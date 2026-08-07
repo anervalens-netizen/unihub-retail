@@ -14,6 +14,7 @@ SQL = (ROOT / "db" / "migrations" / "057_insight_contest_grile_campaign_v3.sql")
     encoding="utf-8"
 )
 PUBLISHER = (ROOT / "services" / "campaign_reporting.py").read_text(encoding="utf-8")
+CONTEST_PUBLISHER = (ROOT / "services" / "contest_reporting.py").read_text(encoding="utf-8")
 
 
 def _view_columns(view_name: str) -> tuple[str, ...]:
@@ -49,8 +50,8 @@ def test_campaign_variant_is_config_derived_and_pos_never_claims_receipts() -> N
 
 
 def test_contest_contract_is_immutable_canonical_and_no_active_month_is_explicit() -> None:
-    assert "class ContestReportingPublisher" in PUBLISHER
-    assert "ContestsService(" in PUBLISHER
+    assert "class ContestReportingPublisher" in CONTEST_PUBLISHER
+    assert "ContestsService(" in CONTEST_PUBLISHER
     assert "contest reporting generations are append-only" in SQL
     assert "contest reporting promotion ledger is append-only" in SQL
     assert "contest_config_sha256" in SQL
@@ -59,8 +60,8 @@ def test_contest_contract_is_immutable_canonical_and_no_active_month_is_explicit
     assert "qualifying_sales" not in SQL
     assert "qualifying_quantity" not in SQL
     assert "score BIGINT" not in SQL
-    assert "no_active_contest" in PUBLISHER
-    assert "contest_promo_points_derive_from_units_not_receipts" in PUBLISHER
+    assert "no_active_contest" in CONTEST_PUBLISHER
+    assert "contest_promo_points_derive_from_units_not_receipts" in CONTEST_PUBLISHER
 
 
 def test_grile_contract_uses_current_fenced_projection_and_domain_metadata() -> None:

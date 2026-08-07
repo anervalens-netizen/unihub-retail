@@ -50,17 +50,31 @@ def _assert_memory_budget(limit_bytes: int) -> int:
     return peak_rss
 
 
+def _private_output_path(output_path: str | None) -> Path:
+    if output_path is None:
+        descriptor, path_value = tempfile.mkstemp(
+            prefix="unihub-export-",
+            suffix=".xlsx",
+        )
+        os.close(descriptor)
+        return Path(path_value)
+    path = Path(output_path)
+    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    descriptor = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+    os.close(descriptor)
+    return path
+
+
 def _save_hashed_workbook(
     workbook: Workbook,
     *,
     max_output_bytes: int,
     max_peak_rss_bytes: int,
+    output_path: str | None = None,
 ) -> dict[str, Any]:
     """Save to a private temporary artifact and attest its exact bytes."""
     _assert_memory_budget(max_peak_rss_bytes)
-    descriptor, path_value = tempfile.mkstemp(prefix="unihub-export-", suffix=".xlsx")
-    os.close(descriptor)
-    path = Path(path_value)
+    path = _private_output_path(output_path)
     try:
         workbook.save(path)
         size = path.stat().st_size
@@ -148,6 +162,7 @@ def render_daily_comparison_xlsx(payload: dict[str, Any]) -> dict[str, Any]:
             workbook,
             max_output_bytes=max_output_bytes,
             max_peak_rss_bytes=max_peak_rss_bytes,
+            output_path=payload.get("output_path"),
         )
         return {
             **artifact,
@@ -184,9 +199,9 @@ def render_daily_metrics_xlsx(payload: dict[str, Any]) -> dict[str, Any]:
             payload["selected_days"],
             payload["daily_rows"],
         )
-        descriptor, path_value = tempfile.mkstemp(prefix="unihub-export-", suffix=".xlsx")
-        os.close(descriptor)
-        path = Path(path_value)
+        path = _private_output_path(
+            str(payload["output_path"]) if payload.get("output_path") else None
+        )
         try:
             with path.open("wb") as destination:
                 for chunk in artifact.iter_chunks():

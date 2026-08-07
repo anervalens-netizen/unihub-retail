@@ -28,6 +28,7 @@ if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
 from services import grile
+from grile.adapters.google_process import GrileGoogleSnapshot
 
 
 DEFAULT_RUNS = 10
@@ -244,7 +245,7 @@ def fixture_runtime(
         for store in stores
     }
     captured: dict[int, list[dict[str, Any]]] = {}
-    values = [
+    values: list[dict[str, Any]] = [
         {"values": [[100.0]]},
         {"values": [[50.0]]},
         {"values": [[1.0]]},
@@ -253,26 +254,24 @@ def fixture_runtime(
     ]
     originals = {
         "GrileRepository": grile.GrileRepository,
-        "get_credentials": grile.get_credentials,
-        "build_services": grile.build_services,
-        "fetch_grila": grile.fetch_grila,
-        "fetch_mod_time": grile.fetch_mod_time,
+        "fetch_grile_snapshot": grile.fetch_grile_snapshot,
     }
 
     def repository_factory(_pool: object) -> FixtureRepository:
         return FixtureRepository(stores, expected, captured)
 
-    def build_fixture_services() -> tuple[FixtureResource, FixtureResource]:
-        return (
-            FixtureResource(client_allocation_kib),
-            FixtureResource(client_allocation_kib),
-        )
+    async def fetch_fixture_snapshot(**_kwargs: Any) -> GrileGoogleSnapshot:
+        transport = FixtureTransport(client_allocation_kib)
+        try:
+            return GrileGoogleSnapshot(
+                value_ranges=values,
+                modified_time="2026-08-01T12:00:00Z",
+            )
+        finally:
+            transport.close()
 
     setattr(grile, "GrileRepository", repository_factory)
-    setattr(grile, "get_credentials", lambda: object())
-    setattr(grile, "build_services", build_fixture_services)
-    setattr(grile, "fetch_grila", lambda *_args: values)
-    setattr(grile, "fetch_mod_time", lambda *_args: "2026-08-01T12:00:00Z")
+    setattr(grile, "fetch_grile_snapshot", fetch_fixture_snapshot)
     try:
         yield captured
     finally:

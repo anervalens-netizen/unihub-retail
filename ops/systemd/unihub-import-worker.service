@@ -11,7 +11,9 @@ User=andrei
 WorkingDirectory=/opt/Mobiup/unihub-retail/backend
 Environment="PATH=/opt/Mobiup/unihub-retail/backend/venv/bin:/usr/bin:/bin"
 EnvironmentFile=/opt/Mobiup/unihub-retail/.env.import-worker
+EnvironmentFile=/opt/Mobiup/ops/prometheus/unihub-retail-network.env
 Environment="RETAIL_WORKER_ROLE=imports"
+Environment="WORKER_METRICS_PORT=9902"
 Environment="UNIHUB_DB_PROCESS_AUTHORITY=sales_import"
 ExecStart=/opt/Mobiup/unihub-retail/backend/venv/bin/python worker.py
 Restart=always

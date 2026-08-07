@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from datetime import date
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 
 from repositories.store_pnl import StorePnlRepository
 from services.fiscal_rules import runtime_gross_to_net
@@ -11,6 +11,8 @@ REVENUE_CODES = {"v1", "v11", "v2", "v3"}
 COGS_CODES = {"c1", "c11", "c2"}
 OPERATING_CODES = {"c3", "c4", "c5", "c6"}
 UNALLOCATED_SOURCE = "__FINANCE_UNALLOCATED__"
+_MONEY = Decimal("0.01")
+_PERCENT = Decimal("0.01")
 
 
 def empty_metrics() -> dict[str, Decimal]:
@@ -25,11 +27,19 @@ def empty_metrics() -> dict[str, Decimal]:
     }
 
 
-def finalize_metrics(values: dict[str, Decimal]) -> dict[str, float]:
+def money(value: Decimal) -> Decimal:
+    return value.quantize(_MONEY, rounding=ROUND_HALF_UP)
+
+
+def percent(value: Decimal) -> Decimal:
+    return value.quantize(_PERCENT, rounding=ROUND_HALF_UP)
+
+
+def finalize_metrics(values: dict[str, Decimal]) -> dict[str, Decimal]:
     values["gross_margin"] = values["revenue"] - values["cogs"]
     values["ebitda"] = values["gross_margin"] - values["operating_costs"]
     values["ebit"] = values["ebitda"] - values["depreciation"]
-    return {key: round(float(value), 2) for key, value in values.items()}
+    return {key: money(value) for key, value in values.items()}
 
 
 def add_amount(values: dict[str, Decimal], category: str, amount: Decimal) -> None:
@@ -121,10 +131,14 @@ class StorePnlService:
             reconciliation.append({
                 "month": period.strftime("%Y-%m"),
                 "pnl_revenue": metrics["revenue"],
-                "retail_sales_gross": round(float(gross_sales), 2),
-                "retail_sales_net": round(float(net_sales), 2),
-                "difference_to_net": round(metrics["revenue"] - float(net_sales), 2),
-                "pnl_to_net_sales_pct": round((metrics["revenue"] / float(net_sales) * 100), 2) if net_sales else None,
+                "retail_sales_gross": money(gross_sales),
+                "retail_sales_net": money(net_sales),
+                "difference_to_net": money(metrics["revenue"] - net_sales),
+                "pnl_to_net_sales_pct": (
+                    percent(metrics["revenue"] / net_sales * Decimal("100"))
+                    if net_sales
+                    else None
+                ),
             })
 
         return {
@@ -143,7 +157,7 @@ class StorePnlService:
                 }
                 for period, values in sorted(monthly.items())
             ],
-            "categories": {key: round(float(value), 2) for key, value in sorted(categories.items())},
+            "categories": {key: money(value) for key, value in sorted(categories.items())},
             "stores": store_payload,
             "reconciliation": reconciliation,
         }

@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, Query
 
 from auth import AuthClaims, require_auth
 from db.connection import get_pool
+from schemas.common import MonthStr
 from repositories.contests import ContestsRepository
 from schemas.contests import ContestResponse
 from services.contests import ContestsService
@@ -28,7 +29,7 @@ def _internal_site_codes_override(site_codes: str | None, claims: AuthClaims) ->
 
 @router.get("/active/all", response_model=list[ContestResponse])
 async def get_active_contests(
-    month: str = Query(...),
+    month: MonthStr = Query(...),
     site_codes: str | None = Query(
         None,
         description=(
@@ -49,7 +50,7 @@ async def get_active_contests(
 
 @router.get("/active", response_model=ContestResponse | None)
 async def get_active_contest(
-    month: str = Query(...),
+    month: MonthStr = Query(...),
     site_codes: str | None = Query(
         None,
         description=(

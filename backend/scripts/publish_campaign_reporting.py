@@ -26,7 +26,8 @@ if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
 from db.connection import verify_database_connection_authority
-from services.campaign_reporting import CampaignReportingPublisher, ContestReportingPublisher
+from services.campaign_reporting import CampaignReportingPublisher
+from services.contest_reporting import ContestReportingPublisher
 
 
 MONTH_RE = re.compile(r"^\d{4}-(0[1-9]|1[0-2])$")

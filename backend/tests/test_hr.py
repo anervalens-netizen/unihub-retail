@@ -126,3 +126,46 @@ async def test_asm_performance_history_returns_list():
         assert "month" in row
         assert "total_sales" in row
         assert "total_target" in row
+
+
+def test_leave_request_contract_rejects_reversed_interval() -> None:
+    from pydantic import ValidationError
+
+    from routers.hr import LeaveRequestCreate
+
+    with pytest.raises(ValidationError, match="start_date"):
+        LeaveRequestCreate.model_validate({
+            "agent_name": "Test Agent",
+            "start_date": "2026-05-12",
+            "end_date": "2026-05-10",
+            "leave_type": "odihna",
+        })
+
+    valid = LeaveRequestCreate.model_validate({
+        "agent_name": " Test Agent ",
+        "start_date": "2026-05-10",
+        "end_date": "2026-05-12",
+        "leave_type": " odihna ",
+    })
+    assert valid.model_dump(mode="json") == {
+        "agent_name": "Test Agent",
+        "start_date": "2026-05-10",
+        "end_date": "2026-05-12",
+        "leave_type": "odihna",
+        "notes": None,
+    }
+
+
+@pytest.mark.anyio
+async def test_leave_request_database_rejects_reversed_interval() -> None:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        with pytest.raises(Exception) as exc_info:
+            await conn.execute(
+                """
+                INSERT INTO leave_requests (
+                    agent_name, start_date, end_date, leave_type
+                ) VALUES ('Invalid interval', DATE '2026-05-12', DATE '2026-05-10', 'odihna')
+                """
+            )
+    assert "ck_leave_requests_date_order" in str(exc_info.value)

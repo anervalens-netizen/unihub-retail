@@ -1,5 +1,5 @@
 /* GENERATED FILE. Run npm run contracts:generate; do not edit manually. */
-export const RETAIL_OPENAPI_SHA256 = 'd7a6a67c7c71aa9b5710885796de4233ab8e3e0b46df5432b4b513b18ff46c3e' as const; // pragma: allowlist secret
+export const RETAIL_OPENAPI_SHA256 = '2b074a57797d4615596a2bf062ced6b94b84cd7f9f7b07c8c5b8382d722101a7' as const; // pragma: allowlist secret
 
 export type RetailDecimal = string & { readonly __retailDecimal: unique symbol };
 
@@ -242,6 +242,7 @@ export interface RetailAiForecastDailyPoint {
   "cumulative_forecast": RetailDecimal;
   "forecast_date": string;
   "forecast_sales": RetailDecimal;
+  "has_actual": boolean;
 }
 
 export interface RetailAiForecastManagerRow {
@@ -799,6 +800,219 @@ export interface RetailFocusHistoryResponse {
   "history": Array<RetailFocusHistoryPoint>;
 }
 
+export interface RetailGrileAgentTargetEnqueueResponse {
+  "job_id"?: string | null;
+  "operation"?: RetailGrileAgentTargetOperationResponse | null;
+  "operation_id": number;
+  "status": string;
+}
+
+export interface RetailGrileAgentTargetOperationEnvelope {
+  "operation": RetailGrileAgentTargetOperationResponse;
+}
+
+export interface RetailGrileAgentTargetOperationResponse {
+  "after_count"?: number | null;
+  "after_sha256"?: string | null;
+  "before_count"?: number | null;
+  "before_sha256"?: string | null;
+  "created_at"?: string | null;
+  "diff"?: Record<string, unknown> | null;
+  "error_message"?: string | null;
+  "finished_at"?: string | null;
+  "id": number;
+  "job_id"?: string | null;
+  "mode": "dry_run" | "sync";
+  "run_month": string;
+  "started_at"?: string | null;
+  "status": string;
+}
+
+export interface RetailGrileFirmResponse {
+  "name": string;
+  "stores": Array<RetailGrileStoreResponse>;
+}
+
+export interface RetailGrileManagerResponse {
+  "avg_completion"?: number | null;
+  "business_unknown": number;
+  "legacy_completion_windows": number;
+  "name": string;
+  "ok": number;
+  "problems": number;
+  "provider_errors": number;
+  "provider_stale": number;
+  "provider_unknown": number;
+  "store_count": number;
+  "team_leaders": Array<RetailGrileTeamLeaderResponse>;
+}
+
+export interface RetailGrileMonthlyJobResponse {
+  "error"?: string | null;
+  "job_id": string;
+  "result"?: Record<string, unknown> | null;
+  "status": "queued" | "in_progress" | "complete" | "not_found";
+}
+
+export interface RetailGrileMonthlyManifestEnvelope {
+  "manifest"?: RetailGrileMonthlyManifestResponse | null;
+}
+
+export interface RetailGrileMonthlyManifestResponse {
+  "approved": boolean;
+  "approved_at"?: string | null;
+  "consumed_at"?: string | null;
+  "created_at"?: string | null;
+  "error_count": number;
+  "expected"?: Record<string, unknown>;
+  "id": number;
+  "manifest_sha256"?: string | null;
+  "month": string;
+  "operation": "finalize" | "archive" | "reset";
+  "operation_id": number;
+  "processed"?: Record<string, unknown>;
+  "status": "building" | "failed" | "verified" | "approved" | "consumed" | "rolled_back" | "uncertain";
+  "verified_at"?: string | null;
+}
+
+export interface RetailGrileMonthlyRunResponse {
+  "dry_run"?: boolean | null;
+  "job_id"?: string | null;
+  "month": string;
+  "month_label": string;
+  "next_month_label"?: string | null;
+  "op": "finalize" | "archive" | "reset";
+  "operation"?: Record<string, unknown> | null;
+  "operation_id": number;
+  "status": "enqueued" | "already_running" | "already_completed";
+}
+
+export interface RetailGrileOverviewResponse {
+  "managers": Array<RetailGrileManagerResponse>;
+  "month": string;
+  "run"?: RetailGrileRunResponse | null;
+  "summary": RetailGrileOverviewSummary;
+  "total_sheets": number;
+}
+
+export interface RetailGrileOverviewSummary {
+  "business_ok": number;
+  "business_problems": number;
+  "business_unknown": number;
+  "legacy_completion_windows": number;
+  "provider_errors": number;
+  "provider_fresh": number;
+  "provider_stale": number;
+  "provider_unknown": number;
+}
+
+export interface RetailGrilePermissionsResponse {
+  "can_run": boolean;
+}
+
+export interface RetailGrileProviderStatus {
+  "last_attempt_at"?: string | null;
+  "last_error_at"?: string | null;
+  "last_error_code"?: string | null;
+  "last_error_message"?: string | null;
+  "last_success_at"?: string | null;
+  "stale_age_seconds"?: number | null;
+  "state": "fresh" | "stale" | "error" | "unknown";
+}
+
+export interface RetailGrileRunEnqueueResponse {
+  "job_id"?: string | null;
+  "month"?: string | null;
+  "run"?: RetailGrileRunResponse | null;
+  "run_id"?: number | null;
+  "status": "enqueued" | "already_running";
+}
+
+export interface RetailGrileRunResponse {
+  "active": boolean;
+  "created_at"?: string | null;
+  "duration_ms"?: number | null;
+  "error_count": number;
+  "error_message"?: string | null;
+  "finished_at"?: string | null;
+  "heartbeat_at"?: string | null;
+  "id": number;
+  "ok_count": number;
+  "problem_count": number;
+  "progress_current": number;
+  "progress_total": number;
+  "run_month": string;
+  "source": "manual" | "auto";
+  "source_snapshot_id"?: number | null;
+  "started_at"?: string | null;
+  "status": "queued" | "running" | "completed" | "failed";
+}
+
+export interface RetailGrileRunStatusResponse {
+  "run"?: RetailGrileRunResponse | null;
+}
+
+export interface RetailGrileStoreRefreshEnqueueResponse {
+  "job_id"?: string | null;
+  "month": string;
+  "operation_id": number;
+  "status": "enqueued" | "already_running";
+}
+
+export interface RetailGrileStoreRefreshOperationEnvelope {
+  "operation": RetailGrileStoreRefreshOperationResponse;
+}
+
+export interface RetailGrileStoreRefreshOperationResponse {
+  "created_at": string;
+  "error_code"?: string | null;
+  "error_message"?: string | null;
+  "finished_at"?: string | null;
+  "heartbeat_at"?: string | null;
+  "id": number;
+  "projection_applied"?: boolean | null;
+  "run_month": string;
+  "site_code": string;
+  "started_at"?: string | null;
+  "status": "queued" | "running" | "completed" | "failed" | "cancelled" | "unknown";
+}
+
+export interface RetailGrileStoreResponse {
+  "asm": string;
+  "checked_at"?: string | null;
+  "completion_algorithm_version": number;
+  "completion_as_of"?: string | null;
+  "completion_pct"?: number | null;
+  "completion_window_status": "current" | "legacy_incomplete_window";
+  "days_elapsed"?: number | null;
+  "db_max_sale_date"?: string | null;
+  "db_sales_mtd"?: RetailDecimal | null;
+  "db_target"?: RetailDecimal | null;
+  "error_code"?: string | null;
+  "error_message"?: string | null;
+  "fill_status"?: string | null;
+  "firma": string;
+  "grila_sales"?: RetailDecimal | null;
+  "grila_target"?: RetailDecimal | null;
+  "last_edit"?: string | null;
+  "locatie": string;
+  "missing_days"?: Array<number> | null;
+  "provider_status": RetailGrileProviderStatus;
+  "regional": string;
+  "sales_diff"?: RetailDecimal | null;
+  "sales_status"?: string | null;
+  "sheet_id"?: string | null;
+  "site_code": string;
+  "target_diff"?: RetailDecimal | null;
+  "target_status"?: string | null;
+  "team_leader_name"?: string | null;
+}
+
+export interface RetailGrileTeamLeaderResponse {
+  "firms": Array<RetailGrileFirmResponse>;
+  "name"?: string | null;
+}
+
 export interface RetailHTTPValidationError {
   "detail"?: Array<RetailValidationError>;
 }
@@ -1136,15 +1350,15 @@ export interface RetailPeriodComparisonPoint {
 }
 
 export interface RetailPnlAnnualItemResponse {
-  "cogs": number;
-  "depreciation": number;
-  "ebit": number;
-  "ebitda": number;
-  "gross_margin": number;
+  "cogs": RetailDecimal;
+  "depreciation": RetailDecimal;
+  "ebit": RetailDecimal;
+  "ebitda": RetailDecimal;
+  "gross_margin": RetailDecimal;
   "is_estimated": boolean;
   "month_count": number;
-  "operating_costs": number;
-  "revenue": number;
+  "operating_costs": RetailDecimal;
+  "revenue": RetailDecimal;
   "store_count": number;
   "year": string;
 }
@@ -1154,13 +1368,13 @@ export interface RetailPnlAnnualResponse {
 }
 
 export interface RetailPnlMetricsResponse {
-  "cogs": number;
-  "depreciation": number;
-  "ebit": number;
-  "ebitda": number;
-  "gross_margin": number;
-  "operating_costs": number;
-  "revenue": number;
+  "cogs": RetailDecimal;
+  "depreciation": RetailDecimal;
+  "ebit": RetailDecimal;
+  "ebitda": RetailDecimal;
+  "gross_margin": RetailDecimal;
+  "operating_costs": RetailDecimal;
+  "revenue": RetailDecimal;
 }
 
 export interface RetailPnlMonthResponse {
@@ -1170,15 +1384,15 @@ export interface RetailPnlMonthResponse {
 }
 
 export interface RetailPnlMonthlyItemResponse {
-  "cogs": number;
-  "depreciation": number;
-  "ebit": number;
-  "ebitda": number;
-  "gross_margin": number;
+  "cogs": RetailDecimal;
+  "depreciation": RetailDecimal;
+  "ebit": RetailDecimal;
+  "ebitda": RetailDecimal;
+  "gross_margin": RetailDecimal;
   "is_estimated": boolean;
   "month": string;
-  "operating_costs": number;
-  "revenue": number;
+  "operating_costs": RetailDecimal;
+  "revenue": RetailDecimal;
 }
 
 export interface RetailPnlMonthsResponse {
@@ -1186,7 +1400,7 @@ export interface RetailPnlMonthsResponse {
 }
 
 export interface RetailPnlOverviewResponse {
-  "categories"?: Record<string, number>;
+  "categories"?: Record<string, RetailDecimal>;
   "company"?: string | null;
   "end_month": string;
   "monthly"?: Array<RetailPnlMonthlyItemResponse>;
@@ -1204,12 +1418,12 @@ export interface RetailPnlPermissionsResponse {
 }
 
 export interface RetailPnlReconciliationResponse {
-  "difference_to_net": number;
+  "difference_to_net": RetailDecimal;
   "month": string;
-  "pnl_revenue": number;
-  "pnl_to_net_sales_pct"?: number | null;
-  "retail_sales_gross": number;
-  "retail_sales_net": number;
+  "pnl_revenue": RetailDecimal;
+  "pnl_to_net_sales_pct"?: RetailDecimal | null;
+  "retail_sales_gross": RetailDecimal;
+  "retail_sales_net": RetailDecimal;
 }
 
 export interface RetailPnlRegionsResponse {
@@ -1225,17 +1439,17 @@ export interface RetailPnlStoreOptionResponse {
 }
 
 export interface RetailPnlStoreResponse {
-  "cogs": number;
+  "cogs": RetailDecimal;
   "company": string;
-  "depreciation": number;
-  "ebit": number;
-  "ebitda": number;
-  "gross_margin": number;
+  "depreciation": RetailDecimal;
+  "ebit": RetailDecimal;
+  "ebitda": RetailDecimal;
+  "gross_margin": RetailDecimal;
   "has_estimates": boolean;
   "location": string;
-  "operating_costs": number;
+  "operating_costs": RetailDecimal;
   "regional"?: string | null;
-  "revenue": number;
+  "revenue": RetailDecimal;
   "site_code": string;
   "source_site_code": string;
 }
@@ -2165,6 +2379,7 @@ export type RetailOperationId =
   'grile_overview_api_grile_overview_get' |
   'grile_run_api_grile_run_post' |
   'grile_run_status_api_grile_run_status_get' |
+  'grile_store_refresh_operation_api_grile_store_refreshes__operation_id__get' |
   'grile_store_refresh_api_grile_stores__site_code__refresh_post' |
   'get_asm_perf_api_hr_asm_performance_get' |
   'get_asm_perf_history_api_hr_asm_performance__asm_name__history_get' |
@@ -2418,17 +2633,17 @@ export interface RetailOperationResponses {
   }
 
   'grile_agent_targets_diff_api_grile_agent_targets_diff_post': {
-    '200': Record<string, unknown>;
+    '200': RetailGrileAgentTargetEnqueueResponse;
     '422': RetailHTTPValidationError;
   }
 
   'grile_agent_targets_operation_api_grile_agent_targets_operations__operation_id__get': {
-    '200': Record<string, unknown>;
+    '200': RetailGrileAgentTargetOperationEnvelope;
     '422': RetailHTTPValidationError;
   }
 
   'grile_agent_targets_sync_api_grile_agent_targets_sync_post': {
-    '200': Record<string, unknown>;
+    '200': RetailGrileAgentTargetEnqueueResponse;
     '422': RetailHTTPValidationError;
   }
 
@@ -2438,46 +2653,51 @@ export interface RetailOperationResponses {
   }
 
   'grile_monthly_job_api_grile_monthly_job__job_id__get': {
-    '200': Record<string, unknown>;
+    '200': RetailGrileMonthlyJobResponse;
     '422': RetailHTTPValidationError;
   }
 
   'grile_monthly_manifest_approve_api_grile_monthly_manifests__manifest_id__approve_post': {
-    '200': Record<string, unknown>;
+    '200': RetailGrileMonthlyManifestEnvelope;
     '422': RetailHTTPValidationError;
   }
 
   'grile_monthly_manifest_api_grile_monthly_manifests__month__get': {
-    '200': Record<string, unknown>;
+    '200': RetailGrileMonthlyManifestEnvelope;
     '422': RetailHTTPValidationError;
   }
 
   'grile_monthly_permissions_api_grile_monthly_permissions_get': {
-    '200': Record<string, unknown>;
+    '200': RetailGrilePermissionsResponse;
   }
 
   'grile_monthly_run_api_grile_monthly_run_post': {
-    '200': Record<string, unknown>;
+    '200': RetailGrileMonthlyRunResponse;
     '422': RetailHTTPValidationError;
   }
 
   'grile_overview_api_grile_overview_get': {
-    '200': Record<string, unknown>;
+    '200': RetailGrileOverviewResponse;
     '422': RetailHTTPValidationError;
   }
 
   'grile_run_api_grile_run_post': {
-    '200': Record<string, unknown>;
+    '200': RetailGrileRunEnqueueResponse;
     '422': RetailHTTPValidationError;
   }
 
   'grile_run_status_api_grile_run_status_get': {
-    '200': Record<string, unknown>;
+    '200': RetailGrileRunStatusResponse;
+    '422': RetailHTTPValidationError;
+  }
+
+  'grile_store_refresh_operation_api_grile_store_refreshes__operation_id__get': {
+    '200': RetailGrileStoreRefreshOperationEnvelope;
     '422': RetailHTTPValidationError;
   }
 
   'grile_store_refresh_api_grile_stores__site_code__refresh_post': {
-    '200': Record<string, unknown>;
+    '202': RetailGrileStoreRefreshEnqueueResponse;
     '422': RetailHTTPValidationError;
   }
 
@@ -2791,19 +3011,20 @@ export interface RetailOperationSuccesses {
   'preview_export_api_exports_preview_post': RetailExportPreviewResponse;
   'get_available_months_api_filters_months_get': Array<string>;
   'get_filter_options_api_filters_options_get': RetailFilterOptions;
-  'grile_agent_targets_diff_api_grile_agent_targets_diff_post': Record<string, unknown>;
-  'grile_agent_targets_operation_api_grile_agent_targets_operations__operation_id__get': Record<string, unknown>;
-  'grile_agent_targets_sync_api_grile_agent_targets_sync_post': Record<string, unknown>;
+  'grile_agent_targets_diff_api_grile_agent_targets_diff_post': RetailGrileAgentTargetEnqueueResponse;
+  'grile_agent_targets_operation_api_grile_agent_targets_operations__operation_id__get': RetailGrileAgentTargetOperationEnvelope;
+  'grile_agent_targets_sync_api_grile_agent_targets_sync_post': RetailGrileAgentTargetEnqueueResponse;
   'grile_monthly_download_api_grile_monthly_download__kind___month__get': unknown;
-  'grile_monthly_job_api_grile_monthly_job__job_id__get': Record<string, unknown>;
-  'grile_monthly_manifest_approve_api_grile_monthly_manifests__manifest_id__approve_post': Record<string, unknown>;
-  'grile_monthly_manifest_api_grile_monthly_manifests__month__get': Record<string, unknown>;
-  'grile_monthly_permissions_api_grile_monthly_permissions_get': Record<string, unknown>;
-  'grile_monthly_run_api_grile_monthly_run_post': Record<string, unknown>;
-  'grile_overview_api_grile_overview_get': Record<string, unknown>;
-  'grile_run_api_grile_run_post': Record<string, unknown>;
-  'grile_run_status_api_grile_run_status_get': Record<string, unknown>;
-  'grile_store_refresh_api_grile_stores__site_code__refresh_post': Record<string, unknown>;
+  'grile_monthly_job_api_grile_monthly_job__job_id__get': RetailGrileMonthlyJobResponse;
+  'grile_monthly_manifest_approve_api_grile_monthly_manifests__manifest_id__approve_post': RetailGrileMonthlyManifestEnvelope;
+  'grile_monthly_manifest_api_grile_monthly_manifests__month__get': RetailGrileMonthlyManifestEnvelope;
+  'grile_monthly_permissions_api_grile_monthly_permissions_get': RetailGrilePermissionsResponse;
+  'grile_monthly_run_api_grile_monthly_run_post': RetailGrileMonthlyRunResponse;
+  'grile_overview_api_grile_overview_get': RetailGrileOverviewResponse;
+  'grile_run_api_grile_run_post': RetailGrileRunEnqueueResponse;
+  'grile_run_status_api_grile_run_status_get': RetailGrileRunStatusResponse;
+  'grile_store_refresh_operation_api_grile_store_refreshes__operation_id__get': RetailGrileStoreRefreshOperationEnvelope;
+  'grile_store_refresh_api_grile_stores__site_code__refresh_post': RetailGrileStoreRefreshEnqueueResponse;
   'get_asm_perf_api_hr_asm_performance_get': Array<RetailHrAsmPerformanceItem>;
   'get_asm_perf_history_api_hr_asm_performance__asm_name__history_get': Array<RetailHrAsmHistoryItem>;
   'get_asm_salary_api_hr_asm_salary__asm_name__get': RetailHrAsmSalaryBreakdown;
@@ -2910,6 +3131,7 @@ export interface RetailOperationErrors {
   'grile_overview_api_grile_overview_get': { '422': RetailHTTPValidationError };
   'grile_run_api_grile_run_post': { '422': RetailHTTPValidationError };
   'grile_run_status_api_grile_run_status_get': { '422': RetailHTTPValidationError };
+  'grile_store_refresh_operation_api_grile_store_refreshes__operation_id__get': { '422': RetailHTTPValidationError };
   'grile_store_refresh_api_grile_stores__site_code__refresh_post': { '422': RetailHTTPValidationError };
   'get_asm_perf_api_hr_asm_performance_get': { '422': RetailHTTPValidationError };
   'get_asm_perf_history_api_hr_asm_performance__asm_name__history_get': { '422': RetailHTTPValidationError };
@@ -3120,6 +3342,9 @@ export const RETAIL_OPERATION_ERROR_STATUSES: { readonly [Id in RetailOperationI
     '422',
   ]),
   'grile_run_status_api_grile_run_status_get': new Set<string>([
+    '422',
+  ]),
+  'grile_store_refresh_operation_api_grile_store_refreshes__operation_id__get': new Set<string>([
     '422',
   ]),
   'grile_store_refresh_api_grile_stores__site_code__refresh_post': new Set<string>([
@@ -3341,6 +3566,7 @@ export interface RetailOperationQueries {
   'grile_overview_api_grile_overview_get': { "month"?: string | null };
   'grile_run_api_grile_run_post': { "month"?: string | null };
   'grile_run_status_api_grile_run_status_get': { "month"?: string | null };
+  'grile_store_refresh_operation_api_grile_store_refreshes__operation_id__get': Record<never, never>;
   'grile_store_refresh_api_grile_stores__site_code__refresh_post': { "month"?: string | null };
   'get_asm_perf_api_hr_asm_performance_get': { "month": string; "regional"?: string | null };
   'get_asm_perf_history_api_hr_asm_performance__asm_name__history_get': { "months"?: number };
@@ -3448,6 +3674,7 @@ export interface RetailOperationPaths {
   'grile_overview_api_grile_overview_get': Record<never, never>;
   'grile_run_api_grile_run_post': Record<never, never>;
   'grile_run_status_api_grile_run_status_get': Record<never, never>;
+  'grile_store_refresh_operation_api_grile_store_refreshes__operation_id__get': { "operation_id": number };
   'grile_store_refresh_api_grile_stores__site_code__refresh_post': { "site_code": string };
   'get_asm_perf_api_hr_asm_performance_get': Record<never, never>;
   'get_asm_perf_history_api_hr_asm_performance__asm_name__history_get': { "asm_name": string };
@@ -3555,6 +3782,7 @@ export interface RetailOperationBodies {
   'grile_overview_api_grile_overview_get': undefined;
   'grile_run_api_grile_run_post': undefined;
   'grile_run_status_api_grile_run_status_get': undefined;
+  'grile_store_refresh_operation_api_grile_store_refreshes__operation_id__get': undefined;
   'grile_store_refresh_api_grile_stores__site_code__refresh_post': undefined;
   'get_asm_perf_api_hr_asm_performance_get': undefined;
   'get_asm_perf_history_api_hr_asm_performance__asm_name__history_get': undefined;
@@ -3662,6 +3890,7 @@ export interface RetailOperationMeta {
   'grile_overview_api_grile_overview_get': { method: 'get'; path: '/api/grile/overview'; responseType: 'json' };
   'grile_run_api_grile_run_post': { method: 'post'; path: '/api/grile/run'; responseType: 'json' };
   'grile_run_status_api_grile_run_status_get': { method: 'get'; path: '/api/grile/run-status'; responseType: 'json' };
+  'grile_store_refresh_operation_api_grile_store_refreshes__operation_id__get': { method: 'get'; path: '/api/grile/store-refreshes/{operation_id}'; responseType: 'json' };
   'grile_store_refresh_api_grile_stores__site_code__refresh_post': { method: 'post'; path: '/api/grile/stores/{site_code}/refresh'; responseType: 'json' };
   'get_asm_perf_api_hr_asm_performance_get': { method: 'get'; path: '/api/hr/asm-performance'; responseType: 'json' };
   'get_asm_perf_history_api_hr_asm_performance__asm_name__history_get': { method: 'get'; path: '/api/hr/asm-performance/{asm_name}/history'; responseType: 'json' };
@@ -4274,10 +4503,18 @@ export const RETAIL_DECIMAL_PATHS: { readonly [Id in RetailOperationId]: Readonl
   'grile_monthly_run_api_grile_monthly_run_post': new Set<string>([
   ]),
   'grile_overview_api_grile_overview_get': new Set<string>([
+    'managers/*/team_leaders/*/firms/*/stores/*/db_sales_mtd',
+    'managers/*/team_leaders/*/firms/*/stores/*/db_target',
+    'managers/*/team_leaders/*/firms/*/stores/*/grila_sales',
+    'managers/*/team_leaders/*/firms/*/stores/*/grila_target',
+    'managers/*/team_leaders/*/firms/*/stores/*/sales_diff',
+    'managers/*/team_leaders/*/firms/*/stores/*/target_diff',
   ]),
   'grile_run_api_grile_run_post': new Set<string>([
   ]),
   'grile_run_status_api_grile_run_status_get': new Set<string>([
+  ]),
+  'grile_store_refresh_operation_api_grile_store_refreshes__operation_id__get': new Set<string>([
   ]),
   'grile_store_refresh_api_grile_stores__site_code__refresh_post': new Set<string>([
   ]),
@@ -4345,10 +4582,44 @@ export const RETAIL_DECIMAL_PATHS: { readonly [Id in RetailOperationId]: Readonl
     'erp_result/metrics/*/retail_value',
   ]),
   'annual_api_store_pnl_annual_get': new Set<string>([
+    'annual/*/cogs',
+    'annual/*/depreciation',
+    'annual/*/ebit',
+    'annual/*/ebitda',
+    'annual/*/gross_margin',
+    'annual/*/operating_costs',
+    'annual/*/revenue',
   ]),
   'months_api_store_pnl_months_get': new Set<string>([
   ]),
   'overview_api_store_pnl_overview_get': new Set<string>([
+    'categories/*',
+    'monthly/*/cogs',
+    'monthly/*/depreciation',
+    'monthly/*/ebit',
+    'monthly/*/ebitda',
+    'monthly/*/gross_margin',
+    'monthly/*/operating_costs',
+    'monthly/*/revenue',
+    'reconciliation/*/difference_to_net',
+    'reconciliation/*/pnl_revenue',
+    'reconciliation/*/pnl_to_net_sales_pct',
+    'reconciliation/*/retail_sales_gross',
+    'reconciliation/*/retail_sales_net',
+    'stores/*/cogs',
+    'stores/*/depreciation',
+    'stores/*/ebit',
+    'stores/*/ebitda',
+    'stores/*/gross_margin',
+    'stores/*/operating_costs',
+    'stores/*/revenue',
+    'summary/cogs',
+    'summary/depreciation',
+    'summary/ebit',
+    'summary/ebitda',
+    'summary/gross_margin',
+    'summary/operating_costs',
+    'summary/revenue',
   ]),
   'pnl_permissions_api_store_pnl_permissions_get': new Set<string>([
   ]),
@@ -4856,10 +5127,14 @@ export const RETAIL_DATE_PATHS: { readonly [Id in RetailOperationId]: ReadonlySe
   'grile_monthly_run_api_grile_monthly_run_post': new Set<string>([
   ]),
   'grile_overview_api_grile_overview_get': new Set<string>([
+    'managers/*/team_leaders/*/firms/*/stores/*/completion_as_of',
+    'managers/*/team_leaders/*/firms/*/stores/*/db_max_sale_date',
   ]),
   'grile_run_api_grile_run_post': new Set<string>([
   ]),
   'grile_run_status_api_grile_run_status_get': new Set<string>([
+  ]),
+  'grile_store_refresh_operation_api_grile_store_refreshes__operation_id__get': new Set<string>([
   ]),
   'grile_store_refresh_api_grile_stores__site_code__refresh_post': new Set<string>([
   ]),
@@ -5088,28 +5363,68 @@ export const RETAIL_DATETIME_PATHS: { readonly [Id in RetailOperationId]: Readon
   'get_filter_options_api_filters_options_get': new Set<string>([
   ]),
   'grile_agent_targets_diff_api_grile_agent_targets_diff_post': new Set<string>([
+    'operation/created_at',
+    'operation/finished_at',
+    'operation/started_at',
   ]),
   'grile_agent_targets_operation_api_grile_agent_targets_operations__operation_id__get': new Set<string>([
+    'operation/created_at',
+    'operation/finished_at',
+    'operation/started_at',
   ]),
   'grile_agent_targets_sync_api_grile_agent_targets_sync_post': new Set<string>([
+    'operation/created_at',
+    'operation/finished_at',
+    'operation/started_at',
   ]),
   'grile_monthly_download_api_grile_monthly_download__kind___month__get': new Set<string>([
   ]),
   'grile_monthly_job_api_grile_monthly_job__job_id__get': new Set<string>([
   ]),
   'grile_monthly_manifest_approve_api_grile_monthly_manifests__manifest_id__approve_post': new Set<string>([
+    'manifest/approved_at',
+    'manifest/consumed_at',
+    'manifest/created_at',
+    'manifest/verified_at',
   ]),
   'grile_monthly_manifest_api_grile_monthly_manifests__month__get': new Set<string>([
+    'manifest/approved_at',
+    'manifest/consumed_at',
+    'manifest/created_at',
+    'manifest/verified_at',
   ]),
   'grile_monthly_permissions_api_grile_monthly_permissions_get': new Set<string>([
   ]),
   'grile_monthly_run_api_grile_monthly_run_post': new Set<string>([
   ]),
   'grile_overview_api_grile_overview_get': new Set<string>([
+    'managers/*/team_leaders/*/firms/*/stores/*/checked_at',
+    'managers/*/team_leaders/*/firms/*/stores/*/last_edit',
+    'managers/*/team_leaders/*/firms/*/stores/*/provider_status/last_attempt_at',
+    'managers/*/team_leaders/*/firms/*/stores/*/provider_status/last_error_at',
+    'managers/*/team_leaders/*/firms/*/stores/*/provider_status/last_success_at',
+    'run/created_at',
+    'run/finished_at',
+    'run/heartbeat_at',
+    'run/started_at',
   ]),
   'grile_run_api_grile_run_post': new Set<string>([
+    'run/created_at',
+    'run/finished_at',
+    'run/heartbeat_at',
+    'run/started_at',
   ]),
   'grile_run_status_api_grile_run_status_get': new Set<string>([
+    'run/created_at',
+    'run/finished_at',
+    'run/heartbeat_at',
+    'run/started_at',
+  ]),
+  'grile_store_refresh_operation_api_grile_store_refreshes__operation_id__get': new Set<string>([
+    'operation/created_at',
+    'operation/finished_at',
+    'operation/heartbeat_at',
+    'operation/started_at',
   ]),
   'grile_store_refresh_api_grile_stores__site_code__refresh_post': new Set<string>([
   ]),
@@ -5274,6 +5589,7 @@ export const RETAIL_OPERATION_ROUTES = {
   'grile_overview_api_grile_overview_get': { method: 'get', path: '/api/grile/overview', responseType: 'json' },
   'grile_run_api_grile_run_post': { method: 'post', path: '/api/grile/run', responseType: 'json' },
   'grile_run_status_api_grile_run_status_get': { method: 'get', path: '/api/grile/run-status', responseType: 'json' },
+  'grile_store_refresh_operation_api_grile_store_refreshes__operation_id__get': { method: 'get', path: '/api/grile/store-refreshes/{operation_id}', responseType: 'json' },
   'grile_store_refresh_api_grile_stores__site_code__refresh_post': { method: 'post', path: '/api/grile/stores/{site_code}/refresh', responseType: 'json' },
   'get_asm_perf_api_hr_asm_performance_get': { method: 'get', path: '/api/hr/asm-performance', responseType: 'json' },
   'get_asm_perf_history_api_hr_asm_performance__asm_name__history_get': { method: 'get', path: '/api/hr/asm-performance/{asm_name}/history', responseType: 'json' },

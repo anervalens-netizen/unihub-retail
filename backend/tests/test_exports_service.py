@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import hashlib
 from decimal import Decimal
 from io import BytesIO
@@ -759,7 +760,9 @@ async def test_complex_export_worker_output_caps_close_and_unlink_artifact(
     service = ExportsService(repo)  # type: ignore[arg-type]
 
     async def worker_result(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
-        path = tmp_path / "worker-output.xlsx"
+        operation_directory = tmp_path / "unihub-export-operation-test"
+        operation_directory.mkdir(exist_ok=True)
+        path = operation_directory / "worker-output.xlsx"
         content = b"x" * 100_001
         path.write_bytes(content)
         return {
@@ -769,14 +772,13 @@ async def test_complex_export_worker_output_caps_close_and_unlink_artifact(
             "sha256": hashlib.sha256(content).hexdigest(),
             "peak_rss": 1,
             "build_seconds": 0.01,
+            "operation_directory": str(operation_directory),
         }
 
-    class Loop:
-        def run_in_executor(self, *_args: Any, **_kwargs: Any) -> Any:
-            return worker_result()
+    async def run_renderer(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+        return await worker_result()
 
-    monkeypatch.setattr(exports_module.asyncio, "get_running_loop", lambda: Loop())
-    monkeypatch.setattr(exports_module, "_complex_process_pool", lambda: object())
+    monkeypatch.setattr(exports_module, "run_export_renderer_process", run_renderer)
     monkeypatch.setattr(exports_module, "EXPORT_MAX_OUTPUT_BYTES", 100_000)
 
     with pytest.raises(ExportValidationError, match="dimensiune de output"):
@@ -880,3 +882,58 @@ def test_daily_evolution_sheet_skips_empty_metrics_and_missing_values() -> None:
     assert sheet["B2"].value is None
     assert sheet["D2"].value is None
     assert sheet.max_row == 33
+
+
+class PeriodFailureRepo(FakeRepo):
+    def __init__(self) -> None:
+        super().__init__()
+        self.day_cancelled = False
+
+    async def fetch_report_rows(self, **kwargs: Any) -> list[dict[str, Any]]:
+        self.report_calls.append(kwargs)
+        period = kwargs.get("period")
+        if period is None:
+            return [row()]
+        if period == "month":
+            await asyncio.sleep(0)
+            raise RuntimeError("monthly loader failed")
+        if period == "day":
+            try:
+                await asyncio.sleep(60)
+            except asyncio.CancelledError:
+                self.day_cancelled = True
+                raise
+        return []
+
+
+@pytest.mark.asyncio
+async def test_period_loader_failure_cancels_sibling_task() -> None:
+    repo = PeriodFailureRepo()
+    service = ExportsService(repo)  # type: ignore[arg-type]
+
+    with pytest.raises(RuntimeError, match="monthly loader failed"):
+        await service.build_report({
+            "dataset": "stores",
+            "months": ["2026-06"],
+            "metrics": ["total_sales"],
+            "monthly_metrics": ["total_sales"],
+            "daily_metrics": ["total_sales"],
+            "selected_days": [1],
+        })
+
+    assert repo.day_cancelled is True
+
+
+@pytest.mark.asyncio
+async def test_period_loader_row_cap_is_enforced(monkeypatch: pytest.MonkeyPatch) -> None:
+    repo = FakeRepo()
+    service = ExportsService(repo)  # type: ignore[arg-type]
+    monkeypatch.setattr(exports_module, "EXPORT_MAX_ROWS", 1)
+
+    with pytest.raises(ExportValidationError, match="evolutia month"):
+        await service.build_report({
+            "dataset": "stores",
+            "months": ["2026-05", "2026-06"],
+            "metrics": ["total_sales"],
+            "monthly_metrics": ["total_sales"],
+        })

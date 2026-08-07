@@ -366,10 +366,10 @@ cache. Gate-ul browser `e2e/pwa-release-lifecycle.spec.ts` verifică instalarea
 reală a unui service worker, activarea imediată, upgrade-ul N -> N+1 și
 rollback-ul N+1 -> N; nu este dovadă de deploy production și se completează cu
 probele artefactului formal.
-Calitatea frontend are doua praguri: `npm run lint` ruleaza ESLint flat config
-cu React Hooks si TypeScript rules, iar `npm run typecheck:strict` aplica
-strict TypeScript pe subseturi curate. `npm run typecheck` ramane pragul
-general pentru toata aplicatia.
+Calitatea frontend are trei praguri complementare: `npm run typecheck` aplica
+TypeScript strict pe intreaga aplicatie, `npm run lint` ruleaza ESLint flat config
+cu zero warnings, iar `npm run complexity:ts` blocheaza functii TypeScript/TSX
+noi care depasesc bugetul aprobat.
 
 Tabul principal `Agenti` are subsectiunile `Prezentare Generala`, `Grile` si
 `Analiza agenti`. Ultima reutilizeaza `AgentEvaluationSubtab`: modul implicit

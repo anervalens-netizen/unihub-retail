@@ -23,10 +23,15 @@ git -C "$BUILDER" config user.name "Deploy Test"
 git -C "$BUILDER" config user.email "deploy-test@example.invalid"
 git -C "$BUILDER" remote add origin "$REMOTE"
 
-mkdir -p "$BUILDER/backend"
+mkdir -p "$BUILDER/backend" "$BUILDER/ops/systemd" "$BUILDER/ops/observability"
 printf '{"name":"retail-deploy-test"}\n' >"$BUILDER/package.json"
 printf 'print("old")\n' >"$BUILDER/backend/main.py"
 printf 'dist/\n' >"$BUILDER/.gitignore"
+cp "$SCRIPT_DIR/systemd/unihub-backend.service" "$BUILDER/ops/systemd/"
+cp "$SCRIPT_DIR/../unihub-worker.service" "$BUILDER/"
+cp "$SCRIPT_DIR/systemd/unihub-import-worker.service" "$BUILDER/ops/systemd/"
+cp "$SCRIPT_DIR/systemd/unihub-retail-migrate.service" "$BUILDER/ops/systemd/"
+cp "$SCRIPT_DIR/observability/retail-process-scrape.yml" "$BUILDER/ops/observability/"
 git -C "$BUILDER" add .
 git -C "$BUILDER" commit --quiet -m old
 OLD_SHA="$(git -C "$BUILDER" rev-parse HEAD)"
@@ -36,6 +41,25 @@ git --git-dir="$REMOTE" symbolic-ref HEAD refs/heads/main
 git clone --quiet "$REMOTE" "$LIVE"
 mkdir -p "$LIVE/dist"
 printf 'old frontend\n' >"$LIVE/dist/index.html"
+
+mkdir -p \
+  "$ROOT/etc/systemd/system" \
+  "$ROOT/prometheus" \
+  "$OPS/prometheus/scrape.d"
+printf '%s\n' \
+  'global:' \
+  '  scrape_interval: 15s' \
+  'scrape_config_files:' \
+  '  - /etc/prometheus/scrape.d/*.yml' \
+  >"$ROOT/prometheus/prometheus.yml"
+touch "$ROOT/prometheus/scrape-mount-ready"
+for unit in \
+  unihub-backend.service \
+  unihub-worker.service \
+  unihub-import-worker.service \
+  unihub-retail-migrate.service; do
+  printf 'legacy unit %s\n' "$unit" >"$ROOT/etc/systemd/system/$unit"
+done
 
 mkdir -p "$BUILDER/docs"
 printf 'print("new")\n' >"$BUILDER/backend/main.py"
@@ -84,6 +108,19 @@ approve_release() {
     bash "$APPROVE_SCRIPT" "$run_id" "$source_sha" "$artifact_sha256"
 }
 
+runtime_state_hash() {
+  (
+    find "$ROOT/etc/systemd/system" "$OPS/prometheus" \
+      -type f -exec sha256sum {} +
+    find "$ROOT/etc/systemd/system" "$OPS/prometheus" \
+      -type l -printf '%p -> %l\n'
+  ) | sort | sha256sum | awk '{print $1}'
+}
+
+RUNTIME_BEFORE_VALIDATE="$(runtime_state_hash)"
+run_deploy validate "$ARTIFACT" "$NEW_SHA" >/dev/null
+[[ "$(runtime_state_hash)" == "$RUNTIME_BEFORE_VALIDATE" ]]
+
 set +e
 RETAIL_APPROVAL_TEST_MODE=1 \
 RETAIL_APPROVAL_TEST_ROOT="$ROOT/approval-store" \
@@ -129,6 +166,20 @@ mv -- "$CLAIMED_APPROVAL" "$ACTIVE_APPROVAL"
 run_deploy "$ARTIFACT" "$NEW_SHA" "$CI_RUN_ID" "$ARTIFACT_SHA256"
 [[ "$(git -C "$LIVE" rev-parse HEAD)" == "$NEW_SHA" ]]
 [[ "$(<"$LIVE/dist/index.html")" == "new frontend" ]]
+for unit in \
+  unihub-backend.service \
+  unihub-worker.service \
+  unihub-import-worker.service \
+  unihub-retail-migrate.service; do
+  [[ -L "$ROOT/etc/systemd/system/$unit" ]]
+  [[ "$(readlink -f "$ROOT/etc/systemd/system/$unit")" == "$ROOT/runtime-releases/$NEW_SHA/systemd/$unit" ]]
+done
+grep -Fxq 'PROMETHEUS_DOCKER_GATEWAY=172.23.0.1' "$OPS/prometheus/unihub-retail-network.env"
+grep -Fxq 'PROMETHEUS_DOCKER_SUBNET=172.23.0.0/16' "$OPS/prometheus/unihub-retail-network.env"
+grep -Fxq 'WORKER_METRICS_HOST=172.23.0.1' "$OPS/prometheus/unihub-retail-network.env"
+[[ "$(grep -Fc '172.23.0.1:' "$OPS/prometheus/scrape.d/unihub-retail.yml")" -eq 3 ]]
+! grep -Eq '__PROMETHEUS_DOCKER_GATEWAY__|0\.0\.0\.0|127\.0\.0\.1' \
+  "$OPS/prometheus/scrape.d/unihub-retail.yml"
 [[ "$(<"$LIVE/docs/AUDIT_TEHNIC_RETAIL_UNIHUB_REAUDIT_2026-07-15.md")" == "published audit" ]]
 HANDLE="$(rg -l '^STATE=deployed$' "$OPS/backups/retail-deploy"/*/release.env | xargs -r -n1 dirname | tail -1)"
 [[ -n "$HANDLE" ]]
@@ -196,11 +247,16 @@ SECOND_HANDLE="$(
 
 run_deploy rollback "$SECOND_HANDLE"
 [[ "$(git -C "$LIVE" rev-parse HEAD)" == "$NEW_SHA" ]]
+[[ "$(readlink -f "$ROOT/etc/systemd/system/unihub-backend.service")" == "$ROOT/runtime-releases/$NEW_SHA/systemd/unihub-backend.service" ]]
 [[ "$(<"$LIVE/docs/AUDIT_TEHNIC_RETAIL_UNIHUB_REAUDIT_2026-07-15.md")" == "published audit" ]]
 [[ "$(<"$LIVE/docs/PLAN_DEZVOLTARE_RETAIL_UNIHUB_URMATOAREA_VERSIUNE_2026-07-15.md")" == "published plan" ]]
 
 run_deploy rollback "$HANDLE"
 [[ "$(git -C "$LIVE" rev-parse HEAD)" == "$OLD_SHA" ]]
+[[ ! -L "$ROOT/etc/systemd/system/unihub-backend.service" ]]
+grep -Fxq 'legacy unit unihub-backend.service' "$ROOT/etc/systemd/system/unihub-backend.service"
+[[ ! -e "$OPS/prometheus/unihub-retail-network.env" ]]
+[[ ! -e "$OPS/prometheus/scrape.d/unihub-retail.yml" ]]
 [[ "$(<"$LIVE/dist/index.html")" == "old frontend" ]]
 [[ ! -e "$LIVE/docs/AUDIT_TEHNIC_RETAIL_UNIHUB_REAUDIT_2026-07-15.md" ]]
 [[ ! -e "$LIVE/docs/PLAN_DEZVOLTARE_RETAIL_UNIHUB_URMATOAREA_VERSIUNE_2026-07-15.md" ]]
@@ -227,6 +283,23 @@ set -e
 [[ "$(<"$LIVE/dist/index.html")" == "old frontend" ]]
 [[ ! -e "$LIVE/docs/AUDIT_TEHNIC_RETAIL_UNIHUB_REAUDIT_2026-07-15.md" ]]
 [[ "$(find "$ROOT/approval-store" -maxdepth 1 -type f -name '*.failed' | wc -l)" -eq 1 ]]
+
+approve_release "$CI_RUN_ID" "$NEW_SHA" "$ARTIFACT_SHA256" >/dev/null
+FAILED_BEFORE_PROMETHEUS="$(find "$ROOT/approval-store" -maxdepth 1 -type f -name '*.failed' | wc -l)"
+set +e
+RETAIL_DEPLOY_TEST_MODE=1 \
+RETAIL_DEPLOY_TEST_ROOT="$ROOT" \
+RETAIL_DEPLOY_TEST_FAIL_PHASE=prometheus \
+  bash "$DEPLOY_SCRIPT" "$ARTIFACT" "$NEW_SHA" "$CI_RUN_ID" "$ARTIFACT_SHA256" >/dev/null 2>&1
+PROMETHEUS_RC=$?
+set -e
+[[ "$PROMETHEUS_RC" -ne 0 ]]
+[[ "$(git -C "$LIVE" rev-parse HEAD)" == "$OLD_SHA" ]]
+[[ ! -L "$ROOT/etc/systemd/system/unihub-backend.service" ]]
+grep -Fxq 'legacy unit unihub-backend.service' "$ROOT/etc/systemd/system/unihub-backend.service"
+[[ ! -e "$OPS/prometheus/unihub-retail-network.env" ]]
+[[ ! -e "$OPS/prometheus/scrape.d/unihub-retail.yml" ]]
+[[ "$(find "$ROOT/approval-store" -maxdepth 1 -type f -name '*.failed' | wc -l)" -eq "$((FAILED_BEFORE_PROMETHEUS + 1))" ]]
 
 approve_release "$CI_RUN_ID" "$NEW_SHA" "$ARTIFACT_SHA256" >/dev/null
 FAILED_BEFORE_PUBLIC_HEALTH="$(find "$ROOT/approval-store" -maxdepth 1 -type f -name '*.failed' | wc -l)"

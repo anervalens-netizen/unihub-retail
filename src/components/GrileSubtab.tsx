@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   AlertTriangle,
@@ -24,6 +24,7 @@ import { FirmaBadge } from './FirmaBadge';
 import { GrileMonthlyPanel } from './GrileMonthlyPanel';
 import { parseIsoTimestamp } from '../lib/dates';
 import { cn } from '../lib/utils';
+import { RefreshStatusError } from './grile/RefreshStatusError';
 
 const NUMBER = new Intl.NumberFormat('ro-RO');
 
@@ -31,7 +32,7 @@ function fmt(n: number | null | undefined): string {
   return n === null || n === undefined ? '—' : NUMBER.format(Math.round(n));
 }
 
-type StatusFilter = 'all' | 'NECOMPLETAT' | 'IN_URMA' | 'DIF_TARGET' | 'DIF_SALES' | 'ERROR' | 'OK';
+type StatusFilter = 'all' | 'NECOMPLETAT' | 'IN_URMA' | 'DIF_TARGET' | 'DIF_SALES' | 'ERROR' | 'STALE' | 'UNKNOWN' | 'OK';
 
 const FILTERS: { id: StatusFilter; label: string }[] = [
   { id: 'all', label: 'Toate' },
@@ -41,6 +42,8 @@ const FILTERS: { id: StatusFilter; label: string }[] = [
   { id: 'DIF_TARGET', label: 'Dif. target' },
   { id: 'DIF_SALES', label: 'Dif. vânzări' },
   { id: 'ERROR', label: 'Eroare Google' },
+  { id: 'STALE', label: 'Date vechi' },
+  { id: 'UNKNOWN', label: 'Neverificat' },
 ];
 
 function matchesFilter(s: GrileStore, f: StatusFilter): boolean {
@@ -58,7 +61,11 @@ function matchesFilter(s: GrileStore, f: StatusFilter): boolean {
     case 'DIF_SALES':
       return s.sales_status === 'DIFERENTA';
     case 'ERROR':
-      return !!s.error_code;
+      return s.provider_status.state === 'error';
+    case 'STALE':
+      return s.provider_status.state === 'stale';
+    case 'UNKNOWN':
+      return s.provider_status.state === 'unknown';
     default:
       return true;
   }
@@ -116,21 +123,33 @@ function DiffCell({
 }
 
 // ── Status combinat (Target / Realizat / Target + Realizat / OK ...) ──────────
-function statusInfo(s: GrileStore): { label: string; cls: string } {
+function businessStatusInfo(s: GrileStore): { label: string; cls: string } {
   const rose = 'bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300';
   const amber = 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300';
   const slate = 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-300';
   const emerald = 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300';
-  if (s.error_code) return { label: 'Eroare', cls: rose };
+  if (s.fill_status === null && s.target_status === null && s.sales_status === null) {
+    return { label: 'Fără rezultat', cls: slate };
+  }
   if (s.fill_status === 'NECOMPLETAT') return { label: 'Necompletat', cls: slate };
-  const t = s.target_status === 'DIFERENTA';
-  const sl = s.sales_status === 'DIFERENTA';
-  const inUrma = s.sales_status === 'IN_URMA';
-  if (t && (sl || inUrma)) return { label: 'Target + Realizat', cls: rose };
-  if (t) return { label: 'Target', cls: rose };
-  if (sl) return { label: 'Realizat', cls: rose };
-  if (inUrma) return { label: 'În urmă', cls: amber };
+  const targetDiff = s.target_status === 'DIFERENTA';
+  const salesDiff = s.sales_status === 'DIFERENTA';
+  const behind = s.sales_status === 'IN_URMA';
+  if (targetDiff && (salesDiff || behind)) return { label: 'Target + Realizat', cls: rose };
+  if (targetDiff) return { label: 'Target', cls: rose };
+  if (salesDiff) return { label: 'Realizat', cls: rose };
+  if (behind) return { label: 'În urmă', cls: amber };
   return { label: 'OK', cls: emerald };
+}
+
+function providerStatusInfo(s: GrileStore): { label: string; cls: string } | null {
+  const rose = 'bg-rose-50 text-rose-700 ring-1 ring-rose-200 dark:bg-rose-950/30 dark:text-rose-300 dark:ring-rose-800';
+  const amber = 'bg-amber-50 text-amber-700 ring-1 ring-amber-200 dark:bg-amber-950/30 dark:text-amber-300 dark:ring-amber-800';
+  const slate = 'bg-slate-100 text-slate-600 ring-1 ring-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:ring-slate-700';
+  if (s.provider_status.state === 'error') return { label: 'Google: eroare', cls: rose };
+  if (s.provider_status.state === 'stale') return { label: 'Google: vechi', cls: amber };
+  if (s.provider_status.state === 'unknown') return { label: 'Google: neverificat', cls: slate };
+  return null;
 }
 
 // ── Badge completare (procent + toggle detalii) — partajat mobil/desktop ───────
@@ -179,14 +198,29 @@ function MobileField({ label, children }: { label: string; children: ReactNode }
 function StoreRow({ s, month }: { s: GrileStore; month: string }) {
   const [open, setOpen] = useState(false);
   const qc = useQueryClient();
+  const refreshController = useRef<AbortController | null>(null);
+  useEffect(() => () => refreshController.current?.abort(), []);
   const refreshMut = useMutation({
-    mutationFn: () => refreshGrileStore(month, s.site_code),
+    mutationFn: () => {
+      refreshController.current?.abort();
+      const controller = new AbortController();
+      refreshController.current = controller;
+      return refreshGrileStore(month, s.site_code, controller.signal);
+    },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['grile-overview', month] }),
+    onSettled: () => {
+      refreshController.current = null;
+    },
   });
   const url = s.sheet_id ? `https://docs.google.com/spreadsheets/d/${s.sheet_id}` : null;
-  const st = statusInfo(s);
+  const businessStatus = businessStatusInfo(s);
+  const providerStatus = providerStatusInfo(s);
   const missing = s.missing_days ?? [];
-  const hasDetail = missing.length > 0 || !!s.error_message;
+  const providerError = s.provider_status.last_error_message;
+  const hasDetail =
+    missing.length > 0
+    || !!providerError
+    || s.completion_window_status === 'legacy_incomplete_window';
   const toggle = () => setOpen((v) => !v);
   const refreshButton = (
     <button
@@ -223,8 +257,22 @@ function StoreRow({ s, month }: { s: GrileStore; month: string }) {
   const salesCell = (
     <DiffCell status={s.sales_status} grila={s.grila_sales} db={s.db_sales_mtd} diff={s.sales_diff} />
   );
-  const statusBadge = (
-    <span className={cn('rounded px-1.5 py-0.5 text-[11px] font-semibold', st.cls)}>{st.label}</span>
+  const statusBadges = (
+    <div className="flex flex-wrap items-center justify-end gap-1">
+      <span className={cn('rounded px-1.5 py-0.5 text-[11px] font-semibold', businessStatus.cls)}>
+        {businessStatus.label}
+      </span>
+      {providerStatus && (
+        <span className={cn('rounded px-1.5 py-0.5 text-[10px] font-semibold', providerStatus.cls)}>
+          {providerStatus.label}
+        </span>
+      )}
+      {s.completion_window_status === 'legacy_incomplete_window' && (
+        <span className="rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700 ring-1 ring-amber-200 dark:bg-amber-950/30 dark:text-amber-300 dark:ring-amber-800">
+          completare legacy
+        </span>
+      )}
+    </div>
   );
 
   return (
@@ -237,20 +285,25 @@ function StoreRow({ s, month }: { s: GrileStore; month: string }) {
             {nameEl}
             {refreshButton}
           </div>
-          <div className="flex-shrink-0">{statusBadge}</div>
+          <div className="flex-shrink-0">{statusBadges}</div>
         </div>
         {refreshMut.data && (
           <div className="mt-1 text-[10px] text-slate-400">
-            Verificare: {refreshMut.data.changed ? 'grila a fost actualizată' : 'fără modificări'}
+            Verificare finalizată: {refreshMut.data.projection_applied ? 'datele curente au fost actualizate' : 'observația nu a înlocuit o generație mai nouă'}
           </div>
         )}
-        {refreshMut.isError && <div className="mt-1 text-[10px] text-rose-500">Verificarea a eșuat</div>}
+        {refreshMut.isError && <RefreshStatusError error={refreshMut.error} />}
         <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-2">
           <MobileField label="Completare">
             <CompletionBadge pct={s.completion_pct} hasDetail={hasDetail} open={open} onToggle={toggle} />
           </MobileField>
           <MobileField label="Editat">
             <span className="text-xs text-slate-500">{relTime(s.last_edit)}</span>
+          </MobileField>
+          <MobileField label="Verificat">
+            <span className="text-xs text-slate-500">
+              {relTime(s.provider_status.last_attempt_at)}
+            </span>
           </MobileField>
           <MobileField label="Target">{targetCell}</MobileField>
           <MobileField label="Realizat">{salesCell}</MobileField>
@@ -270,10 +323,10 @@ function StoreRow({ s, month }: { s: GrileStore; month: string }) {
           {refreshButton}
           {refreshMut.data && (
             <span className="flex-shrink-0 text-[10px] text-slate-400">
-              {refreshMut.data.changed ? 'actualizată' : 'fără modificări'}
+              {refreshMut.data.projection_applied ? 'actualizată' : 'depășită'}
             </span>
           )}
-          {refreshMut.isError && <span className="flex-shrink-0 text-[10px] text-rose-500">eroare</span>}
+          {refreshMut.isError && <RefreshStatusError error={refreshMut.error} compact />}
         </div>
         <div className="flex items-center justify-center gap-1">
           <CompletionBadge pct={s.completion_pct} hasDetail={hasDetail} open={open} onToggle={toggle} />
@@ -281,7 +334,7 @@ function StoreRow({ s, month }: { s: GrileStore; month: string }) {
         <div className="text-center text-xs text-slate-400">{relTime(s.last_edit)}</div>
         <div>{targetCell}</div>
         <div>{salesCell}</div>
-        <div>{statusBadge}</div>
+        <div>{statusBadges}</div>
       </div>
 
       {/* ── Detaliu expandat: zile necompletate + eroare (partajat) ── */}
@@ -293,13 +346,21 @@ function StoreRow({ s, month }: { s: GrileStore; month: string }) {
               {missing.join(', ')}
             </div>
           )}
-          {s.error_message && <div className="mt-1 text-rose-500">Eroare Google: {s.error_message}</div>}
+          {providerError && (
+            <div className="mt-1 text-rose-500">
+              Ultima încercare Google: {providerError}
+            </div>
+          )}
+          {s.completion_window_status === 'legacy_incomplete_window' && (
+            <div className="mt-1 text-amber-600 dark:text-amber-300">
+              Completarea provine din algoritmul vechi și trebuie recalculată pentru această lună.
+            </div>
+          )}
         </div>
       )}
     </div>
   );
 }
-
 // ── Antet desktop unic: mai lizibil si aliniat cu toate randurile ─────────────
 function DesktopTableHeader() {
   return (
@@ -390,7 +451,9 @@ function ManagerGroup({ m, filter, month }: { m: GrileManager; filter: StatusFil
           </div>
           <div className="flex flex-shrink-0 items-center gap-2 text-xs">
             <span className="text-emerald-600 dark:text-emerald-400">{m.ok} OK</span>
-            <span className="text-rose-600 dark:text-rose-400">{m.problems} probl.</span>
+            <span className="text-rose-600 dark:text-rose-400">{m.problems} business</span>
+            {m.provider_errors > 0 && <span className="text-rose-500">{m.provider_errors} Google</span>}
+            {m.provider_stale > 0 && <span className="text-amber-600">{m.provider_stale} vechi</span>}
             {m.avg_completion !== null && <span className="text-slate-500">{m.avg_completion}%</span>}
           </div>
         </div>
@@ -406,8 +469,18 @@ function ManagerGroup({ m, filter, month }: { m: GrileManager; filter: StatusFil
               {m.ok} OK
             </span>
             <span className="rounded-full bg-rose-100 px-2.5 py-1 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300">
-              {m.problems} probleme
+              {m.problems} business
             </span>
+            {m.provider_errors > 0 && (
+              <span className="rounded-full bg-rose-100 px-2.5 py-1 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300">
+                {m.provider_errors} erori Google
+              </span>
+            )}
+            {m.provider_stale > 0 && (
+              <span className="rounded-full bg-amber-100 px-2.5 py-1 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
+                {m.provider_stale} date vechi
+              </span>
+            )}
             {m.avg_completion !== null && (
               <span className="rounded-full bg-slate-200 px-2.5 py-1 text-slate-600 dark:bg-slate-700 dark:text-slate-300">
                 Completare {m.avg_completion}%
@@ -501,28 +574,27 @@ export function GrileSubtab({ initialMonth }: { initialMonth?: string }) {
 
         {/* Sumar ultima rulare */}
         <div className="mt-4 flex flex-wrap items-center gap-6">
-          {run ? (
+          {data ? (
             <>
-              <Stat icon={<CheckCircle2 className="h-5 w-5 text-emerald-500" />} value={run.ok_count} label="OK" />
-              <Stat icon={<AlertTriangle className="h-5 w-5 text-rose-500" />} value={run.problem_count} label="probleme" />
-              {run.error_count > 0 && (
-                <Stat icon={<XCircle className="h-5 w-5 text-rose-400" />} value={run.error_count} label="erori" />
+              <Stat icon={<CheckCircle2 className="h-5 w-5 text-emerald-500" />} value={data.summary.business_ok} label="business OK" />
+              <Stat icon={<AlertTriangle className="h-5 w-5 text-rose-500" />} value={data.summary.business_problems} label="diferențe business" />
+              {data.summary.provider_errors > 0 && (
+                <Stat icon={<XCircle className="h-5 w-5 text-rose-400" />} value={data.summary.provider_errors} label="erori Google" />
               )}
-              <Stat
-                icon={<RefreshCw className="h-5 w-5 text-slate-400" />}
-                value={data?.total_sheets ?? 0}
-                label="magazine"
-              />
-              <div className="flex items-center gap-1.5 text-xs text-slate-500">
-                <Clock className="h-3.5 w-3.5" />
-                {run.source === 'auto' ? 'automat după import' : 'manual'} ·{' '}
-                {relTime(run.finished_at ?? run.started_at)}
-              </div>
+              {data.summary.provider_stale > 0 && (
+                <Stat icon={<Clock className="h-5 w-5 text-amber-500" />} value={data.summary.provider_stale} label="date vechi" />
+              )}
+              <Stat icon={<RefreshCw className="h-5 w-5 text-slate-400" />} value={data.total_sheets} label="magazine" />
+              {run && (
+                <div className="flex items-center gap-1.5 text-xs text-slate-500">
+                  <Clock className="h-3.5 w-3.5" />
+                  Ultima rulare {run.source === 'auto' ? 'automată' : 'manuală'} ·{' '}
+                  {relTime(run.finished_at ?? run.started_at)}
+                </div>
+              )}
             </>
           ) : (
-            <span className="text-sm text-slate-400">
-              Nicio rulare pentru luna selectată. Apasă „Rulează verificare".
-            </span>
+            <span className="text-sm text-slate-400">Datele nu sunt încă disponibile.</span>
           )}
         </div>
 

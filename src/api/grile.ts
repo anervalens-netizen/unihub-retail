@@ -1,122 +1,162 @@
 import { client } from './client';
+import { generatedGet, generatedPost } from './generated/client';
+import type {
+  RetailGrileFirmResponse,
+  RetailGrileManagerResponse,
+  RetailGrileMonthlyManifestResponse,
+  RetailGrileOverviewResponse,
+  RetailGrileOverviewSummary,
+  RetailGrileProviderStatus,
+  RetailGrileRunEnqueueResponse,
+  RetailGrileRunResponse,
+  RetailGrileStoreRefreshEnqueueResponse,
+  RetailGrileStoreRefreshOperationResponse,
+  RetailGrileStoreResponse,
+  RetailGrileTeamLeaderResponse,
+  RetailMonthlyRunRequest,
+} from './generated/contracts';
+import type { RequiredRuntime } from './generated/runtime-types';
 import { formatMonthLabel } from '../lib/dates';
 import { downloadBlob } from '../lib/download';
 
-export interface GrileRun {
-  id: number;
-  run_month: string;
-  source: 'manual' | 'auto';
-  source_snapshot_id: number | null;
-  status: 'queued' | 'running' | 'completed' | 'failed';
-  active: boolean;
-  progress_current: number;
-  progress_total: number;
-  ok_count: number;
-  problem_count: number;
-  error_count: number;
-  duration_ms: number | null;
-  error_message: string | null;
-  started_at: string | null;
-  heartbeat_at: string | null;
-  finished_at: string | null;
-  created_at: string | null;
-}
+export type GrileRun = RequiredRuntime<RetailGrileRunResponse>;
+export type GrileProviderStatus = RequiredRuntime<RetailGrileProviderStatus>;
+export type GrileProviderState = GrileProviderStatus['state'];
+export type GrileStore = RequiredRuntime<RetailGrileStoreResponse>;
+export type GrileFirm = RequiredRuntime<RetailGrileFirmResponse>;
+export type GrileTeamLeader = RequiredRuntime<RetailGrileTeamLeaderResponse>;
+export type GrileManager = RequiredRuntime<RetailGrileManagerResponse>;
+export type GrileOverviewSummary = RequiredRuntime<RetailGrileOverviewSummary>;
+export type GrileOverview = RequiredRuntime<RetailGrileOverviewResponse>;
+export type GrileStoreRefreshEnqueue = RequiredRuntime<RetailGrileStoreRefreshEnqueueResponse>;
+export type GrileStoreRefreshOperation = RequiredRuntime<RetailGrileStoreRefreshOperationResponse>;
 
-export interface GrileStore {
-  site_code: string;
-  sheet_id: string | null;
-  locatie: string;
-  firma: string;
-  regional: string;
-  asm: string;
-  team_leader_name: string;
-  completion_pct: number | null;
-  last_edit: string | null;
-  checked_at: string | null;
-  grila_target: number | null;
-  grila_sales: number | null;
-  db_target: number | null;
-  db_sales_mtd: number | null;
-  target_diff: number | null;
-  sales_diff: number | null;
-  db_max_sale_date: string | null;
-  fill_status: string | null;
-  target_status: string | null;
-  sales_status: string | null;
-  missing_days: number[] | null;
-  days_elapsed: number | null;
-  error_code: string | null;
-  error_message: string | null;
-}
+type GrileRunEnqueue = RequiredRuntime<RetailGrileRunEnqueueResponse>;
 
-export interface GrileFirm {
-  name: string;
-  stores: GrileStore[];
-}
-
-export interface GrileTeamLeader {
-  name: string | null; // null = magazine fara Team Leader (nu se afiseaza bara TL)
-  firms: GrileFirm[];
-}
-
-export interface GrileManager {
-  name: string;
-  store_count: number;
-  ok: number;
-  problems: number;
-  avg_completion: number | null;
-  team_leaders: GrileTeamLeader[];
-}
-
-export interface GrileOverview {
-  month: string;
-  total_sheets: number;
-  run: GrileRun | null;
-  managers: GrileManager[];
-}
-
-export async function getGrileOverview(month?: string, signal?: AbortSignal): Promise<GrileOverview> {
-  const { data } = await client.get<GrileOverview>('/api/grile/overview', {
-    params: month ? { month } : {},
+export async function getGrileOverview(
+  month?: string,
+  signal?: AbortSignal,
+): Promise<GrileOverview> {
+  return generatedGet('grile_overview_api_grile_overview_get', {
+    params: month ? { month } : undefined,
     signal,
   });
-  return data;
 }
 
-export async function runGrileCheck(
-  month?: string,
-): Promise<{ status: 'enqueued' | 'already_running'; run?: GrileRun; month?: string }> {
-  const { data } = await client.post<{ status: 'enqueued' | 'already_running'; run?: GrileRun; month?: string }>(
-    '/api/grile/run',
-    {},
-    { params: month ? { month } : {} },
+export async function runGrileCheck(month?: string): Promise<GrileRunEnqueue> {
+  return generatedPost(
+    'grile_run_api_grile_run_post',
+    undefined,
+    { params: month ? { month } : undefined },
   );
-  return data;
 }
 
-export async function getGrileRunStatus(month?: string): Promise<{ run: GrileRun | null }> {
-  const { data } = await client.get<{ run: GrileRun | null }>('/api/grile/run-status', {
-    params: month ? { month } : {},
+export async function getGrileRunStatus(
+  month?: string,
+  signal?: AbortSignal,
+): Promise<{ run: GrileRun | null }> {
+  return generatedGet('grile_run_status_api_grile_run_status_get', {
+    params: month ? { month } : undefined,
+    signal,
   });
-  return data;
+}
+
+export async function enqueueGrileStoreRefresh(
+  month: string,
+  siteCode: string,
+  signal?: AbortSignal,
+): Promise<GrileStoreRefreshEnqueue> {
+  return generatedPost(
+    'grile_store_refresh_api_grile_stores__site_code__refresh_post',
+    undefined,
+    {
+      pathParams: { site_code: siteCode },
+      params: { month },
+      signal,
+    },
+  );
+}
+
+export async function getGrileStoreRefreshOperation(
+  operationId: number,
+  signal?: AbortSignal,
+): Promise<GrileStoreRefreshOperation> {
+  const data = await generatedGet(
+    'grile_store_refresh_operation_api_grile_store_refreshes__operation_id__get',
+    { pathParams: { operation_id: operationId }, signal },
+  );
+  return data.operation;
+}
+
+function abortableDelay(delayMs: number, signal?: AbortSignal): Promise<void> {
+  if (signal?.aborted) return Promise.reject(new DOMException('Aborted', 'AbortError'));
+  return new Promise((resolve, reject) => {
+    const onAbort = () => {
+      window.clearTimeout(timeout);
+      reject(new DOMException('Aborted', 'AbortError'));
+    };
+    const timeout = window.setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort);
+      resolve();
+    }, delayMs);
+    signal?.addEventListener('abort', onAbort, { once: true });
+  });
+}
+
+
+export class GrileRefreshStatusUnknownError extends Error {
+  readonly operationId: number;
+
+  constructor(operationId: number, cause?: unknown) {
+    super(
+      `Starea verificării ${operationId} nu poate fi confirmată. `
+      + 'Nu relansa verificarea până când operația nu este verificată în backend.',
+      { cause },
+    );
+    this.name = 'GrileRefreshStatusUnknown';
+    this.operationId = operationId;
+  }
+}
+
+interface GrileRefreshPollingOptions {
+  intervalMs?: number;
+  maxAttempts?: number;
 }
 
 export async function refreshGrileStore(
   month: string,
   siteCode: string,
-): Promise<{ month: string; site_code: string; changed: boolean; status: 'ok' | 'error' }> {
-  const { data } = await client.post<{
-    month: string;
-    site_code: string;
-    changed: boolean;
-    status: 'ok' | 'error';
-  }>(`/api/grile/stores/${encodeURIComponent(siteCode)}/refresh`, {}, { params: { month } });
-  return data;
+  signal?: AbortSignal,
+  options: GrileRefreshPollingOptions = {},
+): Promise<GrileStoreRefreshOperation> {
+  const reservation = await enqueueGrileStoreRefresh(month, siteCode, signal);
+  const intervalMs = options.intervalMs ?? 1_500;
+  const maxAttempts = options.maxAttempts ?? 180;
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    let operation: GrileStoreRefreshOperation;
+    try {
+      operation = await getGrileStoreRefreshOperation(reservation.operation_id, signal);
+    } catch (error) {
+      if (signal?.aborted) throw error;
+      throw new GrileRefreshStatusUnknownError(reservation.operation_id, error);
+    }
+    if (operation.status === 'completed') return operation;
+    if (operation.status === 'failed' || operation.status === 'cancelled') {
+      const error = new Error(operation.error_message || 'Verificarea grilei a eșuat.');
+      error.name = operation.error_code || 'GrileRefreshFailed';
+      throw error;
+    }
+    if (operation.status === 'unknown') {
+      throw new GrileRefreshStatusUnknownError(reservation.operation_id);
+    }
+    if (attempt < maxAttempts - 1) await abortableDelay(intervalMs, signal);
+  }
+  throw new GrileRefreshStatusUnknownError(reservation.operation_id);
 }
 
 // ── Inchidere luna ─────────────────────────────────────────────────────────────
 
-export type GrileMonthlyOp = 'finalize' | 'archive' | 'reset';
+export type GrileMonthlyOp = RetailMonthlyRunRequest['op'];
 
 export interface GrileMonthlyResult {
   op: GrileMonthlyOp;
@@ -128,22 +168,11 @@ export interface GrileMonthlyResult {
   manifest?: GrileMonthlyManifest | null;
 }
 
-export interface GrileMonthlyManifest {
-  id: number;
-  operation_id: number;
-  month: string;
-  operation: GrileMonthlyOp;
-  status: 'building' | 'failed' | 'verified' | 'approved' | 'consumed' | 'rolled_back' | 'uncertain';
+type GeneratedManifest = RequiredRuntime<RetailGrileMonthlyManifestResponse>;
+export type GrileMonthlyManifest = Omit<GeneratedManifest, 'expected' | 'processed'> & {
   expected: { stores?: number; agents?: number };
   processed: { stores?: number; agents?: number };
-  error_count: number;
-  manifest_sha256: string | null;
-  approved: boolean;
-  created_at: string | null;
-  verified_at: string | null;
-  approved_at: string | null;
-  consumed_at: string | null;
-}
+};
 
 export interface GrileMonthlyEnqueue {
   status: 'enqueued' | 'already_running' | 'already_completed';
@@ -152,9 +181,9 @@ export interface GrileMonthlyEnqueue {
   op: GrileMonthlyOp;
   month: string;
   month_label: string;
-  next_month_label?: string;
-  dry_run?: boolean;
-  operation?: Record<string, unknown>;
+  next_month_label: string | null;
+  dry_run: boolean | null;
+  operation: Record<string, unknown> | null;
 }
 
 export interface GrileMonthlyJob {
@@ -164,46 +193,60 @@ export interface GrileMonthlyJob {
   error: string | null;
 }
 
-export async function getGrileMonthlyPermissions(signal?: AbortSignal): Promise<{ can_run: boolean }> {
-  const { data } = await client.get<{ can_run: boolean }>('/api/grile/monthly/permissions', { signal });
-  return data;
+export async function getGrileMonthlyPermissions(
+  signal?: AbortSignal,
+): Promise<{ can_run: boolean }> {
+  return generatedGet('grile_monthly_permissions_api_grile_monthly_permissions_get', { signal });
 }
 
-export async function runGrileMonthly(body: {
-  op: GrileMonthlyOp;
-  month: string;
-  only?: string | null;
-  dry_run?: boolean;
-  approved_manifest_id?: number | null;
-}): Promise<GrileMonthlyEnqueue> {
-  const { data } = await client.post<GrileMonthlyEnqueue>('/api/grile/monthly/run', body);
-  return data;
+export async function runGrileMonthly(
+  body: RetailMonthlyRunRequest,
+): Promise<GrileMonthlyEnqueue> {
+  return generatedPost('grile_monthly_run_api_grile_monthly_run_post', body) as Promise<GrileMonthlyEnqueue>;
 }
 
-export async function getGrileMonthlyManifest(month: string, signal?: AbortSignal): Promise<GrileMonthlyManifest | null> {
-  const { data } = await client.get<{ manifest: GrileMonthlyManifest | null }>(
-    `/api/grile/monthly/manifests/${month}`,
-    { signal },
+export async function getGrileMonthlyManifest(
+  month: string,
+  signal?: AbortSignal,
+): Promise<GrileMonthlyManifest | null> {
+  const data = await generatedGet(
+    'grile_monthly_manifest_api_grile_monthly_manifests__month__get',
+    { pathParams: { month }, signal },
   );
-  return data.manifest;
+  return data.manifest as GrileMonthlyManifest | null;
 }
 
-export async function approveGrileMonthlyManifest(manifestId: number): Promise<GrileMonthlyManifest> {
-  const { data } = await client.post<{ manifest: GrileMonthlyManifest }>(
-    `/api/grile/monthly/manifests/${manifestId}/approve`,
+export async function approveGrileMonthlyManifest(
+  manifestId: number,
+): Promise<GrileMonthlyManifest> {
+  const data = await generatedPost(
+    'grile_monthly_manifest_approve_api_grile_monthly_manifests__manifest_id__approve_post',
+    undefined,
+    { pathParams: { manifest_id: manifestId } },
   );
-  return data.manifest;
+  if (!data.manifest) throw new Error('Manifestul aprobat lipsește din răspuns.');
+  return data.manifest as GrileMonthlyManifest;
 }
 
-export async function getGrileMonthlyJob(jobId: string, signal?: AbortSignal): Promise<GrileMonthlyJob> {
-  const { data } = await client.get<GrileMonthlyJob>(`/api/grile/monthly/job/${jobId}`, { signal });
-  return data;
+export async function getGrileMonthlyJob(
+  jobId: string,
+  signal?: AbortSignal,
+): Promise<GrileMonthlyJob> {
+  const data = await generatedGet(
+    'grile_monthly_job_api_grile_monthly_job__job_id__get',
+    { pathParams: { job_id: jobId }, signal },
+  );
+  return data as GrileMonthlyJob;
 }
 
-export async function downloadGrileMonthly(kind: 'final' | 'archive', month: string): Promise<void> {
-  const { data } = await client.get<Blob>(`/api/grile/monthly/download/${kind}/${month}`, {
-    responseType: 'blob',
-  });
+export async function downloadGrileMonthly(
+  kind: 'final' | 'archive',
+  month: string,
+): Promise<void> {
+  const { data } = await client.get<Blob>(
+    `/api/grile/monthly/download/${kind}/${month}`,
+    { responseType: 'blob' },
+  );
   const monthLabel = formatMonthLabel(month, { month: 'long' });
   downloadBlob(
     data,

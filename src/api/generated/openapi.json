@@ -1395,6 +1395,7 @@
         "additionalProperties": false,
         "properties": {
           "month": {
+            "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
             "title": "Month",
             "type": "string"
           }
@@ -1508,12 +1509,17 @@
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Forecast Sales",
             "type": "string"
+          },
+          "has_actual": {
+            "title": "Has Actual",
+            "type": "boolean"
           }
         },
         "required": [
           "forecast_date",
           "forecast_sales",
           "actual_sales",
+          "has_actual",
           "cumulative_forecast",
           "cumulative_actual"
         ],
@@ -4769,6 +4775,1519 @@
         "title": "FocusHistoryResponse",
         "type": "object"
       },
+      "GrileAgentTargetEnqueueResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "job_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Job Id"
+          },
+          "operation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GrileAgentTargetOperationResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "operation_id": {
+            "title": "Operation Id",
+            "type": "integer"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "operation_id"
+        ],
+        "title": "GrileAgentTargetEnqueueResponse",
+        "type": "object"
+      },
+      "GrileAgentTargetOperationEnvelope": {
+        "additionalProperties": false,
+        "properties": {
+          "operation": {
+            "$ref": "#/components/schemas/GrileAgentTargetOperationResponse"
+          }
+        },
+        "required": [
+          "operation"
+        ],
+        "title": "GrileAgentTargetOperationEnvelope",
+        "type": "object"
+      },
+      "GrileAgentTargetOperationResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "after_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "After Count"
+          },
+          "after_sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "After Sha256"
+          },
+          "before_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Before Count"
+          },
+          "before_sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Before Sha256"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "diff": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Diff"
+          },
+          "error_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Message"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "job_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Job Id"
+          },
+          "mode": {
+            "enum": [
+              "dry_run",
+              "sync"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "run_month": {
+            "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
+            "title": "Run Month",
+            "type": "string"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "run_month",
+          "mode",
+          "status"
+        ],
+        "title": "GrileAgentTargetOperationResponse",
+        "type": "object"
+      },
+      "GrileFirmResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "stores": {
+            "items": {
+              "$ref": "#/components/schemas/GrileStoreResponse"
+            },
+            "title": "Stores",
+            "type": "array"
+          }
+        },
+        "required": [
+          "name",
+          "stores"
+        ],
+        "title": "GrileFirmResponse",
+        "type": "object"
+      },
+      "GrileManagerResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "avg_completion": {
+            "anyOf": [
+              {
+                "maximum": 100.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avg Completion"
+          },
+          "business_unknown": {
+            "minimum": 0.0,
+            "title": "Business Unknown",
+            "type": "integer"
+          },
+          "legacy_completion_windows": {
+            "minimum": 0.0,
+            "title": "Legacy Completion Windows",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "ok": {
+            "minimum": 0.0,
+            "title": "Ok",
+            "type": "integer"
+          },
+          "problems": {
+            "minimum": 0.0,
+            "title": "Problems",
+            "type": "integer"
+          },
+          "provider_errors": {
+            "minimum": 0.0,
+            "title": "Provider Errors",
+            "type": "integer"
+          },
+          "provider_stale": {
+            "minimum": 0.0,
+            "title": "Provider Stale",
+            "type": "integer"
+          },
+          "provider_unknown": {
+            "minimum": 0.0,
+            "title": "Provider Unknown",
+            "type": "integer"
+          },
+          "store_count": {
+            "minimum": 0.0,
+            "title": "Store Count",
+            "type": "integer"
+          },
+          "team_leaders": {
+            "items": {
+              "$ref": "#/components/schemas/GrileTeamLeaderResponse"
+            },
+            "title": "Team Leaders",
+            "type": "array"
+          }
+        },
+        "required": [
+          "name",
+          "store_count",
+          "ok",
+          "problems",
+          "business_unknown",
+          "provider_errors",
+          "provider_stale",
+          "provider_unknown",
+          "legacy_completion_windows",
+          "team_leaders"
+        ],
+        "title": "GrileManagerResponse",
+        "type": "object"
+      },
+      "GrileMonthlyJobResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "job_id": {
+            "title": "Job Id",
+            "type": "string"
+          },
+          "result": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Result"
+          },
+          "status": {
+            "enum": [
+              "queued",
+              "in_progress",
+              "complete",
+              "not_found"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "job_id",
+          "status"
+        ],
+        "title": "GrileMonthlyJobResponse",
+        "type": "object"
+      },
+      "GrileMonthlyManifestEnvelope": {
+        "additionalProperties": false,
+        "properties": {
+          "manifest": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GrileMonthlyManifestResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "title": "GrileMonthlyManifestEnvelope",
+        "type": "object"
+      },
+      "GrileMonthlyManifestResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "approved": {
+            "title": "Approved",
+            "type": "boolean"
+          },
+          "approved_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Approved At"
+          },
+          "consumed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Consumed At"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "error_count": {
+            "minimum": 0.0,
+            "title": "Error Count",
+            "type": "integer"
+          },
+          "expected": {
+            "additionalProperties": true,
+            "title": "Expected",
+            "type": "object"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "manifest_sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Manifest Sha256"
+          },
+          "month": {
+            "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
+            "title": "Month",
+            "type": "string"
+          },
+          "operation": {
+            "enum": [
+              "finalize",
+              "archive",
+              "reset"
+            ],
+            "title": "Operation",
+            "type": "string"
+          },
+          "operation_id": {
+            "title": "Operation Id",
+            "type": "integer"
+          },
+          "processed": {
+            "additionalProperties": true,
+            "title": "Processed",
+            "type": "object"
+          },
+          "status": {
+            "enum": [
+              "building",
+              "failed",
+              "verified",
+              "approved",
+              "consumed",
+              "rolled_back",
+              "uncertain"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "verified_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verified At"
+          }
+        },
+        "required": [
+          "id",
+          "operation_id",
+          "month",
+          "operation",
+          "status",
+          "error_count",
+          "approved"
+        ],
+        "title": "GrileMonthlyManifestResponse",
+        "type": "object"
+      },
+      "GrileMonthlyRunResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "dry_run": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dry Run"
+          },
+          "job_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Job Id"
+          },
+          "month": {
+            "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
+            "title": "Month",
+            "type": "string"
+          },
+          "month_label": {
+            "title": "Month Label",
+            "type": "string"
+          },
+          "next_month_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Month Label"
+          },
+          "op": {
+            "enum": [
+              "finalize",
+              "archive",
+              "reset"
+            ],
+            "title": "Op",
+            "type": "string"
+          },
+          "operation": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Operation"
+          },
+          "operation_id": {
+            "title": "Operation Id",
+            "type": "integer"
+          },
+          "status": {
+            "enum": [
+              "enqueued",
+              "already_running",
+              "already_completed"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "operation_id",
+          "op",
+          "month",
+          "month_label"
+        ],
+        "title": "GrileMonthlyRunResponse",
+        "type": "object"
+      },
+      "GrileOverviewResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "managers": {
+            "items": {
+              "$ref": "#/components/schemas/GrileManagerResponse"
+            },
+            "title": "Managers",
+            "type": "array"
+          },
+          "month": {
+            "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
+            "title": "Month",
+            "type": "string"
+          },
+          "run": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GrileRunResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "summary": {
+            "$ref": "#/components/schemas/GrileOverviewSummary"
+          },
+          "total_sheets": {
+            "minimum": 0.0,
+            "title": "Total Sheets",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "month",
+          "total_sheets",
+          "summary",
+          "managers"
+        ],
+        "title": "GrileOverviewResponse",
+        "type": "object"
+      },
+      "GrileOverviewSummary": {
+        "additionalProperties": false,
+        "properties": {
+          "business_ok": {
+            "minimum": 0.0,
+            "title": "Business Ok",
+            "type": "integer"
+          },
+          "business_problems": {
+            "minimum": 0.0,
+            "title": "Business Problems",
+            "type": "integer"
+          },
+          "business_unknown": {
+            "minimum": 0.0,
+            "title": "Business Unknown",
+            "type": "integer"
+          },
+          "legacy_completion_windows": {
+            "minimum": 0.0,
+            "title": "Legacy Completion Windows",
+            "type": "integer"
+          },
+          "provider_errors": {
+            "minimum": 0.0,
+            "title": "Provider Errors",
+            "type": "integer"
+          },
+          "provider_fresh": {
+            "minimum": 0.0,
+            "title": "Provider Fresh",
+            "type": "integer"
+          },
+          "provider_stale": {
+            "minimum": 0.0,
+            "title": "Provider Stale",
+            "type": "integer"
+          },
+          "provider_unknown": {
+            "minimum": 0.0,
+            "title": "Provider Unknown",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "business_ok",
+          "business_problems",
+          "business_unknown",
+          "provider_fresh",
+          "provider_errors",
+          "provider_stale",
+          "provider_unknown",
+          "legacy_completion_windows"
+        ],
+        "title": "GrileOverviewSummary",
+        "type": "object"
+      },
+      "GrilePermissionsResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "can_run": {
+            "title": "Can Run",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "can_run"
+        ],
+        "title": "GrilePermissionsResponse",
+        "type": "object"
+      },
+      "GrileProviderStatus": {
+        "additionalProperties": false,
+        "properties": {
+          "last_attempt_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Attempt At"
+          },
+          "last_error_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error At"
+          },
+          "last_error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error Code"
+          },
+          "last_error_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error Message"
+          },
+          "last_success_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Success At"
+          },
+          "stale_age_seconds": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stale Age Seconds"
+          },
+          "state": {
+            "enum": [
+              "fresh",
+              "stale",
+              "error",
+              "unknown"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "state"
+        ],
+        "title": "GrileProviderStatus",
+        "type": "object"
+      },
+      "GrileRunEnqueueResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "job_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Job Id"
+          },
+          "month": {
+            "anyOf": [
+              {
+                "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Month"
+          },
+          "run": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GrileRunResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
+          },
+          "status": {
+            "enum": [
+              "enqueued",
+              "already_running"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "GrileRunEnqueueResponse",
+        "type": "object"
+      },
+      "GrileRunResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "active": {
+            "title": "Active",
+            "type": "boolean"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "duration_ms": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Ms"
+          },
+          "error_count": {
+            "minimum": 0.0,
+            "title": "Error Count",
+            "type": "integer"
+          },
+          "error_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Message"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "heartbeat_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Heartbeat At"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "ok_count": {
+            "minimum": 0.0,
+            "title": "Ok Count",
+            "type": "integer"
+          },
+          "problem_count": {
+            "minimum": 0.0,
+            "title": "Problem Count",
+            "type": "integer"
+          },
+          "progress_current": {
+            "minimum": 0.0,
+            "title": "Progress Current",
+            "type": "integer"
+          },
+          "progress_total": {
+            "minimum": 0.0,
+            "title": "Progress Total",
+            "type": "integer"
+          },
+          "run_month": {
+            "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
+            "title": "Run Month",
+            "type": "string"
+          },
+          "source": {
+            "enum": [
+              "manual",
+              "auto"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "source_snapshot_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Snapshot Id"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "status": {
+            "enum": [
+              "queued",
+              "running",
+              "completed",
+              "failed"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "run_month",
+          "source",
+          "status",
+          "active",
+          "progress_current",
+          "progress_total",
+          "ok_count",
+          "problem_count",
+          "error_count"
+        ],
+        "title": "GrileRunResponse",
+        "type": "object"
+      },
+      "GrileRunStatusResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "run": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GrileRunResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "title": "GrileRunStatusResponse",
+        "type": "object"
+      },
+      "GrileStoreRefreshEnqueueResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "job_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Job Id"
+          },
+          "month": {
+            "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
+            "title": "Month",
+            "type": "string"
+          },
+          "operation_id": {
+            "title": "Operation Id",
+            "type": "integer"
+          },
+          "status": {
+            "enum": [
+              "enqueued",
+              "already_running"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "month",
+          "operation_id"
+        ],
+        "title": "GrileStoreRefreshEnqueueResponse",
+        "type": "object"
+      },
+      "GrileStoreRefreshOperationEnvelope": {
+        "additionalProperties": false,
+        "properties": {
+          "operation": {
+            "$ref": "#/components/schemas/GrileStoreRefreshOperationResponse"
+          }
+        },
+        "required": [
+          "operation"
+        ],
+        "title": "GrileStoreRefreshOperationEnvelope",
+        "type": "object"
+      },
+      "GrileStoreRefreshOperationResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "error_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Message"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "heartbeat_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Heartbeat At"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "projection_applied": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Projection Applied"
+          },
+          "run_month": {
+            "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
+            "title": "Run Month",
+            "type": "string"
+          },
+          "site_code": {
+            "title": "Site Code",
+            "type": "string"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "status": {
+            "enum": [
+              "queued",
+              "running",
+              "completed",
+              "failed",
+              "cancelled",
+              "unknown"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "run_month",
+          "site_code",
+          "status",
+          "created_at"
+        ],
+        "title": "GrileStoreRefreshOperationResponse",
+        "type": "object"
+      },
+      "GrileStoreResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "asm": {
+            "title": "Asm",
+            "type": "string"
+          },
+          "checked_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Checked At"
+          },
+          "completion_algorithm_version": {
+            "minimum": 1.0,
+            "title": "Completion Algorithm Version",
+            "type": "integer"
+          },
+          "completion_as_of": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completion As Of"
+          },
+          "completion_pct": {
+            "anyOf": [
+              {
+                "maximum": 100.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completion Pct"
+          },
+          "completion_window_status": {
+            "enum": [
+              "current",
+              "legacy_incomplete_window"
+            ],
+            "title": "Completion Window Status",
+            "type": "string"
+          },
+          "days_elapsed": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Days Elapsed"
+          },
+          "db_max_sale_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Db Max Sale Date"
+          },
+          "db_sales_mtd": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Db Sales Mtd"
+          },
+          "db_target": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Db Target"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "error_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Message"
+          },
+          "fill_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fill Status"
+          },
+          "firma": {
+            "title": "Firma",
+            "type": "string"
+          },
+          "grila_sales": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Grila Sales"
+          },
+          "grila_target": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Grila Target"
+          },
+          "last_edit": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Edit"
+          },
+          "locatie": {
+            "title": "Locatie",
+            "type": "string"
+          },
+          "missing_days": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "integer"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Missing Days"
+          },
+          "provider_status": {
+            "$ref": "#/components/schemas/GrileProviderStatus"
+          },
+          "regional": {
+            "title": "Regional",
+            "type": "string"
+          },
+          "sales_diff": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sales Diff"
+          },
+          "sales_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sales Status"
+          },
+          "sheet_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sheet Id"
+          },
+          "site_code": {
+            "title": "Site Code",
+            "type": "string"
+          },
+          "target_diff": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Diff"
+          },
+          "target_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Status"
+          },
+          "team_leader_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Team Leader Name"
+          }
+        },
+        "required": [
+          "site_code",
+          "locatie",
+          "firma",
+          "regional",
+          "asm",
+          "completion_algorithm_version",
+          "completion_window_status",
+          "provider_status"
+        ],
+        "title": "GrileStoreResponse",
+        "type": "object"
+      },
+      "GrileTeamLeaderResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "firms": {
+            "items": {
+              "$ref": "#/components/schemas/GrileFirmResponse"
+            },
+            "title": "Firms",
+            "type": "array"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          }
+        },
+        "required": [
+          "firms"
+        ],
+        "title": "GrileTeamLeaderResponse",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -6078,8 +7597,7 @@
             "type": "string"
           },
           "end_date": {
-            "maxLength": 10,
-            "minLength": 10,
+            "format": "date",
             "title": "End Date",
             "type": "string"
           },
@@ -6102,8 +7620,7 @@
             "title": "Notes"
           },
           "start_date": {
-            "maxLength": 10,
-            "minLength": 10,
+            "format": "date",
             "title": "Start Date",
             "type": "string"
           }
@@ -6379,6 +7896,7 @@
             "type": "boolean"
           },
           "month": {
+            "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
             "title": "Month",
             "type": "string"
           },
@@ -6764,24 +8282,29 @@
         "additionalProperties": true,
         "properties": {
           "cogs": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Cogs",
-            "type": "number"
+            "type": "string"
           },
           "depreciation": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Depreciation",
-            "type": "number"
+            "type": "string"
           },
           "ebit": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Ebit",
-            "type": "number"
+            "type": "string"
           },
           "ebitda": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Ebitda",
-            "type": "number"
+            "type": "string"
           },
           "gross_margin": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Gross Margin",
-            "type": "number"
+            "type": "string"
           },
           "is_estimated": {
             "title": "Is Estimated",
@@ -6792,12 +8315,14 @@
             "type": "integer"
           },
           "operating_costs": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Operating Costs",
-            "type": "number"
+            "type": "string"
           },
           "revenue": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Revenue",
-            "type": "number"
+            "type": "string"
           },
           "store_count": {
             "title": "Store Count",
@@ -6843,32 +8368,39 @@
       "PnlMetricsResponse": {
         "properties": {
           "cogs": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Cogs",
-            "type": "number"
+            "type": "string"
           },
           "depreciation": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Depreciation",
-            "type": "number"
+            "type": "string"
           },
           "ebit": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Ebit",
-            "type": "number"
+            "type": "string"
           },
           "ebitda": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Ebitda",
-            "type": "number"
+            "type": "string"
           },
           "gross_margin": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Gross Margin",
-            "type": "number"
+            "type": "string"
           },
           "operating_costs": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Operating Costs",
-            "type": "number"
+            "type": "string"
           },
           "revenue": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Revenue",
-            "type": "number"
+            "type": "string"
           }
         },
         "required": [
@@ -6910,24 +8442,29 @@
         "additionalProperties": true,
         "properties": {
           "cogs": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Cogs",
-            "type": "number"
+            "type": "string"
           },
           "depreciation": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Depreciation",
-            "type": "number"
+            "type": "string"
           },
           "ebit": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Ebit",
-            "type": "number"
+            "type": "string"
           },
           "ebitda": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Ebitda",
-            "type": "number"
+            "type": "string"
           },
           "gross_margin": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Gross Margin",
-            "type": "number"
+            "type": "string"
           },
           "is_estimated": {
             "title": "Is Estimated",
@@ -6938,12 +8475,14 @@
             "type": "string"
           },
           "operating_costs": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Operating Costs",
-            "type": "number"
+            "type": "string"
           },
           "revenue": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Revenue",
-            "type": "number"
+            "type": "string"
           }
         },
         "required": [
@@ -6981,7 +8520,8 @@
         "properties": {
           "categories": {
             "additionalProperties": {
-              "type": "number"
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
             },
             "title": "Categories",
             "type": "object"
@@ -7087,21 +8627,24 @@
       "PnlReconciliationResponse": {
         "properties": {
           "difference_to_net": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Difference To Net",
-            "type": "number"
+            "type": "string"
           },
           "month": {
             "title": "Month",
             "type": "string"
           },
           "pnl_revenue": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Pnl Revenue",
-            "type": "number"
+            "type": "string"
           },
           "pnl_to_net_sales_pct": {
             "anyOf": [
               {
-                "type": "number"
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
               },
               {
                 "type": "null"
@@ -7110,12 +8653,14 @@
             "title": "Pnl To Net Sales Pct"
           },
           "retail_sales_gross": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Retail Sales Gross",
-            "type": "number"
+            "type": "string"
           },
           "retail_sales_net": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Retail Sales Net",
-            "type": "number"
+            "type": "string"
           }
         },
         "required": [
@@ -7194,28 +8739,33 @@
         "additionalProperties": true,
         "properties": {
           "cogs": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Cogs",
-            "type": "number"
+            "type": "string"
           },
           "company": {
             "title": "Company",
             "type": "string"
           },
           "depreciation": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Depreciation",
-            "type": "number"
+            "type": "string"
           },
           "ebit": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Ebit",
-            "type": "number"
+            "type": "string"
           },
           "ebitda": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Ebitda",
-            "type": "number"
+            "type": "string"
           },
           "gross_margin": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Gross Margin",
-            "type": "number"
+            "type": "string"
           },
           "has_estimates": {
             "title": "Has Estimates",
@@ -7226,8 +8776,9 @@
             "type": "string"
           },
           "operating_costs": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Operating Costs",
-            "type": "number"
+            "type": "string"
           },
           "regional": {
             "anyOf": [
@@ -7241,8 +8792,9 @@
             "title": "Regional"
           },
           "revenue": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Revenue",
-            "type": "number"
+            "type": "string"
           },
           "site_code": {
             "title": "Site Code",
@@ -9751,6 +11303,7 @@
           "cohort_month": {
             "anyOf": [
               {
+                "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
                 "type": "string"
               },
               {
@@ -9823,6 +11376,7 @@
             "type": "integer"
           },
           "target_month": {
+            "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
             "title": "Target Month",
             "type": "string"
           },
@@ -12689,6 +14243,7 @@
             "schema": {
               "anyOf": [
                 {
+                  "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
                   "type": "string"
                 },
                 {
@@ -12807,6 +14362,7 @@
             "schema": {
               "anyOf": [
                 {
+                  "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
                   "type": "string"
                 },
                 {
@@ -16225,9 +17781,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Grile Agent Targets Diff Api Grile Agent Targets Diff Post",
-                  "type": "object"
+                  "$ref": "#/components/schemas/GrileAgentTargetEnqueueResponse"
                 }
               }
             },
@@ -16274,9 +17828,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Grile Agent Targets Operation Api Grile Agent Targets Operations  Operation Id  Get",
-                  "type": "object"
+                  "$ref": "#/components/schemas/GrileAgentTargetOperationEnvelope"
                 }
               }
             },
@@ -16322,9 +17874,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Grile Agent Targets Sync Api Grile Agent Targets Sync Post",
-                  "type": "object"
+                  "$ref": "#/components/schemas/GrileAgentTargetEnqueueResponse"
                 }
               }
             },
@@ -16374,6 +17924,7 @@
             "name": "month",
             "required": true,
             "schema": {
+              "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
               "title": "Month",
               "type": "string"
             }
@@ -16429,9 +17980,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Grile Monthly Job Api Grile Monthly Job  Job Id  Get",
-                  "type": "object"
+                  "$ref": "#/components/schemas/GrileMonthlyJobResponse"
                 }
               }
             },
@@ -16478,9 +18027,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Grile Monthly Manifest Approve Api Grile Monthly Manifests  Manifest Id  Approve Post",
-                  "type": "object"
+                  "$ref": "#/components/schemas/GrileMonthlyManifestEnvelope"
                 }
               }
             },
@@ -16517,6 +18064,7 @@
             "name": "month",
             "required": true,
             "schema": {
+              "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
               "title": "Month",
               "type": "string"
             }
@@ -16527,9 +18075,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Grile Monthly Manifest Api Grile Monthly Manifests  Month  Get",
-                  "type": "object"
+                  "$ref": "#/components/schemas/GrileMonthlyManifestEnvelope"
                 }
               }
             },
@@ -16566,9 +18112,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Grile Monthly Permissions Api Grile Monthly Permissions Get",
-                  "type": "object"
+                  "$ref": "#/components/schemas/GrilePermissionsResponse"
                 }
               }
             },
@@ -16604,9 +18148,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Grile Monthly Run Api Grile Monthly Run Post",
-                  "type": "object"
+                  "$ref": "#/components/schemas/GrileMonthlyRunResponse"
                 }
               }
             },
@@ -16645,6 +18187,7 @@
             "schema": {
               "anyOf": [
                 {
+                  "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
                   "type": "string"
                 },
                 {
@@ -16660,9 +18203,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Grile Overview Api Grile Overview Get",
-                  "type": "object"
+                  "$ref": "#/components/schemas/GrileOverviewResponse"
                 }
               }
             },
@@ -16701,6 +18242,7 @@
             "schema": {
               "anyOf": [
                 {
+                  "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
                   "type": "string"
                 },
                 {
@@ -16716,9 +18258,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Grile Run Api Grile Run Post",
-                  "type": "object"
+                  "$ref": "#/components/schemas/GrileRunEnqueueResponse"
                 }
               }
             },
@@ -16757,6 +18297,7 @@
             "schema": {
               "anyOf": [
                 {
+                  "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
                   "type": "string"
                 },
                 {
@@ -16772,9 +18313,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Grile Run Status Api Grile Run Status Get",
-                  "type": "object"
+                  "$ref": "#/components/schemas/GrileRunStatusResponse"
                 }
               }
             },
@@ -16802,6 +18341,54 @@
         ]
       }
     },
+    "/api/grile/store-refreshes/{operation_id}": {
+      "get": {
+        "operationId": "grile_store_refresh_operation_api_grile_store_refreshes__operation_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "operation_id",
+            "required": true,
+            "schema": {
+              "minimum": 1,
+              "title": "Operation Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GrileStoreRefreshOperationEnvelope"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Grile Store Refresh Operation",
+        "tags": [
+          "grile"
+        ]
+      }
+    },
     "/api/grile/stores/{site_code}/refresh": {
       "post": {
         "operationId": "grile_store_refresh_api_grile_stores__site_code__refresh_post",
@@ -16823,6 +18410,7 @@
             "schema": {
               "anyOf": [
                 {
+                  "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
                   "type": "string"
                 },
                 {
@@ -16834,13 +18422,11 @@
           }
         ],
         "responses": {
-          "200": {
+          "202": {
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Grile Store Refresh Api Grile Stores  Site Code  Refresh Post",
-                  "type": "object"
+                  "$ref": "#/components/schemas/GrileStoreRefreshEnqueueResponse"
                 }
               }
             },
@@ -17264,7 +18850,6 @@
             "name": "month",
             "required": true,
             "schema": {
-              "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
               "title": "Month",
               "type": "string"
             }
@@ -19120,7 +20705,6 @@
             "name": "month",
             "required": true,
             "schema": {
-              "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
               "title": "Month",
               "type": "string"
             }

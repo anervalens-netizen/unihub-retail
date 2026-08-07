@@ -54,6 +54,8 @@ def _set_oidc_settings(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("SESSION_ENCRYPTION_KEY", "MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA=")
     monkeypatch.setenv("SESSION_PUBLIC_ORIGIN", "https://retail.example.invalid")
     monkeypatch.setenv("SESSION_VALKEY_URL", "redis://localhost:6379/14")
+    monkeypatch.setenv("PROMETHEUS_DOCKER_GATEWAY", "172.23.0.1")
+    monkeypatch.setenv("PROMETHEUS_DOCKER_SUBNET", "172.23.0.0/16")
 
 
 def test_is_production_logic(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -227,6 +229,21 @@ def test_postgres_primary_without_shadow_does_not_require_sqlite_in_production(
     _set_privileged_groups(monkeypatch)
     _set_oidc_settings(monkeypatch)
     validate_required_env_vars()
+
+
+def test_production_requires_prometheus_bridge_network(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("DATABASE_URL", "postgresql://u:p@localhost:5432/db")
+    monkeypatch.setenv("UNIHUB_ENV", "production")
+    monkeypatch.setenv("SALARY_PERSON_ID_HMAC_KEY", "x" * 48)
+    monkeypatch.setenv("HUB_INTERNAL_SECRET", "h" * 32)
+    _set_privileged_groups(monkeypatch)
+    _set_oidc_settings(monkeypatch)
+    monkeypatch.delenv("PROMETHEUS_DOCKER_GATEWAY")
+    monkeypatch.delenv("PROMETHEUS_DOCKER_SUBNET")
+    with pytest.raises(ConfigError, match="Prometheus Docker gateway and subnet"):
+        validate_required_env_vars()
 
 
 def test_production_rejects_visits_shadow_compare(

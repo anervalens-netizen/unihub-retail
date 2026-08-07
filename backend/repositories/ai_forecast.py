@@ -92,7 +92,27 @@ class AiForecastRepository:
 
         async with self.pool.acquire() as conn:
             actual_last_date = await conn.fetchval(
-                "SELECT MAX(sale_date) FROM reporting_agent_day WHERE import_month = $1",
+                """
+                SELECT COALESCE(
+                    snapshot.cutoff_date,
+                    (
+                        SELECT MAX(transaction.sale_date)
+                        FROM sales_transactions AS transaction
+                        WHERE transaction.snapshot_id = snapshot.id
+                    )
+                )
+                FROM import_snapshots AS snapshot
+                LEFT JOIN sales_generation_heads AS head
+                  ON head.import_month = snapshot.import_month
+                 AND head.snapshot_id = snapshot.id
+                WHERE snapshot.import_month = $1
+                  AND snapshot.status = 'completed'
+                ORDER BY
+                  CASE WHEN head.snapshot_id IS NOT NULL THEN 0 ELSE 1 END,
+                  snapshot.created_at DESC,
+                  snapshot.id DESC
+                LIMIT 1
+                """,
                 forecast_month,
             )
             rows = await conn.fetch(
@@ -168,7 +188,11 @@ class AiForecastRepository:
                 SELECT
                     fd.forecast_date,
                     fd.forecast_sales,
-                    COALESCE(ad.actual_sales, 0)::NUMERIC(14, 2) AS actual_sales
+                    COALESCE(ad.actual_sales, 0)::NUMERIC(14, 2) AS actual_sales,
+                    (
+                        ${actual_date_param}::DATE IS NOT NULL
+                        AND fd.forecast_date <= ${actual_date_param}::DATE
+                    ) AS has_actual
                 FROM forecast_daily fd
                 LEFT JOIN actual_daily ad ON ad.forecast_date = fd.forecast_date
                 ORDER BY fd.forecast_date
@@ -176,6 +200,7 @@ class AiForecastRepository:
                 *filter_params,
                 run_id,
                 forecast_month,
+                actual_last_date,
             )
 
         if not rows:
@@ -223,6 +248,7 @@ class AiForecastRepository:
                     "forecast_date": row["forecast_date"],
                     "forecast_sales": row["forecast_sales"],
                     "actual_sales": row["actual_sales"],
+                    "has_actual": bool(row["has_actual"]),
                     "cumulative_forecast": cumulative_forecast,
                     "cumulative_actual": cumulative_actual,
                 }

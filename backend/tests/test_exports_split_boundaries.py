@@ -3,8 +3,6 @@ from __future__ import annotations
 import hashlib
 import asyncio
 import resource
-from threading import Event
-from concurrent.futures import ThreadPoolExecutor
 from io import BytesIO
 from pathlib import Path
 from types import SimpleNamespace
@@ -133,107 +131,97 @@ async def test_complex_artifact_adoption_rejects_worker_and_attestation_failures
     tmp_path: Path,
 ) -> None:
     service = ExportsService(cast(Any, None))
-    executor = ThreadPoolExecutor(max_workers=1)
-    monkeypatch.setattr(service_module, "_complex_process_pool", lambda: executor)
-    try:
-        def rejected_renderer(_payload: dict[str, Any]) -> dict[str, Any]:
-            raise ValueError("worker rejected payload")
 
-        with pytest.raises(ExportValidationError, match="siguranta"):
-            await service._run_complex_renderer(
-                rejected_renderer,
-                {"filename": "report.xlsx"},
-                cells=1,
-            )
+    async def rejected(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+        raise service_module.ExportRendererProcessError(
+            "renderer_failed", "worker rejected payload"
+        )
 
-        missing = tmp_path / "missing.xlsx"
-        with pytest.raises(ExportValidationError, match="lipseste"):
-            await service._run_complex_renderer(
-                lambda _payload: {
-                    "path": str(missing),
-                    "size": 1,
-                    "sha256": "0" * 64,
-                    "peak_rss": 1,
-                    "filename": "report.xlsx",
-                },
-                {"filename": "report.xlsx"},
-                cells=1,
-            )
+    monkeypatch.setattr(service_module, "run_export_renderer_process", rejected)
+    with pytest.raises(ExportValidationError, match="siguranta"):
+        await service._run_complex_renderer(
+            "daily_metrics",
+            {"filename": "report.xlsx"},
+            cells=1,
+        )
 
-        tampered = tmp_path / "tampered.xlsx"
-        tampered.write_bytes(b"not-the-attested-content")
-        with pytest.raises(ExportValidationError, match="integritate"):
-            await service._run_complex_renderer(
-                lambda _payload: {
-                    "path": str(tampered),
-                    "size": tampered.stat().st_size,
-                    "sha256": "0" * 64,
-                    "peak_rss": 1,
-                    "filename": "report.xlsx",
-                },
-                {"filename": "report.xlsx"},
-                cells=1,
-            )
-        assert not tampered.exists()
-    finally:
-        executor.shutdown(wait=True)
+    missing_directory = tmp_path / "unihub-export-operation-missing"
+    missing_directory.mkdir()
+    missing = missing_directory / "missing.xlsx"
+
+    async def missing_result(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+        return {
+            "path": str(missing),
+            "size": 1,
+            "sha256": "0" * 64,
+            "peak_rss": 1,
+            "filename": "report.xlsx",
+            "operation_directory": str(missing_directory),
+        }
+
+    monkeypatch.setattr(service_module, "run_export_renderer_process", missing_result)
+    with pytest.raises(ExportValidationError, match="lipseste"):
+        await service._run_complex_renderer(
+            "daily_metrics",
+            {"filename": "report.xlsx"},
+            cells=1,
+        )
+
+    tampered_directory = tmp_path / "unihub-export-operation-tampered"
+    tampered_directory.mkdir()
+    tampered = tampered_directory / "tampered.xlsx"
+    tampered.write_bytes(b"not-the-attested-content")
+
+    async def tampered_result(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+        return {
+            "path": str(tampered),
+            "size": tampered.stat().st_size,
+            "sha256": "0" * 64,
+            "peak_rss": 1,
+            "filename": "report.xlsx",
+            "operation_directory": str(tampered_directory),
+        }
+
+    monkeypatch.setattr(service_module, "run_export_renderer_process", tampered_result)
+    with pytest.raises(ExportValidationError, match="integritate"):
+        await service._run_complex_renderer(
+            "daily_metrics",
+            {"filename": "report.xlsx"},
+            cells=1,
+        )
+    assert not tampered.exists()
 
 
 @pytest.mark.asyncio
-async def test_cancelled_artifact_adoption_waits_for_bounded_result_then_unlinks(
+async def test_cancelled_artifact_adoption_propagates_to_killable_process_boundary(
     monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
 ) -> None:
     service = ExportsService(cast(Any, None))
-    executor = ThreadPoolExecutor(max_workers=1)
-    monkeypatch.setattr(service_module, "_complex_process_pool", lambda: executor)
-    started = Event()
-    release = Event()
-    orphan = tmp_path / "cancelled-worker.xlsx"
+    started = asyncio.Event()
+    cancelled = asyncio.Event()
 
-    def renderer(_payload: dict[str, Any]) -> dict[str, Any]:
+    async def renderer_process(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
         started.set()
-        release.wait(timeout=5)
-        orphan.write_bytes(b"worker-finished-after-cancel")
-        return {"path": str(orphan)}
+        try:
+            await asyncio.Future()
+        except asyncio.CancelledError:
+            cancelled.set()
+            raise
+        raise AssertionError("renderer process returned unexpectedly")
 
+    monkeypatch.setattr(service_module, "run_export_renderer_process", renderer_process)
     task = asyncio.create_task(
         service._run_complex_renderer(
-            renderer,
+            "daily_metrics",
             {"filename": "report.xlsx"},
             cells=1,
         )
     )
-    await asyncio.to_thread(started.wait, 5)
+    await started.wait()
     task.cancel()
-    release.set()
-    try:
-        with pytest.raises(asyncio.CancelledError):
-            await task
-        assert not orphan.exists()
-
-        failed_started = Event()
-        failed_release = Event()
-
-        def failed_renderer(_payload: dict[str, Any]) -> dict[str, Any]:
-            failed_started.set()
-            failed_release.wait(timeout=5)
-            raise ValueError("bounded worker failure after cancellation")
-
-        failed_task = asyncio.create_task(
-            service._run_complex_renderer(
-                failed_renderer,
-                {"filename": "report.xlsx"},
-                cells=1,
-            )
-        )
-        await asyncio.to_thread(failed_started.wait, 5)
-        failed_task.cancel()
-        failed_release.set()
-        with pytest.raises(asyncio.CancelledError):
-            await failed_task
-    finally:
-        executor.shutdown(wait=True)
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert cancelled.is_set()
 
 
 def test_child_renderers_emit_hashed_artifacts_without_process_coverage_gaps(

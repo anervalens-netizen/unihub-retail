@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from datetime import date
+from typing import Any
+
 from fastapi import HTTPException
 
 from business_clock import business_today
@@ -8,12 +11,35 @@ from services.asm_salary import compute_asm_salary
 from services.forecast import get_forecast_factor
 
 
+def _coerce_leave_date(value: Any, *, field_name: str) -> date:
+    if isinstance(value, date):
+        return value
+    if isinstance(value, str):
+        try:
+            return date.fromisoformat(value)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=f"{field_name} invalid") from exc
+    raise HTTPException(status_code=422, detail=f"{field_name} invalid")
+
+
 class HrService:
     def __init__(self, repo: HrRepository):
         self.repo = repo
 
     async def create_leave_request(self, data: dict) -> dict:
-        row = await self.repo.create_leave_request(data)
+        normalized = dict(data)
+        normalized["start_date"] = _coerce_leave_date(
+            normalized.get("start_date"), field_name="start_date"
+        )
+        normalized["end_date"] = _coerce_leave_date(
+            normalized.get("end_date"), field_name="end_date"
+        )
+        if normalized["start_date"] > normalized["end_date"]:
+            raise HTTPException(
+                status_code=422,
+                detail="start_date must be on or before end_date",
+            )
+        row = await self.repo.create_leave_request(normalized)
         if not row:
             raise HTTPException(status_code=500, detail="Eroare la crearea cererii")
         return dict(row)

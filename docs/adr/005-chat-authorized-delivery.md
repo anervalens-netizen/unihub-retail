@@ -1,6 +1,6 @@
 # ADR-005 — Livrare autorizată prin conversația operațională
 
-**Status:** Accepted
+**Status:** Superseded pentru runtime de ADR-006
 **Date:** 2026-07-17
 **Decision owner:** Retail Business și Operations
 
@@ -83,7 +83,13 @@ artefact se păstrează suplimentar runul CI, hashul artefactului, backupul și
 înregistrarea deployului. GitHub rămâne istoric, copie externă și control
 suplimentar; nu este autoritatea care înlocuiește cererea operatorului.
 
-## Consecințe
+## Supersession
+
+Începând cu 2026-08-07, `ADR-006` înlocuiește calea local-first pentru orice
+modificare runtime. Autorizarea prin conversație rămâne valabilă ca autorizație
+de execuție, nu ca permisiune de a sări peste CI și artefactul exact-SHA.
+
+## Consecințe istorice
 
 Modificările uzuale nu mai așteaptă două cicluri CI și o aprobare repetată.
 Mecanismele de release `v2.0.1` nu sunt șterse și pot fi activate proporțional

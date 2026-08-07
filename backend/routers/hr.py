@@ -4,12 +4,13 @@ import logging
 from datetime import date
 
 from fastapi import APIRouter, Depends, Query
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from auth import AuthClaims
 from db.connection import get_pool
 from permissions import require_salary_access
 from repositories.hr import HrRepository
+from schemas.common import MonthStr
 from services.hr import HrService
 
 router = APIRouter(prefix="/api/hr", tags=["hr"])
@@ -182,17 +183,12 @@ def _trim_text(value: str, *, field_name: str) -> str:
     return normalized
 
 
-def _valid_date(value: str) -> str:
-    date.fromisoformat(value)
-    return value
-
-
 class LeaveRequestCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     agent_name: str = Field(min_length=1, max_length=120)
-    start_date: str = Field(min_length=10, max_length=10)
-    end_date: str = Field(min_length=10, max_length=10)
+    start_date: date
+    end_date: date
     leave_type: str = Field(min_length=1, max_length=64)
     notes: str | None = Field(default=None, max_length=2000)
 
@@ -201,15 +197,16 @@ class LeaveRequestCreate(BaseModel):
     def normalize_text(cls, value: str, info) -> str:
         return _trim_text(value, field_name=info.field_name)
 
-    @field_validator("start_date", "end_date")
-    @classmethod
-    def validate_date(cls, value: str) -> str:
-        return _valid_date(value)
-
     @field_validator("notes")
     @classmethod
     def normalize_notes(cls, value: str | None) -> str | None:
         return value.strip() if value is not None else None
+
+    @model_validator(mode="after")
+    def validate_interval(self) -> "LeaveRequestCreate":
+        if self.start_date > self.end_date:
+            raise ValueError("start_date must be on or before end_date")
+        return self
 
 
 class LeaveStatusUpdate(BaseModel):
@@ -245,7 +242,7 @@ async def post_leave_request(
     body: LeaveRequestCreate,
     svc: HrService = Depends(get_hr_service),
 ):
-    return await svc.create_leave_request(body.model_dump(mode="json"))
+    return await svc.create_leave_request(body.model_dump())
 
 
 @router.patch("/leave-requests/{request_id}", response_model=LeaveRequestItem)
@@ -267,7 +264,7 @@ async def get_performance(
 
 @router.get("/asm-performance", response_model=list[HrAsmPerformanceItem])
 async def get_asm_perf(
-    month: str = Query(...),
+    month: MonthStr = Query(...),
     regional: str | None = Query(None),
     svc: HrService = Depends(get_hr_service),
 ):
@@ -276,7 +273,7 @@ async def get_asm_perf(
 
 @router.get("/manager-overview", response_model=list[HrManagerOverviewItem])
 async def get_manager_overview(
-    month: str = Query(..., pattern=r"^\d{4}-(0[1-9]|1[0-2])$"),
+    month: MonthStr = Query(...),
     svc: HrService = Depends(get_hr_service),
 ):
     """Overview operațional de portofoliu și sănătate a echipei per manager."""
@@ -295,7 +292,7 @@ async def get_asm_perf_history(
 @router.get("/asm-salary/{asm_name}", response_model=HrAsmSalaryBreakdown)
 async def get_asm_salary(
     asm_name: str,
-    month: str = Query(...),
+    month: MonthStr = Query(...),
     svc: HrService = Depends(get_hr_service),
     claims: AuthClaims = Depends(require_salary_access),
 ):

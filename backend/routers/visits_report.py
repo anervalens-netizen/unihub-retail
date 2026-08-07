@@ -12,6 +12,7 @@ from models import (
     VisitTreeResponse,
 )
 from repositories.visits_report_postgres import VisitsReportPostgresRepository
+from schemas.common import MonthStr
 from services.visits_report import VisitsReportService
 
 router = APIRouter(prefix="/api/visits-report", tags=["visits-report"])
@@ -22,7 +23,7 @@ async def get_visits_service() -> VisitsReportService:
 
 @router.get("", response_model=VisitReportResponse)
 async def get_visits_report(
-    month: str = Query(...),
+    month: MonthStr = Query(...),
     firma: str | None = None,
     rm: str | None = None,
     asm: str | None = None,
@@ -34,7 +35,7 @@ async def get_visits_report(
 
 @router.get("/tree", response_model=VisitTreeResponse)
 async def get_visits_tree(
-    month: str = Query(..., pattern=r"^\d{4}-(0[1-9]|1[0-2])$"),
+    month: MonthStr = Query(...),
     firma: str | None = None,
     rm: str | None = None,
     asm: str | None = None,

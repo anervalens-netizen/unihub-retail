@@ -37,7 +37,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.exceptions import HTTPException as StarletteHTTPException
-from prometheus_client import REGISTRY, Counter, Histogram, generate_latest
+from prometheus_client import Counter, Histogram
 
 from config import validate_required_env_vars
 from db.connection import (
@@ -64,6 +64,13 @@ from session_auth import (
 )
 from routers import ai_forecast, agents, campaigns, contests, crm, dashboard, exports, filters, grile, health, hr, imports, salarii, store_pnl, stores, target_calculator, tasks, visits_report
 from services.jobs import close_arq_pool, get_arq_pool
+from observability.prometheus import (
+    canonical_handler,
+    mark_current_process_dead,
+    metrics_payload,
+    validate_multiprocess_directory,
+)
+from observability.metrics_network import metrics_peer_allowed
 
 logger = logging.getLogger(__name__)
 
@@ -89,6 +96,7 @@ _PROBE_HANDLERS = {"/health", "/readyz", "/livez", "/metrics"}
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     app.state.runtime_config = validate_required_env_vars("web")
+    validate_multiprocess_directory()
     try:
         await init_oidc_runtime()
         await init_session_runtime()
@@ -121,7 +129,10 @@ async def lifespan(app: FastAPI):
                         try:
                             await close_session_runtime()
                         finally:
-                            await close_oidc_runtime()
+                            try:
+                                await close_oidc_runtime()
+                            finally:
+                                mark_current_process_dead()
 
 
 app = FastAPI(
@@ -140,8 +151,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
             response = await call_next(request)
         except Exception:
             if request.url.path != "/metrics":
-                route = request.scope.get("route")
-                handler = getattr(route, "path", request.url.path)
+                handler = canonical_handler(request.scope)
                 labels = (request.method, "5xx", handler)
                 duration = time.perf_counter() - started_at
                 HTTP_REQUESTS_TOTAL.labels(*labels).inc()
@@ -161,8 +171,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         for name, value in getattr(request.state, "rate_limit_headers", {}).items():
             response.headers[name] = value
         if request.url.path != "/metrics":
-            route = request.scope.get("route")
-            handler = getattr(route, "path", request.url.path)
+            handler = canonical_handler(request.scope)
             status = f"{response.status_code // 100}xx"
             labels = (request.method, status, handler)
             duration = time.perf_counter() - started_at
@@ -290,10 +299,13 @@ app.include_router(store_pnl.router)
 
 
 @app.get("/metrics")
-async def metrics() -> Response:
+async def metrics(request: Request) -> Response:
     """Prometheus-compatible metrics endpoint."""
+    peer = request.client.host if request.client else None
+    if not metrics_peer_allowed(peer):
+        return Response(status_code=404)
     return Response(
-        content=generate_latest(REGISTRY),
+        content=metrics_payload(),
         media_type="text/plain; version=0.0.4",
     )
 

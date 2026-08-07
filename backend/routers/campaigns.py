@@ -6,6 +6,7 @@ from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 
 from db.connection import get_pool
+from schemas.common import MonthStr
 from schemas.campaigns import (
     CampaignSnapshot,
     CampaignsPromotionsResponse,
@@ -42,7 +43,7 @@ async def get_campaigns_service(
 
 @router.get("/overview", response_model=CampaignSnapshot)
 async def get_campaign_overview(
-    month: str = Query(...),
+    month: MonthStr = Query(...),
     firma: str | None = None,
     regional: str | None = None,
     asm: str | None = None,
@@ -54,7 +55,7 @@ async def get_campaign_overview(
 
 @router.get("/history", response_model=FocusHistoryResponse)
 async def get_focus_history(
-    month: str = Query(...),
+    month: MonthStr = Query(...),
     months_back: int = Query(12, ge=2, le=24),
     firma: str | None = None,
     regional: str | None = None,

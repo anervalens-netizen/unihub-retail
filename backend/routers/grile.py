@@ -1,13 +1,26 @@
 from __future__ import annotations
 
-import re
 from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request, Response, status
-from pydantic import BaseModel, ConfigDict, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, model_validator
 
 from auth import AuthClaims, require_auth
 from db.connection import get_pool
+from grile.api.schemas import (
+    GrileAgentTargetEnqueueResponse,
+    GrileAgentTargetOperationEnvelope,
+    GrileMonthlyJobResponse,
+    GrileMonthlyManifestEnvelope,
+    GrileMonthlyRunResponse,
+    GrileOverviewResponse,
+    GrilePermissionsResponse,
+    GrileRunEnqueueResponse,
+    GrileRunStatusResponse,
+    GrileStoreRefreshEnqueueResponse,
+    GrileStoreRefreshOperationEnvelope,
+)
+from schemas.common import MonthStr
 from permissions import require_privileged_access
 from privileged_access import (
     GRILE_FINALIZER_GROUPS_ENV,
@@ -40,23 +53,22 @@ from services.jobs import (
 
 router = APIRouter(prefix="/api/grile", tags=["grile"])
 
-MONTH_PATTERN = re.compile(r"^\d{4}-(0[1-9]|1[0-2])$")
 
 
 # ── verificare (read-only) ────────────────────────────────────────────────────
 
-@router.get("/overview")
+@router.get("/overview", response_model=GrileOverviewResponse)
 async def grile_overview(
-    month: str | None = Query(default=None),
+    month: MonthStr | None = Query(default=None),
     _claims: AuthClaims = Depends(require_auth),
 ) -> dict[str, Any]:
     pool = await get_pool()
     return await get_overview(pool, await resolve_month(pool, month))
 
 
-@router.post("/run")
+@router.post("/run", response_model=GrileRunEnqueueResponse)
 async def grile_run(
-    month: str | None = Query(default=None),
+    month: MonthStr | None = Query(default=None),
     claims: AuthClaims = Depends(require_auth),
     _rate_limit: None = Depends(rate_limit(GRILE_JOB_LIMIT)),
 ) -> dict[str, Any]:
@@ -67,20 +79,20 @@ async def grile_run(
     )
     if result.status == "already_running":
         return {
-            "status": result.status,
+            "status": "already_running",
             "run": _run_to_dict(result.run) if result.run is not None else None,
         }
     return {
-        "status": result.status,
+        "status": "enqueued",
         "month": resolved,
         "run_id": result.run_id,
         "job_id": result.job.job_id if result.job is not None else None,
     }
 
 
-@router.get("/run-status")
+@router.get("/run-status", response_model=GrileRunStatusResponse)
 async def grile_run_status(
-    month: str | None = Query(default=None),
+    month: MonthStr | None = Query(default=None),
     _claims: AuthClaims = Depends(require_auth),
 ) -> dict[str, Any]:
     pool = await get_pool()
@@ -91,10 +103,14 @@ async def grile_run_status(
     return {"run": _run_to_dict(latest) if latest is not None else None}
 
 
-@router.post("/stores/{site_code}/refresh")
+@router.post(
+    "/stores/{site_code}/refresh",
+    response_model=GrileStoreRefreshEnqueueResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
 async def grile_store_refresh(
     site_code: str = Path(pattern=r"^[A-Za-z0-9_-]{1,64}$"),
-    month: str | None = Query(default=None),
+    month: MonthStr | None = Query(default=None),
     claims: AuthClaims = Depends(require_auth),
     _rate_limit: None = Depends(rate_limit(GRILE_JOB_LIMIT)),
 ) -> dict[str, Any]:
@@ -112,8 +128,59 @@ async def grile_store_refresh(
         "month": resolved,
         "operation_id": result.operation_id,
         "job_id": result.job.job_id if result.job is not None else None,
-        "operation": result.operation,
     }
+
+
+_PUBLIC_REFRESH_STATUSES = frozenset(
+    {"queued", "running", "completed", "failed", "cancelled"}
+)
+
+
+def _refresh_operation_payload(operation: dict[str, Any]) -> dict[str, Any]:
+    payload = {
+        key: operation.get(key)
+        for key in (
+            "id",
+            "run_month",
+            "site_code",
+            "projection_applied",
+            "error_code",
+            "error_message",
+            "created_at",
+            "started_at",
+            "heartbeat_at",
+            "finished_at",
+        )
+    }
+    persisted_status = str(operation.get("status") or "")
+    payload["status"] = (
+        persisted_status if persisted_status in _PUBLIC_REFRESH_STATUSES else "unknown"
+    )
+    if payload["status"] == "unknown":
+        payload["error_code"] = payload["error_code"] or "operation_state_unknown"
+        payload["error_message"] = payload["error_message"] or (
+            "Starea persistată a verificării nu este recunoscută. "
+            "Operația nu trebuie relansată automat."
+        )
+    return payload
+
+
+@router.get(
+    "/store-refreshes/{operation_id}",
+    response_model=GrileStoreRefreshOperationEnvelope,
+)
+async def grile_store_refresh_operation(
+    operation_id: int = Path(ge=1),
+    _claims: AuthClaims = Depends(require_auth),
+) -> dict[str, Any]:
+    repo = GrileRepository(await get_pool())
+    operation = await repo.get_store_refresh(operation_id)
+    if operation is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Operatia de refresh nu exista.",
+        )
+    return {"operation": _refresh_operation_payload(dict(operation))}
 
 
 # ── inchidere luna (WRITE Google Sheets — doar admin) ──────────────────────────
@@ -157,14 +224,7 @@ def require_grile_target_sync(
 class AgentTargetRunRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    month: str
-
-    @field_validator("month")
-    @classmethod
-    def _valid_month(cls, value: str) -> str:
-        if not MONTH_PATTERN.match(value):
-            raise ValueError("month trebuie sa fie YYYY-MM")
-        return value
+    month: MonthStr
 
 
 def _target_operation_payload(operation: dict[str, Any]) -> dict[str, Any]:
@@ -189,7 +249,7 @@ def _target_operation_payload(operation: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-@router.post("/agent-targets/diff")
+@router.post("/agent-targets/diff", response_model=GrileAgentTargetEnqueueResponse)
 async def grile_agent_targets_diff(
     body: AgentTargetRunRequest,
     claims: AuthClaims = Depends(require_auth),
@@ -212,7 +272,7 @@ async def grile_agent_targets_diff(
     }
 
 
-@router.post("/agent-targets/sync")
+@router.post("/agent-targets/sync", response_model=GrileAgentTargetEnqueueResponse)
 async def grile_agent_targets_sync(
     body: AgentTargetRunRequest,
     claims: AuthClaims = Depends(require_grile_target_sync),
@@ -235,7 +295,10 @@ async def grile_agent_targets_sync(
     }
 
 
-@router.get("/agent-targets/operations/{operation_id}")
+@router.get(
+    "/agent-targets/operations/{operation_id}",
+    response_model=GrileAgentTargetOperationEnvelope,
+)
 async def grile_agent_targets_operation(
     operation_id: int,
     _claims: AuthClaims = Depends(require_auth),
@@ -250,16 +313,9 @@ class MonthlyRunRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     op: Literal["finalize", "archive", "reset"]
-    month: str
+    month: MonthStr
     dry_run: bool = True
     approved_manifest_id: int | None = None
-
-    @field_validator("month")
-    @classmethod
-    def _valid_month(cls, v: str) -> str:
-        if not MONTH_PATTERN.match(v):
-            raise ValueError("month trebuie sa fie YYYY-MM")
-        return v
 
     @model_validator(mode="after")
     def _manifest_contract(self) -> "MonthlyRunRequest":
@@ -270,13 +326,15 @@ class MonthlyRunRequest(BaseModel):
         return self
 
 
-@router.get("/monthly/permissions")
-async def grile_monthly_permissions(claims: AuthClaims = Depends(require_auth)) -> dict[str, Any]:
+@router.get("/monthly/permissions", response_model=GrilePermissionsResponse)
+async def grile_monthly_permissions(
+    claims: AuthClaims = Depends(require_auth),
+) -> dict[str, bool]:
     """UI-ul afiseaza sectiunea de inchidere doar daca utilizatorul e admin."""
     return {"can_run": can_grile_admin(claims)}
 
 
-@router.post("/monthly/run")
+@router.post("/monthly/run", response_model=GrileMonthlyRunResponse)
 async def grile_monthly_run(
     body: MonthlyRunRequest,
     claims: AuthClaims = Depends(require_grile_admin),
@@ -313,19 +371,25 @@ async def grile_monthly_run(
     return payload
 
 
-@router.get("/monthly/manifests/{month}")
+@router.get(
+    "/monthly/manifests/{month}",
+    response_model=GrileMonthlyManifestEnvelope,
+)
 async def grile_monthly_manifest(
-    month: str,
+    month: MonthStr,
     _claims: AuthClaims = Depends(require_grile_admin),
 ) -> dict[str, Any]:
-    if not MONTH_PATTERN.match(month):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="month invalid (YYYY-MM)")
     pool = await get_pool()
     manifest = await get_latest_monthly_manifest(pool, month=month)
-    return {"manifest": public_manifest_payload(manifest) if manifest is not None else None}
+    return {
+        "manifest": public_manifest_payload(manifest) if manifest is not None else None
+    }
 
 
-@router.post("/monthly/manifests/{manifest_id}/approve")
+@router.post(
+    "/monthly/manifests/{manifest_id}/approve",
+    response_model=GrileMonthlyManifestEnvelope,
+)
 async def grile_monthly_manifest_approve(
     manifest_id: int,
     claims: AuthClaims = Depends(require_grile_admin),
@@ -345,7 +409,7 @@ async def grile_monthly_manifest_approve(
     return {"manifest": manifest}
 
 
-@router.get("/monthly/job/{job_id}")
+@router.get("/monthly/job/{job_id}", response_model=GrileMonthlyJobResponse)
 async def grile_monthly_job(
     job_id: str,
     claims: AuthClaims = Depends(require_grile_admin),
@@ -363,8 +427,16 @@ async def grile_monthly_job(
             return {
                 "job_id": job_id,
                 "status": "complete",
-                "result": operation.get("result") if operation_status == "completed" else None,
-                "error": operation.get("error_message") if operation_status == "failed" else None,
+                "result": (
+                    operation.get("result")
+                    if operation_status == "completed"
+                    else None
+                ),
+                "error": (
+                    operation.get("error_message")
+                    if operation_status == "failed"
+                    else None
+                ),
             }
         js = await get_job_status(job_id)
         if js.status in {JobStatus.QUEUED, JobStatus.IN_PROGRESS}:
@@ -412,11 +484,9 @@ async def grile_monthly_job(
 @router.get("/monthly/download/{kind}/{month}")
 async def grile_monthly_download(
     kind: Literal["final", "archive"],
-    month: str,
+    month: MonthStr,
     claims: AuthClaims = Depends(require_grile_admin),
 ) -> Response:
-    if not MONTH_PATTERN.match(month):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="month invalid (YYYY-MM)")
     try:
         content, filename, media_type = await fetch_download(kind, month)
     except FileNotFoundError as exc:

@@ -5,11 +5,19 @@ from typing import Any
 
 import asyncpg
 
+from repositories.grile_refresh_reservations import (
+    allocate_generation as _allocate_generation,
+    reserve_store_refresh_on_connection,
+)
+
 
 GRILE_RUN_QUEUED_LEASE_SECONDS = 2 * 60 * 60
 GRILE_RUN_RUNNING_LEASE_SECONDS = 5 * 60
 GRILE_RUN_LEASE_EXPIRED = "grile_run_lease_expired"
 GRILE_RUN_WORKER_RESTARTED = "grile_run_worker_restarted"
+GRILE_STORE_REFRESH_QUEUED_LEASE_SECONDS = 2 * 60 * 60
+GRILE_STORE_REFRESH_RUNNING_LEASE_SECONDS = 5 * 60
+GRILE_STORE_REFRESH_LEASE_EXPIRED = "grile_store_refresh_lease_expired"
 
 
 _RUN_COLUMNS = """
@@ -22,13 +30,15 @@ _RUN_COLUMNS = """
 _STORE_STATUS_COLUMNS = """
     run_id, site_code, completion_pct, last_edit, grila_target, grila_sales,
     db_target, db_sales_mtd, db_max_sale_date, fill_status, target_status,
-    sales_status, tolerance, error_code, error_message, raw_summary
+    sales_status, tolerance, completion_algorithm_version, completion_as_of,
+    error_code, error_message, raw_summary
 """
 
 _CURRENT_STATUS_COLUMNS = """
     run_month, site_code, source_run_id, source, completion_pct, last_edit,
     grila_target, grila_sales, db_target, db_sales_mtd, db_max_sale_date,
-    fill_status, target_status, sales_status, tolerance, error_code,
+    fill_status, target_status, sales_status, tolerance,
+    completion_algorithm_version, completion_as_of, error_code,
     error_message, raw_summary, content_sha256, checked_by_sub, checked_at,
     generation, current_observation_id, last_success_observation_id,
     last_success_checked_at, last_error_observation_id, last_error_generation,
@@ -284,15 +294,19 @@ class GrileRepository:
                     INSERT INTO grile_store_status
                         (run_id, site_code, completion_pct, last_edit, grila_target, grila_sales,
                          db_target, db_sales_mtd, db_max_sale_date, fill_status, target_status,
-                         sales_status, tolerance, error_code, error_message, raw_summary)
-                    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+                         sales_status, tolerance, completion_algorithm_version, completion_as_of,
+                         error_code, error_message, raw_summary)
+                    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
                     ON CONFLICT (run_id, site_code) DO UPDATE SET
                         completion_pct = EXCLUDED.completion_pct, last_edit = EXCLUDED.last_edit,
                         grila_target = EXCLUDED.grila_target, grila_sales = EXCLUDED.grila_sales,
                         db_target = EXCLUDED.db_target, db_sales_mtd = EXCLUDED.db_sales_mtd,
                         db_max_sale_date = EXCLUDED.db_max_sale_date, fill_status = EXCLUDED.fill_status,
                         target_status = EXCLUDED.target_status, sales_status = EXCLUDED.sales_status,
-                        tolerance = EXCLUDED.tolerance, error_code = EXCLUDED.error_code,
+                        tolerance = EXCLUDED.tolerance,
+                        completion_algorithm_version = EXCLUDED.completion_algorithm_version,
+                        completion_as_of = EXCLUDED.completion_as_of,
+                        error_code = EXCLUDED.error_code,
                         error_message = EXCLUDED.error_message, raw_summary = EXCLUDED.raw_summary
                     """, run_id, *_status_params(row),
                 )
@@ -301,90 +315,244 @@ class GrileRepository:
                     raise RuntimeError("Grile run disappeared before observation persistence")
                 return await _record_observation(conn, run_month=run_month, row=row, source="full", source_run_id=run_id, store_refresh_id=None, generation=generation, checked_by_sub=checked_by_sub)
 
-    async def reserve_store_refresh(self, *, run_month: str, site_code: str, requested_by_sub: str) -> int | None:
+    async def reserve_store_refresh(
+        self,
+        *,
+        run_month: str,
+        site_code: str,
+        requested_by_sub: str,
+    ) -> int | None:
         async with self.pool.acquire() as conn:
             async with conn.transaction():
-                await conn.execute(
-                    """
-                    UPDATE grile_store_refreshes SET status = 'failed', error_message = 'Refresh reservation expired',
-                        finished_at = now(), heartbeat_at = now()
-                    WHERE run_month = $1 AND site_code = $2 AND status IN ('queued', 'running')
-                      AND COALESCE(heartbeat_at, started_at, created_at) < now() - interval '2 hours'
-                    """, run_month, site_code,
+                await _reconcile_stale_store_refreshes_on_connection(
+                    conn,
+                    run_month=run_month,
+                    site_code=site_code,
+                    queued_lease_seconds=GRILE_STORE_REFRESH_QUEUED_LEASE_SECONDS,
+                    running_lease_seconds=GRILE_STORE_REFRESH_RUNNING_LEASE_SECONDS,
                 )
-                active = await conn.fetchval(
-                    """
-                    SELECT id FROM grile_store_refreshes
-                    WHERE run_month = $1 AND site_code = $2 AND status IN ('queued', 'running')
-                    """, run_month, site_code,
-                )
-                if active is not None:
-                    return None
-                generation = await _allocate_generation(conn, run_month, site_code)
-                return await conn.fetchval(
-                    """
-                    INSERT INTO grile_store_refreshes (run_month, site_code, generation, requested_by_sub, heartbeat_at)
-                    VALUES ($1, $2, $3, $4, now())
-                    ON CONFLICT (run_month, site_code) WHERE status IN ('queued', 'running') DO NOTHING
-                    RETURNING id
-                    """, run_month, site_code, generation, requested_by_sub,
+                return await reserve_store_refresh_on_connection(
+                    conn,
+                    run_month=run_month,
+                    site_code=site_code,
+                    requested_by_sub=requested_by_sub,
                 )
 
-    async def fail_queued_store_refresh(self, refresh_id: int, error_message: str) -> None:
+    async def fail_queued_store_refresh(
+        self,
+        refresh_id: int,
+        error_message: str,
+        *,
+        error_code: str = "queue_publish_failed",
+    ) -> bool:
         async with self.pool.acquire() as conn:
-            await conn.execute(
+            result = await conn.execute(
                 """
-                UPDATE grile_store_refreshes SET status = 'failed', error_message = $2,
+                UPDATE grile_store_refreshes
+                SET status = 'failed', error_code = $2, error_message = $3,
+                    projection_applied = false,
                     finished_at = now(), heartbeat_at = now()
                 WHERE id = $1 AND status = 'queued'
-                """, refresh_id, error_message,
+                """,
+                refresh_id,
+                error_code,
+                error_message[:500],
             )
+        return result == "UPDATE 1"
 
-    async def get_active_store_refresh(self, run_month: str, site_code: str) -> asyncpg.Record | None:
+    async def get_active_store_refresh(
+        self,
+        run_month: str,
+        site_code: str,
+    ) -> asyncpg.Record | None:
+        await self.reconcile_store_refreshes(run_month=run_month, site_code=site_code)
         async with self.pool.acquire() as conn:
             return await conn.fetchrow(
                 """
-                SELECT id, run_month, site_code, generation, status, requested_by_sub, error_message,
-                       started_at, heartbeat_at, finished_at, created_at
+                SELECT id, run_month, site_code, generation, status,
+                       requested_by_sub, projection_applied, error_code,
+                       error_message, started_at, heartbeat_at, finished_at, created_at
                 FROM grile_store_refreshes
-                WHERE run_month = $1 AND site_code = $2 AND status IN ('queued', 'running')
-                ORDER BY id DESC LIMIT 1
-                """, run_month, site_code,
+                WHERE run_month = $1 AND site_code = $2
+                  AND status IN ('queued', 'running')
+                ORDER BY id DESC
+                LIMIT 1
+                """,
+                run_month,
+                site_code,
             )
+
+    async def get_store_refresh(self, refresh_id: int) -> asyncpg.Record | None:
+        await self.reconcile_store_refreshes(refresh_id=refresh_id)
+        async with self.pool.acquire() as conn:
+            return await conn.fetchrow(
+                """
+                SELECT id, run_month, site_code, generation, status,
+                       requested_by_sub, projection_applied, error_code,
+                       error_message, started_at, heartbeat_at, finished_at, created_at
+                FROM grile_store_refreshes
+                WHERE id = $1
+                """,
+                refresh_id,
+            )
+
+    async def reconcile_store_refreshes(
+        self,
+        *,
+        refresh_id: int | None = None,
+        run_month: str | None = None,
+        site_code: str | None = None,
+        queued_lease_seconds: int = GRILE_STORE_REFRESH_QUEUED_LEASE_SECONDS,
+        running_lease_seconds: int = GRILE_STORE_REFRESH_RUNNING_LEASE_SECONDS,
+    ) -> list[int]:
+        if queued_lease_seconds <= 0 or running_lease_seconds <= 0:
+            raise ValueError("Grile store refresh leases must be positive")
+        async with self.pool.acquire() as conn:
+            rows = await _reconcile_stale_store_refreshes_on_connection(
+                conn,
+                refresh_id=refresh_id,
+                run_month=run_month,
+                site_code=site_code,
+                queued_lease_seconds=queued_lease_seconds,
+                running_lease_seconds=running_lease_seconds,
+            )
+        return [int(row["id"]) for row in rows]
 
     async def claim_store_refresh(self, refresh_id: int) -> asyncpg.Record | None:
         async with self.pool.acquire() as conn:
             return await conn.fetchrow(
                 """
-                UPDATE grile_store_refreshes SET status = 'running', started_at = now(), heartbeat_at = now()
+                UPDATE grile_store_refreshes
+                SET status = 'running', started_at = now(), heartbeat_at = now(),
+                    projection_applied = NULL, error_code = NULL, error_message = NULL
                 WHERE id = $1 AND status = 'queued'
                 RETURNING id, run_month, site_code, generation, requested_by_sub,
-                          created_at, started_at
-                """, refresh_id,
+                          created_at, started_at, heartbeat_at
+                """,
+                refresh_id,
             )
 
-    async def finish_store_refresh(self, refresh_id: int, *, status: str, error_message: str | None = None) -> None:
+    async def heartbeat_store_refresh(self, refresh_id: int) -> bool:
         async with self.pool.acquire() as conn:
-            await conn.execute(
+            result = await conn.execute(
                 """
-                UPDATE grile_store_refreshes SET status = $2, error_message = $3,
-                    finished_at = now(), heartbeat_at = now()
+                UPDATE grile_store_refreshes
+                SET heartbeat_at = now()
                 WHERE id = $1 AND status = 'running'
-                """, refresh_id, status, error_message,
+                """,
+                refresh_id,
             )
+        return result == "UPDATE 1"
 
-    async def record_store_refresh_observation(self, refresh_id: int, row: dict[str, Any]) -> bool:
+    async def finish_store_refresh(
+        self,
+        refresh_id: int,
+        *,
+        status: str,
+        projection_applied: bool | None = None,
+        error_code: str | None = None,
+        error_message: str | None = None,
+    ) -> bool:
+        if status not in {"completed", "failed", "cancelled"}:
+            raise ValueError("Invalid terminal Grile store refresh status")
+        async with self.pool.acquire() as conn:
+            result = await conn.execute(
+                """
+                UPDATE grile_store_refreshes
+                SET status = $2, projection_applied = $3, error_code = $4,
+                    error_message = $5, finished_at = now(), heartbeat_at = now()
+                WHERE id = $1 AND status = 'running'
+                """,
+                refresh_id,
+                status,
+                projection_applied,
+                error_code,
+                error_message[:500] if error_message is not None else None,
+            )
+        return result == "UPDATE 1"
+
+    async def complete_store_refresh(
+        self,
+        refresh_id: int,
+        row: dict[str, Any],
+        *,
+        status: str,
+        error_code: str | None = None,
+        error_message: str | None = None,
+    ) -> bool:
+        """Persist the observation and terminal operation state atomically."""
+        if status not in {"completed", "failed"}:
+            raise ValueError("Invalid terminal Grile store refresh status")
         async with self.pool.acquire() as conn:
             async with conn.transaction():
                 refresh = await conn.fetchrow(
                     """
-                    SELECT run_month, generation, requested_by_sub FROM grile_store_refreshes
-                    WHERE id = $1 AND status = 'running' FOR UPDATE
-                    """, refresh_id,
+                    SELECT run_month, generation, requested_by_sub
+                    FROM grile_store_refreshes
+                    WHERE id = $1 AND status = 'running'
+                    FOR UPDATE
+                    """,
+                    refresh_id,
                 )
                 if refresh is None:
                     raise RuntimeError("Store refresh is not an active fenced operation")
-                return await _record_observation(conn, run_month=refresh["run_month"], row=row, source="store", source_run_id=None, store_refresh_id=refresh_id, generation=int(refresh["generation"]), checked_by_sub=refresh["requested_by_sub"])
+                projection_applied = await _record_observation(
+                    conn,
+                    run_month=refresh["run_month"],
+                    row=row,
+                    source="store",
+                    source_run_id=None,
+                    store_refresh_id=refresh_id,
+                    generation=int(refresh["generation"]),
+                    checked_by_sub=refresh["requested_by_sub"],
+                )
+                result = await conn.execute(
+                    """
+                    UPDATE grile_store_refreshes
+                    SET status = $2, projection_applied = $3, error_code = $4,
+                        error_message = $5, finished_at = now(), heartbeat_at = now()
+                    WHERE id = $1 AND status = 'running'
+                    """,
+                    refresh_id,
+                    status,
+                    projection_applied,
+                    error_code,
+                    error_message[:500] if error_message is not None else None,
+                )
+                if result != "UPDATE 1":
+                    raise RuntimeError(
+                        "Store refresh lost its fence before terminal publication"
+                    )
+                return projection_applied
+
+    async def record_store_refresh_observation(
+        self,
+        refresh_id: int,
+        row: dict[str, Any],
+    ) -> bool:
+        async with self.pool.acquire() as conn:
+            async with conn.transaction():
+                refresh = await conn.fetchrow(
+                    """
+                    SELECT run_month, generation, requested_by_sub
+                    FROM grile_store_refreshes
+                    WHERE id = $1 AND status = 'running'
+                    FOR UPDATE
+                    """,
+                    refresh_id,
+                )
+                if refresh is None:
+                    raise RuntimeError("Store refresh is not an active fenced operation")
+                return await _record_observation(
+                    conn,
+                    run_month=refresh["run_month"],
+                    row=row,
+                    source="store",
+                    source_run_id=None,
+                    store_refresh_id=refresh_id,
+                    generation=int(refresh["generation"]),
+                    checked_by_sub=refresh["requested_by_sub"],
+                )
 
     async def get_current_status(self, month: str, site_code: str) -> asyncpg.Record | None:
         async with self.pool.acquire() as conn:
@@ -417,22 +585,10 @@ def _status_params(row: dict[str, Any]) -> tuple[Any, ...]:
         row.get("grila_target"), row.get("grila_sales"), row.get("db_target"),
         row.get("db_sales_mtd"), row.get("db_max_sale_date"), row.get("fill_status"),
         row.get("target_status"), row.get("sales_status"), row.get("tolerance"),
+        row.get("completion_algorithm_version", 1), row.get("completion_as_of"),
         row.get("error_code"), row.get("error_message"),
         json.dumps(row.get("raw_summary")) if row.get("raw_summary") is not None else None,
     )
-
-
-async def _allocate_generation(conn: asyncpg.Connection, run_month: str, site_code: str) -> int:
-    return int(await conn.fetchval(
-        """
-        INSERT INTO grile_store_projection_generations (run_month, site_code, next_generation)
-        VALUES ($1, $2, 1)
-        ON CONFLICT (run_month, site_code) DO UPDATE
-        SET next_generation = grile_store_projection_generations.next_generation + 1
-        RETURNING next_generation
-        """, run_month, site_code,
-    ))
-
 
 async def _reconcile_stale_runs_on_connection(
     conn: asyncpg.Connection,
@@ -479,6 +635,56 @@ async def _reconcile_stale_runs_on_connection(
         GRILE_RUN_LEASE_EXPIRED,
     )
 
+async def _reconcile_stale_store_refreshes_on_connection(
+    conn: asyncpg.Connection,
+    *,
+    refresh_id: int | None = None,
+    run_month: str | None = None,
+    site_code: str | None = None,
+    queued_lease_seconds: int,
+    running_lease_seconds: int,
+) -> list[asyncpg.Record]:
+    return await conn.fetch(
+        """
+        WITH candidates AS (
+            SELECT candidate.id
+            FROM grile_store_refreshes AS candidate
+            WHERE candidate.status IN ('queued', 'running')
+              AND ($1::bigint IS NULL OR candidate.id = $1)
+              AND ($2::text IS NULL OR candidate.run_month = $2)
+              AND ($3::text IS NULL OR candidate.site_code = $3)
+              AND (
+                    (
+                        candidate.status = 'queued'
+                        AND COALESCE(candidate.heartbeat_at, candidate.created_at)
+                            < now() - ($4::integer * interval '1 second')
+                    )
+                    OR (
+                        candidate.status = 'running'
+                        AND COALESCE(
+                            candidate.heartbeat_at,
+                            candidate.started_at,
+                            candidate.created_at
+                        ) < now() - ($5::integer * interval '1 second')
+                    )
+              )
+            FOR UPDATE SKIP LOCKED
+        )
+        UPDATE grile_store_refreshes AS operation
+        SET status = 'failed', error_code = $6, error_message = $6,
+            projection_applied = false, finished_at = now(), heartbeat_at = now()
+        FROM candidates
+        WHERE operation.id = candidates.id
+          AND operation.status IN ('queued', 'running')
+        RETURNING operation.id
+        """,
+        refresh_id,
+        run_month,
+        site_code,
+        queued_lease_seconds,
+        running_lease_seconds,
+        GRILE_STORE_REFRESH_LEASE_EXPIRED,
+    )
 
 async def _record_observation(conn: asyncpg.Connection, *, run_month: str, row: dict[str, Any], source: str, source_run_id: int | None, store_refresh_id: int | None, generation: int, checked_by_sub: str | None) -> bool:
     observation = await conn.fetchrow(
@@ -487,15 +693,21 @@ async def _record_observation(conn: asyncpg.Connection, *, run_month: str, row: 
             run_month, site_code, source, source_run_id, store_refresh_id, generation,
             completion_pct, last_edit, grila_target, grila_sales, db_target, db_sales_mtd,
             db_max_sale_date, fill_status, target_status, sales_status, tolerance,
+            completion_algorithm_version, completion_as_of,
             error_code, error_message, raw_summary, content_sha256, checked_by_sub
-        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
+        ) VALUES (
+            $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,
+            $19,$20,$21,$22,$23,$24
+        )
         RETURNING id, checked_at
         """,
         run_month, row["site_code"], source, source_run_id, store_refresh_id, generation,
         row.get("completion_pct"), row.get("last_edit"), row.get("grila_target"), row.get("grila_sales"),
         row.get("db_target"), row.get("db_sales_mtd"), row.get("db_max_sale_date"), row.get("fill_status"),
-        row.get("target_status"), row.get("sales_status"), row.get("tolerance"), row.get("error_code"),
-        row.get("error_message"), json.dumps(row.get("raw_summary")) if row.get("raw_summary") is not None else None,
+        row.get("target_status"), row.get("sales_status"), row.get("tolerance"),
+        row.get("completion_algorithm_version", 1), row.get("completion_as_of"),
+        row.get("error_code"), row.get("error_message"),
+        json.dumps(row.get("raw_summary")) if row.get("raw_summary") is not None else None,
         row.get("content_sha256"), checked_by_sub,
     )
     if observation is None:  # pragma: no cover
@@ -510,71 +722,162 @@ async def _record_observation(conn: asyncpg.Connection, *, run_month: str, row: 
     return await _apply_success_projection(**kwargs)
 
 
-async def _apply_success_projection(*, conn: asyncpg.Connection, run_month: str, row: dict[str, Any], source: str, source_run_id: int | None, generation: int, checked_by_sub: str | None, observation_id: int, checked_at: Any) -> bool:
+async def _apply_success_projection(
+    *,
+    conn: asyncpg.Connection,
+    run_month: str,
+    row: dict[str, Any],
+    source: str,
+    source_run_id: int | None,
+    generation: int,
+    checked_by_sub: str | None,
+    observation_id: int,
+    checked_at: Any,
+) -> bool:
     applied = await conn.fetchval(
         """
         INSERT INTO grile_store_current_status (
             run_month, site_code, source_run_id, source, completion_pct, last_edit,
             grila_target, grila_sales, db_target, db_sales_mtd, db_max_sale_date,
-            fill_status, target_status, sales_status, tolerance, error_code, error_message,
-            raw_summary, content_sha256, checked_by_sub, checked_at, generation,
-            current_observation_id, last_success_observation_id, last_success_checked_at
-        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,NULL,NULL,$16,$17,$18,$19,$20,$21,$22,$19)
+            fill_status, target_status, sales_status, tolerance,
+            completion_algorithm_version, completion_as_of,
+            error_code, error_message, raw_summary, content_sha256,
+            checked_by_sub, checked_at, generation, current_observation_id,
+            last_success_observation_id, last_success_checked_at
+        ) VALUES (
+            $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,
+            NULL,NULL,$18,$19,$20,$21,$22,$23,$23,$21
+        )
         ON CONFLICT (run_month, site_code) DO UPDATE SET
-            source_run_id = EXCLUDED.source_run_id, source = EXCLUDED.source,
-            completion_pct = EXCLUDED.completion_pct, last_edit = EXCLUDED.last_edit,
-            grila_target = EXCLUDED.grila_target, grila_sales = EXCLUDED.grila_sales,
-            db_target = EXCLUDED.db_target, db_sales_mtd = EXCLUDED.db_sales_mtd,
-            db_max_sale_date = EXCLUDED.db_max_sale_date, fill_status = EXCLUDED.fill_status,
-            target_status = EXCLUDED.target_status, sales_status = EXCLUDED.sales_status,
-            tolerance = EXCLUDED.tolerance, error_code = NULL, error_message = NULL,
-            raw_summary = EXCLUDED.raw_summary, content_sha256 = EXCLUDED.content_sha256,
-            checked_by_sub = EXCLUDED.checked_by_sub, checked_at = EXCLUDED.checked_at,
-            generation = EXCLUDED.generation, current_observation_id = EXCLUDED.current_observation_id,
+            source_run_id = EXCLUDED.source_run_id,
+            source = EXCLUDED.source,
+            completion_pct = EXCLUDED.completion_pct,
+            last_edit = EXCLUDED.last_edit,
+            grila_target = EXCLUDED.grila_target,
+            grila_sales = EXCLUDED.grila_sales,
+            db_target = EXCLUDED.db_target,
+            db_sales_mtd = EXCLUDED.db_sales_mtd,
+            db_max_sale_date = EXCLUDED.db_max_sale_date,
+            fill_status = EXCLUDED.fill_status,
+            target_status = EXCLUDED.target_status,
+            sales_status = EXCLUDED.sales_status,
+            tolerance = EXCLUDED.tolerance,
+            completion_algorithm_version = EXCLUDED.completion_algorithm_version,
+            completion_as_of = EXCLUDED.completion_as_of,
+            error_code = NULL,
+            error_message = NULL,
+            raw_summary = EXCLUDED.raw_summary,
+            content_sha256 = EXCLUDED.content_sha256,
+            checked_by_sub = EXCLUDED.checked_by_sub,
+            checked_at = EXCLUDED.checked_at,
+            generation = EXCLUDED.generation,
+            current_observation_id = EXCLUDED.current_observation_id,
             last_success_observation_id = EXCLUDED.last_success_observation_id,
             last_success_checked_at = EXCLUDED.last_success_checked_at
         WHERE EXCLUDED.generation > grile_store_current_status.generation
-           OR (EXCLUDED.generation = grile_store_current_status.generation
-               AND EXCLUDED.checked_at > grile_store_current_status.checked_at)
+           OR (
+                EXCLUDED.generation = grile_store_current_status.generation
+                AND EXCLUDED.checked_at > grile_store_current_status.checked_at
+           )
         RETURNING true
         """,
-        run_month, row["site_code"], source_run_id, source, row.get("completion_pct"), row.get("last_edit"),
-        row.get("grila_target"), row.get("grila_sales"), row.get("db_target"), row.get("db_sales_mtd"),
-        row.get("db_max_sale_date"), row.get("fill_status"), row.get("target_status"), row.get("sales_status"),
-        row.get("tolerance"), json.dumps(row.get("raw_summary")) if row.get("raw_summary") is not None else None,
-        row.get("content_sha256"), checked_by_sub, checked_at, generation, observation_id, observation_id,
+        run_month,
+        row["site_code"],
+        source_run_id,
+        source,
+        row.get("completion_pct"),
+        row.get("last_edit"),
+        row.get("grila_target"),
+        row.get("grila_sales"),
+        row.get("db_target"),
+        row.get("db_sales_mtd"),
+        row.get("db_max_sale_date"),
+        row.get("fill_status"),
+        row.get("target_status"),
+        row.get("sales_status"),
+        row.get("tolerance"),
+        row.get("completion_algorithm_version", 1),
+        row.get("completion_as_of"),
+        json.dumps(row.get("raw_summary")) if row.get("raw_summary") is not None else None,
+        row.get("content_sha256"),
+        checked_by_sub,
+        checked_at,
+        generation,
+        observation_id,
     )
     return applied is True
 
 
-async def _apply_error_projection(*, conn: asyncpg.Connection, run_month: str, row: dict[str, Any], source: str, source_run_id: int | None, generation: int, checked_by_sub: str | None, observation_id: int, checked_at: Any) -> bool:
+async def _apply_error_projection(
+    *,
+    conn: asyncpg.Connection,
+    run_month: str,
+    row: dict[str, Any],
+    source: str,
+    source_run_id: int | None,
+    generation: int,
+    checked_by_sub: str | None,
+    observation_id: int,
+    checked_at: Any,
+) -> bool:
     applied = await conn.fetchval(
         """
         INSERT INTO grile_store_current_status (
             run_month, site_code, source_run_id, source, completion_pct, last_edit,
             grila_target, grila_sales, db_target, db_sales_mtd, db_max_sale_date,
-            fill_status, target_status, sales_status, tolerance, error_code, error_message,
-            raw_summary, content_sha256, checked_by_sub, checked_at, generation,
+            fill_status, target_status, sales_status, tolerance,
+            completion_algorithm_version, completion_as_of,
+            error_code, error_message, raw_summary, content_sha256,
+            checked_by_sub, checked_at, generation,
             last_error_observation_id, last_error_generation, last_error_checked_at,
             last_error_code, last_error_message
-        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$22,$21,$16,$17)
+        ) VALUES (
+            $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,
+            $18,$19,$20,$21,$22,$23,$24,$25,$24,$23,$18,$19
+        )
         ON CONFLICT (run_month, site_code) DO UPDATE SET
             last_error_observation_id = EXCLUDED.last_error_observation_id,
             last_error_generation = EXCLUDED.last_error_generation,
             last_error_checked_at = EXCLUDED.last_error_checked_at,
             last_error_code = EXCLUDED.last_error_code,
             last_error_message = EXCLUDED.last_error_message
-        WHERE EXCLUDED.last_error_generation > grile_store_current_status.last_error_generation
-           OR (EXCLUDED.last_error_generation = grile_store_current_status.last_error_generation
-               AND (grile_store_current_status.last_error_checked_at IS NULL
-                    OR EXCLUDED.last_error_checked_at > grile_store_current_status.last_error_checked_at))
+        WHERE EXCLUDED.last_error_generation >= grile_store_current_status.generation
+          AND (
+                EXCLUDED.last_error_generation > grile_store_current_status.last_error_generation
+                OR (
+                    EXCLUDED.last_error_generation = grile_store_current_status.last_error_generation
+                    AND (
+                        grile_store_current_status.last_error_checked_at IS NULL
+                        OR EXCLUDED.last_error_checked_at > grile_store_current_status.last_error_checked_at
+                    )
+                )
+          )
         RETURNING true
         """,
-        run_month, row["site_code"], source_run_id, source, row.get("completion_pct"), row.get("last_edit"),
-        row.get("grila_target"), row.get("grila_sales"), row.get("db_target"), row.get("db_sales_mtd"),
-        row.get("db_max_sale_date"), row.get("fill_status"), row.get("target_status"), row.get("sales_status"),
-        row.get("tolerance"), row.get("error_code"), row.get("error_message"),
+        run_month,
+        row["site_code"],
+        source_run_id,
+        source,
+        row.get("completion_pct"),
+        row.get("last_edit"),
+        row.get("grila_target"),
+        row.get("grila_sales"),
+        row.get("db_target"),
+        row.get("db_sales_mtd"),
+        row.get("db_max_sale_date"),
+        row.get("fill_status"),
+        row.get("target_status"),
+        row.get("sales_status"),
+        row.get("tolerance"),
+        row.get("completion_algorithm_version", 1),
+        row.get("completion_as_of"),
+        row.get("error_code"),
+        row.get("error_message"),
         json.dumps(row.get("raw_summary")) if row.get("raw_summary") is not None else None,
-        row.get("content_sha256"), checked_by_sub, checked_at, generation, observation_id,
+        row.get("content_sha256"),
+        checked_by_sub,
+        checked_at,
+        generation,
+        observation_id,
     )
     return applied is True

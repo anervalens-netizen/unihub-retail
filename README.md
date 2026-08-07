@@ -234,7 +234,7 @@ node scripts/verify_vendored_npm_packages.mjs
 backend/scripts/run_tests_isolated.sh
 mypy backend/ --ignore-missing-imports --explicit-package-bases
 npm run typecheck
-npm run typecheck:strict
+npm run complexity:ts
 npm run lint
 npm run test
 npm audit --omit=dev --audit-level=high
@@ -248,22 +248,20 @@ izolare a runnerului PR.
 
 ## Deploy
 
-Fluxul implicit este autorizat de cererea explicită din conversația
-operațională: implementare, verificări locale proporționale, commit direct pe
-`main`, push fără a aștepta CI, deploy și verificare live. Push-ul direct este
-acceptat pentru schimbări obișnuite; operatorul nu trebuie să repete aprobarea
-în terminal. Dacă agentul deschide un PR, îl duce fără o nouă confirmare prin
-CI, merge, deploy și verificare.
+Orice schimbare runtime urmează calea formală exact-SHA: branch/PR, CI verde,
+merge, CI manual pe noul SHA `main`, artefact imutabil, digest verificat, deploy
+workflow și probe. Serverul nu construiește din checkout și `main` nu este
+folosit drept branch de dezvoltare.
 
-Pentru release-uri formale și schimbări cu risc mare rămâne disponibilă calea cu
-PR, artefact CI imutabil, backup, migrații controlate, health local/public și
-rollback compatibil. Alegerea căii este proporțională cu riscul. Decizia
-canonică este [`ADR-005`](docs/adr/005-chat-authorized-delivery.md); mecanismul
-formal este documentat în `ops/README.md` și
-`docs/engineering/pr-runner-isolation.md`.
+Cererea explicită din conversația operațională autorizează agentul să execute
+autonom întregul flux, inclusiv remedierea CI și deployul, dar nu autorizează
+sărirea porților. Calea fără artefact rămâne numai pentru documentație
+non-runtime; break-glass este limitat prin ADR-006.
 
 Un run manual `CI` de pe `main` livrează artefactul numit după `head_sha`; acel
-SHA și digestul publicat sunt singurele valori admise pentru approval și deploy.
+SHA și digestul publicat sunt singurele valori admise pentru deploy. Decizia
+canonică este [`ADR-006`](docs/adr/006-verified-runtime-delivery.md), iar
+mecanismul este documentat în `ops/README.md`.
 
 ## Documentație specializată
 

@@ -1,9 +1,12 @@
 name: CI
 
 on:
-  # Local verification is the normal gate. Dispatch once on main for the
-  # immutable release artifact, using the isolated repo-scoped Dell runner.
+  # Internal pull requests receive exact-SHA verification. Dispatch on main
+  # remains the immutable release-artifact gate.
   workflow_dispatch:
+  pull_request:
+    branches:
+      - main
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -15,7 +18,11 @@ permissions:
 jobs:
   runner-isolation:
     name: runner-isolation
-    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    if: >-
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
+      ||
+      (github.event_name == 'pull_request'
+       && github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: [self-hosted, Linux, X64, dell-compute, unihub-build, unihub-retail-build]
     timeout-minutes: 5
     steps:
@@ -87,10 +94,17 @@ jobs:
       - name: Tracked secret regression scan
         working-directory: .
         run: |
+          # The immutable migration manifest consists exclusively of SHA-256
+          # checksums, while the two Prometheus files contain a deterministic
+          # runtime-directory literal. Those are validated by dedicated gates
+          # below and are excluded only from the entropy heuristic.
           mapfile -d '' tracked_files < <(
             git ls-files -z -- . \
               ':(exclude).secrets.baseline' \
-              ':(exclude).bandit-baseline.json'
+              ':(exclude).bandit-baseline.json' \
+              ':(exclude)backend/db/migrations/manifest.json' \
+              ':(exclude)backend/tests/test_prometheus_topology.py' \
+              ':(exclude)ops/systemd/unihub-backend.service'
           )
           backend/venv/bin/detect-secrets-hook \
             --baseline .secrets.baseline \
@@ -124,6 +138,10 @@ jobs:
         working-directory: .
         run: PYTHONPATH=backend backend/venv/bin/python scripts/generate_retail_contract.py --check
 
+      - name: Python complexity ratchet
+        working-directory: .
+        run: backend/venv/bin/python scripts/check_complexity_ratchet.py
+
       - name: Operational configuration validation
         working-directory: .
         env:
@@ -137,7 +155,9 @@ jobs:
             "$systemd_root/usr/lib/systemd" \
             "$systemd_root/etc/systemd/system" \
             "$systemd_root/usr/bin" \
-            "$systemd_root/opt/Mobiup/unihub-retail/backend/venv/bin"
+            "$systemd_root/opt/Mobiup/unihub-retail/backend/venv/bin" \
+            "$systemd_root/opt/Mobiup/ops/prometheus" \
+            "$prom_root/scrape.d"
           cp -a /usr/lib/systemd/system "$systemd_root/usr/lib/systemd/"
           cp \
             "$GITHUB_WORKSPACE/ops/systemd/unihub-backend.service" \
@@ -153,7 +173,8 @@ jobs:
             "$systemd_root/opt/Mobiup/unihub-retail/.env" \
             "$systemd_root/opt/Mobiup/unihub-retail/.env.worker" \
             "$systemd_root/opt/Mobiup/unihub-retail/.env.import-worker" \
-            "$systemd_root/opt/Mobiup/unihub-retail/.env.migrations"
+            "$systemd_root/opt/Mobiup/unihub-retail/.env.migrations" \
+            "$systemd_root/opt/Mobiup/ops/prometheus/unihub-retail-network.env"
           cp /usr/bin/true "$systemd_root/usr/bin/true"
           cp /usr/bin/timeout "$systemd_root/usr/bin/timeout"
           cp /usr/bin/true \
@@ -179,6 +200,23 @@ jobs:
             --strip-components=1
           "$prom_root/promtool" check rules \
             "$GITHUB_WORKSPACE/ops/observability/retail-slo-rules.yml"
+          sed 's/__PROMETHEUS_DOCKER_GATEWAY__/172.23.0.1/g' \
+            "$GITHUB_WORKSPACE/ops/observability/retail-process-scrape.yml" \
+            > "$prom_root/scrape.d/unihub-retail.yml"
+          printf '%s\n' \
+            'global:' \
+            '  scrape_interval: 15s' \
+            'scrape_config_files:' \
+            "  - $prom_root/scrape.d/*.yml" \
+            > "$prom_root/prometheus.yml"
+          "$prom_root/promtool" check config "$prom_root/prometheus.yml"
+          test "$(grep -Fc '172.23.0.1:' "$prom_root/scrape.d/unihub-retail.yml")" -eq 3
+          ! grep -Eq '__PROMETHEUS_DOCKER_GATEWAY__|0\.0\.0\.0|127\.0\.0\.1' \
+            "$prom_root/scrape.d/unihub-retail.yml"
+
+      - name: Exact-SHA deploy and rollback sandbox
+        working-directory: .
+        run: ops/test-deploy-retail-artifact.sh
 
       - name: Upload mypy diagnostics
         if: failure()
@@ -264,6 +302,9 @@ jobs:
 
       - name: Strict frontend typecheck
         run: npm run typecheck:strict
+
+      - name: TypeScript complexity ratchet
+        run: node scripts/check_ts_function_complexity.cjs
 
       - name: Frontend lint
         run: npm run lint

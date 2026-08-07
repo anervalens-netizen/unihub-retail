@@ -22,7 +22,7 @@ from typing import Any, Callable
 
 import asyncpg
 
-from services.grile import _retry_sync
+from grile.adapters.retry import retry_google_call
 from services.grile_constants import (
     GOOGLE_API_RETRY_ATTEMPTS,
     GOOGLE_API_RETRY_BASE_DELAY_SECONDS,
@@ -633,7 +633,7 @@ def _build_google_fetcher(concurrency: int) -> FetchAgentRanges:
                 time.sleep(min_interval - elapsed)
             last_call["ts"] = time.monotonic()
         sheets_svc = _service()
-        return _retry_sync(
+        return retry_google_call(
             lambda: sheets_svc.spreadsheets().values().batchGet(
                 spreadsheetId=sheet_id,
                 ranges=(

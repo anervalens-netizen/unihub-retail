@@ -78,24 +78,24 @@ async def test_hr_repository_uses_bounded_stable_pagination() -> None:
 
 def test_listing_inputs_are_typed_and_bounded() -> None:
     assert TaskCreate(title="  Follow up  ", deadline="2026-08-05").title == "Follow up"
-    assert LeaveRequestCreate(
-        agent_name=" Ana ",
-        start_date="2026-08-05",
-        end_date="2026-08-06",
-        leave_type=" odihna ",
-    ).agent_name == "Ana"
+    assert LeaveRequestCreate.model_validate({
+        "agent_name": " Ana ",
+        "start_date": "2026-08-05",
+        "end_date": "2026-08-06",
+        "leave_type": " odihna ",
+    }).agent_name == "Ana"
 
     with pytest.raises(ValidationError):
         TaskCreate(title="x" * 201)
     with pytest.raises(ValidationError):
         TaskCreate(title="x", deadline="2026-99-99")
     with pytest.raises(ValidationError):
-        LeaveRequestCreate(
-            agent_name="Ana",
-            start_date="2026-08-05",
-            end_date="not-a-date",
-            leave_type="odihna",
-        )
+        LeaveRequestCreate.model_validate({
+            "agent_name": "Ana",
+            "start_date": "2026-08-05",
+            "end_date": "not-a-date",
+            "leave_type": "odihna",
+        })
 
 
 @pytest.mark.asyncio

@@ -14,10 +14,14 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import Any
 
-from business_clock import business_now
+from grile.domain.completion import (
+    COMPLETION_ALGORITHM_VERSION,
+    coerce_business_date,
+    completed_days_for_month,
+)
 
 # Scope-uri minime, read-only (vezi docs/grile-integration-plan.md)
 SCOPES = [
@@ -188,20 +192,24 @@ class GrilaReading:
     completion_pct: float | None
     missing_days: list[int]
     days_elapsed: int
+    completion_algorithm_version: int
+    completion_as_of: date
 
 
 def analyze_grila(
     value_ranges: list[dict[str, Any]],
     *,
-    as_of: datetime | None = None,
+    run_month: str,
+    as_of: date | datetime | None = None,
+    completion_cutoff: date | None = None,
     template_version: str = "v2",
 ) -> GrilaReading:
     """Extrage target/realizat (K5/L5) + % completare + zilele lipsa dintr-un batchGet.
 
     Model completare ("acoperire zi", portat din monitor_grile.py): o zi e
     acoperita daca P[zi] sau U[zi] are valoare, sau ziua apare in sectiunea
-    Suplimentar (D32:D46). % = zile acoperite / zilele complete din luna curenta.
-    Ziua curenta nu se cere, pentru ca grilele se completeaza abia seara dupa program.
+    Suplimentar. Fereastra este derivata din luna ceruta: lunile trecute folosesc
+    toate zilele, luna curenta se opreste la ieri, iar lunile viitoare au zero zile.
     """
     if template_version == "v3":
         validate_grila_v3_response(value_ranges)
@@ -219,8 +227,12 @@ def analyze_grila(
             if d:
                 days_from_supl.add(d)
 
-    today = as_of or business_now()
-    days_elapsed = max(today.day - 1, 0)
+    completion_as_of = coerce_business_date(as_of)
+    days_elapsed = completed_days_for_month(
+        run_month,
+        as_of=completion_as_of,
+        explicit_cutoff=completion_cutoff,
+    )
     covered = 0
     missing_days: list[int] = []
     for d in range(1, days_elapsed + 1):
@@ -241,6 +253,8 @@ def analyze_grila(
         completion_pct=completion_pct,
         missing_days=missing_days,
         days_elapsed=days_elapsed,
+        completion_algorithm_version=COMPLETION_ALGORITHM_VERSION,
+        completion_as_of=completion_as_of,
     )
 
 

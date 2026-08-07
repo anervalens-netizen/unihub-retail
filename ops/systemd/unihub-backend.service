@@ -11,11 +11,15 @@ Type=simple
 User=andrei
 WorkingDirectory=/opt/Mobiup/unihub-retail/backend
 EnvironmentFile=/opt/Mobiup/unihub-retail/.env
+EnvironmentFile=/opt/Mobiup/ops/prometheus/unihub-retail-network.env
 Environment="UNIHUB_DB_PROCESS_AUTHORITY=web"
 Environment="SESSION_VALKEY_PORT=6380"
 Environment="SESSION_VALKEY_DATABASE=0"
 Environment="RATE_LIMIT_VALKEY_PORT=6380"
 Environment="RATE_LIMIT_VALKEY_DATABASE=1"
+Environment="PROMETHEUS_MULTIPROC_DIR=/run/unihub-retail-prometheus"
+RuntimeDirectory=unihub-retail-prometheus
+RuntimeDirectoryMode=0700
 ExecStartPre=/usr/bin/timeout 90 /usr/bin/bash -c 'until (: >/dev/tcp/127.0.0.1/6380) 2>/dev/null; do sleep 1; done'
 ExecStart=/opt/Mobiup/unihub-retail/backend/venv/bin/python3 -m uvicorn main:app --host 0.0.0.0 --port 9898 --workers 2 --no-proxy-headers
 Restart=always

@@ -2,13 +2,14 @@
 
 This directory plus repository-root `unihub-worker.service` are the versioned
 source of truth for the Retail web, operations worker, dedicated import worker
-and one-shot migration services. Production copies live under
-`/etc/systemd/system`.
+and one-shot migration services. The exact-SHA deploy stores each reviewed set
+under `/var/lib/unihub-retail-deploy/runtime-releases/<SHA>/systemd/` and
+atomically switches the four links under `/etc/systemd/system`.
 
-Install a reviewed unit with `sudo install -m 0644`, run
-`sudo systemctl daemon-reload`, then restart only the affected service. The
-migration unit remains one-shot and must never be enabled as a long-running
-daemon.
+Do not copy these units independently during a release. The artifact deploy
+backs up the active links, switches the exact-SHA set, runs `daemon-reload`,
+and restores the prior set on a compatible rollback. The migration unit
+remains one-shot and must never be enabled as a long-running daemon.
 
 Before installation:
 
@@ -23,6 +24,21 @@ systemd-analyze verify \
 After a backend restart, `/livez` proves that the process responds and
 `/readyz` proves that PostgreSQL and the BFF session backend are usable.
 `/health` remains a compatibility alias for `/readyz`.
+
+## Prometheus bridge boundary
+
+Prometheus remains on its Docker bridge. Before stopping Retail, the deploy
+detects and validates that bridge's single private IPv4 gateway/subnet and
+requires the shared read-only mount `/opt/Mobiup/ops/prometheus/scrape.d` ->
+`/etc/prometheus/scrape.d`. It writes the non-secret, versioned
+`/opt/Mobiup/ops/prometheus/unihub-retail-network.env`; both workers bind only
+to the detected gateway, never loopback or `0.0.0.0`.
+
+The web `/metrics` route trusts only the direct socket peer and returns 200
+solely inside the detected Prometheus subnet; forwarded headers are ignored
+and every other peer receives 404. The exact-SHA fragment supplies the web,
+operations and import targets on ports 9898, 9901 and 9902. `promtool`, HUP
+reload and all three targets UP are deployment gates.
 
 ## P0 lifecycle și evidence
 

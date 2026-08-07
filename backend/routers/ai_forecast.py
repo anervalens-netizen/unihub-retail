@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from db.connection import get_pool
 from repositories.ai_forecast import AiForecastRepository
+from schemas.common import MonthStr
 from schemas.ai_forecast import AiForecastResponse, AiForecastRollingResponse
 from services.ai_forecast import AiForecastService
 
@@ -17,7 +18,7 @@ async def get_ai_forecast_service() -> AiForecastService:
 
 @router.get("/current", response_model=AiForecastResponse)
 async def get_current_ai_forecast(
-    month: str = Query(...),
+    month: MonthStr = Query(...),
     metric: str = Query("sales_value", pattern="^(sales_value|units)$"),
     firma: str | None = None,
     regional: str | None = None,
@@ -40,7 +41,7 @@ async def get_current_ai_forecast(
 
 @router.get("/rolling-12", response_model=AiForecastRollingResponse)
 async def get_rolling_12_ai_forecast(
-    month: str = Query(...),
+    month: MonthStr = Query(...),
     metric: str = Query("sales_value", pattern="^(sales_value|units)$"),
     firma: str | None = None,
     regional: str | None = None,

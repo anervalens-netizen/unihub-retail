@@ -180,12 +180,14 @@ async def test_operations_worker_does_not_reconcile_imports(
     orphan_sweep = AsyncMock()
     monkeypatch.setattr(services.export_operations, "sweep_orphan_export_artifacts", orphan_sweep)
     run_reconcile = AsyncMock(return_value=[192])
+    refresh_reconcile = AsyncMock(return_value=[193])
     restart_reconcile = AsyncMock(return_value=[191])
     monkeypatch.setattr(
         repositories.grile,
         "GrileRepository",
         lambda received_pool: SimpleNamespace(
             reconcile_stale_runs=run_reconcile,
+            reconcile_store_refreshes=refresh_reconcile,
             reconcile_interrupted_running_runs=restart_reconcile,
         )
         if received_pool is pool
@@ -202,6 +204,7 @@ async def test_operations_worker_does_not_reconcile_imports(
     export_cleanup.assert_awaited_once()
     orphan_sweep.assert_awaited_once()
     run_reconcile.assert_awaited_once_with()
+    refresh_reconcile.assert_awaited_once_with()
     restart_reconcile.assert_awaited_once_with()
     assert ctx["db_pool"] is pool
     ctx["grile_monthly_reconcile_task"].cancel()

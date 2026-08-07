@@ -1,15 +1,29 @@
 """Fixed-cardinality Prometheus metrics for queued Grile store refreshes."""
 from __future__ import annotations
 
+import asyncio
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Coroutine, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
+from functools import wraps
+from typing import Any, ParamSpec, TypeVar
 
-from prometheus_client import Histogram
+from prometheus_client import Counter, Histogram
 
 
 GRILE_STORE_REFRESH_PHASES = frozenset({"queue_wait", "provider", "db", "total"})
+
+GRILE_STORE_REFRESH_OUTCOMES = frozenset(
+    {"completed", "failed", "cancelled", "not_claimed", "worker_failed"}
+)
+
+GRILE_STORE_REFRESH_OUTCOMES_TOTAL = Counter(
+    "grile_store_refresh_outcomes_total",
+    "Terminal outcomes for persisted per-store Grile refresh operations.",
+    ("outcome",),
+)
+
 
 GRILE_STORE_REFRESH_PHASE_SECONDS = Histogram(
     "grile_store_refresh_phase_seconds",
@@ -31,6 +45,34 @@ GRILE_STORE_REFRESH_PHASE_SECONDS = Histogram(
         60.0,
     ),
 )
+
+
+def observe_grile_store_refresh_outcome(outcome: str) -> None:
+    normalized = outcome if outcome in GRILE_STORE_REFRESH_OUTCOMES else "not_claimed"
+    GRILE_STORE_REFRESH_OUTCOMES_TOTAL.labels(normalized).inc()
+
+
+P = ParamSpec("P")
+R = TypeVar("R", bound=dict[str, Any])
+
+
+def observe_grile_store_refresh_operation(
+    function: Callable[P, Coroutine[Any, Any, R]],
+) -> Callable[P, Coroutine[Any, Any, R]]:
+    @wraps(function)
+    async def wrapped(*args: P.args, **kwargs: P.kwargs) -> R:
+        try:
+            result = await function(*args, **kwargs)
+        except asyncio.CancelledError:
+            observe_grile_store_refresh_outcome("cancelled")
+            raise
+        except Exception:
+            observe_grile_store_refresh_outcome("worker_failed")
+            raise
+        observe_grile_store_refresh_outcome(str(result.get("status") or "not_claimed"))
+        return result
+
+    return wrapped
 
 
 def observe_grile_store_refresh_phase(phase: str, seconds: float) -> None:

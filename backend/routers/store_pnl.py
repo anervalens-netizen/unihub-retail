@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import re
 from datetime import date
+from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, ConfigDict, Field
@@ -12,19 +12,19 @@ from permissions import can_access_management, require_privileged_access
 from privileged_access import STORE_PNL_ACCESS_GROUPS_ENV, has_configured_group
 from repositories.store_pnl import StorePnlRepository
 from services.store_pnl import StorePnlService
+from schemas.common import MonthStr
 
 router = APIRouter(prefix="/api/store-pnl", tags=["store-pnl"])
-MONTH_PATTERN = re.compile(r"^\d{4}-(0[1-9]|1[0-2])$")
 
 
 class PnlMetricsResponse(BaseModel):
-    revenue: float
-    cogs: float
-    gross_margin: float
-    operating_costs: float
-    ebitda: float
-    depreciation: float
-    ebit: float
+    revenue: Decimal
+    cogs: Decimal
+    gross_margin: Decimal
+    operating_costs: Decimal
+    ebitda: Decimal
+    depreciation: Decimal
+    ebit: Decimal
 
 
 class PnlMonthResponse(BaseModel):
@@ -66,13 +66,13 @@ class PnlAnnualItemResponse(BaseModel):
     store_count: int
     month_count: int
     is_estimated: bool
-    revenue: float
-    cogs: float
-    gross_margin: float
-    operating_costs: float
-    ebitda: float
-    depreciation: float
-    ebit: float
+    revenue: Decimal
+    cogs: Decimal
+    gross_margin: Decimal
+    operating_costs: Decimal
+    ebitda: Decimal
+    depreciation: Decimal
+    ebit: Decimal
 
 
 class PnlAnnualResponse(BaseModel):
@@ -84,13 +84,13 @@ class PnlMonthlyItemResponse(BaseModel):
 
     month: str
     is_estimated: bool
-    revenue: float
-    cogs: float
-    gross_margin: float
-    operating_costs: float
-    ebitda: float
-    depreciation: float
-    ebit: float
+    revenue: Decimal
+    cogs: Decimal
+    gross_margin: Decimal
+    operating_costs: Decimal
+    ebitda: Decimal
+    depreciation: Decimal
+    ebit: Decimal
 
 
 class PnlStoreResponse(BaseModel):
@@ -102,22 +102,22 @@ class PnlStoreResponse(BaseModel):
     location: str
     regional: str | None = None
     has_estimates: bool
-    revenue: float
-    cogs: float
-    gross_margin: float
-    operating_costs: float
-    ebitda: float
-    depreciation: float
-    ebit: float
+    revenue: Decimal
+    cogs: Decimal
+    gross_margin: Decimal
+    operating_costs: Decimal
+    ebitda: Decimal
+    depreciation: Decimal
+    ebit: Decimal
 
 
 class PnlReconciliationResponse(BaseModel):
     month: str
-    pnl_revenue: float
-    retail_sales_gross: float
-    retail_sales_net: float
-    difference_to_net: float
-    pnl_to_net_sales_pct: float | None = None
+    pnl_revenue: Decimal
+    retail_sales_gross: Decimal
+    retail_sales_net: Decimal
+    difference_to_net: Decimal
+    pnl_to_net_sales_pct: Decimal | None = None
 
 
 class PnlOverviewResponse(BaseModel):
@@ -131,7 +131,7 @@ class PnlOverviewResponse(BaseModel):
     regional: str | None = None
     summary: PnlMetricsResponse
     monthly: list[PnlMonthlyItemResponse] = Field(default_factory=list)
-    categories: dict[str, float] = Field(default_factory=dict)
+    categories: dict[str, Decimal] = Field(default_factory=dict)
     stores: list[PnlStoreResponse] = Field(default_factory=list)
     reconciliation: list[PnlReconciliationResponse] = Field(default_factory=list)
 
@@ -157,9 +157,7 @@ def require_store_pnl_owner(
     )
 
 
-def parse_month(value: str) -> date:
-    if not MONTH_PATTERN.match(value):
-        raise HTTPException(status_code=422, detail="Luna trebuie sa fie in format YYYY-MM.")
+def parse_month(value: MonthStr) -> date:
     year, month = (int(part) for part in value.split("-"))
     return date(year, month, 1)
 
@@ -224,8 +222,8 @@ async def annual(
 
 @router.get("/overview", response_model=PnlOverviewResponse)
 async def overview(
-    start_month: str = Query(...),
-    end_month: str = Query(...),
+    start_month: MonthStr = Query(...),
+    end_month: MonthStr = Query(...),
     company: str | None = Query(default=None),
     site_code: str | None = Query(default=None, max_length=100),
     site_company: str | None = Query(default=None),

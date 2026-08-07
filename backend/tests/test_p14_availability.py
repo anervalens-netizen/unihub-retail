@@ -19,7 +19,7 @@ from business_clock import (
     SystemBusinessClock,
     business_now,
 )
-from config import ConfigError, load_runtime_config
+from config import ConfigError, grile_provider_stale_after_seconds, load_runtime_config
 
 
 def test_runtime_config_is_typed_for_web_worker_and_import(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -389,3 +389,15 @@ async def test_queue_down_fails_monthly_reservation_without_hanging(
                 "DELETE FROM grile_monthly_operations WHERE closing_month = $1",
                 month,
             )
+
+
+def test_grile_provider_stale_threshold_is_typed_and_bounded(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("GRILE_PROVIDER_STALE_AFTER_SECONDS", "7200")
+    assert grile_provider_stale_after_seconds() == 7200
+
+    for invalid in ("299", str(7 * 24 * 60 * 60 + 1), "invalid"):
+        monkeypatch.setenv("GRILE_PROVIDER_STALE_AFTER_SECONDS", invalid)
+        with pytest.raises(ConfigError, match="GRILE_PROVIDER_STALE_AFTER_SECONDS"):
+            load_runtime_config("web")

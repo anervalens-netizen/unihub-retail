@@ -80,8 +80,14 @@ def test_overview_reprojects_historical_run_to_current_active_grid_scope(monkeyp
             "sales_status": "OK",
             "error_code": None,
             "error_message": None,
-                "raw_summary": None,
-                "checked_at": None,
+            "raw_summary": None,
+            "checked_at": datetime(2026, 7, 31, tzinfo=timezone.utc),
+            "completion_algorithm_version": 2,
+            "completion_as_of": date(2026, 8, 1),
+            "last_success_checked_at": datetime(2026, 7, 31, tzinfo=timezone.utc),
+            "last_error_checked_at": None,
+            "last_error_code": None,
+            "last_error_message": None,
         }
 
     class Repository:
@@ -113,6 +119,9 @@ def test_overview_reprojects_historical_run_to_current_active_grid_scope(monkeyp
         async def get_sheet_map(self, _month: str):
             return {"ACTIVE_OK": "sheet-a", "ACTIVE_PROBLEM": "sheet-b"}
 
+        async def get_expected_by_site(self, _month: str):
+            return {}
+
         async def get_current_statuses(self, _month: str):
             return [
                 status("ACTIVE_OK", ok=True),
@@ -125,12 +134,24 @@ def test_overview_reprojects_historical_run_to_current_active_grid_scope(monkeyp
     result = asyncio.run(grile.get_overview(object(), "2026-07"))
 
     assert result["total_sheets"] == 2
-    assert result["run"]["progress_current"] == 2
-    assert result["run"]["progress_total"] == 2
+    # Full-run counters remain immutable evidence for that run; the current
+    # active-sheet projection is exposed separately in summary.
+    assert result["run"]["progress_current"] == 3
+    assert result["run"]["progress_total"] == 3
     assert result["run"]["ok_count"] == 1
-    assert result["run"]["problem_count"] == 1
+    assert result["run"]["problem_count"] == 2
     assert result["run"]["error_count"] == 0
     assert result["run"]["active"] is False
+    assert result["summary"] == {
+        "business_ok": 1,
+        "business_problems": 1,
+        "business_unknown": 0,
+        "provider_fresh": 2,
+        "provider_errors": 0,
+        "provider_stale": 0,
+        "provider_unknown": 0,
+        "legacy_completion_windows": 0,
+    }
     visible = {
         store["site_code"]
         for manager in result["managers"]
@@ -151,7 +172,6 @@ def test_store_refresh_worker_persists_through_fenced_operation(monkeypatch) -> 
     ]
     persisted: list[dict] = []
     finished: list[dict] = []
-    closed: list[object] = []
     phases: list[tuple[str, float | None]] = []
 
     class Timings:
@@ -191,21 +211,25 @@ def test_store_refresh_worker_persists_through_fenced_operation(monkeypatch) -> 
         async def get_expected_by_site(self, _month: str):
             return {"SITE01": {"db_target": 100, "db_sales_mtd": 50}}
 
-        async def record_store_refresh_observation(self, refresh_id: int, row: dict):
+        async def complete_store_refresh(self, refresh_id: int, row: dict, **kwargs):
             assert refresh_id == 19
             persisted.append(row)
+            finished.append({"refresh_id": refresh_id, **kwargs})
+            return True
+
+        async def heartbeat_store_refresh(self, _refresh_id: int) -> bool:
             return True
 
         async def finish_store_refresh(self, refresh_id: int, **kwargs):
             finished.append({"refresh_id": refresh_id, **kwargs})
+            return True
+
+    async def fetch_snapshot(**_kwargs):
+        return grile.GrileGoogleSnapshot(value_ranges=values, modified_time=None)
 
     monkeypatch.setattr(grile, "GrileStoreRefreshTimings", Timings)
     monkeypatch.setattr(grile, "GrileRepository", Repository)
-    monkeypatch.setattr(grile, "get_credentials", lambda: object())
-    monkeypatch.setattr(grile, "build_services", lambda: (object(), object()))
-    monkeypatch.setattr(grile, "close_services", lambda *services: closed.extend(services))
-    monkeypatch.setattr(grile, "fetch_grila", lambda *_args: values)
-    monkeypatch.setattr(grile, "fetch_mod_time", lambda *_args: None)
+    monkeypatch.setattr(grile, "fetch_grile_snapshot", fetch_snapshot)
 
     result = asyncio.run(grile.run_grile_store_refresh(object(), refresh_id=19))
 
@@ -214,11 +238,16 @@ def test_store_refresh_worker_persists_through_fenced_operation(monkeypatch) -> 
         "site_code": "SITE01",
         "status": "completed",
         "projection_applied": True,
+        "error_code": None,
     }
     assert len(persisted) == 1
     assert persisted[0]["content_sha256"] == grile._content_sha256(values)
-    assert finished == [{"refresh_id": 19, "status": "completed", "error_message": None}]
-    assert len(closed) == 2
+    assert finished == [{
+        "refresh_id": 19,
+        "status": "completed",
+        "error_code": None,
+        "error_message": None,
+    }]
     assert [phase for phase, _seconds in phases] == [
         "db", "queue_wait", "db", "provider", "db", "finish",
     ]
@@ -267,19 +296,11 @@ def test_claimed_grile_run_completes_and_persistence_failure_is_drained(monkeypa
         {"values": []},
         {"values": []},
     ]
-    closed: list[object] = []
-    released = 0
 
-    def release_transient_memory() -> None:
-        nonlocal released
-        released += 1
+    async def fetch_snapshot(**_kwargs):
+        return grile.GrileGoogleSnapshot(value_ranges=values, modified_time=None)
 
-    monkeypatch.setattr(grile, "get_credentials", lambda: object())
-    monkeypatch.setattr(grile, "build_services", lambda: (object(), object()))
-    monkeypatch.setattr(grile, "close_services", lambda *services: closed.extend(services))
-    monkeypatch.setattr(grile, "_release_grile_transient_memory", release_transient_memory)
-    monkeypatch.setattr(grile, "fetch_grila", lambda *_args: values)
-    monkeypatch.setattr(grile, "fetch_mod_time", lambda *_args: None)
+    monkeypatch.setattr(grile, "fetch_grile_snapshot", fetch_snapshot)
 
     async def scenario() -> None:
         class Repository:
@@ -317,6 +338,7 @@ def test_claimed_grile_run_completes_and_persistence_failure_is_drained(monkeypa
         assert await grile._run_claimed_grile_check(
             cast(GrileRepository, healthy),
             run_id=31,
+            run_month="2026-07",
             sheets=sheets,
             expected=expected,
             generations={"S1": 1, "S2": 1},
@@ -332,6 +354,7 @@ def test_claimed_grile_run_completes_and_persistence_failure_is_drained(monkeypa
             await grile._run_claimed_grile_check(
                 cast(GrileRepository, failing),
                 run_id=32,
+                run_month="2026-07",
                 sheets=sheets,
                 expected=expected,
                 generations={"S1": 1, "S2": 1},
@@ -348,6 +371,77 @@ def test_claimed_grile_run_completes_and_persistence_failure_is_drained(monkeypa
         assert failing.finalized == []
 
     asyncio.run(scenario())
-    assert len(closed) >= 6
-    assert len(closed) % 2 == 0
-    assert released >= 3
+
+
+def test_overview_keeps_last_good_business_values_and_surfaces_new_provider_error(
+    monkeypatch,
+) -> None:
+    success_at = datetime(2026, 8, 7, 7, tzinfo=timezone.utc)
+    error_at = datetime(2026, 8, 7, 8, tzinfo=timezone.utc)
+
+    class Repository:
+        def __init__(self, _pool) -> None:
+            pass
+
+        async def reconcile_stale_runs(self, *, run_month: str):
+            assert run_month == "2026-08"
+            return []
+
+        async def count_active_sheets(self, _month: str) -> int:
+            return 1
+
+        async def get_latest_run(self, _month: str):
+            return None
+
+        async def get_hierarchy(self):
+            return {
+                "SITE01": {
+                    "locatie": "Magazin",
+                    "firma": "Mobiup",
+                    "regional": "Manager",
+                    "asm": "ASM",
+                    "team_leader_name": None,
+                }
+            }
+
+        async def get_sheet_map(self, _month: str):
+            return {"SITE01": "sheet-1"}
+
+        async def get_expected_by_site(self, _month: str):
+            return {"SITE01": {"db_target": 100, "db_sales_mtd": 50}}
+
+        async def get_current_statuses(self, _month: str):
+            return [
+                {
+                    "site_code": "SITE01",
+                    "completion_pct": 100,
+                    "last_edit": success_at,
+                    "checked_at": success_at,
+                    "grila_target": 100,
+                    "grila_sales": 50,
+                    "db_target": 100,
+                    "db_sales_mtd": 50,
+                    "db_max_sale_date": date(2026, 8, 6),
+                    "fill_status": "COMPLETAT",
+                    "target_status": "OK",
+                    "sales_status": "OK",
+                    "raw_summary": {"missing_days": [], "days_elapsed": 6},
+                    "completion_algorithm_version": 2,
+                    "completion_as_of": date(2026, 8, 7),
+                    "last_success_checked_at": success_at,
+                    "last_error_checked_at": error_at,
+                    "last_error_code": "provider_timeout",
+                    "last_error_message": "Google timeout",
+                }
+            ]
+
+    monkeypatch.setattr(grile, "GrileRepository", Repository)
+
+    result = asyncio.run(grile.get_overview(object(), "2026-08"))
+    store = result["managers"][0]["team_leaders"][0]["firms"][0]["stores"][0]
+    assert store["target_status"] == "OK"
+    assert store["sales_status"] == "OK"
+    assert store["provider_status"]["state"] == "error"
+    assert store["provider_status"]["last_error_code"] == "provider_timeout"
+    assert result["summary"]["business_ok"] == 1
+    assert result["summary"]["provider_errors"] == 1

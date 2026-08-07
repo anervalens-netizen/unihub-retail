@@ -13,7 +13,7 @@ class HrRepository:
             return await conn.fetchrow(
                 """
                 INSERT INTO leave_requests (agent_name, start_date, end_date, leave_type, notes)
-                VALUES ($1, $2::text::date, $3::text::date, $4, $5)
+                VALUES ($1, $2::date, $3::date, $4, $5)
                 RETURNING id, agent_name, start_date::text, end_date::text, leave_type, notes,
                           status, created_at::text, updated_at::text
                 """,

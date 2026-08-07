@@ -119,7 +119,7 @@ const AGENT_PROFILE = { agent: 'Ana Popescu', first_seen_month: '2025-05', last_
   reactivation_count: 0, longest_active_streak: 12, career_total_sales: 12000, career_total_quantity: 120,
   avg_monthly_sales: 1000, best_month: '2026-05', best_month_sales: 12000, current_status: 'active' };
 const AGENT_HISTORY = { history: [{ month: '2026-05', total_sales: 12000, total_quantity: 120, receipt_count: 80, active_store_count: 1, is_active: true }] };
-const GRILE = { month: '2026-05', total_sheets: 0, run: null, managers: [] };
+const GRILE = { month: '2026-05', total_sheets: 0, run: null, summary: { business_ok: 0, business_problems: 0, business_unknown: 0, provider_fresh: 0, provider_errors: 0, provider_stale: 0, provider_unknown: 0, legacy_completion_windows: 0 }, managers: [] };
 const MANAGERS = [{ manager: 'Mihai Condorateanu', regional: 'Regional 1', month: '2026-05', reporting_available: true,
   active_stores: 1, active_agents: 1, previous_active_agents: 1, agent_delta: 0, agents_added: 0, agents_left: 0,
   stores_without_agents: 0, agents_per_store: 1, visits_available: true, total_visits: 1, visited_stores: 1,
@@ -356,7 +356,7 @@ for (const viewport of VIEWPORTS) {
       await page.getByRole('tab', { name: 'Acoperire magazine', exact: true }).click();
       await expect(page.getByText('Magazin Unirii', { exact: true }).first()).toBeVisible();
       await page.getByRole('tab', { name: 'Grile', exact: true }).click();
-      await expect(page.getByText(/^Nicio rulare pentru luna selectată\./)).toBeVisible();
+      await expect(page.getByText('Nicio dată. Rulează o verificare pentru luna selectată.', { exact: true })).toBeVisible();
       await expect(page.getByRole('button', { name: 'Rulează verificare', exact: true })).toBeVisible();
       await assertNoPageOverflow(page);
 

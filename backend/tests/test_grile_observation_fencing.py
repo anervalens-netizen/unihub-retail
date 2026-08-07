@@ -102,23 +102,31 @@ async def test_immutable_observations_fence_stale_full_run_and_keep_last_success
         refresh = await repo.claim_store_refresh(int(refresh_id))
         assert refresh is not None
         assert int(refresh["generation"]) == 2
-        assert await repo.record_store_refresh_observation(int(refresh_id), _success(200)) is True
-        await repo.finish_store_refresh(int(refresh_id), status="completed")
+        assert await repo.complete_store_refresh(
+            int(refresh_id),
+            _success(200),
+            status="completed",
+        ) is True
 
-        # The full run read first but persists later: its immutable row is retained,
-        # while its older generation cannot overwrite the newer store refresh.
+        # The full run read first but persists an error later. Its immutable row is
+        # retained, while its older generation cannot become the latest provider
+        # failure after a newer successful store refresh.
         assert await repo.record_full_observation(
             int(run_id),
-            _success(100),
+            _error(),
             generation=full_generations[_SITE],
             checked_by_sub="p11-test",
         ) is False
+        current_after_stale_error = await repo.get_current_status(_MONTH, _SITE)
+        assert current_after_stale_error is not None
+        assert int(current_after_stale_error["generation"]) == 2
+        assert current_after_stale_error["last_error_code"] is None
         await repo.finalize_run(
             int(run_id),
             status="completed",
-            ok_count=1,
+            ok_count=0,
             problem_count=0,
-            error_count=0,
+            error_count=1,
             duration_ms=1,
         )
 
@@ -131,8 +139,13 @@ async def test_immutable_observations_fence_stale_full_run_and_keep_last_success
         failed_refresh = await repo.claim_store_refresh(int(failed_refresh_id))
         assert failed_refresh is not None
         assert int(failed_refresh["generation"]) == 3
-        assert await repo.record_store_refresh_observation(int(failed_refresh_id), _error()) is True
-        await repo.finish_store_refresh(int(failed_refresh_id), status="failed", error_message="range order changed")
+        assert await repo.complete_store_refresh(
+            int(failed_refresh_id),
+            _error(),
+            status="failed",
+            error_code="STRUCTURAL_INVALID",
+            error_message="range order changed",
+        ) is True
 
         current = await repo.get_current_status(_MONTH, _SITE)
         assert current is not None

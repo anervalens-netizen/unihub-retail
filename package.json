@@ -16,11 +16,13 @@
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
     "test": "vitest run",
     "test:watch": "vitest",
-    "lint": "eslint .",
-    "typecheck:strict": "tsc --noEmit",
+    "lint": "eslint . --max-warnings=0",
     "typecheck": "tsc --noEmit",
+    "typecheck:strict": "tsc --noEmit",
     "test:e2e": "playwright test",
-    "test:e2e:ui": "playwright test --ui"
+    "test:e2e:ui": "playwright test --ui",
+    "complexity:python": "python3 scripts/check_complexity_ratchet.py",
+    "complexity:ts": "node scripts/check_ts_function_complexity.cjs"
   },
   "dependencies": {
     "@sentry/react": "^10.66.0",
@@ -50,7 +52,6 @@
     "@testing-library/user-event": "^14.6.3",
     "@types/node": "^22.20.1",
     "@types/react-dom": "^19.2.4",
-    "@typescript/native": "npm:typescript@~7.0.2",
     "@vitejs/plugin-react": "^6.0.3",
     "eslint": "^10.7.0",
     "eslint-plugin-react-hooks": "^7.1.1",

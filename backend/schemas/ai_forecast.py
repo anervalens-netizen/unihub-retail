@@ -64,6 +64,7 @@ class AiForecastDailyPoint(BaseModel):
     forecast_date: date
     forecast_sales: Decimal
     actual_sales: Decimal
+    has_actual: bool
     cumulative_forecast: Decimal
     cumulative_actual: Decimal
 

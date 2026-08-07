@@ -36,3 +36,23 @@ def test_grile_refresh_timings_emit_fixed_phases_once(monkeypatch) -> None:
 def test_grile_refresh_metrics_reject_unknown_phase() -> None:
     with pytest.raises(ValueError, match="Unknown Grile refresh phase"):
         grile_metrics.observe_grile_store_refresh_phase("site_code", 1.0)
+
+
+def test_grile_refresh_outcome_metric_has_fixed_cardinality(monkeypatch) -> None:
+    from services import grile_metrics
+
+    observed: list[str] = []
+
+    class Labels:
+        def inc(self) -> None:
+            return None
+
+    class Counter:
+        def labels(self, outcome: str) -> Labels:
+            observed.append(outcome)
+            return Labels()
+
+    monkeypatch.setattr(grile_metrics, "GRILE_STORE_REFRESH_OUTCOMES_TOTAL", Counter())
+    grile_metrics.observe_grile_store_refresh_outcome("completed")
+    grile_metrics.observe_grile_store_refresh_outcome("unbounded-provider-detail")
+    assert observed == ["completed", "not_claimed"]

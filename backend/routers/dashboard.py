@@ -18,6 +18,7 @@ from schemas.dashboard import (
     YearHistoryResponse,
 )
 from schemas.premium_glass import PremiumGlassAnalysis
+from schemas.common import MonthStr
 from repositories.dashboard import DashboardRepository
 from services.dashboard_filters import canonical_dashboard_site_codes
 from services.dashboard_service import DashboardService
@@ -60,7 +61,7 @@ async def _run_dashboard(
 
 @router.get("/summary", response_model=DashboardSummary)
 async def get_summary(
-    month: str = Query(...),
+    month: MonthStr = Query(...),
     firma: str | None = None,
     regional: str | None = None,
     asm: str | None = None,
@@ -80,7 +81,7 @@ async def get_summary(
 
 @router.get("/all", response_model=DashboardAllResponse)
 async def get_dashboard_all(
-    month: str = Query(...),
+    month: MonthStr = Query(...),
     firma: str | None = None,
     regional: str | None = None,
     asm: str | None = None,
@@ -137,7 +138,7 @@ async def get_dashboard_history_details_batch(
 
 @router.get("/daily", response_model=list[DailySalesPoint])
 async def get_daily_sales(
-    month: str = Query(...),
+    month: MonthStr = Query(...),
     firma: str | None = None,
     regional: str | None = None,
     asm: str | None = None,
@@ -157,7 +158,7 @@ async def get_daily_sales(
 
 @router.get("/special-cards", response_model=DashboardSpecialCardsResponse)
 async def get_special_cards(
-    month: str = Query(...),
+    month: MonthStr = Query(...),
     firma: str | None = None,
     regional: str | None = None,
     asm: str | None = None,
@@ -177,7 +178,7 @@ async def get_special_cards(
 
 @router.get("/premium-glass", response_model=PremiumGlassAnalysis)
 async def get_premium_glass(
-    month: str = Query(...),
+    month: MonthStr = Query(...),
     firma: str | None = None,
     regional: str | None = None,
     asm: str | None = None,
@@ -209,7 +210,7 @@ async def get_premium_glass(
 
 @router.get("/history", response_model=DashboardHistoryResponse)
 async def get_monthly_history(
-    month: str = Query(...),
+    month: MonthStr = Query(...),
     months_back: int = Query(12, ge=2, le=24),
     firma: str | None = None,
     regional: str | None = None,
@@ -271,7 +272,7 @@ async def get_history_by_year(
 
 @router.get("/performance-detail", response_model=PerformanceDetailResponse)
 async def get_performance_detail(
-    month: str = Query(...),
+    month: MonthStr = Query(...),
     level: Literal["regional", "store", "agent"] = Query(...),
     key: str = Query(...),
     firma: str | None = None,

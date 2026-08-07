@@ -3,6 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, Query
 
 from db.connection import get_pool
+from schemas.common import MonthStr
 from schemas.agents import (
     AgentsOverviewResponse,
     AgentMovementResponse,
@@ -26,7 +27,7 @@ async def get_agents_service() -> AgentsService:
 
 @router.get("/overview", response_model=AgentsOverviewResponse)
 async def get_agents_overview(
-    selected_month: str = Query(...),
+    selected_month: MonthStr = Query(...),
     firma: str | None = Query(None),
     regional: str | None = Query(None),
     asm: str | None = Query(None),
@@ -39,7 +40,7 @@ async def get_agents_overview(
 
 @router.get("/movement", response_model=AgentMovementResponse)
 async def get_agents_movement(
-    selected_month: str = Query(...),
+    selected_month: MonthStr = Query(...),
     firma: str | None = Query(None),
     regional: str | None = Query(None),
     asm: str | None = Query(None),
@@ -52,7 +53,7 @@ async def get_agents_movement(
 
 @router.get("/list", response_model=AgentListResponse)
 async def get_agents_list(
-    selected_month: str = Query(...),
+    selected_month: MonthStr = Query(...),
     search: str | None = Query(None),
     firma: str | None = Query(None),
     regional: str | None = Query(None),
@@ -65,7 +66,7 @@ async def get_agents_list(
 
 @router.get("/evaluation", response_model=AgentEvaluationResponse)
 async def get_agent_evaluation(
-    month: str | None = Query(None),
+    month: MonthStr | None = Query(None),
     months: str | None = Query(None),
     firma: str | None = Query(None),
     asm: str | None = Query(None),
@@ -77,7 +78,7 @@ async def get_agent_evaluation(
 
 @router.get("/evaluation-v2", response_model=AgentEvaluationV2Response)
 async def get_agent_evaluation_v2(
-    month: str | None = Query(None),
+    month: MonthStr | None = Query(None),
     months: str | None = Query(None),
     firma: str | None = Query(None),
     asm: str | None = Query(None),
@@ -90,7 +91,7 @@ async def get_agent_evaluation_v2(
 @router.get("/profile", response_model=AgentProfileResponse)
 async def get_agent_profile(
     agent: str = Query(...),
-    selected_month: str = Query(...),
+    selected_month: MonthStr = Query(...),
     svc: AgentsService = Depends(get_agents_service),
 ):
     return await svc.get_agent_profile(agent, selected_month)
@@ -106,7 +107,7 @@ async def get_agent_history(
 
 @router.get("/stores-coverage", response_model=StoreCoverageResponse)
 async def get_stores_coverage(
-    selected_month: str = Query(...),
+    selected_month: MonthStr = Query(...),
     firma: str | None = Query(None),
     regional: str | None = Query(None),
     asm: str | None = Query(None),

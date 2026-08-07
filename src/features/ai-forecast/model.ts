@@ -13,10 +13,15 @@ export interface DailyCurvePoint {
 }
 
 export function buildDailyCurve(points: AiForecastDailyPoint[]): DailyCurvePoint[] {
-  return points.map((point) => {
-    const hasActual = point.actual_sales > 0 || point.cumulative_actual > 0;
-    return { day: point.forecast_date.slice(-2), date: point.forecast_date, isWeekend: isIsoWeekendDate(point.forecast_date), forecastDaily: point.forecast_sales, actualDaily: hasActual ? point.actual_sales : null, cumulativeForecast: point.cumulative_forecast, cumulativeActual: hasActual ? point.cumulative_actual : null };
-  });
+  return points.map((point) => ({
+    day: point.forecast_date.slice(-2),
+    date: point.forecast_date,
+    isWeekend: isIsoWeekendDate(point.forecast_date),
+    forecastDaily: point.forecast_sales,
+    actualDaily: point.has_actual ? point.actual_sales : null,
+    cumulativeForecast: point.cumulative_forecast,
+    cumulativeActual: point.has_actual ? point.cumulative_actual : null,
+  }));
 }
 
 export function nextSortDirection(currentKey: string, nextKey: string, currentDirection: 'asc' | 'desc'): 'asc' | 'desc' {

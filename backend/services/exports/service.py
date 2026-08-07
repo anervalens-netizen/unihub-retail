@@ -2,11 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
-import multiprocessing
 import os
+import shutil
 from decimal import Decimal
-from concurrent.futures import ProcessPoolExecutor
-from concurrent.futures.process import BrokenProcessPool
 from pathlib import Path
 from typing import Any, IO
 
@@ -22,7 +20,11 @@ from services.dashboard_specials import (
     load_special_cards_config,
     parse_promotion_definitions,
 )
-from services.export_complex_worker import render_daily_comparison_xlsx, render_daily_metrics_xlsx
+from services.export_process import (
+    ExportRendererProcessError,
+    RendererName,
+    run_export_renderer_process,
+)
 from .artifact import XLSX_STREAM_CHUNK_BYTES, XlsxArtifact
 from .catalog import (
     CAMPAIGN_METRICS,
@@ -65,17 +67,6 @@ from .validation import (
 
 
 EXPORT_COMPLEX_SEMAPHORE = asyncio.Semaphore(1)
-EXPORT_COMPLEX_PROCESS_POOL: ProcessPoolExecutor | None = None
-
-
-def _complex_process_pool() -> ProcessPoolExecutor:
-    global EXPORT_COMPLEX_PROCESS_POOL
-    if EXPORT_COMPLEX_PROCESS_POOL is None:
-        EXPORT_COMPLEX_PROCESS_POOL = ProcessPoolExecutor(
-            max_workers=1,
-            mp_context=multiprocessing.get_context("spawn"),
-        )
-    return EXPORT_COMPLEX_PROCESS_POOL
 
 class ExportsService(ExportPlanner, CampaignLoaders, XlsxRenderers):
     def __init__(self, repo: ExportsRepository):
@@ -605,36 +596,51 @@ class ExportsService(ExportPlanner, CampaignLoaders, XlsxRenderers):
         }
         cells = (len(result["rows"]) + 1) * len(result["columns"])
         async with EXPORT_COMPLEX_SEMAPHORE:
-            return await self._run_complex_renderer(render_daily_metrics_xlsx, payload, cells=cells)
+            return await self._run_complex_renderer("daily_metrics", payload, cells=cells)
 
     async def _run_complex_renderer(
         self,
-        renderer: Any,
+        renderer_name: RendererName,
         payload: dict[str, Any],
         *,
         cells: int,
     ) -> XlsxArtifact:
-        """Adopt only a complete, attested artifact from the spawned writer."""
-        loop = asyncio.get_running_loop()
-        render_future = loop.run_in_executor(_complex_process_pool(), renderer, payload)
+        """Adopt only a complete, attested artifact from a killable child."""
         try:
-            result = await asyncio.shield(render_future)
+            if renderer_name not in {"daily_metrics", "daily_comparison"}:
+                raise ValueError("Unknown complex export renderer")
+            result = await run_export_renderer_process(renderer_name, payload)
         except asyncio.CancelledError:
-            # The process call itself cannot be cancelled. Wait for its bounded
-            # result solely to delete the unattached temporary artifact.
-            try:
-                cancelled_result = await asyncio.shield(render_future)
-                Path(str(cancelled_result.get("path") or "")).unlink(missing_ok=True)
-            except Exception:
-                pass
             raise
-        except (BrokenProcessPool, MemoryError, OSError, ValueError) as exc:
+        except ExportRendererProcessError as exc:
+            EXPORT_REJECTED_TOTAL.labels(exc.code).inc()
+            if exc.code == "renderer_timeout":
+                raise ExportValidationError("Exportul complex a depasit timpul maxim permis.") from exc
+            if exc.code == "renderer_memory_limit":
+                raise ExportValidationError("Exportul complex a depasit limita de memorie RSS.") from exc
+            raise ExportValidationError("Exportul complex nu a putut fi finalizat in siguranta.") from exc
+        except (MemoryError, OSError, ValueError) as exc:
             EXPORT_REJECTED_TOTAL.labels("complex_worker").inc()
             raise ExportValidationError("Exportul complex nu a putut fi finalizat in siguranta.") from exc
 
-        path = Path(str(result.get("path") or ""))
+        raw_path = str(result.get("path") or "")
+        raw_operation_directory = str(result.get("operation_directory") or "")
+        path = Path(raw_path) if raw_path else None
+        operation_directory = (
+            Path(raw_operation_directory).resolve()
+            if raw_operation_directory
+            else None
+        )
         stream: IO[bytes] | None = None
         try:
+            if (
+                path is None
+                or operation_directory is None
+                or not operation_directory.name.startswith("unihub-export-operation-")
+                or path.resolve().parent != operation_directory
+            ):
+                EXPORT_REJECTED_TOTAL.labels("complex_artifact_path").inc()
+                raise ExportValidationError("Calea artifactului exportului complex este invalida.")
             if not path.is_file():
                 EXPORT_REJECTED_TOTAL.labels("complex_artifact").inc()
                 raise ExportValidationError("Artifactul exportului complex lipseste.")
@@ -674,7 +680,13 @@ class ExportsService(ExportPlanner, CampaignLoaders, XlsxRenderers):
                 stream.close()
             raise
         finally:
-            path.unlink(missing_ok=True)
+            if path is not None and path.is_file():
+                path.unlink(missing_ok=True)
+            if (
+                operation_directory is not None
+                and operation_directory.name.startswith("unihub-export-operation-")
+            ):
+                shutil.rmtree(operation_directory, ignore_errors=True)
 
 
     async def _preview_daily_comparison(
@@ -778,7 +790,7 @@ class ExportsService(ExportPlanner, CampaignLoaders, XlsxRenderers):
             ))),
         }
         return await self._run_complex_renderer(
-            render_daily_comparison_xlsx,
+            "daily_comparison",
             payload,
             cells=sum(len(table[1]["rows"]) * len(table[1]["columns"]) for table in tables),
         )

@@ -19,6 +19,7 @@ from oidc_settings import hub_internal_secret_errors, oidc_config_errors
 from rate_limit_settings import rate_limit_config_errors
 from salary_identity import SALARY_PERSON_ID_HMAC_KEY_ENV, validate_salary_person_id_key
 from session_auth import session_config_errors
+from observability.metrics_network import metrics_network_config_errors
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_VISITS_DB_PATH = _REPO_ROOT / "data" / "visits" / "visits.db"
@@ -171,9 +172,23 @@ def _parse_runtime_int(
     return value
 
 
-def load_runtime_config(role: RuntimeRole | None = None) -> RuntimeConfig:
-    """Parsează și validează configul de proces fără conectări externe."""
+def grile_provider_stale_after_seconds() -> int:
     errors: list[str] = []
+    value = _parse_runtime_int(
+        "GRILE_PROVIDER_STALE_AFTER_SECONDS",
+        12 * 60 * 60,
+        errors,
+        minimum=5 * 60,
+        maximum=7 * 24 * 60 * 60,
+    )
+    if errors:
+        raise ConfigError("; ".join(errors))
+    return value
+
+
+def load_runtime_config(role: RuntimeRole | None = None) -> RuntimeConfig:
+    errors: list[str] = []
+    _parse_runtime_int("GRILE_PROVIDER_STALE_AFTER_SECONDS", 12 * 60 * 60, errors, minimum=5 * 60, maximum=7 * 24 * 60 * 60)
     raw_worker_role = os.getenv("RETAIL_WORKER_ROLE")
     configured_worker_role = (
         raw_worker_role.strip().lower()
@@ -443,6 +458,7 @@ def validate_required_env_vars(role: RuntimeRole | None = None) -> RuntimeConfig
     errors.extend(hub_internal_secret_errors())
     errors.extend(rate_limit_config_errors(_is_production()))
     errors.extend(session_config_errors(_is_production()))
+    errors.extend(metrics_network_config_errors(required=_is_production()))
 
     person_id_key = os.getenv(SALARY_PERSON_ID_HMAC_KEY_ENV)
     if _is_production():

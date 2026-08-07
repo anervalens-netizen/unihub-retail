@@ -59,6 +59,21 @@ MIGRATION_SERVICE="unihub-retail-migrate.service"
 BACKEND_SERVICE="unihub-backend.service"
 WORKER_SERVICE="unihub-worker.service"
 IMPORT_WORKER_SERVICE="unihub-import-worker.service"
+if [[ "$TEST_MODE" == "1" ]]; then
+  SYSTEMD_ROOT="$TEST_ROOT/etc/systemd/system"
+  PROMETHEUS_HOST_CONFIG="$TEST_ROOT/prometheus/prometheus.yml"
+  RUNTIME_RELEASE_BASE="$TEST_ROOT/runtime-releases"
+else
+  SYSTEMD_ROOT="/etc/systemd/system"
+  PROMETHEUS_HOST_CONFIG="/opt/Mobiup/infra/observability/prometheus/prometheus.yml"
+  RUNTIME_RELEASE_BASE="/var/lib/unihub-retail-deploy/runtime-releases"
+fi
+PROMETHEUS_CONTAINER="unihub-prometheus"
+PROMETHEUS_CONTAINER_CONFIG="/etc/prometheus/prometheus.yml"
+PROMETHEUS_CONTAINER_SCRAPE_ROOT="/etc/prometheus/scrape.d"
+PROMETHEUS_SCRAPE_ROOT="$OPS_ROOT/prometheus/scrape.d"
+PROMETHEUS_FRAGMENT="$PROMETHEUS_SCRAPE_ROOT/unihub-retail.yml"
+PROMETHEUS_NETWORK_ENV="$OPS_ROOT/prometheus/unihub-retail-network.env"
 if [[ "$TEST_MODE" != "1" && "${SUDO_USER:-}" == "unihub-deploy" ]]; then
   [[ "$READ_ONLY_MODE" == "0" && "$#" -eq 4 && "$1" == /* ]] \
     || die "deploy runner may invoke only the four-argument production deployment"
@@ -168,7 +183,16 @@ with tarfile.open(archive, mode="r:gz") as bundle:
             if total_size > 1_073_741_824:
                 raise SystemExit("archive expands beyond the 1 GiB safety limit")
 
-required = {"package.json", "backend/main.py", "dist/index.html"}
+required = {
+    "package.json",
+    "backend/main.py",
+    "dist/index.html",
+    "unihub-worker.service",
+    "ops/systemd/unihub-backend.service",
+    "ops/systemd/unihub-import-worker.service",
+    "ops/systemd/unihub-retail-migrate.service",
+    "ops/observability/retail-process-scrape.yml",
+}
 missing = sorted(required - seen)
 if missing:
     raise SystemExit("archive is missing required paths: " + ", ".join(missing))
@@ -302,6 +326,412 @@ copy_and_verify_artifact() {
   [[ -f "$artifact_tree/dist/index.html" && ! -L "$artifact_tree/dist/index.html" \
     && -s "$artifact_tree/dist/index.html" ]] || die "tested frontend artifact is missing"
   printf '%s\n' "$artifact_tree"
+}
+
+PROMETHEUS_NETWORK_NAME=""
+PROMETHEUS_DOCKER_GATEWAY=""
+PROMETHEUS_DOCKER_SUBNET=""
+
+validate_prometheus_network_values() {
+  local gateway="$1"
+  local subnet="$2"
+  python3 - "$gateway" "$subnet" <<'PY'
+import ipaddress
+import sys
+
+gateway = ipaddress.ip_address(sys.argv[1])
+subnet = ipaddress.ip_network(sys.argv[2], strict=True)
+if (
+    not isinstance(gateway, ipaddress.IPv4Address)
+    or not isinstance(subnet, ipaddress.IPv4Network)
+    or gateway.is_unspecified
+    or gateway.is_loopback
+    or gateway.is_multicast
+    or not gateway.is_private
+    or gateway not in subnet
+):
+    raise SystemExit("Prometheus Docker gateway/subnet is not a private IPv4 bridge")
+PY
+}
+
+detect_prometheus_network() {
+  if [[ "$TEST_MODE" == "1" ]]; then
+    PROMETHEUS_NETWORK_NAME="retail-test-net"
+    PROMETHEUS_DOCKER_GATEWAY="${RETAIL_DEPLOY_TEST_PROMETHEUS_GATEWAY:-172.23.0.1}"
+    PROMETHEUS_DOCKER_SUBNET="${RETAIL_DEPLOY_TEST_PROMETHEUS_SUBNET:-172.23.0.0/16}"
+  else
+    local inspect_json network_json
+    inspect_json="$(docker inspect "$PROMETHEUS_CONTAINER")" \
+      || die "Prometheus container is unavailable"
+    mapfile -t network_values < <(
+      python3 -c '
+import json, sys
+payload = json.load(sys.stdin)
+if len(payload) != 1 or not payload[0].get("State", {}).get("Running"):
+    raise SystemExit("Prometheus container is not running")
+if payload[0].get("HostConfig", {}).get("NetworkMode") == "host":
+    raise SystemExit("Prometheus must remain in Docker bridge mode")
+networks = payload[0].get("NetworkSettings", {}).get("Networks", {})
+if len(networks) != 1:
+    raise SystemExit("Prometheus must have exactly one Docker bridge network")
+name, details = next(iter(networks.items()))
+if not details.get("IPAddress"):
+    raise SystemExit("Prometheus bridge has no IPv4 address")
+print(name)
+' <<<"$inspect_json"
+    )
+    [[ "${#network_values[@]}" -eq 1 ]] || die "unable to resolve the Prometheus Docker network"
+    PROMETHEUS_NETWORK_NAME="${network_values[0]}"
+    network_json="$(docker network inspect "$PROMETHEUS_NETWORK_NAME")" \
+      || die "unable to inspect the Prometheus Docker network"
+    mapfile -t network_values < <(
+      python3 -c '
+import ipaddress, json, sys
+payload = json.load(sys.stdin)
+if len(payload) != 1:
+    raise SystemExit("invalid Docker network inspection")
+configs = payload[0].get("IPAM", {}).get("Config", [])
+ipv4 = []
+for item in configs:
+    subnet = item.get("Subnet", "")
+    gateway = item.get("Gateway", "")
+    try:
+        parsed = ipaddress.ip_network(subnet, strict=True)
+        parsed_gateway = ipaddress.ip_address(gateway)
+    except ValueError:
+        continue
+    if isinstance(parsed, ipaddress.IPv4Network) and isinstance(parsed_gateway, ipaddress.IPv4Address):
+        ipv4.append((str(parsed_gateway), str(parsed)))
+if len(ipv4) != 1:
+    raise SystemExit("Prometheus network must expose exactly one IPv4 gateway/subnet")
+print(ipv4[0][0])
+print(ipv4[0][1])
+' <<<"$network_json"
+    )
+    [[ "${#network_values[@]}" -eq 2 ]] || die "unable to resolve the Prometheus bridge gateway/subnet"
+    PROMETHEUS_DOCKER_GATEWAY="${network_values[0]}"
+    PROMETHEUS_DOCKER_SUBNET="${network_values[1]}"
+  fi
+  validate_prometheus_network_values "$PROMETHEUS_DOCKER_GATEWAY" "$PROMETHEUS_DOCKER_SUBNET"
+  log "Prometheus bridge validated: network=$PROMETHEUS_NETWORK_NAME gateway=$PROMETHEUS_DOCKER_GATEWAY subnet=$PROMETHEUS_DOCKER_SUBNET"
+}
+
+assert_prometheus_shared_include() {
+  [[ -f "$PROMETHEUS_HOST_CONFIG" && ! -L "$PROMETHEUS_HOST_CONFIG" ]] \
+    || die "shared Prometheus config is unavailable"
+  [[ -d "$PROMETHEUS_SCRAPE_ROOT" && ! -L "$PROMETHEUS_SCRAPE_ROOT" ]] \
+    || die "shared Prometheus scrape include directory is unavailable"
+  python3 - "$PROMETHEUS_HOST_CONFIG" "$PROMETHEUS_CONTAINER_SCRAPE_ROOT/*.yml" <<'PY'
+import pathlib
+import re
+import sys
+
+text = pathlib.Path(sys.argv[1]).read_text(encoding="utf-8")
+pattern = re.compile(
+    r"(?m)^scrape_config_files:\s*$\n(?:^[ \t]+.*\n)*?^[ \t]*-[ \t]*[\"']?"
+    + re.escape(sys.argv[2])
+    + r"[\"']?[ \t]*$"
+)
+if pattern.search(text) is None:
+    raise SystemExit("shared Prometheus config is missing the Retail scrape include")
+if re.search(r"(?m)^\s*-?\s*job_name:\s*[\"']?unihub_retail[\"']?\s*$", text):
+    raise SystemExit("shared Prometheus config still contains the legacy Retail scrape job")
+PY
+  if [[ "$TEST_MODE" == "1" ]]; then
+    [[ -f "$TEST_ROOT/prometheus/scrape-mount-ready" ]] \
+      || die "test Prometheus scrape mount marker is missing"
+    return
+  fi
+  [[ "$(stat -c '%u:%g:%a' "$(dirname "$PROMETHEUS_SCRAPE_ROOT")")" == "0:0:755" ]] \
+    || die "Prometheus host include parent must be root:root mode 0755"
+  [[ "$(stat -c '%u:%g:%a' "$PROMETHEUS_SCRAPE_ROOT")" == "0:0:755" ]] \
+    || die "Prometheus host include directory must be root:root mode 0755"
+  local inspect_json
+  inspect_json="$(docker inspect "$PROMETHEUS_CONTAINER")"
+  python3 -c '
+import json
+import pathlib
+import sys
+
+payload = json.load(sys.stdin)
+mounts = payload[0].get("Mounts", [])
+
+def require_mount(source: str, destination: str) -> None:
+    expected = pathlib.Path(source).resolve()
+    matches = [item for item in mounts if item.get("Destination") == destination]
+    if len(matches) != 1:
+        raise SystemExit(f"missing unique Prometheus mount for {destination}")
+    item = matches[0]
+    if pathlib.Path(item.get("Source", "")).resolve() != expected or item.get("RW") is not False:
+        raise SystemExit(f"Prometheus mount for {destination} must be exact and read-only")
+
+require_mount(sys.argv[1], sys.argv[2])
+require_mount(sys.argv[3], sys.argv[4])
+' "$PROMETHEUS_HOST_CONFIG" "$PROMETHEUS_CONTAINER_CONFIG" \
+    "$PROMETHEUS_SCRAPE_ROOT" "$PROMETHEUS_CONTAINER_SCRAPE_ROOT" \
+    <<<"$inspect_json"
+}
+
+prepare_runtime_release() {
+  local artifact_tree="$1"
+  local stage_root="$2"
+  local unit_source
+  rm -rf -- "$stage_root"
+  mkdir -p "$stage_root/systemd"
+  local -a unit_sources=(
+    "ops/systemd/unihub-backend.service"
+    "unihub-worker.service"
+    "ops/systemd/unihub-import-worker.service"
+    "ops/systemd/unihub-retail-migrate.service"
+  )
+  for unit_source in "${unit_sources[@]}"; do
+    [[ -f "$artifact_tree/$unit_source" && ! -L "$artifact_tree/$unit_source" ]] \
+      || die "runtime artifact unit is missing: $unit_source"
+    install -m 0644 -- "$artifact_tree/$unit_source" "$stage_root/systemd/$(basename "$unit_source")"
+  done
+  local worker_unit
+  for worker_unit in unihub-worker.service unihub-import-worker.service; do
+    grep -Fq 'EnvironmentFile=/opt/Mobiup/ops/prometheus/unihub-retail-network.env' \
+      "$stage_root/systemd/$worker_unit" \
+      || die "worker unit is missing the Prometheus network environment"
+    if grep -Eq 'WORKER_METRICS_HOST=(0\.0\.0\.0|127\.0\.0\.1|::1)' "$stage_root/systemd/$worker_unit"; then
+      die "worker metrics unit contains a forbidden bind address"
+    fi
+  done
+  grep -Fq 'EnvironmentFile=/opt/Mobiup/ops/prometheus/unihub-retail-network.env' \
+    "$stage_root/systemd/unihub-backend.service" \
+    || die "backend unit is missing the Prometheus network environment"
+  if [[ "$TEST_MODE" != "1" ]]; then
+    systemd-analyze verify \
+      "$stage_root/systemd/unihub-backend.service" \
+      "$stage_root/systemd/unihub-worker.service" \
+      "$stage_root/systemd/unihub-import-worker.service" \
+      "$stage_root/systemd/unihub-retail-migrate.service"
+  fi
+  {
+    printf 'PROMETHEUS_DOCKER_GATEWAY=%s\n' "$PROMETHEUS_DOCKER_GATEWAY"
+    printf 'PROMETHEUS_DOCKER_SUBNET=%s\n' "$PROMETHEUS_DOCKER_SUBNET"
+    printf 'WORKER_METRICS_HOST=%s\n' "$PROMETHEUS_DOCKER_GATEWAY"
+  } >"$stage_root/unihub-retail-network.env"
+  chmod 0644 "$stage_root/unihub-retail-network.env"
+
+  local fragment_source="$artifact_tree/ops/observability/retail-process-scrape.yml"
+  [[ -f "$fragment_source" && ! -L "$fragment_source" ]] \
+    || die "Retail Prometheus scrape template is missing"
+  python3 - "$fragment_source" "$stage_root/unihub-retail.yml" "$PROMETHEUS_DOCKER_GATEWAY" <<'PY'
+from pathlib import Path
+import sys
+
+source = Path(sys.argv[1]).read_text(encoding="utf-8")
+token = "__PROMETHEUS_DOCKER_GATEWAY__"
+if source.count(token) != 3:
+    raise SystemExit("Retail scrape template must contain exactly three gateway placeholders")
+rendered = source.replace(token, sys.argv[3])
+if token in rendered or "0.0.0.0" in rendered or "127.0.0.1" in rendered:
+    raise SystemExit("Retail scrape fragment contains a forbidden target")
+Path(sys.argv[2]).write_text(rendered, encoding="utf-8")
+PY
+  chmod 0644 "$stage_root/unihub-retail.yml"
+}
+
+runtime_asset_destinations() {
+  printf '%s\n' \
+    "$SYSTEMD_ROOT/unihub-backend.service" \
+    "$SYSTEMD_ROOT/unihub-worker.service" \
+    "$SYSTEMD_ROOT/unihub-import-worker.service" \
+    "$SYSTEMD_ROOT/unihub-retail-migrate.service" \
+    "$PROMETHEUS_NETWORK_ENV" \
+    "$PROMETHEUS_FRAGMENT"
+}
+
+backup_runtime_assets() {
+  local backup_dir="$1"
+  local assets_dir="$backup_dir/runtime-assets"
+  local destination name
+  mkdir -p "$assets_dir/files"
+  : >"$assets_dir/state.env"
+  while IFS= read -r destination; do
+    name="$(basename "$destination")"
+    if [[ -e "$destination" || -L "$destination" ]]; then
+      printf '%s=1\n' "$name" >>"$assets_dir/state.env"
+      cp -a --no-dereference -- "$destination" "$assets_dir/files/$name"
+    else
+      printf '%s=0\n' "$name" >>"$assets_dir/state.env"
+    fi
+  done < <(runtime_asset_destinations)
+  chmod 0600 "$assets_dir/state.env"
+}
+
+atomic_symlink() {
+  local target="$1"
+  local destination="$2"
+  local temporary="${destination}.new.$$"
+  ln -s -- "$target" "$temporary"
+  mv -Tf -- "$temporary" "$destination"
+}
+
+assert_runtime_release_security() {
+  local release_root="$1"
+  [[ -d "$release_root" && ! -L "$release_root" ]] \
+    || die "versioned runtime release is unavailable"
+  if [[ "$TEST_MODE" == "1" ]]; then
+    return
+  fi
+  [[ "$(stat -c '%u:%g:%a' "$RUNTIME_RELEASE_BASE")" == "0:0:755" ]] \
+    || die "versioned runtime release root must be root:root mode 0755"
+  local unsafe
+  unsafe="$(find "$release_root" \( ! -user root -o ! -group root -o -type l \) -print -quit)"
+  [[ -z "$unsafe" ]] || die "versioned runtime release contains an unsafe path"
+}
+
+install_runtime_assets() {
+  local stage_root="$1"
+  local expected_sha="$2"
+  local release_root="$RUNTIME_RELEASE_BASE/$expected_sha"
+  local release_tmp="$RUNTIME_RELEASE_BASE/.${expected_sha}.new.$$"
+  if [[ -d "$release_root" && ! -L "$release_root" ]]; then
+    diff -qr -- "$stage_root" "$release_root" >/dev/null \
+      || die "existing versioned runtime release differs from the approved artifact"
+  else
+    [[ ! -e "$release_root" && ! -L "$release_root" ]] \
+      || die "versioned runtime release path is invalid"
+    if [[ "$TEST_MODE" == "1" ]]; then
+      mkdir -p "$RUNTIME_RELEASE_BASE"
+    else
+      install -d -m 0755 -o root -g root "$RUNTIME_RELEASE_BASE"
+      [[ "$(stat -c '%u:%g:%a' "$RUNTIME_RELEASE_BASE")" == "0:0:755" ]] \
+        || die "versioned runtime release root must be root:root mode 0755"
+    fi
+    rm -rf -- "$release_tmp"
+    cp -a -- "$stage_root" "$release_tmp"
+    if [[ "$TEST_MODE" != "1" ]]; then
+      chown -R root:root "$release_tmp"
+    fi
+    find "$release_tmp" -type d -exec chmod 0755 {} +
+    find "$release_tmp" -type f -exec chmod 0644 {} +
+    mv -- "$release_tmp" "$release_root"
+  fi
+  assert_runtime_release_security "$release_root"
+  mkdir -p "$SYSTEMD_ROOT" "$(dirname "$PROMETHEUS_NETWORK_ENV")" "$PROMETHEUS_SCRAPE_ROOT"
+  atomic_symlink "$release_root/systemd/unihub-backend.service" "$SYSTEMD_ROOT/unihub-backend.service"
+  atomic_symlink "$release_root/systemd/unihub-worker.service" "$SYSTEMD_ROOT/unihub-worker.service"
+  atomic_symlink "$release_root/systemd/unihub-import-worker.service" "$SYSTEMD_ROOT/unihub-import-worker.service"
+  atomic_symlink "$release_root/systemd/unihub-retail-migrate.service" "$SYSTEMD_ROOT/unihub-retail-migrate.service"
+  local network_env_tmp="${PROMETHEUS_NETWORK_ENV}.new.$$"
+  install -m 0644 -- "$release_root/unihub-retail-network.env" "$network_env_tmp"
+  if [[ "$TEST_MODE" != "1" ]]; then
+    chown root:root "$network_env_tmp"
+  fi
+  mv -f -- "$network_env_tmp" "$PROMETHEUS_NETWORK_ENV"
+  local fragment_tmp="${PROMETHEUS_FRAGMENT}.new.$$"
+  install -m 0644 -- "$release_root/unihub-retail.yml" "$fragment_tmp"
+  if [[ "$TEST_MODE" != "1" ]]; then
+    chown root:root "$fragment_tmp"
+  fi
+  mv -f -- "$fragment_tmp" "$PROMETHEUS_FRAGMENT"
+  service_action daemon-reload
+}
+
+restore_runtime_assets() {
+  local backup_dir="$1"
+  local assets_dir="$backup_dir/runtime-assets"
+  [[ -f "$assets_dir/state.env" ]] || {
+    log "legacy rollback handle has no runtime asset snapshot"
+    return 0
+  }
+  local destination name existed
+  while IFS= read -r destination; do
+    name="$(basename "$destination")"
+    existed="$(sed -n "s/^${name}=//p" "$assets_dir/state.env")"
+    [[ "$existed" == "0" || "$existed" == "1" ]] \
+      || die "runtime asset backup state is invalid: $name"
+    rm -f -- "$destination"
+    if [[ "$existed" == "1" ]]; then
+      [[ -e "$assets_dir/files/$name" || -L "$assets_dir/files/$name" ]] \
+        || die "runtime asset backup is missing: $name"
+      cp -a --no-dereference -- "$assets_dir/files/$name" "$destination"
+    fi
+  done < <(runtime_asset_destinations)
+  service_action daemon-reload
+}
+
+check_prometheus_config() {
+  if [[ "$TEST_MODE" == "1" ]]; then
+    log "TEST Prometheus config check"
+    [[ ! -e "$PROMETHEUS_FRAGMENT" ]] && return 0
+    ! grep -Eq '__PROMETHEUS_DOCKER_GATEWAY__|0\.0\.0\.0|127\.0\.0\.1' "$PROMETHEUS_FRAGMENT"
+    return
+  fi
+  docker exec "$PROMETHEUS_CONTAINER" promtool check config "$PROMETHEUS_CONTAINER_CONFIG"
+}
+
+reload_prometheus() {
+  check_prometheus_config
+  if [[ "$TEST_MODE" == "1" ]]; then
+    log "TEST Prometheus HUP"
+    [[ "$TEST_FAIL_PHASE" != "prometheus" ]]
+    return
+  fi
+  docker kill --signal HUP "$PROMETHEUS_CONTAINER" >/dev/null
+}
+
+verify_prometheus_targets() {
+  if [[ "$TEST_MODE" == "1" ]]; then
+    [[ -s "$PROMETHEUS_FRAGMENT" ]]
+    return
+  fi
+  local attempt payload
+  for attempt in {1..30}; do
+    payload="$(curl --silent --show-error --fail --max-time 5 \
+      http://127.0.0.1:9090/api/v1/targets)" || payload=""
+    if python3 -c '
+import json
+import sys
+
+required = set(sys.argv[1:])
+payload = json.load(sys.stdin)
+active = payload.get("data", {}).get("activeTargets", [])
+healthy = {
+    item.get("labels", {}).get("job")
+    for item in active
+    if item.get("health") == "up"
+}
+if not required <= healthy:
+    raise SystemExit(1)
+' unihub-retail-web unihub-retail-operations unihub-retail-imports <<<"$payload"
+    then
+      return 0
+    fi
+    sleep 2
+  done
+  return 1
+}
+
+verify_active_runtime_assets() {
+  local expected_sha="$1"
+  local release_root="$RUNTIME_RELEASE_BASE/$expected_sha"
+  assert_runtime_release_security "$release_root"
+  local destination expected
+  local -a names=(
+    unihub-backend.service
+    unihub-worker.service
+    unihub-import-worker.service
+    unihub-retail-migrate.service
+  )
+  for destination in "${names[@]}"; do
+    expected="$release_root/systemd/$destination"
+    [[ -L "$SYSTEMD_ROOT/$destination" && "$(readlink -f "$SYSTEMD_ROOT/$destination")" == "$expected" ]] \
+      || die "active systemd unit is not the expected version: $destination"
+  done
+  diff -q -- "$PROMETHEUS_NETWORK_ENV" "$release_root/unihub-retail-network.env" >/dev/null \
+    || die "active Prometheus network environment differs from the expected version"
+  diff -q -- "$PROMETHEUS_FRAGMENT" "$release_root/unihub-retail.yml" >/dev/null \
+    || die "active Retail scrape fragment differs from the expected version"
+  grep -Fxq "PROMETHEUS_DOCKER_GATEWAY=$PROMETHEUS_DOCKER_GATEWAY" "$PROMETHEUS_NETWORK_ENV"
+  grep -Fxq "PROMETHEUS_DOCKER_SUBNET=$PROMETHEUS_DOCKER_SUBNET" "$PROMETHEUS_NETWORK_ENV"
+  grep -Fxq "WORKER_METRICS_HOST=$PROMETHEUS_DOCKER_GATEWAY" "$PROMETHEUS_NETWORK_ENV"
+  check_prometheus_config
+  verify_prometheus_targets
 }
 
 read_approval_value() {
@@ -542,7 +972,7 @@ recover_forward_release() {
   local expected_artifact_sha256="$4"
   local backup_dir="$5"
   local manifest="$backup_dir/release.env"
-  local old_sha state work_dir artifact_tree next_dist failed_dist prior_link prior_approval_id
+  local old_sha state work_dir artifact_tree next_dist failed_dist prior_link prior_approval_id stage_root
 
   old_sha="$(read_manifest_value "$manifest" OLD_SHA)"
   state="$(read_manifest_value "$manifest" STATE)"
@@ -569,6 +999,10 @@ recover_forward_release() {
   approval_claimed=1
   claim_approval "$ci_run_id" "$expected_sha" "$expected_artifact_sha256"
   artifact_tree="$(copy_and_verify_artifact "$source_archive" "$expected_sha" "$expected_artifact_sha256" "$work_dir")"
+  detect_prometheus_network
+  assert_prometheus_shared_include
+  stage_root="$work_dir/runtime-release"
+  prepare_runtime_release "$artifact_tree" "$stage_root"
   next_dist="$backup_dir/dist.recovery.next"
   rm -rf -- "$next_dist"
   mkdir -p "$next_dist"
@@ -584,6 +1018,7 @@ recover_forward_release() {
   write_approval_link "$backup_dir" "$ci_run_id" "$expected_sha" "$expected_artifact_sha256"
 
   stop_runtime
+  install_runtime_assets "$stage_root" "$expected_sha"
   if ! diff -qr -- "$LIVE_ROOT/dist" "$next_dist" >/dev/null; then
     failed_dist="$backup_dir/dist.recovery.failed.$(date -u +%Y%m%dT%H%M%SZ)"
     mv -- "$LIVE_ROOT/dist" "$failed_dist"
@@ -595,6 +1030,8 @@ recover_forward_release() {
   run_migrations
   start_runtime
   verify_local_health
+  reload_prometheus
+  verify_prometheus_targets
   verify_public_release
   [[ "$(git_service rev-parse HEAD)" == "$expected_sha" ]] || die "recovered Git SHA mismatch"
 
@@ -790,8 +1227,10 @@ rollback_from_backup() {
   stop_runtime || true
   git_service reset --hard "$old_sha"
   restore_dist "$backup_dir"
+  restore_runtime_assets "$backup_dir"
   start_runtime
   verify_local_health || die "rollback completed but local health failed"
+  reload_prometheus || die "rollback completed but Prometheus reload failed"
   write_release_manifest "$backup_dir" "$old_sha" "$expected_current_sha" "rolled_back"
   log "rollback verified at $old_sha; additive database migrations remain in place"
 }
@@ -807,7 +1246,7 @@ deploy_release() {
   assert_live_checkout
   assert_worktree_safe
 
-  local old_sha stamp backup_dir work_dir artifact_tree backup_started next_dist backup_nonce
+  local old_sha stamp backup_dir work_dir artifact_tree backup_started next_dist backup_nonce stage_root
   old_sha="$(git_service rev-parse HEAD)"
   if [[ "$old_sha" == "$expected_sha" ]]; then
     local recovery_handle=""
@@ -832,6 +1271,9 @@ deploy_release() {
       && -s "$artifact_tree/dist/index.html" ]] || die "tested frontend artifact is missing"
     diff -qr -- "$LIVE_ROOT/dist" "$artifact_tree/dist" >/dev/null \
       || die "live frontend differs from the tested release artifact"
+    detect_prometheus_network
+    assert_prometheus_shared_include
+    verify_active_runtime_assets "$expected_sha"
     verify_local_health
     verify_public_release
     log "existing deployment reverified without mutation: $expected_sha"
@@ -879,6 +1321,10 @@ deploy_release() {
   approval_claimed=1
   claim_approval "$ci_run_id" "$expected_sha" "$expected_artifact_sha256"
   artifact_tree="$(copy_and_verify_artifact "$source_archive" "$expected_sha" "$expected_artifact_sha256" "$work_dir")"
+  detect_prometheus_network
+  assert_prometheus_shared_include
+  stage_root="$work_dir/runtime-release"
+  prepare_runtime_release "$artifact_tree" "$stage_root"
   ensure_backup_root
   mkdir -p "$backup_dir"
   chmod 0700 "$backup_dir"
@@ -891,10 +1337,12 @@ deploy_release() {
   write_release_manifest "$backup_dir" "$old_sha" "$expected_sha" "backed_up"
   next_dist="$(prepare_tested_dist "$artifact_tree" "$backup_dir")"
   backup_current_dist "$backup_dir"
+  backup_runtime_assets "$backup_dir"
   rollback_needed=1
 
   runtime_touched=1
   stop_runtime
+  install_runtime_assets "$stage_root" "$expected_sha"
   switch_dist "$next_dist" "$backup_dir"
   git_service merge --ff-only "$expected_sha"
   write_release_manifest "$backup_dir" "$old_sha" "$expected_sha" "switched"
@@ -902,6 +1350,8 @@ deploy_release() {
   run_migrations
   start_runtime
   verify_local_health
+  reload_prometheus
+  verify_prometheus_targets
   verify_public_release
   [[ "$(git_service rev-parse HEAD)" == "$expected_sha" ]] || die "deployed Git SHA mismatch"
   write_release_manifest "$backup_dir" "$old_sha" "$expected_sha" "deployed"
@@ -944,7 +1394,7 @@ validate_release() {
   assert_live_checkout
   assert_worktree_safe
   fetch_and_verify_commit "$expected_sha"
-  local work_dir artifact_tree artifact_sha256
+  local work_dir artifact_tree artifact_sha256 stage_root
   work_dir="$(mktemp -d "${TMPDIR:-/tmp}/retail-deploy-validate.XXXXXX")"
   trap 'rm -rf -- "$work_dir"' RETURN
   artifact_sha256="$(sha256sum "$source_archive" | awk '{print $1}')"
@@ -952,7 +1402,11 @@ validate_release() {
   artifact_tree="$(copy_and_verify_artifact "$source_archive" "$expected_sha" "$artifact_sha256" "$work_dir")"
   [[ -f "$artifact_tree/dist/index.html" && ! -L "$artifact_tree/dist/index.html" \
     && -s "$artifact_tree/dist/index.html" ]] || die "tested frontend artifact is missing"
-  log "artifact matches approved source and contains a tested frontend: $expected_sha"
+  detect_prometheus_network
+  assert_prometheus_shared_include
+  stage_root="$work_dir/runtime-release"
+  prepare_runtime_release "$artifact_tree" "$stage_root"
+  log "artifact and runtime topology match the approved source without mutation: $expected_sha"
 }
 
 case "${1:-}" in

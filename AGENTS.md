@@ -39,7 +39,7 @@ apply is NO-GO until the eight known groups are reconciled.
 
 ```bash
 npm run typecheck
-npm run typecheck:strict
+npm run complexity:ts
 npm run lint
 npm run test
 pytest backend/tests/ -q
@@ -183,19 +183,24 @@ token; run `node scripts/verify_vendored_npm_packages.mjs` after package changes
 
 ## Deployment
 
-- Cererea explicită din conversația operațională autorizează implementarea,
-  verificarea, commitul, sincronizarea, deployul și verificarea live pentru
-  scopul cerut. Nu cere operatorului comenzi în terminal sau aprobări repetate.
-- Calea implicită este local-first: verificări proporționale, commit direct pe
-  `main`, push fără a aștepta CI, deploy controlat și verificare live. PR-ul și
-  artefactul formal sunt opționale și se folosesc proporțional cu riscul.
-- Push-ul direct în `main` este acceptat pentru schimbări obișnuite verificate.
-  Dacă este deschis un PR, du-l fără o nouă confirmare prin CI, merge, deploy și
-  verificare live. Vezi `docs/adr/005-chat-authorized-delivery.md`.
-- Pentru un release formal, rulează manual `CI` numai de pe `main`; approval-ul
-  și deployul folosesc exact `head_sha` și digestul artefactului acelui run,
-  niciodată un rebuild local.
-- Frontend changes are not live until `npm run build`.
+- Cererea explicită din conversația operațională autorizează agentul să ducă
+  sarcina cap-coadă, fără aprobări repetate, dar nu înlocuiește porțile tehnice.
+- Orice modificare runtime folosește `ADR-006`: branch/PR, CI exact-SHA,
+  artefactul acelui run, digest verificat, deploy formal și probe.
+- Nu face push direct în `main` pentru cod, migrări, frontend, systemd, workers,
+  proxy, auth sau date. Nu deploya checkout local și nu reconstrui artefactul pe
+  server.
+- Calea fără artefact este permisă numai pentru documentație non-runtime.
+  Break-glass este rezervat incidentelor active și nu este permis pentru schema
+  DB, auth/permissions, importuri, salarii, Grile destructive, rețea sau release
+  tooling.
+- Un PR deja autorizat se duce autonom prin remedierea CI, review, merge, CI pe
+  noul `main`, deploy și verificare live; operatorul nu trebuie să repete
+  aprobarea la fiecare etapă.
+- Frontend changes are not live until buildul din artefactul CI este instalat.
 - Backend changes require `unihub-backend.service` restart.
-- Worker/job changes also require `unihub-worker.service` restart.
-- Verify local health and the changed user path after deployment.
+- Worker/job changes also require `unihub-worker.service` și/sau
+  `unihub-import-worker.service` restart.
+- Verify local health, metrics and the changed user path after deployment.
+- Vezi `docs/adr/006-verified-runtime-delivery.md` și runbookurile din
+  `docs/operations/`.

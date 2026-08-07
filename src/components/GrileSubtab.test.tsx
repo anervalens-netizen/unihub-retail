@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { GrileOverview, GrileRun } from '../api/grile';
+import type { GrileOverview, GrileRun, GrileStore } from '../api/grile';
 
 const api = vi.hoisted(() => ({
   getGrileOverview: vi.fn(),
@@ -53,12 +54,94 @@ const overview = (currentRun: GrileRun): GrileOverview => ({
   month: '2026-08',
   total_sheets: 2,
   run: currentRun,
+  summary: {
+    business_ok: 0,
+    business_problems: 0,
+    business_unknown: 2,
+    provider_fresh: 0,
+    provider_errors: 0,
+    provider_stale: 0,
+    provider_unknown: 2,
+    legacy_completion_windows: 0,
+  },
   managers: [],
+});
+
+const store = (): GrileStore => ({
+  site_code: 'S001',
+  sheet_id: 'sheet-1',
+  locatie: 'Magazin Test',
+  firma: 'Mobiup',
+  regional: 'RM Test',
+  asm: 'ASM Test',
+  team_leader_name: null,
+  completion_pct: 50,
+  last_edit: null,
+  checked_at: null,
+  grila_target: 100,
+  grila_sales: 50,
+  db_target: 100,
+  db_sales_mtd: 50,
+  target_diff: 0,
+  sales_diff: 0,
+  db_max_sale_date: null,
+  fill_status: 'COMPLETAT',
+  target_status: 'OK',
+  sales_status: 'OK',
+  missing_days: [],
+  days_elapsed: 6,
+  completion_algorithm_version: 2,
+  completion_as_of: '2026-08-07',
+  completion_window_status: 'current',
+  provider_status: {
+    state: 'fresh',
+    last_attempt_at: '2026-08-07T08:00:00Z',
+    last_success_at: '2026-08-07T08:00:00Z',
+    last_error_at: null,
+    last_error_code: null,
+    last_error_message: null,
+    stale_age_seconds: 0,
+  },
+  error_code: null,
+  error_message: null,
+});
+
+const overviewWithStore = (): GrileOverview => ({
+  month: '2026-08',
+  total_sheets: 1,
+  run: null,
+  summary: {
+    business_ok: 1,
+    business_problems: 0,
+    business_unknown: 0,
+    provider_fresh: 1,
+    provider_errors: 0,
+    provider_stale: 0,
+    provider_unknown: 0,
+    legacy_completion_windows: 0,
+  },
+  managers: [{
+    name: 'ASM Test',
+    store_count: 1,
+    ok: 1,
+    problems: 0,
+    business_unknown: 0,
+    provider_errors: 0,
+    provider_stale: 0,
+    provider_unknown: 0,
+    legacy_completion_windows: 0,
+    avg_completion: 50,
+    team_leaders: [{ name: null, firms: [{ name: 'Mobiup', stores: [store()] }] }],
+  }],
 });
 
 describe('Grile run authority', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    cleanup();
   });
 
   it('blocks only an authoritative active run and re-enables after terminal state', async () => {
@@ -94,5 +177,32 @@ describe('Grile run authority', () => {
     );
 
     expect(await screen.findByRole('button', { name: 'Rulează verificare' })).toBeEnabled();
+  });
+
+  it('shows the explicit unknown-state warning instead of claiming refresh failure or success', async () => {
+    api.getGrileOverview.mockResolvedValue(overviewWithStore());
+    api.refreshGrileStore.mockRejectedValue(
+      new Error(
+        'Starea verificării 41 nu poate fi confirmată. Nu relansa verificarea până când operația nu este verificată în backend.',
+      ),
+    );
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false, gcTime: 0 } },
+    });
+    const user = userEvent.setup();
+    render(
+      <QueryClientProvider client={client}>
+        <GrileSubtab initialMonth="2026-08" />
+      </QueryClientProvider>,
+    );
+
+    const refreshButtons = await screen.findAllByRole('button', {
+      name: 'Reîmprospătează grila Magazin Test',
+    });
+    // StoreRow intentionally exposes equivalent mobile and desktop controls;
+    // exercise one rendered control and verify the shared mutation state.
+    expect(refreshButtons.length).toBeGreaterThan(0);
+    await user.click(refreshButtons[0]!);
+    expect(await screen.findByRole('alert')).toHaveTextContent('Nu relansa verificarea');
   });
 });

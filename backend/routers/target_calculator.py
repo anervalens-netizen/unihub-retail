@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-import re
 from decimal import Decimal
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field
 
 from auth import AuthClaims, require_auth
 from db.connection import get_pool
@@ -14,10 +13,10 @@ from permissions import require_privileged_access
 from privileged_access import TARGET_FINALIZER_GROUPS_ENV, has_configured_group
 from rate_limits import REPORT_EXPORT_LIMIT, TARGET_MUTATION_LIMIT, rate_limit
 from repositories.target_calculator import TargetCalculatorRepository
+from schemas.common import MonthStr
 from services.target_calculator import TargetCalculatorService
 
 router = APIRouter(prefix="/api/target-calculator", tags=["target-calculator"])
-MONTH_PATTERN = re.compile(r"^\d{4}-(0[1-9]|1[0-2])$")
 
 
 def can_finalize_targets(claims: AuthClaims) -> bool:
@@ -41,21 +40,14 @@ def require_target_owner(
 class TargetCalculationRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    target_month: str
+    target_month: MonthStr
     total_target: Decimal = Field(gt=0)
     min_floor: Decimal = Field(default=Decimal("35000"), ge=0)
     previous_month_floor_pct: Decimal = Field(default=Decimal("0.90"), ge=0, le=2)
     previous_month_cap_pct: Decimal = Field(default=Decimal("1.70"), gt=0, le=3)
     seasonality_years: int = Field(default=3, ge=1, le=3)
-    cohort_month: str | None = None
+    cohort_month: MonthStr | None = None
     expected_revision: int | None = Field(default=None, ge=1)
-
-    @field_validator("target_month", "cohort_month")
-    @classmethod
-    def valid_month(cls, value: str | None) -> str | None:
-        if value is not None and not MONTH_PATTERN.match(value):
-            raise ValueError("Luna trebuie sa fie in format YYYY-MM")
-        return value
 
 
 class TargetFinalRow(BaseModel):

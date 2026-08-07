@@ -2,12 +2,12 @@
 
 ## Rolul acestei căi
 
-Acesta este mecanismul formal, cu artefact imutabil, păstrat pentru release-uri
-etichetate și schimbări cu risc mare. Nu mai este calea obligatorie pentru orice
-modificare. Calea rapidă autorizată prin conversația operațională este definită
-în `../docs/adr/005-chat-authorized-delivery.md` și poate folosi checkoutul local,
-buildul, restartul serviciilor afectate și verificarea live fără un PR sau un
-approval separat.
+Acesta este mecanismul obligatoriu pentru orice modificare runtime. Conform
+`../docs/adr/006-verified-runtime-delivery.md`, codul, frontendul, migrările,
+workers și configurația operațională intră live numai din artefactul CI al
+SHA-ului exact. Conversația autorizează execuția autonomă, dar nu înlocuiește
+CI-ul, digestul sau deploy workflow-ul. Calea fără artefact este limitată la
+documentație non-runtime și break-glass strict.
 
 `deploy-retail-artifact.sh` and `approve-retail-release.sh` are the reviewed
 sources for the root-owned production boundary. CI must never install them.
@@ -15,6 +15,16 @@ Provisioning is a separate privileged operation that copies the reviewed files
 to `/opt/Mobiup/ops/scripts/`, makes the files and parent directory root-owned
 and non-writable by the runner, and verifies the installed SHA-256 values match
 the reviewed sources exactly.
+
+The deploy also owns the versioned Retail runtime assets: four systemd units,
+the detected Prometheus bridge environment, and the rendered Retail scrape
+fragment. The shared observability stack is provisioned once with
+`scrape_config_files: /etc/prometheus/scrape.d/*.yml` and a read-only host mount
+from `/opt/Mobiup/ops/prometheus/scrape.d`; the Retail deploy validates but
+never rewrites the shared Prometheus config or Compose topology. Missing mount,
+include, bridge data, `promtool` success or any of the three UP targets is a
+fail-closed release gate. Rollback restores the prior units, environment and
+fragment together with code and `dist/`.
 
 Run the sandbox without production access:
 
@@ -99,9 +109,9 @@ may complete this gate without asking the operator to run the command. Never
 place it in Actions, a script run by the deploy identity, or an unattended
 scheduler.
 
-Invocation of this formal artifact entrypoint is allowed only through the
-workflow and the dedicated `unihub-deploy` OS identity. This restriction does
-not prohibit the ADR-005 local-first path. Install `unihub-deploy.sudoers` only
+Invocation of this artifact entrypoint is allowed only through the workflow
+and the dedicated `unihub-deploy` OS identity. ADR-006 elimină calea local-first
+pentru runtime. Install `unihub-deploy.sudoers` only
 after validating it with `visudo -cf`. Politica permite numai entrypointul de
 artefact si operatiile `acquire`/`release` ale lockului global
 `/usr/local/sbin/unihub-deploy-lock`; scriptul lock root-owned valideaza strict
