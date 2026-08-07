@@ -1001,6 +1001,10 @@ async def test_p1a_authority_matrix_and_controlled_cas_are_authenticated(
             # Every row is an independent authenticated session, not SET ROLE.
             assert await web.fetchval("SELECT COUNT(*) FROM stores") == 0
             assert await web.fetchval("SELECT COUNT(*) FROM fieldops_visits") == 0
+            assert await web.fetchval(
+                "SELECT COUNT(*) FROM reporting_sales_cutoff_v1"
+            ) == 0
+            await _expect_denied(web, "SELECT * FROM sales_generation_heads")
             await _expect_denied(web, "SELECT * FROM sales_import_stage_rows")
 
             # business-write may create online work, but cannot read import evidence.

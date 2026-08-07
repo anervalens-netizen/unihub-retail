@@ -68,6 +68,7 @@
     "060_insight_finance_v2_performance.sql": "67975c4e926996b26a650e6cbac46d597a4c5a0f915979a7180568d4d1489e09",
     "061_insight_finance_v2_period_pushdown.sql": "7dff26f8268923cf644dcd00a1d5292f53f34b3338952d0b4be645f8bcd4b4eb",
     "062_grile_v2_read_contract.sql": "146ac39fc6c2ec7d3f0ddc599d60e43bdbe76ad0344fe837e4439841ebb05ccc",
-    "063_leave_request_date_contract.sql": "dba80346ea5fe02213a0e39ebf9c3f408168b9b048efba75e78fff6544487df4"
+    "063_leave_request_date_contract.sql": "dba80346ea5fe02213a0e39ebf9c3f408168b9b048efba75e78fff6544487df4",
+    "064_ai_forecast_cutoff_read_model.sql": "3fe8d8f32d51ec8a25450d3fc45bc7d64f8bdfb663949054862ea41a1805b6f4"
   }
 }

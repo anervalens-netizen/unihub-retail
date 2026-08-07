@@ -42,7 +42,7 @@
   "legacy_max_python_function_lines": {
     "backend/config.py::load_runtime_config": 195,
     "backend/grile/adapters/google_process.py::fetch_grile_snapshot": 123,
-    "backend/repositories/ai_forecast.py::AiForecastRepository.fetch_response_rows": 203,
+    "backend/repositories/ai_forecast.py::AiForecastRepository.fetch_response_rows": 187,
     "backend/repositories/ai_forecast.py::AiForecastRepository.fetch_rolling_rows": 174,
     "backend/repositories/dashboard.py::DashboardRepository.fetch_monthly_history": 126,
     "backend/repositories/dashboard.py::DashboardRepository.fetch_summary": 127,

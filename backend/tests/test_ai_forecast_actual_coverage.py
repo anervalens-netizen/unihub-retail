@@ -4,6 +4,7 @@ import asyncio
 from contextlib import asynccontextmanager
 from datetime import date
 from decimal import Decimal
+from pathlib import Path
 from typing import Any
 
 from repositories.ai_forecast import AiForecastRepository
@@ -87,9 +88,22 @@ def test_actual_coverage_uses_official_cutoff_not_positive_sales() -> None:
         assert [point["has_actual"] for point in result["daily"]] == [True, True, False]
         assert result["daily"][0]["actual_sales"] == Decimal("0")
         assert result["daily"][1]["actual_sales"] == Decimal("-3")
-        assert "sales_generation_heads" in connection.cutoff_query
-        assert "snapshot.cutoff_date" in connection.cutoff_query
-        assert "MAX(transaction.sale_date)" in connection.cutoff_query
+        assert "reporting_sales_cutoff_v1" in connection.cutoff_query
+        assert "sales_generation_heads" not in connection.cutoff_query
         assert "fd.forecast_date <=" in connection.daily_query
 
     asyncio.run(scenario())
+
+
+def test_cutoff_read_model_preserves_authority_and_web_least_privilege() -> None:
+    root = Path(__file__).resolve().parents[2]
+    migration = (
+        root / "backend/db/migrations/064_ai_forecast_cutoff_read_model.sql"
+    ).read_text(encoding="utf-8")
+
+    assert "CREATE OR REPLACE VIEW reporting_sales_cutoff_v1" in migration
+    assert "sales_generation_heads AS head" in migration
+    assert "head.snapshot_id" in migration
+    assert "COALESCE(snapshot.cutoff_date, MAX(transaction.sale_date))" in migration
+    assert "GRANT SELECT ON TABLE reporting_sales_cutoff_v1 TO unihub_web_read" in migration
+    assert "GRANT SELECT ON TABLE sales_generation_heads TO unihub_web_read" not in migration

@@ -93,25 +93,9 @@ class AiForecastRepository:
         async with self.pool.acquire() as conn:
             actual_last_date = await conn.fetchval(
                 """
-                SELECT COALESCE(
-                    snapshot.cutoff_date,
-                    (
-                        SELECT MAX(transaction.sale_date)
-                        FROM sales_transactions AS transaction
-                        WHERE transaction.snapshot_id = snapshot.id
-                    )
-                )
-                FROM import_snapshots AS snapshot
-                LEFT JOIN sales_generation_heads AS head
-                  ON head.import_month = snapshot.import_month
-                 AND head.snapshot_id = snapshot.id
-                WHERE snapshot.import_month = $1
-                  AND snapshot.status = 'completed'
-                ORDER BY
-                  CASE WHEN head.snapshot_id IS NOT NULL THEN 0 ELSE 1 END,
-                  snapshot.created_at DESC,
-                  snapshot.id DESC
-                LIMIT 1
+                SELECT cutoff_date
+                FROM reporting_sales_cutoff_v1
+                WHERE import_month = $1
                 """,
                 forecast_month,
             )
