@@ -129,6 +129,11 @@ Migrarea 060 păstrează neschimbat contractul Finance v2 și materializează o
 singură dată setul său de rânduri în fiecare interogare. Citirea P&L nu mai
 reexpandează snapshoturile cross-domain doar pentru a repeta metadata.
 
+Migrarea 061 optimizează suplimentar aceeași interfață fără schimbarea
+semanticii: precedența actual/estimat și metadata sunt calculate cu ferestre pe
+perioadă, iar `period_date` permite pushdown indexat pentru luna sau intervalul
+cerut. Lunile fără legătură nu mai sunt scanate de interogarea Insight.
+
 ## Cutover P1-A și recovery
 
 040 creează grupurile de autoritate, iar 041 preia ownershipul. La upgrade,

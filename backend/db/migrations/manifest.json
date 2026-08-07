@@ -65,6 +65,7 @@
     "057_insight_contest_grile_campaign_v3.sql": "b66ba6287f2e842be7e6be2047cf6c23e6048f92419044f0b45d639e6a83bc8e",
     "058_insight_grile_historical_v2.sql": "c2d369aab988931e35e32b91d90a4df650a801b1b5a9f14fa13d4f5fe3d9d4ec",
     "059_insight_full_visibility_read_models.sql": "e587202acff59b7d98f2d8d23dc3c0a917b583c616f97c1b6bf8af8ebcad7ed8",
-    "060_insight_finance_v2_performance.sql": "67975c4e926996b26a650e6cbac46d597a4c5a0f915979a7180568d4d1489e09"
+    "060_insight_finance_v2_performance.sql": "67975c4e926996b26a650e6cbac46d597a4c5a0f915979a7180568d4d1489e09",
+    "061_insight_finance_v2_period_pushdown.sql": "7dff26f8268923cf644dcd00a1d5292f53f34b3338952d0b4be645f8bcd4b4eb"
   }
 }
