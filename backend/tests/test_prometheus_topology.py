@@ -87,3 +87,12 @@ def test_systemd_uses_multiprocess_web_metrics_and_detected_gateway_env() -> Non
     assert "WORKER_METRICS_HOST=127.0.0.1" not in imports
     assert "WORKER_METRICS_HOST=0.0.0.0" not in imports
     assert "WORKER_METRICS_PORT=9902" in imports
+
+
+def test_runtime_verifier_sets_backend_pythonpath_itself() -> None:
+    root = Path(__file__).resolve().parents[2]
+    verifier = (root / "ops/verify-forensic-remediation-runtime.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert 'PYTHONPATH="$ROOT/backend${PYTHONPATH:+:$PYTHONPATH}"' in verifier

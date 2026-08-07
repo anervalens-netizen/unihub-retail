@@ -13,7 +13,8 @@ test -d "$ROOT"
 test "$(git -C "$ROOT" rev-parse HEAD)" = "$EXPECTED_SHA"
 
 cd "$ROOT"
-backend/venv/bin/python -c \
+PYTHONPATH="$ROOT/backend${PYTHONPATH:+:$PYTHONPATH}" \
+  backend/venv/bin/python -c \
   'from db.migration_runner import load_migration_manifest, verify_migration_files; verify_migration_files(load_migration_manifest())'
 
 systemctl is-active --quiet unihub-backend.service
