@@ -1,0 +1,36 @@
+Forensic remediation bootstrap failed.
+bootstrap_head=e87320c1d5aed3498dabeb545692e9a1b993e56f
+expected_base=5a0325f6bcd2ecc15a2e120e879dff99e6f089fb
+exit_status=127
+
+/tmp/forensic-remediation.tar.xz: OK
+/tmp/tmp.m5aUKZhOp6/remediation.patch:5510: trailing whitespace.
+**Status:** Accepted  
+/tmp/tmp.m5aUKZhOp6/remediation.patch:5511: trailing whitespace.
+**Date:** 2026-08-07  
+/tmp/tmp.m5aUKZhOp6/remediation.patch:5512: trailing whitespace.
+**Decision owner:** Retail Business și Operations  
+warning: 3 lines add whitespace errors.
+/opt/Mobiup/ops/runners/retail/_work/_temp/98c2d52f-7e67-443f-8658-2a93d176c2a6.sh: line 53: python: command not found
+HEAD is now at e87320c chore: make remediation bootstrap diagnostic and atomic
+Removing backend/db/migrations/059_grile_v2_read_contract.sql
+Removing backend/db/migrations/060_leave_request_date_contract.sql
+Removing backend/grile/
+Removing backend/observability/
+Removing backend/services/export_process.py
+Removing backend/tests/test_ai_forecast_actual_coverage.py
+Removing backend/tests/test_complexity_ratchet.py
+Removing backend/tests/test_export_process.py
+Removing backend/tests/test_grile_v2_contract.py
+Removing backend/tests/test_prometheus_topology.py
+Removing backend/tests/test_public_month_contract.py
+Removing backend/tests/test_store_pnl_decimal.py
+Removing docs/adr/006-verified-runtime-delivery.md
+Removing docs/engineering/forensic-remediation-implementation-2026-08-07.md
+Removing docs/operations/SERVER_AGENT_PROMPT_FORENSIC_REMEDIATION.md
+Removing docs/operations/forensic-remediation-rollout-2026-08-07.md
+Removing ops/observability/retail-process-scrape.yml
+Removing ops/verify-forensic-remediation-runtime.sh
+Removing scripts/check_complexity_ratchet.py
+Removing scripts/complexity-ratchet.json
+Removing src/api/grile.test.ts
