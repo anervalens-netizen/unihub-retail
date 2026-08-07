@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import asyncio
 import calendar
+import ctypes
+import gc
 from hashlib import sha256
 import json
 import logging
@@ -38,6 +40,19 @@ DEFAULT_CONCURRENCY = 3  # sub quota Google read (60/min/user); 429 rare la aces
 GRILE_RUN_HEARTBEAT_SECONDS = 30.0
 _TRANSIENT = {429, 500, 502, 503, 504}
 logger = logging.getLogger(__name__)
+
+
+def _release_grile_transient_memory() -> None:
+    """Return large Google response arenas before the serialized worker is throttled."""
+    gc.collect()
+    try:
+        libc = ctypes.CDLL(None)
+        malloc_trim = libc.malloc_trim
+    except (AttributeError, OSError):
+        return
+    malloc_trim.argtypes = [ctypes.c_size_t]
+    malloc_trim.restype = ctypes.c_int
+    malloc_trim(0)
 
 
 def _is_transient(exc: Exception) -> bool:
@@ -335,6 +350,9 @@ async def _run_claimed_grile_check(
         site = str(sheet["site_code"])
         sid = str(sheet["sheet_id"])
         exp = expected.get(site, {})
+        value_ranges: list[dict[str, Any]] | None = None
+        mod_raw: str | None = None
+        row: dict[str, Any] | None = None
         if lease_lost.is_set():
             raise RuntimeError("Grile run lost its DB lease")
         try:
@@ -344,6 +362,7 @@ async def _run_claimed_grile_check(
                 sid,
                 str(sheet["template_version"]),
             )
+            assert value_ranges is not None
             row = _status_from_google(
                 site_code=site,
                 expected=exp,
@@ -359,20 +378,27 @@ async def _run_claimed_grile_check(
         except Exception as exc:  # noqa: BLE001 — eroare Google per magazin
             row = _error_row(site, exp, tolerance, "GOOGLE_ERROR", str(exc)[:500])
             cls = "error"
-        if lease_lost.is_set() or google_stop.is_set():
-            raise RuntimeError("Grile run stopped before observation persistence")
-        await repo.record_full_observation(
-            run_id,
-            row,
-            generation=generations[site],
-            checked_by_sub=triggered_by_sub,
-        )
-        async with progress_lock:
-            progress += 1
-            if not await repo.set_run_progress(run_id, progress):
-                lease_lost.set()
-                raise RuntimeError("Grile run lost its DB lease")
-        return cls
+        try:
+            if lease_lost.is_set() or google_stop.is_set():
+                raise RuntimeError("Grile run stopped before observation persistence")
+            await repo.record_full_observation(
+                run_id,
+                row,
+                generation=generations[site],
+                checked_by_sub=triggered_by_sub,
+            )
+            async with progress_lock:
+                progress += 1
+                if not await repo.set_run_progress(run_id, progress):
+                    lease_lost.set()
+                    raise RuntimeError("Grile run lost its DB lease")
+            return cls
+        finally:
+            value_ranges = None
+            mod_raw = None
+            if row is not None:
+                row.clear()
+            _release_grile_transient_memory()
 
     tasks = [
         asyncio.create_task(process(sheet), name=f"grile-store:{run_id}:{sheet['site_code']}")

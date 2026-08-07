@@ -268,9 +268,16 @@ def test_claimed_grile_run_completes_and_persistence_failure_is_drained(monkeypa
         {"values": []},
     ]
     closed: list[object] = []
+    released = 0
+
+    def release_transient_memory() -> None:
+        nonlocal released
+        released += 1
+
     monkeypatch.setattr(grile, "get_credentials", lambda: object())
     monkeypatch.setattr(grile, "build_services", lambda: (object(), object()))
     monkeypatch.setattr(grile, "close_services", lambda *services: closed.extend(services))
+    monkeypatch.setattr(grile, "_release_grile_transient_memory", release_transient_memory)
     monkeypatch.setattr(grile, "fetch_grila", lambda *_args: values)
     monkeypatch.setattr(grile, "fetch_mod_time", lambda *_args: None)
 
@@ -343,3 +350,4 @@ def test_claimed_grile_run_completes_and_persistence_failure_is_drained(monkeypa
     asyncio.run(scenario())
     assert len(closed) >= 6
     assert len(closed) % 2 == 0
+    assert released >= 3
