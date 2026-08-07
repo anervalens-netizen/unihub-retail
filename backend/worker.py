@@ -492,9 +492,6 @@ async def startup(ctx: dict) -> None:
         from observability.worker_metrics import start_worker_metrics
 
         ctx["worker_metrics_server"] = start_worker_metrics(worker_role)
-        # Expose process metrics before startup reconciliation can wait on an
-        # external provider. Any startup failure still flows through shutdown,
-        # which closes the endpoint together with the partially built runtime.
         await _startup_runtime(ctx, worker_role=worker_role)
     except BaseException:
         logger.exception("Worker startup failed; cleaning partially started resources")
