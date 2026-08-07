@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 import db.connection
+import observability.worker_metrics
 import services.importer
 import services.jobs
 import services.export_operations
@@ -14,6 +15,56 @@ import services.erp_reconciliation
 import services.imports
 import repositories.grile
 import worker
+
+
+@pytest.mark.asyncio
+async def test_worker_metrics_start_before_runtime_reconciliation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    metrics_server = MagicMock()
+    start_metrics = MagicMock(return_value=metrics_server)
+
+    async def assert_metrics_started(ctx: dict, *, worker_role: str) -> None:
+        assert worker_role == "operations"
+        assert ctx["worker_metrics_server"] is metrics_server
+
+    monkeypatch.setenv("RETAIL_WORKER_ROLE", "operations")
+    monkeypatch.setattr(
+        observability.worker_metrics,
+        "start_worker_metrics",
+        start_metrics,
+    )
+    monkeypatch.setattr(worker, "_startup_runtime", assert_metrics_started)
+    ctx: dict = {}
+
+    await worker.startup(ctx)
+
+    start_metrics.assert_called_once_with("operations")
+
+
+@pytest.mark.asyncio
+async def test_failed_worker_startup_closes_early_metrics_endpoint(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    metrics_server = MagicMock()
+    monkeypatch.setenv("RETAIL_WORKER_ROLE", "operations")
+    monkeypatch.setattr(
+        observability.worker_metrics,
+        "start_worker_metrics",
+        MagicMock(return_value=metrics_server),
+    )
+    monkeypatch.setattr(
+        worker,
+        "_startup_runtime",
+        AsyncMock(side_effect=RuntimeError("startup reconciliation failed")),
+    )
+    monkeypatch.setattr(db.connection, "close_db_pool", AsyncMock())
+    monkeypatch.setattr(services.jobs, "close_arq_pool", AsyncMock())
+
+    with pytest.raises(RuntimeError, match="startup reconciliation failed"):
+        await worker.startup({})
+
+    metrics_server.close.assert_called_once_with()
 
 
 def test_worker_uses_bounded_serial_execution(monkeypatch: pytest.MonkeyPatch) -> None:
