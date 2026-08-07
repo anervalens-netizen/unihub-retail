@@ -125,6 +125,10 @@ precedență actual/estimat ca repository-ul Retail și păstrează explicit
 rândurile estimate, nemapate și nealocate. Rolul Insight primește SELECT numai
 pe view-urile versionate, niciodată pe sursele raw.
 
+Migrarea 060 păstrează neschimbat contractul Finance v2 și materializează o
+singură dată setul său de rânduri în fiecare interogare. Citirea P&L nu mai
+reexpandează snapshoturile cross-domain doar pentru a repeta metadata.
+
 ## Cutover P1-A și recovery
 
 040 creează grupurile de autoritate, iar 041 preia ownershipul. La upgrade,
