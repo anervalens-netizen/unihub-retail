@@ -114,6 +114,17 @@ setul auditat al run-ului (fence dacă există, altfel rândurile immutable), nu
 lista actuală de foi: închiderea ulterioară a unui magazin nu șterge istoria.
 TR și cartele rămân excluse.
 
+### Compensation și Finance complete (059)
+
+Migrarea 059 păstrează contractele v1 și snapshot v6 ca ancore N-1 și adaugă
+`reporting_source_snapshot_v7`, `reporting_compensation_person_month_v2`,
+`reporting_compensation_month_v2` și `reporting_finance_month_v2`. Compensation
+publică fiecare rând salarial Retail, inclusiv rândurile legacy fără batch, fără
+prag salarial sau de cohortă; CNP nu intră în contract. Finance aplică aceeași
+precedență actual/estimat ca repository-ul Retail și păstrează explicit
+rândurile estimate, nemapate și nealocate. Rolul Insight primește SELECT numai
+pe view-urile versionate, niciodată pe sursele raw.
+
 ## Cutover P1-A și recovery
 
 040 creează grupurile de autoritate, iar 041 preia ownershipul. La upgrade,
