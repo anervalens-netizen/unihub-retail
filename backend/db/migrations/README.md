@@ -65,6 +65,7 @@ release-ului `v2.1.0` include:
 | 055 | `055_durable_export_operations.sql` | `69e02b01dbfab1caf207b30a46b7abf2b1dcbeb7f51e26bcfabc5c1ec0c63b28` | operații XLSX complexe owner-bound, rezervare înainte de ARQ, lease/epoch fencing, artifact privat hash-uit, auto-download revendicat atomic și retry explicit până la TTL |
 | 056 | `056_fieldops_visits_operations_authority.sql` | `36c2bda0adf6b2e15298403e164e99b75d78e46369b44510c500fdf7dcd838db` | autoritate operațională minimă pentru snapshotul local Visits, fără extinderea accesului la sursa FieldOps |
 | 057 | `057_insight_contest_grile_campaign_v3.sql` | `b66ba6287f2e842be7e6be2047cf6c23e6048f92419044f0b45d639e6a83bc8e` | Campaign v3 cu variantă canonică, Concurs v1 publicat immutable, Grile v1 fenced și snapshot Insight v5; v2/v4 rămân N-1 |
+| 058 | `058_insight_grile_historical_v2.sql` | `c2d369aab988931e35e32b91d90a4df650a801b1b5a9f14fa13d4f5fe3d9d4ec` | Grile v2: o singură sursă pe perioadă, proiecția fenced curentă nenulă sau, determinist, ultimul full run finalizat immutable; v1/v5 rămân N-1 |
 
 Aplicarea se face numai prin `unihub-retail-migrate.service`, cu `MIGRATION_DATABASE_URL`, backup/read-only reconciliation și verificarea checksumului. Nu edita 032–036 după aplicare; corecția este o migrare nouă.
 
@@ -97,6 +98,21 @@ reconstruibilă: `promo_qualifying_bons` rămâne `NULL`, iar unitățile și
 discountul materializat rămân disponibile cu warning explicit.
 
 Migrațiile nu activează singure TVA live sau importul salarial live. Promotion pointer-ul P&L și batchul salary sunt contracte de audit/recovery; apply-ul financiar și reconcilierea HR rămân explicit blocate la P0.
+
+### Grile istoric (058)
+
+Migrarea 058 păstrează `reporting_source_snapshot_v5` și
+`reporting_grile_month_v1` N-1. Contractele noi
+`reporting_source_snapshot_v6` și `reporting_grile_month_v2` aleg exact o
+sursă pentru fiecare lună: întreaga proiecție fenced curentă numai când are cel
+puțin o observație eligibilă; altfel, full run-ul `completed` cel mai recent,
+ordonat stabil după instantul terminal și `id`. Nu completează găurile unei
+proiecții curente cu rânduri dintr-un run vechi. Full run-ul este final/immutable
+dar poate rămâne `partial` pentru acoperire, erori sau diferențe Grilă; o
+proiecție curentă rămâne explicit nefinală. Pentru fallback, populația este
+setul auditat al run-ului (fence dacă există, altfel rândurile immutable), nu
+lista actuală de foi: închiderea ulterioară a unui magazin nu șterge istoria.
+TR și cartele rămân excluse.
 
 ## Cutover P1-A și recovery
 
