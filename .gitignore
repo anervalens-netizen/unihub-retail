@@ -44,3 +44,13 @@ reports/audit/
 # Grile — Google service account (secret, read-only Sheets)
 backend/config/google/
 backend/config/google/*.json
+
+# Commercial campaign documents are private operational inputs, never Git assets.
+/docs/Campanii-promo/**/*.pdf
+/docs/Campanii-promo/**/*.doc
+/docs/Campanii-promo/**/*.docx
+/docs/Campanii-promo/**/*.xls
+/docs/Campanii-promo/**/*.xlsx
+/docs/Campanii-promo/**/*.xlsm
+/docs/Campanii-promo/**/*.ppt
+/docs/Campanii-promo/**/*.pptx

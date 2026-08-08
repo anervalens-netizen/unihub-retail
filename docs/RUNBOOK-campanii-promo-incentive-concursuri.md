@@ -15,8 +15,10 @@ loguri.
 | Vânzări | snapshotul lunar Retail și agregatele `reporting_*` |
 
 Fișierele din `data/` sunt neversionate și sunt incluse în backupul
-operațional. Anexele sursă păstrate sub `docs/Campanii-promo/` sunt inputuri
-business, nu rapoarte generate și nu se șterg la curățarea repository-ului.
+operațional. Documentele comerciale sursă nu se păstrează în Git. Ele rămân în
+storage operațional privat, iar runtime-ul consumă numai generațiile promo
+imuabile din `data/promo_generations/`, împreună cu manifestele și hashurile
+verificate.
 
 ## Semantica Incentive
 

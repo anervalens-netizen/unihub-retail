@@ -28,7 +28,15 @@ def test_repository_ignore_rules_are_path_specific() -> None:
 
 def test_repository_keeps_only_authoritative_documentation() -> None:
     paths = tracked_paths()
-    assert any(path.startswith("docs/Campanii-promo/") for path in paths)
+    commercial_suffixes = {
+        ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".xlsm", ".ppt", ".pptx"
+    }
+    assert "docs/Campanii-promo/README.md" in paths
+    assert not any(
+        path.startswith("docs/Campanii-promo/")
+        and Path(path).suffix.lower() in commercial_suffixes
+        for path in paths
+    )
     assert not any(path.startswith("docs/archive/") for path in paths)
     assert "APP_ARCHITECTURE.md" in paths
     assert "docs/AUDIT_TEHNIC_RETAIL_UNIHUB_REAUDIT_2026-07-15.md" in paths
