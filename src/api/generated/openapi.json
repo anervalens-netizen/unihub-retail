@@ -5043,6 +5043,11 @@
             "title": "Provider Errors",
             "type": "integer"
           },
+          "provider_fresh": {
+            "minimum": 0.0,
+            "title": "Provider Fresh",
+            "type": "integer"
+          },
           "provider_stale": {
             "minimum": 0.0,
             "title": "Provider Stale",
@@ -5072,6 +5077,7 @@
           "ok",
           "problems",
           "business_unknown",
+          "provider_fresh",
           "provider_errors",
           "provider_stale",
           "provider_unknown",

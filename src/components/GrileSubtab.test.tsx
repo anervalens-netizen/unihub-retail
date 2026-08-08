@@ -126,6 +126,7 @@ const overviewWithStore = (): GrileOverview => ({
     ok: 1,
     problems: 0,
     business_unknown: 0,
+    provider_fresh: 1,
     provider_errors: 0,
     provider_stale: 0,
     provider_unknown: 0,

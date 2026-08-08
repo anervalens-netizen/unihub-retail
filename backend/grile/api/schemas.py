@@ -92,6 +92,7 @@ class GrileManagerResponse(GrileApiModel):
     ok: NonNegativeInt
     problems: NonNegativeInt
     business_unknown: NonNegativeInt
+    provider_fresh: NonNegativeInt
     provider_errors: NonNegativeInt
     provider_stale: NonNegativeInt
     provider_unknown: NonNegativeInt

@@ -5,6 +5,7 @@ from contextlib import nullcontext
 from datetime import date, datetime, timezone
 from typing import Any, cast
 
+from grile.api.schemas import GrileOverviewResponse
 from repositories.grile import GrileRepository
 from services import grile
 from services.grile import _completed_days_for_month, _normalize_completion_window
@@ -132,8 +133,10 @@ def test_overview_reprojects_historical_run_to_current_active_grid_scope(monkeyp
     monkeypatch.setattr(grile, "GrileRepository", Repository)
 
     result = asyncio.run(grile.get_overview(object(), "2026-07"))
+    validated = GrileOverviewResponse.model_validate(result)
 
     assert result["total_sheets"] == 2
+    assert validated.managers[0].provider_fresh == 2
     # Full-run counters remain immutable evidence for that run; the current
     # active-sheet projection is exposed separately in summary.
     assert result["run"]["progress_current"] == 3

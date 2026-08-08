@@ -1,5 +1,5 @@
 /* GENERATED FILE. Run npm run contracts:generate; do not edit manually. */
-export const RETAIL_OPENAPI_SHA256 = '2b074a57797d4615596a2bf062ced6b94b84cd7f9f7b07c8c5b8382d722101a7' as const; // pragma: allowlist secret
+export const RETAIL_OPENAPI_SHA256 = '92541b7bcba89603cccee03d56741459321651512185e6be3f15616ae46c67f7' as const; // pragma: allowlist secret
 
 export type RetailDecimal = string & { readonly __retailDecimal: unique symbol };
 
@@ -841,6 +841,7 @@ export interface RetailGrileManagerResponse {
   "ok": number;
   "problems": number;
   "provider_errors": number;
+  "provider_fresh": number;
   "provider_stale": number;
   "provider_unknown": number;
   "store_count": number;
