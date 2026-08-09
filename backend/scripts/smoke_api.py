@@ -5,10 +5,17 @@ from __future__ import annotations
 import json
 import os
 import sys
-import urllib.error
 import urllib.parse
-import urllib.request
+from pathlib import Path
 from typing import Any
+
+import httpx
+
+BACKEND_DIR = Path(__file__).resolve().parents[1]
+if str(BACKEND_DIR) not in sys.path:
+    sys.path.insert(0, str(BACKEND_DIR))
+
+from domain.http_endpoints import validated_http_endpoint
 
 
 BASE_URL = os.getenv("UNIHUB_API_URL", "http://localhost:8000").rstrip("/")
@@ -20,9 +27,15 @@ def request_json(path: str, token: str | None = None) -> Any:
     headers = {"Accept": "application/json"}
     if token:
         headers["Authorization"] = f"Bearer {token}"
-    request = urllib.request.Request(url=url, headers=headers, method="GET")
-    with urllib.request.urlopen(request, timeout=30) as response:
-        return json.loads(response.read().decode("utf-8"))
+    endpoint = validated_http_endpoint(url, setting="UNIHUB_API_URL")
+    response = httpx.get(
+        endpoint,
+        headers=headers,
+        timeout=30,
+        follow_redirects=False,
+    )
+    response.raise_for_status()
+    return response.json()
 
 
 def main() -> int:

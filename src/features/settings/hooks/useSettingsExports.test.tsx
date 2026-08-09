@@ -94,7 +94,7 @@ function wrapper(client = new QueryClient({
 describe("useSettingsExports request ownership", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    window.localStorage.clear();
+    window.sessionStorage.clear();
     api.getAvailableMonths.mockResolvedValue(["2026-08", "2026-07"]);
     api.getExportCatalog.mockResolvedValue(catalog);
     api.getFilterOptions.mockResolvedValue(filterOptions);
@@ -312,7 +312,7 @@ describe("useSettingsExports request ownership", () => {
       wrapper: wrapper(),
     });
     await waitFor(() => expect(first.result.current.exportMessage).toContain("Statusul exportului activ"));
-    expect(window.localStorage.getItem("unihub:settings:export-operation:user-a")).toBe("15");
+    expect(window.sessionStorage.getItem("unihub:settings:export-operation:user-a")).toBe("15");
     first.unmount();
 
     const second = renderHook(() => useSettingsExports(true, "user-a"), {
@@ -321,7 +321,7 @@ describe("useSettingsExports request ownership", () => {
     await waitFor(() => expect(api.downloadBlob).toHaveBeenCalledOnce());
     expect(api.getExportOperation).toHaveBeenCalledWith(15, expect.any(AbortSignal));
     expect(api.downloadExportOperation).toHaveBeenCalledTimes(2);
-    expect(window.localStorage.getItem("unihub:settings:export-operation:user-a")).toBeNull();
+    expect(window.sessionStorage.getItem("unihub:settings:export-operation:user-a")).toBeNull();
     second.unmount();
 
     const third = renderHook(() => useSettingsExports(true, "user-a"), {

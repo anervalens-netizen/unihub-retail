@@ -4,9 +4,9 @@ from __future__ import annotations
 from decimal import Decimal
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import Field
+from schemas.common import StrictApiModel, MonthStr
 
-from schemas.common import MonthStr
 
 
 StoreCoverageStatus = Literal["covered", "uncovered", "closed", "inactive"]
@@ -31,7 +31,7 @@ AgentEvaluationPeriod = Annotated[
 ]
 
 
-class AgentsOverviewResponse(BaseModel):
+class AgentsOverviewResponse(StrictApiModel):
     active_count: int
     new_count: int
     reactivated_count: int
@@ -43,7 +43,7 @@ class AgentsOverviewResponse(BaseModel):
     churned_total_count: int
 
 
-class StoreCoverageItem(BaseModel):
+class StoreCoverageItem(StrictApiModel):
     site_code: str
     locatie: str
     firma: str
@@ -58,7 +58,7 @@ class StoreCoverageItem(BaseModel):
     change_reason: str | None = None
 
 
-class StoreCoverageResponse(BaseModel):
+class StoreCoverageResponse(StrictApiModel):
     active_stores_count: int
     uncovered_stores_count: int
     closed_stores_count: int
@@ -66,7 +66,7 @@ class StoreCoverageResponse(BaseModel):
     items: list[StoreCoverageItem]
 
 
-class AgentMovementPoint(BaseModel):
+class AgentMovementPoint(StrictApiModel):
     month: MonthStr
     active: int
     new: int
@@ -76,11 +76,11 @@ class AgentMovementPoint(BaseModel):
     is_baseline: bool = False
 
 
-class AgentMovementResponse(BaseModel):
+class AgentMovementResponse(StrictApiModel):
     history: list[AgentMovementPoint]
 
 
-class AgentListItem(BaseModel):
+class AgentListItem(StrictApiModel):
     agent: str
     store_name: str | None = None
     firma: str | None = None
@@ -92,11 +92,11 @@ class AgentListItem(BaseModel):
     current_status: AgentCurrentStatus
 
 
-class AgentListResponse(BaseModel):
+class AgentListResponse(StrictApiModel):
     items: list[AgentListItem]
 
 
-class AgentProfileResponse(BaseModel):
+class AgentProfileResponse(StrictApiModel):
     agent: str
     first_seen_month: MonthStr
     last_seen_month: MonthStr
@@ -116,7 +116,7 @@ class AgentProfileResponse(BaseModel):
     current_status: AgentCurrentStatus
 
 
-class AgentHistoryPoint(BaseModel):
+class AgentHistoryPoint(StrictApiModel):
     month: MonthStr
     total_sales: Decimal
     total_quantity: int
@@ -125,16 +125,16 @@ class AgentHistoryPoint(BaseModel):
     is_active: bool
 
 
-class AgentHistoryResponse(BaseModel):
+class AgentHistoryResponse(StrictApiModel):
     history: list[AgentHistoryPoint]
 
 
-class AgentEvaluationOption(BaseModel):
+class AgentEvaluationOption(StrictApiModel):
     value: str
     label: str
 
 
-class AgentEvaluationRow(BaseModel):
+class AgentEvaluationRow(StrictApiModel):
     month: AgentEvaluationPeriod
     firma: str
     site_code: str
@@ -171,7 +171,7 @@ class AgentEvaluationRow(BaseModel):
     qualifier: AgentQualifier
 
 
-class AgentEvaluationResponse(BaseModel):
+class AgentEvaluationResponse(StrictApiModel):
     months: list[AgentEvaluationOption]
     firmas: list[AgentEvaluationOption]
     asms: list[AgentEvaluationOption]
@@ -179,7 +179,7 @@ class AgentEvaluationResponse(BaseModel):
     rows: list[AgentEvaluationRow]
 
 
-class AgentEvaluationV2Component(BaseModel):
+class AgentEvaluationV2Component(StrictApiModel):
     value: Decimal | None
     reference: Decimal | None = None
     score: Decimal | None
@@ -187,7 +187,7 @@ class AgentEvaluationV2Component(BaseModel):
     label: str | None = None
 
 
-class AgentEvaluationV2Row(BaseModel):
+class AgentEvaluationV2Row(StrictApiModel):
     month: AgentEvaluationPeriod
     firma: str
     site_code: str
@@ -236,7 +236,7 @@ class AgentEvaluationV2Row(BaseModel):
     rating: AgentRating
 
 
-class AgentEvaluationV2Response(BaseModel):
+class AgentEvaluationV2Response(StrictApiModel):
     months: list[AgentEvaluationOption]
     firmas: list[AgentEvaluationOption]
     asms: list[AgentEvaluationOption]

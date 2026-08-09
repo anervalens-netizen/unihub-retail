@@ -27,6 +27,7 @@ backend/venv/
 
 # Playwright
 playwright-report/
+playwright-report-*/
 test-results/
 
 # graphify tooling internals
@@ -46,11 +47,11 @@ backend/config/google/
 backend/config/google/*.json
 
 # Commercial campaign documents are private operational inputs, never Git assets.
-/docs/Campanii-promo/**/*.pdf
-/docs/Campanii-promo/**/*.doc
-/docs/Campanii-promo/**/*.docx
-/docs/Campanii-promo/**/*.xls
-/docs/Campanii-promo/**/*.xlsx
-/docs/Campanii-promo/**/*.xlsm
-/docs/Campanii-promo/**/*.ppt
-/docs/Campanii-promo/**/*.pptx
+/docs/Campanii-promo/**/*.[pP][dD][fF]
+/docs/Campanii-promo/**/*.[dD][oO][cC]
+/docs/Campanii-promo/**/*.[dD][oO][cC][xX]
+/docs/Campanii-promo/**/*.[xX][lL][sS]
+/docs/Campanii-promo/**/*.[xX][lL][sS][xX]
+/docs/Campanii-promo/**/*.[xX][lL][sS][mM]
+/docs/Campanii-promo/**/*.[pP][pP][tT]
+/docs/Campanii-promo/**/*.[pP][pP][tT][xX]

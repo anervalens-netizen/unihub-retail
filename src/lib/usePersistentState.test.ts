@@ -23,7 +23,7 @@ class MemoryStorage {
 }
 
 describe('persistent state helpers', () => {
-  it('keeps strings as plain localStorage values', () => {
+  it('keeps strings as plain sessionStorage values', () => {
     expect(serializePersistentValue('hub')).toBe('hub');
     expect(deserializePersistentValue('hub', 'fallback')).toBe('hub');
   });

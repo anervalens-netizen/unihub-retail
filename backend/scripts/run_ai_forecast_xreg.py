@@ -6,8 +6,7 @@ import csv
 import json
 import math
 import os
-import urllib.error
-import urllib.request
+import sys
 from calendar import monthrange
 from dataclasses import dataclass
 from decimal import Decimal
@@ -15,8 +14,13 @@ from pathlib import Path
 from time import monotonic
 from typing import Any, Literal
 
+BACKEND_DIR = Path(__file__).resolve().parents[1]
+if str(BACKEND_DIR) not in sys.path:
+    sys.path.insert(0, str(BACKEND_DIR))
+
 import asyncpg
 from dotenv import load_dotenv
+from services.forecast_http import post_forecast
 from services.spreadsheet_safety import csv_cell_value
 
 
@@ -351,21 +355,6 @@ def build_payload(
         "feature_profile": feature_profile,
     }
     return payload, rows_meta, skipped
-
-
-def post_forecast(api_url: str, api_key: str, payload: dict[str, Any], timeout: int) -> dict[str, Any]:
-    request = urllib.request.Request(
-        api_url,
-        data=json.dumps(payload, separators=(",", ":")).encode("utf-8"),
-        headers={"Content-Type": "application/json", "X-API-Key": api_key},
-        method="POST",
-    )
-    try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:
-            return json.loads(response.read())
-    except urllib.error.HTTPError as exc:
-        detail = exc.read().decode("utf-8", errors="replace")
-        raise RuntimeError(f"TimesFM HTTP {exc.code}: {detail}") from exc
 
 
 def parse_predictions(response: dict[str, Any], *, metric: MetricName) -> dict[str, list[Decimal]]:

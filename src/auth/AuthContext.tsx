@@ -15,6 +15,7 @@ import type {
   RetailSessionProfileResponse,
   RetailSessionStatusResponse,
 } from '../api/generated/contracts';
+import { bindRetailBrowserSession, clearRetailBrowserSession } from './browserSession';
 
 export type SessionProfile = RetailSessionProfileResponse;
 
@@ -54,12 +55,6 @@ export function AuthProvider({
     initRef.current = true;
 
     const init = async () => {
-      const e2eUser = (window as unknown as Record<string, unknown>).__E2E_USER__ as SessionUser | undefined;
-      if (e2eUser) {
-        setUser(e2eUser);
-        setIsLoading(false);
-        return;
-      }
       try {
         const response = await fetch('/auth/session', {
           credentials: 'same-origin',
@@ -74,6 +69,7 @@ export function AuthProvider({
         if (!payload.profile?.sub || !Array.isArray(payload.profile.groups) || !payload.csrf_token) {
           throw new Error('Session bootstrap returned an invalid contract');
         }
+        bindRetailBrowserSession(payload.profile.sub);
         csrfRef.current = payload.csrf_token;
         setUser({ profile: payload.profile });
       } catch (error) {
@@ -97,6 +93,7 @@ export function AuthProvider({
     });
     csrfRef.current = null;
     setUser(null);
+    clearRetailBrowserSession();
     onSessionCleared?.();
     if (response.ok) {
       const payload = await response.json() as RetailSessionLogoutResponse;
@@ -114,7 +111,7 @@ export function AuthProvider({
     logout,
   }), [user, isLoading, login, logout]);
 
-  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+  return <AuthContext.Provider value={value}>{isLoading ? null : children}</AuthContext.Provider>;
 }
 
 export function useAuth(): AuthContextValue {

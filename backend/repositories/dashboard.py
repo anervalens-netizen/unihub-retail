@@ -3,8 +3,8 @@ from __future__ import annotations
 from typing import Any
 import asyncpg
 
-from services.receipt_identity import canonical_receipt_identity_sql
-from services.forecast import business_forecast_factor_ctes
+from domain.reporting_sql import canonical_receipt_identity_sql
+from domain.reporting_sql import business_forecast_factor_ctes
 
 
 class DashboardRepository:

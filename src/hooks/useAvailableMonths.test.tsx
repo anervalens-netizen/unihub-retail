@@ -21,9 +21,9 @@ function wrapper() {
 
 describe('useAvailableMonths', () => {
   it('clears the session-scoped persistent fallback on logout', () => {
-    localStorage.setItem('unihub_available_months_v1', '{"version":1}');
+    sessionStorage.setItem('unihub_available_months_v1', '{"version":1}');
     clearAvailableMonthsCache();
-    expect(localStorage.getItem('unihub_available_months_v1')).toBeNull();
+    expect(sessionStorage.getItem('unihub_available_months_v1')).toBeNull();
   });
 
   it('classifies empty, stale, and session-expired states explicitly', () => {
@@ -43,7 +43,7 @@ describe('useAvailableMonths', () => {
   });
 
   it('rejects a single saved month as an incomplete stale fallback', () => {
-    localStorage.setItem(
+    sessionStorage.setItem(
       'unihub_available_months_v1',
       JSON.stringify({
         version: 1,
@@ -57,7 +57,7 @@ describe('useAvailableMonths', () => {
   });
 
   it('rejects duplicate saved months that normalize to one value', () => {
-    localStorage.setItem(
+    sessionStorage.setItem(
       'unihub_available_months_v1',
       JSON.stringify({
         version: 1,

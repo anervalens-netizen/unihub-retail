@@ -56,6 +56,7 @@ def _set_oidc_settings(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("SESSION_VALKEY_URL", "redis://localhost:6379/14")
     monkeypatch.setenv("PROMETHEUS_DOCKER_GATEWAY", "172.23.0.1")
     monkeypatch.setenv("PROMETHEUS_DOCKER_SUBNET", "172.23.0.0/16")
+    monkeypatch.setenv("CORS_ORIGINS", "https://retail.example.invalid")
 
 
 def test_is_production_logic(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -16,14 +16,13 @@ import os
 import sys
 from collections import defaultdict
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
 from typing import Sequence
 from uuid import UUID
 
 import asyncpg
-import xlrd
 from dotenv import load_dotenv
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
@@ -32,6 +31,7 @@ if str(BACKEND_DIR) not in sys.path:
 
 from db.connection import connect_database_url, verify_database_connection_authority  # noqa: E402
 
+from services.legacy_xls import LegacyXlsLimits, parse_legacy_xls  # noqa: E402
 from services.store_pnl_import import (  # noqa: E402
     AuthorityManifest,
     PnlImportError,
@@ -77,11 +77,21 @@ def company_from_title(value: object) -> str:
     raise PnlImportError(f"Companie necunoscuta in titlul P&L: {value!r}")
 
 
-def detail_category(detail: xlrd.sheet.Sheet, row_index: int) -> str:
-    direct = str(detail.cell_value(row_index, 1)).strip().lower()
+def _cell(rows: Sequence[Sequence[object]], row_index: int, column_index: int) -> object:
+    legacy_cell = getattr(rows, "cell_value", None)
+    if callable(legacy_cell):
+        return legacy_cell(row_index, column_index)
+    if row_index < 0 or row_index >= len(rows):
+        return None
+    row = rows[row_index]
+    return row[column_index] if 0 <= column_index < len(row) else None
+
+
+def detail_category(detail: Sequence[Sequence[object]], row_index: int) -> str:
+    direct = str(_cell(detail, row_index, 1) or "").strip().lower()
     if direct in VALID_CODES:
         return direct
-    composite = str(detail.cell_value(row_index, 5)).strip().lower()
+    composite = str(_cell(detail, row_index, 5) or "").strip().lower()
     inferred = composite.split("-", 1)[0]
     return inferred if inferred in VALID_CODES else direct
 
@@ -89,39 +99,55 @@ def detail_category(detail: xlrd.sheet.Sheet, row_index: int) -> str:
 def parse_workbook(path: Path, root: Path) -> WorkbookData:
     """Parse the exact bytes whose digest is compared with authority.
 
-    ``xlrd`` receives the already-hashed bytes, so a concurrent file mutation
-    cannot make the parser consume different content than the authenticated
-    source hash.
+    The resource-bounded parser child receives the already-hashed bytes, so a
+    concurrent file mutation cannot make it consume different content than the
+    authenticated source hash.
     """
     if path.is_symlink() or not path.is_file():
         raise PnlImportError(f"Sursa Finance trebuie sa fie fisier regulat: {path}")
     payload = path.read_bytes()
     digest = hashlib.sha256(payload).hexdigest()
-    workbook = xlrd.open_workbook(file_contents=payload)
-    summary = workbook.sheet_by_name("P&L Magazine")
-    detail = workbook.sheet_by_name("Detaliere")
-    company = company_from_title(summary.cell_value(0, 1))
+    parsed = parse_legacy_xls(
+        payload,
+        sheets=["P&L Magazine", "Detaliere"],
+        limits=LegacyXlsLimits(
+            max_source_bytes=64 * 1024 * 1024,
+            max_cells=4_000_000,
+            max_output_bytes=512 * 1024 * 1024,
+            memory_bytes=1536 * 1024 * 1024,
+            timeout_seconds=60.0,
+            cpu_seconds=55,
+        ),
+    )
+    summary = parsed.sheet("P&L Magazine").rows
+    detail = parsed.sheet("Detaliere").rows
+    company = company_from_title(_cell(summary, 0, 1))
 
     periods: list[date] = []
     for column in range(5, 17):
-        value = summary.cell_value(1, column)
-        moment = xlrd.xldate_as_datetime(value, workbook.datemode)
+        value = _cell(summary, 1, column)
+        if isinstance(value, datetime):
+            moment = value
+        elif isinstance(value, date):
+            moment = datetime(value.year, value.month, value.day)
+        else:
+            raise PnlImportError("Perioadă invalidă în sursa Finance")
         periods.append(date(moment.year, moment.month, 1))
 
     source_file = path.relative_to(root).as_posix()
     rows: list[PnlRow] = []
     months_with_values: set[date] = set()
-    for row_index in range(1, detail.nrows):
+    for row_index in range(1, len(detail)):
         category = detail_category(detail, row_index)
         if category not in VALID_CODES:
             continue
-        site_code = str(detail.cell_value(row_index, 2)).strip()
-        location = str(detail.cell_value(row_index, 3)).strip()
-        category_name = str(detail.cell_value(row_index, 4)).strip()
+        site_code = str(_cell(detail, row_index, 2) or "").strip()
+        location = str(_cell(detail, row_index, 3) or "").strip()
+        category_name = str(_cell(detail, row_index, 4) or "").strip()
         if not site_code or not location:
             continue
         for month_index, period in enumerate(periods):
-            value = detail.cell_value(row_index, 6 + month_index)
+            value = _cell(detail, row_index, 6 + month_index)
             if not isinstance(value, (int, float)) or isinstance(value, bool):
                 continue
             if abs(float(value)) > 1e-9:
@@ -173,7 +199,7 @@ def summary_category_code(code_value: object, name_value: object) -> str | None:
 
 
 def parse_consolidated_rows(
-    summary: xlrd.sheet.Sheet,
+    summary: Sequence[Sequence[object]],
     company: str,
     periods: Sequence[date],
     source_file: str,
@@ -181,13 +207,13 @@ def parse_consolidated_rows(
     populated_months: set[date],
 ) -> list[PnlRow]:
     rows: list[PnlRow] = []
-    for row_index in range(summary.nrows):
-        category = summary_category_code(summary.cell_value(row_index, 2), summary.cell_value(row_index, 3))
+    for row_index in range(len(summary)):
+        category = summary_category_code(_cell(summary, row_index, 2), _cell(summary, row_index, 3))
         if category is None:
             continue
-        category_name = str(summary.cell_value(row_index, 3)).strip() or category
+        category_name = str(_cell(summary, row_index, 3) or "").strip() or category
         for month_index, period in enumerate(periods):
-            value = summary.cell_value(row_index, 5 + month_index)
+            value = _cell(summary, row_index, 5 + month_index)
             if period not in populated_months or not isinstance(value, (int, float)) or isinstance(value, bool):
                 continue
             rows.append(PnlRow(
@@ -404,6 +430,6 @@ def main(argv: Sequence[str] | None = None) -> int:
 if __name__ == "__main__":
     try:
         raise SystemExit(main())
-    except (PnlImportError, ValueError, xlrd.XLRDError) as exc:
+    except (PnlImportError, ValueError) as exc:
         print(f"EROARE: {exc}", file=sys.stderr)
         raise SystemExit(1)

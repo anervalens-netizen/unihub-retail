@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
 import os
+import time
 from typing import Any
 
-from prometheus_client import Gauge, start_http_server
+from prometheus_client import Counter, Gauge, Histogram, start_http_server
 
 from observability.metrics_network import required_metrics_network
 
@@ -14,6 +16,68 @@ WORKER_UP = Gauge(
     "Whether one UniHub worker metrics endpoint is active.",
     ("service_role",),
 )
+QUEUE_BACKLOG = Gauge(
+    "unihub_worker_queue_backlog",
+    "Number of jobs waiting in a Retail worker queue.",
+    ("service_role",),
+)
+QUEUE_OLDEST_AGE_SECONDS = Gauge(
+    "unihub_worker_queue_oldest_age_seconds",
+    "Age of the oldest queued Retail job.",
+    ("service_role",),
+)
+JOB_DURATION_SECONDS = Histogram(
+    "unihub_worker_job_duration_seconds",
+    "Retail worker job execution duration.",
+    ("service_role",),
+)
+JOB_RESULTS = Counter(
+    "unihub_worker_job_results_total",
+    "Terminal Retail worker job outcomes.",
+    ("service_role", "result"),
+)
+
+
+async def observe_queue(redis: Any, *, role: str, queue_name: str) -> None:
+    """Refresh bounded queue backlog and oldest-age gauges from the ARQ zset."""
+    backlog = int(await redis.zcard(queue_name))
+    QUEUE_BACKLOG.labels(role).set(backlog)
+    oldest_age = 0.0
+    if backlog:
+        oldest = await redis.zrange(queue_name, 0, 0, withscores=True)
+        if oldest:
+            score_ms = float(oldest[0][1])
+            oldest_age = max(0.0, time.time() - score_ms / 1000.0)
+    QUEUE_OLDEST_AGE_SECONDS.labels(role).set(oldest_age)
+
+
+async def observe_job_start(ctx: dict[str, Any]) -> None:
+    enqueue_time = ctx.get("enqueue_time")
+    if isinstance(enqueue_time, datetime):
+        if enqueue_time.tzinfo is None:
+            enqueue_time = enqueue_time.replace(tzinfo=timezone.utc)
+        ctx["metrics_job_started_monotonic"] = time.monotonic()
+
+
+async def observe_job_end(ctx: dict[str, Any]) -> None:
+    role = str(ctx.get("worker_role", "unknown"))
+    started = ctx.get("metrics_job_started_monotonic")
+    if isinstance(started, (float, int)):
+        JOB_DURATION_SECONDS.labels(role).observe(max(0.0, time.monotonic() - started))
+    result = "unknown"
+    try:
+        from arq.jobs import Job
+
+        info = await Job(
+            str(ctx["job_id"]),
+            ctx["redis"],
+            _queue_name=str(ctx["queue_name"]),
+        ).result_info()
+        if info is not None:
+            result = "success" if info.success else "failed"
+    except Exception:
+        result = "unknown"
+    JOB_RESULTS.labels(role, result).inc()
 
 
 @dataclass(slots=True)
@@ -45,7 +109,7 @@ def _port_for_role(role: str) -> int | None:
 
 
 def start_worker_metrics(role: str) -> WorkerMetricsServer | None:
-    if role not in {"operations", "imports"}:
+    if role not in {"operations", "imports", "grile", "exports", "legacy"}:
         raise RuntimeError("Unknown worker metrics role")
     port = _port_for_role(role)
     if port is None:

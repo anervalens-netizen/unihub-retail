@@ -26,6 +26,8 @@ from schemas.erp_reconciliation import (
     ErpReconciliationResponse,
 )
 from services.campaigns import fetch_promo_incentive_summary
+from services.legacy_xls import limits_from_upload_policy
+from services.spreadsheet_readers import MissingWorksheetsError, read_required_spreadsheet_frames
 from services.jobs import enqueue_erp_reconciliation
 from services.spreadsheet_safety import (
     ERP_RECONCILIATION_SPREADSHEET_LIMITS,
@@ -36,11 +38,9 @@ from services.spreadsheet_safety import (
 
 
 logger = logging.getLogger(__name__)
-
 DEFAULT_MAX_ERP_RECONCILIATION_BYTES = 16 * 1024 * 1024
 ALLOWED_ERP_EXTENSIONS = frozenset({".xlsx", ".xls"})
 MAX_RETURNED_ISSUES = 500
-
 STORE_IDENTITY_COLUMNS = ("Firma", "CodLocatie", "Locatie")
 AGENT_IDENTITY_COLUMNS = (*STORE_IDENTITY_COLUMNS, "Agent")
 STORE_BASE_METRIC_COLUMNS = (
@@ -180,6 +180,7 @@ def _parse_erp_report_impl(
     import_month: str,
     *,
     cutoff_date: date,
+    source_suffix: str,
 ) -> ParsedErpReport:
     try:
         month_start = date.fromisoformat(f"{import_month}-01")
@@ -188,21 +189,19 @@ def _parse_erp_report_impl(
     if cutoff_date < month_start or cutoff_date.strftime("%Y-%m") != import_month:
         raise ErpReportValidationError("Cutoff-ul Retail nu este in luna selectata")
     try:
-        workbook = pd.ExcelFile(BytesIO(content))
-        try:
-            missing_sheets = [
-                sheet for sheet in ("Locatii", "Agenti") if sheet not in workbook.sheet_names
-            ]
-            if missing_sheets:
-                raise ErpReportValidationError(
-                    "Raportul nu contine foile: " + ", ".join(missing_sheets)
-                )
-            raw_stores = workbook.parse("Locatii", header=None)
-            raw_agents = workbook.parse("Agenti", header=None)
-        finally:
-            workbook.close()
+        frames = read_required_spreadsheet_frames(
+            content,
+            suffix=source_suffix,
+            sheet_names=["Locatii", "Agenti"], header=None,
+            limits=limits_from_upload_policy(ERP_RECONCILIATION_SPREADSHEET_LIMITS),
+        )
+        raw_stores, raw_agents = frames["Locatii"], frames["Agenti"]
     except ErpReportValidationError:
         raise
+    except MissingWorksheetsError as exc:
+        raise ErpReportValidationError(
+            "Raportul nu contine foile: " + ", ".join(exc.missing)
+        ) from exc
     except Exception as exc:
         raise ErpReportValidationError(
             "Raportul ERP nu poate fi citit ca fisier Excel"
@@ -296,6 +295,7 @@ def parse_erp_report(
             content,
             import_month,
             cutoff_date=cutoff_date,
+            source_suffix=source_suffix,
         )
         measurement.set_rows(len(parsed.stores) + len(parsed.agents))
     return replace(parsed, parser_resources=measurement.as_dict())

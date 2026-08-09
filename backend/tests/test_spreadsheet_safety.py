@@ -27,6 +27,7 @@ from services.spreadsheet_safety import (
     spreadsheet_cell_value,
     validate_spreadsheet_upload,
 )
+from services import legacy_xls
 
 
 def workbook_bytes(rows: int = 1) -> bytes:
@@ -78,6 +79,26 @@ def test_xls_preflight_reports_unavailable_structure_honestly() -> None:
     assert stats.uncompressed_bytes is None
     assert stats.cells is None
     assert stats.format == "xls"
+
+
+def test_numeric_legacy_sheet_selection_is_delegated_to_bounded_child(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    def bounded_parse(source: bytes, *, sheets: object, limits: object) -> object:
+        captured["source"] = source
+        captured["sheets"] = sheets
+        captured["limits"] = limits
+        return legacy_xls.LegacyXlsWorkbook(
+            (legacy_xls.LegacyXlsSheet("first", (("header",), ("value",))),)
+        )
+
+    monkeypatch.setattr(legacy_xls, "parse_legacy_xls", bounded_parse)
+    frame = legacy_xls.read_legacy_xls_frame(b"untrusted-xls", sheet_name=0)
+
+    assert captured["sheets"] == [0]
+    assert frame.to_dict(orient="records") == [{"header": "value"}]
 
 
 def test_import_policies_are_explicit_and_parser_measurement_is_finite() -> None:

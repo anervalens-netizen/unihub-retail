@@ -5,26 +5,17 @@ from datetime import date
 from fastapi import APIRouter, Depends, File, Form, UploadFile
 
 from auth import AuthClaims
-from db.connection import get_pool
+from composition import build_erp_reconciliation_service, build_imports_service
 from models import ImportHistoryEntry, ImportJobStatus, SalesGenerationPromotionRequest
 from permissions import require_import_admin
-from repositories.erp_reconciliation import ErpReconciliationRepository
-from repositories.imports import ImportsRepository
 from rate_limits import SALES_IMPORT_UPLOAD_LIMIT, rate_limit
 from services.erp_reconciliation import ErpReconciliationService
 from services.imports import ImportsService, get_public_import_job_status
 
 router = APIRouter(prefix="/api/import", tags=["imports"])
 
-async def get_imports_service() -> ImportsService:
-    pool = await get_pool()
-    repo = ImportsRepository(pool)
-    return ImportsService(repo, pool)
-
-
-async def get_erp_reconciliation_service() -> ErpReconciliationService:
-    pool = await get_pool()
-    return ErpReconciliationService(ErpReconciliationRepository(pool), pool)
+get_imports_service = build_imports_service
+get_erp_reconciliation_service = build_erp_reconciliation_service
 
 
 @router.post("/sales", response_model=ImportJobStatus)

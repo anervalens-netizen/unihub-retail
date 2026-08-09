@@ -14,32 +14,15 @@ from logging_config import attach_db_error_handler, detach_db_error_handler, set
 setup_logging()
 
 
-from fastapi import FastAPI, Depends, Request
+from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import Response
-
-import sentry_sdk
-from request_context import (
-    REQUEST_ID_HEADER,
-    RequestContextMiddleware,
-    bind_request_id,
-    normalize_request_id,
-    reset_request_id,
-)
-
-sentry_dsn = os.getenv("VITE_GLITCHTIP_DSN", os.getenv("SENTRY_DSN"))
-if sentry_dsn:
-    sentry_sdk.init(
-        dsn=sentry_dsn,
-        traces_sample_rate=0.1,
-    )
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from prometheus_client import Counter, Histogram
 
-from config import validate_required_env_vars
+from config import get_cors_origins, validate_required_env_vars
 from db.connection import (
     close_db_pool,
     get_pool,
@@ -57,6 +40,7 @@ from permissions import (
 )
 from rate_limits import close_rate_limit_runtime, init_rate_limit_runtime
 from session_auth import (
+    authenticate_session,
     callback_router as session_callback_router,
     close_session_runtime,
     init_session_runtime,
@@ -70,7 +54,17 @@ from observability.prometheus import (
     metrics_payload,
     validate_multiprocess_directory,
 )
+from observability.error_tracking import configure_error_tracking
 from observability.metrics_network import metrics_peer_allowed
+from request_context import (
+    REQUEST_ID_HEADER,
+    RequestContextMiddleware,
+    bind_request_id,
+    normalize_request_id,
+    reset_request_id,
+)
+
+configure_error_tracking()
 
 logger = logging.getLogger(__name__)
 
@@ -142,6 +136,10 @@ app = FastAPI(
     redoc_url=None,
     openapi_url=None,
 )
+
+# Composition root: auth depends on an application-provided session adapter,
+# never on the concrete session module.
+app.state.session_authenticator = authenticate_session
 
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
@@ -232,14 +230,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 
 app.add_middleware(SecurityHeadersMiddleware)
 
-cors_origins = [
-    item.strip()
-    for item in os.getenv(
-        "CORS_ORIGINS",
-        "http://localhost:3000,http://127.0.0.1:3000",
-    ).split(",")
-    if item.strip()
-]
+cors_origins = get_cors_origins()
 app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_origins,

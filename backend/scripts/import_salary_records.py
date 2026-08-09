@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 """Importa fisierele lunare HR de salarii in `salary_records`.
-
 Exemplu:
     cd /opt/Mobiup/unihub-retail
     backend/venv/bin/python backend/scripts/import_salary_records.py \
@@ -35,6 +34,7 @@ import pandas as pd
 from dotenv import load_dotenv
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from services.spreadsheet_readers import read_spreadsheet_frame
 from salary_import_approval import (
     SalaryImportApprovalError,
     ValidatedApproval,
@@ -216,7 +216,7 @@ def parse_file(
     source_path = Path(path)
     source_name = source_path.name
     source_digest = source_sha256 or (sha256_file(source_path) if source_path.is_file() else "")
-    df = pd.read_excel(source_path, sheet_name=0)
+    df = read_spreadsheet_frame(source_path, sheet_name=0)
     cnp_col = "CNP" if "CNP" in df.columns else "cnp"
     meal_col = next((col for col in df.columns if normalize_text(col).startswith("BONURI MASA")), None)
     required = {"Denumire locatie", cnp_col, "Nume Prenume", "TOTAL SALARIU"}

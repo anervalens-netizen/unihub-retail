@@ -59,6 +59,9 @@ MIGRATION_SERVICE="unihub-retail-migrate.service"
 BACKEND_SERVICE="unihub-backend.service"
 WORKER_SERVICE="unihub-worker.service"
 IMPORT_WORKER_SERVICE="unihub-import-worker.service"
+GRILE_WORKER_SERVICE="unihub-grile-worker.service"
+EXPORT_WORKER_SERVICE="unihub-export-worker.service"
+LEGACY_WORKER_SERVICE="unihub-legacy-worker.service"
 if [[ "$TEST_MODE" == "1" ]]; then
   SYSTEMD_ROOT="$TEST_ROOT/etc/systemd/system"
   PROMETHEUS_HOST_CONFIG="$TEST_ROOT/prometheus/prometheus.yml"
@@ -110,6 +113,61 @@ service_action() {
   else
     systemctl "$action" "$@"
   fi
+}
+
+runtime_service_names() {
+  printf '%s\n' \
+    "$BACKEND_SERVICE" \
+    "$WORKER_SERVICE" \
+    "$IMPORT_WORKER_SERVICE" \
+    "$GRILE_WORKER_SERVICE" \
+    "$EXPORT_WORKER_SERVICE" \
+    "$LEGACY_WORKER_SERVICE"
+}
+
+service_exists() {
+  local unit="$1"
+  if [[ "$TEST_MODE" == "1" ]]; then
+    [[ -e "$SYSTEMD_ROOT/$unit" || -L "$SYSTEMD_ROOT/$unit" ]]
+  else
+    systemctl cat "$unit" >/dev/null 2>&1
+  fi
+}
+
+service_is_enabled() {
+  local unit="$1"
+  if [[ "$TEST_MODE" == "1" ]]; then
+    [[ -e "$TEST_ROOT/enabled/$unit" ]]
+  else
+    systemctl is-enabled --quiet "$unit"
+  fi
+}
+
+set_service_enabled() {
+  local unit="$1"
+  if [[ "$TEST_MODE" == "1" ]]; then
+    mkdir -p "$TEST_ROOT/enabled"
+    : >"$TEST_ROOT/enabled/$unit"
+  else
+    systemctl enable "$unit"
+  fi
+}
+
+set_service_disabled() {
+  local unit="$1"
+  if [[ "$TEST_MODE" == "1" ]]; then
+    rm -f -- "$TEST_ROOT/enabled/$unit"
+  else
+    systemctl disable "$unit"
+  fi
+}
+
+enable_runtime_services() {
+  local unit
+  while IFS= read -r unit; do
+    service_exists "$unit" || die "runtime service is unavailable after installation: $unit"
+    set_service_enabled "$unit"
+  done < <(runtime_service_names)
 }
 
 set_service_ownership() {
@@ -190,6 +248,9 @@ required = {
     "unihub-worker.service",
     "ops/systemd/unihub-backend.service",
     "ops/systemd/unihub-import-worker.service",
+    "ops/systemd/unihub-grile-worker.service",
+    "ops/systemd/unihub-export-worker.service",
+    "ops/systemd/unihub-legacy-worker.service",
     "ops/systemd/unihub-retail-migrate.service",
     "ops/observability/retail-process-scrape.yml",
 }
@@ -306,6 +367,46 @@ copy_and_verify_artifact() {
   local artifact_tree="$work_dir/artifact"
   local tested_dist="$work_dir/tested-dist"
   local git_tree="$work_dir/git-tree"
+  local bundle_dir
+  bundle_dir="$(dirname -- "$source_archive")"
+
+  python3 - "$bundle_dir" "$(basename -- "$source_archive")" "$expected_sha" "$expected_artifact_sha256" <<'PY'
+import hashlib
+import json
+import pathlib
+import sys
+
+root = pathlib.Path(sys.argv[1])
+archive_name, expected_sha, expected_digest = sys.argv[2:]
+required = {"SOURCE_SHA", "SHA256SUMS", "SBOM.cdx.json", "PROVENANCE.json", "RELEASE_MANIFEST.json", archive_name}
+for name in required:
+    path = root / name
+    if not path.is_file() or path.is_symlink():
+        raise SystemExit(f"release evidence is missing or unsafe: {name}")
+if (root / "SOURCE_SHA").read_text(encoding="utf-8").strip() != expected_sha:
+    raise SystemExit("release evidence SOURCE_SHA mismatch")
+manifest = json.loads((root / "RELEASE_MANIFEST.json").read_text(encoding="utf-8"))
+if manifest.get("schemaVersion") != 1 or manifest.get("sourceSha") != expected_sha or manifest.get("archive") != archive_name:
+    raise SystemExit("release manifest identity mismatch")
+if manifest.get("sha256", {}).get(archive_name) != expected_digest:
+    raise SystemExit("release manifest artifact digest mismatch")
+provenance = json.loads((root / "PROVENANCE.json").read_text(encoding="utf-8"))
+subjects = provenance.get("subject", [])
+if len(subjects) != 1 or subjects[0].get("name") != archive_name or subjects[0].get("digest", {}).get("sha256") != expected_digest:
+    raise SystemExit("release provenance subject mismatch")
+sbom = json.loads((root / "SBOM.cdx.json").read_text(encoding="utf-8"))
+if sbom.get("bomFormat") != "CycloneDX" or sbom.get("metadata", {}).get("component", {}).get("version") != expected_sha:
+    raise SystemExit("release SBOM identity mismatch")
+seen = set()
+for line in (root / "SHA256SUMS").read_text(encoding="utf-8").splitlines():
+    digest, name = line.split(maxsplit=1)
+    name = name.lstrip("*")
+    if name in seen or name not in required or hashlib.sha256((root / name).read_bytes()).hexdigest() != digest:
+        raise SystemExit(f"release evidence digest mismatch: {name}")
+    seen.add(name)
+if seen != required - {"SHA256SUMS"}:
+    raise SystemExit("release evidence checksum inventory mismatch")
+PY
 
   [[ -f "$source_archive" && ! -L "$source_archive" ]] || die "artifact must be a regular non-symlink file"
   local compressed_size
@@ -482,6 +583,9 @@ prepare_runtime_release() {
     "ops/systemd/unihub-backend.service"
     "unihub-worker.service"
     "ops/systemd/unihub-import-worker.service"
+    "ops/systemd/unihub-grile-worker.service"
+    "ops/systemd/unihub-export-worker.service"
+    "ops/systemd/unihub-legacy-worker.service"
     "ops/systemd/unihub-retail-migrate.service"
   )
   for unit_source in "${unit_sources[@]}"; do
@@ -490,7 +594,7 @@ prepare_runtime_release() {
     install -m 0644 -- "$artifact_tree/$unit_source" "$stage_root/systemd/$(basename "$unit_source")"
   done
   local worker_unit
-  for worker_unit in unihub-worker.service unihub-import-worker.service; do
+  for worker_unit in unihub-worker.service unihub-import-worker.service unihub-grile-worker.service unihub-export-worker.service unihub-legacy-worker.service; do
     grep -Fq 'EnvironmentFile=/opt/Mobiup/ops/prometheus/unihub-retail-network.env' \
       "$stage_root/systemd/$worker_unit" \
       || die "worker unit is missing the Prometheus network environment"
@@ -506,6 +610,9 @@ prepare_runtime_release() {
       "$stage_root/systemd/unihub-backend.service" \
       "$stage_root/systemd/unihub-worker.service" \
       "$stage_root/systemd/unihub-import-worker.service" \
+      "$stage_root/systemd/unihub-grile-worker.service" \
+      "$stage_root/systemd/unihub-export-worker.service" \
+      "$stage_root/systemd/unihub-legacy-worker.service" \
       "$stage_root/systemd/unihub-retail-migrate.service"
   fi
   {
@@ -524,8 +631,8 @@ import sys
 
 source = Path(sys.argv[1]).read_text(encoding="utf-8")
 token = "__PROMETHEUS_DOCKER_GATEWAY__"
-if source.count(token) != 3:
-    raise SystemExit("Retail scrape template must contain exactly three gateway placeholders")
+if source.count(token) != 5:
+    raise SystemExit("Retail scrape template must contain exactly five gateway placeholders")
 rendered = source.replace(token, sys.argv[3])
 if token in rendered or "0.0.0.0" in rendered or "127.0.0.1" in rendered:
     raise SystemExit("Retail scrape fragment contains a forbidden target")
@@ -539,6 +646,9 @@ runtime_asset_destinations() {
     "$SYSTEMD_ROOT/unihub-backend.service" \
     "$SYSTEMD_ROOT/unihub-worker.service" \
     "$SYSTEMD_ROOT/unihub-import-worker.service" \
+    "$SYSTEMD_ROOT/unihub-grile-worker.service" \
+    "$SYSTEMD_ROOT/unihub-export-worker.service" \
+    "$SYSTEMD_ROOT/unihub-legacy-worker.service" \
     "$SYSTEMD_ROOT/unihub-retail-migrate.service" \
     "$PROMETHEUS_NETWORK_ENV" \
     "$PROMETHEUS_FRAGMENT"
@@ -550,6 +660,7 @@ backup_runtime_assets() {
   local destination name
   mkdir -p "$assets_dir/files"
   : >"$assets_dir/state.env"
+  : >"$assets_dir/enabled.env"
   while IFS= read -r destination; do
     name="$(basename "$destination")"
     if [[ -e "$destination" || -L "$destination" ]]; then
@@ -559,7 +670,15 @@ backup_runtime_assets() {
       printf '%s=0\n' "$name" >>"$assets_dir/state.env"
     fi
   done < <(runtime_asset_destinations)
+  while IFS= read -r name; do
+    if service_is_enabled "$name"; then
+      printf '%s=1\n' "$name" >>"$assets_dir/enabled.env"
+    else
+      printf '%s=0\n' "$name" >>"$assets_dir/enabled.env"
+    fi
+  done < <(runtime_service_names)
   chmod 0600 "$assets_dir/state.env"
+  chmod 0600 "$assets_dir/enabled.env"
 }
 
 atomic_symlink() {
@@ -616,6 +735,9 @@ install_runtime_assets() {
   atomic_symlink "$release_root/systemd/unihub-backend.service" "$SYSTEMD_ROOT/unihub-backend.service"
   atomic_symlink "$release_root/systemd/unihub-worker.service" "$SYSTEMD_ROOT/unihub-worker.service"
   atomic_symlink "$release_root/systemd/unihub-import-worker.service" "$SYSTEMD_ROOT/unihub-import-worker.service"
+  atomic_symlink "$release_root/systemd/unihub-grile-worker.service" "$SYSTEMD_ROOT/unihub-grile-worker.service"
+  atomic_symlink "$release_root/systemd/unihub-export-worker.service" "$SYSTEMD_ROOT/unihub-export-worker.service"
+  atomic_symlink "$release_root/systemd/unihub-legacy-worker.service" "$SYSTEMD_ROOT/unihub-legacy-worker.service"
   atomic_symlink "$release_root/systemd/unihub-retail-migrate.service" "$SYSTEMD_ROOT/unihub-retail-migrate.service"
   local network_env_tmp="${PROMETHEUS_NETWORK_ENV}.new.$$"
   install -m 0644 -- "$release_root/unihub-retail-network.env" "$network_env_tmp"
@@ -630,6 +752,7 @@ install_runtime_assets() {
   fi
   mv -f -- "$fragment_tmp" "$PROMETHEUS_FRAGMENT"
   service_action daemon-reload
+  enable_runtime_services
 }
 
 restore_runtime_assets() {
@@ -653,6 +776,19 @@ restore_runtime_assets() {
     fi
   done < <(runtime_asset_destinations)
   service_action daemon-reload
+  if [[ -f "$assets_dir/enabled.env" ]]; then
+    local enabled
+    while IFS= read -r name; do
+      enabled="$(sed -n "s/^${name}=//p" "$assets_dir/enabled.env")"
+      [[ "$enabled" == "0" || "$enabled" == "1" ]] \
+        || die "runtime service enablement backup is invalid: $name"
+      if [[ "$enabled" == "1" ]] && service_exists "$name"; then
+        set_service_enabled "$name"
+      elif service_is_enabled "$name"; then
+        set_service_disabled "$name"
+      fi
+    done < <(runtime_service_names)
+  fi
 }
 
 check_prometheus_config() {
@@ -698,7 +834,7 @@ healthy = {
 }
 if not required <= healthy:
     raise SystemExit(1)
-' unihub-retail-web unihub-retail-operations unihub-retail-imports <<<"$payload"
+' unihub-retail-web unihub-retail-operations unihub-retail-imports unihub-retail-grile unihub-retail-exports <<<"$payload"
     then
       return 0
     fi
@@ -716,6 +852,9 @@ verify_active_runtime_assets() {
     unihub-backend.service
     unihub-worker.service
     unihub-import-worker.service
+    unihub-grile-worker.service
+    unihub-export-worker.service
+    unihub-legacy-worker.service
     unihub-retail-migrate.service
   )
   for destination in "${names[@]}"; do
@@ -1125,7 +1264,8 @@ backup_current_dist() {
 
 restore_dist() {
   local backup_dir="$1"
-  local failed_dist="$backup_dir/dist.failed.$(date -u +%Y%m%dT%H%M%SZ)"
+  local failed_dist
+  failed_dist="$backup_dir/dist.failed.$(date -u +%Y%m%dT%H%M%SZ)"
   [[ -d "$backup_dir/dist" ]] || die "rollback frontend backup is missing"
   if [[ -e "$LIVE_ROOT/dist" || -L "$LIVE_ROOT/dist" ]]; then
     mv -- "$LIVE_ROOT/dist" "$failed_dist"
@@ -1135,11 +1275,22 @@ restore_dist() {
 }
 
 stop_runtime() {
-  service_action stop "$IMPORT_WORKER_SERVICE" "$WORKER_SERVICE" "$BACKEND_SERVICE"
+  local unit
+  local -a existing=()
+  while IFS= read -r unit; do
+    service_exists "$unit" && existing+=("$unit")
+  done < <(runtime_service_names)
+  ((${#existing[@]} > 0)) && service_action stop "${existing[@]}"
 }
 
 start_runtime() {
-  service_action restart "$BACKEND_SERVICE" "$WORKER_SERVICE" "$IMPORT_WORKER_SERVICE"
+  local unit
+  local -a existing=()
+  while IFS= read -r unit; do
+    service_exists "$unit" && existing+=("$unit")
+  done < <(runtime_service_names)
+  ((${#existing[@]} > 0)) || die "no Retail runtime services are installed"
+  service_action restart "${existing[@]}"
 }
 
 run_migrations() {
@@ -1161,11 +1312,16 @@ verify_local_health() {
     return
   fi
 
-  local attempt
+  local attempt unit all_active
   for attempt in {1..30}; do
-    if systemctl is-active --quiet "$BACKEND_SERVICE" \
-      && systemctl is-active --quiet "$WORKER_SERVICE" \
-      && systemctl is-active --quiet "$IMPORT_WORKER_SERVICE" \
+    all_active=1
+    while IFS= read -r unit; do
+      if service_exists "$unit" && ! systemctl is-active --quiet "$unit"; then
+        all_active=0
+        break
+      fi
+    done < <(runtime_service_names)
+    if [[ "$all_active" == "1" ]] \
       && curl --silent --show-error --fail --max-time 5 http://127.0.0.1:9898/health >/dev/null \
       && curl --silent --show-error --fail --max-time 5 http://127.0.0.1:9898/readyz >/dev/null; then
       return 0

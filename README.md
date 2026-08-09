@@ -14,10 +14,9 @@ salarii, P&L, raportarea vizitelor și interfața activă Grile.
 - regula canonică pentru multiplicitatea rândurilor de vânzare:
   [`docs/adr/004-sales-row-multiplicity.md`](docs/adr/004-sales-row-multiplicity.md);
 - instalare locală: [`LOCAL_SETUP.md`](LOCAL_SETUP.md);
-- audit tehnic istoric și riscuri de la release-ul v2.0.1:
-  [`docs/AUDIT_TEHNIC_RETAIL_UNIHUB_REAUDIT_2026-07-15.md`](docs/AUDIT_TEHNIC_RETAIL_UNIHUB_REAUDIT_2026-07-15.md);
-- singurul plan activ pentru ridicarea aplicației peste 9:
-  [`docs/PLAN_UNIC_UNIHUB_RETAIL_PESTE_9_2026-08-06.md`](docs/PLAN_UNIC_UNIHUB_RETAIL_PESTE_9_2026-08-06.md);
+- indexul canonic pentru candidatul Retail 9.5, readiness și documentele active:
+  [`docs/README.md`](docs/README.md);
+- auditul și planurile datate sunt evidence istoric și nu suprascriu indexul canonic;
 - deploy privilegiat și rollback: [`ops/README.md`](ops/README.md).
 
 Planurile și rapoartele închise nu sunt duplicate într-o arhivă Markdown din
@@ -31,7 +30,7 @@ HEAD; istoricul lor rămâne disponibil în Git.
 | Backend | FastAPI + asyncpg |
 | Bază de date | PostgreSQL `unihub` |
 | Auth | Authentik OIDC BFF, sesiune criptată în Valkey |
-| Workeri | `unihub-worker.service` pentru operații și `unihub-import-worker.service` pentru importuri, fiecare serializat |
+| Workeri | cozi și procese separate: `unihub-worker.service` (Grile), `unihub-import-worker.service` și `unihub-export-worker.service` |
 | Backend service | `unihub-backend.service` |
 | Migrații | `unihub-retail-migrate.service`, one-shot |
 | URL public | `https://retail.unihub.ro` |
@@ -92,10 +91,11 @@ repository sunt în `APP_ARCHITECTURE.md`.
 - bonurile promo calificate și cantitatea incentive sunt metrici distincte;
 - vizitele se grupează după snapshotul Team Leader al autorului.
 
-## Starea P0 la SHA-ul documentat
+## Starea P0 istorică
 
-Baseline-ul documentat este `f9c0b1efe15686bcda532d22528e6e2644925aec`.
-Lotul P0 introduce garduri de date și state machines pentru vânzări, shadow
+Secțiunea descrie baseline-ul istoric `f9c0b1efe15686bcda532d22528e6e2644925aec`.
+Identitatea candidatului curent este exclusiv SHA-ul exact din CI și provenance,
+conform [`docs/README.md`](docs/README.md). Lotul P0 introduce garduri de date și state machines pentru vânzări, shadow
 P&L/TVA și importul HR, împreună cu migrațiile aditive 032–034. Orice worker
 care pierde lease-ul este fencing-uit, iar datele sunt promovate numai după
 manifest, control totals, business hash și CAS.

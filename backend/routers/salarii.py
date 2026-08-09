@@ -4,10 +4,10 @@ import logging
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request, Response, status
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import Field
+from schemas.common import StrictApiModel
 
-from db.connection import get_pool
-from repositories.salarii import SalariiRepository
+from composition import build_salarii_service
 from services.salarii import SalariiService
 from salary_identity import get_salary_person_id_key
 from schemas.salarii import SalaryAgentsSummaryResponse, SalaryHistoryResponse, SalaryRecordPublic
@@ -20,21 +20,19 @@ router = APIRouter(
 logger = logging.getLogger(__name__)
 
 
-class SalaryExportAudit(BaseModel):
+class SalaryExportAudit(StrictApiModel):
     export_kind: Literal["store_summary", "monthly_trend", "agents_page"]
     row_count: int = Field(ge=0, le=5000)
 
 
-class SalaryCompanyTotal(BaseModel):
-    model_config = ConfigDict(extra="allow")
+class SalaryCompanyTotal(StrictApiModel):
 
     company: str | None = None
     name: str | None = None
     total: float
 
 
-class SalaryOverviewResponse(BaseModel):
-    model_config = ConfigDict(extra="allow")
+class SalaryOverviewResponse(StrictApiModel):
 
     total: float | None = None
     by_company: list[SalaryCompanyTotal] = Field(default_factory=list)
@@ -46,15 +44,14 @@ class SalaryOverviewResponse(BaseModel):
     months_span: tuple[int, int, int, int] | None = None
 
 
-class SalaryEvolutionPoint(BaseModel):
+class SalaryEvolutionPoint(StrictApiModel):
     month: str
     total: float
     mobicell: float
     mobiup: float
 
 
-class SalaryComparisonItem(BaseModel):
-    model_config = ConfigDict(extra="allow")
+class SalaryComparisonItem(StrictApiModel):
 
     site_code: str
     locatie: str | None = None
@@ -67,13 +64,12 @@ class SalaryComparisonItem(BaseModel):
     ratio: float
 
 
-class SalarySummaryResponse(BaseModel):
+class SalarySummaryResponse(StrictApiModel):
     month: str | None = None
     items: list[SalaryComparisonItem] = Field(default_factory=list)
 
 
-class SalaryTrendPoint(BaseModel):
-    model_config = ConfigDict(extra="allow")
+class SalaryTrendPoint(StrictApiModel):
 
     month: str
     total_salary: float
@@ -84,24 +80,24 @@ class SalaryTrendPoint(BaseModel):
     by_company: dict[str, object] = Field(default_factory=dict)
 
 
-class SalaryStoreOption(BaseModel):
+class SalaryStoreOption(StrictApiModel):
     site_code: str
     locatie: str | None = None
 
 
 async def get_salarii_service() -> SalariiService:
-    pool = await get_pool()
-    repo = SalariiRepository(pool)
-    return SalariiService(repo)
+    return await build_salarii_service()
 
 
 async def get_identity_salarii_service() -> SalariiService:
-    pool = await get_pool()
     try:
         key = get_salary_person_id_key()
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="salary identity is unavailable") from exc
-    return SalariiService(SalariiRepository(pool), key)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="salary identity is unavailable",
+        ) from exc
+    return await build_salarii_service(person_id_key=key)
 
 
 @router.get(

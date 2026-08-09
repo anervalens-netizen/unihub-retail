@@ -94,6 +94,10 @@ async def require_auth(request: Request, credentials: HTTPAuthorizationCredentia
         return await verify_oidc_token(credentials.credentials)
     if "__Host-unihub_session" not in request.cookies and "unihub_session_dev" not in request.cookies:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Authentication required")
-    from session_auth import authenticate_session
-
+    authenticate_session = getattr(request.app.state, "session_authenticator", None)
+    if authenticate_session is None:
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "Session authentication unavailable",
+        )
     return await authenticate_session(request)

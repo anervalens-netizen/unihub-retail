@@ -13,21 +13,9 @@ from schemas.campaigns import (
     FocusHistoryPoint,
     FocusHistoryResponse,
 )
-from services.campaigns.context import CampaignResponseSnapshot
+from services.campaigns.contracts import CampaignResponseSnapshot
 from services.campaigns.money import money_float
-
-
-def calculation_status(
-    *,
-    configured: bool,
-    error: str | None,
-    partial: bool = False,
-) -> str:
-    if error is not None:
-        return "invalid"
-    if partial:
-        return "partial"
-    return "complete" if configured else "not_configured"
+from services.campaigns.status import calculation_status
 
 
 def map_campaign_overview(

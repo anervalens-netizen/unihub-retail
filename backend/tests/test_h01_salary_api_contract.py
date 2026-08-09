@@ -160,8 +160,6 @@ async def test_asgi_unknown_retail_link_hides_identity_and_skips_history() -> No
 @pytest.mark.anyio
 @pytest.mark.parametrize("key", [None, ""])
 async def test_asgi_identity_endpoint_returns_generic_503_without_key(monkeypatch: pytest.MonkeyPatch, key: str | None) -> None:
-    import routers.salarii as salarii_router
-
     if key is None:
         monkeypatch.delenv("SALARY_PERSON_ID_HMAC_KEY", raising=False)
     else:
@@ -169,10 +167,9 @@ async def test_asgi_identity_endpoint_returns_generic_503_without_key(monkeypatc
 
     class _BaseService:
         async def get_overview(self, *args, **kwargs):
-            return {"base": True}
+            return {"total": 1}
 
     with _salary_app_overrides(None, _BaseService()) as app:
-        monkeypatch.setattr(salarii_router, "get_pool", AsyncMock())
         transport = httpx.ASGITransport(app=app)
         async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
             response = await client.get("/salarii/agents/summary")
@@ -181,7 +178,7 @@ async def test_asgi_identity_endpoint_returns_generic_503_without_key(monkeypatc
     assert response.status_code == 503
     assert response.json() == {"detail": "salary identity is unavailable"}
     assert overview.status_code == 200
-    assert overview.json() == {"base": True}
+    assert overview.json() == {"total": 1.0}
 
 
 @pytest.mark.anyio

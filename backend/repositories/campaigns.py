@@ -6,7 +6,7 @@ from typing import Any
 import asyncpg
 
 from business_rules import CAMPAIGN_RANKING_LIMIT
-from services.filters import build_scoped_params, scoped_clauses
+from domain.filter_scope import build_scoped_params, scoped_clauses
 
 
 def build_campaign_clauses(

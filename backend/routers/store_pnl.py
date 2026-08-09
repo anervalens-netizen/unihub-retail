@@ -4,20 +4,19 @@ from datetime import date
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import Field
+from schemas.common import StrictApiModel, MonthStr
 
 from auth import AuthClaims, require_auth
-from db.connection import get_pool
+from composition import build_store_pnl_service
 from permissions import can_access_management, require_privileged_access
 from privileged_access import STORE_PNL_ACCESS_GROUPS_ENV, has_configured_group
-from repositories.store_pnl import StorePnlRepository
 from services.store_pnl import StorePnlService
-from schemas.common import MonthStr
 
 router = APIRouter(prefix="/api/store-pnl", tags=["store-pnl"])
 
 
-class PnlMetricsResponse(BaseModel):
+class PnlMetricsResponse(StrictApiModel):
     revenue: Decimal
     cogs: Decimal
     gross_margin: Decimal
@@ -27,22 +26,21 @@ class PnlMetricsResponse(BaseModel):
     ebit: Decimal
 
 
-class PnlMonthResponse(BaseModel):
+class PnlMonthResponse(StrictApiModel):
     month: str
     has_actual: bool
     has_estimated: bool
 
 
-class PnlPermissionsResponse(BaseModel):
+class PnlPermissionsResponse(StrictApiModel):
     can_view: bool
 
 
-class PnlMonthsResponse(BaseModel):
+class PnlMonthsResponse(StrictApiModel):
     months: list[PnlMonthResponse]
 
 
-class PnlStoreOptionResponse(BaseModel):
-    model_config = ConfigDict(extra="allow")
+class PnlStoreOptionResponse(StrictApiModel):
 
     company_name: str
     site_code: str
@@ -51,16 +49,15 @@ class PnlStoreOptionResponse(BaseModel):
     scope_company: str | None = None
 
 
-class PnlStoresResponse(BaseModel):
+class PnlStoresResponse(StrictApiModel):
     stores: list[PnlStoreOptionResponse]
 
 
-class PnlRegionsResponse(BaseModel):
+class PnlRegionsResponse(StrictApiModel):
     regions: list[str]
 
 
-class PnlAnnualItemResponse(BaseModel):
-    model_config = ConfigDict(extra="allow")
+class PnlAnnualItemResponse(StrictApiModel):
 
     year: str
     store_count: int
@@ -75,12 +72,11 @@ class PnlAnnualItemResponse(BaseModel):
     ebit: Decimal
 
 
-class PnlAnnualResponse(BaseModel):
+class PnlAnnualResponse(StrictApiModel):
     annual: list[PnlAnnualItemResponse]
 
 
-class PnlMonthlyItemResponse(BaseModel):
-    model_config = ConfigDict(extra="allow")
+class PnlMonthlyItemResponse(StrictApiModel):
 
     month: str
     is_estimated: bool
@@ -93,8 +89,7 @@ class PnlMonthlyItemResponse(BaseModel):
     ebit: Decimal
 
 
-class PnlStoreResponse(BaseModel):
-    model_config = ConfigDict(extra="allow")
+class PnlStoreResponse(StrictApiModel):
 
     company: str
     site_code: str
@@ -111,7 +106,7 @@ class PnlStoreResponse(BaseModel):
     ebit: Decimal
 
 
-class PnlReconciliationResponse(BaseModel):
+class PnlReconciliationResponse(StrictApiModel):
     month: str
     pnl_revenue: Decimal
     retail_sales_gross: Decimal
@@ -120,8 +115,7 @@ class PnlReconciliationResponse(BaseModel):
     pnl_to_net_sales_pct: Decimal | None = None
 
 
-class PnlOverviewResponse(BaseModel):
-    model_config = ConfigDict(extra="allow")
+class PnlOverviewResponse(StrictApiModel):
 
     start_month: str
     end_month: str
@@ -162,8 +156,7 @@ def parse_month(value: MonthStr) -> date:
     return date(year, month, 1)
 
 
-async def get_service() -> StorePnlService:
-    return StorePnlService(StorePnlRepository(await get_pool()))
+get_service = build_store_pnl_service
 
 
 @router.get("/permissions", response_model=PnlPermissionsResponse)

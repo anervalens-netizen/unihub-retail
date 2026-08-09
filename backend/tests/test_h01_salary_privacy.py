@@ -41,7 +41,9 @@ async def test_identity_dependency_fails_closed_but_base_service_is_lazy(monkeyp
     from routers import salarii
 
     monkeypatch.delenv("SALARY_PERSON_ID_HMAC_KEY", raising=False)
-    monkeypatch.setattr(salarii, "get_pool", AsyncMock(return_value=object()))
+    base_service = AsyncMock()
+    base_service.person_id_key = None
+    monkeypatch.setattr(salarii, "build_salarii_service", AsyncMock(return_value=base_service))
     assert (await salarii.get_salarii_service()).person_id_key is None
     with pytest.raises(HTTPException) as exc_info:
         await salarii.get_identity_salarii_service()

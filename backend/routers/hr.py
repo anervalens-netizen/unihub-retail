@@ -4,20 +4,19 @@ import logging
 from datetime import date
 
 from fastapi import APIRouter, Depends, Query
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import ConfigDict, Field, field_validator, model_validator
+from schemas.common import StrictApiModel, MonthStr
 
 from auth import AuthClaims
-from db.connection import get_pool
+from composition import build_hr_service
 from permissions import require_salary_access
-from repositories.hr import HrRepository
-from schemas.common import MonthStr
 from services.hr import HrService
 
 router = APIRouter(prefix="/api/hr", tags=["hr"])
 logger = logging.getLogger(__name__)
 
 
-class LeaveRequestItem(BaseModel):
+class LeaveRequestItem(StrictApiModel):
     id: int
     agent_name: str
     start_date: str
@@ -29,15 +28,14 @@ class LeaveRequestItem(BaseModel):
     updated_at: str | None = None
 
 
-class LeaveRequestListResponse(BaseModel):
+class LeaveRequestListResponse(StrictApiModel):
     items: list[LeaveRequestItem]
     total: int = Field(ge=0)
     limit: int = Field(ge=1, le=100)
     offset: int = Field(ge=0)
 
 
-class HrAgentPerformanceItem(BaseModel):
-    model_config = ConfigDict(extra="allow")
+class HrAgentPerformanceItem(StrictApiModel):
 
     import_month: str
     total_value: float
@@ -46,8 +44,7 @@ class HrAgentPerformanceItem(BaseModel):
     target_pct: float
 
 
-class HrAsmPerformanceItem(BaseModel):
-    model_config = ConfigDict(extra="allow")
+class HrAsmPerformanceItem(StrictApiModel):
 
     asm: str
     regional: str | None = None
@@ -69,8 +66,7 @@ class HrAsmPerformanceItem(BaseModel):
     approved_pct: float | None = None
 
 
-class HrAsmHistoryItem(BaseModel):
-    model_config = ConfigDict(extra="allow")
+class HrAsmHistoryItem(StrictApiModel):
 
     month: str
     total_sales: float
@@ -85,7 +81,7 @@ class HrAsmHistoryItem(BaseModel):
     avg_duration: float | None = None
 
 
-class HrManagerStoreItem(BaseModel):
+class HrManagerStoreItem(StrictApiModel):
     site_code: str
     locatie: str
     firma: str
@@ -94,8 +90,7 @@ class HrManagerStoreItem(BaseModel):
     agent_delta: int
 
 
-class HrManagerOverviewItem(BaseModel):
-    model_config = ConfigDict(extra="allow")
+class HrManagerOverviewItem(StrictApiModel):
 
     manager: str
     regional: str | None = None
@@ -119,8 +114,7 @@ class HrManagerOverviewItem(BaseModel):
     stores: list[HrManagerStoreItem] = Field(default_factory=list)
 
 
-class HrAsmSalaryIsland(BaseModel):
-    model_config = ConfigDict(extra="allow")
+class HrAsmSalaryIsland(StrictApiModel):
 
     site_code: str
     locatie: str
@@ -134,8 +128,7 @@ class HrAsmSalaryIsland(BaseModel):
     commission: float
 
 
-class HrAsmSalaryZone(BaseModel):
-    model_config = ConfigDict(extra="allow")
+class HrAsmSalaryZone(StrictApiModel):
 
     total_sales: float
     total_target: float
@@ -146,7 +139,7 @@ class HrAsmSalaryZone(BaseModel):
     commission: float
 
 
-class HrAsmSalaryHomogeneity(BaseModel):
+class HrAsmSalaryHomogeneity(StrictApiModel):
     islands_count: int
     qualifying_count: int
     qualifying_pct: float
@@ -155,13 +148,12 @@ class HrAsmSalaryHomogeneity(BaseModel):
     commission: float
 
 
-class HrAsmSalaryAccFocus(BaseModel):
+class HrAsmSalaryAccFocus(StrictApiModel):
     pct: float | None = None
     commission: float
 
 
-class HrAsmSalaryBreakdown(BaseModel):
-    model_config = ConfigDict(extra="allow")
+class HrAsmSalaryBreakdown(StrictApiModel):
 
     asm: str
     month: str
@@ -183,7 +175,7 @@ def _trim_text(value: str, *, field_name: str) -> str:
     return normalized
 
 
-class LeaveRequestCreate(BaseModel):
+class LeaveRequestCreate(StrictApiModel):
     model_config = ConfigDict(extra="forbid")
 
     agent_name: str = Field(min_length=1, max_length=120)
@@ -209,7 +201,7 @@ class LeaveRequestCreate(BaseModel):
         return self
 
 
-class LeaveStatusUpdate(BaseModel):
+class LeaveStatusUpdate(StrictApiModel):
     model_config = ConfigDict(extra="forbid")
 
     status: str = Field(min_length=1, max_length=16)
@@ -220,10 +212,7 @@ class LeaveStatusUpdate(BaseModel):
         return _trim_text(value, field_name="status")
 
 
-async def get_hr_service() -> HrService:
-    pool = await get_pool()
-    repo = HrRepository(pool)
-    return HrService(repo)
+get_hr_service = build_hr_service
 
 
 @router.get("/leave-requests", response_model=LeaveRequestListResponse)

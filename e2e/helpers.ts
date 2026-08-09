@@ -19,15 +19,21 @@ export const MOCK_USER = {
 };
 
 export async function mockAuthenticatedSession(context: BrowserContext) {
-  await context.addInitScript(() => {
-    (window as unknown as Record<string, unknown>).__E2E_USER__ = {
-      profile: {
-        sub: 'test-user-123',
-        email: 'test@mobiup.ro',
-        preferred_username: 'test-user',
-        groups: ['unihub-admin'],
-      },
-    };
+  await context.route('**/auth/session', (route) => {
+    if (route.request().method() !== 'GET') return route.continue();
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        profile: {
+          sub: 'test-user-123',
+          email: 'test@mobiup.ro',
+          preferred_username: 'test-user',
+          groups: ['unihub-admin'],
+        },
+        csrf_token: 'e2e-csrf-token',
+      }),
+    });
   });
 }
 

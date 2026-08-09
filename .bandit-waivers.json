@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "waivers": [
+    {
+      "filename": "backend/scripts/backfill_salary_private_identities.py",
+      "test_id": "B608",
+      "lines": [24, 49, 86, 94],
+      "owner": "retail-security",
+      "expires": "2026-12-31",
+      "rationale": "One-shot administrative backfill interpolates only fixed internal schema identifiers; values remain parameterized."
+    },
+    {
+      "filename": "backend/services/reporting_refresh.py",
+      "test_id": "B608",
+      "lines": [210, 242, 308, 354, 409, 508, 583, 652],
+      "owner": "retail-platform",
+      "expires": "2026-12-31",
+      "rationale": "Reporting refresh composes only fixed application-owned SQL fragments and parameterizes all business values."
+    }
+  ]
+}

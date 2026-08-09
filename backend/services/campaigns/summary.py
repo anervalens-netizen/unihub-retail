@@ -7,7 +7,8 @@ from typing import Any, Literal
 
 from business_rules import PROMOTION_DISCOUNT_RATE
 from schemas.campaigns import PromoIncentiveSummary
-from services.campaigns.context import CampaignContext, load_campaign_context
+from services.campaigns.contracts import CampaignContext
+from services.campaigns.context import load_campaign_context
 from services.campaigns.promotions import compute_promotion_result
 from services.campaigns.scope import campaign_scope_clauses, campaign_scope_join
 from services.dashboard_specials import incentive_multiplier

@@ -1,5 +1,5 @@
 /* GENERATED FILE. Run npm run contracts:generate; do not edit manually. */
-export const RETAIL_OPENAPI_SHA256 = '92541b7bcba89603cccee03d56741459321651512185e6be3f15616ae46c67f7' as const; // pragma: allowlist secret
+export const RETAIL_OPENAPI_SHA256 = '40d92e0c005aabe1a60a0f2dc5d57467e8c918bcd511a6e94a60ecaf3d5ecb78' as const; // pragma: allowlist secret
 
 export type RetailDecimal = string & { readonly __retailDecimal: unique symbol };
 
@@ -532,7 +532,17 @@ export interface RetailCrmAlertResponse {
 }
 
 export interface RetailCrmBreakdownResponse {
+  "avg_completion"?: number | null;
+  "forecast_factor"?: number | null;
+  "kpi_bon2acc"?: number | null;
+  "kpi_bon2acc_avg"?: number | null;
+  "kpi_bon2acc_score"?: number | null;
+  "kpi_focus"?: number | null;
+  "kpi_focus_avg"?: number | null;
+  "kpi_focus_score"?: number | null;
   "kpi_pct"?: number | null;
+  "nr_vizite"?: number | null;
+  "target_attainment"?: number | null;
   "target_pct"?: number | null;
   "trend_pct"?: number | null;
   "visits_pct"?: number | null;
@@ -544,7 +554,11 @@ export interface RetailCrmRecalculateResponse {
 }
 
 export interface RetailCrmScoreResponse {
+  "asm"?: string | null;
   "breakdown": RetailCrmBreakdownResponse;
+  "calculated_at"?: string | null;
+  "locatie"?: string | null;
+  "regional"?: string | null;
   "score": number;
   "site_code": string;
 }
@@ -1147,15 +1161,22 @@ export interface RetailHrManagerStoreItem {
 export interface RetailImportCoverageReport {
   "active_store_count_before"?: number | null;
   "active_store_coverage_pct"?: number | null;
+  "anomalies"?: Array<RetailSalesGenerationAnomaly> | null;
   "company_count"?: number | null;
+  "incoming_set_sha256"?: string | null;
   "incoming_store_count"?: number | null;
   "metadata_change_count"?: number | null;
+  "missing_active_set_sha256"?: string | null;
   "missing_active_store_count"?: number | null;
+  "missing_prior_set_sha256"?: string | null;
   "missing_prior_store_count"?: number | null;
   "new_store_count"?: number | null;
+  "new_store_set_sha256"?: string | null;
   "prior_snapshot_coverage_pct"?: number | null;
   "prior_snapshot_store_count"?: number | null;
   "store_activity_writes"?: number | null;
+  "stores_missing_count"?: number | null;
+  "stores_present_count"?: number | null;
 }
 
 export interface RetailImportHistoryEntry {
@@ -1749,18 +1770,42 @@ export interface RetailSalaryTrendPoint {
 
 export interface RetailSalesGenerationAnomaly {
   "blocking": boolean;
+  "classification"?: "informational" | "structural_contradiction" | null;
   "code": string;
   "count"?: number | null;
+  "cutoff_date"?: string | null;
+  "drop_pct"?: string | null;
+  "import_month"?: string | null;
+  "incoming"?: string | null;
+  "max_sale_date"?: string | null;
   "message": string;
+  "months"?: Array<string> | null;
+  "previous"?: string | null;
+  "set_sha256"?: string | null;
+  "site_days"?: Array<string> | null;
+  "threshold_pct"?: string | null;
 }
 
 export interface RetailSalesGenerationManifest {
+  "agent_count"?: number | null;
   "anomalies"?: Array<RetailSalesGenerationAnomaly>;
   "business_sha256"?: string | null;
   "cutoff_date"?: string | null;
-  "generation_state"?: "validated" | "promoted" | null;
+  "generation_state"?: "validated" | "promoting" | "promoted" | null;
+  "import_month"?: string | null;
+  "max_sale_date"?: string | null;
+  "parser_resources"?: Record<string, number | string | null> | null;
   "receipt_count"?: number | null;
+  "rows_filtered"?: number | null;
+  "rows_imported"?: number | null;
+  "rows_in_file"?: number | null;
+  "schema_version"?: number | null;
   "site_day_count"?: number | null;
+  "site_day_sha256"?: string | null;
+  "site_days"?: Array<RetailSalesSiteDayManifest> | null;
+  "source_sha256"?: string | null;
+  "stage_rows_sha256"?: string | null;
+  "store_count"?: number | null;
   "total_quantity"?: number | null;
   "total_value"?: string | null;
 }
@@ -1769,6 +1814,15 @@ export interface RetailSalesGenerationPromotionRequest {
   "generation_token": string;
   "manifest_sha256": string;
   "override_reason"?: string | null;
+}
+
+export interface RetailSalesSiteDayManifest {
+  "quantity": number;
+  "receipts": number;
+  "rows": number;
+  "sale_date": string;
+  "site_code": string;
+  "value": string;
 }
 
 export interface RetailSessionLogoutResponse {
@@ -1886,9 +1940,19 @@ export interface RetailTargetCalculationDetails {
 }
 
 export interface RetailTargetCalculationParams {
-  "profitability"?: RetailTargetOpenModel | null;
-  "profitability_summary"?: RetailTargetOpenModel | null;
+  "minimum_seasonality_base"?: RetailDecimal | null;
+  "new_store_weights"?: Record<string, RetailDecimal>;
+  "previous_month_cap_pct"?: RetailDecimal | null;
+  "profitability"?: RetailTargetProfitabilityAssumptionsResponse | null;
+  "profitability_summary"?: RetailTargetProfitabilitySummaryResponse | null;
+  "seasonality_max"?: RetailDecimal | null;
+  "seasonality_min"?: RetailDecimal | null;
   "seasonality_years"?: number | null;
+  "strong_weights"?: Record<string, RetailDecimal>;
+  "trend_adjustment_max"?: RetailDecimal | null;
+  "trend_adjustment_min"?: RetailDecimal | null;
+  "trend_weight"?: RetailDecimal | null;
+  "weak_weights"?: Record<string, RetailDecimal>;
 }
 
 export interface RetailTargetCalculationRequest {
@@ -1932,6 +1996,16 @@ export interface RetailTargetFinalizeRequest {
   "expected_revision": number;
 }
 
+export interface RetailTargetForecastCoverageResponse {
+  "covered_store_count": number;
+  "cutoff"?: string | null;
+  "cutoff_max"?: string | null;
+  "cutoff_min"?: string | null;
+  "expected_store_count": number;
+  "missing_site_codes"?: Array<string>;
+  "mode": string;
+}
+
 export interface RetailTargetForecastRunResponse {
   "generated_at": string;
   "id": number;
@@ -1954,7 +2028,24 @@ export interface RetailTargetHistoryValue {
   "weight"?: RetailDecimal;
 }
 
-export type RetailTargetOpenModel = Record<string, unknown>;
+export interface RetailTargetProfitabilityAssumptionsResponse {
+  "base_salary_default": RetailDecimal;
+  "base_salary_high"?: RetailDecimal | null;
+  "default_store_agent_count": number;
+  "meal_vouchers_per_agent": RetailDecimal;
+  "salary_assumed_attainment": RetailDecimal;
+  "salary_pnl_factor": RetailDecimal;
+  "sales_commission_rate": RetailDecimal;
+  "sun_plaza_agent_count"?: number | null;
+  "target_rule_set_hash"?: string | null;
+  "target_rule_set_id"?: string | null;
+  "vat_effective_from"?: string | null;
+  "vat_multiplier": RetailDecimal;
+  "vat_rate": RetailDecimal;
+  "vat_rule_id": string;
+  "vat_ruleset_hash"?: string | null;
+  "vat_ruleset_id": string;
+}
 
 export interface RetailTargetProfitabilityResponse {
   "accessory_margin_pct"?: RetailDecimal | null;
@@ -1968,13 +2059,14 @@ export interface RetailTargetProfitabilityResponse {
 }
 
 export interface RetailTargetProfitabilitySummaryResponse {
-  "assumptions"?: RetailTargetOpenModel | null;
+  "assumptions"?: RetailTargetProfitabilityAssumptionsResponse | null;
   "break_even_total"?: RetailDecimal | null;
   "forecast_below_break_even_count": number;
-  "forecast_coverage"?: RetailTargetOpenModel | null;
+  "forecast_coverage"?: RetailTargetForecastCoverageResponse | null;
   "forecast_run"?: RetailTargetForecastRunResponse | null;
   "forecast_store_count": number;
   "forecast_total"?: RetailDecimal | null;
+  "input_sha256"?: string | null;
   "operating_costs_total"?: RetailDecimal | null;
   "pnl_months"?: Array<string>;
   "pnl_store_count": number;
@@ -2001,6 +2093,7 @@ export interface RetailTargetRegionalSummaryResponse {
 }
 
 export interface RetailTargetScenarioResponse {
+  "calculation_input_sha256"?: string | null;
   "calculation_method": string;
   "calculation_params"?: RetailTargetCalculationParams;
   "cap_limited_count"?: number;
@@ -2015,12 +2108,16 @@ export interface RetailTargetScenarioResponse {
   "min_floor": RetailDecimal;
   "pending_final_count": number;
   "previous_month_floor_pct": RetailDecimal;
+  "profitability_input_sha256"?: string | null;
   "profitability_summary"?: RetailTargetProfitabilitySummaryResponse | null;
   "proposed_total"?: RetailDecimal;
   "regional_summary"?: Array<RetailTargetRegionalSummaryResponse>;
   "remaining_difference": RetailDecimal;
   "revision": number;
   "rows": Array<RetailTargetScenarioRowResponse>;
+  "rule_set_hash"?: string | null;
+  "rule_set_id"?: string | null;
+  "rule_set_snapshot"?: Record<string, unknown> | null;
   "source_months"?: Array<RetailTargetSourceMonth>;
   "source_summary"?: Array<RetailTargetSourceSummaryResponse>;
   "status": string;
@@ -2043,6 +2140,10 @@ export interface RetailTargetScenarioRowResponse {
   "is_cap_limited"?: boolean;
   "is_floor_limited"?: boolean;
   "locatie": string;
+  "manager_override_at"?: string | null;
+  "manager_override_reason"?: string | null;
+  "manager_override_revision"?: number | null;
+  "manager_override_target"?: RetailDecimal | null;
   "normalized_weight"?: RetailDecimal | null;
   "note"?: string | null;
   "profitability"?: RetailTargetProfitabilityResponse | null;
@@ -2053,6 +2154,7 @@ export interface RetailTargetScenarioRowResponse {
 }
 
 export interface RetailTargetScenarioSummaryResponse {
+  "calculation_input_sha256"?: string | null;
   "calculation_method": string;
   "calculation_params"?: RetailTargetCalculationParams;
   "cohort_month": string;
@@ -2063,8 +2165,12 @@ export interface RetailTargetScenarioSummaryResponse {
   "min_floor": RetailDecimal;
   "pending_final_count"?: number;
   "previous_month_floor_pct": RetailDecimal;
+  "profitability_input_sha256"?: string | null;
   "proposed_total"?: RetailDecimal;
   "revision": number;
+  "rule_set_hash"?: string | null;
+  "rule_set_id"?: string | null;
+  "rule_set_snapshot"?: Record<string, unknown> | null;
   "source_months"?: Array<RetailTargetSourceMonth>;
   "status": string;
   "store_count"?: number;
@@ -4641,6 +4747,36 @@ export const RETAIL_DECIMAL_PATHS: { readonly [Id in RetailOperationId]: Readonl
     'suggested_total_target',
   ]),
   'list_scenarios_api_target_calculator_scenarios_get': new Set<string>([
+    '*/calculation_params/minimum_seasonality_base',
+    '*/calculation_params/new_store_weights/*',
+    '*/calculation_params/previous_month_cap_pct',
+    '*/calculation_params/profitability/base_salary_default',
+    '*/calculation_params/profitability/base_salary_high',
+    '*/calculation_params/profitability/meal_vouchers_per_agent',
+    '*/calculation_params/profitability/salary_assumed_attainment',
+    '*/calculation_params/profitability/salary_pnl_factor',
+    '*/calculation_params/profitability/sales_commission_rate',
+    '*/calculation_params/profitability/vat_multiplier',
+    '*/calculation_params/profitability/vat_rate',
+    '*/calculation_params/profitability_summary/assumptions/base_salary_default',
+    '*/calculation_params/profitability_summary/assumptions/base_salary_high',
+    '*/calculation_params/profitability_summary/assumptions/meal_vouchers_per_agent',
+    '*/calculation_params/profitability_summary/assumptions/salary_assumed_attainment',
+    '*/calculation_params/profitability_summary/assumptions/salary_pnl_factor',
+    '*/calculation_params/profitability_summary/assumptions/sales_commission_rate',
+    '*/calculation_params/profitability_summary/assumptions/vat_multiplier',
+    '*/calculation_params/profitability_summary/assumptions/vat_rate',
+    '*/calculation_params/profitability_summary/break_even_total',
+    '*/calculation_params/profitability_summary/forecast_total',
+    '*/calculation_params/profitability_summary/operating_costs_total',
+    '*/calculation_params/profitability_summary/salary_total',
+    '*/calculation_params/seasonality_max',
+    '*/calculation_params/seasonality_min',
+    '*/calculation_params/strong_weights/*',
+    '*/calculation_params/trend_adjustment_max',
+    '*/calculation_params/trend_adjustment_min',
+    '*/calculation_params/trend_weight',
+    '*/calculation_params/weak_weights/*',
     '*/final_total',
     '*/min_floor',
     '*/previous_month_floor_pct',
@@ -4648,9 +4784,47 @@ export const RETAIL_DECIMAL_PATHS: { readonly [Id in RetailOperationId]: Readonl
     '*/total_target',
   ]),
   'calculate_scenario_api_target_calculator_scenarios_calculate_post': new Set<string>([
+    'calculation_params/minimum_seasonality_base',
+    'calculation_params/new_store_weights/*',
+    'calculation_params/previous_month_cap_pct',
+    'calculation_params/profitability/base_salary_default',
+    'calculation_params/profitability/base_salary_high',
+    'calculation_params/profitability/meal_vouchers_per_agent',
+    'calculation_params/profitability/salary_assumed_attainment',
+    'calculation_params/profitability/salary_pnl_factor',
+    'calculation_params/profitability/sales_commission_rate',
+    'calculation_params/profitability/vat_multiplier',
+    'calculation_params/profitability/vat_rate',
+    'calculation_params/profitability_summary/assumptions/base_salary_default',
+    'calculation_params/profitability_summary/assumptions/base_salary_high',
+    'calculation_params/profitability_summary/assumptions/meal_vouchers_per_agent',
+    'calculation_params/profitability_summary/assumptions/salary_assumed_attainment',
+    'calculation_params/profitability_summary/assumptions/salary_pnl_factor',
+    'calculation_params/profitability_summary/assumptions/sales_commission_rate',
+    'calculation_params/profitability_summary/assumptions/vat_multiplier',
+    'calculation_params/profitability_summary/assumptions/vat_rate',
+    'calculation_params/profitability_summary/break_even_total',
+    'calculation_params/profitability_summary/forecast_total',
+    'calculation_params/profitability_summary/operating_costs_total',
+    'calculation_params/profitability_summary/salary_total',
+    'calculation_params/seasonality_max',
+    'calculation_params/seasonality_min',
+    'calculation_params/strong_weights/*',
+    'calculation_params/trend_adjustment_max',
+    'calculation_params/trend_adjustment_min',
+    'calculation_params/trend_weight',
+    'calculation_params/weak_weights/*',
     'final_total',
     'min_floor',
     'previous_month_floor_pct',
+    'profitability_summary/assumptions/base_salary_default',
+    'profitability_summary/assumptions/base_salary_high',
+    'profitability_summary/assumptions/meal_vouchers_per_agent',
+    'profitability_summary/assumptions/salary_assumed_attainment',
+    'profitability_summary/assumptions/salary_pnl_factor',
+    'profitability_summary/assumptions/sales_commission_rate',
+    'profitability_summary/assumptions/vat_multiplier',
+    'profitability_summary/assumptions/vat_rate',
     'profitability_summary/break_even_total',
     'profitability_summary/forecast_total',
     'profitability_summary/operating_costs_total',
@@ -4705,6 +4879,7 @@ export const RETAIL_DECIMAL_PATHS: { readonly [Id in RetailOperationId]: Readonl
     'rows/*/history/*/realized',
     'rows/*/history/*/target',
     'rows/*/history/*/weight',
+    'rows/*/manager_override_target',
     'rows/*/normalized_weight',
     'rows/*/profitability/accessory_margin_pct',
     'rows/*/profitability/base_salary_per_agent',
@@ -4721,9 +4896,47 @@ export const RETAIL_DECIMAL_PATHS: { readonly [Id in RetailOperationId]: Readonl
     'total_target',
   ]),
   'get_scenario_api_target_calculator_scenarios__scenario_id__get': new Set<string>([
+    'calculation_params/minimum_seasonality_base',
+    'calculation_params/new_store_weights/*',
+    'calculation_params/previous_month_cap_pct',
+    'calculation_params/profitability/base_salary_default',
+    'calculation_params/profitability/base_salary_high',
+    'calculation_params/profitability/meal_vouchers_per_agent',
+    'calculation_params/profitability/salary_assumed_attainment',
+    'calculation_params/profitability/salary_pnl_factor',
+    'calculation_params/profitability/sales_commission_rate',
+    'calculation_params/profitability/vat_multiplier',
+    'calculation_params/profitability/vat_rate',
+    'calculation_params/profitability_summary/assumptions/base_salary_default',
+    'calculation_params/profitability_summary/assumptions/base_salary_high',
+    'calculation_params/profitability_summary/assumptions/meal_vouchers_per_agent',
+    'calculation_params/profitability_summary/assumptions/salary_assumed_attainment',
+    'calculation_params/profitability_summary/assumptions/salary_pnl_factor',
+    'calculation_params/profitability_summary/assumptions/sales_commission_rate',
+    'calculation_params/profitability_summary/assumptions/vat_multiplier',
+    'calculation_params/profitability_summary/assumptions/vat_rate',
+    'calculation_params/profitability_summary/break_even_total',
+    'calculation_params/profitability_summary/forecast_total',
+    'calculation_params/profitability_summary/operating_costs_total',
+    'calculation_params/profitability_summary/salary_total',
+    'calculation_params/seasonality_max',
+    'calculation_params/seasonality_min',
+    'calculation_params/strong_weights/*',
+    'calculation_params/trend_adjustment_max',
+    'calculation_params/trend_adjustment_min',
+    'calculation_params/trend_weight',
+    'calculation_params/weak_weights/*',
     'final_total',
     'min_floor',
     'previous_month_floor_pct',
+    'profitability_summary/assumptions/base_salary_default',
+    'profitability_summary/assumptions/base_salary_high',
+    'profitability_summary/assumptions/meal_vouchers_per_agent',
+    'profitability_summary/assumptions/salary_assumed_attainment',
+    'profitability_summary/assumptions/salary_pnl_factor',
+    'profitability_summary/assumptions/sales_commission_rate',
+    'profitability_summary/assumptions/vat_multiplier',
+    'profitability_summary/assumptions/vat_rate',
     'profitability_summary/break_even_total',
     'profitability_summary/forecast_total',
     'profitability_summary/operating_costs_total',
@@ -4778,6 +4991,7 @@ export const RETAIL_DECIMAL_PATHS: { readonly [Id in RetailOperationId]: Readonl
     'rows/*/history/*/realized',
     'rows/*/history/*/target',
     'rows/*/history/*/weight',
+    'rows/*/manager_override_target',
     'rows/*/normalized_weight',
     'rows/*/profitability/accessory_margin_pct',
     'rows/*/profitability/base_salary_per_agent',
@@ -4796,9 +5010,47 @@ export const RETAIL_DECIMAL_PATHS: { readonly [Id in RetailOperationId]: Readonl
   'export_scenario_api_target_calculator_scenarios__scenario_id__export_get': new Set<string>([
   ]),
   'finalize_scenario_api_target_calculator_scenarios__scenario_id__finalize_post': new Set<string>([
+    'calculation_params/minimum_seasonality_base',
+    'calculation_params/new_store_weights/*',
+    'calculation_params/previous_month_cap_pct',
+    'calculation_params/profitability/base_salary_default',
+    'calculation_params/profitability/base_salary_high',
+    'calculation_params/profitability/meal_vouchers_per_agent',
+    'calculation_params/profitability/salary_assumed_attainment',
+    'calculation_params/profitability/salary_pnl_factor',
+    'calculation_params/profitability/sales_commission_rate',
+    'calculation_params/profitability/vat_multiplier',
+    'calculation_params/profitability/vat_rate',
+    'calculation_params/profitability_summary/assumptions/base_salary_default',
+    'calculation_params/profitability_summary/assumptions/base_salary_high',
+    'calculation_params/profitability_summary/assumptions/meal_vouchers_per_agent',
+    'calculation_params/profitability_summary/assumptions/salary_assumed_attainment',
+    'calculation_params/profitability_summary/assumptions/salary_pnl_factor',
+    'calculation_params/profitability_summary/assumptions/sales_commission_rate',
+    'calculation_params/profitability_summary/assumptions/vat_multiplier',
+    'calculation_params/profitability_summary/assumptions/vat_rate',
+    'calculation_params/profitability_summary/break_even_total',
+    'calculation_params/profitability_summary/forecast_total',
+    'calculation_params/profitability_summary/operating_costs_total',
+    'calculation_params/profitability_summary/salary_total',
+    'calculation_params/seasonality_max',
+    'calculation_params/seasonality_min',
+    'calculation_params/strong_weights/*',
+    'calculation_params/trend_adjustment_max',
+    'calculation_params/trend_adjustment_min',
+    'calculation_params/trend_weight',
+    'calculation_params/weak_weights/*',
     'final_total',
     'min_floor',
     'previous_month_floor_pct',
+    'profitability_summary/assumptions/base_salary_default',
+    'profitability_summary/assumptions/base_salary_high',
+    'profitability_summary/assumptions/meal_vouchers_per_agent',
+    'profitability_summary/assumptions/salary_assumed_attainment',
+    'profitability_summary/assumptions/salary_pnl_factor',
+    'profitability_summary/assumptions/sales_commission_rate',
+    'profitability_summary/assumptions/vat_multiplier',
+    'profitability_summary/assumptions/vat_rate',
     'profitability_summary/break_even_total',
     'profitability_summary/forecast_total',
     'profitability_summary/operating_costs_total',
@@ -4853,6 +5105,7 @@ export const RETAIL_DECIMAL_PATHS: { readonly [Id in RetailOperationId]: Readonl
     'rows/*/history/*/realized',
     'rows/*/history/*/target',
     'rows/*/history/*/weight',
+    'rows/*/manager_override_target',
     'rows/*/normalized_weight',
     'rows/*/profitability/accessory_margin_pct',
     'rows/*/profitability/base_salary_per_agent',
@@ -4869,9 +5122,47 @@ export const RETAIL_DECIMAL_PATHS: { readonly [Id in RetailOperationId]: Readonl
     'total_target',
   ]),
   'update_final_targets_api_target_calculator_scenarios__scenario_id__rows_patch': new Set<string>([
+    'calculation_params/minimum_seasonality_base',
+    'calculation_params/new_store_weights/*',
+    'calculation_params/previous_month_cap_pct',
+    'calculation_params/profitability/base_salary_default',
+    'calculation_params/profitability/base_salary_high',
+    'calculation_params/profitability/meal_vouchers_per_agent',
+    'calculation_params/profitability/salary_assumed_attainment',
+    'calculation_params/profitability/salary_pnl_factor',
+    'calculation_params/profitability/sales_commission_rate',
+    'calculation_params/profitability/vat_multiplier',
+    'calculation_params/profitability/vat_rate',
+    'calculation_params/profitability_summary/assumptions/base_salary_default',
+    'calculation_params/profitability_summary/assumptions/base_salary_high',
+    'calculation_params/profitability_summary/assumptions/meal_vouchers_per_agent',
+    'calculation_params/profitability_summary/assumptions/salary_assumed_attainment',
+    'calculation_params/profitability_summary/assumptions/salary_pnl_factor',
+    'calculation_params/profitability_summary/assumptions/sales_commission_rate',
+    'calculation_params/profitability_summary/assumptions/vat_multiplier',
+    'calculation_params/profitability_summary/assumptions/vat_rate',
+    'calculation_params/profitability_summary/break_even_total',
+    'calculation_params/profitability_summary/forecast_total',
+    'calculation_params/profitability_summary/operating_costs_total',
+    'calculation_params/profitability_summary/salary_total',
+    'calculation_params/seasonality_max',
+    'calculation_params/seasonality_min',
+    'calculation_params/strong_weights/*',
+    'calculation_params/trend_adjustment_max',
+    'calculation_params/trend_adjustment_min',
+    'calculation_params/trend_weight',
+    'calculation_params/weak_weights/*',
     'final_total',
     'min_floor',
     'previous_month_floor_pct',
+    'profitability_summary/assumptions/base_salary_default',
+    'profitability_summary/assumptions/base_salary_high',
+    'profitability_summary/assumptions/meal_vouchers_per_agent',
+    'profitability_summary/assumptions/salary_assumed_attainment',
+    'profitability_summary/assumptions/salary_pnl_factor',
+    'profitability_summary/assumptions/sales_commission_rate',
+    'profitability_summary/assumptions/vat_multiplier',
+    'profitability_summary/assumptions/vat_rate',
     'profitability_summary/break_even_total',
     'profitability_summary/forecast_total',
     'profitability_summary/operating_costs_total',
@@ -4926,6 +5217,7 @@ export const RETAIL_DECIMAL_PATHS: { readonly [Id in RetailOperationId]: Readonl
     'rows/*/history/*/realized',
     'rows/*/history/*/target',
     'rows/*/history/*/weight',
+    'rows/*/manager_override_target',
     'rows/*/normalized_weight',
     'rows/*/profitability/accessory_margin_pct',
     'rows/*/profitability/base_salary_per_agent',
@@ -5160,6 +5452,8 @@ export const RETAIL_DATE_PATHS: { readonly [Id in RetailOperationId]: ReadonlySe
     'erp_result/retail_cutoff_date',
     'promo_result/cutoff_date',
     'result/manifest/cutoff_date',
+    'result/manifest/max_sale_date',
+    'result/manifest/site_days/*/sale_date',
   ]),
   'get_import_history_api_import_history_get': new Set<string>([
     '*/upload_date',
@@ -5169,24 +5463,32 @@ export const RETAIL_DATE_PATHS: { readonly [Id in RetailOperationId]: ReadonlySe
     'erp_result/retail_cutoff_date',
     'promo_result/cutoff_date',
     'result/manifest/cutoff_date',
+    'result/manifest/max_sale_date',
+    'result/manifest/site_days/*/sale_date',
   ]),
   'upload_promo_actuals_file_api_import_promo_actuals_post': new Set<string>([
     'erp_result/report_cutoff_date',
     'erp_result/retail_cutoff_date',
     'promo_result/cutoff_date',
     'result/manifest/cutoff_date',
+    'result/manifest/max_sale_date',
+    'result/manifest/site_days/*/sale_date',
   ]),
   'upload_sales_file_api_import_sales_post': new Set<string>([
     'erp_result/report_cutoff_date',
     'erp_result/retail_cutoff_date',
     'promo_result/cutoff_date',
     'result/manifest/cutoff_date',
+    'result/manifest/max_sale_date',
+    'result/manifest/site_days/*/sale_date',
   ]),
   'promote_sales_generation_api_import_sales__snapshot_id__promote_post': new Set<string>([
     'erp_result/report_cutoff_date',
     'erp_result/retail_cutoff_date',
     'promo_result/cutoff_date',
     'result/manifest/cutoff_date',
+    'result/manifest/max_sale_date',
+    'result/manifest/site_days/*/sale_date',
   ]),
   'annual_api_store_pnl_annual_get': new Set<string>([
   ]),

@@ -29,6 +29,9 @@ const IMPORT_HISTORY: ImportHistoryEntry[] = [{
     active_store_count_before: 1, active_store_coverage_pct: 100, company_count: 1, incoming_store_count: 1,
     metadata_change_count: 0, missing_active_store_count: 0, missing_prior_store_count: 0, new_store_count: 0,
     prior_snapshot_coverage_pct: 100, prior_snapshot_store_count: 1, store_activity_writes: 0,
+    anomalies: [], incoming_set_sha256: null, missing_active_set_sha256: null,
+    missing_prior_set_sha256: null, new_store_set_sha256: null,
+    stores_missing_count: 0, stores_present_count: 1,
   },
 }];
 

@@ -7,13 +7,14 @@ from datetime import date, datetime, timezone
 from io import BytesIO
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, call
 
 import pytest
 from arq.jobs import JobStatus as ArqJobStatus
 from fastapi import HTTPException, UploadFile
 
 import services.imports as imports_service
+import services.job_queue_routing as job_queue_routing
 import services.jobs as jobs_service
 from services.imports import ImportsService
 from services.jobs import JobResult, JobStatus
@@ -131,7 +132,7 @@ async def test_sales_job_status_uses_import_worker_queue(
     job.status = AsyncMock(return_value=ArqJobStatus.queued)
     job_factory = MagicMock(return_value=job)
     monkeypatch.setattr(jobs_service, "get_arq_pool", AsyncMock(return_value=pool))
-    monkeypatch.setattr(jobs_service, "Job", job_factory)
+    monkeypatch.setattr(job_queue_routing, "Job", job_factory)
 
     result = await jobs_service.get_job_status(job_id)
 
@@ -141,6 +142,57 @@ async def test_sales_job_status_uses_import_worker_queue(
         pool,
         _queue_name=jobs_service.SALES_IMPORT_QUEUE_NAME,
     )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("job_id", "queue_name"),
+    [
+        ("export-complex:7", jobs_service.EXPORT_QUEUE_NAME),
+        ("grile-check:8", jobs_service.GRILE_QUEUE_NAME),
+        ("grile-store-refresh:9", jobs_service.GRILE_QUEUE_NAME),
+        ("grile-monthly:10", jobs_service.GRILE_QUEUE_NAME),
+        ("grile-agent-targets:11", jobs_service.GRILE_QUEUE_NAME),
+    ],
+)
+async def test_isolated_job_status_uses_owning_queue(
+    monkeypatch: pytest.MonkeyPatch,
+    job_id: str,
+    queue_name: str,
+) -> None:
+    pool = MagicMock()
+    job = MagicMock()
+    job.status = AsyncMock(return_value=ArqJobStatus.queued)
+    job_factory = MagicMock(return_value=job)
+    monkeypatch.setattr(jobs_service, "get_arq_pool", AsyncMock(return_value=pool))
+    monkeypatch.setattr(job_queue_routing, "Job", job_factory)
+
+    result = await jobs_service.get_job_status(job_id)
+
+    assert result.status is JobStatus.QUEUED
+    job_factory.assert_called_once_with(job_id, pool, _queue_name=queue_name)
+
+
+@pytest.mark.asyncio
+async def test_cutover_grile_job_status_falls_back_to_legacy_default_queue(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pool = MagicMock()
+    isolated_job = MagicMock()
+    isolated_job.status = AsyncMock(return_value=ArqJobStatus.not_found)
+    legacy_job = MagicMock()
+    legacy_job.status = AsyncMock(return_value=ArqJobStatus.queued)
+    job_factory = MagicMock(side_effect=[isolated_job, legacy_job])
+    monkeypatch.setattr(jobs_service, "get_arq_pool", AsyncMock(return_value=pool))
+    monkeypatch.setattr(job_queue_routing, "Job", job_factory)
+
+    result = await jobs_service.get_job_status("grile-monthly:10")
+
+    assert result.status is JobStatus.QUEUED
+    assert job_factory.call_args_list == [
+        call("grile-monthly:10", pool, _queue_name=jobs_service.GRILE_QUEUE_NAME),
+        call("grile-monthly:10", pool),
+    ]
 
 
 @pytest.mark.asyncio

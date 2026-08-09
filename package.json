@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite --port=3000 --host=0.0.0.0",
     "dev:frontend": "vite --port=3000 --host=0.0.0.0",
-    "dev:backend": "cd backend && python -m uvicorn main:app --reload --host 0.0.0.0 --port 8000",
+    "dev:backend": "cd backend && python -m uvicorn main:app --reload --host=0.0.0.0 --port=8000",
     "build": "vite build",
     "verify:rum-build": "node scripts/verify_frontend_rum_build.mjs",
     "contracts:generate": "PYTHONPATH=backend backend/venv/bin/python scripts/generate_retail_contract.py",
@@ -21,6 +21,9 @@
     "typecheck:strict": "tsc --noEmit",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
+    "test:e2e:browsers": "playwright test --config=playwright.browser-smoke.config.ts",
+    "test:e2e:pwa-real": "scripts/run_pwa_release_lifecycle.sh",
+    "test:e2e:pwa-workbox": "playwright test --config=playwright.pwa-workbox.config.ts",
     "complexity:python": "python3 scripts/check_complexity_ratchet.py",
     "complexity:ts": "node scripts/check_ts_function_complexity.cjs"
   },
@@ -65,5 +68,8 @@
     "vite": "^8.1.5",
     "vite-plugin-pwa": "^1.3.0",
     "vitest": "^4.1.10"
+  },
+  "overrides": {
+    "nanoid": "3.3.18"
   }
 }

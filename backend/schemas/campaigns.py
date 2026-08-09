@@ -3,12 +3,12 @@ from __future__ import annotations
 from decimal import Decimal
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import Field
+from schemas.common import StrictApiModel, MonthStr
 
-from schemas.common import MonthStr
 
 
-class PromoIncentiveSummary(BaseModel):
+class PromoIncentiveSummary(StrictApiModel):
     promo_qty: int = 0
     promo_sales: Decimal = Decimal(0)
     promo_impact: Decimal = Decimal(0)
@@ -28,7 +28,7 @@ class PromoIncentiveSummary(BaseModel):
     calculation_warnings: list[str] = Field(default_factory=list)
 
 
-class CampaignOverview(BaseModel):
+class CampaignOverview(StrictApiModel):
     month: MonthStr
     total_focus_sales: Decimal
     total_focus_qty: int
@@ -37,7 +37,7 @@ class CampaignOverview(BaseModel):
     active_focus_stores: int
 
 
-class CampaignProductStat(BaseModel):
+class CampaignProductStat(StrictApiModel):
     item_code: str
     item_name: str
     qty_total: int
@@ -45,7 +45,7 @@ class CampaignProductStat(BaseModel):
     store_count: int
 
 
-class CampaignStoreStat(BaseModel):
+class CampaignStoreStat(StrictApiModel):
     site_code: str
     locatie: str
     qty_total: int
@@ -53,13 +53,13 @@ class CampaignStoreStat(BaseModel):
     active_products: int
 
 
-class CampaignSnapshot(BaseModel):
+class CampaignSnapshot(StrictApiModel):
     overview: CampaignOverview
     products: list[CampaignProductStat]
     stores: list[CampaignStoreStat]
 
 
-class PromoStoreStat(BaseModel):
+class PromoStoreStat(StrictApiModel):
     site_code: str
     locatie: str
     qty_total: int
@@ -68,31 +68,31 @@ class PromoStoreStat(BaseModel):
     realizat_pct: Decimal | None = None
 
 
-class PromoData(BaseModel):
+class PromoData(StrictApiModel):
     overall_qty: int
     overall_sales: Decimal
     category_qty: int | None = None
     stores: list[PromoStoreStat]
 
 
-class IncentiveAgentStat(BaseModel):
+class IncentiveAgentStat(StrictApiModel):
     agent: str
     qty_total: int
     value: Decimal
 
 
-class IncentiveData(BaseModel):
+class IncentiveData(StrictApiModel):
     overall_qty: int
     overall_value: Decimal
     agents: list[IncentiveAgentStat]
 
 
-class PromotionsIncentivesResponse(BaseModel):
+class PromotionsIncentivesResponse(StrictApiModel):
     promo: PromoData | None
     incentive: IncentiveData | None
 
 
-class FocusHistoryPoint(BaseModel):
+class FocusHistoryPoint(StrictApiModel):
     month: MonthStr
     total_focus_sales: Decimal
     total_focus_qty: int
@@ -101,11 +101,11 @@ class FocusHistoryPoint(BaseModel):
     active_focus_stores: int
 
 
-class FocusHistoryResponse(BaseModel):
+class FocusHistoryResponse(StrictApiModel):
     history: list[FocusHistoryPoint]
 
 
-class PromoTopStore(BaseModel):
+class PromoTopStore(StrictApiModel):
     store_name: str
     qty: int
     total_qty: int
@@ -117,14 +117,14 @@ class PromoTopStore(BaseModel):
     firma: str = ""
 
 
-class PromoTopAgent(BaseModel):
+class PromoTopAgent(StrictApiModel):
     agent_name: str
     store_name: str = ""
     firma: str = ""
     promo_bons: int = 0
 
 
-class IncentiveTopAgent(BaseModel):
+class IncentiveTopAgent(StrictApiModel):
     agent_name: str
     store_name: str = ""
     firma: str = ""
@@ -134,13 +134,13 @@ class IncentiveTopAgent(BaseModel):
     achievement: float | None = None
 
 
-class IncentiveCategory(BaseModel):
+class IncentiveCategory(StrictApiModel):
     label: str
     qty: int
     value: float
 
 
-class IncentivePeriodStat(BaseModel):
+class IncentivePeriodStat(StrictApiModel):
     label: str
     start_date: str
     end_date: str
@@ -151,7 +151,7 @@ class IncentivePeriodStat(BaseModel):
     value: float = 0.0
 
 
-class IncentiveCategoryBreakdown(BaseModel):
+class IncentiveCategoryBreakdown(StrictApiModel):
     label: str
     qty: int
     qualified_qty: int
@@ -159,12 +159,12 @@ class IncentiveCategoryBreakdown(BaseModel):
     value: float
 
 
-class CampaignPromotionOption(BaseModel):
+class CampaignPromotionOption(StrictApiModel):
     key: str
     label: str
 
 
-class CampaignsPromotionsResponse(BaseModel):
+class CampaignsPromotionsResponse(StrictApiModel):
     promotions: list[CampaignPromotionOption] = Field(default_factory=list)
     selected_promotion_key: str = ""
     promo_title: str = ""

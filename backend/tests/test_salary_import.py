@@ -23,6 +23,7 @@ from scripts.import_salary_records import (
     validate_cnp,
     validate_records,
 )
+import scripts.import_salary_records as salary_import_module
 from salary_identity import make_salary_person_id
 from salary_import_approval import (
     APPROVAL_ARTIFACT_TYPE,
@@ -173,7 +174,7 @@ def test_parse_salary_file_rejects_invalid_cnp_and_includes_meal_vouchers(
             },
         ]
     )
-    monkeypatch.setattr(pd, "read_excel", lambda *args, **kwargs: frame)
+    monkeypatch.setattr(salary_import_module, "read_spreadsheet_frame", lambda *args, **kwargs: frame)
 
     records = parse_file(
         Path("salary.xlsx"),
@@ -214,7 +215,7 @@ def test_parse_salary_file_rejects_blank_cnp_before_import(
             }
         ]
     )
-    monkeypatch.setattr(pd, "read_excel", lambda *args, **kwargs: frame)
+    monkeypatch.setattr(salary_import_module, "read_spreadsheet_frame", lambda *args, **kwargs: frame)
 
     with pytest.raises(ValueError, match="exact 13 cifre"):
         parse_file(

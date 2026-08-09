@@ -2,14 +2,12 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 from datetime import date
 from decimal import Decimal
 from typing import Any
 
 import asyncpg
 
-from schemas.campaigns import PromoIncentiveSummary
 from services.campaigns.aggregation import merge_excluded_units
 from services.campaigns.loader import load_campaign_configuration, load_incentive_campaign
 from services.dashboard_specials import (
@@ -18,92 +16,12 @@ from services.dashboard_specials import (
     parse_promotion_definitions,
 )
 from services.incentive_db import get_incentive_campaign
-from services.promo_copurchase import PromoCoPurchaseResult
+from services.campaigns.contracts import CampaignContext, CampaignResponseSnapshot
 from services.promotion_evaluation import (
-    PromotionEvaluation,
     PromotionEvaluationStatus,
+    evaluate_promotion,
     scope_promotion_definition_to_interval,
 )
-
-
-@dataclass
-class CampaignContext:
-    """Request-local Promo/Incentive inputs shared by all Retail consumers."""
-
-    config_error: str | None
-    promotion_definitions: list[dict[str, Any]]
-    promotion_definition: dict[str, Any] | None
-    promotion_error: str | None
-    incentive_campaign: dict[str, Any] | None
-    promotion_results: list[tuple[dict[str, Any], PromoCoPurchaseResult]]
-    promo_excluded_units: dict[tuple[str, str, str], int]
-    promo_discount_values: dict[tuple[str, str, str], Decimal] = field(
-        default_factory=dict
-    )
-    promotion_status: PromotionEvaluationStatus = PromotionEvaluationStatus.COMPLETE
-    promotion_warnings: tuple[str, ...] = ()
-    promotion_evaluations: list[
-        tuple[dict[str, Any], PromotionEvaluation]
-    ] = field(default_factory=list)
-    period_evaluations: dict[
-        tuple[int, date, date], PromotionEvaluation
-    ] = field(default_factory=dict)
-
-    @property
-    def selected_promotion_result(self) -> PromoCoPurchaseResult | None:
-        selected_key = (
-            self.promotion_definition.get("key")
-            if self.promotion_definition is not None
-            else None
-        )
-        for definition, result in self.promotion_results:
-            if definition.get("key") == selected_key:
-                return result
-        return None
-
-    @property
-    def selected_promotion_evaluation(self) -> PromotionEvaluation | None:
-        selected_key = (
-            self.promotion_definition.get("key")
-            if self.promotion_definition is not None
-            else None
-        )
-        for definition, evaluation in self.promotion_evaluations:
-            if definition.get("key") == selected_key:
-                return evaluation
-        return None
-
-    @staticmethod
-    def period_evaluation_key(
-        definition: dict[str, Any],
-        start_date: date,
-        end_date: date,
-    ) -> tuple[int, date, date]:
-        return id(definition), start_date, end_date
-
-
-@dataclass(frozen=True)
-class CampaignResponseSnapshot:
-    """All values needed after releasing the repeatable-read connection."""
-
-    start: date
-    end: date
-    month: str
-    promotion_definitions: list[dict[str, Any]]
-    promotion_list_error: str | None
-    promotion_definition: dict[str, Any] | None
-    promotion_error: str | None
-    include_incentive: bool
-    incentive_campaign: dict[str, Any] | None
-    incentive_periods: list[dict[str, Any]]
-    campaign_context: CampaignContext
-    summary: PromoIncentiveSummary | None
-    store_multipliers: dict[str, float]
-    store_achievements: dict[str, float | None]
-    promo_total_row: Any | None
-    promo_store_rows: list[Any] = field(default_factory=list)
-    incentive_store_rows: list[Any] = field(default_factory=list)
-    incentive_agent_rows: list[Any] = field(default_factory=list)
 
 
 async def build_campaign_context(
@@ -123,12 +41,8 @@ async def build_campaign_context(
     include_incentive: bool,
     current_scope: bool,
     include_closed_stores: bool,
-    evaluator: Any = None,
+    evaluator: Any = evaluate_promotion,
 ) -> CampaignContext:
-    if evaluator is None:
-        from services.campaigns.promotions import compute_promotion_result
-
-        evaluator = compute_promotion_result
     definitions_to_evaluate = (
         list(promotion_definitions)
         if include_incentive
@@ -261,8 +175,6 @@ async def load_campaign_context(
     cutoff_date: date | None = None,
 ) -> CampaignContext:
     """Load and evaluate one canonical Campaign context on the supplied snapshot."""
-    from services.campaigns.promotions import compute_promotion_result
-
     (
         _config,
         config_error,
@@ -321,5 +233,5 @@ async def load_campaign_context(
         include_incentive=True,
         current_scope=current_scope,
         include_closed_stores=include_closed_stores,
-        evaluator=compute_promotion_result,
+        evaluator=evaluate_promotion,
     )

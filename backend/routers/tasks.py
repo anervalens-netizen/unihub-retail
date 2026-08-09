@@ -4,11 +4,11 @@ from datetime import date
 from typing import Any
 
 from fastapi import APIRouter, Depends, Query
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import ConfigDict, Field, field_validator
+from schemas.common import StrictApiModel
 
-from db.connection import get_pool
+from composition import build_tasks_service
 from permissions import require_business_write_access
-from repositories.tasks import TasksRepository
 from services.tasks import TasksService
 
 router = APIRouter(prefix="/api/tasks", tags=["tasks"])
@@ -29,7 +29,7 @@ def _valid_date(value: str | None) -> str | None:
     return value
 
 
-class TaskItem(BaseModel):
+class TaskItem(StrictApiModel):
     id: int
     title: str
     assignee: str | None = None
@@ -42,18 +42,18 @@ class TaskItem(BaseModel):
     updated_at: str | None = None
 
 
-class TaskListResponse(BaseModel):
+class TaskListResponse(StrictApiModel):
     items: list[TaskItem]
     total: int = Field(ge=0)
     limit: int = Field(ge=1, le=100)
     offset: int = Field(ge=0)
 
 
-class TaskDeleteResponse(BaseModel):
+class TaskDeleteResponse(StrictApiModel):
     ok: bool
 
 
-class TaskCreate(BaseModel):
+class TaskCreate(StrictApiModel):
     model_config = ConfigDict(extra="forbid")
 
     title: str = Field(min_length=1, max_length=200)
@@ -75,7 +75,7 @@ class TaskCreate(BaseModel):
         return _valid_date(value)
 
 
-class TaskUpdate(BaseModel):
+class TaskUpdate(StrictApiModel):
     model_config = ConfigDict(extra="forbid")
 
     title: str | None = Field(default=None, max_length=200)
@@ -95,10 +95,7 @@ class TaskUpdate(BaseModel):
         return _valid_date(value)
 
 
-async def get_tasks_service() -> TasksService:
-    pool = await get_pool()
-    repo = TasksRepository(pool)
-    return TasksService(repo)
+get_tasks_service = build_tasks_service
 
 
 @router.get("", response_model=TaskListResponse)

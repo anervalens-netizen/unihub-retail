@@ -75,6 +75,8 @@ def test_systemd_uses_multiprocess_web_metrics_and_detected_gateway_env() -> Non
     web = (root / "ops/systemd/unihub-backend.service").read_text(encoding="utf-8")
     operations = (root / "unihub-worker.service").read_text(encoding="utf-8")
     imports = (root / "ops/systemd/unihub-import-worker.service").read_text(encoding="utf-8")
+    grile = (root / "ops/systemd/unihub-grile-worker.service").read_text(encoding="utf-8")
+    exports = (root / "ops/systemd/unihub-export-worker.service").read_text(encoding="utf-8")
 
     assert "--host 0.0.0.0" in web
     assert "PROMETHEUS_MULTIPROC_DIR=/run/unihub-retail-prometheus" in web
@@ -87,6 +89,12 @@ def test_systemd_uses_multiprocess_web_metrics_and_detected_gateway_env() -> Non
     assert "WORKER_METRICS_HOST=127.0.0.1" not in imports
     assert "WORKER_METRICS_HOST=0.0.0.0" not in imports
     assert "WORKER_METRICS_PORT=9902" in imports
+    assert "WORKER_METRICS_PORT=9903" in grile
+    assert "WORKER_METRICS_PORT=9904" in exports
+    for unit in (grile, exports):
+        assert "EnvironmentFile=/opt/Mobiup/ops/prometheus/unihub-retail-network.env" in unit
+        assert "WORKER_METRICS_HOST=127.0.0.1" not in unit
+        assert "WORKER_METRICS_HOST=0.0.0.0" not in unit
 
 
 def test_runtime_verifier_sets_backend_pythonpath_itself() -> None:

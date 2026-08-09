@@ -9,11 +9,15 @@ from typing import Any
 from uuid import uuid4
 
 from arq.worker import create_worker, func
+from arq.constants import default_queue_name
 
 from config import load_runtime_config
 from logging_config import setup_logging
 from request_context import bind_request_id, reset_request_id
 from services.jobs import (
+    EXPORT_QUEUE_NAME,
+    GRILE_QUEUE_NAME,
+    OPERATIONS_QUEUE_NAME,
     SALES_IMPORT_QUEUE_NAME,
     cleanup_stale_sales_import_spool_files,
     get_valkey_settings,
@@ -29,11 +33,11 @@ logger = logging.getLogger(__name__)
 VISITS_SNAPSHOT_REFRESH_SECONDS = 15 * 60
 EXPORT_CLEANUP_SECONDS = 5 * 60
 GRILE_RUN_RECONCILE_SECONDS = 60
+QUEUE_METRICS_SECONDS = 15
 
 
 async def _refresh_visits_snapshot_once(pool: Any) -> int:
     from services.visits_sync import sync_visits_snapshot
-
     async with pool.acquire() as conn:
         async with conn.transaction():
             claimed = await conn.fetchval(
@@ -45,8 +49,9 @@ async def _refresh_visits_snapshot_once(pool: Any) -> int:
             refreshed = await sync_visits_snapshot(conn)
     logger.info("Refreshed %d visits snapshot rows", refreshed)
     return refreshed
-
-
+async def refresh_visits_snapshot_background(ctx: dict) -> dict[str, int]:
+    """Explicit operations-queue entrypoint; periodic refresh uses the same fence."""
+    return {"rows": await _refresh_visits_snapshot_once(ctx["db_pool"])}
 async def _visits_snapshot_refresh_loop(ctx: dict) -> None:
     stop = ctx["visits_snapshot_refresh_stop"]
     pool = ctx["db_pool"]
@@ -67,11 +72,8 @@ async def _visits_snapshot_refresh_loop(ctx: dict) -> None:
                 logger.exception("Periodic visits snapshot refresh failed; last good projection retained")
     except asyncio.CancelledError:
         return
-
-
 async def _grile_monthly_reconciliation_loop(ctx: dict) -> None:
     from services.grile_monthly import reconcile_monthly_operations
-
     stop = ctx["grile_monthly_reconcile_stop"]
     pool = ctx["db_pool"]
     adapter = ctx["grile_monthly_google"]
@@ -82,11 +84,8 @@ async def _grile_monthly_reconciliation_loop(ctx: dict) -> None:
                 await reconcile_monthly_operations(pool, adapter)
     except asyncio.CancelledError:
         return
-
-
 async def _grile_run_reconciliation_loop(ctx: dict) -> None:
     from repositories.grile import GrileRepository
-
     stop = ctx["grile_run_reconcile_stop"]
     repo = GrileRepository(ctx["db_pool"])
     try:
@@ -108,12 +107,9 @@ async def _grile_run_reconciliation_loop(ctx: dict) -> None:
                 logger.exception("Periodic Grile run reconciliation failed")
     except asyncio.CancelledError:
         return
-
-
 async def _export_cleanup_loop(ctx: dict) -> None:
     from repositories.export_operations import ExportOperationsRepository
     from services.export_operations import cleanup_export_operations, sweep_orphan_export_artifacts
-
     stop = ctx["export_cleanup_stop"]
     repo = ExportOperationsRepository(ctx["db_pool"])
     try:
@@ -135,8 +131,22 @@ async def _export_cleanup_loop(ctx: dict) -> None:
         return
     except Exception:
         logger.exception("Durable export cleanup loop stopped unexpectedly")
-
-
+async def _queue_metrics_loop(ctx: dict) -> None:
+    from observability.worker_metrics import observe_queue
+    stop = ctx["queue_metrics_stop"]
+    while not stop.is_set():
+        try:
+            await observe_queue(
+                ctx["redis"],
+                role=ctx["worker_role"],
+                queue_name=ctx["queue_name"],
+            )
+        except Exception:
+            logger.exception("Worker queue metrics refresh failed")
+        try:
+            await asyncio.wait_for(stop.wait(), timeout=QUEUE_METRICS_SECONDS)
+        except TimeoutError:
+            pass
 async def import_sales_background(
     ctx: dict,
     spool_path: str,
@@ -150,7 +160,6 @@ async def import_sales_background(
     from dataclasses import asdict
     from services.importer import import_sales_file
     from services.sales_generation_flow import mark_sales_generation_artifact_retained
-
     staged = False
     if not isinstance(spool_path, str) or not spool_path:
         raise ValueError("Sales import worker requires a durable spool path")
@@ -160,7 +169,6 @@ async def import_sales_background(
         raise ValueError("Sales import worker requires a valid source size")
     if not filename:
         raise ValueError("Sales import filename is missing")
-
     token = bind_request_id(request_id) if request_id else None
     cutoff = date.fromisoformat(cutoff_date_iso) if cutoff_date_iso else None
     actor = requested_by_sub or "unknown"
@@ -252,8 +260,6 @@ async def import_sales_background(
             await asyncio.to_thread(remove_sales_import_spool_file, spool_path)
         if token is not None:
             reset_request_id(token)
-
-
 async def import_promo_actuals_background(
     ctx: dict,
     spool_path: str,
@@ -265,7 +271,6 @@ async def import_promo_actuals_background(
 ) -> dict:
     from repositories.imports import ImportsRepository
     from services.imports import ImportsService
-
     succeeded = False
     try:
         await asyncio.to_thread(
@@ -278,7 +283,6 @@ async def import_promo_actuals_background(
         pool = ctx.get("db_pool")
         if pool is None:
             from db.connection import get_pool
-
             pool = await get_pool()
         result = await ImportsService(ImportsRepository(pool), pool).process_promo_actuals(
             content=content,
@@ -295,8 +299,6 @@ async def import_promo_actuals_background(
         # cleanup removes abandoned failures after the bounded retention TTL.
         if succeeded:
             await asyncio.to_thread(remove_sales_import_spool_file, spool_path)
-
-
 async def reconcile_erp_background(
     ctx: dict,
     spool_path: str,
@@ -307,7 +309,6 @@ async def reconcile_erp_background(
 ) -> dict:
     from repositories.erp_reconciliation import ErpReconciliationRepository
     from services.erp_reconciliation import ErpReconciliationService
-
     succeeded = False
     try:
         await asyncio.to_thread(verify_sales_import_artifact, spool_path, source_digest, source_byte_size)
@@ -315,7 +316,6 @@ async def reconcile_erp_background(
         pool = ctx.get("db_pool")
         if pool is None:
             from db.connection import get_pool
-
             pool = await get_pool()
         result = await ErpReconciliationService(ErpReconciliationRepository(pool), pool).process(
             content=content,
@@ -328,8 +328,6 @@ async def reconcile_erp_background(
     finally:
         if succeeded:
             await asyncio.to_thread(remove_sales_import_spool_file, spool_path)
-
-
 async def promote_sales_background(
     ctx: dict,
     snapshot_id: int,
@@ -345,7 +343,6 @@ async def promote_sales_background(
         promote_sales_generation,
         restore_sales_generation_claim,
     )
-
     token = bind_request_id(request_id) if request_id else None
     try:
         pool = ctx.get("db_pool")
@@ -403,14 +400,12 @@ async def promote_sales_background(
             if row is None:
                 raise RuntimeError("Promoted sales generation cannot be read back")
             import_month = str(row["import_month"])
-
         from routers.filters import clear_filter_options_cache
         from services.imports import (
             trigger_campaign_reporting_publication,
             trigger_grile_check_after_import,
         )
         from services.retail_metrics import update_business_metrics
-
         clear_filter_options_cache()
         await update_business_metrics(pool)
         await trigger_grile_check_after_import(import_month, snapshot_id)
@@ -445,8 +440,6 @@ async def promote_sales_background(
     finally:
         if token is not None:
             reset_request_id(token)
-
-
 async def publish_campaign_reporting_background(
     ctx: dict,
     period: str,
@@ -458,7 +451,6 @@ async def publish_campaign_reporting_background(
     from dataclasses import asdict
     from services.campaign_reporting import CampaignReportingPublisher
     from services.contest_reporting import ContestReportingPublisher
-
     token = bind_request_id(request_id) if request_id else None
     try:
         pool = ctx.get("db_pool")
@@ -482,27 +474,27 @@ async def publish_campaign_reporting_background(
     finally:
         if token is not None:
             reset_request_id(token)
-
-
 async def startup(ctx: dict) -> None:
     raw_worker_role = os.getenv("RETAIL_WORKER_ROLE", "operations").strip().lower()
     runtime = load_runtime_config("import" if raw_worker_role == "imports" else "worker")
     worker_role = runtime.worker_role or "operations"
+    ctx["worker_role"] = worker_role
     try:
         from observability.worker_metrics import start_worker_metrics
-
         ctx["worker_metrics_server"] = start_worker_metrics(worker_role)
+        if "redis" in ctx and "queue_name" in ctx:
+            ctx["queue_metrics_stop"] = asyncio.Event()
+            ctx["queue_metrics_task"] = asyncio.create_task(
+                _queue_metrics_loop(ctx), name=f"{worker_role}-queue-metrics"
+            )
         await _startup_runtime(ctx, worker_role=worker_role)
     except BaseException:
         logger.exception("Worker startup failed; cleaning partially started resources")
         await shutdown(ctx)
         raise
-
-
 async def _startup_runtime(ctx: dict, *, worker_role: str) -> None:
     from db.connection import init_db_pool, get_pool
     from services.importer import reconcile_interrupted_imports
-
     await init_db_pool()
     if worker_role == "imports":
         removed = await asyncio.to_thread(cleanup_stale_sales_import_spool_files)
@@ -521,22 +513,33 @@ async def _startup_runtime(ctx: dict, *, worker_role: str) -> None:
     ctx.setdefault("grile_monthly_sessions", {})
     if worker_role == "imports":
         return
-
-    from repositories.export_operations import ExportOperationsRepository
+    if worker_role == "exports":
+        from repositories.export_operations import ExportOperationsRepository
+        from services.export_operations import cleanup_export_operations, sweep_orphan_export_artifacts
+        export_repo = ExportOperationsRepository(pool)
+        await cleanup_export_operations(export_repo)
+        await sweep_orphan_export_artifacts(export_repo)
+        ctx["export_cleanup_stop"] = asyncio.Event()
+        ctx["export_cleanup_task"] = asyncio.create_task(
+            _export_cleanup_loop(ctx), name="durable-export-cleanup"
+        )
+        return
+    if worker_role == "operations":
+        try:
+            await _refresh_visits_snapshot_once(pool)
+        except Exception:
+            logger.exception("Initial visits snapshot refresh failed; last good projection retained")
+        ctx["visits_snapshot_refresh_stop"] = asyncio.Event()
+        ctx["visits_snapshot_refresh_task"] = asyncio.create_task(
+            _visits_snapshot_refresh_loop(ctx), name="visits-snapshot-refresh"
+        )
+        return
     from repositories.grile import GrileRepository
-    from services.export_operations import cleanup_export_operations, sweep_orphan_export_artifacts
     from services.grile_monthly import reconcile_monthly_operations
     from services.grile_monthly_google import GoogleSyncAdapter
-
-    export_repo = ExportOperationsRepository(pool)
-    await cleanup_export_operations(export_repo)
-    await sweep_orphan_export_artifacts(export_repo)
     grile_run_repo = GrileRepository(pool)
-    interrupted_runs = await grile_run_repo.reconcile_interrupted_running_runs()
     reconciled_runs = await grile_run_repo.reconcile_stale_runs()
     reconciled_refreshes = await grile_run_repo.reconcile_store_refreshes()
-    if interrupted_runs:
-        logger.warning("Closed interrupted Grile runs at worker startup: %s", interrupted_runs)
     if reconciled_runs:
         logger.warning("Closed stale Grile runs at worker startup: %s", reconciled_runs)
     if reconciled_refreshes:
@@ -544,20 +547,10 @@ async def _startup_runtime(ctx: dict, *, worker_role: str) -> None:
             "Closed stale Grile store refreshes at worker startup: %s",
             reconciled_refreshes,
         )
-
-    ctx["export_cleanup_stop"] = asyncio.Event()
-    ctx["export_cleanup_task"] = asyncio.create_task(
-        _export_cleanup_loop(ctx),
-        name="durable-export-cleanup",
-    )
     adapter = GoogleSyncAdapter()
     ctx["grile_monthly_google"] = adapter
     await adapter.start()
     await reconcile_monthly_operations(pool, adapter)
-    try:
-        await _refresh_visits_snapshot_once(pool)
-    except Exception:
-        logger.exception("Initial visits snapshot refresh failed; last good projection retained")
     ctx["grile_monthly_reconcile_stop"] = asyncio.Event()
     ctx["grile_monthly_reconcile_task"] = asyncio.create_task(
         _grile_monthly_reconciliation_loop(ctx),
@@ -568,13 +561,6 @@ async def _startup_runtime(ctx: dict, *, worker_role: str) -> None:
         _grile_run_reconciliation_loop(ctx),
         name="grile-run-reconciler",
     )
-    ctx["visits_snapshot_refresh_stop"] = asyncio.Event()
-    ctx["visits_snapshot_refresh_task"] = asyncio.create_task(
-        _visits_snapshot_refresh_loop(ctx),
-        name="visits-snapshot-refresh",
-    )
-
-
 async def _export_heartbeat_loop(
     repo: Any,
     *,
@@ -584,7 +570,6 @@ async def _export_heartbeat_loop(
     worker_task: asyncio.Task[Any],
 ) -> None:
     from services.export_operations import EXPORT_EXECUTION_LEASE_SECONDS
-
     try:
         while True:
             await asyncio.sleep(20)
@@ -602,13 +587,10 @@ async def _export_heartbeat_loop(
                 return
     except asyncio.CancelledError:
         return
-
-
 async def build_complex_export_background(ctx: dict, operation_id: int) -> dict[str, Any]:
     """Build one DB-reserved complex export and publish only through its fence."""
     if isinstance(operation_id, bool) or not isinstance(operation_id, int) or operation_id <= 0:
         raise ValueError("Invalid durable export operation id")
-
     from repositories.export_operations import ExportOperationsRepository
     from repositories.exports import ExportsRepository
     from services.export_operations import (
@@ -620,11 +602,9 @@ async def build_complex_export_background(ctx: dict, operation_id: int) -> dict[
         sweep_orphan_export_artifacts,
     )
     from services.exports import ExportValidationError, ExportsService, XlsxArtifact
-
     pool = ctx.get("db_pool")
     if pool is None:
         from db.connection import get_pool
-
         pool = await get_pool()
     repo = ExportOperationsRepository(pool)
     execution_owner = uuid4().hex
@@ -639,7 +619,6 @@ async def build_complex_export_background(ctx: dict, operation_id: int) -> dict[
             "operation_id": operation_id,
             "status": str(current.get("status")) if current else "not_found",
         }
-
     execution_epoch = int(operation["execution_epoch"])
     request_payload = operation.get("request_payload")
     if not isinstance(request_payload, dict):
@@ -650,7 +629,6 @@ async def build_complex_export_background(ctx: dict, operation_id: int) -> dict[
             error_code="invalid_persisted_request",
         )
         raise RuntimeError("Complex export has an invalid persisted request")
-
     worker_task = asyncio.current_task()
     if worker_task is None:
         raise RuntimeError("Complex export worker task is unavailable")
@@ -740,8 +718,6 @@ async def build_complex_export_background(ctx: dict, operation_id: int) -> dict[
             await sweep_orphan_export_artifacts(repo)
         except Exception:
             logger.exception("Export orphan sweep failed operation_id=%s", operation_id)
-
-
 async def grile_check_background(
     ctx: dict,
     month: str,
@@ -752,7 +728,6 @@ async def grile_check_background(
     request_id: str | None = None,
 ) -> dict:
     from services.grile import run_grile_check
-
     token = bind_request_id(request_id) if request_id else None
     try:
         pool = ctx.get("db_pool")
@@ -763,7 +738,6 @@ async def grile_check_background(
             read_agent_targets_state,
             sync_agent_targets_from_grile,
         )
-
         before = await read_agent_targets_state(pool, month)
         try:
             run_id = await run_grile_check(
@@ -823,8 +797,6 @@ async def grile_check_background(
     finally:
         if token is not None:
             reset_request_id(token)
-
-
 async def _terminalize_grile_run_after_worker_exit(
     ctx: dict,
     *,
@@ -837,10 +809,8 @@ async def _terminalize_grile_run_after_worker_exit(
         pool = ctx.get("db_pool")
         if pool is None:
             from db.connection import get_pool
-
             pool = await get_pool()
         from repositories.grile import GrileRepository
-
         await GrileRepository(pool).fail_run(
             int(run_id),
             error_message=error_message,
@@ -850,15 +820,12 @@ async def _terminalize_grile_run_after_worker_exit(
             "Could not terminalize Grile run after worker exit run_id=%s",
             run_id,
         )
-
-
 async def grile_store_refresh_background(
     ctx: dict,
     refresh_id: int,
     request_id: str | None = None,
 ) -> dict:
     from services.grile import run_grile_store_refresh
-
     token = bind_request_id(request_id) if request_id else None
     try:
         pool = ctx.get("db_pool")
@@ -869,11 +836,8 @@ async def grile_store_refresh_background(
     finally:
         if token is not None:
             reset_request_id(token)
-
-
 async def grile_monthly_background(ctx: dict, operation_id: int) -> dict:
     """Inchidere luna grile: ruleaza operatiile native din Retail.
-
     Ruleaza in worker fiindca operatia poate dura minute (peste timeout-ul de
     edge Cloudflare). Rezultatul (output + exit_code) e citit din rezultatul
     jobului arq de catre UI (`/api/grile/monthly/job/{id}`).
@@ -881,7 +845,6 @@ async def grile_monthly_background(ctx: dict, operation_id: int) -> dict:
     if isinstance(operation_id, bool) or not isinstance(operation_id, int) or operation_id <= 0:
         raise ValueError("Invalid persisted Grile monthly operation identity")
     persisted_operation_id = operation_id
-
     token = bind_request_id(f"grile-monthly:{persisted_operation_id}")
     session_task = asyncio.current_task()
     sessions = ctx.setdefault("grile_monthly_sessions", {})
@@ -893,9 +856,7 @@ async def grile_monthly_background(ctx: dict, operation_id: int) -> dict:
             mark_monthly_operation_cancelled_uncertain,
             run_monthly_op,
         )
-
         execution_owner = uuid4().hex
-
         try:
             adapter = ctx.get("grile_monthly_google")
             if adapter is None:
@@ -916,7 +877,6 @@ async def grile_monthly_background(ctx: dict, operation_id: int) -> dict:
             pool = ctx.get("db_pool")
             if pool is None:
                 from db.connection import get_pool
-
                 pool = await get_pool()
             cleanup_task = asyncio.create_task(
                 get_monthly_execution_lease(
@@ -949,7 +909,6 @@ async def grile_monthly_background(ctx: dict, operation_id: int) -> dict:
             pool = ctx.get("db_pool")
             if pool is None:
                 from db.connection import get_pool
-
                 pool = await get_pool()
             try:
                 lease = await get_monthly_execution_lease(
@@ -974,8 +933,6 @@ async def grile_monthly_background(ctx: dict, operation_id: int) -> dict:
     finally:
         sessions.pop(session_task, None)
         reset_request_id(token)
-
-
 async def grile_agent_targets_background(
     ctx: dict,
     operation_id: int,
@@ -994,11 +951,9 @@ async def grile_agent_targets_background(
             sync_agent_targets_from_grile,
         )
         from dataclasses import replace
-
         pool = ctx.get("db_pool")
         if pool is None:
             from db.connection import get_pool
-
             pool = await get_pool()
         repo = GrileAgentTargetSyncRepository(pool)
         operation = await repo.start(operation_id)
@@ -1074,12 +1029,16 @@ async def grile_agent_targets_background(
     finally:
         if token is not None:
             reset_request_id(token)
-
-
 async def shutdown(ctx: dict) -> None:
     from db.connection import close_db_pool
     from services.jobs import close_arq_pool
-
+    queue_metrics_stop = ctx.get("queue_metrics_stop")
+    queue_metrics_task = ctx.get("queue_metrics_task")
+    if queue_metrics_stop is not None:
+        queue_metrics_stop.set()
+    if queue_metrics_task is not None:
+        queue_metrics_task.cancel()
+        await asyncio.gather(queue_metrics_task, return_exceptions=True)
     export_cleanup_task = ctx.get("export_cleanup_task")
     export_cleanup_stop = ctx.get("export_cleanup_stop")
     if export_cleanup_stop is not None:
@@ -1087,7 +1046,6 @@ async def shutdown(ctx: dict) -> None:
     if export_cleanup_task is not None:
         export_cleanup_task.cancel()
         await asyncio.gather(export_cleanup_task, return_exceptions=True)
-
     reconcile_task = ctx.get("grile_monthly_reconcile_task")
     stop = ctx.get("grile_monthly_reconcile_stop")
     if stop is not None:
@@ -1095,7 +1053,6 @@ async def shutdown(ctx: dict) -> None:
     if reconcile_task is not None:
         reconcile_task.cancel()
         await asyncio.gather(reconcile_task, return_exceptions=True)
-
     run_reconcile_task = ctx.get("grile_run_reconcile_task")
     run_reconcile_stop = ctx.get("grile_run_reconcile_stop")
     if run_reconcile_stop is not None:
@@ -1103,7 +1060,6 @@ async def shutdown(ctx: dict) -> None:
     if run_reconcile_task is not None:
         run_reconcile_task.cancel()
         await asyncio.gather(run_reconcile_task, return_exceptions=True)
-
     visits_task = ctx.get("visits_snapshot_refresh_task")
     visits_stop = ctx.get("visits_snapshot_refresh_stop")
     if visits_stop is not None:
@@ -1111,66 +1067,78 @@ async def shutdown(ctx: dict) -> None:
     if visits_task is not None:
         visits_task.cancel()
         await asyncio.gather(visits_task, return_exceptions=True)
-
     sessions = ctx.get("grile_monthly_sessions", {})
     active = [task for task in sessions if task is not asyncio.current_task() and not task.done()]
     for task in active:
         task.cancel()
     if active:
         await asyncio.gather(*active, return_exceptions=True)
-
     adapter = ctx.get("grile_monthly_google")
     if adapter is not None:
         await adapter.close(timeout=30)
-
     await close_arq_pool()
     await close_db_pool()
     metrics_server = ctx.get("worker_metrics_server")
     if metrics_server is not None:
         await asyncio.to_thread(metrics_server.close)
-
-
 def main() -> None:
     from dotenv import find_dotenv, load_dotenv
     load_dotenv(find_dotenv())
-
     raw_worker_role = os.getenv("RETAIL_WORKER_ROLE", "operations").strip().lower()
     runtime = load_runtime_config("import" if raw_worker_role == "imports" else "worker")
     worker_role = runtime.worker_role or "operations"
-    functions = (
-        [
+    functions_by_role = {
+        "imports": [
             import_sales_background,
             import_promo_actuals_background,
             reconcile_erp_background,
             promote_sales_background,
             publish_campaign_reporting_background,
-        ]
-        if worker_role == "imports"
-        else [
+        ],
+        "grile": [
+            grile_check_background,
+            func(grile_store_refresh_background, max_tries=1),
+            func(grile_monthly_background, timeout=runtime.arq_job_timeout_seconds, max_tries=1),
+            grile_agent_targets_background,
+        ],
+        "exports": [func(build_complex_export_background, max_tries=1)],
+        "operations": [func(refresh_visits_snapshot_background, max_tries=1)],
+        # One-release compatibility consumer for jobs published by pre-9.5
+        # web processes to ARQ's default queue. New jobs never target it.
+        "legacy": [
             func(build_complex_export_background, max_tries=1),
             grile_check_background,
             func(grile_store_refresh_background, max_tries=1),
             func(grile_monthly_background, timeout=runtime.arq_job_timeout_seconds, max_tries=1),
             grile_agent_targets_background,
-        ]
-    )
+        ],
+    }
+    functions = functions_by_role[worker_role]
+    queue_name = {
+        "imports": SALES_IMPORT_QUEUE_NAME,
+        "grile": GRILE_QUEUE_NAME,
+        "exports": EXPORT_QUEUE_NAME,
+        "operations": OPERATIONS_QUEUE_NAME,
+        "legacy": default_queue_name,
+    }[worker_role]
+    from observability.worker_metrics import observe_job_end, observe_job_start
     worker_settings: dict[str, Any] = {
         "redis_settings": get_valkey_settings(),
         "functions": functions,
         "on_startup": startup,
         "on_shutdown": shutdown,
+        "on_job_start": observe_job_start,
+        "after_job_end": observe_job_end,
         "job_completion_wait": runtime.arq_completion_wait_seconds,
         "max_jobs": runtime.arq_max_jobs,
         "job_timeout": runtime.arq_job_timeout_seconds,
         "keep_result": runtime.arq_keep_result_seconds,
         "health_check_interval": 30,
         "retry_jobs": True,
+        "ctx": {"worker_role": worker_role, "queue_name": queue_name},
     }
-    if worker_role == "imports":
-        worker_settings["queue_name"] = SALES_IMPORT_QUEUE_NAME
+    worker_settings["queue_name"] = queue_name
     worker = create_worker(worker_settings)
     worker.run()
-
-
 if __name__ == "__main__":
     main()

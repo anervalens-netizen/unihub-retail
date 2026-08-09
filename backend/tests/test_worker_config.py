@@ -79,21 +79,12 @@ def test_worker_uses_bounded_serial_execution(monkeypatch: pytest.MonkeyPatch) -
     assert settings["job_timeout"] == 1800
     assert settings["job_completion_wait"] == 2400
     assert settings["health_check_interval"] == 30
-    assert "queue_name" not in settings
+    assert settings["queue_name"] == services.jobs.OPERATIONS_QUEUE_NAME
     assert worker.import_sales_background not in settings["functions"]
     assert worker.promote_sales_background not in settings["functions"]
-    monthly = next(
-        entry
-        for entry in settings["functions"]
-        if getattr(entry, "coroutine", None) is worker.grile_monthly_background
-    )
-    assert (monthly.timeout_s, monthly.max_tries) == (1800, 1)
-    complex_export = next(
-        entry
-        for entry in settings["functions"]
-        if getattr(entry, "coroutine", None) is worker.build_complex_export_background
-    )
-    assert complex_export.max_tries == 1
+    assert len(settings["functions"]) == 1
+    assert settings["functions"][0].coroutine is worker.refresh_visits_snapshot_background
+    assert settings["functions"][0].max_tries == 1
     worker_instance.run.assert_called_once_with()
 
 
@@ -214,7 +205,7 @@ async def test_failed_erp_worker_keeps_spool_for_retry(
 
 
 @pytest.mark.asyncio
-async def test_operations_worker_does_not_reconcile_imports(
+async def test_operations_worker_only_starts_visits_refresh(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     pool = MagicMock()
@@ -232,14 +223,12 @@ async def test_operations_worker_does_not_reconcile_imports(
     monkeypatch.setattr(services.export_operations, "sweep_orphan_export_artifacts", orphan_sweep)
     run_reconcile = AsyncMock(return_value=[192])
     refresh_reconcile = AsyncMock(return_value=[193])
-    restart_reconcile = AsyncMock(return_value=[191])
     monkeypatch.setattr(
         repositories.grile,
         "GrileRepository",
         lambda received_pool: SimpleNamespace(
             reconcile_stale_runs=run_reconcile,
             reconcile_store_refreshes=refresh_reconcile,
-            reconcile_interrupted_running_runs=restart_reconcile,
         )
         if received_pool is pool
         else None,
@@ -250,23 +239,64 @@ async def test_operations_worker_does_not_reconcile_imports(
     await worker.startup(ctx)
 
     reconcile.assert_not_awaited()
-    monthly_reconcile.assert_awaited_once_with(pool, ctx["grile_monthly_google"])
+    monthly_reconcile.assert_not_awaited()
     visits_refresh.assert_awaited_once_with(pool)
-    export_cleanup.assert_awaited_once()
-    orphan_sweep.assert_awaited_once()
-    run_reconcile.assert_awaited_once_with()
-    refresh_reconcile.assert_awaited_once_with()
-    restart_reconcile.assert_awaited_once_with()
+    export_cleanup.assert_not_awaited()
+    orphan_sweep.assert_not_awaited()
+    run_reconcile.assert_not_awaited()
+    refresh_reconcile.assert_not_awaited()
     assert ctx["db_pool"] is pool
-    ctx["grile_monthly_reconcile_task"].cancel()
     ctx["visits_snapshot_refresh_task"].cancel()
-    ctx["export_cleanup_task"].cancel()
-    ctx["grile_run_reconcile_task"].cancel()
-    await asyncio.gather(ctx["grile_monthly_reconcile_task"], return_exceptions=True)
     await asyncio.gather(ctx["visits_snapshot_refresh_task"], return_exceptions=True)
-    await asyncio.gather(ctx["export_cleanup_task"], return_exceptions=True)
-    await asyncio.gather(ctx["grile_run_reconcile_task"], return_exceptions=True)
-    await ctx["grile_monthly_google"].close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("worker_role", ["grile", "legacy"])
+async def test_coexisting_grile_workers_reconcile_only_expired_leases(
+    monkeypatch: pytest.MonkeyPatch,
+    worker_role: str,
+) -> None:
+    pool = MagicMock()
+    stale_runs = AsyncMock(return_value=[])
+    stale_refreshes = AsyncMock(return_value=[])
+    monkeypatch.setattr(db.connection, "init_db_pool", AsyncMock())
+    monkeypatch.setattr(db.connection, "get_pool", AsyncMock(return_value=pool))
+    monkeypatch.setattr(
+        repositories.grile,
+        "GrileRepository",
+        lambda received_pool: SimpleNamespace(
+            reconcile_stale_runs=stale_runs,
+            reconcile_store_refreshes=stale_refreshes,
+        )
+        if received_pool is pool
+        else None,
+    )
+    adapter = MagicMock()
+    adapter.start = AsyncMock()
+    monkeypatch.setattr(
+        "services.grile_monthly_google.GoogleSyncAdapter",
+        lambda: adapter,
+    )
+    monthly_reconcile = AsyncMock()
+    monkeypatch.setattr(
+        "services.grile_monthly.reconcile_monthly_operations",
+        monthly_reconcile,
+    )
+    ctx: dict = {}
+
+    await worker._startup_runtime(ctx, worker_role=worker_role)
+
+    stale_runs.assert_awaited_once_with()
+    stale_refreshes.assert_awaited_once_with()
+    monthly_reconcile.assert_awaited_once_with(pool, adapter)
+    adapter.start.assert_awaited_once_with()
+    tasks = [
+        ctx["grile_monthly_reconcile_task"],
+        ctx["grile_run_reconcile_task"],
+    ]
+    for task in tasks:
+        task.cancel()
+    await asyncio.gather(*tasks, return_exceptions=True)
 
 
 @pytest.mark.asyncio
@@ -325,12 +355,63 @@ def test_worker_operations_consumes_runtime_config(
     assert settings["job_timeout"] == 900
     assert settings["job_completion_wait"] == 1200
     assert settings["keep_result"] == 1200
-    monthly = next(
-        entry
+    assert settings["queue_name"] == services.jobs.OPERATIONS_QUEUE_NAME
+    assert settings["functions"][0].coroutine is worker.refresh_visits_snapshot_background
+
+
+@pytest.mark.parametrize(
+    ("role", "queue_name", "coroutine"),
+    [
+        ("grile", services.jobs.GRILE_QUEUE_NAME, worker.grile_monthly_background),
+        ("exports", services.jobs.EXPORT_QUEUE_NAME, worker.build_complex_export_background),
+    ],
+)
+def test_specialized_workers_use_dedicated_queues(
+    monkeypatch: pytest.MonkeyPatch,
+    role: str,
+    queue_name: str,
+    coroutine: object,
+) -> None:
+    worker_instance = MagicMock()
+    create_worker = MagicMock(return_value=worker_instance)
+    monkeypatch.setattr(worker, "create_worker", create_worker)
+    monkeypatch.setenv("RETAIL_WORKER_ROLE", role)
+
+    worker.main()
+
+    settings = create_worker.call_args.args[0]
+    assert settings["queue_name"] == queue_name
+    assert any(
+        entry is coroutine or getattr(entry, "coroutine", None) is coroutine
         for entry in settings["functions"]
-        if getattr(entry, "coroutine", None) is worker.grile_monthly_background
     )
-    assert monthly.timeout_s == 900
+    worker_instance.run.assert_called_once_with()
+
+
+def test_legacy_worker_drains_pre_95_default_queue(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    worker_instance = MagicMock()
+    create_worker = MagicMock(return_value=worker_instance)
+    monkeypatch.setattr(worker, "create_worker", create_worker)
+    monkeypatch.setenv("RETAIL_WORKER_ROLE", "legacy")
+
+    worker.main()
+
+    settings = create_worker.call_args.args[0]
+    assert settings["queue_name"] == worker.default_queue_name
+    assert {
+        entry if callable(entry) else entry.coroutine
+        for entry in settings["functions"]
+    } >= {
+        worker.grile_check_background,
+        worker.grile_agent_targets_background,
+    }
+    assert any(
+        getattr(entry, "coroutine", None) is worker.build_complex_export_background
+        for entry in settings["functions"]
+    )
+    worker_instance.run.assert_called_once_with()
 
 
 def test_worker_import_consumes_runtime_config(

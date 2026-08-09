@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Query
 
-from db.connection import get_pool
+from composition import build_agents_service
 from schemas.common import MonthStr
 from schemas.agents import (
     AgentsOverviewResponse,
@@ -14,15 +14,11 @@ from schemas.agents import (
     AgentEvaluationV2Response,
     StoreCoverageResponse,
 )
-from repositories.agents import AgentsRepository
 from services.agents import AgentsService
 
 router = APIRouter(prefix="/api/agents", tags=["agents"])
 
-async def get_agents_service() -> AgentsService:
-    pool = await get_pool()
-    repo = AgentsRepository(pool)
-    return AgentsService(repo)
+get_agents_service = build_agents_service
 
 
 @router.get("/overview", response_model=AgentsOverviewResponse)

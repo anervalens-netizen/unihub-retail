@@ -4,15 +4,15 @@ from datetime import date
 from decimal import Decimal
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import ConfigDict, Field, field_validator
+from schemas.common import StrictApiModel, MonthStr
 
 from schemas.campaigns import PromoIncentiveSummary
-from schemas.common import MonthStr
 from schemas.premium_glass import PremiumGlassAnalysis
-from services.dashboard_filters import canonical_dashboard_site_codes
+from domain.dashboard_filters import canonical_dashboard_site_codes
 
 
-class DashboardSummary(BaseModel):
+class DashboardSummary(StrictApiModel):
     month: MonthStr
     total_sales: Decimal
     total_target: Decimal
@@ -35,20 +35,20 @@ class DashboardSummary(BaseModel):
     cartele_qty: int = 0
 
 
-class ReceiptBucketItem(BaseModel):
+class ReceiptBucketItem(StrictApiModel):
     bucket: str
     receipt_count: int
     share_pct: Decimal | None
 
 
-class DailySalesPoint(BaseModel):
+class DailySalesPoint(StrictApiModel):
     sale_date: date
     total_sales: Decimal
     total_quantity: int
     receipt_count: int
 
 
-class MonthlyHistoryPoint(BaseModel):
+class MonthlyHistoryPoint(StrictApiModel):
     month: MonthStr
     total_sales: Decimal
     total_target: Decimal
@@ -65,12 +65,12 @@ class MonthlyHistoryPoint(BaseModel):
     medie_produs: Decimal | None = None
 
 
-class DashboardSpecialCardMetric(BaseModel):
+class DashboardSpecialCardMetric(StrictApiModel):
     label: str
     value: str
 
 
-class DashboardSpecialCard(BaseModel):
+class DashboardSpecialCard(StrictApiModel):
     key: Literal["promotion", "incentive", "premium_glass"]
     title: str
     subtitle: str | None = None
@@ -89,11 +89,11 @@ class DashboardSpecialCard(BaseModel):
     metrics: list[DashboardSpecialCardMetric] = Field(default_factory=list)
 
 
-class DashboardSpecialCardsResponse(BaseModel):
+class DashboardSpecialCardsResponse(StrictApiModel):
     cards: list[DashboardSpecialCard] = Field(default_factory=list)
 
 
-class AgentStats(BaseModel):
+class AgentStats(StrictApiModel):
     model_config = ConfigDict(from_attributes=True)
 
     import_month: MonthStr
@@ -121,7 +121,7 @@ class AgentStats(BaseModel):
     return_receipt_count: int = 0
 
 
-class StoreStats(BaseModel):
+class StoreStats(StrictApiModel):
     model_config = ConfigDict(from_attributes=True)
 
     import_month: MonthStr
@@ -147,7 +147,7 @@ class StoreStats(BaseModel):
     prc_focus_acc_qty: Decimal | None = None
 
 
-class RegionalStats(BaseModel):
+class RegionalStats(StrictApiModel):
     model_config = ConfigDict(from_attributes=True)
 
     regional: str
@@ -169,7 +169,7 @@ class RegionalStats(BaseModel):
     return_receipt_count: int = 0
 
 
-class PerformancePeerRow(BaseModel):
+class PerformancePeerRow(StrictApiModel):
     label: str
     sublabel: str | None = None
     total_sales: Decimal
@@ -181,13 +181,13 @@ class PerformancePeerRow(BaseModel):
     is_selected: bool = False
 
 
-class PerformanceScoreBreakdown(BaseModel):
+class PerformanceScoreBreakdown(StrictApiModel):
     target_points: Decimal
     bon2acc_points: Decimal
     focus_points: Decimal
 
 
-class PerformanceDetailResponse(BaseModel):
+class PerformanceDetailResponse(StrictApiModel):
     level: Literal["regional", "store", "agent"]
     key: str
     title: str
@@ -206,7 +206,7 @@ class PerformanceDetailResponse(BaseModel):
     context_summary: DashboardSummary | None = None
 
 
-class AsmStats(BaseModel):
+class AsmStats(StrictApiModel):
     model_config = ConfigDict(from_attributes=True)
 
     asm: str
@@ -227,7 +227,7 @@ class AsmStats(BaseModel):
     prc_focus_acc_qty: Decimal | None
 
 
-class YearHistoryPoint(BaseModel):
+class YearHistoryPoint(StrictApiModel):
     label: str
     sort_key: str
     total_sales: Decimal
@@ -236,11 +236,11 @@ class YearHistoryPoint(BaseModel):
     is_aggregate: bool
 
 
-class YearHistoryResponse(BaseModel):
+class YearHistoryResponse(StrictApiModel):
     points: list[YearHistoryPoint]
 
 
-class PeriodComparisonPoint(BaseModel):
+class PeriodComparisonPoint(StrictApiModel):
     label: str
     month: MonthStr
     day_range: str
@@ -256,27 +256,27 @@ class PeriodComparisonPoint(BaseModel):
     prc_focus_acc_qty: Decimal | None
 
 
-class PeriodComparisonPayload(BaseModel):
+class PeriodComparisonPayload(StrictApiModel):
     current: PeriodComparisonPoint
     previous: PeriodComparisonPoint
     year_over_year: PeriodComparisonPoint
 
 
-class CategoryMixItem(BaseModel):
+class CategoryMixItem(StrictApiModel):
     category: str
     sales_total: Decimal
     quantity_total: int
     share_pct: Decimal | None
 
 
-class BrandMixItem(BaseModel):
+class BrandMixItem(StrictApiModel):
     brand: str
     sales_total: Decimal
     quantity_total: int
     share_pct: Decimal | None
 
 
-class DashboardAllResponse(BaseModel):
+class DashboardAllResponse(StrictApiModel):
     summary: DashboardSummary
     agents: list[AgentStats]
     stores: list[StoreStats]
@@ -294,7 +294,7 @@ class DashboardAllResponse(BaseModel):
     daily_last_year: list[DailySalesPoint] = Field(default_factory=list)
 
 
-class DashboardAllQuery(BaseModel):
+class DashboardAllQuery(StrictApiModel):
     month: MonthStr
     firma: str | None = None
     regional: str | None = None
@@ -310,13 +310,13 @@ class DashboardAllQuery(BaseModel):
         return canonical_dashboard_site_codes(value)
 
 
-class DashboardAllBatchRequest(BaseModel):
+class DashboardAllBatchRequest(StrictApiModel):
     queries: list[DashboardAllQuery] = Field(min_length=1, max_length=12)
 
 
-class DashboardAllBatchResponse(BaseModel):
+class DashboardAllBatchResponse(StrictApiModel):
     results: list[DashboardAllResponse]
 
 
-class DashboardHistoryResponse(BaseModel):
+class DashboardHistoryResponse(StrictApiModel):
     history: list[MonthlyHistoryPoint]

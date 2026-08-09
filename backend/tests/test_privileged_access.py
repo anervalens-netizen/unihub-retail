@@ -125,6 +125,7 @@ def _set_production_base(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Non
     monkeypatch.setenv("SESSION_VALKEY_URL", "redis://localhost:6379/14")
     monkeypatch.setenv("PROMETHEUS_DOCKER_GATEWAY", "172.23.0.1")
     monkeypatch.setenv("PROMETHEUS_DOCKER_SUBNET", "172.23.0.0/16")
+    monkeypatch.setenv("CORS_ORIGINS", "https://retail.example.invalid")
     monkeypatch.delenv(DEPRECATED_TARGET_EMAILS_ENV, raising=False)
     monkeypatch.delenv(DEPRECATED_GRILE_EMAILS_ENV, raising=False)
     monkeypatch.delenv(DEPRECATED_PNL_OWNER_EMAILS_ENV, raising=False)

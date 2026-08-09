@@ -1877,55 +1877,6 @@
   },
   "results": [
     {
-      "code": "31             raw_rows = con.execute(\n32                 f\"\"\"\n33                 SELECT magazin, asm, regional, firma, completion_pct,\n34                        curatenie, imagine, uniforma, afise, produse_promo, data_raport\n35                 FROM visits WHERE {where}\n36                 \"\"\",\n37                 params,\n",
-      "col_offset": 20,
-      "end_col_offset": 34,
-      "filename": "backend/repositories/visits_report.py",
-      "issue_confidence": "MEDIUM",
-      "issue_cwe": {
-        "id": 89,
-        "link": "https://cwe.mitre.org/data/definitions/89.html"
-      },
-      "issue_severity": "MEDIUM",
-      "issue_text": "Possible SQL injection vector through string-based query construction.",
-      "line_number": 32,
-      "line_range": [
-        32,
-        33,
-        34,
-        35,
-        36
-      ],
-      "more_info": "https://bandit.readthedocs.io/en/1.9.4/plugins/b608_hardcoded_sql_expressions.html",
-      "test_id": "B608",
-      "test_name": "hardcoded_sql_expressions"
-    },
-    {
-      "code": "68             rows = con.execute(\n69                 f\"\"\"\n70                 SELECT id, data_raport, ora_trimitere, asm, team_leader_name, magazin, firma,\n71                        completion_pct, foto1, foto2, foto3, foto4\n72                 FROM visits WHERE {where}\n73                 ORDER BY team_leader_name ASC, data_raport DESC, ora_trimitere DESC\n74                 \"\"\",\n75                 params,\n",
-      "col_offset": 20,
-      "end_col_offset": 34,
-      "filename": "backend/repositories/visits_report.py",
-      "issue_confidence": "MEDIUM",
-      "issue_cwe": {
-        "id": 89,
-        "link": "https://cwe.mitre.org/data/definitions/89.html"
-      },
-      "issue_severity": "MEDIUM",
-      "issue_text": "Possible SQL injection vector through string-based query construction.",
-      "line_number": 69,
-      "line_range": [
-        69,
-        70,
-        71,
-        72,
-        73,
-        74
-      ],
-      "more_info": "https://bandit.readthedocs.io/en/1.9.4/plugins/b608_hardcoded_sql_expressions.html",
-      "test_id": "B608",
-      "test_name": "hardcoded_sql_expressions"
-    },
-    {
       "code": "23     await connection.execute(\n24         f\"\"\"\n25         INSERT INTO salary_private.people (\n26             person_id, cnp, normalized_name, identity_source\n27         )\n28         SELECT DISTINCT ON (person_id)\n29             person_id,\n30             cnp,\n31             normalized_name,\n32             identity_source\n33         FROM (\n34             SELECT\n35                 {salary_person_id} AS person_id,\n36                 NULLIF(BTRIM(sr.cnp), '') AS cnp,\n37                 LOWER(BTRIM(sr.full_name)) AS normalized_name,\n38                 CASE WHEN NULLIF(BTRIM(sr.cnp), '') IS NOT NULL THEN 'cnp' ELSE 'name' END AS identity_source\n39             FROM salary_records sr\n40             WHERE NULLIF(BTRIM(sr.cnp), '') IS NOT NULL\n41                OR NULLIF(BTRIM(sr.full_name), '') IS NOT NULL\n42         ) identities\n43         ORDER BY person_id, normalized_name\n44         ON CONFLICT (person_id) DO NOTHING\n45         \"\"\",\n46         key,\n",
       "col_offset": 12,
       "end_col_offset": 16,
@@ -2083,46 +2034,6 @@
       "more_info": "https://bandit.readthedocs.io/en/1.9.4/plugins/b608_hardcoded_sql_expressions.html",
       "test_id": "B608",
       "test_name": "hardcoded_sql_expressions"
-    },
-    {
-      "code": "363     try:\n364         with urllib.request.urlopen(request, timeout=timeout) as response:\n365             return json.loads(response.read())\n",
-      "col_offset": 13,
-      "end_col_offset": 61,
-      "filename": "backend/scripts/run_ai_forecast_xreg.py",
-      "issue_confidence": "HIGH",
-      "issue_cwe": {
-        "id": 22,
-        "link": "https://cwe.mitre.org/data/definitions/22.html"
-      },
-      "issue_severity": "MEDIUM",
-      "issue_text": "Audit url open for permitted schemes. Allowing use of file:/ or custom schemes is often unexpected.",
-      "line_number": 364,
-      "line_range": [
-        364
-      ],
-      "more_info": "https://bandit.readthedocs.io/en/1.9.4/blacklists/blacklist_calls.html#b310-urllib-urlopen",
-      "test_id": "B310",
-      "test_name": "blacklist"
-    },
-    {
-      "code": "23     request = urllib.request.Request(url=url, headers=headers, method=\"GET\")\n24     with urllib.request.urlopen(request, timeout=30) as response:\n25         return json.loads(response.read().decode(\"utf-8\"))\n",
-      "col_offset": 9,
-      "end_col_offset": 52,
-      "filename": "backend/scripts/smoke_api.py",
-      "issue_confidence": "HIGH",
-      "issue_cwe": {
-        "id": 22,
-        "link": "https://cwe.mitre.org/data/definitions/22.html"
-      },
-      "issue_severity": "MEDIUM",
-      "issue_text": "Audit url open for permitted schemes. Allowing use of file:/ or custom schemes is often unexpected.",
-      "line_number": 24,
-      "line_range": [
-        24
-      ],
-      "more_info": "https://bandit.readthedocs.io/en/1.9.4/blacklists/blacklist_calls.html#b310-urllib-urlopen",
-      "test_id": "B310",
-      "test_name": "blacklist"
     },
     {
       "code": "209     await conn.execute(\n210         f\"\"\"\n211         INSERT INTO tmp_reporting_receipts (\n212             import_month,\n213             sale_date,\n214             site_code,\n215             agent,\n216             bon_nr,\n217             net_quantity\n218         )\n219         SELECT\n220             st.import_month,\n221             st.sale_date,\n222             st.site_code,\n223             st.agent,\n224             st.bon_nr,\n225             COALESCE(SUM(st.quantity), 0)::INT AS net_quantity\n226         FROM sales_transactions st\n227         JOIN stores s ON s.site_code = st.site_code\n228         WHERE st.import_month = $1\n229           AND {_RETAIL_TRANSACTION_EXCLUSIONS_SQL}\n230         GROUP BY st.import_month, st.sale_date, st.site_code, st.agent, st.bon_nr\n231         \"\"\",\n232         import_month,\n",

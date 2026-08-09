@@ -355,6 +355,7 @@ def frozen_profitability(
         if not isinstance(snapshot, dict):
             raise HTTPException(status_code=409, detail="Snapshotul per magazin Target lipseste.")
         row["profitability"] = snapshot
+        row.pop("profitability_snapshot", None)
     return summary
 
 

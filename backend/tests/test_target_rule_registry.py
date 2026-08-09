@@ -20,6 +20,7 @@ from services.target_rule_registry import (
     validate_store_exception_scope,
     validate_target_rule_set,
 )
+from routers.target_calculator import TargetProfitabilityAssumptionsResponse
 
 
 def make_rule_set_record(target_month: str = "2026-06") -> dict[str, Any]:
@@ -63,6 +64,11 @@ def test_rule_set_is_effective_dated_hashed_and_has_valid_business_mapping() -> 
 
     assert rule_set.rules_hash == record["rules_sha256"]
     assert profitability_assumptions(rule_set)["vat_multiplier"] == 1.21
+    projection = TargetProfitabilityAssumptionsResponse.model_validate(
+        profitability_assumptions(rule_set)
+    )
+    assert projection.sun_plaza_agent_count is None
+    assert projection.base_salary_high is None
     assert store_salary_parameters(rule_set, "SITE01") == (4, 3100)
     assert store_salary_parameters(rule_set, "SITE02") == (2, 3000)
 

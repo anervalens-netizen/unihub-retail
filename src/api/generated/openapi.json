@@ -2,6 +2,7 @@
   "components": {
     "schemas": {
       "AgentEvaluationOption": {
+        "additionalProperties": false,
         "properties": {
           "label": {
             "title": "Label",
@@ -20,6 +21,7 @@
         "type": "object"
       },
       "AgentEvaluationResponse": {
+        "additionalProperties": false,
         "properties": {
           "asms": {
             "items": {
@@ -68,6 +70,7 @@
         "type": "object"
       },
       "AgentEvaluationRow": {
+        "additionalProperties": false,
         "properties": {
           "agent": {
             "title": "Agent",
@@ -313,6 +316,7 @@
         "type": "object"
       },
       "AgentEvaluationV2Response": {
+        "additionalProperties": false,
         "properties": {
           "asms": {
             "items": {
@@ -361,6 +365,7 @@
         "type": "object"
       },
       "AgentEvaluationV2Row": {
+        "additionalProperties": false,
         "properties": {
           "agent": {
             "title": "Agent",
@@ -771,6 +776,7 @@
         "type": "object"
       },
       "AgentHistoryPoint": {
+        "additionalProperties": false,
         "properties": {
           "active_store_count": {
             "title": "Active Store Count",
@@ -811,6 +817,7 @@
         "type": "object"
       },
       "AgentHistoryResponse": {
+        "additionalProperties": false,
         "properties": {
           "history": {
             "items": {
@@ -827,6 +834,7 @@
         "type": "object"
       },
       "AgentListItem": {
+        "additionalProperties": false,
         "properties": {
           "active_in_month": {
             "title": "Active In Month",
@@ -898,6 +906,7 @@
         "type": "object"
       },
       "AgentListResponse": {
+        "additionalProperties": false,
         "properties": {
           "items": {
             "items": {
@@ -914,6 +923,7 @@
         "type": "object"
       },
       "AgentMovementPoint": {
+        "additionalProperties": false,
         "properties": {
           "active": {
             "title": "Active",
@@ -958,6 +968,7 @@
         "type": "object"
       },
       "AgentMovementResponse": {
+        "additionalProperties": false,
         "properties": {
           "history": {
             "items": {
@@ -974,6 +985,7 @@
         "type": "object"
       },
       "AgentOption": {
+        "additionalProperties": false,
         "properties": {
           "agent": {
             "title": "Agent",
@@ -1012,6 +1024,7 @@
         "type": "object"
       },
       "AgentProfileResponse": {
+        "additionalProperties": false,
         "properties": {
           "active_months_count": {
             "title": "Active Months Count",
@@ -1221,6 +1234,7 @@
         "type": "object"
       },
       "AgentStats": {
+        "additionalProperties": false,
         "properties": {
           "acc_focus_qty": {
             "title": "Acc Focus Qty",
@@ -1407,6 +1421,7 @@
         "type": "object"
       },
       "AgentsOverviewResponse": {
+        "additionalProperties": false,
         "properties": {
           "active_count": {
             "title": "Active Count",
@@ -1484,6 +1499,7 @@
         "type": "object"
       },
       "AiForecastDailyPoint": {
+        "additionalProperties": false,
         "properties": {
           "actual_sales": {
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
@@ -1527,6 +1543,7 @@
         "type": "object"
       },
       "AiForecastManagerRow": {
+        "additionalProperties": false,
         "properties": {
           "actual_sales": {
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
@@ -1581,6 +1598,7 @@
         "type": "object"
       },
       "AiForecastResponse": {
+        "additionalProperties": false,
         "properties": {
           "daily": {
             "items": {
@@ -1618,6 +1636,7 @@
         "type": "object"
       },
       "AiForecastRollingManagerRow": {
+        "additionalProperties": false,
         "properties": {
           "actual_sales": {
             "anyOf": [
@@ -1678,6 +1697,7 @@
         "type": "object"
       },
       "AiForecastRollingMonthlyPoint": {
+        "additionalProperties": false,
         "properties": {
           "actual_sales": {
             "anyOf": [
@@ -1739,6 +1759,7 @@
         "type": "object"
       },
       "AiForecastRollingResponse": {
+        "additionalProperties": false,
         "properties": {
           "managers": {
             "items": {
@@ -1779,6 +1800,7 @@
         "type": "object"
       },
       "AiForecastRollingStoreRow": {
+        "additionalProperties": false,
         "properties": {
           "actual_sales": {
             "anyOf": [
@@ -1854,6 +1876,7 @@
         "type": "object"
       },
       "AiForecastRollingSummary": {
+        "additionalProperties": false,
         "properties": {
           "actual_sales": {
             "anyOf": [
@@ -1932,6 +1955,7 @@
         "type": "object"
       },
       "AiForecastRunInfo": {
+        "additionalProperties": false,
         "properties": {
           "forecast_month": {
             "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
@@ -2001,6 +2025,7 @@
         "type": "object"
       },
       "AiForecastStoreRow": {
+        "additionalProperties": false,
         "properties": {
           "actual_sales": {
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
@@ -2070,6 +2095,7 @@
         "type": "object"
       },
       "AiForecastSummary": {
+        "additionalProperties": false,
         "properties": {
           "actual_last_date": {
             "anyOf": [
@@ -2153,6 +2179,7 @@
         "type": "object"
       },
       "AsmStats": {
+        "additionalProperties": false,
         "properties": {
           "asm": {
             "title": "Asm",
@@ -2347,6 +2374,7 @@
         "type": "object"
       },
       "BrandMixItem": {
+        "additionalProperties": false,
         "properties": {
           "brand": {
             "title": "Brand",
@@ -2384,6 +2412,7 @@
         "type": "object"
       },
       "CampaignOverview": {
+        "additionalProperties": false,
         "properties": {
           "active_focus_products": {
             "title": "Active Focus Products",
@@ -2432,6 +2461,7 @@
         "type": "object"
       },
       "CampaignProductStat": {
+        "additionalProperties": false,
         "properties": {
           "item_code": {
             "title": "Item Code",
@@ -2466,6 +2496,7 @@
         "type": "object"
       },
       "CampaignPromotionOption": {
+        "additionalProperties": false,
         "properties": {
           "key": {
             "title": "Key",
@@ -2484,6 +2515,7 @@
         "type": "object"
       },
       "CampaignSnapshot": {
+        "additionalProperties": false,
         "properties": {
           "overview": {
             "$ref": "#/components/schemas/CampaignOverview"
@@ -2512,6 +2544,7 @@
         "type": "object"
       },
       "CampaignStoreStat": {
+        "additionalProperties": false,
         "properties": {
           "active_products": {
             "title": "Active Products",
@@ -2546,6 +2579,7 @@
         "type": "object"
       },
       "CampaignsPromotionsResponse": {
+        "additionalProperties": false,
         "properties": {
           "calculation_warnings": {
             "items": {
@@ -2799,6 +2833,7 @@
         "type": "object"
       },
       "CategoryMixItem": {
+        "additionalProperties": false,
         "properties": {
           "category": {
             "title": "Category",
@@ -2836,6 +2871,7 @@
         "type": "object"
       },
       "ContestLeaderboardRow": {
+        "additionalProperties": false,
         "properties": {
           "agent": {
             "title": "Agent",
@@ -2933,6 +2969,7 @@
         "type": "object"
       },
       "ContestPrizeInfo": {
+        "additionalProperties": false,
         "properties": {
           "label": {
             "title": "Label",
@@ -2956,6 +2993,7 @@
         "type": "object"
       },
       "ContestResponse": {
+        "additionalProperties": false,
         "properties": {
           "end_date": {
             "title": "End Date",
@@ -3035,6 +3073,7 @@
         "type": "object"
       },
       "ContestRuleInfo": {
+        "additionalProperties": false,
         "properties": {
           "label": {
             "title": "Label",
@@ -3069,7 +3108,7 @@
         "type": "object"
       },
       "CrmAlertResponse": {
-        "additionalProperties": true,
+        "additionalProperties": false,
         "properties": {
           "asm": {
             "anyOf": [
@@ -3128,8 +3167,96 @@
         "type": "object"
       },
       "CrmBreakdownResponse": {
-        "additionalProperties": true,
+        "additionalProperties": false,
         "properties": {
+          "avg_completion": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avg Completion"
+          },
+          "forecast_factor": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Forecast Factor"
+          },
+          "kpi_bon2acc": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kpi Bon2Acc"
+          },
+          "kpi_bon2acc_avg": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kpi Bon2Acc Avg"
+          },
+          "kpi_bon2acc_score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kpi Bon2Acc Score"
+          },
+          "kpi_focus": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kpi Focus"
+          },
+          "kpi_focus_avg": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kpi Focus Avg"
+          },
+          "kpi_focus_score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kpi Focus Score"
+          },
           "kpi_pct": {
             "anyOf": [
               {
@@ -3140,6 +3267,28 @@
               }
             ],
             "title": "Kpi Pct"
+          },
+          "nr_vizite": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nr Vizite"
+          },
+          "target_attainment": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Attainment"
           },
           "target_pct": {
             "anyOf": [
@@ -3179,6 +3328,7 @@
         "type": "object"
       },
       "CrmRecalculateResponse": {
+        "additionalProperties": false,
         "properties": {
           "month": {
             "title": "Month",
@@ -3197,10 +3347,54 @@
         "type": "object"
       },
       "CrmScoreResponse": {
-        "additionalProperties": true,
+        "additionalProperties": false,
         "properties": {
+          "asm": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Asm"
+          },
           "breakdown": {
             "$ref": "#/components/schemas/CrmBreakdownResponse"
+          },
+          "calculated_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Calculated At"
+          },
+          "locatie": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Locatie"
+          },
+          "regional": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Regional"
           },
           "score": {
             "title": "Score",
@@ -3220,6 +3414,7 @@
         "type": "object"
       },
       "DailySalesPoint": {
+        "additionalProperties": false,
         "properties": {
           "receipt_count": {
             "title": "Receipt Count",
@@ -3250,6 +3445,7 @@
         "type": "object"
       },
       "DashboardAllBatchRequest": {
+        "additionalProperties": false,
         "properties": {
           "queries": {
             "items": {
@@ -3268,6 +3464,7 @@
         "type": "object"
       },
       "DashboardAllBatchResponse": {
+        "additionalProperties": false,
         "properties": {
           "results": {
             "items": {
@@ -3284,6 +3481,7 @@
         "type": "object"
       },
       "DashboardAllQuery": {
+        "additionalProperties": false,
         "properties": {
           "agent": {
             "anyOf": [
@@ -3363,6 +3561,7 @@
         "type": "object"
       },
       "DashboardAllResponse": {
+        "additionalProperties": false,
         "properties": {
           "agents": {
             "items": {
@@ -3478,6 +3677,7 @@
         "type": "object"
       },
       "DashboardHistoryResponse": {
+        "additionalProperties": false,
         "properties": {
           "history": {
             "items": {
@@ -3494,6 +3694,7 @@
         "type": "object"
       },
       "DashboardSpecialCard": {
+        "additionalProperties": false,
         "properties": {
           "coverage_note": {
             "anyOf": [
@@ -3574,6 +3775,7 @@
         "type": "object"
       },
       "DashboardSpecialCardMetric": {
+        "additionalProperties": false,
         "properties": {
           "label": {
             "title": "Label",
@@ -3592,6 +3794,7 @@
         "type": "object"
       },
       "DashboardSpecialCardsResponse": {
+        "additionalProperties": false,
         "properties": {
           "cards": {
             "items": {
@@ -3605,6 +3808,7 @@
         "type": "object"
       },
       "DashboardSummary": {
+        "additionalProperties": false,
         "properties": {
           "cartele_qty": {
             "default": 0,
@@ -3788,6 +3992,7 @@
         "type": "object"
       },
       "ErpReconciliationAppMetric": {
+        "additionalProperties": false,
         "properties": {
           "key": {
             "title": "Key",
@@ -3832,6 +4037,7 @@
         "type": "object"
       },
       "ErpReconciliationIssue": {
+        "additionalProperties": false,
         "properties": {
           "difference": {
             "anyOf": [
@@ -3921,6 +4127,7 @@
         "type": "object"
       },
       "ErpReconciliationMetric": {
+        "additionalProperties": false,
         "properties": {
           "difference": {
             "anyOf": [
@@ -4009,6 +4216,7 @@
         "type": "object"
       },
       "ErpReconciliationResponse": {
+        "additionalProperties": false,
         "properties": {
           "app_only_metrics": {
             "items": {
@@ -4305,6 +4513,7 @@
         "type": "object"
       },
       "ExportOperationPublishUncertainDetail": {
+        "additionalProperties": false,
         "properties": {
           "job_id": {
             "anyOf": [
@@ -4341,6 +4550,7 @@
         "type": "object"
       },
       "ExportOperationResponse": {
+        "additionalProperties": false,
         "properties": {
           "artifact_sha256": {
             "anyOf": [
@@ -4510,6 +4720,7 @@
         "type": "object"
       },
       "ExportOperationUnavailableResponse": {
+        "additionalProperties": false,
         "properties": {
           "detail": {
             "anyOf": [
@@ -4664,6 +4875,7 @@
         "type": "object"
       },
       "FilterOptions": {
+        "additionalProperties": false,
         "properties": {
           "agenti": {
             "items": {
@@ -4712,6 +4924,7 @@
         "type": "object"
       },
       "FocusHistoryPoint": {
+        "additionalProperties": false,
         "properties": {
           "active_focus_products": {
             "title": "Active Focus Products",
@@ -4760,6 +4973,7 @@
         "type": "object"
       },
       "FocusHistoryResponse": {
+        "additionalProperties": false,
         "properties": {
           "history": {
             "items": {
@@ -6308,7 +6522,7 @@
         "type": "object"
       },
       "HrAgentPerformanceItem": {
-        "additionalProperties": true,
+        "additionalProperties": false,
         "properties": {
           "active_days": {
             "title": "Active Days",
@@ -6342,7 +6556,7 @@
         "type": "object"
       },
       "HrAsmHistoryItem": {
-        "additionalProperties": true,
+        "additionalProperties": false,
         "properties": {
           "active_stores": {
             "title": "Active Stores",
@@ -6430,7 +6644,7 @@
         "type": "object"
       },
       "HrAsmPerformanceItem": {
-        "additionalProperties": true,
+        "additionalProperties": false,
         "properties": {
           "active_agents": {
             "title": "Active Agents",
@@ -6571,6 +6785,7 @@
         "type": "object"
       },
       "HrAsmSalaryAccFocus": {
+        "additionalProperties": false,
         "properties": {
           "commission": {
             "title": "Commission",
@@ -6595,7 +6810,7 @@
         "type": "object"
       },
       "HrAsmSalaryBreakdown": {
-        "additionalProperties": true,
+        "additionalProperties": false,
         "properties": {
           "acc_focus": {
             "$ref": "#/components/schemas/HrAsmSalaryAccFocus"
@@ -6658,6 +6873,7 @@
         "type": "object"
       },
       "HrAsmSalaryHomogeneity": {
+        "additionalProperties": false,
         "properties": {
           "commission": {
             "title": "Commission",
@@ -6696,7 +6912,7 @@
         "type": "object"
       },
       "HrAsmSalaryIsland": {
-        "additionalProperties": true,
+        "additionalProperties": false,
         "properties": {
           "commission": {
             "title": "Commission",
@@ -6773,7 +6989,7 @@
         "type": "object"
       },
       "HrAsmSalaryZone": {
-        "additionalProperties": true,
+        "additionalProperties": false,
         "properties": {
           "commission": {
             "title": "Commission",
@@ -6835,7 +7051,7 @@
         "type": "object"
       },
       "HrManagerOverviewItem": {
-        "additionalProperties": true,
+        "additionalProperties": false,
         "properties": {
           "active_agents": {
             "title": "Active Agents",
@@ -6976,6 +7192,7 @@
         "type": "object"
       },
       "HrManagerStoreItem": {
+        "additionalProperties": false,
         "properties": {
           "active_agents": {
             "title": "Active Agents",
@@ -7014,7 +7231,7 @@
         "type": "object"
       },
       "ImportCoverageReport": {
-        "additionalProperties": true,
+        "additionalProperties": false,
         "properties": {
           "active_store_count_before": {
             "anyOf": [
@@ -7038,6 +7255,20 @@
             ],
             "title": "Active Store Coverage Pct"
           },
+          "anomalies": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/SalesGenerationAnomaly"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Anomalies"
+          },
           "company_count": {
             "anyOf": [
               {
@@ -7048,6 +7279,18 @@
               }
             ],
             "title": "Company Count"
+          },
+          "incoming_set_sha256": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Incoming Set Sha256"
           },
           "incoming_store_count": {
             "anyOf": [
@@ -7071,6 +7314,18 @@
             ],
             "title": "Metadata Change Count"
           },
+          "missing_active_set_sha256": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Missing Active Set Sha256"
+          },
           "missing_active_store_count": {
             "anyOf": [
               {
@@ -7081,6 +7336,18 @@
               }
             ],
             "title": "Missing Active Store Count"
+          },
+          "missing_prior_set_sha256": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Missing Prior Set Sha256"
           },
           "missing_prior_store_count": {
             "anyOf": [
@@ -7103,6 +7370,18 @@
               }
             ],
             "title": "New Store Count"
+          },
+          "new_store_set_sha256": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "New Store Set Sha256"
           },
           "prior_snapshot_coverage_pct": {
             "anyOf": [
@@ -7136,12 +7415,35 @@
               }
             ],
             "title": "Store Activity Writes"
+          },
+          "stores_missing_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stores Missing Count"
+          },
+          "stores_present_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stores Present Count"
           }
         },
         "title": "ImportCoverageReport",
         "type": "object"
       },
       "ImportHistoryEntry": {
+        "additionalProperties": false,
         "properties": {
           "coverage_report": {
             "$ref": "#/components/schemas/ImportCoverageReport"
@@ -7258,6 +7560,7 @@
         "type": "object"
       },
       "ImportJobStatus": {
+        "additionalProperties": false,
         "properties": {
           "erp_result": {
             "anyOf": [
@@ -7333,6 +7636,7 @@
         "type": "object"
       },
       "ImportResponse": {
+        "additionalProperties": false,
         "properties": {
           "agent_count": {
             "minimum": 0.0,
@@ -7439,6 +7743,7 @@
         "type": "object"
       },
       "IncentiveCategory": {
+        "additionalProperties": false,
         "properties": {
           "label": {
             "title": "Label",
@@ -7462,6 +7767,7 @@
         "type": "object"
       },
       "IncentiveCategoryBreakdown": {
+        "additionalProperties": false,
         "properties": {
           "label": {
             "title": "Label",
@@ -7495,6 +7801,7 @@
         "type": "object"
       },
       "IncentivePeriodStat": {
+        "additionalProperties": false,
         "properties": {
           "end_date": {
             "title": "End Date",
@@ -7545,6 +7852,7 @@
         "type": "object"
       },
       "IncentiveTopAgent": {
+        "additionalProperties": false,
         "properties": {
           "achievement": {
             "anyOf": [
@@ -7641,6 +7949,7 @@
         "type": "object"
       },
       "LeaveRequestItem": {
+        "additionalProperties": false,
         "properties": {
           "agent_name": {
             "title": "Agent Name",
@@ -7712,6 +8021,7 @@
         "type": "object"
       },
       "LeaveRequestListResponse": {
+        "additionalProperties": false,
         "properties": {
           "items": {
             "items": {
@@ -7763,6 +8073,7 @@
         "type": "object"
       },
       "MonthlyHistoryPoint": {
+        "additionalProperties": false,
         "properties": {
           "daily_average": {
             "anyOf": [
@@ -7924,6 +8235,7 @@
         "type": "object"
       },
       "PerformanceDetailResponse": {
+        "additionalProperties": false,
         "properties": {
           "context_summary": {
             "anyOf": [
@@ -8037,6 +8349,7 @@
         "type": "object"
       },
       "PerformancePeerRow": {
+        "additionalProperties": false,
         "properties": {
           "forecast_target_pct": {
             "anyOf": [
@@ -8125,6 +8438,7 @@
         "type": "object"
       },
       "PerformanceScoreBreakdown": {
+        "additionalProperties": false,
         "properties": {
           "bon2acc_points": {
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
@@ -8151,6 +8465,7 @@
         "type": "object"
       },
       "PeriodComparisonPayload": {
+        "additionalProperties": false,
         "properties": {
           "current": {
             "$ref": "#/components/schemas/PeriodComparisonPoint"
@@ -8171,6 +8486,7 @@
         "type": "object"
       },
       "PeriodComparisonPoint": {
+        "additionalProperties": false,
         "properties": {
           "avg_receipt_value": {
             "anyOf": [
@@ -8285,7 +8601,7 @@
         "type": "object"
       },
       "PnlAnnualItemResponse": {
-        "additionalProperties": true,
+        "additionalProperties": false,
         "properties": {
           "cogs": {
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
@@ -8356,6 +8672,7 @@
         "type": "object"
       },
       "PnlAnnualResponse": {
+        "additionalProperties": false,
         "properties": {
           "annual": {
             "items": {
@@ -8372,6 +8689,7 @@
         "type": "object"
       },
       "PnlMetricsResponse": {
+        "additionalProperties": false,
         "properties": {
           "cogs": {
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
@@ -8422,6 +8740,7 @@
         "type": "object"
       },
       "PnlMonthResponse": {
+        "additionalProperties": false,
         "properties": {
           "has_actual": {
             "title": "Has Actual",
@@ -8445,7 +8764,7 @@
         "type": "object"
       },
       "PnlMonthlyItemResponse": {
-        "additionalProperties": true,
+        "additionalProperties": false,
         "properties": {
           "cogs": {
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
@@ -8506,6 +8825,7 @@
         "type": "object"
       },
       "PnlMonthsResponse": {
+        "additionalProperties": false,
         "properties": {
           "months": {
             "items": {
@@ -8522,7 +8842,7 @@
         "type": "object"
       },
       "PnlOverviewResponse": {
-        "additionalProperties": true,
+        "additionalProperties": false,
         "properties": {
           "categories": {
             "additionalProperties": {
@@ -8618,6 +8938,7 @@
         "type": "object"
       },
       "PnlPermissionsResponse": {
+        "additionalProperties": false,
         "properties": {
           "can_view": {
             "title": "Can View",
@@ -8631,6 +8952,7 @@
         "type": "object"
       },
       "PnlReconciliationResponse": {
+        "additionalProperties": false,
         "properties": {
           "difference_to_net": {
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
@@ -8680,6 +9002,7 @@
         "type": "object"
       },
       "PnlRegionsResponse": {
+        "additionalProperties": false,
         "properties": {
           "regions": {
             "items": {
@@ -8696,7 +9019,7 @@
         "type": "object"
       },
       "PnlStoreOptionResponse": {
-        "additionalProperties": true,
+        "additionalProperties": false,
         "properties": {
           "company_name": {
             "title": "Company Name",
@@ -8742,7 +9065,7 @@
         "type": "object"
       },
       "PnlStoreResponse": {
-        "additionalProperties": true,
+        "additionalProperties": false,
         "properties": {
           "cogs": {
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
@@ -8829,6 +9152,7 @@
         "type": "object"
       },
       "PnlStoresResponse": {
+        "additionalProperties": false,
         "properties": {
           "stores": {
             "items": {
@@ -8845,6 +9169,7 @@
         "type": "object"
       },
       "PremiumGlassAgentStat": {
+        "additionalProperties": false,
         "properties": {
           "agent": {
             "title": "Agent",
@@ -8918,6 +9243,7 @@
         "type": "object"
       },
       "PremiumGlassAnalysis": {
+        "additionalProperties": false,
         "properties": {
           "agents": {
             "items": {
@@ -8972,6 +9298,7 @@
         "type": "object"
       },
       "PremiumGlassManagerStat": {
+        "additionalProperties": false,
         "properties": {
           "agent_count": {
             "default": 0,
@@ -9040,6 +9367,7 @@
         "type": "object"
       },
       "PremiumGlassModelStat": {
+        "additionalProperties": false,
         "properties": {
           "model_key": {
             "title": "Model Key",
@@ -9113,6 +9441,7 @@
         "type": "object"
       },
       "PremiumGlassProductStat": {
+        "additionalProperties": false,
         "properties": {
           "is_premium": {
             "title": "Is Premium",
@@ -9159,6 +9488,7 @@
         "type": "object"
       },
       "PremiumGlassStoreStat": {
+        "additionalProperties": false,
         "properties": {
           "firma": {
             "title": "Firma",
@@ -9227,6 +9557,7 @@
         "type": "object"
       },
       "PremiumGlassSummary": {
+        "additionalProperties": false,
         "properties": {
           "active_agents": {
             "default": 0,
@@ -9323,6 +9654,7 @@
         "type": "object"
       },
       "PremiumGlassSurfaceStat": {
+        "additionalProperties": false,
         "properties": {
           "premium_qty": {
             "default": 0,
@@ -9390,6 +9722,7 @@
         "type": "object"
       },
       "PromoActualImportResponse": {
+        "additionalProperties": false,
         "properties": {
           "config_sha256": {
             "pattern": "^[0-9a-f]{64}$",
@@ -9457,6 +9790,7 @@
         "type": "object"
       },
       "PromoIncentiveSummary": {
+        "additionalProperties": false,
         "properties": {
           "calculation_status": {
             "default": "complete",
@@ -9587,6 +9921,7 @@
         "type": "object"
       },
       "PromoTopAgent": {
+        "additionalProperties": false,
         "properties": {
           "agent_name": {
             "title": "Agent Name",
@@ -9615,6 +9950,7 @@
         "type": "object"
       },
       "PromoTopStore": {
+        "additionalProperties": false,
         "properties": {
           "achievement": {
             "anyOf": [
@@ -9674,6 +10010,7 @@
         "type": "object"
       },
       "ReceiptBucketItem": {
+        "additionalProperties": false,
         "properties": {
           "bucket": {
             "title": "Bucket",
@@ -9705,6 +10042,7 @@
         "type": "object"
       },
       "RegionalStats": {
+        "additionalProperties": false,
         "properties": {
           "forecast_target_pct": {
             "anyOf": [
@@ -9926,7 +10264,7 @@
         "type": "object"
       },
       "SalaryCompanyTotal": {
-        "additionalProperties": true,
+        "additionalProperties": false,
         "properties": {
           "company": {
             "anyOf": [
@@ -9962,7 +10300,7 @@
         "type": "object"
       },
       "SalaryComparisonItem": {
-        "additionalProperties": true,
+        "additionalProperties": false,
         "properties": {
           "agent_count": {
             "title": "Agent Count",
@@ -10022,6 +10360,7 @@
         "type": "object"
       },
       "SalaryEvolutionPoint": {
+        "additionalProperties": false,
         "properties": {
           "mobicell": {
             "title": "Mobicell",
@@ -10050,6 +10389,7 @@
         "type": "object"
       },
       "SalaryExportAudit": {
+        "additionalProperties": false,
         "properties": {
           "export_kind": {
             "enum": [
@@ -10175,7 +10515,7 @@
         "type": "object"
       },
       "SalaryOverviewResponse": {
-        "additionalProperties": true,
+        "additionalProperties": false,
         "properties": {
           "agent_count": {
             "anyOf": [
@@ -10351,6 +10691,7 @@
         "type": "object"
       },
       "SalaryStoreOption": {
+        "additionalProperties": false,
         "properties": {
           "locatie": {
             "anyOf": [
@@ -10375,6 +10716,7 @@
         "type": "object"
       },
       "SalarySummaryResponse": {
+        "additionalProperties": false,
         "properties": {
           "items": {
             "items": {
@@ -10399,7 +10741,7 @@
         "type": "object"
       },
       "SalaryTrendPoint": {
-        "additionalProperties": true,
+        "additionalProperties": false,
         "properties": {
           "agent_count": {
             "title": "Agent Count",
@@ -10443,11 +10785,26 @@
         "type": "object"
       },
       "SalesGenerationAnomaly": {
-        "additionalProperties": true,
+        "additionalProperties": false,
         "properties": {
           "blocking": {
             "title": "Blocking",
             "type": "boolean"
+          },
+          "classification": {
+            "anyOf": [
+              {
+                "enum": [
+                  "informational",
+                  "structural_contradiction"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Classification"
           },
           "code": {
             "title": "Code",
@@ -10464,9 +10821,126 @@
             ],
             "title": "Count"
           },
+          "cutoff_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cutoff Date"
+          },
+          "drop_pct": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Drop Pct"
+          },
+          "import_month": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Import Month"
+          },
+          "incoming": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Incoming"
+          },
+          "max_sale_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Sale Date"
+          },
           "message": {
             "title": "Message",
             "type": "string"
+          },
+          "months": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Months"
+          },
+          "previous": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Previous"
+          },
+          "set_sha256": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Set Sha256"
+          },
+          "site_days": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Site Days"
+          },
+          "threshold_pct": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Threshold Pct"
           }
         },
         "required": [
@@ -10478,8 +10952,20 @@
         "type": "object"
       },
       "SalesGenerationManifest": {
-        "additionalProperties": true,
+        "additionalProperties": false,
         "properties": {
+          "agent_count": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Count"
+          },
           "anomalies": {
             "items": {
               "$ref": "#/components/schemas/SalesGenerationAnomaly"
@@ -10490,6 +10976,7 @@
           "business_sha256": {
             "anyOf": [
               {
+                "pattern": "^[0-9a-f]{64}$",
                 "type": "string"
               },
               {
@@ -10515,6 +11002,7 @@
               {
                 "enum": [
                   "validated",
+                  "promoting",
                   "promoted"
                 ],
                 "type": "string"
@@ -10524,6 +11012,57 @@
               }
             ],
             "title": "Generation State"
+          },
+          "import_month": {
+            "anyOf": [
+              {
+                "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Import Month"
+          },
+          "max_sale_date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Sale Date"
+          },
+          "parser_resources": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "anyOf": [
+                    {
+                      "type": "integer"
+                    },
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parser Resources"
           },
           "receipt_count": {
             "anyOf": [
@@ -10537,6 +11076,53 @@
             ],
             "title": "Receipt Count"
           },
+          "rows_filtered": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rows Filtered"
+          },
+          "rows_imported": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rows Imported"
+          },
+          "rows_in_file": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rows In File"
+          },
+          "schema_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Schema Version"
+          },
           "site_day_count": {
             "anyOf": [
               {
@@ -10549,10 +11135,71 @@
             ],
             "title": "Site Day Count"
           },
-          "total_quantity": {
+          "site_day_sha256": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Site Day Sha256"
+          },
+          "site_days": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/SalesSiteDayManifest"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Site Days"
+          },
+          "source_sha256": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Sha256"
+          },
+          "stage_rows_sha256": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stage Rows Sha256"
+          },
+          "store_count": {
             "anyOf": [
               {
                 "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Store Count"
+          },
+          "total_quantity": {
+            "anyOf": [
+              {
                 "type": "integer"
               },
               {
@@ -10608,6 +11255,48 @@
           "manifest_sha256"
         ],
         "title": "SalesGenerationPromotionRequest",
+        "type": "object"
+      },
+      "SalesSiteDayManifest": {
+        "additionalProperties": false,
+        "properties": {
+          "quantity": {
+            "title": "Quantity",
+            "type": "integer"
+          },
+          "receipts": {
+            "minimum": 0.0,
+            "title": "Receipts",
+            "type": "integer"
+          },
+          "rows": {
+            "minimum": 0.0,
+            "title": "Rows",
+            "type": "integer"
+          },
+          "sale_date": {
+            "format": "date",
+            "title": "Sale Date",
+            "type": "string"
+          },
+          "site_code": {
+            "title": "Site Code",
+            "type": "string"
+          },
+          "value": {
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "site_code",
+          "sale_date",
+          "rows",
+          "receipts",
+          "quantity",
+          "value"
+        ],
+        "title": "SalesSiteDayManifest",
         "type": "object"
       },
       "SessionLogoutResponse": {
@@ -10710,6 +11399,7 @@
         "type": "object"
       },
       "StoreActivityChangeResponse": {
+        "additionalProperties": false,
         "properties": {
           "event_id": {
             "title": "Event Id",
@@ -10738,6 +11428,7 @@
         "type": "object"
       },
       "StoreCoverageItem": {
+        "additionalProperties": false,
         "properties": {
           "added_agents_count": {
             "default": 0,
@@ -10818,6 +11509,7 @@
         "type": "object"
       },
       "StoreCoverageResponse": {
+        "additionalProperties": false,
         "properties": {
           "active_stores_count": {
             "title": "Active Stores Count",
@@ -10854,6 +11546,7 @@
         "type": "object"
       },
       "StoreOption": {
+        "additionalProperties": false,
         "properties": {
           "asm": {
             "title": "Asm",
@@ -10887,6 +11580,7 @@
         "type": "object"
       },
       "StoreStats": {
+        "additionalProperties": false,
         "properties": {
           "asm": {
             "title": "Asm",
@@ -11081,6 +11775,7 @@
         "type": "object"
       },
       "StoreTargetsSaveResponse": {
+        "additionalProperties": false,
         "properties": {
           "inserted": {
             "minimum": 0.0,
@@ -11095,6 +11790,7 @@
         "type": "object"
       },
       "TargetApiErrorResponse": {
+        "additionalProperties": false,
         "description": "Documented shape of explicit Target HTTPException responses.",
         "properties": {
           "detail": {
@@ -11117,7 +11813,7 @@
         "type": "object"
       },
       "TargetCalculationDetails": {
-        "additionalProperties": true,
+        "additionalProperties": false,
         "properties": {
           "allocation_reason": {
             "anyOf": [
@@ -11166,7 +11862,6 @@
             "title": "Current Month"
           },
           "flags": {
-            "default": [],
             "items": {
               "type": "string"
             },
@@ -11266,12 +11961,44 @@
         "type": "object"
       },
       "TargetCalculationParams": {
-        "additionalProperties": true,
+        "additionalProperties": false,
         "properties": {
+          "minimum_seasonality_base": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Minimum Seasonality Base"
+          },
+          "new_store_weights": {
+            "additionalProperties": {
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
+            },
+            "title": "New Store Weights",
+            "type": "object"
+          },
+          "previous_month_cap_pct": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Previous Month Cap Pct"
+          },
           "profitability": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/TargetOpenModel"
+                "$ref": "#/components/schemas/TargetProfitabilityAssumptionsResponse"
               },
               {
                 "type": "null"
@@ -11281,12 +12008,36 @@
           "profitability_summary": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/TargetOpenModel"
+                "$ref": "#/components/schemas/TargetProfitabilitySummaryResponse"
               },
               {
                 "type": "null"
               }
             ]
+          },
+          "seasonality_max": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seasonality Max"
+          },
+          "seasonality_min": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seasonality Min"
           },
           "seasonality_years": {
             "anyOf": [
@@ -11298,6 +12049,58 @@
               }
             ],
             "title": "Seasonality Years"
+          },
+          "strong_weights": {
+            "additionalProperties": {
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
+            },
+            "title": "Strong Weights",
+            "type": "object"
+          },
+          "trend_adjustment_max": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trend Adjustment Max"
+          },
+          "trend_adjustment_min": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trend Adjustment Min"
+          },
+          "trend_weight": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trend Weight"
+          },
+          "weak_weights": {
+            "additionalProperties": {
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
+            },
+            "title": "Weak Weights",
+            "type": "object"
           }
         },
         "title": "TargetCalculationParams",
@@ -11408,7 +12211,7 @@
         "type": "object"
       },
       "TargetContextResponse": {
-        "additionalProperties": true,
+        "additionalProperties": false,
         "properties": {
           "active_store_count": {
             "title": "Active Store Count",
@@ -11572,8 +12375,72 @@
         "title": "TargetFinalizeRequest",
         "type": "object"
       },
+      "TargetForecastCoverageResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "covered_store_count": {
+            "title": "Covered Store Count",
+            "type": "integer"
+          },
+          "cutoff": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cutoff"
+          },
+          "cutoff_max": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cutoff Max"
+          },
+          "cutoff_min": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cutoff Min"
+          },
+          "expected_store_count": {
+            "title": "Expected Store Count",
+            "type": "integer"
+          },
+          "missing_site_codes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Missing Site Codes",
+            "type": "array"
+          },
+          "mode": {
+            "title": "Mode",
+            "type": "string"
+          }
+        },
+        "required": [
+          "mode",
+          "expected_store_count",
+          "covered_store_count"
+        ],
+        "title": "TargetForecastCoverageResponse",
+        "type": "object"
+      },
       "TargetForecastRunResponse": {
-        "additionalProperties": true,
+        "additionalProperties": false,
         "properties": {
           "generated_at": {
             "title": "Generated At",
@@ -11618,7 +12485,7 @@
         "type": "object"
       },
       "TargetHistoryValue": {
-        "additionalProperties": true,
+        "additionalProperties": false,
         "properties": {
           "actual_realized": {
             "anyOf": [
@@ -11694,14 +12561,141 @@
         "title": "TargetHistoryValue",
         "type": "object"
       },
-      "TargetOpenModel": {
-        "additionalProperties": true,
-        "properties": {},
-        "title": "TargetOpenModel",
+      "TargetProfitabilityAssumptionsResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "base_salary_default": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Base Salary Default",
+            "type": "string"
+          },
+          "base_salary_high": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Salary High"
+          },
+          "default_store_agent_count": {
+            "title": "Default Store Agent Count",
+            "type": "integer"
+          },
+          "meal_vouchers_per_agent": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Meal Vouchers Per Agent",
+            "type": "string"
+          },
+          "salary_assumed_attainment": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Salary Assumed Attainment",
+            "type": "string"
+          },
+          "salary_pnl_factor": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Salary Pnl Factor",
+            "type": "string"
+          },
+          "sales_commission_rate": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Sales Commission Rate",
+            "type": "string"
+          },
+          "sun_plaza_agent_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sun Plaza Agent Count"
+          },
+          "target_rule_set_hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Rule Set Hash"
+          },
+          "target_rule_set_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Rule Set Id"
+          },
+          "vat_effective_from": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vat Effective From"
+          },
+          "vat_multiplier": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Vat Multiplier",
+            "type": "string"
+          },
+          "vat_rate": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Vat Rate",
+            "type": "string"
+          },
+          "vat_rule_id": {
+            "title": "Vat Rule Id",
+            "type": "string"
+          },
+          "vat_ruleset_hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vat Ruleset Hash"
+          },
+          "vat_ruleset_id": {
+            "title": "Vat Ruleset Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "vat_ruleset_id",
+          "vat_rule_id",
+          "vat_multiplier",
+          "vat_rate",
+          "salary_pnl_factor",
+          "meal_vouchers_per_agent",
+          "sales_commission_rate",
+          "salary_assumed_attainment",
+          "default_store_agent_count",
+          "base_salary_default"
+        ],
+        "title": "TargetProfitabilityAssumptionsResponse",
         "type": "object"
       },
       "TargetProfitabilityResponse": {
-        "additionalProperties": true,
+        "additionalProperties": false,
         "properties": {
           "accessory_margin_pct": {
             "anyOf": [
@@ -11720,7 +12714,6 @@
             "type": "integer"
           },
           "anomaly_flags": {
-            "default": [],
             "items": {
               "type": "string"
             },
@@ -11783,12 +12776,12 @@
         "type": "object"
       },
       "TargetProfitabilitySummaryResponse": {
-        "additionalProperties": true,
+        "additionalProperties": false,
         "properties": {
           "assumptions": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/TargetOpenModel"
+                "$ref": "#/components/schemas/TargetProfitabilityAssumptionsResponse"
               },
               {
                 "type": "null"
@@ -11814,7 +12807,7 @@
           "forecast_coverage": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/TargetOpenModel"
+                "$ref": "#/components/schemas/TargetForecastCoverageResponse"
               },
               {
                 "type": "null"
@@ -11847,6 +12840,18 @@
             ],
             "title": "Forecast Total"
           },
+          "input_sha256": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Input Sha256"
+          },
           "operating_costs_total": {
             "anyOf": [
               {
@@ -11860,7 +12865,6 @@
             "title": "Operating Costs Total"
           },
           "pnl_months": {
-            "default": [],
             "items": {
               "type": "string"
             },
@@ -11897,7 +12901,7 @@
         "type": "object"
       },
       "TargetRegionalSummaryResponse": {
-        "additionalProperties": true,
+        "additionalProperties": false,
         "properties": {
           "current_forecast_total": {
             "default": "0",
@@ -12021,15 +13025,26 @@
         "type": "object"
       },
       "TargetScenarioResponse": {
-        "additionalProperties": true,
+        "additionalProperties": false,
         "properties": {
+          "calculation_input_sha256": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Calculation Input Sha256"
+          },
           "calculation_method": {
             "title": "Calculation Method",
             "type": "string"
           },
           "calculation_params": {
-            "$ref": "#/components/schemas/TargetCalculationParams",
-            "default": {}
+            "$ref": "#/components/schemas/TargetCalculationParams"
           },
           "cap_limited_count": {
             "default": 0,
@@ -12092,6 +13107,18 @@
             "title": "Previous Month Floor Pct",
             "type": "string"
           },
+          "profitability_input_sha256": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Profitability Input Sha256"
+          },
           "profitability_summary": {
             "anyOf": [
               {
@@ -12109,7 +13136,6 @@
             "type": "string"
           },
           "regional_summary": {
-            "default": [],
             "items": {
               "$ref": "#/components/schemas/TargetRegionalSummaryResponse"
             },
@@ -12132,8 +13158,42 @@
             "title": "Rows",
             "type": "array"
           },
+          "rule_set_hash": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rule Set Hash"
+          },
+          "rule_set_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rule Set Id"
+          },
+          "rule_set_snapshot": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rule Set Snapshot"
+          },
           "source_months": {
-            "default": [],
             "items": {
               "$ref": "#/components/schemas/TargetSourceMonth"
             },
@@ -12141,7 +13201,6 @@
             "type": "array"
           },
           "source_summary": {
-            "default": [],
             "items": {
               "$ref": "#/components/schemas/TargetSourceSummaryResponse"
             },
@@ -12171,7 +13230,6 @@
             "type": "string"
           },
           "warnings": {
-            "default": [],
             "items": {
               "type": "string"
             },
@@ -12201,7 +13259,7 @@
         "type": "object"
       },
       "TargetScenarioRowResponse": {
-        "additionalProperties": true,
+        "additionalProperties": false,
         "properties": {
           "asm": {
             "title": "Asm",
@@ -12213,10 +13271,7 @@
             "type": "string"
           },
           "calculation_details": {
-            "$ref": "#/components/schemas/TargetCalculationDetails",
-            "default": {
-              "flags": []
-            }
+            "$ref": "#/components/schemas/TargetCalculationDetails"
           },
           "cap_target": {
             "anyOf": [
@@ -12252,7 +13307,6 @@
             "type": "string"
           },
           "history": {
-            "default": [],
             "items": {
               "$ref": "#/components/schemas/TargetHistoryValue"
             },
@@ -12272,6 +13326,51 @@
           "locatie": {
             "title": "Locatie",
             "type": "string"
+          },
+          "manager_override_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Manager Override At"
+          },
+          "manager_override_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Manager Override Reason"
+          },
+          "manager_override_revision": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Manager Override Revision"
+          },
+          "manager_override_target": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Manager Override Target"
           },
           "normalized_weight": {
             "anyOf": [
@@ -12345,15 +13444,26 @@
         "type": "object"
       },
       "TargetScenarioSummaryResponse": {
-        "additionalProperties": true,
+        "additionalProperties": false,
         "properties": {
+          "calculation_input_sha256": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Calculation Input Sha256"
+          },
           "calculation_method": {
             "title": "Calculation Method",
             "type": "string"
           },
           "calculation_params": {
-            "$ref": "#/components/schemas/TargetCalculationParams",
-            "default": {}
+            "$ref": "#/components/schemas/TargetCalculationParams"
           },
           "cohort_month": {
             "title": "Cohort Month",
@@ -12399,6 +13509,18 @@
             "title": "Previous Month Floor Pct",
             "type": "string"
           },
+          "profitability_input_sha256": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Profitability Input Sha256"
+          },
           "proposed_total": {
             "default": "0",
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
@@ -12409,8 +13531,42 @@
             "title": "Revision",
             "type": "integer"
           },
+          "rule_set_hash": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rule Set Hash"
+          },
+          "rule_set_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rule Set Id"
+          },
+          "rule_set_snapshot": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rule Set Snapshot"
+          },
           "source_months": {
-            "default": [],
             "items": {
               "$ref": "#/components/schemas/TargetSourceMonth"
             },
@@ -12440,7 +13596,6 @@
             "type": "string"
           },
           "warnings": {
-            "default": [],
             "items": {
               "type": "string"
             },
@@ -12465,7 +13620,7 @@
         "type": "object"
       },
       "TargetSeasonalityDetails": {
-        "additionalProperties": true,
+        "additionalProperties": false,
         "properties": {
           "blended_factor": {
             "anyOf": [
@@ -12540,7 +13695,6 @@
             "title": "Network Factor"
           },
           "network_years": {
-            "default": [],
             "items": {
               "$ref": "#/components/schemas/TargetSeasonalityYear"
             },
@@ -12560,7 +13714,6 @@
             "title": "Store Factor"
           },
           "store_years": {
-            "default": [],
             "items": {
               "$ref": "#/components/schemas/TargetSeasonalityYear"
             },
@@ -12607,7 +13760,6 @@
             "title": "Zone Factor"
           },
           "zone_years": {
-            "default": [],
             "items": {
               "$ref": "#/components/schemas/TargetSeasonalityYear"
             },
@@ -12619,7 +13771,7 @@
         "type": "object"
       },
       "TargetSeasonalityYear": {
-        "additionalProperties": true,
+        "additionalProperties": false,
         "properties": {
           "base_month": {
             "title": "Base Month",
@@ -12667,7 +13819,7 @@
         "type": "object"
       },
       "TargetSourceMonth": {
-        "additionalProperties": true,
+        "additionalProperties": false,
         "properties": {
           "label": {
             "title": "Label",
@@ -12691,7 +13843,7 @@
         "type": "object"
       },
       "TargetSourceSummaryResponse": {
-        "additionalProperties": true,
+        "additionalProperties": false,
         "properties": {
           "actual_realized": {
             "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
@@ -12751,7 +13903,7 @@
         "type": "object"
       },
       "TargetStoreAgentResponse": {
-        "additionalProperties": true,
+        "additionalProperties": false,
         "properties": {
           "active_months_16": {
             "title": "Active Months 16",
@@ -12834,10 +13986,9 @@
         "type": "object"
       },
       "TargetStoreDetailResponse": {
-        "additionalProperties": true,
+        "additionalProperties": false,
         "properties": {
           "agents": {
-            "default": [],
             "items": {
               "$ref": "#/components/schemas/TargetStoreAgentResponse"
             },
@@ -12884,7 +14035,6 @@
             "type": "string"
           },
           "history": {
-            "default": [],
             "items": {
               "$ref": "#/components/schemas/TargetStoreHistoryPointResponse"
             },
@@ -12938,7 +14088,7 @@
         "type": "object"
       },
       "TargetStoreHistoryPointResponse": {
-        "additionalProperties": true,
+        "additionalProperties": false,
         "properties": {
           "active_agents": {
             "title": "Active Agents",
@@ -13037,7 +14187,7 @@
         "type": "object"
       },
       "TargetTrendDetails": {
-        "additionalProperties": true,
+        "additionalProperties": false,
         "properties": {
           "base_month": {
             "anyOf": [
@@ -13205,6 +14355,7 @@
         "type": "object"
       },
       "TaskDeleteResponse": {
+        "additionalProperties": false,
         "properties": {
           "ok": {
             "title": "Ok",
@@ -13218,6 +14369,7 @@
         "type": "object"
       },
       "TaskItem": {
+        "additionalProperties": false,
         "properties": {
           "assignee": {
             "anyOf": [
@@ -13313,6 +14465,7 @@
         "type": "object"
       },
       "TaskListResponse": {
+        "additionalProperties": false,
         "properties": {
           "items": {
             "items": {
@@ -13415,6 +14568,7 @@
         "type": "object"
       },
       "TeamLeaderGroup": {
+        "additionalProperties": false,
         "properties": {
           "months": {
             "items": {
@@ -13482,6 +14636,7 @@
         "type": "object"
       },
       "VisitDayGroup": {
+        "additionalProperties": false,
         "properties": {
           "date": {
             "title": "Date",
@@ -13509,6 +14664,7 @@
         "type": "object"
       },
       "VisitDetail": {
+        "additionalProperties": false,
         "properties": {
           "afise": {
             "title": "Afise",
@@ -13901,6 +15057,7 @@
         "type": "object"
       },
       "VisitMonthGroup": {
+        "additionalProperties": false,
         "properties": {
           "days": {
             "items": {
@@ -13937,6 +15094,7 @@
         "type": "object"
       },
       "VisitReportResponse": {
+        "additionalProperties": false,
         "properties": {
           "avg_completion": {
             "maximum": 100.0,
@@ -13978,6 +15136,7 @@
         "type": "object"
       },
       "VisitReportRow": {
+        "additionalProperties": false,
         "properties": {
           "afise_pct": {
             "maximum": 100.0,
@@ -14087,6 +15246,7 @@
         "type": "object"
       },
       "VisitSummaryItem": {
+        "additionalProperties": false,
         "properties": {
           "completion_pct": {
             "maximum": 100.0,
@@ -14153,6 +15313,7 @@
         "type": "object"
       },
       "VisitTreeResponse": {
+        "additionalProperties": false,
         "properties": {
           "team_leaders": {
             "items": {
@@ -14169,6 +15330,7 @@
         "type": "object"
       },
       "YearHistoryPoint": {
+        "additionalProperties": false,
         "properties": {
           "is_aggregate": {
             "title": "Is Aggregate",
@@ -14209,6 +15371,7 @@
         "type": "object"
       },
       "YearHistoryResponse": {
+        "additionalProperties": false,
         "properties": {
           "points": {
             "items": {

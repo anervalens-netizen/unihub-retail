@@ -186,14 +186,9 @@ async def test_grile_reconciler_terminalizes_stale_queued_and_running_only() -> 
             assert states[int(stale["id"])] == ("failed", "grile_run_lease_expired")
         assert states[int(fresh_id)] == ("running", None)
 
-        assert await repo.reconcile_interrupted_running_runs() == [int(fresh_id)]
-        async with pool.acquire() as conn:
-            restarted = await conn.fetchrow(
-                "SELECT status, error_message FROM grile_runs WHERE id = $1",
-                fresh_id,
-            )
-        assert restarted["status"] == "failed"
-        assert restarted["error_message"] == "grile_run_worker_restarted"
+        # A coexisting legacy or isolated worker restart must not fail a fresh
+        # run owned by the other process. Only the heartbeat lease may close it.
+        assert states[int(fresh_id)] == ("running", None)
     finally:
         async with pool.acquire() as conn:
             await conn.execute("DELETE FROM grile_runs WHERE run_month = ANY($1::text[])", months)

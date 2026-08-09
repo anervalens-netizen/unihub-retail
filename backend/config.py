@@ -13,6 +13,7 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, cast
+from urllib.parse import urlsplit
 
 from privileged_access import privileged_access_config_errors
 from oidc_settings import hub_internal_secret_errors, oidc_config_errors
@@ -33,7 +34,7 @@ class ConfigError(RuntimeError):
 
 
 RuntimeRole = Literal["web", "worker", "import"]
-WorkerRole = Literal["operations", "imports"]
+WorkerRole = Literal["operations", "imports", "grile", "exports", "legacy"]
 DatabaseAuthority = Literal[
     "web", "operations", "sales_import", "finance_import", "migrate"
 ]
@@ -122,7 +123,7 @@ def expected_database_authority(role: RuntimeRole) -> DatabaseAuthority:
 
 @dataclass(frozen=True)
 class RuntimeConfig:
-    """Configurația comună, tipizată, pentru web și cele două worker roles."""
+    """Configurația comună, tipizată, pentru web și worker-ele izolate."""
 
     role: RuntimeRole
     worker_role: WorkerRole | None
@@ -186,20 +187,27 @@ def grile_provider_stale_after_seconds() -> int:
     return value
 
 
+def _configured_worker_role(
+    role: RuntimeRole | None,
+    errors: list[str],
+) -> WorkerRole | None:
+    raw = os.getenv("RETAIL_WORKER_ROLE")
+    configured = raw.strip().lower() if raw is not None else (
+        "imports" if role == "import" else "operations"
+    )
+    allowed = {"operations", "imports", "grile", "exports", "legacy"}
+    if configured not in allowed:
+        errors.append(
+            "RETAIL_WORKER_ROLE trebuie să fie operations, imports, grile, exports sau legacy"
+        )
+        return None
+    return cast(WorkerRole, configured)
+
+
 def load_runtime_config(role: RuntimeRole | None = None) -> RuntimeConfig:
     errors: list[str] = []
     _parse_runtime_int("GRILE_PROVIDER_STALE_AFTER_SECONDS", 12 * 60 * 60, errors, minimum=5 * 60, maximum=7 * 24 * 60 * 60)
-    raw_worker_role = os.getenv("RETAIL_WORKER_ROLE")
-    configured_worker_role = (
-        raw_worker_role.strip().lower()
-        if raw_worker_role is not None
-        else ("imports" if role == "import" else "operations")
-    )
-    worker_role: WorkerRole | None = None
-    if configured_worker_role not in {"operations", "imports"}:
-        errors.append("RETAIL_WORKER_ROLE trebuie să fie operations sau imports")
-    else:
-        worker_role = configured_worker_role  # type: ignore[assignment]
+    worker_role = _configured_worker_role(role, errors)
 
     if role is None:
         process_role: RuntimeRole = (
@@ -392,6 +400,88 @@ def _is_production() -> bool:
     return os.getenv("UNIHUB_ENV", "development").strip().lower() == "production"
 
 
+_DEFAULT_DEVELOPMENT_CORS_ORIGINS = (
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+)
+_MAX_CORS_ORIGINS = 16
+
+
+def _normalized_cors_origin(value: str, *, production: bool) -> str:
+    if value != value.strip() or any(ord(character) < 32 for character in value):
+        raise ValueError("contains whitespace or control characters")
+    if "*" in value:
+        raise ValueError("wildcards are forbidden")
+    try:
+        parsed = urlsplit(value)
+        port = parsed.port
+    except ValueError as exc:
+        raise ValueError("has an invalid port") from exc
+    if parsed.scheme not in {"http", "https"}:
+        raise ValueError("must use http or https")
+    if production and parsed.scheme != "https":
+        raise ValueError("must use https in production")
+    if not parsed.hostname:
+        raise ValueError("must include a hostname")
+    if parsed.username is not None or parsed.password is not None:
+        raise ValueError("must not contain credentials")
+    if parsed.path or parsed.query or parsed.fragment:
+        raise ValueError("must be an origin without path, query, or fragment")
+
+    hostname = parsed.hostname.casefold()
+    if production and hostname in {"localhost", "127.0.0.1", "::1"}:
+        raise ValueError("must not target loopback in production")
+    host = f"[{hostname}]" if ":" in hostname else hostname
+    default_port = 443 if parsed.scheme == "https" else 80
+    authority = host if port in {None, default_port} else f"{host}:{port}"
+    return f"{parsed.scheme}://{authority}"
+
+
+def cors_config_errors(production: bool | None = None) -> list[str]:
+    production = _is_production() if production is None else production
+    raw = os.getenv("CORS_ORIGINS")
+    if raw is None or not raw.strip():
+        if production:
+            return ["CORS_ORIGINS is required in production"]
+        values = list(_DEFAULT_DEVELOPMENT_CORS_ORIGINS)
+    else:
+        values = raw.split(",")
+
+    errors: list[str] = []
+    if len(values) > _MAX_CORS_ORIGINS:
+        errors.append(f"CORS_ORIGINS supports at most {_MAX_CORS_ORIGINS} origins")
+    seen: set[str] = set()
+    for index, item in enumerate(values[: _MAX_CORS_ORIGINS], start=1):
+        if not item:
+            errors.append(f"CORS_ORIGINS entry {index} is empty")
+            continue
+        try:
+            origin = _normalized_cors_origin(item, production=production)
+        except ValueError as exc:
+            errors.append(f"CORS_ORIGINS entry {index} {exc}")
+            continue
+        if origin in seen:
+            errors.append(f"CORS_ORIGINS contains duplicate origin {origin}")
+        seen.add(origin)
+    return errors
+
+
+def get_cors_origins(production: bool | None = None) -> tuple[str, ...]:
+    production = _is_production() if production is None else production
+    errors = cors_config_errors(production)
+    if errors:
+        raise ConfigError("CORS config invalid:\n  - " + "\n  - ".join(errors))
+    raw = os.getenv("CORS_ORIGINS")
+    values = (
+        raw.split(",")
+        if raw is not None and raw.strip()
+        else list(_DEFAULT_DEVELOPMENT_CORS_ORIGINS)
+    )
+    return tuple(
+        _normalized_cors_origin(value, production=production) for value in values
+    )
+
+
 def get_visits_db_path() -> Path:
     return Path(os.getenv("VISITS_DB_PATH", str(DEFAULT_VISITS_DB_PATH))).expanduser()
 
@@ -459,6 +549,7 @@ def validate_required_env_vars(role: RuntimeRole | None = None) -> RuntimeConfig
     errors.extend(rate_limit_config_errors(_is_production()))
     errors.extend(session_config_errors(_is_production()))
     errors.extend(metrics_network_config_errors(required=_is_production()))
+    errors.extend(cors_config_errors(_is_production()))
 
     person_id_key = os.getenv(SALARY_PERSON_ID_HMAC_KEY_ENV)
     if _is_production():

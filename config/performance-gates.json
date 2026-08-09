@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "profiles": {
+    "ci_mixed_load": {
+      "duration_seconds": 8,
+      "concurrency": 8,
+      "request_timeout_seconds": 4,
+      "minimum_requests": 100,
+      "maximum_error_rate": 0,
+      "maximum_p95_ms": 2500,
+      "maximum_p99_ms": 3000
+    }
+  }
+}

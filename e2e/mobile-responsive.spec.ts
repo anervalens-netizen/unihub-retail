@@ -140,6 +140,9 @@ test.describe('E2E: responsive mobile', () => {
         incoming_store_count: null, metadata_change_count: null, missing_active_store_count: null,
         missing_prior_store_count: null, new_store_count: null, prior_snapshot_coverage_pct: null,
         prior_snapshot_store_count: null, store_activity_writes: null,
+        anomalies: null, incoming_set_sha256: null, missing_active_set_sha256: null,
+        missing_prior_set_sha256: null, new_store_set_sha256: null,
+        stores_missing_count: null, stores_present_count: null,
       },
     }];
     await mockApiRoute(context, 'GET', /\/api\/import\/history$/, history);

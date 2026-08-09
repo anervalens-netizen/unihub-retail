@@ -2,6 +2,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
+import composition
 from auth import AuthClaims
 from fastapi import HTTPException, Request
 from fastapi.routing import APIRoute
@@ -84,7 +85,7 @@ async def test_store_pnl_service_uses_the_canonical_repository(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     pool = object()
-    monkeypatch.setattr("routers.store_pnl.get_pool", AsyncMock(return_value=pool))
+    monkeypatch.setattr(composition, "get_pool", AsyncMock(return_value=pool))
 
     service = await get_service()
 

@@ -31,7 +31,7 @@ errors while Docker restores the dependency.
 Frontend RUM este activ în build-ul live prin integrarea GlitchTip/Sentry
 `browserTracingIntegration`, cu eșantionare 10% pentru navigări/tranzacții și
 taguri finite pentru tipul conexiunii și `saveData`. Vite folosește
-`VITE_GLITCHTIP_DSN`, cu fallback controlat la `SENTRY_DSN`; raportul zilnic
+`VITE_FRONTEND_GLITCHTIP_DSN` exclusiv; DSN-ul backend rămâne separat în `BACKEND_SENTRY_DSN`. Raportul zilnic
 central din Command Center verifică inclusiv că DSN-ul RUM este compilat în
 artefact, apoi corelează RUM/GlitchTip cu p95 și erorile Prometheus pe 24h.
 În același boundary, `web-vitals` înregistrează numai LCP și INP, în
