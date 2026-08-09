@@ -180,7 +180,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("baseline", type=Path)
     parser.add_argument("candidate", type=Path)
-    parser.add_argument("--policy", type=Path, default=Path("config/pg-workload-policy.json"))
+    parser.add_argument("--policy", type=Path, default=None)
     parser.add_argument("--max-regression-percent", type=float)
     parser.add_argument("--min-baseline-calls", type=int)
     parser.add_argument("--output", type=Path)

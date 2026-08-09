@@ -1,6 +1,22 @@
 from __future__ import annotations
 
+import sys
+
+import pytest
+
+from scripts.check_pg_workload_regression import DEFAULT_POLICY, load_policy, parse_args
 from scripts.report_pg_stat_statements import normalize_query, statement_payload
+
+
+def test_workload_checker_uses_builtin_policy_when_cli_policy_is_omitted(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(sys, "argv", ["check", "baseline.json", "candidate.json"])
+
+    args = parse_args()
+
+    assert args.policy is None
+    assert load_policy(args.policy) == DEFAULT_POLICY
 
 
 def test_normalize_query_compacts_and_bounds_statement_text() -> None:
