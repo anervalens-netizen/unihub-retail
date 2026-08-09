@@ -22,7 +22,8 @@
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:browsers": "playwright test --config=playwright.browser-smoke.config.ts",
-    "test:e2e:pwa-real": "playwright test --config=playwright.pwa-workbox.config.ts",
+    "test:e2e:pwa-real": "scripts/run_pwa_release_lifecycle.sh",
+    "test:e2e:pwa-workbox": "playwright test --config=playwright.pwa-workbox.config.ts",
     "complexity:python": "python3 scripts/check_complexity_ratchet.py",
     "complexity:ts": "node scripts/check_ts_function_complexity.cjs"
   },

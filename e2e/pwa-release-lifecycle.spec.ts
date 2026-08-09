@@ -1,16 +1,37 @@
 import { readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { extname, join, normalize } from 'node:path';
+import { extname, join, normalize, resolve } from 'node:path';
 
 import { expect, test, type Page } from '@playwright/test';
 
-const dist = join(process.cwd(), 'dist');
-const generatedWorkbox = readFileSync(join(dist, 'sw.js'), 'utf8');
+type ReleaseArtifact = {
+  dist: string;
+  label: 'N' | 'N+1';
+  worker: string;
+  workerSha256: string;
+};
 
-function releaseWorker(release: string): string {
-  return `${generatedWorkbox}\nself.addEventListener('message', event => {\n`
-    + `  if (event.data === 'retail-release') event.ports[0].postMessage(${JSON.stringify(release)});\n`
+function loadArtifact(label: ReleaseArtifact['label'], directory: string | undefined): ReleaseArtifact {
+  if (!directory) throw new Error(`PWA_${label === 'N' ? 'PREVIOUS' : 'CANDIDATE'}_DIST is required`);
+  const dist = resolve(directory);
+  const worker = readFileSync(join(dist, 'sw.js'), 'utf8');
+  return {
+    dist,
+    label,
+    worker,
+    workerSha256: createHash('sha256').update(worker).digest('hex'),
+  };
+}
+
+const previousArtifact = loadArtifact('N', process.env.PWA_PREVIOUS_DIST);
+const candidateArtifact = loadArtifact('N+1', process.env.PWA_CANDIDATE_DIST);
+
+function releaseWorker(artifact: ReleaseArtifact): string {
+  const identity = { release: artifact.label, workerSha256: artifact.workerSha256 };
+  return `${artifact.worker}\nself.addEventListener('message', event => {\n`
+    + `  if (event.data === 'retail-release') event.ports[0].postMessage(${JSON.stringify(identity)});\n`
     + `});\n`;
 }
 
@@ -18,15 +39,15 @@ async function closeServer(server: Server): Promise<void> {
   await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
 }
 
-async function activeRelease(page: Page): Promise<string> {
+async function activeRelease(page: Page): Promise<{ release: string; workerSha256: string }> {
   return page.evaluate(async () => {
     const registration = await navigator.serviceWorker.ready;
     const worker = navigator.serviceWorker.controller ?? registration.active;
     if (!worker) throw new Error('active Workbox worker missing');
-    return new Promise<string>((resolve, reject) => {
+    return new Promise<{ release: string; workerSha256: string }>((resolve, reject) => {
       const channel = new MessageChannel();
       const timer = window.setTimeout(() => reject(new Error('Workbox release response timed out')), 5_000);
-      channel.port1.onmessage = (event) => { window.clearTimeout(timer); resolve(String(event.data)); };
+      channel.port1.onmessage = (event) => { window.clearTimeout(timer); resolve(event.data); };
       worker.postMessage('retail-release', [channel.port2]);
     });
   });
@@ -48,8 +69,10 @@ async function updateWorker(page: Page): Promise<void> {
 }
 
 test('generated Workbox worker upgrades N to N+1 and rolls back to N', async ({ browser }) => {
-  expect(generatedWorkbox).toContain('precacheAndRoute');
-  let release = 'N';
+  expect(previousArtifact.worker).toContain('precacheAndRoute');
+  expect(candidateArtifact.worker).toContain('precacheAndRoute');
+  expect(candidateArtifact.workerSha256).not.toBe(previousArtifact.workerSha256);
+  let artifact = previousArtifact;
   const server = createServer((request, response) => {
     const pathname = new URL(request.url ?? '/', 'http://localhost').pathname;
     if (pathname === '/sw.js') {
@@ -58,7 +81,7 @@ test('generated Workbox worker upgrades N to N+1 and rolls back to N', async ({ 
         'Content-Type': 'application/javascript; charset=utf-8',
         'Service-Worker-Allowed': '/',
       });
-      response.end(releaseWorker(release));
+      response.end(releaseWorker(artifact));
       return;
     }
     if (pathname === '/') {
@@ -69,7 +92,7 @@ test('generated Workbox worker upgrades N to N+1 and rolls back to N', async ({ 
     const relative = normalize(pathname).replace(/^[/\\]+/, '');
     if (relative.includes('..')) { response.writeHead(404).end(); return; }
     try {
-      const body = readFileSync(join(dist, relative));
+      const body = readFileSync(join(artifact.dist, relative));
       const contentType = extname(relative) === '.js' ? 'application/javascript' : 'application/octet-stream';
       response.writeHead(200, { 'Content-Type': contentType });
       response.end(body);
@@ -87,13 +110,22 @@ test('generated Workbox worker upgrades N to N+1 and rolls back to N', async ({ 
   try {
     await page.goto(`http://127.0.0.1:${address.port}`);
     await page.evaluate(() => navigator.serviceWorker.ready);
-    await expect.poll(() => activeRelease(page)).toBe('N');
-    release = 'N+1';
+    await expect.poll(() => activeRelease(page)).toEqual({
+      release: 'N',
+      workerSha256: previousArtifact.workerSha256,
+    });
+    artifact = candidateArtifact;
     await updateWorker(page);
-    await expect.poll(() => activeRelease(page)).toBe('N+1');
-    release = 'N';
+    await expect.poll(() => activeRelease(page)).toEqual({
+      release: 'N+1',
+      workerSha256: candidateArtifact.workerSha256,
+    });
+    artifact = previousArtifact;
     await updateWorker(page);
-    await expect.poll(() => activeRelease(page)).toBe('N');
+    await expect.poll(() => activeRelease(page)).toEqual({
+      release: 'N',
+      workerSha256: previousArtifact.workerSha256,
+    });
   } finally {
     await context.close();
     await closeServer(server);

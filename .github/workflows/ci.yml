@@ -453,7 +453,18 @@ jobs:
         run: npx playwright install chromium
 
       - name: Real Workbox release lifecycle
-        run: npm run test:e2e:pwa-real
+        env:
+          PWA_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          if [[ -z "$PWA_BASE_SHA" ]]; then
+            git fetch --no-tags --depth=2 origin "$GITHUB_SHA"
+            PWA_BASE_SHA="$(git rev-parse "$GITHUB_SHA^")"
+            export PWA_BASE_SHA
+          fi
+          if ! git cat-file -e "$PWA_BASE_SHA^{commit}" 2>/dev/null; then
+            git fetch --no-tags --depth=1 origin "$PWA_BASE_SHA"
+          fi
+          scripts/run_pwa_release_lifecycle.sh
 
       - name: Real full-stack integration gate
         env:
