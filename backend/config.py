@@ -34,7 +34,7 @@ class ConfigError(RuntimeError):
 
 
 RuntimeRole = Literal["web", "worker", "import"]
-WorkerRole = Literal["operations", "imports", "grile", "exports"]
+WorkerRole = Literal["operations", "imports", "grile", "exports", "legacy"]
 DatabaseAuthority = Literal[
     "web", "operations", "sales_import", "finance_import", "migrate"
 ]
@@ -195,10 +195,10 @@ def _configured_worker_role(
     configured = raw.strip().lower() if raw is not None else (
         "imports" if role == "import" else "operations"
     )
-    allowed = {"operations", "imports", "grile", "exports"}
+    allowed = {"operations", "imports", "grile", "exports", "legacy"}
     if configured not in allowed:
         errors.append(
-            "RETAIL_WORKER_ROLE trebuie să fie operations, imports, grile sau exports"
+            "RETAIL_WORKER_ROLE trebuie să fie operations, imports, grile, exports sau legacy"
         )
         return None
     return cast(WorkerRole, configured)

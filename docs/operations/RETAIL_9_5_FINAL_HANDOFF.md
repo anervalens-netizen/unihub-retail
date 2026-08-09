@@ -21,6 +21,10 @@ check is green on the exact head SHA and all review threads are resolved.
 - Imports: `unihub-import-worker.service`, queue `arq:retail:imports`, metrics `9902`.
 - Grile: `unihub-grile-worker.service`, queue `arq:retail:grile`, metrics `9903`.
 - Exports: `unihub-export-worker.service`, queue `arq:retail:exports`, metrics `9904`.
+- Pre-9.5 drain: `unihub-legacy-worker.service`, default ARQ queue, no new
+  publishers and no metrics listener. Keep it for the 9.5 cutover release so
+  pending legacy Grile/export jobs drain; retire it only after the queue is
+  observed empty in a later verified release.
 - PostgreSQL is authoritative; Valkey transports bounded job/session state only.
 
 Owner access is unchanged. No allowlist, Authentik administrator group, SSH,
@@ -60,9 +64,14 @@ Workbox N -> N+1 -> N, multi-browser smoke and exact artifact identity.
 
 After merge, dispatch `ci.yml` on the new `main`. Deploy only the uploaded
 `retail-release-<SHA>` bundle whose `SOURCE_SHA`, `SHA256SUMS`, CycloneDX SBOM,
-SLSA provenance and release manifest agree. The deploy gate installs all six
+SLSA provenance and release manifest agree. The deploy gate installs all seven
 systemd units, verifies all five Prometheus targets, `/livez`, `/readyz`,
 `/health`, changed authenticated paths and the deployed Git SHA.
+
+The deploy snapshots and restores service enablement, enables every long-lived
+runtime unit, tolerates units absent in the pre-9.5 release, and disables newly
+introduced units again on a compatible rollback. The migration unit remains
+one-shot and is never enabled.
 
 Rollback is allowed only when migration manifests are compatible. An
 incompatible database boundary fails closed as `recovery_required`; it is not

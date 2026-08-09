@@ -181,6 +181,7 @@ jobs:
             "$GITHUB_WORKSPACE/ops/systemd/unihub-import-worker.service" \
             "$GITHUB_WORKSPACE/ops/systemd/unihub-grile-worker.service" \
             "$GITHUB_WORKSPACE/ops/systemd/unihub-export-worker.service" \
+            "$GITHUB_WORKSPACE/ops/systemd/unihub-legacy-worker.service" \
             "$GITHUB_WORKSPACE/ops/systemd/unihub-retail-migrate.service" \
             "$systemd_root/etc/systemd/system/"
           printf '[Service]\nType=oneshot\nExecStart=/usr/bin/true\n' \
@@ -205,6 +206,7 @@ jobs:
             "$systemd_root/etc/systemd/system/unihub-import-worker.service" \
             "$systemd_root/etc/systemd/system/unihub-grile-worker.service" \
             "$systemd_root/etc/systemd/system/unihub-export-worker.service" \
+            "$systemd_root/etc/systemd/system/unihub-legacy-worker.service" \
             "$systemd_root/etc/systemd/system/unihub-retail-migrate.service"
           visudo -cf "$GITHUB_WORKSPACE/ops/unihub-deploy.sudoers"
           grep -Fq "/usr/local/sbin/unihub-deploy-lock acquire *" \

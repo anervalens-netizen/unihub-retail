@@ -245,6 +245,7 @@ def test_versioned_units_declare_exclusive_process_authorities() -> None:
         root / "ops/systemd/unihub-import-worker.service": "sales_import",
         root / "ops/systemd/unihub-grile-worker.service": "operations",
         root / "ops/systemd/unihub-export-worker.service": "operations",
+        root / "ops/systemd/unihub-legacy-worker.service": "operations",
         root / "ops/systemd/unihub-retail-migrate.service": "migrate",
     }
     for path, authority in expected.items():

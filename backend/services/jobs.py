@@ -30,14 +30,10 @@ logger = logging.getLogger(__name__)
 
 class JobQueueUnavailableError(HTTPException):
     """Queue-ul nu este disponibil; endpointurile de enqueue răspund 503."""
-
     def __init__(self) -> None:
         super().__init__(status_code=503, detail="Job backend unavailable")
-
-
 class JobPublishUncertainError(HTTPException):
     """Publish-ul poate fi acceptat, dar confirmarea nu a fost posibilă."""
-
     def __init__(
         self,
         *,
@@ -47,19 +43,15 @@ class JobPublishUncertainError(HTTPException):
         self.job_id = job_id
         self.operation_id = operation_id
         super().__init__(status_code=503, detail=self._detail())
-
     def _detail(self) -> dict[str, object | None]:
         return {
             "status": "unknown",
             "job_id": self.job_id,
             "operation_id": self.operation_id,
         }
-
     def attach_operation_id(self, operation_id: int) -> None:
         self.operation_id = operation_id
         object.__setattr__(self, "detail", self._detail())
-
-
 ARQ_TRANSPORT_ERRORS: tuple[type[BaseException], ...] = (
     RedisConnectionError,
     RedisTimeoutError,
@@ -76,32 +68,24 @@ class JobStatus(str, Enum):
     NOT_FOUND = "not_found"
     BACKEND_UNAVAILABLE = "backend_unavailable"
     UNKNOWN = "unknown"
-
-
 @dataclass
 class JobResult:
     job_id: str
     status: JobStatus
     result: Optional[dict] = None
     error: Optional[str] = None
-
-
 @dataclass
 class GrileEnqueueResult:
     status: str
     run_id: int
     job: Job | None = None
     run: dict | None = None
-
-
 @dataclass
 class GrileStoreRefreshEnqueueResult:
     status: str
     operation_id: int
     job: Job | None = None
     operation: dict | None = None
-
-
 @dataclass
 class GrileMonthlyEnqueueResult:
     status: str
@@ -109,16 +93,12 @@ class GrileMonthlyEnqueueResult:
     job: Job | None = None
     job_id: str | None = None
     operation: dict | None = None
-
-
 @dataclass
 class GrileTargetSyncEnqueueResult:
     status: str
     operation_id: int
     job: Job | None = None
     operation: dict | None = None
-
-
 _VALKEY_SETTINGS: Optional[RedisSettings] = None
 SALES_IMPORT_QUEUE_NAME = "arq:retail:imports"
 OPERATIONS_QUEUE_NAME = "arq:retail:operations"
@@ -132,12 +112,8 @@ MONTHLY_QUEUE_PUBLISH_FAILED = "monthly_queue_publish_failed"
 
 class SalesImportArtifactError(RuntimeError):
     pass
-
-
 class SalesImportArtifactConflictError(SalesImportArtifactError):
     pass
-
-
 def get_sales_import_spool_dir() -> Path:
     configured = os.getenv("SALES_IMPORT_SPOOL_DIR")
     path = (
@@ -146,8 +122,6 @@ def get_sales_import_spool_dir() -> Path:
         else Path(__file__).resolve().parents[2] / "data" / "import_spool"
     )
     return path.resolve()
-
-
 def _sales_spool_path(path: str | Path) -> Path:
     root = get_sales_import_spool_dir()
     raw = Path(path)
@@ -157,15 +131,11 @@ def _sales_spool_path(path: str | Path) -> Path:
     if not candidate.is_relative_to(root):
         raise ValueError("Sales import spool path escapes the configured directory")
     return candidate
-
-
 def _artifact_digest_from_path(path: Path) -> str:
     digest = path.name.rsplit(".", 1)[0]
     if not _SALES_ARTIFACT_DIGEST.fullmatch(digest):
         raise SalesImportArtifactError("Sales import artifact name is not content-addressed")
     return digest
-
-
 def _file_digest_and_size(path: Path) -> tuple[str, int]:
     if not path.exists() or not path.is_file() or path.is_symlink():
         raise SalesImportArtifactError("Sales import artifact is not a regular file")
@@ -176,21 +146,15 @@ def _file_digest_and_size(path: Path) -> tuple[str, int]:
             digest.update(chunk)
             size += len(chunk)
     return digest.hexdigest(), size
-
-
 def _fsync_file(path: Path) -> None:
     with path.open("rb") as source:
         os.fsync(source.fileno())
-
-
 def _fsync_directory(path: Path) -> None:
     descriptor = os.open(path, os.O_RDONLY)
     try:
         os.fsync(descriptor)
     finally:
         os.close(descriptor)
-
-
 def verify_sales_import_artifact(
     path: str | Path,
     expected_digest: str,
@@ -201,8 +165,6 @@ def verify_sales_import_artifact(
     if digest != expected_digest or (expected_bytes is not None and size != expected_bytes):
         raise SalesImportArtifactError("Sales import artifact integrity check failed")
     return size
-
-
 def stage_sales_import_spool_file(
     content: bytes,
     digest: str,
@@ -241,13 +203,9 @@ def stage_sales_import_spool_file(
     finally:
         temporary.unlink(missing_ok=True)
     return destination
-
-
 def remove_sales_import_spool_file(path: str | Path) -> None:
     candidate = _sales_spool_path(path)
     candidate.unlink(missing_ok=True)
-
-
 def retain_sales_import_spool_file(
     path: str | Path,
     *,
@@ -289,8 +247,6 @@ def retain_sales_import_spool_file(
     if actual_digest != digest or (expected_bytes is not None and actual_size != expected_bytes):
         raise SalesImportArtifactError("Retained sales artifact readback failed")
     return destination
-
-
 def cleanup_sales_import_retained_artifacts(keep_paths: set[str]) -> int:
     root = get_sales_import_spool_dir()
     retained_dir = root / "retained"
@@ -305,16 +261,12 @@ def cleanup_sales_import_retained_artifacts(keep_paths: set[str]) -> int:
     if removed:
         _fsync_directory(retained_dir)
     return removed
-
-
 def read_sales_import_spool_file(path: str, expected_digest: str) -> bytes:
     candidate = _sales_spool_path(path)
     content = candidate.read_bytes()
     if sha256(content).hexdigest() != expected_digest:
         raise ValueError("Sales import spool integrity check failed")
     return content
-
-
 def cleanup_stale_sales_import_spool_files() -> int:
     spool_dir = get_sales_import_spool_dir()
     if not spool_dir.exists():
@@ -338,8 +290,6 @@ def cleanup_stale_sales_import_spool_files() -> int:
             candidate.unlink(missing_ok=True)
             removed += 1
     return removed
-
-
 def get_valkey_settings() -> RedisSettings:
     global _VALKEY_SETTINGS
     if _VALKEY_SETTINGS is None:
@@ -365,8 +315,6 @@ def get_valkey_settings() -> RedisSettings:
                 max_connections=runtime.valkey_max_connections,
             )
     return _VALKEY_SETTINGS
-
-
 _arq_pool: Optional[ArqRedis] = None
 _arq_pool_attempt: asyncio.Task[ArqRedis | None] | None = None
 _arq_last_failure_monotonic = 0.0
@@ -387,8 +335,6 @@ async def _create_arq_pool() -> ArqRedis | None:
         logger.warning("ARQ queue creation returned no pool")
         return None
     return pool
-
-
 async def _publish_arq_job(
     pool: ArqRedis,
     *args: Any,
@@ -402,8 +348,6 @@ async def _publish_arq_job(
         raise JobPublishUncertainError(
             job_id=str(job_id) if job_id is not None else None,
         ) from exc
-
-
 async def get_arq_pool() -> ArqRedis | None:
     """Best-effort ARQ pool with single-flight creation and cooldown retry."""
     global _arq_pool, _arq_pool_attempt
@@ -428,15 +372,11 @@ async def get_arq_pool() -> ArqRedis | None:
     finally:
         if attempt.done() and _arq_pool_attempt is attempt:
             _arq_pool_attempt = None
-
-
 async def _require_arq_pool() -> ArqRedis:
     pool = await get_arq_pool()
     if pool is None:
         raise JobQueueUnavailableError()
     return pool
-
-
 async def close_arq_pool() -> None:
     global _arq_pool, _arq_pool_attempt
     attempt = _arq_pool_attempt
@@ -448,8 +388,6 @@ async def close_arq_pool() -> None:
     if _arq_pool is not None:
         await _arq_pool.close()
         _arq_pool = None
-
-
 async def enqueue_sales_import(
     file_content: bytes,
     filename: str,
@@ -519,8 +457,6 @@ async def enqueue_sales_import(
         await asyncio.to_thread(remove_sales_import_spool_file, spool_path)
         raise RuntimeError("Failed to enqueue import job")
     return job
-
-
 async def enqueue_sales_promotion(
     *,
     snapshot_id: int,
@@ -568,8 +504,6 @@ async def enqueue_sales_promotion(
     if replacement is None:
         raise RuntimeError("Failed to enqueue sales promotion job")
     return replacement
-
-
 async def enqueue_promo_actuals_import(
     content: bytes,
     *,
@@ -578,7 +512,6 @@ async def enqueue_promo_actuals_import(
     cutoff_date: str,
 ) -> Job:
     """Stage a content-addressed promo report and publish one deterministic import job.
-
     Statusul și rezultatul rămân recuperabile din ARQ minimum 3600s implicit,
     peste fereastra de polling UI de 1800s; nu este necesară o tabelă DB.
     """
@@ -591,8 +524,6 @@ async def enqueue_promo_actuals_import(
         function_name="import_promo_actuals_background",
         function_args=(filename, import_month, cutoff_date),
     )
-
-
 async def enqueue_erp_reconciliation(
     content: bytes,
     *,
@@ -608,8 +539,6 @@ async def enqueue_erp_reconciliation(
         function_name="reconcile_erp_background",
         function_args=(filename, import_month),
     )
-
-
 async def _enqueue_spooled_import_job(
     *,
     content: bytes,
@@ -691,8 +620,6 @@ async def _enqueue_spooled_import_job(
             return replacement
     await asyncio.to_thread(remove_sales_import_spool_file, spool_path)
     raise RuntimeError(f"Failed to enqueue import job {job_id}")
-
-
 async def enqueue_campaign_reporting_publication(
     *,
     month: str,
@@ -700,7 +627,6 @@ async def enqueue_campaign_reporting_publication(
     reason: str,
 ) -> Job:
     """Queue one idempotent Campaigns read-model publication per month.
-
     A queued/running job intentionally absorbs newer source generations: the
     worker reads the current immutable promo pointer and current sales head when
     it starts.  A completed result is removed before a later source event gets
@@ -740,8 +666,6 @@ async def enqueue_campaign_reporting_publication(
         if replacement is not None:
             return replacement
     raise RuntimeError("Failed to enqueue campaign reporting publication")
-
-
 async def enqueue_complex_export(operation_id: int) -> Job:
     """Publish one durable export operation to the isolated export worker."""
     if isinstance(operation_id, bool) or not isinstance(operation_id, int) or operation_id <= 0:
@@ -769,8 +693,6 @@ async def enqueue_complex_export(operation_id: int) -> Job:
     }:
         return existing
     raise RuntimeError("Failed to enqueue complex export operation")
-
-
 async def enqueue_grile_check(
     *,
     month: str,
@@ -781,7 +703,6 @@ async def enqueue_grile_check(
 ) -> GrileEnqueueResult:
     from db.connection import get_pool
     from repositories.grile import GrileRepository
-
     db_pool = await get_pool()
     repo = GrileRepository(db_pool)
     if sales_import_authority:
@@ -811,7 +732,6 @@ async def enqueue_grile_check(
             run_id=int(active["id"]),
             run=dict(active),
         )
-
     try:
         pool = await _require_arq_pool()
         job = await _publish_arq_job(
@@ -847,8 +767,6 @@ async def enqueue_grile_check(
         run_id=int(run_id),
         job=job,
     )
-
-
 async def enqueue_grile_store_refresh(
     *,
     month: str,
@@ -857,7 +775,6 @@ async def enqueue_grile_store_refresh(
 ) -> GrileStoreRefreshEnqueueResult:
     from db.connection import get_pool
     from repositories.grile import GrileRepository
-
     db_pool = await get_pool()
     repo = GrileRepository(db_pool)
     if await repo.get_active_sheet(site_code, month) is None:
@@ -902,8 +819,6 @@ async def enqueue_grile_store_refresh(
         operation_id=int(operation_id),
         job=job,
     )
-
-
 async def enqueue_grile_monthly(
     *,
     op: str,
@@ -919,7 +834,6 @@ async def enqueue_grile_monthly(
         fail_queued_monthly_operation,
         reserve_monthly_operation,
     )
-
     db_pool = await get_pool()
     reservation = await reserve_monthly_operation(
         db_pool,
@@ -937,7 +851,6 @@ async def enqueue_grile_monthly(
             job_id=reservation.job_id,
             operation=reservation.operation,
         )
-
     # The job identifier is deterministic, so persist it before publishing the
     # job. Otherwise a fast worker can transition queued -> running before the
     # post-enqueue attachment and leave the operation without a recoverable
@@ -952,7 +865,6 @@ async def enqueue_grile_monthly(
         raise RuntimeError(
             "Grile monthly operation is no longer queued before job publication"
         )
-
     try:
         pool = await _require_arq_pool()
         job = await _publish_arq_job(
@@ -977,15 +889,12 @@ async def enqueue_grile_monthly(
             error_message=MONTHLY_QUEUE_PUBLISH_FAILED,
         )
         raise
-
     return GrileMonthlyEnqueueResult(
         status="enqueued",
         operation_id=reservation.operation_id,
         job=job,
         job_id=job.job_id,
     )
-
-
 async def enqueue_grile_target_sync(
     *,
     month: str,
@@ -996,7 +905,6 @@ async def enqueue_grile_target_sync(
     from repositories.grile_agent_target_sync import (
         GrileAgentTargetSyncRepository,
     )
-
     if mode not in {"dry_run", "sync"}:
         raise ValueError("invalid Grile target sync mode")
     db_pool = await get_pool()
@@ -1013,7 +921,6 @@ async def enqueue_grile_target_sync(
             operation_id=operation_id,
             operation=operation,
         )
-
     job_id = f"grile-agent-targets:{operation_id}"
     if not await repo.attach_job(operation_id, job_id):
         raise RuntimeError("Grile target sync operation is no longer queued")
@@ -1043,17 +950,12 @@ async def enqueue_grile_target_sync(
         operation_id=operation_id,
         job=job,
     )
-
-
 async def get_grile_monthly_operation_by_job_id(job_id: str) -> dict | None:
     """Read the durable monthly operation before consulting ephemeral ARQ state."""
     from db.connection import get_pool
     from repositories.grile_monthly_operations import get_by_job_id
-
     db_pool = await get_pool()
     return await get_by_job_id(db_pool, job_id)
-
-
 async def get_grile_target_sync_operation(
     operation_id: int,
 ) -> dict | None:
@@ -1061,11 +963,8 @@ async def get_grile_target_sync_operation(
     from repositories.grile_agent_target_sync import (
         GrileAgentTargetSyncRepository,
     )
-
     db_pool = await get_pool()
     return await GrileAgentTargetSyncRepository(db_pool).get(operation_id)
-
-
 async def get_job_status(job_id: str) -> JobResult:
     pool = await get_arq_pool()
     if pool is None:
@@ -1092,7 +991,6 @@ async def get_job_status(job_id: str) -> JobResult:
             status=JobStatus.UNKNOWN,
             error="Job status could not be determined",
         )
-
     if arq_status == ArqJobStatus.queued:
         return JobResult(job_id=job_id, status=JobStatus.QUEUED)
     if arq_status == ArqJobStatus.in_progress:
@@ -1112,7 +1010,6 @@ async def get_job_status(job_id: str) -> JobResult:
         return JobResult(job_id=job_id, status=JobStatus.COMPLETE, error=error)
     if arq_status == ArqJobStatus.not_found:
         return JobResult(job_id=job_id, status=JobStatus.NOT_FOUND)
-
     return JobResult(
         job_id=job_id,
         status=JobStatus.UNKNOWN,

@@ -14,7 +14,7 @@ EnvironmentFile=/opt/Mobiup/unihub-retail/.env.worker
 EnvironmentFile=/opt/Mobiup/ops/prometheus/unihub-retail-network.env
 Environment="RETAIL_WORKER_ROLE=grile"
 Environment="WORKER_METRICS_PORT=9903"
-Environment=UNIHUB_DB_PROCESS_AUTHORITY=operations
+Environment="UNIHUB_DB_PROCESS_AUTHORITY=operations"
 ExecStart=/opt/Mobiup/unihub-retail/backend/venv/bin/python worker.py
 Restart=always
 RestartSec=5

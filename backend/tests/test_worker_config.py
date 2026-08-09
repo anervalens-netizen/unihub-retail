@@ -342,6 +342,32 @@ def test_specialized_workers_use_dedicated_queues(
     worker_instance.run.assert_called_once_with()
 
 
+def test_legacy_worker_drains_pre_95_default_queue(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    worker_instance = MagicMock()
+    create_worker = MagicMock(return_value=worker_instance)
+    monkeypatch.setattr(worker, "create_worker", create_worker)
+    monkeypatch.setenv("RETAIL_WORKER_ROLE", "legacy")
+
+    worker.main()
+
+    settings = create_worker.call_args.args[0]
+    assert settings["queue_name"] == worker.default_queue_name
+    assert {
+        entry if callable(entry) else entry.coroutine
+        for entry in settings["functions"]
+    } >= {
+        worker.grile_check_background,
+        worker.grile_agent_targets_background,
+    }
+    assert any(
+        getattr(entry, "coroutine", None) is worker.build_complex_export_background
+        for entry in settings["functions"]
+    )
+    worker_instance.run.assert_called_once_with()
+
+
 def test_worker_import_consumes_runtime_config(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

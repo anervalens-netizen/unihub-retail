@@ -129,5 +129,16 @@ fi
 printf '{"status":"passed","role":"operations","restart_count":1}\n' \
   >test-results/real-e2e-worker-recovery.json
 
-printf '{"status":"passed","database":"isolated","lease_model":"database-fenced"}\n' \
-  >test-results/real-e2e-import-overlap.json
+export RETAIL_WORKER_ROLE=imports
+"${PYTHON}" backend/worker.py >test-results/real-e2e-runtime/import-worker.log 2>&1 &
+WORKER_PID=$!
+sleep 3
+PYTHONPATH="${ROOT_DIR}/backend" "${PYTHON}" backend/scripts/run_import_overlap_gate.py \
+  test-results/real-e2e-import-overlap.json
+kill "${WORKER_PID}"
+wait "${WORKER_PID}" || true
+WORKER_PID=""
+if rg -n 'Traceback|Config invalid|ERROR' test-results/real-e2e-runtime/import-worker.log; then
+  printf 'Import worker overlap gate emitted an error.\n' >&2
+  exit 1
+fi

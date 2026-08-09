@@ -32,8 +32,6 @@ printf 'dist/\n' >"$BUILDER/.gitignore"
 cp "$SCRIPT_DIR/systemd/unihub-backend.service" "$BUILDER/ops/systemd/"
 cp "$SCRIPT_DIR/../unihub-worker.service" "$BUILDER/"
 cp "$SCRIPT_DIR/systemd/unihub-import-worker.service" "$BUILDER/ops/systemd/"
-cp "$SCRIPT_DIR/systemd/unihub-grile-worker.service" "$BUILDER/ops/systemd/"
-cp "$SCRIPT_DIR/systemd/unihub-export-worker.service" "$BUILDER/ops/systemd/"
 cp "$SCRIPT_DIR/systemd/unihub-retail-migrate.service" "$BUILDER/ops/systemd/"
 cp "$SCRIPT_DIR/observability/retail-process-scrape.yml" "$BUILDER/ops/observability/"
 git -C "$BUILDER" add .
@@ -41,6 +39,12 @@ git -C "$BUILDER" commit --quiet -m old
 OLD_SHA="$(git -C "$BUILDER" rev-parse HEAD)"
 git -C "$BUILDER" push --quiet -u origin main
 git --git-dir="$REMOTE" symbolic-ref HEAD refs/heads/main
+
+# Retail 9.5 introduces isolated Grile/export workers plus a one-release
+# compatibility consumer; the old release intentionally has none of them.
+cp "$SCRIPT_DIR/systemd/unihub-grile-worker.service" "$BUILDER/ops/systemd/"
+cp "$SCRIPT_DIR/systemd/unihub-export-worker.service" "$BUILDER/ops/systemd/"
+cp "$SCRIPT_DIR/systemd/unihub-legacy-worker.service" "$BUILDER/ops/systemd/"
 
 git clone --quiet "$REMOTE" "$LIVE"
 mkdir -p "$LIVE/dist"
@@ -61,10 +65,12 @@ for unit in \
   unihub-backend.service \
   unihub-worker.service \
   unihub-import-worker.service \
-  unihub-grile-worker.service \
-  unihub-export-worker.service \
   unihub-retail-migrate.service; do
   printf 'legacy unit %s\n' "$unit" >"$ROOT/etc/systemd/system/$unit"
+done
+mkdir -p "$ROOT/enabled"
+for unit in unihub-backend.service unihub-worker.service unihub-import-worker.service; do
+  : >"$ROOT/enabled/$unit"
 done
 
 mkdir -p "$BUILDER/docs"
@@ -178,9 +184,14 @@ for unit in \
   unihub-import-worker.service \
   unihub-grile-worker.service \
   unihub-export-worker.service \
+  unihub-legacy-worker.service \
   unihub-retail-migrate.service; do
   [[ -L "$ROOT/etc/systemd/system/$unit" ]]
   [[ "$(readlink -f "$ROOT/etc/systemd/system/$unit")" == "$ROOT/runtime-releases/$NEW_SHA/systemd/$unit" ]]
+done
+for unit in unihub-backend.service unihub-worker.service unihub-import-worker.service \
+  unihub-grile-worker.service unihub-export-worker.service unihub-legacy-worker.service; do
+  [[ -e "$ROOT/enabled/$unit" ]]
 done
 grep -Fxq 'PROMETHEUS_DOCKER_GATEWAY=172.23.0.1' "$OPS/prometheus/unihub-retail-network.env"
 grep -Fxq 'PROMETHEUS_DOCKER_SUBNET=172.23.0.0/16' "$OPS/prometheus/unihub-retail-network.env"
@@ -263,6 +274,10 @@ run_deploy rollback "$HANDLE"
 [[ "$(git -C "$LIVE" rev-parse HEAD)" == "$OLD_SHA" ]]
 [[ ! -L "$ROOT/etc/systemd/system/unihub-backend.service" ]]
 grep -Fxq 'legacy unit unihub-backend.service' "$ROOT/etc/systemd/system/unihub-backend.service"
+for unit in unihub-grile-worker.service unihub-export-worker.service unihub-legacy-worker.service; do
+  [[ ! -e "$ROOT/etc/systemd/system/$unit" ]]
+  [[ ! -e "$ROOT/enabled/$unit" ]]
+done
 [[ ! -e "$OPS/prometheus/unihub-retail-network.env" ]]
 [[ ! -e "$OPS/prometheus/scrape.d/unihub-retail.yml" ]]
 [[ "$(<"$LIVE/dist/index.html")" == "old frontend" ]]
