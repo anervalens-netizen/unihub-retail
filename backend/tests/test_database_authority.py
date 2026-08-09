@@ -250,7 +250,12 @@ def test_versioned_units_declare_exclusive_process_authorities() -> None:
     }
     for path, authority in expected.items():
         source = path.read_text(encoding="utf-8")
-        assert f'Environment="{DB_PROCESS_AUTHORITY_ENV}={authority}"' in source
+        assignments = {
+            line.removeprefix("Environment=").strip('"')
+            for line in source.splitlines()
+            if line.startswith("Environment=")
+        }
+        assert f"{DB_PROCESS_AUTHORITY_ENV}={authority}" in assignments
 
     import_unit = (root / "ops/systemd/unihub-import-worker.service").read_text(
         encoding="utf-8"
