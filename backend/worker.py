@@ -538,11 +538,8 @@ async def _startup_runtime(ctx: dict, *, worker_role: str) -> None:
     from services.grile_monthly import reconcile_monthly_operations
     from services.grile_monthly_google import GoogleSyncAdapter
     grile_run_repo = GrileRepository(pool)
-    interrupted_runs = await grile_run_repo.reconcile_interrupted_running_runs()
     reconciled_runs = await grile_run_repo.reconcile_stale_runs()
     reconciled_refreshes = await grile_run_repo.reconcile_store_refreshes()
-    if interrupted_runs:
-        logger.warning("Closed interrupted Grile runs at worker startup: %s", interrupted_runs)
     if reconciled_runs:
         logger.warning("Closed stale Grile runs at worker startup: %s", reconciled_runs)
     if reconciled_refreshes:

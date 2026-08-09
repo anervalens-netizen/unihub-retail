@@ -223,14 +223,12 @@ async def test_operations_worker_only_starts_visits_refresh(
     monkeypatch.setattr(services.export_operations, "sweep_orphan_export_artifacts", orphan_sweep)
     run_reconcile = AsyncMock(return_value=[192])
     refresh_reconcile = AsyncMock(return_value=[193])
-    restart_reconcile = AsyncMock(return_value=[191])
     monkeypatch.setattr(
         repositories.grile,
         "GrileRepository",
         lambda received_pool: SimpleNamespace(
             reconcile_stale_runs=run_reconcile,
             reconcile_store_refreshes=refresh_reconcile,
-            reconcile_interrupted_running_runs=restart_reconcile,
         )
         if received_pool is pool
         else None,
@@ -247,10 +245,58 @@ async def test_operations_worker_only_starts_visits_refresh(
     orphan_sweep.assert_not_awaited()
     run_reconcile.assert_not_awaited()
     refresh_reconcile.assert_not_awaited()
-    restart_reconcile.assert_not_awaited()
     assert ctx["db_pool"] is pool
     ctx["visits_snapshot_refresh_task"].cancel()
     await asyncio.gather(ctx["visits_snapshot_refresh_task"], return_exceptions=True)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("worker_role", ["grile", "legacy"])
+async def test_coexisting_grile_workers_reconcile_only_expired_leases(
+    monkeypatch: pytest.MonkeyPatch,
+    worker_role: str,
+) -> None:
+    pool = MagicMock()
+    stale_runs = AsyncMock(return_value=[])
+    stale_refreshes = AsyncMock(return_value=[])
+    monkeypatch.setattr(db.connection, "init_db_pool", AsyncMock())
+    monkeypatch.setattr(db.connection, "get_pool", AsyncMock(return_value=pool))
+    monkeypatch.setattr(
+        repositories.grile,
+        "GrileRepository",
+        lambda received_pool: SimpleNamespace(
+            reconcile_stale_runs=stale_runs,
+            reconcile_store_refreshes=stale_refreshes,
+        )
+        if received_pool is pool
+        else None,
+    )
+    adapter = MagicMock()
+    adapter.start = AsyncMock()
+    monkeypatch.setattr(
+        "services.grile_monthly_google.GoogleSyncAdapter",
+        lambda: adapter,
+    )
+    monthly_reconcile = AsyncMock()
+    monkeypatch.setattr(
+        "services.grile_monthly.reconcile_monthly_operations",
+        monthly_reconcile,
+    )
+    ctx: dict = {}
+
+    await worker._startup_runtime(ctx, worker_role=worker_role)
+
+    stale_runs.assert_awaited_once_with()
+    stale_refreshes.assert_awaited_once_with()
+    monthly_reconcile.assert_awaited_once_with(pool, adapter)
+    adapter.start.assert_awaited_once_with()
+    tasks = [
+        ctx["grile_monthly_reconcile_task"],
+        ctx["grile_run_reconcile_task"],
+    ]
+    for task in tasks:
+        task.cancel()
+    await asyncio.gather(*tasks, return_exceptions=True)
 
 
 @pytest.mark.asyncio

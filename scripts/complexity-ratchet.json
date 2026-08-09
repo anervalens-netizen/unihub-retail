@@ -8,7 +8,7 @@
   "legacy_max_lines": {
     "backend/logging_config.py": 794,
     "backend/repositories/exports.py": 889,
-    "backend/repositories/grile.py": 883,
+    "backend/repositories/grile.py": 867,
     "backend/repositories/grile_monthly_operations.py": 1572,
     "backend/repositories/salarii.py": 715,
     "backend/repositories/target_calculator.py": 772,
@@ -31,7 +31,7 @@
     "backend/services/reporting_refresh.py": 828,
     "backend/services/sales_generation_flow.py": 708,
     "backend/services/store_pnl_import.py": 725,
-    "backend/worker.py": 1147,
+    "backend/worker.py": 1144,
     "src/components/GrileSubtab.tsx": 675,
     "src/components/PnlSubtab.tsx": 706,
     "src/components/SalariiSubtab.tsx": 729,

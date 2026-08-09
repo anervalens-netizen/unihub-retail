@@ -14,7 +14,6 @@ from repositories.grile_refresh_reservations import (
 GRILE_RUN_QUEUED_LEASE_SECONDS = 2 * 60 * 60
 GRILE_RUN_RUNNING_LEASE_SECONDS = 5 * 60
 GRILE_RUN_LEASE_EXPIRED = "grile_run_lease_expired"
-GRILE_RUN_WORKER_RESTARTED = "grile_run_worker_restarted"
 GRILE_STORE_REFRESH_QUEUED_LEASE_SECONDS = 2 * 60 * 60
 GRILE_STORE_REFRESH_RUNNING_LEASE_SECONDS = 5 * 60
 GRILE_STORE_REFRESH_LEASE_EXPIRED = "grile_store_refresh_lease_expired"
@@ -268,21 +267,6 @@ class GrileRepository:
                 run_month=run_month,
                 queued_lease_seconds=queued_lease_seconds,
                 running_lease_seconds=running_lease_seconds,
-            )
-        return [int(row["id"]) for row in rows]
-
-    async def reconcile_interrupted_running_runs(self) -> list[int]:
-        """A fresh operations worker owns no run left running by its predecessor."""
-        async with self.pool.acquire() as conn:
-            rows = await conn.fetch(
-                """
-                UPDATE grile_runs AS operation
-                SET status = 'failed', error_message = $1,
-                    finished_at = now(), heartbeat_at = now()
-                WHERE operation.status = 'running'
-                RETURNING operation.id
-                """,
-                GRILE_RUN_WORKER_RESTARTED,
             )
         return [int(row["id"]) for row in rows]
 
