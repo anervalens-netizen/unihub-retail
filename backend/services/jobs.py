@@ -23,6 +23,7 @@ from redis.exceptions import TimeoutError as RedisTimeoutError
 
 from config import ConfigError, load_runtime_config
 from request_context import get_request_id
+from services.job_queue_routing import resolve_status_job
 
 
 logger = logging.getLogger(__name__)
@@ -983,8 +984,7 @@ async def get_job_status(job_id: str) -> JobResult:
             if job_id.startswith(("grile-check:", "grile-store-refresh:", "grile-monthly:", "grile-agent-targets:"))
             else None
         )
-        job = Job(job_id, pool, _queue_name=queue_name) if queue_name else Job(job_id, pool)
-        arq_status = await job.status()
+        job, arq_status = await resolve_status_job(job_id, pool, queue_name)
     except ARQ_TRANSPORT_ERRORS:
         return JobResult(
             job_id=job_id,

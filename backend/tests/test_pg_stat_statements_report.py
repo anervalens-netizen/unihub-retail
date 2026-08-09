@@ -66,6 +66,47 @@ def test_workload_checker_normalizes_temporary_writes_per_call() -> None:
     assert temp_regression["normalization"] == "per_call"
 
 
+def test_workload_checker_requires_review_for_frequent_candidate_only_statement() -> None:
+    candidate_only = {
+        "fingerprint_sha256": "b" * 64,
+        "calls": 5,
+        "mean_exec_time_ms": 1000,
+        "estimated_p95_exec_time_ms": 2000,
+        "temp_blocks_written": 500,
+        "query": "SELECT expensive_new_query()",
+    }
+    baseline: dict[str, Any] = {
+        "schema_version": 2,
+        "runtime_sha": "baseline",
+        "statements": [],
+    }
+    candidate: dict[str, Any] = {
+        "schema_version": 2,
+        "runtime_sha": "candidate",
+        "statements": [candidate_only],
+    }
+
+    result = compare_snapshots(baseline, candidate)
+
+    assert result["passed"] is False
+    assert result["candidate_only_reviewed_statements"] == 1
+    assert result["regressions"] == [
+        {
+            "fingerprint_sha256": "b" * 64,
+            "owner": "retail-platform",
+            "metric": "candidate_only_statement",
+            "normalization": "review_required",
+            "baseline": None,
+            "candidate": 5,
+            "absolute_delta": None,
+            "regression_ratio": None,
+            "limit_ratio": None,
+            "zero_baseline_delta_limit": None,
+            "query": "SELECT expensive_new_query()",
+        }
+    ]
+
+
 def test_normalize_query_compacts_and_bounds_statement_text() -> None:
     assert normalize_query(" SELECT\n  *   FROM reporting_item_day ") == (
         "SELECT * FROM reporting_item_day"

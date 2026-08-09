@@ -108,6 +108,7 @@ def compare_snapshots(
     compared = 0
     skipped_low_calls = 0
     missing_candidate = 0
+    candidate_only_reviewed = 0
     for fingerprint, old in baseline_index.items():
         statement_policy = _statement_policy(effective_policy, fingerprint)
         min_calls = (
@@ -155,6 +156,34 @@ def compare_snapshots(
                         "query": new.get("query") or old.get("query"),
                     }
                 )
+    for fingerprint, new in candidate_index.items():
+        if fingerprint in baseline_index:
+            continue
+        statement_policy = _statement_policy(effective_policy, fingerprint)
+        min_calls = (
+            min_baseline_calls
+            if min_baseline_calls is not None
+            else statement_policy["min_baseline_calls"]
+        )
+        calls = int(new.get("calls", 0) or 0)
+        if calls < min_calls:
+            continue
+        candidate_only_reviewed += 1
+        regressions.append(
+            {
+                "fingerprint_sha256": fingerprint,
+                "owner": statement_policy["owner"],
+                "metric": "candidate_only_statement",
+                "normalization": "review_required",
+                "baseline": None,
+                "candidate": calls,
+                "absolute_delta": None,
+                "regression_ratio": None,
+                "limit_ratio": None,
+                "zero_baseline_delta_limit": None,
+                "query": new.get("query"),
+            }
+        )
     regressions.sort(
         key=lambda item: (
             -(item["regression_ratio"] if item["regression_ratio"] is not None else float("inf")),
@@ -169,6 +198,7 @@ def compare_snapshots(
         "compared_statements": compared,
         "skipped_low_call_statements": skipped_low_calls,
         "missing_candidate_statements": missing_candidate,
+        "candidate_only_reviewed_statements": candidate_only_reviewed,
         "regressions": regressions,
         "passed": not regressions,
     }
