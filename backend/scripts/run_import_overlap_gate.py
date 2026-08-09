@@ -55,7 +55,11 @@ async def start_worker(log_path: Path) -> tuple[asyncio.subprocess.Process, Any]
         sys.executable,
         "worker.py",
         cwd=Path(__file__).resolve().parents[1],
-        env={**os.environ, "RETAIL_WORKER_ROLE": "imports"},
+        env={
+            **os.environ,
+            "RETAIL_WORKER_ROLE": "imports",
+            "ARQ_MAX_JOBS": "1",
+        },
         stdout=log_file,
         stderr=asyncio.subprocess.STDOUT,
     )
@@ -128,6 +132,7 @@ def write_evidence(output_path: Path) -> None:
                 "worker_role": "imports",
                 "queue": "arq:retail:imports",
                 "worker_processes": 2,
+                "max_jobs_per_worker": 1,
                 "concurrent_worker_claims": True,
                 "worker_processed_imports": 3,
                 "overlapping_imports": 2,
