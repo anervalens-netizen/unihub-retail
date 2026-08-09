@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 from decimal import Decimal
 from typing import Any
 
@@ -18,38 +17,14 @@ from services.campaigns.aggregation import (
     excluded_by_period_site_item,
     period_exclusions,
 )
-from services.campaigns.context import CampaignResponseSnapshot
+from services.campaigns.contracts import (
+    CampaignResponseSnapshot,
+    IncentiveProjection,
+    PromotionProjection,
+)
 from services.campaigns.money import money, money_float
-from services.campaigns.promotions import PromotionProjection
-from services.campaigns.response import calculation_status
+from services.campaigns.status import calculation_status
 from services.promotion_evaluation import PromotionEvaluationStatus
-
-
-@dataclass(frozen=True)
-class IncentiveProjection:
-    title: str = ""
-    description: str = ""
-    calculation_status: str = "not_configured"
-    warnings: list[str] = field(default_factory=list)
-    qty: int | None = 0
-    sold_qty: int = 0
-    value: Decimal | None = Decimal("0")
-    potential: Decimal | None = Decimal("0")
-    qualified_qty: int | None = 0
-    qualified_stores: int = 0
-    qualified_stores_full: int = 0
-    qualified_stores_half: int = 0
-    qualified_agents: int = 0
-    qualified_agents_full: int = 0
-    qualified_agents_half: int = 0
-    product_count: int = 0
-    categories: list[IncentiveCategory] = field(default_factory=list)
-    periods: list[IncentivePeriodStat] = field(default_factory=list)
-    category_breakdown: list[IncentiveCategoryBreakdown] = field(
-        default_factory=list
-    )
-    top_stores: list[PromoTopStore] = field(default_factory=list)
-    top_agents: list[IncentiveTopAgent] = field(default_factory=list)
 
 
 def incentive_item_codes(campaign: dict[str, Any] | None) -> list[str]:

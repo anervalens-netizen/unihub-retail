@@ -11,14 +11,13 @@ from models import (
     VisitReportResponse,
     VisitTreeResponse,
 )
-from repositories.visits_report_postgres import VisitsReportPostgresRepository
+from composition import build_visits_service
 from schemas.common import MonthStr
 from services.visits_report import VisitsReportService
 
 router = APIRouter(prefix="/api/visits-report", tags=["visits-report"])
 
-async def get_visits_service() -> VisitsReportService:
-    return VisitsReportService(VisitsReportPostgresRepository())
+get_visits_service = build_visits_service
 
 
 @router.get("", response_model=VisitReportResponse)

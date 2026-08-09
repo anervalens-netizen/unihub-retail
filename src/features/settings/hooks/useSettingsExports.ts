@@ -58,19 +58,19 @@ const exportOperationStorageKey = (identityKey: string) =>
 
 const readStoredExportOperationId = (identityKey: string): number | null => {
   if (typeof window === "undefined") return null;
-  const value = Number(window.localStorage.getItem(exportOperationStorageKey(identityKey)));
+  const value = Number(window.sessionStorage.getItem(exportOperationStorageKey(identityKey)));
   return Number.isInteger(value) && value > 0 ? value : null;
 };
 
 const storeExportOperationId = (identityKey: string, operationId: number) => {
   if (typeof window !== "undefined") {
-    window.localStorage.setItem(exportOperationStorageKey(identityKey), String(operationId));
+    window.sessionStorage.setItem(exportOperationStorageKey(identityKey), String(operationId));
   }
 };
 
 const clearStoredExportOperationId = (identityKey: string) => {
   if (typeof window !== "undefined") {
-    window.localStorage.removeItem(exportOperationStorageKey(identityKey));
+    window.sessionStorage.removeItem(exportOperationStorageKey(identityKey));
   }
 };
 

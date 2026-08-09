@@ -18,3 +18,15 @@ scrape_configs:
       - targets: ["__PROMETHEUS_DOCKER_GATEWAY__:9902"]
         labels:
           service_role: imports
+
+  - job_name: unihub-retail-grile
+    static_configs:
+      - targets: ["__PROMETHEUS_DOCKER_GATEWAY__:9903"]
+        labels:
+          service_role: grile
+
+  - job_name: unihub-retail-exports
+    static_configs:
+      - targets: ["__PROMETHEUS_DOCKER_GATEWAY__:9904"]
+        labels:
+          service_role: exports

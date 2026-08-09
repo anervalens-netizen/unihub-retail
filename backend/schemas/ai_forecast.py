@@ -5,12 +5,12 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import Field
+from schemas.common import StrictApiModel, MonthStr
 
-from schemas.common import MonthStr
 
 
-class AiForecastRunInfo(BaseModel):
+class AiForecastRunInfo(StrictApiModel):
     id: int
     forecast_month: MonthStr
     source_month: MonthStr
@@ -23,7 +23,7 @@ class AiForecastRunInfo(BaseModel):
     metadata: dict = Field(default_factory=dict)
 
 
-class AiForecastSummary(BaseModel):
+class AiForecastSummary(StrictApiModel):
     forecast_month: MonthStr
     source_month: MonthStr
     actual_last_date: date | None = None
@@ -37,7 +37,7 @@ class AiForecastSummary(BaseModel):
     delta_pct: Decimal | None = None
 
 
-class AiForecastManagerRow(BaseModel):
+class AiForecastManagerRow(StrictApiModel):
     manager: str
     store_count: int
     forecast_sales: Decimal
@@ -47,7 +47,7 @@ class AiForecastManagerRow(BaseModel):
     delta_pct: Decimal | None = None
 
 
-class AiForecastStoreRow(BaseModel):
+class AiForecastStoreRow(StrictApiModel):
     site_code: str
     locatie: str
     firma: str
@@ -60,7 +60,7 @@ class AiForecastStoreRow(BaseModel):
     delta_pct: Decimal | None = None
 
 
-class AiForecastDailyPoint(BaseModel):
+class AiForecastDailyPoint(StrictApiModel):
     forecast_date: date
     forecast_sales: Decimal
     actual_sales: Decimal
@@ -69,7 +69,7 @@ class AiForecastDailyPoint(BaseModel):
     cumulative_actual: Decimal
 
 
-class AiForecastResponse(BaseModel):
+class AiForecastResponse(StrictApiModel):
     run: AiForecastRunInfo
     summary: AiForecastSummary
     managers: list[AiForecastManagerRow] = Field(default_factory=list)
@@ -77,7 +77,7 @@ class AiForecastResponse(BaseModel):
     daily: list[AiForecastDailyPoint] = Field(default_factory=list)
 
 
-class AiForecastRollingSummary(BaseModel):
+class AiForecastRollingSummary(StrictApiModel):
     source_month: MonthStr
     start_month: MonthStr
     end_month: MonthStr
@@ -89,7 +89,7 @@ class AiForecastRollingSummary(BaseModel):
     delta_pct: Decimal | None = None
 
 
-class AiForecastRollingMonthlyPoint(BaseModel):
+class AiForecastRollingMonthlyPoint(StrictApiModel):
     forecast_month: MonthStr
     store_count: int
     forecast_sales: Decimal
@@ -98,7 +98,7 @@ class AiForecastRollingMonthlyPoint(BaseModel):
     delta_pct: Decimal | None = None
 
 
-class AiForecastRollingManagerRow(BaseModel):
+class AiForecastRollingManagerRow(StrictApiModel):
     manager: str
     store_count: int
     forecast_sales: Decimal
@@ -107,7 +107,7 @@ class AiForecastRollingManagerRow(BaseModel):
     delta_pct: Decimal | None = None
 
 
-class AiForecastRollingStoreRow(BaseModel):
+class AiForecastRollingStoreRow(StrictApiModel):
     site_code: str
     locatie: str
     firma: str
@@ -119,7 +119,7 @@ class AiForecastRollingStoreRow(BaseModel):
     delta_pct: Decimal | None = None
 
 
-class AiForecastRollingResponse(BaseModel):
+class AiForecastRollingResponse(StrictApiModel):
     runs: list[AiForecastRunInfo] = Field(default_factory=list)
     summary: AiForecastRollingSummary
     months: list[AiForecastRollingMonthlyPoint] = Field(default_factory=list)

@@ -144,6 +144,35 @@ async def test_sales_job_status_uses_import_worker_queue(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("job_id", "queue_name"),
+    [
+        ("export-complex:7", jobs_service.EXPORT_QUEUE_NAME),
+        ("grile-check:8", jobs_service.GRILE_QUEUE_NAME),
+        ("grile-store-refresh:9", jobs_service.GRILE_QUEUE_NAME),
+        ("grile-monthly:10", jobs_service.GRILE_QUEUE_NAME),
+        ("grile-agent-targets:11", jobs_service.GRILE_QUEUE_NAME),
+    ],
+)
+async def test_isolated_job_status_uses_owning_queue(
+    monkeypatch: pytest.MonkeyPatch,
+    job_id: str,
+    queue_name: str,
+) -> None:
+    pool = MagicMock()
+    job = MagicMock()
+    job.status = AsyncMock(return_value=ArqJobStatus.queued)
+    job_factory = MagicMock(return_value=job)
+    monkeypatch.setattr(jobs_service, "get_arq_pool", AsyncMock(return_value=pool))
+    monkeypatch.setattr(jobs_service, "Job", job_factory)
+
+    result = await jobs_service.get_job_status(job_id)
+
+    assert result.status is JobStatus.QUEUED
+    job_factory.assert_called_once_with(job_id, pool, _queue_name=queue_name)
+
+
+@pytest.mark.asyncio
 async def test_import_history_maps_repository_rows() -> None:
     now = datetime.now(timezone.utc)
     repo = MagicMock()

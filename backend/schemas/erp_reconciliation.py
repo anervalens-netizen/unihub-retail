@@ -4,15 +4,15 @@ from datetime import date
 from decimal import Decimal
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import Field
+from schemas.common import StrictApiModel, MonthStr
 
-from schemas.common import MonthStr
 
 
 ReconciliationStatus = Literal["ok", "explained", "difference", "not_comparable"]
 
 
-class ErpReconciliationMetric(BaseModel):
+class ErpReconciliationMetric(StrictApiModel):
     key: str
     label: str
     report_value: Decimal | None = None
@@ -23,7 +23,7 @@ class ErpReconciliationMetric(BaseModel):
     note: str | None = None
 
 
-class ErpReconciliationIssue(BaseModel):
+class ErpReconciliationIssue(StrictApiModel):
     severity: Literal["warning", "error"]
     scope: Literal["report", "store", "agent"]
     site_code: str | None = None
@@ -35,7 +35,7 @@ class ErpReconciliationIssue(BaseModel):
     note: str
 
 
-class ErpReconciliationAppMetric(BaseModel):
+class ErpReconciliationAppMetric(StrictApiModel):
     key: str
     label: str
     value: Decimal | None = None
@@ -43,7 +43,7 @@ class ErpReconciliationAppMetric(BaseModel):
     note: str
 
 
-class ErpReconciliationResponse(BaseModel):
+class ErpReconciliationResponse(StrictApiModel):
     status: Literal["ok", "differences"]
     import_month: MonthStr
     report_cutoff_date: date

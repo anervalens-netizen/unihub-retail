@@ -5,14 +5,13 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 
-from db.connection import get_pool
+from composition import build_campaigns_service
 from schemas.common import MonthStr
 from schemas.campaigns import (
     CampaignSnapshot,
     CampaignsPromotionsResponse,
     FocusHistoryResponse,
 )
-from repositories.campaigns import CampaignsRepository
 from services.campaigns import (
     CampaignDateRangeError,
     CampaignsService,
@@ -37,9 +36,7 @@ async def get_campaigns_deadline(request: Request) -> RequestDeadline:
 async def get_campaigns_service(
     _deadline: RequestDeadline = Depends(get_campaigns_deadline),
 ) -> CampaignsService:
-    pool = await get_pool()
-    repo = CampaignsRepository(pool)
-    return CampaignsService(repo, pool)
+    return await build_campaigns_service()
 
 @router.get("/overview", response_model=CampaignSnapshot)
 async def get_campaign_overview(

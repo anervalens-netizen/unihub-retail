@@ -1,10 +1,10 @@
 # Retail systemd units
 
 This directory plus repository-root `unihub-worker.service` are the versioned
-source of truth for the Retail web, operations worker, dedicated import worker
-and one-shot migration services. The exact-SHA deploy stores each reviewed set
+source of truth for the Retail web, four role-isolated workers (operations,
+imports, Grile and exports) and one-shot migration service. The exact-SHA deploy stores each reviewed set
 under `/var/lib/unihub-retail-deploy/runtime-releases/<SHA>/systemd/` and
-atomically switches the four links under `/etc/systemd/system`.
+atomically switches the six links under `/etc/systemd/system`.
 
 Do not copy these units independently during a release. The artifact deploy
 backs up the active links, switches the exact-SHA set, runs `daemon-reload`,
@@ -18,6 +18,8 @@ systemd-analyze verify \
   ops/systemd/unihub-backend.service \
   unihub-worker.service \
   ops/systemd/unihub-import-worker.service \
+  ops/systemd/unihub-grile-worker.service \
+  ops/systemd/unihub-export-worker.service \
   ops/systemd/unihub-retail-migrate.service
 ```
 
@@ -31,14 +33,14 @@ Prometheus remains on its Docker bridge. Before stopping Retail, the deploy
 detects and validates that bridge's single private IPv4 gateway/subnet and
 requires the shared read-only mount `/opt/Mobiup/ops/prometheus/scrape.d` ->
 `/etc/prometheus/scrape.d`. It writes the non-secret, versioned
-`/opt/Mobiup/ops/prometheus/unihub-retail-network.env`; both workers bind only
+`/opt/Mobiup/ops/prometheus/unihub-retail-network.env`; all workers bind only
 to the detected gateway, never loopback or `0.0.0.0`.
 
 The web `/metrics` route trusts only the direct socket peer and returns 200
 solely inside the detected Prometheus subnet; forwarded headers are ignored
 and every other peer receives 404. The exact-SHA fragment supplies the web,
-operations and import targets on ports 9898, 9901 and 9902. `promtool`, HUP
-reload and all three targets UP are deployment gates.
+operations, import, Grile and export targets on ports 9898 and 9901–9904.
+`promtool`, HUP reload and all five targets UP are deployment gates.
 
 ## P0 lifecycle și evidence
 

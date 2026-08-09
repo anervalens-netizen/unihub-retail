@@ -3,14 +3,14 @@ from __future__ import annotations
 
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import ConfigDict, Field
+from schemas.common import StrictApiModel, MonthStr
 
-from schemas.common import MonthStr
 
 SalaryPersonId = Annotated[str, Field(pattern=r"^sp1_[0-9a-f]{64}$")]
 
 
-class _PublicModel(BaseModel):
+class _PublicModel(StrictApiModel):
     model_config = ConfigDict(extra="forbid")
 
 

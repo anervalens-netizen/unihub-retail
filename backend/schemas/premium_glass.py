@@ -3,12 +3,12 @@ from __future__ import annotations
 from decimal import Decimal
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import Field
+from schemas.common import StrictApiModel, MonthStr
 
-from schemas.common import MonthStr
 
 
-class PremiumGlassSummary(BaseModel):
+class PremiumGlassSummary(StrictApiModel):
     month: MonthStr
     total_qty: int = 0
     total_sales: Decimal = Decimal(0)
@@ -25,7 +25,7 @@ class PremiumGlassSummary(BaseModel):
     target_model_count: int = 0
 
 
-class PremiumGlassModelStat(BaseModel):
+class PremiumGlassModelStat(StrictApiModel):
     model_key: str
     model_label: str
     premium_qty: int = 0
@@ -39,7 +39,7 @@ class PremiumGlassModelStat(BaseModel):
     regular_item_count: int = 0
 
 
-class PremiumGlassSurfaceStat(BaseModel):
+class PremiumGlassSurfaceStat(StrictApiModel):
     surface_key: Literal["screen", "camera"]
     surface_label: str
     premium_qty: int = 0
@@ -51,7 +51,7 @@ class PremiumGlassSurfaceStat(BaseModel):
     premium_qty_share_pct: Decimal | None = None
 
 
-class PremiumGlassStoreStat(BaseModel):
+class PremiumGlassStoreStat(StrictApiModel):
     site_code: str
     locatie: str
     firma: str
@@ -64,7 +64,7 @@ class PremiumGlassStoreStat(BaseModel):
     premium_qty_share_pct: Decimal | None = None
 
 
-class PremiumGlassManagerStat(BaseModel):
+class PremiumGlassManagerStat(StrictApiModel):
     manager: str
     premium_qty: int = 0
     regular_qty: int = 0
@@ -77,7 +77,7 @@ class PremiumGlassManagerStat(BaseModel):
     agent_count: int = 0
 
 
-class PremiumGlassAgentStat(BaseModel):
+class PremiumGlassAgentStat(StrictApiModel):
     agent: str
     site_code: str
     locatie: str
@@ -91,7 +91,7 @@ class PremiumGlassAgentStat(BaseModel):
     premium_qty_share_pct: Decimal | None = None
 
 
-class PremiumGlassProductStat(BaseModel):
+class PremiumGlassProductStat(StrictApiModel):
     item_code: str
     item_name: str
     is_premium: bool
@@ -101,7 +101,7 @@ class PremiumGlassProductStat(BaseModel):
     store_count: int = 0
 
 
-class PremiumGlassAnalysis(BaseModel):
+class PremiumGlassAnalysis(StrictApiModel):
     summary: PremiumGlassSummary
     models: list[PremiumGlassModelStat] = Field(default_factory=list)
     surfaces: list[PremiumGlassSurfaceStat] = Field(default_factory=list)

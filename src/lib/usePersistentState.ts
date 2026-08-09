@@ -12,7 +12,7 @@ export interface PersistentStateOptions<T> {
 function getBrowserStorage(): PersistentStorage | null {
   if (typeof window === 'undefined') return null;
   try {
-    return window.localStorage;
+    return window.sessionStorage;
   } catch {
     return null;
   }

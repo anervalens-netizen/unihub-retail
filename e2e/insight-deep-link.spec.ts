@@ -13,11 +13,11 @@ test.describe('Insight contextual deep links', () => {
 
     await expect(page.getByRole('tab', { name: 'Istoric' })).toHaveAttribute('aria-selected', 'true');
     await expect
-      .poll(() => page.evaluate(() => localStorage.getItem('unihub_current_month')))
+      .poll(() => page.evaluate(() => sessionStorage.getItem('unihub_current_month')))
       .toBe('2026-05');
     await expect
       .poll(() =>
-        page.evaluate(() => JSON.parse(localStorage.getItem('unihub_hub_filters') ?? '{}')),
+        page.evaluate(() => JSON.parse(sessionStorage.getItem('unihub_hub_filters') ?? '{}')),
       )
       .toEqual({
         firma: 'Firma 1',

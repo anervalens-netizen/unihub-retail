@@ -2,18 +2,14 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Query
 
-from db.connection import get_pool
+from composition import build_filters_service
 from schemas.common import MonthStr
 from models import FilterOptions
-from repositories.filters import FiltersRepository
 from services.filter_options import FilterOptionsService
 
 router = APIRouter(prefix="/api/filters", tags=["filters"])
 
-async def get_filters_service() -> FilterOptionsService:
-    pool = await get_pool()
-    repo = FiltersRepository(pool)
-    return FilterOptionsService(repo)
+get_filters_service = build_filters_service
 
 
 def clear_filter_options_cache() -> None:

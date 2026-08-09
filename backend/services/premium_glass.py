@@ -365,7 +365,7 @@ async def get_premium_glass_analysis(
 
     model_rows = [
         {
-            **bucket,
+            **{name: value for name, value in bucket.items() if name not in {"premium_items", "regular_items"}},
             "model_key": key[0],
             "model_label": key[1],
             "premium_qty_share_pct": _share_pct(bucket["premium_qty"], bucket["total_qty"]),
@@ -376,21 +376,21 @@ async def get_premium_glass_analysis(
     ]
     store_rows = [
         {
-            **bucket,
+            **{name: value for name, value in bucket.items() if name not in {"stores", "agents"}},
             "premium_qty_share_pct": _share_pct(bucket["premium_qty"], bucket["total_qty"]),
         }
         for bucket in store_buckets.values()
     ]
     surface_rows = [
         {
-            **bucket,
+            **{name: value for name, value in bucket.items() if name != "stores"},
             "premium_qty_share_pct": _share_pct(bucket["premium_qty"], bucket["total_qty"]),
         }
         for bucket in surface_buckets.values()
     ]
     manager_rows = [
         {
-            **bucket,
+            **{name: value for name, value in bucket.items() if name not in {"stores", "agents"}},
             "premium_qty_share_pct": _share_pct(bucket["premium_qty"], bucket["total_qty"]),
             "store_count": len(bucket["stores"]),
             "agent_count": len(bucket["agents"]),
@@ -406,7 +406,7 @@ async def get_premium_glass_analysis(
     ]
     product_rows = [
         {
-            **bucket,
+            **{name: value for name, value in bucket.items() if name != "stores"},
             "model_labels": sorted(product_models[bucket["item_code"]]),
             "store_count": len(bucket["stores"]),
         }

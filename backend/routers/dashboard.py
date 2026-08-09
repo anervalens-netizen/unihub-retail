@@ -5,7 +5,7 @@ from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 
-from db.connection import get_pool
+from composition import build_dashboard_service
 from schemas.dashboard import (
     DailySalesPoint,
     DashboardAllBatchRequest,
@@ -19,7 +19,6 @@ from schemas.dashboard import (
 )
 from schemas.premium_glass import PremiumGlassAnalysis
 from schemas.common import MonthStr
-from repositories.dashboard import DashboardRepository
 from services.dashboard_filters import canonical_dashboard_site_codes
 from services.dashboard_service import DashboardService
 from services.request_deadline import RequestDeadline, RequestDeadlineExceeded
@@ -40,10 +39,7 @@ async def get_dashboard_service(
     request: Request,
     _deadline: RequestDeadline = Depends(get_dashboard_deadline),
 ) -> DashboardService:
-    runtime_config = request.app.state.runtime_config
-    pool = await get_pool()
-    repo = DashboardRepository(pool)
-    return DashboardService(repo, pool, runtime_config)
+    return await build_dashboard_service(request.app.state.runtime_config)
 
 
 async def _run_dashboard(

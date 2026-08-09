@@ -14,6 +14,9 @@ from config import load_runtime_config
 from logging_config import setup_logging
 from request_context import bind_request_id, reset_request_id
 from services.jobs import (
+    EXPORT_QUEUE_NAME,
+    GRILE_QUEUE_NAME,
+    OPERATIONS_QUEUE_NAME,
     SALES_IMPORT_QUEUE_NAME,
     cleanup_stale_sales_import_spool_files,
     get_valkey_settings,
@@ -29,6 +32,7 @@ logger = logging.getLogger(__name__)
 VISITS_SNAPSHOT_REFRESH_SECONDS = 15 * 60
 EXPORT_CLEANUP_SECONDS = 5 * 60
 GRILE_RUN_RECONCILE_SECONDS = 60
+QUEUE_METRICS_SECONDS = 15
 
 
 async def _refresh_visits_snapshot_once(pool: Any) -> int:
@@ -45,6 +49,11 @@ async def _refresh_visits_snapshot_once(pool: Any) -> int:
             refreshed = await sync_visits_snapshot(conn)
     logger.info("Refreshed %d visits snapshot rows", refreshed)
     return refreshed
+
+
+async def refresh_visits_snapshot_background(ctx: dict) -> dict[str, int]:
+    """Explicit operations-queue entrypoint; periodic refresh uses the same fence."""
+    return {"rows": await _refresh_visits_snapshot_once(ctx["db_pool"])}
 
 
 async def _visits_snapshot_refresh_loop(ctx: dict) -> None:
@@ -135,6 +144,25 @@ async def _export_cleanup_loop(ctx: dict) -> None:
         return
     except Exception:
         logger.exception("Durable export cleanup loop stopped unexpectedly")
+
+
+async def _queue_metrics_loop(ctx: dict) -> None:
+    from observability.worker_metrics import observe_queue
+
+    stop = ctx["queue_metrics_stop"]
+    while not stop.is_set():
+        try:
+            await observe_queue(
+                ctx["redis"],
+                role=ctx["worker_role"],
+                queue_name=ctx["queue_name"],
+            )
+        except Exception:
+            logger.exception("Worker queue metrics refresh failed")
+        try:
+            await asyncio.wait_for(stop.wait(), timeout=QUEUE_METRICS_SECONDS)
+        except TimeoutError:
+            pass
 
 
 async def import_sales_background(
@@ -488,10 +516,16 @@ async def startup(ctx: dict) -> None:
     raw_worker_role = os.getenv("RETAIL_WORKER_ROLE", "operations").strip().lower()
     runtime = load_runtime_config("import" if raw_worker_role == "imports" else "worker")
     worker_role = runtime.worker_role or "operations"
+    ctx["worker_role"] = worker_role
     try:
         from observability.worker_metrics import start_worker_metrics
 
         ctx["worker_metrics_server"] = start_worker_metrics(worker_role)
+        if "redis" in ctx and "queue_name" in ctx:
+            ctx["queue_metrics_stop"] = asyncio.Event()
+            ctx["queue_metrics_task"] = asyncio.create_task(
+                _queue_metrics_loop(ctx), name=f"{worker_role}-queue-metrics"
+            )
         await _startup_runtime(ctx, worker_role=worker_role)
     except BaseException:
         logger.exception("Worker startup failed; cleaning partially started resources")
@@ -522,15 +556,34 @@ async def _startup_runtime(ctx: dict, *, worker_role: str) -> None:
     if worker_role == "imports":
         return
 
-    from repositories.export_operations import ExportOperationsRepository
+    if worker_role == "exports":
+        from repositories.export_operations import ExportOperationsRepository
+        from services.export_operations import cleanup_export_operations, sweep_orphan_export_artifacts
+
+        export_repo = ExportOperationsRepository(pool)
+        await cleanup_export_operations(export_repo)
+        await sweep_orphan_export_artifacts(export_repo)
+        ctx["export_cleanup_stop"] = asyncio.Event()
+        ctx["export_cleanup_task"] = asyncio.create_task(
+            _export_cleanup_loop(ctx), name="durable-export-cleanup"
+        )
+        return
+
+    if worker_role == "operations":
+        try:
+            await _refresh_visits_snapshot_once(pool)
+        except Exception:
+            logger.exception("Initial visits snapshot refresh failed; last good projection retained")
+        ctx["visits_snapshot_refresh_stop"] = asyncio.Event()
+        ctx["visits_snapshot_refresh_task"] = asyncio.create_task(
+            _visits_snapshot_refresh_loop(ctx), name="visits-snapshot-refresh"
+        )
+        return
+
     from repositories.grile import GrileRepository
-    from services.export_operations import cleanup_export_operations, sweep_orphan_export_artifacts
     from services.grile_monthly import reconcile_monthly_operations
     from services.grile_monthly_google import GoogleSyncAdapter
 
-    export_repo = ExportOperationsRepository(pool)
-    await cleanup_export_operations(export_repo)
-    await sweep_orphan_export_artifacts(export_repo)
     grile_run_repo = GrileRepository(pool)
     interrupted_runs = await grile_run_repo.reconcile_interrupted_running_runs()
     reconciled_runs = await grile_run_repo.reconcile_stale_runs()
@@ -545,19 +598,10 @@ async def _startup_runtime(ctx: dict, *, worker_role: str) -> None:
             reconciled_refreshes,
         )
 
-    ctx["export_cleanup_stop"] = asyncio.Event()
-    ctx["export_cleanup_task"] = asyncio.create_task(
-        _export_cleanup_loop(ctx),
-        name="durable-export-cleanup",
-    )
     adapter = GoogleSyncAdapter()
     ctx["grile_monthly_google"] = adapter
     await adapter.start()
     await reconcile_monthly_operations(pool, adapter)
-    try:
-        await _refresh_visits_snapshot_once(pool)
-    except Exception:
-        logger.exception("Initial visits snapshot refresh failed; last good projection retained")
     ctx["grile_monthly_reconcile_stop"] = asyncio.Event()
     ctx["grile_monthly_reconcile_task"] = asyncio.create_task(
         _grile_monthly_reconciliation_loop(ctx),
@@ -567,11 +611,6 @@ async def _startup_runtime(ctx: dict, *, worker_role: str) -> None:
     ctx["grile_run_reconcile_task"] = asyncio.create_task(
         _grile_run_reconciliation_loop(ctx),
         name="grile-run-reconciler",
-    )
-    ctx["visits_snapshot_refresh_stop"] = asyncio.Event()
-    ctx["visits_snapshot_refresh_task"] = asyncio.create_task(
-        _visits_snapshot_refresh_loop(ctx),
-        name="visits-snapshot-refresh",
     )
 
 
@@ -1080,6 +1119,14 @@ async def shutdown(ctx: dict) -> None:
     from db.connection import close_db_pool
     from services.jobs import close_arq_pool
 
+    queue_metrics_stop = ctx.get("queue_metrics_stop")
+    queue_metrics_task = ctx.get("queue_metrics_task")
+    if queue_metrics_stop is not None:
+        queue_metrics_stop.set()
+    if queue_metrics_task is not None:
+        queue_metrics_task.cancel()
+        await asyncio.gather(queue_metrics_task, return_exceptions=True)
+
     export_cleanup_task = ctx.get("export_cleanup_task")
     export_cleanup_stop = ctx.get("export_cleanup_stop")
     if export_cleanup_stop is not None:
@@ -1137,37 +1184,48 @@ def main() -> None:
     raw_worker_role = os.getenv("RETAIL_WORKER_ROLE", "operations").strip().lower()
     runtime = load_runtime_config("import" if raw_worker_role == "imports" else "worker")
     worker_role = runtime.worker_role or "operations"
-    functions = (
-        [
+    functions_by_role = {
+        "imports": [
             import_sales_background,
             import_promo_actuals_background,
             reconcile_erp_background,
             promote_sales_background,
             publish_campaign_reporting_background,
-        ]
-        if worker_role == "imports"
-        else [
-            func(build_complex_export_background, max_tries=1),
+        ],
+        "grile": [
             grile_check_background,
             func(grile_store_refresh_background, max_tries=1),
             func(grile_monthly_background, timeout=runtime.arq_job_timeout_seconds, max_tries=1),
             grile_agent_targets_background,
-        ]
-    )
+        ],
+        "exports": [func(build_complex_export_background, max_tries=1)],
+        "operations": [func(refresh_visits_snapshot_background, max_tries=1)],
+    }
+    functions = functions_by_role[worker_role]
+    queue_name = {
+        "imports": SALES_IMPORT_QUEUE_NAME,
+        "grile": GRILE_QUEUE_NAME,
+        "exports": EXPORT_QUEUE_NAME,
+        "operations": OPERATIONS_QUEUE_NAME,
+    }[worker_role]
+    from observability.worker_metrics import observe_job_end, observe_job_start
+
     worker_settings: dict[str, Any] = {
         "redis_settings": get_valkey_settings(),
         "functions": functions,
         "on_startup": startup,
         "on_shutdown": shutdown,
+        "on_job_start": observe_job_start,
+        "after_job_end": observe_job_end,
         "job_completion_wait": runtime.arq_completion_wait_seconds,
         "max_jobs": runtime.arq_max_jobs,
         "job_timeout": runtime.arq_job_timeout_seconds,
         "keep_result": runtime.arq_keep_result_seconds,
         "health_check_interval": 30,
         "retry_jobs": True,
+        "ctx": {"worker_role": worker_role, "queue_name": queue_name},
     }
-    if worker_role == "imports":
-        worker_settings["queue_name"] = SALES_IMPORT_QUEUE_NAME
+    worker_settings["queue_name"] = queue_name
     worker = create_worker(worker_settings)
     worker.run()
 

@@ -14,7 +14,7 @@ function normalizeMonths(months: string[]): string[] {
 
 export function clearAvailableMonthsCache(): void {
   try {
-    window.localStorage.removeItem(AVAILABLE_MONTHS_CACHE_KEY);
+    window.sessionStorage.removeItem(AVAILABLE_MONTHS_CACHE_KEY);
   } catch {
     // Storage can be disabled; the in-memory query cache is cleared separately.
   }
@@ -48,7 +48,7 @@ export type AvailableMonthsState = {
 
 export function readCachedMonths(identityKey: string): CachedMonths | null {
   try {
-    const raw = window.localStorage.getItem(AVAILABLE_MONTHS_CACHE_KEY);
+    const raw = window.sessionStorage.getItem(AVAILABLE_MONTHS_CACHE_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as Partial<CachedMonths>;
     if (
@@ -78,7 +78,7 @@ function writeCachedMonths(months: string[], identityKey: string): void {
       months: normalizedMonths,
       savedAt: new Date().toISOString(),
     };
-    window.localStorage.setItem(AVAILABLE_MONTHS_CACHE_KEY, JSON.stringify(payload));
+    window.sessionStorage.setItem(AVAILABLE_MONTHS_CACHE_KEY, JSON.stringify(payload));
   } catch {
     // Storage is an optimization; a disabled or full browser cache is safe.
   }

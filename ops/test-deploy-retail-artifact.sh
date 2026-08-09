@@ -25,11 +25,15 @@ git -C "$BUILDER" remote add origin "$REMOTE"
 
 mkdir -p "$BUILDER/backend" "$BUILDER/ops/systemd" "$BUILDER/ops/observability"
 printf '{"name":"retail-deploy-test"}\n' >"$BUILDER/package.json"
+cp "$SCRIPT_DIR/../package-lock.json" "$BUILDER/package-lock.json"
+cp "$SCRIPT_DIR/../backend/requirements.lock" "$BUILDER/backend/requirements.lock"
 printf 'print("old")\n' >"$BUILDER/backend/main.py"
 printf 'dist/\n' >"$BUILDER/.gitignore"
 cp "$SCRIPT_DIR/systemd/unihub-backend.service" "$BUILDER/ops/systemd/"
 cp "$SCRIPT_DIR/../unihub-worker.service" "$BUILDER/"
 cp "$SCRIPT_DIR/systemd/unihub-import-worker.service" "$BUILDER/ops/systemd/"
+cp "$SCRIPT_DIR/systemd/unihub-grile-worker.service" "$BUILDER/ops/systemd/"
+cp "$SCRIPT_DIR/systemd/unihub-export-worker.service" "$BUILDER/ops/systemd/"
 cp "$SCRIPT_DIR/systemd/unihub-retail-migrate.service" "$BUILDER/ops/systemd/"
 cp "$SCRIPT_DIR/observability/retail-process-scrape.yml" "$BUILDER/ops/observability/"
 git -C "$BUILDER" add .
@@ -57,6 +61,8 @@ for unit in \
   unihub-backend.service \
   unihub-worker.service \
   unihub-import-worker.service \
+  unihub-grile-worker.service \
+  unihub-export-worker.service \
   unihub-retail-migrate.service; do
   printf 'legacy unit %s\n' "$unit" >"$ROOT/etc/systemd/system/$unit"
 done
@@ -170,6 +176,8 @@ for unit in \
   unihub-backend.service \
   unihub-worker.service \
   unihub-import-worker.service \
+  unihub-grile-worker.service \
+  unihub-export-worker.service \
   unihub-retail-migrate.service; do
   [[ -L "$ROOT/etc/systemd/system/$unit" ]]
   [[ "$(readlink -f "$ROOT/etc/systemd/system/$unit")" == "$ROOT/runtime-releases/$NEW_SHA/systemd/$unit" ]]
@@ -177,7 +185,7 @@ done
 grep -Fxq 'PROMETHEUS_DOCKER_GATEWAY=172.23.0.1' "$OPS/prometheus/unihub-retail-network.env"
 grep -Fxq 'PROMETHEUS_DOCKER_SUBNET=172.23.0.0/16' "$OPS/prometheus/unihub-retail-network.env"
 grep -Fxq 'WORKER_METRICS_HOST=172.23.0.1' "$OPS/prometheus/unihub-retail-network.env"
-[[ "$(grep -Fc '172.23.0.1:' "$OPS/prometheus/scrape.d/unihub-retail.yml")" -eq 3 ]]
+[[ "$(grep -Fc '172.23.0.1:' "$OPS/prometheus/scrape.d/unihub-retail.yml")" -eq 5 ]]
 ! grep -Eq '__PROMETHEUS_DOCKER_GATEWAY__|0\.0\.0\.0|127\.0\.0\.1' \
   "$OPS/prometheus/scrape.d/unihub-retail.yml"
 [[ "$(<"$LIVE/docs/AUDIT_TEHNIC_RETAIL_UNIHUB_REAUDIT_2026-07-15.md")" == "published audit" ]]

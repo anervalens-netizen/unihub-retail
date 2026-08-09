@@ -4,16 +4,16 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import ConfigDict, Field
+from schemas.common import StrictApiModel
 from starlette.background import BackgroundTask
 
 from auth import AuthClaims
-from db.connection import get_pool
+from composition import build_export_operations_service, build_exports_service
 from models import ExportOperationResponse, ExportOperationUnavailableResponse
 from permissions import require_report_export_access
 from rate_limits import REPORT_EXPORT_LIMIT, rate_limit
-from repositories.export_operations import ExportOperationCapacityError
-from repositories.exports import ExportsRepository
+from domain.export_operations import ExportOperationCapacityError
 from services.export_operations import (
     ExportArtifactExpiredError,
     ExportArtifactIntegrityError,
@@ -26,7 +26,7 @@ from services.exports import ExportValidationError, ExportsService
 router = APIRouter(prefix="/api/exports", tags=["exports"])
 
 
-class ExportFilters(BaseModel):
+class ExportFilters(StrictApiModel):
     model_config = ConfigDict(extra="forbid")
 
     firma: list[str] = Field(default_factory=list)
@@ -36,7 +36,7 @@ class ExportFilters(BaseModel):
     agent: list[str] = Field(default_factory=list)
 
 
-class ExportRequest(BaseModel):
+class ExportRequest(StrictApiModel):
     model_config = ConfigDict(extra="forbid")
 
     export_mode: str = "table"
@@ -54,7 +54,7 @@ class ExportRequest(BaseModel):
     filename: str | None = None
 
 
-class ExportColumnDef(BaseModel):
+class ExportColumnDef(StrictApiModel):
     model_config = ConfigDict(extra="forbid")
 
     key: str
@@ -63,7 +63,7 @@ class ExportColumnDef(BaseModel):
     group: str
 
 
-class ExportDataset(BaseModel):
+class ExportDataset(StrictApiModel):
     model_config = ConfigDict(extra="forbid")
 
     key: str
@@ -72,14 +72,14 @@ class ExportDataset(BaseModel):
     dimensions: list[ExportColumnDef]
 
 
-class ExportComparisonLevel(BaseModel):
+class ExportComparisonLevel(StrictApiModel):
     model_config = ConfigDict(extra="forbid")
 
     key: str
     label: str
 
 
-class ExportCatalogResponse(BaseModel):
+class ExportCatalogResponse(StrictApiModel):
     model_config = ConfigDict(extra="forbid")
 
     datasets: list[ExportDataset]
@@ -89,7 +89,7 @@ class ExportCatalogResponse(BaseModel):
     comparison_levels: list[ExportComparisonLevel]
 
 
-class ExportPreviewResponse(BaseModel):
+class ExportPreviewResponse(StrictApiModel):
     model_config = ConfigDict(extra="forbid")
 
     columns: list[ExportColumnDef]
@@ -98,13 +98,8 @@ class ExportPreviewResponse(BaseModel):
     truncated: bool
 
 
-async def get_exports_service() -> ExportsService:
-    pool = await get_pool()
-    return ExportsService(ExportsRepository(pool))
-
-
-async def get_export_operations_service() -> ExportOperationsService:
-    return ExportOperationsService(await get_pool())
+get_exports_service = build_exports_service
+get_export_operations_service = build_export_operations_service
 
 
 @router.get("/catalog", response_model=ExportCatalogResponse)

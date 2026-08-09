@@ -59,9 +59,71 @@ tar --create \
   .
 gzip -n "$BUILD_DIR/${ARCHIVE_NAME%.gz}"
 printf '%s\n' "$SOURCE_SHA" >"$BUILD_DIR/SOURCE_SHA"
+python3 - "$REPO_ROOT" "$BUILD_DIR" "$SOURCE_SHA" "$ARCHIVE_NAME" \
+  "${RELEASE_BUILDER_ID:-local:ops/build-retail-release-artifact.sh}" \
+  "${RELEASE_INVOCATION_ID:-local}" <<'PY'
+import hashlib
+import json
+import pathlib
+import re
+import sys
+
+repo, output, source_sha, archive_name, builder_id, invocation_id = sys.argv[1:]
+repo_path = pathlib.Path(repo)
+output_path = pathlib.Path(output)
+archive_path = output_path / archive_name
+
+components = []
+lock = json.loads((repo_path / "package-lock.json").read_text(encoding="utf-8"))
+for package_path, package in sorted(lock.get("packages", {}).items()):
+    if not package_path or not package_path.startswith("node_modules/"):
+        continue
+    name = package.get("name") or package_path.removeprefix("node_modules/")
+    version = package.get("version")
+    if version:
+        components.append({"type": "library", "name": name, "version": version, "purl": f"pkg:npm/{name}@{version}"})
+requirement = re.compile(r"^([A-Za-z0-9_.-]+)==([^ ;\\]+)")
+for line in (repo_path / "backend/requirements.lock").read_text(encoding="utf-8").splitlines():
+    match = requirement.match(line)
+    if match:
+        name, version = match.groups()
+        components.append({"type": "library", "name": name, "version": version, "purl": f"pkg:pypi/{name.lower()}@{version}"})
+components.sort(key=lambda item: (item["purl"], item["name"]))
+sbom = {
+    "bomFormat": "CycloneDX",
+    "specVersion": "1.5",
+    "version": 1,
+    "metadata": {"component": {"type": "application", "name": "unihub-retail", "version": source_sha}},
+    "components": components,
+}
+(output_path / "SBOM.cdx.json").write_text(json.dumps(sbom, sort_keys=True, separators=(",", ":")) + "\n", encoding="utf-8")
+
+archive_digest = hashlib.sha256(archive_path.read_bytes()).hexdigest()
+provenance = {
+    "_type": "https://in-toto.io/Statement/v1",
+    "subject": [{"name": archive_name, "digest": {"sha256": archive_digest}}],
+    "predicateType": "https://slsa.dev/provenance/v1",
+    "predicate": {
+        "buildDefinition": {
+            "buildType": "https://github.com/anervalens-netizen/unihub-retail/retail-release@v1",
+            "externalParameters": {"sourceSha": source_sha},
+            "internalParameters": {},
+            "resolvedDependencies": [{"uri": "git+https://github.com/anervalens-netizen/unihub-retail", "digest": {"gitCommit": source_sha}}],
+        },
+        "runDetails": {"builder": {"id": builder_id}, "metadata": {"invocationId": invocation_id}},
+    },
+}
+(output_path / "PROVENANCE.json").write_text(json.dumps(provenance, sort_keys=True, separators=(",", ":")) + "\n", encoding="utf-8")
+
+evidence = {}
+for name in (archive_name, "SOURCE_SHA", "SBOM.cdx.json", "PROVENANCE.json"):
+    evidence[name] = hashlib.sha256((output_path / name).read_bytes()).hexdigest()
+manifest = {"schemaVersion": 1, "sourceSha": source_sha, "archive": archive_name, "sha256": evidence}
+(output_path / "RELEASE_MANIFEST.json").write_text(json.dumps(manifest, sort_keys=True, separators=(",", ":")) + "\n", encoding="utf-8")
+PY
 (
   cd "$BUILD_DIR"
-  sha256sum SOURCE_SHA "$ARCHIVE_NAME" > SHA256SUMS
+  sha256sum SOURCE_SHA "$ARCHIVE_NAME" SBOM.cdx.json PROVENANCE.json RELEASE_MANIFEST.json > SHA256SUMS
 )
 
 mv -- "$BUILD_DIR" "$OUTPUT_DIR"

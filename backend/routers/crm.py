@@ -1,37 +1,47 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Query
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import Field
+from schemas.common import StrictApiModel, MonthStr
 
-from db.connection import get_pool
-from schemas.common import MonthStr
+from composition import build_crm_service
 from permissions import require_business_write_access
 from rate_limits import BUSINESS_WRITE_LIMIT, rate_limit
-from repositories.crm import CrmRepository
 from services.crm import CrmService
 
 router = APIRouter(prefix="/api/crm", tags=["crm"])
 
 
-class CrmBreakdownResponse(BaseModel):
-    model_config = ConfigDict(extra="allow")
+class CrmBreakdownResponse(StrictApiModel):
 
     target_pct: float | None = None
     trend_pct: float | None = None
     kpi_pct: float | None = None
     visits_pct: float | None = None
+    kpi_bon2acc_score: float | None = None
+    kpi_focus_score: float | None = None
+    target_attainment: float | None = None
+    forecast_factor: float | None = None
+    kpi_bon2acc: float | None = None
+    kpi_focus: float | None = None
+    kpi_bon2acc_avg: float | None = None
+    kpi_focus_avg: float | None = None
+    nr_vizite: int | None = None
+    avg_completion: float | None = None
 
 
-class CrmScoreResponse(BaseModel):
-    model_config = ConfigDict(extra="allow")
+class CrmScoreResponse(StrictApiModel):
 
     site_code: str
     score: float
     breakdown: CrmBreakdownResponse
+    calculated_at: str | None = None
+    regional: str | None = None
+    asm: str | None = None
+    locatie: str | None = None
 
 
-class CrmAlertResponse(BaseModel):
-    model_config = ConfigDict(extra="allow")
+class CrmAlertResponse(StrictApiModel):
 
     site_code: str
     score: float
@@ -41,14 +51,11 @@ class CrmAlertResponse(BaseModel):
     locatie: str | None = None
 
 
-class CrmRecalculateResponse(BaseModel):
+class CrmRecalculateResponse(StrictApiModel):
     recalculated: int
     month: str
 
-async def get_crm_service() -> CrmService:
-    pool = await get_pool()
-    repo = CrmRepository(pool)
-    return CrmService(repo, pool)
+get_crm_service = build_crm_service
 
 
 @router.get("/scores", response_model=list[CrmScoreResponse])

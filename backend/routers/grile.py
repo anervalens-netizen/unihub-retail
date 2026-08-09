@@ -3,10 +3,11 @@ from __future__ import annotations
 from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request, Response, status
-from pydantic import BaseModel, ConfigDict, model_validator
+from pydantic import ConfigDict, model_validator
+from schemas.common import StrictApiModel, MonthStr
 
 from auth import AuthClaims, require_auth
-from db.connection import get_pool
+from composition import build_grile_query_service, get_pool
 from grile.api.schemas import (
     GrileAgentTargetEnqueueResponse,
     GrileAgentTargetOperationEnvelope,
@@ -20,7 +21,6 @@ from grile.api.schemas import (
     GrileStoreRefreshEnqueueResponse,
     GrileStoreRefreshOperationEnvelope,
 )
-from schemas.common import MonthStr
 from permissions import require_privileged_access
 from privileged_access import (
     GRILE_FINALIZER_GROUPS_ENV,
@@ -28,16 +28,13 @@ from privileged_access import (
     has_configured_group,
 )
 from rate_limits import GRILE_JOB_LIMIT, rate_limit
-from repositories.grile import GrileRepository
-from services.grile import _run_to_dict, get_overview, resolve_month
+from services.grile import _run_to_dict, resolve_month
+from services.grile_queries import GrileQueryService
 from services.grile_monthly import (
     GrileMonthlyRetryBlockedError,
     MonthlyIntegrityError,
-    approve_monthly_manifest,
     fetch_download,
-    get_latest_monthly_manifest,
     next_ym,
-    public_manifest_payload,
     ro_month_label,
 )
 from services.jobs import (
@@ -53,6 +50,15 @@ from services.jobs import (
 
 router = APIRouter(prefix="/api/grile", tags=["grile"])
 
+async def get_grile_query_service() -> GrileQueryService:
+    # Keep the router-level pool seam for legacy direct-call tests and local
+    # adapters, while construction remains centralized in composition.py.
+    return await build_grile_query_service(pool=await get_pool())
+
+
+def _injected_grile_service(value: object, method: str) -> GrileQueryService | None:
+    return value if hasattr(value, method) else None  # type: ignore[return-value]
+
 
 
 # ── verificare (read-only) ────────────────────────────────────────────────────
@@ -61,9 +67,13 @@ router = APIRouter(prefix="/api/grile", tags=["grile"])
 async def grile_overview(
     month: MonthStr | None = Query(default=None),
     _claims: AuthClaims = Depends(require_auth),
+    svc: GrileQueryService = Depends(get_grile_query_service),
 ) -> dict[str, Any]:
+    injected = _injected_grile_service(svc, "overview")
+    if injected is not None:
+        return await injected.overview(month)
     pool = await get_pool()
-    return await get_overview(pool, await resolve_month(pool, month))
+    return await (await build_grile_query_service(pool=pool)).overview(month)
 
 
 @router.post("/run", response_model=GrileRunEnqueueResponse)
@@ -71,9 +81,14 @@ async def grile_run(
     month: MonthStr | None = Query(default=None),
     claims: AuthClaims = Depends(require_auth),
     _rate_limit: None = Depends(rate_limit(GRILE_JOB_LIMIT)),
+    svc: GrileQueryService = Depends(get_grile_query_service),
 ) -> dict[str, Any]:
-    pool = await get_pool()
-    resolved = await resolve_month(pool, month)
+    injected = _injected_grile_service(svc, "resolve_month")
+    if injected is not None:
+        resolved = await injected.resolve_month(month)
+    else:
+        pool = await get_pool()
+        resolved = await resolve_month(pool, month)
     result = await enqueue_grile_check(
         month=resolved, source="manual", source_snapshot_id=None, triggered_by_sub=claims.sub
     )
@@ -94,13 +109,12 @@ async def grile_run(
 async def grile_run_status(
     month: MonthStr | None = Query(default=None),
     _claims: AuthClaims = Depends(require_auth),
+    svc: GrileQueryService = Depends(get_grile_query_service),
 ) -> dict[str, Any]:
-    pool = await get_pool()
-    repo = GrileRepository(pool)
-    resolved = await resolve_month(pool, month)
-    await repo.reconcile_stale_runs(run_month=resolved)
-    latest = await repo.get_latest_run(resolved)
-    return {"run": _run_to_dict(latest) if latest is not None else None}
+    injected = _injected_grile_service(svc, "run_status")
+    if injected is not None:
+        return await injected.run_status(month)
+    return await (await get_grile_query_service()).run_status(month)
 
 
 @router.post(
@@ -113,8 +127,14 @@ async def grile_store_refresh(
     month: MonthStr | None = Query(default=None),
     claims: AuthClaims = Depends(require_auth),
     _rate_limit: None = Depends(rate_limit(GRILE_JOB_LIMIT)),
+    svc: GrileQueryService = Depends(get_grile_query_service),
 ) -> dict[str, Any]:
-    resolved = await resolve_month(await get_pool(), month)
+    injected = _injected_grile_service(svc, "resolve_month")
+    if injected is not None:
+        resolved = await injected.resolve_month(month)
+    else:
+        pool = await get_pool()
+        resolved = await resolve_month(pool, month)
     try:
         result = await enqueue_grile_store_refresh(
             month=resolved,
@@ -172,15 +192,15 @@ def _refresh_operation_payload(operation: dict[str, Any]) -> dict[str, Any]:
 async def grile_store_refresh_operation(
     operation_id: int = Path(ge=1),
     _claims: AuthClaims = Depends(require_auth),
+    svc: GrileQueryService = Depends(get_grile_query_service),
 ) -> dict[str, Any]:
-    repo = GrileRepository(await get_pool())
-    operation = await repo.get_store_refresh(operation_id)
+    operation = await svc.store_refresh(operation_id)
     if operation is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Operatia de refresh nu exista.",
         )
-    return {"operation": _refresh_operation_payload(dict(operation))}
+    return {"operation": _refresh_operation_payload(operation)}
 
 
 # ── inchidere luna (WRITE Google Sheets — doar admin) ──────────────────────────
@@ -221,7 +241,7 @@ def require_grile_target_sync(
     )
 
 
-class AgentTargetRunRequest(BaseModel):
+class AgentTargetRunRequest(StrictApiModel):
     model_config = ConfigDict(extra="forbid")
 
     month: MonthStr
@@ -309,7 +329,7 @@ async def grile_agent_targets_operation(
     return {"operation": _target_operation_payload(operation)}
 
 
-class MonthlyRunRequest(BaseModel):
+class MonthlyRunRequest(StrictApiModel):
     model_config = ConfigDict(extra="forbid")
 
     op: Literal["finalize", "archive", "reset"]
@@ -378,12 +398,9 @@ async def grile_monthly_run(
 async def grile_monthly_manifest(
     month: MonthStr,
     _claims: AuthClaims = Depends(require_grile_admin),
+    svc: GrileQueryService = Depends(get_grile_query_service),
 ) -> dict[str, Any]:
-    pool = await get_pool()
-    manifest = await get_latest_monthly_manifest(pool, month=month)
-    return {
-        "manifest": public_manifest_payload(manifest) if manifest is not None else None
-    }
+    return {"manifest": await svc.latest_monthly_manifest(month)}
 
 
 @router.post(
@@ -394,11 +411,10 @@ async def grile_monthly_manifest_approve(
     manifest_id: int,
     claims: AuthClaims = Depends(require_grile_admin),
     _rate_limit: None = Depends(rate_limit(GRILE_JOB_LIMIT)),
+    svc: GrileQueryService = Depends(get_grile_query_service),
 ) -> dict[str, Any]:
-    pool = await get_pool()
     try:
-        manifest = await approve_monthly_manifest(
-            pool,
+        manifest = await svc.approve_monthly_manifest(
             manifest_id=manifest_id,
             approved_by_sub=claims.sub,
         )

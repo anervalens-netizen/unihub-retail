@@ -11,6 +11,7 @@ import pytest
 from openpyxl import Workbook
 
 import services.importer as importer_module
+import services.spreadsheet_readers as spreadsheet_readers
 from services.importer import (
     SALES_COLUMNS,
     detect_month,
@@ -122,29 +123,18 @@ def test_load_sales_dataframe_preserves_identical_sales_rows() -> None:
 
 
 def test_sales_loader_parses_the_worksheet_once(monkeypatch: pytest.MonkeyPatch) -> None:
-    original = importer_module.pd.ExcelFile
+    original = spreadsheet_readers.pd.read_excel
     parse_calls: list[dict[str, object]] = []
 
-    class TrackingExcelFile:
-        def __init__(self, *args: object, **kwargs: object) -> None:
-            self._inner = original(*args, **kwargs)
+    def tracking_read_excel(*args: object, **kwargs: object) -> pd.DataFrame:
+        parse_calls.append(dict(kwargs))
+        return original(*args, **kwargs)
 
-        def __enter__(self) -> "TrackingExcelFile":
-            self._inner.__enter__()
-            return self
-
-        def __exit__(self, *args: object) -> None:
-            self._inner.__exit__(*args)
-
-        def parse(self, *args: object, **kwargs: object) -> pd.DataFrame:
-            parse_calls.append(dict(kwargs))
-            return self._inner.parse(*args, **kwargs)
-
-    monkeypatch.setattr(importer_module.pd, "ExcelFile", TrackingExcelFile)
+    monkeypatch.setattr(spreadsheet_readers.pd, "read_excel", tracking_read_excel)
 
     load_sales_dataframe(sales_workbook([sales_row()]))
 
-    assert parse_calls == [{"header": None}]
+    assert parse_calls == [{"sheet_name": 0, "header": None, "engine": "openpyxl"}]
 
 
 def test_sales_loader_keeps_finite_parser_resources_for_manifest() -> None:

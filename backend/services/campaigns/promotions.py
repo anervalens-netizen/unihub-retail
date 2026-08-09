@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 from decimal import Decimal
 from typing import Any
 
@@ -10,38 +9,14 @@ import asyncpg
 
 from schemas.campaigns import PromoTopAgent, PromoTopStore
 from services.campaigns.aggregation import promo_receipt_totals
-from services.campaigns.context import CampaignResponseSnapshot
+from services.campaigns.contracts import CampaignResponseSnapshot, PromotionProjection
 from services.campaigns.money import money
-from services.campaigns.response import calculation_status
+from services.campaigns.status import calculation_status
 from services.promotion_evaluation import (
     PromotionEvaluation,
     PromotionEvaluationStatus,
     evaluate_promotion,
 )
-
-
-@dataclass(frozen=True)
-class PromotionProjection:
-    title: str = ""
-    description: str = ""
-    error: str | None = None
-    has_active: bool = False
-    calculation_status: str = "not_configured"
-    warnings: list[str] = field(default_factory=list)
-    invalidates_incentive: bool = False
-    total_qty: int = 0
-    qty: int = 0
-    impact: Decimal = Decimal("0")
-    qualifying_bons: int = 0
-    discounted_units: int = 0
-    discount_value: Decimal = Decimal("0")
-    active_stores: int = 0
-    active_agents: int = 0
-    top_stores: list[PromoTopStore] = field(default_factory=list)
-    promo_agents: list[PromoTopAgent] = field(default_factory=list)
-    incentive_excluded_units: dict[tuple[str, str, str], int] = field(
-        default_factory=dict
-    )
 
 
 async def compute_promotion_result(

@@ -18,6 +18,8 @@ import pandas as pd
 from prometheus_client import Gauge, Histogram
 
 from business_clock import BusinessClock, business_today
+from services.legacy_xls import limits_from_upload_policy
+from services.spreadsheet_readers import read_spreadsheet_frame
 from services.reporting_refresh import (
     rebuild_agent_lifecycle_reporting,
     rebuild_reporting_month,
@@ -54,7 +56,6 @@ from services.spreadsheet_safety import (
     SpreadsheetUploadStats,
     validate_spreadsheet_upload,
 )
-
 SALES_COLUMNS = [
     "Data",
     "SiteCode",
@@ -73,7 +74,6 @@ SALES_COLUMNS = [
     "SubCategorie",
     "Agent",
 ]
-
 IMPORT_COMPRESSED_BYTES = Gauge(
     "sales_import_compressed_bytes",
     "Source bytes parsed by the sales import loader.",
@@ -138,7 +138,6 @@ def _raise_structural_contradiction(
 
 async def reconcile_interrupted_imports(pool: asyncpg.Pool) -> list[int]:
     """Close leases left by a worker stop before ARQ retries queued imports.
-
     Startup only closes an expired staging lease (or a legacy reservation stale
     for more than one hour). A validated generation is deliberately retained
     for explicit promotion after a worker restart; a stale promoting claim is
@@ -377,33 +376,34 @@ def _load_sales_dataframe_impl(
     except SpreadsheetUploadError as exc:
         _raise_structural_contradiction("invalid_workbook", str(exc))
         raise AssertionError("unreachable") from exc
-    content = BytesIO(raw_content)
-    # Parse the worksheet exactly once.  Pandas otherwise reads it once for
-    # duplicate-header inspection and once for data, which doubles CPU and
-    # decompression pressure for the worker-owned import path.
-    with pd.ExcelFile(content) as workbook:
-        raw_sheet = workbook.parse(header=None)
-        if raw_sheet.empty:
-            _raise_structural_contradiction("empty_workbook", "Fișierul nu conține date.")
-        raw_header = raw_sheet.iloc[0]
-        raw_columns = [
-            "" if pd.isna(value) else str(value).strip()
-            for value in raw_header.tolist()
-        ]
-        duplicate_headers = sorted(
-            {
-                column
-                for column in raw_columns
-                if column and raw_columns.count(column) > 1
-            }
+    # Parse once; legacy OLE2/XLS is isolated behind the bounded child.
+    raw_sheet = read_spreadsheet_frame(
+        raw_content,
+        suffix=suffix,
+        header=None,
+        limits=limits_from_upload_policy(SALES_SPREADSHEET_LIMITS),
+    )
+    if raw_sheet.empty:
+        _raise_structural_contradiction("empty_workbook", "Fișierul nu conține date.")
+    raw_header = raw_sheet.iloc[0]
+    raw_columns = [
+        "" if pd.isna(value) else str(value).strip()
+        for value in raw_header.tolist()
+    ]
+    duplicate_headers = sorted(
+        {
+            column
+            for column in raw_columns
+            if column and raw_columns.count(column) > 1
+        }
+    )
+    if duplicate_headers:
+        _raise_structural_contradiction(
+            "duplicate_headers",
+            "Fișierul conține antete duplicate.",
+            headers=duplicate_headers,
         )
-        if duplicate_headers:
-            _raise_structural_contradiction(
-                "duplicate_headers",
-                "Fișierul conține antete duplicate.",
-                headers=duplicate_headers,
-            )
-        df = raw_sheet.iloc[1:].copy().reset_index(drop=True)
+    df = raw_sheet.iloc[1:].copy().reset_index(drop=True)
     df.columns = raw_columns
     missing = [column for column in SALES_COLUMNS if column not in df.columns]
     if missing:

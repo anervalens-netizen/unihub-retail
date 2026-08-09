@@ -67,7 +67,7 @@ function parseCampaignsSection(value: string): CampaignsSection {
 }
 
 function loadSavedFilters(key: string, overrides: Partial<AppFilters> = {}): AppFilters {
-  const saved = localStorage.getItem(key);
+  const saved = sessionStorage.getItem(key);
   if (!saved) return { ...defaultAppFilters(), ...overrides };
   try {
     return { ...normalizeAppFilters(JSON.parse(saved)), ...overrides };
@@ -181,7 +181,7 @@ export default function App() {
 
   useEffect(() => {
     // Luna in curs se rescrie la bootstrap cu cea mai recenta luna disponibila.
-    if (currentMonth) localStorage.setItem(CURRENT_MONTH_STORAGE_KEY, currentMonth);
+    if (currentMonth) sessionStorage.setItem(CURRENT_MONTH_STORAGE_KEY, currentMonth);
   }, [currentMonth]);
 
   useEffect(() => {
@@ -192,15 +192,15 @@ export default function App() {
   }, [currentMonth, months]);
 
   useEffect(() => {
-    localStorage.setItem(FILTER_STORAGE_KEYS.hub, JSON.stringify(hubFilters));
+    sessionStorage.setItem(FILTER_STORAGE_KEYS.hub, JSON.stringify(hubFilters));
   }, [hubFilters]);
 
   useEffect(() => {
-    localStorage.setItem(FILTER_STORAGE_KEYS.focus, JSON.stringify(focusFilters));
+    sessionStorage.setItem(FILTER_STORAGE_KEYS.focus, JSON.stringify(focusFilters));
   }, [focusFilters]);
 
   useEffect(() => {
-    localStorage.setItem(FILTER_STORAGE_KEYS.agents, JSON.stringify(agentsFilters));
+    sessionStorage.setItem(FILTER_STORAGE_KEYS.agents, JSON.stringify(agentsFilters));
   }, [agentsFilters]);
 
   useEffect(() => {

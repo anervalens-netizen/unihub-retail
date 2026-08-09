@@ -2,8 +2,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from db.connection import get_pool
-from repositories.ai_forecast import AiForecastRepository
+from composition import build_ai_forecast_service
 from schemas.common import MonthStr
 from schemas.ai_forecast import AiForecastResponse, AiForecastRollingResponse
 from services.ai_forecast import AiForecastService
@@ -11,9 +10,7 @@ from services.ai_forecast import AiForecastService
 router = APIRouter(prefix="/api/ai-forecast", tags=["ai-forecast"])
 
 
-async def get_ai_forecast_service() -> AiForecastService:
-    pool = await get_pool()
-    return AiForecastService(AiForecastRepository(pool))
+get_ai_forecast_service = build_ai_forecast_service
 
 
 @router.get("/current", response_model=AiForecastResponse)

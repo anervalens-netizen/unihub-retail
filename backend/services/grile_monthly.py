@@ -2289,6 +2289,604 @@ async def _rollback_reset_entries_adapter_cancel_safe(
         return False
 
 
+@dataclass(slots=True)
+class ResetRunContext:
+    pool: asyncpg.Pool
+    closing_month: str
+    next_month: str
+    closing_month_key: str
+    next_month_key: str
+    requested_by_sub: str
+    operation_id: int | None
+    approved_manifest_id: int | None
+    only: str | None
+    dry_run: bool
+    google_adapter: GoogleSyncAdapter | None
+    execution_owner: str | None
+    execution_epoch: int | None
+
+
+def _reset_manifest(
+    context: ResetRunContext,
+    *,
+    expected: dict[str, Any] | None = None,
+    archive_manifest: dict[str, Any] | None = None,
+    processed_stores: int = 0,
+    source_backups: list[dict[str, Any]] | None = None,
+    errors: list[str],
+    status: str = "failed",
+    artifacts: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    expected = expected or {"stores": 0, "agents": 0}
+    return base_manifest(
+        month=context.closing_month_key,
+        operation="reset",
+        requested_by_sub=context.requested_by_sub,
+        expected_stores=int(expected["stores"]),
+        expected_agents=int(expected["agents"]),
+        processed_stores=processed_stores,
+        processed_agents=(
+            int(expected["agents"]) if status == "verified" else 0
+        ),
+        control_totals=(archive_manifest or {}).get("control_totals", {}),
+        artifacts=artifacts or [],
+        source_backups=source_backups or [],
+        errors=errors,
+        status=status,
+    )
+
+
+def _validate_reset_request(context: ResetRunContext) -> None:
+    if not context.dry_run and (
+        context.operation_id is None or context.approved_manifest_id is None
+    ):
+        manifest = _reset_manifest(
+            context, errors=["approved_manifest_required"]
+        )
+        raise MonthlyManifestError(
+            "approved_manifest_required", "Approved manifest is required", manifest
+        )
+    if context.only and not context.dry_run:
+        manifest = _reset_manifest(
+            context, errors=["partial_live_reset_forbidden"]
+        )
+        raise MonthlyManifestError(
+            "partial_live_reset_forbidden",
+            "Partial live reset is forbidden",
+            manifest,
+        )
+
+
+async def _load_reset_archive(context: ResetRunContext) -> dict[str, Any]:
+    latest = await fetch_latest_monthly_manifest(
+        context.pool,
+        closing_month=context.closing_month_key,
+        operation="archive",
+        statuses=MANIFEST_ATTEMPT_STATUSES,
+    )
+    if context.approved_manifest_id is not None:
+        prerequisite = await fetch_monthly_manifest(
+            context.pool, context.approved_manifest_id
+        )
+        if (
+            latest is None
+            or prerequisite is None
+            or latest.get("id") != prerequisite.get("id")
+        ):
+            prerequisite = None
+    else:
+        prerequisite = latest
+    archive = prerequisite.get("manifest") if prerequisite else None
+    allowed = {"approved"} if not context.dry_run else {"verified", "approved"}
+    if (
+        prerequisite is None
+        or prerequisite.get("status") not in allowed
+        or not isinstance(archive, dict)
+    ):
+        manifest = _reset_manifest(
+            context, errors=["verified_archive_required"]
+        )
+        raise MonthlyManifestError(
+            "verified_archive_required", "Verified archive is required", manifest
+        )
+    validate_verified_manifest(archive, operation="archive")
+    verify_artifacts(archive, root=OUTPUTS_DIR)
+    if not context.dry_run and (
+        context.execution_owner is None or context.execution_epoch is None
+    ):
+        raise MonthlyIntegrityError(
+            "operation_lease_missing", "Reset operation lease is missing"
+        )
+    return archive
+
+
+async def _load_reset_entries(
+    context: ResetRunContext, archive: dict[str, Any]
+) -> tuple[list[StoreEntry], dict[str, Any]]:
+    entries = await load_entries(
+        context.pool, only=context.only, month=context.closing_month_key
+    )
+    expected = archive["expected"]
+    source_backups = archive.get("source_backups")
+    archived_by_site = (
+        {
+            item.get("site_code"): item
+            for item in source_backups
+            if isinstance(item, dict)
+            and isinstance(item.get("site_code"), str)
+        }
+        if isinstance(source_backups, list)
+        else {}
+    )
+    current_sites = {entry.site_code for entry in entries}
+    valid = (
+        len(entries) == int(expected["stores"])
+        and set(archived_by_site) == current_sites
+        and len(current_sites) == len(entries)
+        and isinstance(source_backups, list)
+        and len(source_backups) == len(entries)
+        and all(
+            archived_by_site[entry.site_code].get("sheet_id") == entry.sheet_id
+            and archived_by_site[entry.site_code].get("template_version", "v2")
+            == entry.template_version
+            for entry in entries
+        )
+    )
+    if not valid:
+        manifest = _reset_manifest(
+            context,
+            expected=expected,
+            archive_manifest=archive,
+            errors=["registry_or_archive_coverage_changed"],
+        )
+        raise MonthlyManifestError(
+            "registry_or_archive_coverage_changed",
+            "Registry or archive coverage changed before reset",
+            manifest,
+        )
+    return entries, expected
+
+
+async def _prepare_reset_execution(
+    context: ResetRunContext, entries: list[StoreEntry]
+) -> Any | None:
+    sheets_service = None
+    if context.google_adapter is None:
+        sheets_service, _ = build_google_services()
+    if context.operation_id is not None and not context.dry_run:
+        assert context.execution_owner is not None
+        assert context.execution_epoch is not None
+        await ensure_reset_items(
+            context.pool,
+            operation_id=context.operation_id,
+            closing_month_key=context.closing_month_key,
+            next_month_key=context.next_month_key,
+            entries=entries,
+            execution_owner=context.execution_owner,
+            execution_epoch=context.execution_epoch,
+        )
+    return sheets_service
+
+
+async def _read_reset_entry_snapshot(
+    context: ResetRunContext, sheets_service: Any, entry: StoreEntry
+) -> dict[str, Any]:
+    if context.google_adapter is None:
+        return _read_reset_snapshot(sheets_service, entry)
+    return await _read_reset_snapshot_async(context.google_adapter, entry)
+
+
+async def _persist_reset_backup(
+    context: ResetRunContext,
+    *,
+    entry: StoreEntry,
+    snapshot: dict[str, Any],
+    backup_dir: Path,
+) -> dict[str, Any]:
+    assert context.operation_id is not None
+    assert context.execution_owner is not None
+    assert context.execution_epoch is not None
+    token = manifest_sha256({"site_code": entry.site_code})[:20]
+    backup_path = backup_dir / f"source-{token}.json"
+    secure_write_json(
+        backup_path,
+        {
+            "schema_version": 1,
+            "operation_id": context.operation_id,
+            "closing_month": context.closing_month_key,
+            "site_code": entry.site_code,
+            "sheet_id": entry.sheet_id,
+            "template_version": entry.template_version,
+            "snapshot": snapshot,
+            "snapshot_sha256": snapshot_sha256(snapshot),
+            "created_at": utc_now(),
+        },
+    )
+    artifact = relative_artifact(
+        backup_path, root=OUTPUTS_DIR, kind="reset_source_snapshot"
+    )
+    artifact.update(
+        site_code=entry.site_code,
+        sheet_id=entry.sheet_id,
+        template_version=entry.template_version,
+    )
+    recorded = await record_reset_item_backup(
+        context.pool,
+        operation_id=context.operation_id,
+        site_code=entry.site_code,
+        backup_path=artifact["path"],
+        backup_sha256=artifact["sha256"],
+        execution_owner=context.execution_owner,
+        execution_epoch=context.execution_epoch,
+    )
+    if not recorded:
+        raise MonthlyIntegrityError(
+            "backup_checkpoint_failed", "Backup checkpoint failed"
+        )
+    return artifact
+
+
+async def _capture_reset_backups(
+    context: ResetRunContext,
+    *,
+    entries: list[StoreEntry],
+    sheets_service: Any,
+    expected: dict[str, Any],
+    archive: dict[str, Any],
+) -> tuple[dict[str, dict[str, Any]], list[dict[str, Any]]]:
+    snapshots: dict[str, dict[str, Any]] = {}
+    artifacts: list[dict[str, Any]] = []
+    backup_dir = (
+        build_reset_backup_dir(
+            OUTPUTS_DIR, context.closing_month, context.operation_id
+        )
+        if context.operation_id is not None and not context.dry_run
+        else None
+    )
+    try:
+        for entry in entries:
+            snapshot = await _read_reset_entry_snapshot(
+                context, sheets_service, entry
+            )
+            snapshots[entry.site_code] = snapshot
+            if backup_dir is not None:
+                artifacts.append(
+                    await _persist_reset_backup(
+                        context,
+                        entry=entry,
+                        snapshot=snapshot,
+                        backup_dir=backup_dir,
+                    )
+                )
+        if artifacts:
+            verify_artifacts({"artifacts": artifacts}, root=OUTPUTS_DIR)
+        return snapshots, artifacts
+    except BaseException as exc:
+        code = (
+            exc.code
+            if isinstance(exc, MonthlyIntegrityError)
+            else "reset_preflight_failed"
+        )
+        manifest = _reset_manifest(
+            context,
+            expected=expected,
+            archive_manifest=archive,
+            processed_stores=len(snapshots),
+            source_backups=artifacts,
+            errors=[code],
+        )
+        raise MonthlyManifestError(
+            code, "Reset preflight failed", manifest
+        ) from exc
+
+
+def _reset_report_artifact(
+    context: ResetRunContext,
+    *,
+    expected: dict[str, Any],
+    processed_stores: int,
+    dry_run: bool,
+) -> tuple[Path, dict[str, Any]]:
+    report = {
+        "schema_version": 1,
+        "operation": "reset",
+        "month": context.closing_month_key,
+        "next_month": context.next_month_key,
+        "dry_run": dry_run,
+        "expected_store_count": int(expected["stores"]),
+        "processed_store_count": processed_stores,
+        "error_count": 0,
+        "created_at": utc_now(),
+    }
+    if not dry_run:
+        report["approved_manifest_id"] = context.approved_manifest_id
+    report_path = (
+        build_reset_dry_run_report_path(OUTPUTS_DIR, context.next_month)
+        if dry_run
+        else build_reset_report_path(OUTPUTS_DIR, context.next_month)
+    )
+    stage_dir = _staging_dir(
+        "reset-dry-run" if dry_run else "reset", context.operation_id
+    )
+    staged_report = stage_dir / "report.json"
+    try:
+        secure_write_json(staged_report, report)
+        _promote_file(staged_report, report_path)
+    finally:
+        shutil.rmtree(stage_dir, ignore_errors=True)
+    artifact = relative_artifact(
+        report_path,
+        root=OUTPUTS_DIR,
+        kind="reset_dry_run_report" if dry_run else "reset_report",
+    )
+    return report_path, artifact
+
+
+def _build_reset_dry_run(
+    context: ResetRunContext,
+    *,
+    expected: dict[str, Any],
+    snapshots: dict[str, dict[str, Any]],
+    archive: dict[str, Any],
+) -> MonthlyExecution:
+    report_path, artifact = _reset_report_artifact(
+        context,
+        expected=expected,
+        processed_stores=len(snapshots),
+        dry_run=True,
+    )
+    manifest = _reset_manifest(
+        context,
+        expected=expected,
+        archive_manifest=archive,
+        processed_stores=len(snapshots),
+        source_backups=archive.get("source_backups", []),
+        artifacts=[artifact],
+        errors=[],
+        status="verified",
+    )
+    return MonthlyExecution(path=report_path, manifest=manifest)
+
+
+async def _clear_reset_entry(
+    context: ResetRunContext,
+    *,
+    entry: StoreEntry,
+    sheets_service: Any,
+) -> None:
+    assert context.operation_id is not None
+    assert context.execution_owner is not None
+    assert context.execution_epoch is not None
+    await heartbeat_monthly_operation(
+        context.pool,
+        context.operation_id,
+        execution_owner=context.execution_owner,
+        execution_epoch=context.execution_epoch,
+    )
+    claimed = await mark_reset_item_running(
+        context.pool,
+        operation_id=context.operation_id,
+        site_code=entry.site_code,
+        execution_owner=context.execution_owner,
+        execution_epoch=context.execution_epoch,
+    )
+    if not claimed:
+        raise MonthlyIntegrityError(
+            "reset_checkpoint_claim_failed", "Reset checkpoint claim failed"
+        )
+    if context.google_adapter is None:
+        result = reset_store(sheets_service, entry, dry_run=False)
+        if result["status"] != "OK":
+            raise MonthlyIntegrityError(result["error"], "Google reset failed")
+        _verify_reset_cleared(sheets_service, entry)
+        persisted = await finish_reset_item(
+            context.pool,
+            operation_id=context.operation_id,
+            site_code=entry.site_code,
+            status="completed",
+            execution_owner=context.execution_owner,
+            execution_epoch=context.execution_epoch,
+        )
+    else:
+        intent = await persist_reset_clear_intent(
+            context.pool,
+            operation_id=context.operation_id,
+            site_code=entry.site_code,
+            execution_owner=context.execution_owner,
+            execution_epoch=context.execution_epoch,
+        )
+        if intent is None:
+            raise MonthlyIntegrityError(
+                "operation_lease_lost", "Reset clear intent was fenced"
+            )
+        await _google_request(
+            context.google_adapter,
+            "clear",
+            {
+                "spreadsheet_id": entry.sheet_id,
+                "ranges": reset_ranges_for_entry(entry),
+            },
+            label="Google reset",
+            destructive=True,
+        )
+        await _verify_reset_cleared_async(context.google_adapter, entry)
+        persisted = await persist_reset_clear_confirmation(
+            context.pool,
+            operation_id=context.operation_id,
+            site_code=entry.site_code,
+            execution_owner=context.execution_owner,
+            execution_epoch=context.execution_epoch,
+            fence_epoch=int(intent["fence_epoch"]),
+        )
+    if not persisted:
+        raise MonthlyIntegrityError(
+            "reset_checkpoint_finish_failed", "Reset checkpoint finish failed"
+        )
+
+
+async def _rollback_touched_entries(
+    context: ResetRunContext,
+    *,
+    entries: list[StoreEntry],
+    sheets_service: Any,
+    snapshots: dict[str, dict[str, Any]],
+) -> bool:
+    assert context.operation_id is not None
+    if context.execution_owner is None or context.execution_epoch is None:
+        return False
+    if context.google_adapter is None:
+        return await _rollback_reset_entries_cancel_safe(
+            context.pool,
+            operation_id=context.operation_id,
+            entries=entries,
+            sheets_svc=sheets_service,
+            snapshots=snapshots,
+            execution_owner=context.execution_owner,
+            execution_epoch=context.execution_epoch,
+        )
+    return await _rollback_reset_entries_adapter_cancel_safe(
+        context.pool,
+        operation_id=context.operation_id,
+        entries=entries,
+        google_adapter=context.google_adapter,
+        snapshots=snapshots,
+        execution_owner=context.execution_owner,
+        execution_epoch=context.execution_epoch,
+    )
+
+
+async def _execute_reset_effects(
+    context: ResetRunContext,
+    *,
+    entries: list[StoreEntry],
+    sheets_service: Any,
+    snapshots: dict[str, dict[str, Any]],
+    backups: list[dict[str, Any]],
+    expected: dict[str, Any],
+    archive: dict[str, Any],
+) -> list[StoreEntry]:
+    touched: list[StoreEntry] = []
+    try:
+        for entry in entries:
+            touched.append(entry)
+            await _clear_reset_entry(
+                context, entry=entry, sheets_service=sheets_service
+            )
+        return touched
+    except BaseException as exc:
+        code = (
+            exc.code
+            if isinstance(exc, MonthlyIntegrityError)
+            else (
+                "reset_cancelled"
+                if isinstance(exc, asyncio.CancelledError)
+                else "reset_failed"
+            )
+        )
+        rollback_ok = await _rollback_touched_entries(
+            context,
+            entries=touched,
+            sheets_service=sheets_service,
+            snapshots=snapshots,
+        )
+        status = "rolled_back" if rollback_ok else "uncertain"
+        manifest = _reset_manifest(
+            context,
+            expected=expected,
+            archive_manifest=archive,
+            source_backups=backups,
+            errors=[code, "rollback_verified" if rollback_ok else "rollback_failed"],
+            status=status,
+        )
+        raise MonthlyManifestError(
+            status, "Reset failed and rollback was evaluated", manifest
+        ) from exc
+
+
+async def _reset_rollback_manifest(
+    context: ResetRunContext,
+    *,
+    touched: list[StoreEntry],
+    sheets_service: Any,
+    snapshots: dict[str, dict[str, Any]],
+    backups: list[dict[str, Any]],
+    expected: dict[str, Any],
+    archive: dict[str, Any],
+) -> dict[str, Any]:
+    rollback_ok = await _rollback_touched_entries(
+        context,
+        entries=touched,
+        sheets_service=sheets_service,
+        snapshots=snapshots,
+    )
+    return _reset_manifest(
+        context,
+        expected=expected,
+        archive_manifest=archive,
+        source_backups=backups,
+        errors=[
+            "reset_commit_failed",
+            "rollback_verified" if rollback_ok else "rollback_failed",
+        ],
+        status="rolled_back" if rollback_ok else "uncertain",
+    )
+
+
+async def _build_live_reset_execution(
+    context: ResetRunContext,
+    *,
+    entries: list[StoreEntry],
+    touched: list[StoreEntry],
+    sheets_service: Any,
+    snapshots: dict[str, dict[str, Any]],
+    backups: list[dict[str, Any]],
+    expected: dict[str, Any],
+    archive: dict[str, Any],
+) -> MonthlyExecution:
+    async def rollback_after_commit_failure() -> dict[str, Any]:
+        return await _reset_rollback_manifest(
+            context,
+            touched=touched,
+            sheets_service=sheets_service,
+            snapshots=snapshots,
+            backups=backups,
+            expected=expected,
+            archive=archive,
+        )
+
+    try:
+        report_path, artifact = _reset_report_artifact(
+            context,
+            expected=expected,
+            processed_stores=len(entries),
+            dry_run=False,
+        )
+        manifest = _reset_manifest(
+            context,
+            expected=expected,
+            archive_manifest=archive,
+            processed_stores=len(entries),
+            source_backups=backups,
+            artifacts=[artifact],
+            errors=[],
+            status="verified",
+        )
+        validate_verified_manifest(manifest, operation="reset")
+        verify_artifacts(manifest, root=OUTPUTS_DIR)
+        return MonthlyExecution(
+            path=report_path,
+            manifest=manifest,
+            rollback=rollback_after_commit_failure,
+        )
+    except BaseException as exc:
+        failed = await rollback_after_commit_failure()
+        raise MonthlyManifestError(
+            str(failed["status"]),
+            "Reset output failed and rollback was evaluated",
+            failed,
+        ) from exc
+
+
 async def _reset_month_execution(
     pool: asyncpg.Pool,
     closing_month: str,
@@ -2305,442 +2903,55 @@ async def _reset_month_execution(
     execution_owner: str | None = None,
     execution_epoch: int | None = None,
 ) -> MonthlyExecution:
-    if not dry_run and (operation_id is None or approved_manifest_id is None):
-        failed = base_manifest(
-            month=closing_month_key,
-            operation="reset",
-            requested_by_sub=requested_by_sub,
-            expected_stores=0,
-            expected_agents=0,
-            processed_stores=0,
-            processed_agents=0,
-            control_totals={},
-            artifacts=[],
-            errors=["approved_manifest_required"],
-            status="failed",
-        )
-        raise MonthlyManifestError("approved_manifest_required", "Approved manifest is required", failed)
-    if only and not dry_run:
-        failed = base_manifest(
-            month=closing_month_key,
-            operation="reset",
-            requested_by_sub=requested_by_sub,
-            expected_stores=0,
-            expected_agents=0,
-            processed_stores=0,
-            processed_agents=0,
-            control_totals={},
-            artifacts=[],
-            errors=["partial_live_reset_forbidden"],
-            status="failed",
-        )
-        raise MonthlyManifestError("partial_live_reset_forbidden", "Partial live reset is forbidden", failed)
-
-    latest_archive = await fetch_latest_monthly_manifest(
-        pool,
-        closing_month=closing_month_key,
-        operation="archive",
-        statuses=MANIFEST_ATTEMPT_STATUSES,
+    context = ResetRunContext(
+        pool=pool,
+        closing_month=closing_month,
+        next_month=next_month,
+        closing_month_key=closing_month_key,
+        next_month_key=next_month_key,
+        requested_by_sub=requested_by_sub,
+        operation_id=operation_id,
+        approved_manifest_id=approved_manifest_id,
+        only=only,
+        dry_run=dry_run,
+        google_adapter=google_adapter,
+        execution_owner=execution_owner,
+        execution_epoch=execution_epoch,
     )
-    if approved_manifest_id is not None:
-        prerequisite = await fetch_monthly_manifest(pool, approved_manifest_id)
-        if (
-            latest_archive is None
-            or prerequisite is None
-            or latest_archive.get("id") != prerequisite.get("id")
-        ):
-            prerequisite = None
-    else:
-        prerequisite = latest_archive
-    archive_manifest = prerequisite.get("manifest") if prerequisite else None
-    allowed_statuses = {"approved"} if not dry_run else {"verified", "approved"}
-    if (
-        prerequisite is None
-        or prerequisite.get("status") not in allowed_statuses
-        or not isinstance(archive_manifest, dict)
-    ):
-        failed = base_manifest(
-            month=closing_month_key,
-            operation="reset",
-            requested_by_sub=requested_by_sub,
-            expected_stores=0,
-            expected_agents=0,
-            processed_stores=0,
-            processed_agents=0,
-            control_totals={},
-            artifacts=[],
-            errors=["verified_archive_required"],
-            status="failed",
-        )
-        raise MonthlyManifestError("verified_archive_required", "Verified archive is required", failed)
-    validate_verified_manifest(archive_manifest, operation="archive")
-    verify_artifacts(archive_manifest, root=OUTPUTS_DIR)
-    if not dry_run and (execution_owner is None or execution_epoch is None):
-        raise MonthlyIntegrityError("operation_lease_missing", "Reset operation lease is missing")
-
-    entries = await load_entries(pool, only=only, month=closing_month_key)
-    expected = archive_manifest["expected"]
-    source_backups = archive_manifest.get("source_backups")
-    archived_by_site = {
-        item.get("site_code"): item
-        for item in source_backups
-        if isinstance(item, dict) and isinstance(item.get("site_code"), str)
-    } if isinstance(source_backups, list) else {}
-    archived_sites = set(archived_by_site)
-    current_sites = {entry.site_code for entry in entries}
-    if (
-        len(entries) != int(expected["stores"])
-        or archived_sites != current_sites
-        or len(current_sites) != len(entries)
-        or not isinstance(source_backups, list)
-        or len(source_backups) != len(entries)
-        or any(
-            archived_by_site[entry.site_code].get("sheet_id") != entry.sheet_id
-            or archived_by_site[entry.site_code].get("template_version", "v2")
-            != entry.template_version
-            for entry in entries
-        )
-    ):
-        failed = base_manifest(
-            month=closing_month_key,
-            operation="reset",
-            requested_by_sub=requested_by_sub,
-            expected_stores=int(expected["stores"]),
-            expected_agents=int(expected["agents"]),
-            processed_stores=0,
-            processed_agents=0,
-            control_totals=archive_manifest.get("control_totals", {}),
-            artifacts=[],
-            errors=["registry_or_archive_coverage_changed"],
-            status="failed",
-        )
-        raise MonthlyManifestError(
-            "registry_or_archive_coverage_changed",
-            "Registry or archive coverage changed before reset",
-            failed,
-        )
-
-    sheets_svc = None
-    if google_adapter is None:
-        sheets_svc, _ = build_google_services()
-    if operation_id is not None and not dry_run:
-        assert execution_owner is not None
-        assert execution_epoch is not None
-        await ensure_reset_items(
-            pool,
-            operation_id=operation_id,
-            closing_month_key=closing_month_key,
-            next_month_key=next_month_key,
-            entries=entries,
-            execution_owner=execution_owner,
-            execution_epoch=execution_epoch,
-        )
-
-    snapshots: dict[str, dict[str, Any]] = {}
-    backup_artifacts: list[dict[str, Any]] = []
-    backup_dir = (
-        build_reset_backup_dir(OUTPUTS_DIR, closing_month, operation_id)
-        if operation_id is not None and not dry_run
-        else None
+    _validate_reset_request(context)
+    archive = await _load_reset_archive(context)
+    entries, expected = await _load_reset_entries(context, archive)
+    sheets_service = await _prepare_reset_execution(context, entries)
+    snapshots, backups = await _capture_reset_backups(
+        context,
+        entries=entries,
+        sheets_service=sheets_service,
+        expected=expected,
+        archive=archive,
     )
-    try:
-        for entry in entries:
-            if google_adapter is None:
-                assert sheets_svc is not None
-                snapshot = _read_reset_snapshot(sheets_svc, entry)
-            else:
-                snapshot = await _read_reset_snapshot_async(google_adapter, entry)
-            snapshots[entry.site_code] = snapshot
-            if backup_dir is not None and operation_id is not None:
-                assert execution_owner is not None
-                assert execution_epoch is not None
-                token = manifest_sha256({"site_code": entry.site_code})[:20]
-                backup_path = backup_dir / f"source-{token}.json"
-                payload = {
-                    "schema_version": 1,
-                    "operation_id": operation_id,
-                    "closing_month": closing_month_key,
-                    "site_code": entry.site_code,
-                    "sheet_id": entry.sheet_id,
-                    "template_version": entry.template_version,
-                    "snapshot": snapshot,
-                    "snapshot_sha256": snapshot_sha256(snapshot),
-                    "created_at": utc_now(),
-                }
-                secure_write_json(backup_path, payload)
-                artifact = relative_artifact(backup_path, root=OUTPUTS_DIR, kind="reset_source_snapshot")
-                artifact.update({
-                    "site_code": entry.site_code,
-                    "sheet_id": entry.sheet_id,
-                    "template_version": entry.template_version,
-                })
-                backup_artifacts.append(artifact)
-                recorded = await record_reset_item_backup(
-                    pool,
-                    operation_id=operation_id,
-                    site_code=entry.site_code,
-                    backup_path=artifact["path"],
-                    backup_sha256=artifact["sha256"],
-                    execution_owner=execution_owner,
-                    execution_epoch=execution_epoch,
-                )
-                if not recorded:
-                    raise MonthlyIntegrityError("backup_checkpoint_failed", "Backup checkpoint failed")
-        if backup_artifacts:
-            verify_artifacts({"artifacts": backup_artifacts}, root=OUTPUTS_DIR)
-    except BaseException as exc:
-        code = exc.code if isinstance(exc, MonthlyIntegrityError) else "reset_preflight_failed"
-        failed = base_manifest(
-            month=closing_month_key,
-            operation="reset",
-            requested_by_sub=requested_by_sub,
-            expected_stores=int(expected["stores"]),
-            expected_agents=int(expected["agents"]),
-            processed_stores=len(snapshots),
-            processed_agents=0,
-            control_totals=archive_manifest.get("control_totals", {}),
-            artifacts=[],
-            source_backups=backup_artifacts,
-            errors=[code],
-            status="failed",
-        )
-        raise MonthlyManifestError(code, "Reset preflight failed", failed) from exc
-
     if dry_run:
-        report = {
-            "schema_version": 1,
-            "operation": "reset",
-            "month": closing_month_key,
-            "next_month": next_month_key,
-            "dry_run": True,
-            "expected_store_count": int(expected["stores"]),
-            "processed_store_count": len(snapshots),
-            "error_count": 0,
-            "created_at": utc_now(),
-        }
-        report_path = build_reset_dry_run_report_path(OUTPUTS_DIR, next_month)
-        stage_dir = _staging_dir("reset-dry-run", operation_id)
-        staged_report = stage_dir / "report.json"
-        try:
-            secure_write_json(staged_report, report)
-            _promote_file(staged_report, report_path)
-        finally:
-            shutil.rmtree(stage_dir, ignore_errors=True)
-        artifact = relative_artifact(report_path, root=OUTPUTS_DIR, kind="reset_dry_run_report")
-        manifest = base_manifest(
-            month=closing_month_key,
-            operation="reset",
-            requested_by_sub=requested_by_sub,
-            expected_stores=int(expected["stores"]),
-            expected_agents=int(expected["agents"]),
-            processed_stores=len(snapshots),
-            processed_agents=int(expected["agents"]),
-            control_totals=archive_manifest.get("control_totals", {}),
-            artifacts=[artifact],
-            source_backups=archive_manifest.get("source_backups", []),
+        return _build_reset_dry_run(
+            context, expected=expected, snapshots=snapshots, archive=archive
         )
-        return MonthlyExecution(path=report_path, manifest=manifest)
-
-    assert operation_id is not None
-    assert execution_owner is not None
-    assert execution_epoch is not None
-    touched: list[StoreEntry] = []
-    try:
-        for entry in entries:
-            await heartbeat_monthly_operation(
-                pool,
-                operation_id,
-                execution_owner=execution_owner,
-                execution_epoch=execution_epoch,
-            )
-            claimed = await mark_reset_item_running(
-                pool,
-                operation_id=operation_id,
-                site_code=entry.site_code,
-                execution_owner=execution_owner,
-                execution_epoch=execution_epoch,
-            )
-            if not claimed:
-                raise MonthlyIntegrityError("reset_checkpoint_claim_failed", "Reset checkpoint claim failed")
-            touched.append(entry)
-            if google_adapter is None:
-                assert sheets_svc is not None
-                result = reset_store(sheets_svc, entry, dry_run=False)
-                if result["status"] != "OK":
-                    raise MonthlyIntegrityError(result["error"], "Google reset failed")
-                _verify_reset_cleared(sheets_svc, entry)
-                persisted = await finish_reset_item(
-                    pool,
-                    operation_id=operation_id,
-                    site_code=entry.site_code,
-                    status="completed",
-                    execution_owner=execution_owner,
-                    execution_epoch=execution_epoch,
-                )
-            else:
-                if execution_owner is None or execution_epoch is None:
-                    raise MonthlyIntegrityError("operation_lease_missing", "Reset operation lease is missing")
-                intent = await persist_reset_clear_intent(
-                    pool,
-                    operation_id=operation_id,
-                    site_code=entry.site_code,
-                    execution_owner=execution_owner,
-                    execution_epoch=execution_epoch,
-                )
-                if intent is None:
-                    raise MonthlyIntegrityError("operation_lease_lost", "Reset clear intent was fenced")
-                await _google_request(
-                    google_adapter,
-                    "clear",
-                    {"spreadsheet_id": entry.sheet_id, "ranges": reset_ranges_for_entry(entry)},
-                    label="Google reset",
-                    destructive=True,
-                )
-                await _verify_reset_cleared_async(google_adapter, entry)
-                persisted = await persist_reset_clear_confirmation(
-                    pool,
-                    operation_id=operation_id,
-                    site_code=entry.site_code,
-                    execution_owner=execution_owner,
-                    execution_epoch=execution_epoch,
-                    fence_epoch=int(intent["fence_epoch"]),
-                )
-            if not persisted:
-                raise MonthlyIntegrityError("reset_checkpoint_finish_failed", "Reset checkpoint finish failed")
-    except BaseException as exc:
-        code = exc.code if isinstance(exc, MonthlyIntegrityError) else (
-            "reset_cancelled" if isinstance(exc, asyncio.CancelledError) else "reset_failed"
-        )
-        if google_adapter is None:
-            assert sheets_svc is not None
-            rollback_ok = await _rollback_reset_entries_cancel_safe(
-                pool,
-                operation_id=operation_id,
-                entries=touched,
-                sheets_svc=sheets_svc,
-                snapshots=snapshots,
-                execution_owner=execution_owner,
-                execution_epoch=execution_epoch,
-            )
-        elif execution_owner is not None and execution_epoch is not None:
-            rollback_ok = await _rollback_reset_entries_adapter_cancel_safe(
-                pool,
-                operation_id=operation_id,
-                entries=touched,
-                google_adapter=google_adapter,
-                snapshots=snapshots,
-                execution_owner=execution_owner,
-                execution_epoch=execution_epoch,
-            )
-        else:
-            rollback_ok = False
-        rollback_failed = not rollback_ok
-        status = "uncertain" if rollback_failed else "rolled_back"
-        errors = [code, "rollback_failed" if rollback_failed else "rollback_verified"]
-        failed = base_manifest(
-            month=closing_month_key,
-            operation="reset",
-            requested_by_sub=requested_by_sub,
-            expected_stores=int(expected["stores"]),
-            expected_agents=int(expected["agents"]),
-            processed_stores=0,
-            processed_agents=0,
-            control_totals=archive_manifest.get("control_totals", {}),
-            artifacts=[],
-            source_backups=backup_artifacts,
-            errors=errors,
-            status=status,
-        )
-        raise MonthlyManifestError(status, "Reset failed and rollback was evaluated", failed) from exc
-
-    async def rollback_after_commit_failure() -> dict[str, Any]:
-        if google_adapter is None:
-            assert sheets_svc is not None
-            rollback_ok = await _rollback_reset_entries_cancel_safe(
-                pool,
-                operation_id=operation_id,
-                entries=touched,
-                sheets_svc=sheets_svc,
-                snapshots=snapshots,
-                execution_owner=execution_owner,
-                execution_epoch=execution_epoch,
-            )
-        elif execution_owner is not None and execution_epoch is not None:
-            rollback_ok = await _rollback_reset_entries_adapter_cancel_safe(
-                pool,
-                operation_id=operation_id,
-                entries=touched,
-                google_adapter=google_adapter,
-                snapshots=snapshots,
-                execution_owner=execution_owner,
-                execution_epoch=execution_epoch,
-            )
-        else:
-            rollback_ok = False
-        status = "rolled_back" if rollback_ok else "uncertain"
-        return base_manifest(
-            month=closing_month_key,
-            operation="reset",
-            requested_by_sub=requested_by_sub,
-            expected_stores=int(expected["stores"]),
-            expected_agents=int(expected["agents"]),
-            processed_stores=0,
-            processed_agents=0,
-            control_totals=archive_manifest.get("control_totals", {}),
-            artifacts=[],
-            source_backups=backup_artifacts,
-            errors=["reset_commit_failed", "rollback_verified" if rollback_ok else "rollback_failed"],
-            status=status,
-        )
-
-    try:
-        report = {
-            "schema_version": 1,
-            "operation": "reset",
-            "month": closing_month_key,
-            "next_month": next_month_key,
-            "dry_run": False,
-            "approved_manifest_id": approved_manifest_id,
-            "expected_store_count": int(expected["stores"]),
-            "processed_store_count": len(entries),
-            "error_count": 0,
-            "created_at": utc_now(),
-        }
-        report_path = build_reset_report_path(OUTPUTS_DIR, next_month)
-        stage_dir = _staging_dir("reset", operation_id)
-        staged_report = stage_dir / "report.json"
-        try:
-            secure_write_json(staged_report, report)
-            _promote_file(staged_report, report_path)
-        finally:
-            shutil.rmtree(stage_dir, ignore_errors=True)
-        artifact = relative_artifact(report_path, root=OUTPUTS_DIR, kind="reset_report")
-        manifest = base_manifest(
-            month=closing_month_key,
-            operation="reset",
-            requested_by_sub=requested_by_sub,
-            expected_stores=int(expected["stores"]),
-            expected_agents=int(expected["agents"]),
-            processed_stores=len(entries),
-            processed_agents=int(expected["agents"]),
-            control_totals=archive_manifest.get("control_totals", {}),
-            artifacts=[artifact],
-            source_backups=backup_artifacts,
-        )
-        validate_verified_manifest(manifest, operation="reset")
-        verify_artifacts(manifest, root=OUTPUTS_DIR)
-        return MonthlyExecution(
-            path=report_path,
-            manifest=manifest,
-            rollback=rollback_after_commit_failure,
-        )
-    except BaseException as exc:
-        failed = await rollback_after_commit_failure()
-        raise MonthlyManifestError(
-            str(failed["status"]),
-            "Reset output failed and rollback was evaluated",
-            failed,
-        ) from exc
+    touched = await _execute_reset_effects(
+        context,
+        entries=entries,
+        sheets_service=sheets_service,
+        snapshots=snapshots,
+        backups=backups,
+        expected=expected,
+        archive=archive,
+    )
+    return await _build_live_reset_execution(
+        context,
+        entries=entries,
+        touched=touched,
+        sheets_service=sheets_service,
+        snapshots=snapshots,
+        backups=backups,
+        expected=expected,
+        archive=archive,
+    )
 
 
 async def reset_month(
@@ -2943,6 +3154,40 @@ async def reconcile_monthly_operations(
     return reconciled
 
 
+async def _monthly_operation_pool() -> Any:
+    from db.connection import get_pool
+
+    return await get_pool()
+
+
+def _monthly_run_ports() -> Any:
+    from services.grile_monthly_orchestration import MonthlyRunPorts
+
+    return MonthlyRunPorts(
+        valid_ops=frozenset(VALID_OPS),
+        owner_hex=lambda: uuid4().hex,
+        get_pool=_monthly_operation_pool,
+        start_operation=start_monthly_operation,
+        heartbeat_operation=heartbeat_monthly_operation,
+        finish_operation=finish_monthly_operation,
+        run_with_lease=_run_with_monthly_lease,
+        persist_manifest=persist_manifest_result,
+        persist_reset_success=persist_reset_success,
+        fetch_manifest=fetch_monthly_manifest,
+        finalize_execution=_finalize_month_execution,
+        archive_execution=_archive_month_execution,
+        reset_execution=_reset_month_execution,
+        base_manifest=base_manifest,
+        public_manifest_payload=public_manifest_payload,
+        finalize_manifest=finalize_manifest,
+        ro_month_label=ro_month_label,
+        next_month=next_ym,
+        utc_now=utc_now,
+        manifest_error_type=MonthlyManifestError,
+        integrity_error_type=MonthlyIntegrityError,
+    )
+
+
 async def run_monthly_op(
     *,
     op: str | None = None,
@@ -2953,391 +3198,18 @@ async def run_monthly_op(
     google_adapter: GoogleSyncAdapter | None = None,
     execution_owner_hint: str | None = None,
 ) -> dict[str, Any]:
-    if operation_id is None:
-        if op not in VALID_OPS:
-            raise ValueError(f"Operatie necunoscuta: {op}")
-        if month is None:
-            raise ValueError("month is required")
+    from services.grile_monthly_orchestration import orchestrate_monthly_operation
 
-    from db.connection import get_pool
-
-    pool = await get_pool()
-    operation: dict[str, Any] | None = None
-    requested_by_sub = "direct-execution"
-    approved_manifest_id: int | None = None
-    execution_owner = ""
-    execution_epoch = 0
-
-    if operation_id is not None:
-        requested_execution_owner = execution_owner_hint or uuid4().hex
-        start = await start_monthly_operation(
-            pool,
-            operation_id,
-            execution_owner=requested_execution_owner,
-        )
-        if start.status != "started":
-            if start.status == "already_completed" and start.result is not None:
-                replay = dict(start.result)
-                replay.update(
-                    {
-                        "operation_id": operation_id,
-                        "operation_status": "completed",
-                        "idempotent_replay": True,
-                    }
-                )
-                return replay
-
-            persisted = start.operation or {}
-            persisted_op = str(persisted.get("op") or op or "unknown")
-            persisted_month = persisted.get("closing_month") or month
-            persisted_dry_run = bool(persisted.get("dry_run", dry_run))
-            operation_status = start.status.removeprefix("already_")
-            return {
-                "op": persisted_op,
-                "month_label": ro_month_label(str(persisted_month)) if persisted_month else None,
-                "status": "failed" if start.status in {"already_failed", "not_found"} else "no_op",
-                "output": f"Operation {operation_id} was not started: {start.status}.",
-                "exit_code": -1 if start.status in {"already_failed", "not_found"} else 0,
-                "dry_run": persisted_dry_run if persisted_op == "reset" else None,
-                "operation_id": operation_id,
-                "operation_status": operation_status,
-                "idempotent_replay": True,
-            }
-
-        operation = start.operation
-        if operation is None:
-            raise RuntimeError("Started monthly operation has no persisted state")
-        op = str(operation["op"])
-        persisted_month = operation.get("closing_month")
-        month = persisted_month if isinstance(persisted_month, str) and persisted_month else None
-        only = operation.get("only_filter")
-        dry_run = bool(operation["dry_run"])
-        requested_by_sub = str(operation.get("requested_by_sub") or "")
-        approved_manifest_id = operation.get("approved_manifest_id")
-        execution_owner = str(operation.get("execution_owner") or requested_execution_owner)
-        # A queued operation can be started only once, so its first lease epoch
-        # is exactly one. The repository normally returns both fields; these
-        # fallbacks preserve the caller-owned claim if a reduced adapter omits
-        # them without weakening the DB-side owner+epoch predicate.
-        execution_epoch = int(operation.get("execution_epoch", 1))
-        if not requested_by_sub:
-            raise RuntimeError("Persisted monthly operation has no OIDC subject")
-
-    if operation_id is not None and (
-        not execution_owner
-        or execution_epoch <= 0
-    ):
-        raise MonthlyIntegrityError("operation_lease_missing", "Monthly operation lease is missing")
-
-    if op not in VALID_OPS:
-        raise ValueError(f"Operatie necunoscuta: {op}")
-    if month is None:
-        raise ValueError("month is required")
-    if operation_id is not None and only and (op != "reset" or not dry_run):
-        error_manifest = base_manifest(
-            month=month,
-            operation=op,
-            requested_by_sub=requested_by_sub,
-            expected_stores=0,
-            expected_agents=0,
-            processed_stores=0,
-            processed_agents=0,
-            control_totals={},
-            artifacts=[],
-            errors=["partial_official_operation_forbidden"],
-            status="failed",
-        )
-        await persist_manifest_result(
-            pool,
-            operation_id=operation_id,
-            manifest=error_manifest,
-            error_code="partial_official_operation_forbidden",
-            execution_owner=execution_owner,
-            execution_epoch=execution_epoch,
-        )
-        result = {
-            "op": op,
-            "month_label": ro_month_label(month),
-            "status": "failed",
-            "output": "Operation failed: partial_official_operation_forbidden",
-            "exit_code": -1,
-            "dry_run": dry_run if op == "reset" else None,
-            "operation_id": operation_id,
-            "operation_status": "failed",
-        }
-        await finish_monthly_operation(
-            pool,
-            operation_id,
-            result=result,
-            error_message="partial_official_operation_forbidden",
-            execution_owner=execution_owner,
-            execution_epoch=execution_epoch,
-        )
-        return result
-
-    month_label = ro_month_label(month)
-
-    status = "success"
-    exit_code = 0
-    error_code: str | None = None
-    execution: MonthlyExecution | None = None
-    manifest_record: dict[str, Any] | None = None
-    try:
-        if operation_id is not None:
-            alive = await heartbeat_monthly_operation(
-                pool,
-                operation_id,
-                execution_owner=execution_owner,
-                execution_epoch=execution_epoch,
-            )
-            if not alive:
-                raise MonthlyIntegrityError("operation_lease_lost", "Monthly operation lease was lost")
-        operation_call: Coroutine[Any, Any, MonthlyExecution]
-        if op == "finalize":
-            operation_call = _finalize_month_execution(
-                pool,
-                month_label,
-                month_key=month,
-                requested_by_sub=requested_by_sub,
-                operation_id=operation_id,
-                only=only,
-                google_adapter=google_adapter,
-            )
-        elif op == "archive":
-            operation_call = _archive_month_execution(
-                pool,
-                month_label,
-                month_key=month,
-                requested_by_sub=requested_by_sub,
-                operation_id=operation_id,
-                only=only,
-                google_adapter=google_adapter,
-            )
-        else:
-            operation_call = _reset_month_execution(
-                pool,
-                closing_month=month_label,
-                next_month=ro_month_label(next_ym(month)),
-                closing_month_key=month,
-                next_month_key=next_ym(month),
-                requested_by_sub=requested_by_sub,
-                operation_id=operation_id,
-                approved_manifest_id=int(approved_manifest_id) if approved_manifest_id is not None else None,
-                only=only,
-                dry_run=dry_run,
-                google_adapter=google_adapter,
-                execution_owner=execution_owner,
-                execution_epoch=execution_epoch,
-            )
-        if operation_id is not None:
-            execution = await _run_with_monthly_lease(
-                pool,
-                operation_id,
-                execution_owner=execution_owner,
-                execution_epoch=execution_epoch,
-                operation=operation_call,
-            )
-        else:
-            execution = await operation_call
-        if operation_id is not None and not (
-            op == "reset" and not dry_run and approved_manifest_id is not None
-        ):
-            manifest_record = await persist_manifest_result(
-                pool,
-                operation_id=operation_id,
-                manifest=execution.manifest,
-                execution_owner=execution_owner,
-                execution_epoch=execution_epoch,
-            )
-    except MonthlyManifestError as exc:
-        status = "failed"
-        exit_code = -1
-        error_code = exc.code
-        if operation_id is not None:
-            manifest_record = await persist_manifest_result(
-                pool,
-                operation_id=operation_id,
-                manifest=exc.manifest,
-                error_code=exc.code,
-                execution_owner=execution_owner,
-                execution_epoch=execution_epoch,
-            )
-    except asyncio.CancelledError:
-        current = asyncio.current_task()
-        if current is not None:
-            while current.cancelling():
-                current.uncancel()
-        status = "failed"
-        exit_code = -1
-        error_code = "monthly_operation_cancelled"
-        if operation_id is not None:
-            cancellation_status = "uncertain" if op == "reset" and not dry_run else "failed"
-            cancelled_manifest = base_manifest(
-                month=month,
-                operation=op,
-                requested_by_sub=requested_by_sub,
-                expected_stores=0,
-                expected_agents=0,
-                processed_stores=0,
-                processed_agents=0,
-                control_totals={},
-                artifacts=[],
-                errors=[error_code],
-                status=cancellation_status,
-            )
-            manifest_record = await persist_manifest_result(
-                pool,
-                operation_id=operation_id,
-                manifest=cancelled_manifest,
-                error_code=error_code,
-                execution_owner=execution_owner,
-                execution_epoch=execution_epoch,
-            )
-    except Exception as exc:  # noqa: BLE001
-        status = "failed"
-        exit_code = -1
-        error_code = exc.code if isinstance(exc, MonthlyIntegrityError) else "monthly_operation_failed"
-        if operation_id is not None:
-            failed_manifest = base_manifest(
-                month=month,
-                operation=op,
-                requested_by_sub=requested_by_sub,
-                expected_stores=0,
-                expected_agents=0,
-                processed_stores=0,
-                processed_agents=0,
-                control_totals={},
-                artifacts=[],
-                errors=[error_code],
-                status="failed",
-            )
-            manifest_record = await persist_manifest_result(
-                pool,
-                operation_id=operation_id,
-                manifest=failed_manifest,
-                error_code=error_code,
-                execution_owner=execution_owner,
-                execution_epoch=execution_epoch,
-            )
-
-    result = {
-        "op": op,
-        "month_label": month_label,
-        "status": status,
-        "output": (
-            "Operation completed with verified coverage."
-            if status == "success"
-            else f"Operation failed: {error_code or 'monthly_operation_failed'}"
-        ),
-        "exit_code": exit_code,
-        "dry_run": dry_run if op == "reset" else None,
-    }
-    if manifest_record is not None:
-        result["manifest"] = public_manifest_payload(manifest_record)
-    if operation_id is not None:
-        result["operation_id"] = operation_id
-        result["operation_status"] = "completed" if status == "success" else "failed"
-        if (
-            status == "success"
-            and op == "reset"
-            and not dry_run
-            and approved_manifest_id is not None
-        ):
-            try:
-                approved_record = await fetch_monthly_manifest(pool, int(approved_manifest_id))
-                approved_payload = approved_record.get("manifest") if approved_record else None
-                approved_sha = approved_record.get("manifest_sha256") if approved_record else None
-                if not isinstance(approved_payload, dict) or not isinstance(approved_sha, str):
-                    raise RuntimeError("Approved manifest disappeared before consumption")
-                if execution is None:
-                    raise RuntimeError("Reset execution disappeared before commit")
-                consumed_manifest = dict(approved_payload)
-                consumed_manifest["status"] = "consumed"
-                consumed_manifest["consumed_at"] = utc_now()
-                consumed_manifest = finalize_manifest(consumed_manifest)
-                manifest_record = await persist_reset_success(
-                    pool,
-                    operation_id,
-                    result=result,
-                    reset_manifest=execution.manifest,
-                    manifest_id=int(approved_manifest_id),
-                    expected_manifest_sha256=approved_sha,
-                    consumed_manifest=consumed_manifest,
-                    execution_owner=execution_owner,
-                    execution_epoch=execution_epoch,
-                )
-                result["manifest"] = public_manifest_payload(manifest_record)
-                finished = True
-            except BaseException:  # cancellation also requires rollback before exit
-                rollback_manifest: dict[str, Any]
-                try:
-                    if execution is None or execution.rollback is None:
-                        raise RuntimeError("Reset rollback callback is unavailable")
-                    rollback_manifest = await execution.rollback()
-                except BaseException:  # persisted as uncertain below
-                    rollback_manifest = base_manifest(
-                        month=month,
-                        operation="reset",
-                        requested_by_sub=requested_by_sub,
-                        expected_stores=0,
-                        expected_agents=0,
-                        processed_stores=0,
-                        processed_agents=0,
-                        control_totals={},
-                        artifacts=[],
-                        errors=["reset_commit_failed", "rollback_failed"],
-                        status="uncertain",
-                    )
-                try:
-                    manifest_record = await persist_manifest_result(
-                        pool,
-                        operation_id=operation_id,
-                        manifest=rollback_manifest,
-                        error_code="reset_commit_failed",
-                        execution_owner=execution_owner,
-                        execution_epoch=execution_epoch,
-                    )
-                except Exception:  # noqa: BLE001 - operation still transitions to failed below
-                    manifest_record = None
-                result.update(
-                    {
-                        "status": "failed",
-                        "output": f"Operation failed: {rollback_manifest['status']}",
-                        "exit_code": -1,
-                        "operation_status": "failed",
-                    }
-                )
-                if manifest_record is not None:
-                    result["manifest"] = public_manifest_payload(manifest_record)
-                finished = await finish_monthly_operation(
-                    pool,
-                    operation_id,
-                    result=result,
-                    error_message="reset_commit_failed",
-                    execution_owner=execution_owner,
-                    execution_epoch=execution_epoch,
-                )
-        else:
-            finished = await finish_monthly_operation(
-                pool,
-                operation_id,
-                result=result,
-                error_message=error_code if status == "failed" else None,
-                execution_owner=execution_owner,
-                execution_epoch=execution_epoch,
-            )
-        if not finished:
-            return {
-                "op": op,
-                "month_label": month_label,
-                "status": "failed",
-                "output": "Operation failed: operation_lease_lost",
-                "exit_code": -1,
-                "dry_run": dry_run if op == "reset" else None,
-                "operation_id": operation_id,
-                "operation_status": "failed",
-            }
-    return result
+    return await orchestrate_monthly_operation(
+        _monthly_run_ports(),
+        op=op,
+        month=month,
+        only=only,
+        dry_run=dry_run,
+        operation_id=operation_id,
+        google_adapter=google_adapter,
+        execution_owner_hint=execution_owner_hint,
+    )
 
 
 async def fetch_download(kind: str, month: str) -> tuple[bytes, str, str]:

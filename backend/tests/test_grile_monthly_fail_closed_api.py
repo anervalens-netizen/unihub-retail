@@ -11,6 +11,7 @@ from pydantic import ValidationError
 from auth import AuthClaims
 from privileged_access import GRILE_FINALIZER_GROUPS_ENV
 import routers.grile as grile_router
+from services.grile_queries import GrileQueryService
 
 
 def claims(groups: list[str]) -> AuthClaims:
@@ -119,20 +120,18 @@ async def test_duplicate_monthly_request_returns_persisted_operation_identity(
 async def test_manifest_approval_persists_approver_subject(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    pool = object()
-    approve = AsyncMock(return_value={"id": 9, "status": "approved"})
-    monkeypatch.setattr(grile_router, "get_pool", AsyncMock(return_value=pool))
-    monkeypatch.setattr(grile_router, "approve_monthly_manifest", approve)
+    service = AsyncMock(spec=GrileQueryService)
+    service.approve_monthly_manifest.return_value = {"id": 9, "status": "approved"}
 
     result = await grile_router.grile_monthly_manifest_approve(
         manifest_id=9,
         claims=claims(["synthetic-finalizer"]),
         _rate_limit=None,
+        svc=service,
     )
 
     assert result == {"manifest": {"id": 9, "status": "approved"}}
-    approve.assert_awaited_once_with(
-        pool,
+    service.approve_monthly_manifest.assert_awaited_once_with(
         manifest_id=9,
         approved_by_sub="stable-monthly-subject",
     )

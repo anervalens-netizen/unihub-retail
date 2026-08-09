@@ -7,12 +7,10 @@ from typing import Any
 
 import asyncpg
 
+from domain.export_operations import ExportOperationCapacityError
+
 
 MAX_ACTIVE_EXPORT_OPERATIONS = 3
-
-
-class ExportOperationCapacityError(RuntimeError):
-    pass
 
 
 EXPORT_OPERATION_COLUMNS = """

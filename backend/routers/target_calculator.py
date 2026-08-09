@@ -5,15 +5,14 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import ConfigDict, Field
+from schemas.common import StrictApiModel, MonthStr
 
 from auth import AuthClaims, require_auth
-from db.connection import get_pool
+from composition import build_target_calculator_service
 from permissions import require_privileged_access
 from privileged_access import TARGET_FINALIZER_GROUPS_ENV, has_configured_group
 from rate_limits import REPORT_EXPORT_LIMIT, TARGET_MUTATION_LIMIT, rate_limit
-from repositories.target_calculator import TargetCalculatorRepository
-from schemas.common import MonthStr
 from services.target_calculator import TargetCalculatorService
 
 router = APIRouter(prefix="/api/target-calculator", tags=["target-calculator"])
@@ -37,7 +36,7 @@ def require_target_owner(
     )
 
 
-class TargetCalculationRequest(BaseModel):
+class TargetCalculationRequest(StrictApiModel):
     model_config = ConfigDict(extra="forbid")
 
     target_month: MonthStr
@@ -50,7 +49,7 @@ class TargetCalculationRequest(BaseModel):
     expected_revision: int | None = Field(default=None, ge=1)
 
 
-class TargetFinalRow(BaseModel):
+class TargetFinalRow(StrictApiModel):
     model_config = ConfigDict(extra="forbid")
 
     site_code: str
@@ -59,24 +58,20 @@ class TargetFinalRow(BaseModel):
     override_reason: str | None = Field(default=None, min_length=1, max_length=500)
 
 
-class TargetFinalRowsRequest(BaseModel):
+class TargetFinalRowsRequest(StrictApiModel):
     model_config = ConfigDict(extra="forbid")
 
     expected_revision: int = Field(ge=1)
     rows: list[TargetFinalRow] = Field(min_length=1)
 
 
-class TargetFinalizeRequest(BaseModel):
+class TargetFinalizeRequest(StrictApiModel):
     model_config = ConfigDict(extra="forbid")
 
     expected_revision: int = Field(ge=1)
 
 
-class TargetOpenModel(BaseModel):
-    model_config = ConfigDict(extra="allow")
-
-
-class TargetApiErrorResponse(BaseModel):
+class TargetApiErrorResponse(StrictApiModel):
     """Documented shape of explicit Target HTTPException responses."""
 
     detail: str | dict[str, object]
@@ -101,7 +96,7 @@ TARGET_MUTATION_ERROR_RESPONSES: TargetErrorResponses = {
 }
 
 
-class TargetContextResponse(TargetOpenModel):
+class TargetContextResponse(StrictApiModel):
     latest_sales_month: str
     suggested_target_month: str
     suggested_cohort_month: str
@@ -115,13 +110,13 @@ class TargetContextResponse(TargetOpenModel):
     can_finalize: bool
 
 
-class TargetSourceMonth(TargetOpenModel):
+class TargetSourceMonth(StrictApiModel):
     month: str
     label: str
     role: str
 
 
-class TargetHistoryValue(TargetOpenModel):
+class TargetHistoryValue(StrictApiModel):
     month: str
     label: str
     role: str
@@ -134,7 +129,7 @@ class TargetHistoryValue(TargetOpenModel):
     weight: Decimal = Decimal("0")
 
 
-class TargetSeasonalityYear(TargetOpenModel):
+class TargetSeasonalityYear(StrictApiModel):
     year_offset: int
     base_month: str
     target_month: str
@@ -143,7 +138,7 @@ class TargetSeasonalityYear(TargetOpenModel):
     ratio: Decimal | None = None
 
 
-class TargetSeasonalityDetails(TargetOpenModel):
+class TargetSeasonalityDetails(StrictApiModel):
     store_factor: Decimal | None = None
     zone_factor: Decimal | None = None
     network_factor: Decimal | None = None
@@ -152,14 +147,14 @@ class TargetSeasonalityDetails(TargetOpenModel):
     last_year_store_factor: Decimal | None = None
     multiyear_store_factor: Decimal | None = None
     weights: dict[str, Decimal] | None = None
-    store_years: list[TargetSeasonalityYear] = []
-    zone_years: list[TargetSeasonalityYear] = []
-    network_years: list[TargetSeasonalityYear] = []
+    store_years: list[TargetSeasonalityYear] = Field(default_factory=list)
+    zone_years: list[TargetSeasonalityYear] = Field(default_factory=list)
+    network_years: list[TargetSeasonalityYear] = Field(default_factory=list)
     min: Decimal | None = None
     max: Decimal | None = None
 
 
-class TargetTrendDetails(TargetOpenModel):
+class TargetTrendDetails(StrictApiModel):
     base_month: str | None = None
     ratio: Decimal | None = None
     weight: Decimal | None = None
@@ -169,7 +164,7 @@ class TargetTrendDetails(TargetOpenModel):
     max: Decimal | None = None
 
 
-class TargetCalculationDetails(TargetOpenModel):
+class TargetCalculationDetails(StrictApiModel):
     method: str | None = None
     seasonality_years: int | None = None
     current_month: str | None = None
@@ -180,12 +175,12 @@ class TargetCalculationDetails(TargetOpenModel):
     allocation_reason: str | None = None
     is_floor_limited: bool | None = None
     is_cap_limited: bool | None = None
-    flags: list[str] = []
+    flags: list[str] = Field(default_factory=list)
     seasonality: TargetSeasonalityDetails | None = None
     trend: TargetTrendDetails | None = None
 
 
-class TargetProfitabilityResponse(TargetOpenModel):
+class TargetProfitabilityResponse(StrictApiModel):
     agent_count: int
     base_salary_per_agent: Decimal
     salary_cost_at_90_pct: Decimal
@@ -193,10 +188,10 @@ class TargetProfitabilityResponse(TargetOpenModel):
     accessory_margin_pct: Decimal | None = None
     break_even_gross_sales: Decimal | None = None
     forecast_sales: Decimal | None = None
-    anomaly_flags: list[str] = []
+    anomaly_flags: list[str] = Field(default_factory=list)
 
 
-class TargetScenarioRowResponse(TargetOpenModel):
+class TargetScenarioRowResponse(StrictApiModel):
     site_code: str
     locatie: str
     firma: str
@@ -210,14 +205,20 @@ class TargetScenarioRowResponse(TargetOpenModel):
     final_target: Decimal | None = None
     is_floor_limited: bool = False
     is_cap_limited: bool = False
-    history: list[TargetHistoryValue] = []
-    calculation_details: TargetCalculationDetails = TargetCalculationDetails()
+    history: list[TargetHistoryValue] = Field(default_factory=list)
+    calculation_details: TargetCalculationDetails = Field(
+        default_factory=TargetCalculationDetails
+    )
     note: str | None = None
     updated_at: str | None = None
+    manager_override_target: Decimal | None = None
+    manager_override_reason: str | None = None
+    manager_override_at: str | None = None
+    manager_override_revision: int | None = None
     profitability: TargetProfitabilityResponse | None = None
 
 
-class TargetRegionalSummaryResponse(TargetOpenModel):
+class TargetRegionalSummaryResponse(StrictApiModel):
     regional: str
     store_count: int
     floor_total: Decimal
@@ -234,7 +235,7 @@ class TargetRegionalSummaryResponse(TargetOpenModel):
     last_year_growth_pct: Decimal | None = None
 
 
-class TargetSourceSummaryResponse(TargetOpenModel):
+class TargetSourceSummaryResponse(StrictApiModel):
     month: str
     label: str
     target: Decimal
@@ -245,7 +246,7 @@ class TargetSourceSummaryResponse(TargetOpenModel):
     attainment_pct: Decimal | None = None
 
 
-class TargetForecastRunResponse(TargetOpenModel):
+class TargetForecastRunResponse(StrictApiModel):
     id: int
     model_name: str
     model_mode: str
@@ -254,29 +255,69 @@ class TargetForecastRunResponse(TargetOpenModel):
     source_month: str | None = None
 
 
-class TargetProfitabilitySummaryResponse(TargetOpenModel):
+class TargetForecastCoverageResponse(StrictApiModel):
+    mode: str
+    cutoff: str | None = None
+    cutoff_min: str | None = None
+    cutoff_max: str | None = None
+    expected_store_count: int
+    covered_store_count: int
+    missing_site_codes: list[str] = Field(default_factory=list)
+
+
+class TargetProfitabilityAssumptionsResponse(StrictApiModel):
+    vat_ruleset_id: str
+    vat_ruleset_hash: str | None = None
+    vat_rule_id: str
+    vat_effective_from: str | None = None
+    vat_multiplier: Decimal
+    vat_rate: Decimal
+    salary_pnl_factor: Decimal
+    meal_vouchers_per_agent: Decimal
+    sales_commission_rate: Decimal
+    salary_assumed_attainment: Decimal
+    default_store_agent_count: int
+    sun_plaza_agent_count: int
+    base_salary_default: Decimal
+    base_salary_high: Decimal
+    target_rule_set_id: str | None = None
+    target_rule_set_hash: str | None = None
+
+
+class TargetProfitabilitySummaryResponse(StrictApiModel):
     status: str
-    pnl_months: list[str] = []
+    pnl_months: list[str] = Field(default_factory=list)
     pnl_store_count: int
     forecast_store_count: int
     forecast_run: TargetForecastRunResponse | None = None
-    assumptions: TargetOpenModel | None = None
+    assumptions: TargetProfitabilityAssumptionsResponse | None = None
     salary_total: Decimal
     operating_costs_total: Decimal | None = None
     break_even_total: Decimal | None = None
     forecast_total: Decimal | None = None
-    forecast_coverage: TargetOpenModel | None = None
+    forecast_coverage: TargetForecastCoverageResponse | None = None
     forecast_below_break_even_count: int
     target_below_break_even_count: int
+    input_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
 
 
-class TargetCalculationParams(TargetOpenModel):
+class TargetCalculationParams(StrictApiModel):
     seasonality_years: int | None = None
-    profitability: TargetOpenModel | None = None
-    profitability_summary: TargetOpenModel | None = None
+    seasonality_min: Decimal | None = None
+    seasonality_max: Decimal | None = None
+    trend_weight: Decimal | None = None
+    trend_adjustment_min: Decimal | None = None
+    trend_adjustment_max: Decimal | None = None
+    previous_month_cap_pct: Decimal | None = None
+    minimum_seasonality_base: Decimal | None = None
+    strong_weights: dict[str, Decimal] = Field(default_factory=dict)
+    weak_weights: dict[str, Decimal] = Field(default_factory=dict)
+    new_store_weights: dict[str, Decimal] = Field(default_factory=dict)
+    profitability: TargetProfitabilityAssumptionsResponse | None = None
+    profitability_summary: TargetProfitabilitySummaryResponse | None = None
 
 
-class TargetScenarioSummaryResponse(TargetOpenModel):
+class TargetScenarioSummaryResponse(StrictApiModel):
     id: int
     target_month: str
     cohort_month: str
@@ -286,9 +327,20 @@ class TargetScenarioSummaryResponse(TargetOpenModel):
     status: str
     revision: int
     calculation_method: str
-    source_months: list[TargetSourceMonth] = []
-    warnings: list[str] = []
-    calculation_params: TargetCalculationParams = TargetCalculationParams()
+    source_months: list[TargetSourceMonth] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    calculation_params: TargetCalculationParams = Field(
+        default_factory=TargetCalculationParams
+    )
+    rule_set_id: str | None = None
+    rule_set_hash: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    rule_set_snapshot: dict[str, object] | None = None
+    calculation_input_sha256: str | None = Field(
+        default=None, pattern=r"^[0-9a-f]{64}$"
+    )
+    profitability_input_sha256: str | None = Field(
+        default=None, pattern=r"^[0-9a-f]{64}$"
+    )
     store_count: int = 0
     proposed_total: Decimal = Decimal("0")
     final_total: Decimal = Decimal("0")
@@ -306,12 +358,12 @@ class TargetScenarioResponse(TargetScenarioSummaryResponse):
     cap_limited_count: int = 0
     manager_overrides_count: int = 0
     rows: list[TargetScenarioRowResponse]
-    regional_summary: list[TargetRegionalSummaryResponse] = []
-    source_summary: list[TargetSourceSummaryResponse] = []
+    regional_summary: list[TargetRegionalSummaryResponse] = Field(default_factory=list)
+    source_summary: list[TargetSourceSummaryResponse] = Field(default_factory=list)
     profitability_summary: TargetProfitabilitySummaryResponse | None = None
 
 
-class TargetStoreHistoryPointResponse(TargetOpenModel):
+class TargetStoreHistoryPointResponse(StrictApiModel):
     month: str
     total_sales: Decimal
     target_value: Decimal
@@ -326,7 +378,7 @@ class TargetStoreHistoryPointResponse(TargetOpenModel):
     working_days: int
 
 
-class TargetStoreAgentResponse(TargetOpenModel):
+class TargetStoreAgentResponse(StrictApiModel):
     agent: str
     total_sales: Decimal
     sales_share_pct: Decimal
@@ -339,7 +391,7 @@ class TargetStoreAgentResponse(TargetOpenModel):
     sales_16m: Decimal
 
 
-class TargetStoreDetailResponse(TargetOpenModel):
+class TargetStoreDetailResponse(StrictApiModel):
     site_code: str
     locatie: str
     firma: str
@@ -349,16 +401,14 @@ class TargetStoreDetailResponse(TargetOpenModel):
     cohort_month: str
     proposed_target: Decimal
     final_target: Decimal | None = None
-    history: list[TargetStoreHistoryPointResponse] = []
+    history: list[TargetStoreHistoryPointResponse] = Field(default_factory=list)
     latest: TargetStoreHistoryPointResponse | None = None
     best_month: TargetStoreHistoryPointResponse | None = None
     avg_sales_16m: Decimal
-    agents: list[TargetStoreAgentResponse] = []
+    agents: list[TargetStoreAgentResponse] = Field(default_factory=list)
 
 
-async def get_target_calculator_service() -> TargetCalculatorService:
-    pool = await get_pool()
-    return TargetCalculatorService(TargetCalculatorRepository(pool))
+get_target_calculator_service = build_target_calculator_service
 
 
 @router.get("/context", responses=TARGET_NOT_FOUND_RESPONSES)

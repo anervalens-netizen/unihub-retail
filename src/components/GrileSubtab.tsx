@@ -383,10 +383,10 @@ function DesktopTableHeader() {
 // ── Grup Team Leader (pliabil ca managerul; fara bara cand nu exista TL) ──────
 function TeamLeaderGroup({ tl, month }: { tl: GrileTeamLeader; month: string }) {
   const storageKey = `unihub_grile_tl_${tl.name ?? 'fara-tl'}`;
-  const [open, setOpen] = useState(() => localStorage.getItem(storageKey) !== 'closed');
+  const [open, setOpen] = useState(() => sessionStorage.getItem(storageKey) !== 'closed');
   const toggleOpen = () => setOpen((value) => {
     const next = !value;
-    localStorage.setItem(storageKey, next ? 'open' : 'closed');
+    sessionStorage.setItem(storageKey, next ? 'open' : 'closed');
     return next;
   });
 
@@ -416,10 +416,10 @@ function TeamLeaderGroup({ tl, month }: { tl: GrileTeamLeader; month: string }) 
 // ── Grup manager (ASM) ────────────────────────────────────────────────────────
 function ManagerGroup({ m, filter, month }: { m: GrileManager; filter: StatusFilter; month: string }) {
   const storageKey = `unihub_grile_manager_${m.name}`;
-  const [open, setOpen] = useState(() => localStorage.getItem(storageKey) !== 'closed');
+  const [open, setOpen] = useState(() => sessionStorage.getItem(storageKey) !== 'closed');
   const toggleOpen = () => setOpen((value) => {
     const next = !value;
-    localStorage.setItem(storageKey, next ? 'open' : 'closed');
+    sessionStorage.setItem(storageKey, next ? 'open' : 'closed');
     return next;
   });
 
@@ -524,7 +524,7 @@ export function GrileSubtab({ initialMonth }: { initialMonth?: string }) {
   }, [data?.month, month]);
 
   useEffect(() => {
-    localStorage.removeItem(LEGACY_GRILE_MONTH_KEY);
+    sessionStorage.removeItem(LEGACY_GRILE_MONTH_KEY);
   }, []);
 
   const runMut = useMutation({

@@ -4,12 +4,13 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import ConfigDict, Field
+from schemas.common import StrictApiModel
 
 from schemas.common import MonthStr, NonNegativeInt, PercentageFloat
 
 
-class GrileApiModel(BaseModel):
+class GrileApiModel(StrictApiModel):
     model_config = ConfigDict(extra="forbid")
 
 

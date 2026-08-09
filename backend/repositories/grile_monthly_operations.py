@@ -9,7 +9,7 @@ from uuid import uuid4
 
 import asyncpg
 
-from services.grile_monthly_state import (
+from grile.domain.monthly_state import (
     GrileMonthlyRetryBlockedError,
     MonthlyOperationReservation,
     MonthlyOperationStartResult,

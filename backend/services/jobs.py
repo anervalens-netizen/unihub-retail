@@ -121,6 +121,9 @@ class GrileTargetSyncEnqueueResult:
 
 _VALKEY_SETTINGS: Optional[RedisSettings] = None
 SALES_IMPORT_QUEUE_NAME = "arq:retail:imports"
+OPERATIONS_QUEUE_NAME = "arq:retail:operations"
+GRILE_QUEUE_NAME = "arq:retail:grile"
+EXPORT_QUEUE_NAME = "arq:retail:exports"
 DEFAULT_SALES_IMPORT_SPOOL_MAX_AGE_SECONDS = 24 * 60 * 60
 _SALES_ARTIFACT_DIGEST = re.compile(r"^[0-9a-f]{64}$")
 _IMPORT_SPOOL_NAMESPACE = re.compile(r"^[0-9a-f]{64}$")
@@ -740,7 +743,7 @@ async def enqueue_campaign_reporting_publication(
 
 
 async def enqueue_complex_export(operation_id: int) -> Job:
-    """Publish one durable export operation to the serialized operations worker."""
+    """Publish one durable export operation to the isolated export worker."""
     if isinstance(operation_id, bool) or not isinstance(operation_id, int) or operation_id <= 0:
         raise ValueError("Invalid export operation id")
     pool = await _require_arq_pool()
@@ -750,10 +753,11 @@ async def enqueue_complex_export(operation_id: int) -> Job:
         "build_complex_export_background",
         operation_id,
         _job_id=job_id,
+        _queue_name=EXPORT_QUEUE_NAME,
     )
     if job is not None:
         return job
-    existing = Job(job_id, pool)
+    existing = Job(job_id, pool, _queue_name=EXPORT_QUEUE_NAME)
     try:
         existing_status = await existing.status()
     except ARQ_TRANSPORT_ERRORS as exc:
@@ -819,6 +823,8 @@ async def enqueue_grile_check(
             triggered_by_sub,
             int(run_id),
             get_request_id(),
+            _job_id=f"grile-check:{run_id}",
+            _queue_name=GRILE_QUEUE_NAME,
         )
         if job is None:
             raise RuntimeError("Failed to enqueue grile check job")
@@ -877,6 +883,8 @@ async def enqueue_grile_store_refresh(
             "grile_store_refresh_background",
             int(operation_id),
             get_request_id(),
+            _job_id=f"grile-store-refresh:{operation_id}",
+            _queue_name=GRILE_QUEUE_NAME,
         )
         if job is None:
             raise RuntimeError("Failed to enqueue grile store refresh job")
@@ -952,6 +960,7 @@ async def enqueue_grile_monthly(
             "grile_monthly_background",
             reservation.operation_id,
             _job_id=job_id,
+            _queue_name=GRILE_QUEUE_NAME,
         )
         if job is None:
             raise RuntimeError("Failed to enqueue grile monthly job")
@@ -1016,6 +1025,7 @@ async def enqueue_grile_target_sync(
             operation_id,
             get_request_id(),
             _job_id=job_id,
+            _queue_name=GRILE_QUEUE_NAME,
         )
         if job is None:
             raise RuntimeError("Failed to enqueue Grile target sync job")
@@ -1068,6 +1078,10 @@ async def get_job_status(job_id: str) -> JobResult:
         queue_name = (
             SALES_IMPORT_QUEUE_NAME
             if job_id.startswith(("sales-import:", "sales-promote:", "promo-actuals:", "erp-reconciliation:"))
+            else EXPORT_QUEUE_NAME
+            if job_id.startswith("export-complex:")
+            else GRILE_QUEUE_NAME
+            if job_id.startswith(("grile-check:", "grile-store-refresh:", "grile-monthly:", "grile-agent-targets:"))
             else None
         )
         job = Job(job_id, pool, _queue_name=queue_name) if queue_name else Job(job_id, pool)

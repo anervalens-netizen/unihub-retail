@@ -20,6 +20,8 @@ PYTHONPATH="$ROOT/backend${PYTHONPATH:+:$PYTHONPATH}" \
 systemctl is-active --quiet unihub-backend.service
 systemctl is-active --quiet unihub-worker.service
 systemctl is-active --quiet unihub-import-worker.service
+systemctl is-active --quiet unihub-grile-worker.service
+systemctl is-active --quiet unihub-export-worker.service
 
 curl --fail --silent --show-error --max-time 10 http://127.0.0.1:9898/livez >/dev/null
 curl --fail --silent --show-error --max-time 10 http://127.0.0.1:9898/readyz >/dev/null
@@ -45,15 +47,19 @@ for unit in \
   unihub-backend.service \
   unihub-worker.service \
   unihub-import-worker.service \
+  unihub-grile-worker.service \
+  unihub-export-worker.service \
   unihub-retail-migrate.service; do
   test "$(readlink "/etc/systemd/system/$unit")" = \
     "/var/lib/unihub-retail-deploy/runtime-releases/$EXPECTED_SHA/systemd/$unit"
 done
 
-listeners="$(ss -H -ltn '( sport = :9901 or sport = :9902 )')"
+listeners="$(ss -H -ltn '( sport = :9901 or sport = :9902 or sport = :9903 or sport = :9904 )')"
 grep -Fq "$gateway:9901" <<<"$listeners"
 grep -Fq "$gateway:9902" <<<"$listeners"
-! grep -Eq '(^|[[:space:]])(0\.0\.0\.0|127\.0\.0\.1):990[12]([[:space:]]|$)' <<<"$listeners"
+grep -Fq "$gateway:9903" <<<"$listeners"
+grep -Fq "$gateway:9904" <<<"$listeners"
+! grep -Eq '(^|[[:space:]])(0\.0\.0\.0|127\.0\.0\.1):990[1-4]([[:space:]]|$)' <<<"$listeners"
 
 status="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' \
   --max-time 10 http://127.0.0.1:9898/metrics)"
@@ -74,7 +80,8 @@ healthy = {
 }
 if not required <= healthy:
     raise SystemExit("Retail Prometheus targets are not all UP")
-' unihub-retail-web unihub-retail-operations unihub-retail-imports <<<"$targets"
+' unihub-retail-web unihub-retail-operations unihub-retail-imports \
+  unihub-retail-grile unihub-retail-exports <<<"$targets"
 
 for path in /metrics /docs /redoc /openapi.json; do
   status="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' \

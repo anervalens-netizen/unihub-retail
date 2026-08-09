@@ -3,9 +3,8 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, Query
 
 from auth import AuthClaims, require_auth
-from db.connection import get_pool
+from composition import build_contests_service
 from schemas.common import MonthStr
-from repositories.contests import ContestsRepository
 from schemas.contests import ContestResponse
 from services.contests import ContestsService
 
@@ -15,10 +14,7 @@ from services.contests import ContestsService
 router = APIRouter(prefix="/api/contests", tags=["contests"])
 
 
-async def get_contests_service() -> ContestsService:
-    pool = await get_pool()
-    repo = ContestsRepository(pool)
-    return ContestsService(repo, pool)
+get_contests_service = build_contests_service
 
 
 def _internal_site_codes_override(site_codes: str | None, claims: AuthClaims) -> list[str] | None:

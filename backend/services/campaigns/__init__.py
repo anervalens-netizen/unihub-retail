@@ -16,9 +16,8 @@ from schemas.campaigns import (
     CampaignSnapshot,
     FocusHistoryResponse,
 )
+from services.campaigns.contracts import CampaignContext, CampaignResponseSnapshot
 from services.campaigns.context import (
-    CampaignContext,
-    CampaignResponseSnapshot,
     build_campaign_context,
     load_campaign_context,
     materialize_period_evaluations,

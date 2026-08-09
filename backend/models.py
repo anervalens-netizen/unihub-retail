@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from typing import Any, Literal
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import ConfigDict, Field, field_validator
+from schemas.common import StrictApiModel
 from schemas.erp_reconciliation import ErpReconciliationResponse
 
 from schemas.ai_forecast import (
@@ -111,7 +112,7 @@ ImportSnapshotStatus = Literal["processing", "completed", "failed"]
 ImportJobState = Literal["queued", "in_progress", "complete", "not_found"]
 
 
-class AgentOption(BaseModel):
+class AgentOption(StrictApiModel):
     agent: str
     site_code: str
     locatie: str
@@ -120,7 +121,7 @@ class AgentOption(BaseModel):
     asm: str
 
 
-class FilterOptions(BaseModel):
+class FilterOptions(StrictApiModel):
     firme: list[str]
     regionali: list[str]
     asmi: list[str]
@@ -128,9 +129,8 @@ class FilterOptions(BaseModel):
     agenti: list[AgentOption]
 
 
-class ImportCoverageReport(BaseModel):
-    model_config = ConfigDict(extra="allow")
-
+class ImportCoverageReport(StrictApiModel):
+    # Current generation-based coverage contract.
     incoming_store_count: int | None = None
     company_count: int | None = None
     active_store_count_before: int | None = None
@@ -141,30 +141,67 @@ class ImportCoverageReport(BaseModel):
     missing_prior_store_count: int | None = None
     new_store_count: int | None = None
     metadata_change_count: int | None = None
+    incoming_set_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    missing_active_set_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    missing_prior_set_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    new_store_set_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     store_activity_writes: int | None = None
+    anomalies: list["SalesGenerationAnomaly"] | None = None
+    # Read-only compatibility for snapshots created before generation fencing.
+    stores_present_count: int | None = None
+    stores_missing_count: int | None = None
 
-class SalesGenerationAnomaly(BaseModel):
-    model_config = ConfigDict(extra="allow")
 
+class SalesGenerationAnomaly(StrictApiModel):
     code: str
+    classification: Literal["informational", "structural_contradiction"] | None = None
     blocking: bool
     message: str
     count: int | None = None
+    cutoff_date: str | None = None
+    import_month: str | None = None
+    max_sale_date: str | None = None
+    months: list[str] | None = None
+    previous: str | None = None
+    incoming: str | None = None
+    drop_pct: str | None = None
+    threshold_pct: str | None = None
+    set_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    site_days: list[str] | None = None
 
 
-class SalesGenerationManifest(BaseModel):
-    model_config = ConfigDict(extra="allow")
+class SalesSiteDayManifest(StrictApiModel):
+    site_code: str
+    sale_date: date
+    rows: NonNegativeInt
+    receipts: NonNegativeInt
+    quantity: int
+    value: str
 
+
+class SalesGenerationManifest(StrictApiModel):
+    schema_version: int | None = None
+    import_month: MonthStr | None = None
+    source_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     cutoff_date: date | None = None
+    max_sale_date: date | None = None
+    rows_in_file: NonNegativeInt | None = None
+    rows_imported: NonNegativeInt | None = None
+    rows_filtered: NonNegativeInt | None = None
+    store_count: NonNegativeInt | None = None
+    agent_count: NonNegativeInt | None = None
     receipt_count: NonNegativeInt | None = None
     total_value: str | None = None
-    total_quantity: NonNegativeInt | None = None
-    business_sha256: str | None = None
+    total_quantity: int | None = None
     site_day_count: NonNegativeInt | None = None
+    site_day_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    site_days: list[SalesSiteDayManifest] | None = None
+    business_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     anomalies: list[SalesGenerationAnomaly] = Field(default_factory=list)
-    generation_state: Literal["validated", "promoted"] | None = None
+    generation_state: Literal["validated", "promoting", "promoted"] | None = None
 
-class ImportHistoryEntry(BaseModel):
+
+class ImportHistoryEntry(StrictApiModel):
     id: int
     import_month: MonthStr
     filename: str
@@ -180,7 +217,7 @@ class ImportHistoryEntry(BaseModel):
     duration_seconds: float | None = Field(default=None, ge=0)
 
 
-class ImportResponse(BaseModel):
+class ImportResponse(StrictApiModel):
     import_month: MonthStr
     rows_in_file: NonNegativeInt
     rows_imported: NonNegativeInt
@@ -197,7 +234,7 @@ class ImportResponse(BaseModel):
     manifest: SalesGenerationManifest | None = None
 
 
-class SalesGenerationPromotionRequest(BaseModel):
+class SalesGenerationPromotionRequest(StrictApiModel):
     model_config = ConfigDict(extra="forbid")
 
     generation_token: str = Field(pattern=r"^[0-9a-f-]{36}$")
@@ -205,7 +242,7 @@ class SalesGenerationPromotionRequest(BaseModel):
     override_reason: str | None = Field(default=None, min_length=10, max_length=500)
 
 
-class PromoActualImportResponse(BaseModel):
+class PromoActualImportResponse(StrictApiModel):
     import_month: MonthStr
     cutoff_date: date
     filename: str
@@ -218,7 +255,7 @@ class PromoActualImportResponse(BaseModel):
     material_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
 
 
-class ImportJobStatus(BaseModel):
+class ImportJobStatus(StrictApiModel):
     job_id: str
     status: ImportJobState
     job_kind: Literal["sales", "promo_actuals", "erp_reconciliation"] = "sales"
@@ -228,7 +265,7 @@ class ImportJobStatus(BaseModel):
     error: str | None = None
 
 
-class ExportOperationResponse(BaseModel):
+class ExportOperationResponse(StrictApiModel):
     id: int = Field(gt=0)
     kind: Literal["daily_metrics", "daily_comparison"]
     status: Literal["queued", "running", "completed", "failed", "cancelled", "expired"]
@@ -247,17 +284,17 @@ class ExportOperationResponse(BaseModel):
     can_download: bool = False
 
 
-class ExportOperationPublishUncertainDetail(BaseModel):
+class ExportOperationPublishUncertainDetail(StrictApiModel):
     status: Literal["unknown"]
     job_id: str | None = None
     operation_id: int | None = None
 
 
-class ExportOperationUnavailableResponse(BaseModel):
+class ExportOperationUnavailableResponse(StrictApiModel):
     detail: str | ExportOperationPublishUncertainDetail
 
 
-class StoreActivityChangeRequest(BaseModel):
+class StoreActivityChangeRequest(StrictApiModel):
     model_config = ConfigDict(extra="forbid")
 
     is_active: bool
@@ -273,14 +310,14 @@ class StoreActivityChangeRequest(BaseModel):
         return normalized
 
 
-class StoreActivityChangeResponse(BaseModel):
+class StoreActivityChangeResponse(StrictApiModel):
     site_code: str
     previous_is_active: bool
     is_active: bool
     event_id: int
 
 
-class VisitReportRow(BaseModel):
+class VisitReportRow(StrictApiModel):
     magazin: str
     asm: str | None
     regional: str | None
@@ -295,7 +332,7 @@ class VisitReportRow(BaseModel):
     last_visit: str | None
 
 
-class VisitReportResponse(BaseModel):
+class VisitReportResponse(StrictApiModel):
     month: MonthStr
     total_vizite: NonNegativeInt
     magazine_unice: NonNegativeInt
@@ -303,7 +340,7 @@ class VisitReportResponse(BaseModel):
     rows: list[VisitReportRow]
 
 
-class VisitSummaryItem(BaseModel):
+class VisitSummaryItem(StrictApiModel):
     id: str
     magazin: str
     locatie: str | None
@@ -313,29 +350,29 @@ class VisitSummaryItem(BaseModel):
     has_photos: bool
 
 
-class VisitDayGroup(BaseModel):
+class VisitDayGroup(StrictApiModel):
     date: str
     nr_vizite: NonNegativeInt
     visits: list[VisitSummaryItem]
 
 
-class VisitMonthGroup(BaseModel):
+class VisitMonthGroup(StrictApiModel):
     month: MonthStr | Literal["—"]
     nr_vizite: NonNegativeInt
     days: list[VisitDayGroup]
 
 
-class TeamLeaderGroup(BaseModel):
+class TeamLeaderGroup(StrictApiModel):
     team_leader: str
     nr_vizite: NonNegativeInt
     months: list[VisitMonthGroup]
 
 
-class VisitTreeResponse(BaseModel):
+class VisitTreeResponse(StrictApiModel):
     team_leaders: list[TeamLeaderGroup]
 
 
-class VisitDetail(BaseModel):
+class VisitDetail(StrictApiModel):
     id: str
     data_raport: str | None
     ora_trimitere: str | None
@@ -375,7 +412,7 @@ class VisitDetail(BaseModel):
     notes: str | None
 
 
-class StoreOption(BaseModel):
+class StoreOption(StrictApiModel):
     site_code: str
     locatie: str
     firma: str
@@ -383,11 +420,11 @@ class StoreOption(BaseModel):
     asm: str
 
 
-class StoreTargetsSaveResponse(BaseModel):
+class StoreTargetsSaveResponse(StrictApiModel):
     inserted: NonNegativeInt
 
 
-class StoreTargetInput(BaseModel):
+class StoreTargetInput(StrictApiModel):
     model_config = ConfigDict(extra="forbid")
 
     site_code: str

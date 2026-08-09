@@ -32,6 +32,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import asyncpg
 import pandas as pd
 
+from services.legacy_xls import read_legacy_xls_frame
+
 DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data"
 
 CODE_ALIASES = {"cod", "itemcode", "cod_produs", "code", "sku"}
@@ -49,7 +51,11 @@ def load_excel(
     header_row: int = 0,
     reward_overrides: dict[str, float] | None = None,
 ) -> list[dict]:
-    df = pd.read_excel(str(path), sheet_name=sheet, header=header_row)
+    df = (
+        read_legacy_xls_frame(path, sheet_name=sheet, header=header_row)
+        if path.suffix.casefold() == ".xls"
+        else pd.read_excel(str(path), sheet_name=sheet, header=header_row)
+    )
     df = df.rename(columns=lambda c: normalize(str(c)))
 
     norm_cols = list(df.columns)

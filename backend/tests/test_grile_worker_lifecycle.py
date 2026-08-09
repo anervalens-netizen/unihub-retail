@@ -10,6 +10,7 @@ import repositories.grile as grile_repository
 import routers.grile as grile_router
 import services.grile as grile_service
 import services.grile_agent_targets as target_service
+from services.grile_queries import GrileQueryService
 import worker
 from services.grile_agent_targets import AgentTargetsState
 
@@ -128,11 +129,12 @@ async def test_run_status_reconciles_stale_run_before_exposing_activity(
             events.append(f"read:{month}")
             return latest
 
-    monkeypatch.setattr(grile_router, "get_pool", AsyncMock(return_value=object()))
-    monkeypatch.setattr(grile_router, "resolve_month", AsyncMock(return_value="2098-09"))
-    monkeypatch.setattr(grile_router, "GrileRepository", lambda _pool: Repository())
+    service = object.__new__(GrileQueryService)
+    service.pool = object()  # type: ignore[assignment]
+    service.repo = Repository()  # type: ignore[assignment]
+    monkeypatch.setattr(service, "resolve_month", AsyncMock(return_value="2098-09"))
 
-    payload = await grile_router.grile_run_status(month="2098-09", _claims=object())  # type: ignore[arg-type]
+    payload = await service.run_status("2098-09")
 
     assert events == ["reconcile:2098-09", "read:2098-09"]
     assert payload["run"]["status"] == "failed"
