@@ -119,6 +119,57 @@ def route_for(sequence: int) -> tuple[str, str, dict[str, Any] | None]:
     return "export-preview", "/api/exports/preview", EXPORT_REQUEST
 
 
+async def poll_export_operation(
+    client: httpx.AsyncClient,
+    headers: dict[str, str],
+    operation: dict[str, Any],
+) -> str:
+    operation_id = operation.get("id")
+    if operation_id is None:
+        return "missing_id"
+    deadline = time.monotonic() + 30
+    state = "poll_timeout"
+    while time.monotonic() < deadline:
+        response = await client.get(
+            f"/api/exports/operations/{operation_id}", headers=headers
+        )
+        if response.status_code != 200:
+            return f"http_{response.status_code}"
+        state = str(response.json().get("status"))
+        if state in {"completed", "failed", "cancelled", "expired"}:
+            return state
+        await asyncio.sleep(0.2)
+    return state
+
+
+async def collect_export_operation_states(
+    client: httpx.AsyncClient,
+    headers: dict[str, str],
+    operations: list[dict[str, Any]],
+) -> list[str]:
+    states = [
+        await poll_export_operation(client, headers, operation)
+        for operation in operations
+    ]
+    # The API intentionally permits only one active export per requester.
+    # A second pre-load reservation can therefore return 409. Submit its
+    # replacement after the first terminal result so two real jobs are still
+    # consumed and verified by the isolated export worker.
+    while len(states) < 2:
+        request = {
+            **EXPORT_REQUEST,
+            "filename": f"mixed-load-gate-followup-{len(states) + 1}.xlsx",
+        }
+        response = await client.post(
+            "/api/exports/operations", headers=headers, json=request
+        )
+        if response.status_code not in {200, 201}:
+            states.append(f"submit_http_{response.status_code}")
+            break
+        states.append(await poll_export_operation(client, headers, response.json()))
+    return states
+
+
 async def run_gate(
     *,
     base_url: str,
@@ -188,44 +239,9 @@ async def run_gate(
             ready = await client.get("/readyz")
             readiness_checks.append(ready.status_code)
             await asyncio.sleep(0.2)
-        export_operation_states: list[str] = []
-        async def poll_export(operation: dict[str, Any]) -> str:
-            operation_id = operation.get("id")
-            if operation_id is None:
-                return "missing_id"
-            operation_deadline = time.monotonic() + 30
-            state = "poll_timeout"
-            while time.monotonic() < operation_deadline:
-                status_response = await client.get(
-                    f"/api/exports/operations/{operation_id}", headers=headers
-                )
-                if status_response.status_code != 200:
-                    state = f"http_{status_response.status_code}"
-                    break
-                state = str(status_response.json().get("status"))
-                if state in {"completed", "failed", "cancelled", "expired"}:
-                    break
-                await asyncio.sleep(0.2)
-            return state
-
-        for operation in export_operations:
-            export_operation_states.append(await poll_export(operation))
-        # The API intentionally permits only one active export per requester.
-        # A second pre-load reservation can therefore return 409. Submit its
-        # replacement after the first terminal result so two real jobs are
-        # still consumed and verified by the isolated export worker.
-        while len(export_operation_states) < 2:
-            request = {
-                **EXPORT_REQUEST,
-                "filename": f"mixed-load-gate-followup-{len(export_operation_states) + 1}.xlsx",
-            }
-            response = await client.post(
-                "/api/exports/operations", headers=headers, json=request
-            )
-            if response.status_code not in {200, 201}:
-                export_operation_states.append(f"submit_http_{response.status_code}")
-                break
-            export_operation_states.append(await poll_export(response.json()))
+        export_operation_states = await collect_export_operation_states(
+            client, headers, export_operations
+        )
 
     request_count = len(latencies)
     route_summary = {
