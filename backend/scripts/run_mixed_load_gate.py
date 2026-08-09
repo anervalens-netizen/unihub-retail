@@ -76,6 +76,8 @@ def evaluate(summary: dict[str, Any], policy: GatePolicy) -> list[str]:
         failures.append(
             f"export operations did not complete successfully: {export_states}"
         )
+    if summary.get("export_running_during_load") is not True:
+        failures.append("no export was observed running during the mixed-load window")
     return failures
 
 
@@ -123,38 +125,40 @@ async def poll_export_operation(
     client: httpx.AsyncClient,
     headers: dict[str, str],
     operation: dict[str, Any],
-) -> str:
+    *,
+    load_deadline: float,
+) -> tuple[str, bool]:
     operation_id = operation.get("id")
     if operation_id is None:
-        return "missing_id"
+        return "missing_id", False
     deadline = time.monotonic() + 30
     state = "poll_timeout"
+    running_during_load = False
     while time.monotonic() < deadline:
         response = await client.get(
             f"/api/exports/operations/{operation_id}", headers=headers
         )
         if response.status_code != 200:
-            return f"http_{response.status_code}"
+            return f"http_{response.status_code}", running_during_load
         state = str(response.json().get("status"))
+        if state == "running" and time.monotonic() < load_deadline:
+            running_during_load = True
         if state in {"completed", "failed", "cancelled", "expired"}:
-            return state
-        await asyncio.sleep(0.2)
-    return state
+            return state, running_during_load
+        await asyncio.sleep(0.02)
+    return state, running_during_load
 
 
-async def collect_export_operation_states(
+async def run_exports_during_load(
     client: httpx.AsyncClient,
     headers: dict[str, str],
-    operations: list[dict[str, Any]],
-) -> list[str]:
-    states = [
-        await poll_export_operation(client, headers, operation)
-        for operation in operations
-    ]
-    # The API intentionally permits only one active export per requester.
-    # A second pre-load reservation can therefore return 409. Submit its
-    # replacement after the first terminal result so two real jobs are still
-    # consumed and verified by the isolated export worker.
+    *,
+    load_started: asyncio.Event,
+    load_deadline: float,
+) -> tuple[list[str], bool]:
+    await load_started.wait()
+    states: list[str] = []
+    running_during_load = False
     while len(states) < 2:
         request = {
             **EXPORT_REQUEST,
@@ -166,8 +170,12 @@ async def collect_export_operation_states(
         if response.status_code not in {200, 201}:
             states.append(f"submit_http_{response.status_code}")
             break
-        states.append(await poll_export_operation(client, headers, response.json()))
-    return states
+        state, overlapped = await poll_export_operation(
+            client, headers, response.json(), load_deadline=load_deadline
+        )
+        states.append(state)
+        running_during_load = running_during_load or overlapped
+    return states, running_during_load
 
 
 async def run_gate(
@@ -188,27 +196,18 @@ async def run_gate(
         headers = {"Authorization": f"Bearer {token}"}
         warmup = await client.get("/readyz")
         warmup.raise_for_status()
-        export_operations: list[dict[str, Any]] = []
-        for index in range(2):
-            request = {**EXPORT_REQUEST, "filename": f"mixed-load-gate-{index + 1}.xlsx"}
-            response = await client.post(
-                "/api/exports/operations", headers=headers, json=request
-            )
-            if response.status_code not in {200, 201, 409}:
-                response.raise_for_status()
-            if response.status_code in {200, 201}:
-                export_operations.append(response.json())
-
         latencies: list[float] = []
         route_latencies: dict[str, list[float]] = defaultdict(list)
         statuses: Counter[str] = Counter()
         errors: list[str] = []
         sequence = 0
         sequence_lock = asyncio.Lock()
+        load_started = asyncio.Event()
         deadline = time.monotonic() + policy.duration_seconds
 
         async def worker() -> None:
             nonlocal sequence
+            load_started.set()
             while time.monotonic() < deadline:
                 async with sequence_lock:
                     current = sequence
@@ -233,15 +232,21 @@ async def run_gate(
                     statuses["transport_error"] += 1
                     errors.append(f"{route}:{type(exc).__name__}")
 
+        export_task = asyncio.create_task(
+            run_exports_during_load(
+                client,
+                headers,
+                load_started=load_started,
+                load_deadline=deadline,
+            )
+        )
         await asyncio.gather(*(worker() for _ in range(policy.concurrency)))
+        export_operation_states, export_running_during_load = await export_task
         readiness_checks: list[int] = []
         for _ in range(3):
             ready = await client.get("/readyz")
             readiness_checks.append(ready.status_code)
             await asyncio.sleep(0.2)
-        export_operation_states = await collect_export_operation_states(
-            client, headers, export_operations
-        )
 
     request_count = len(latencies)
     route_summary = {
@@ -268,6 +273,7 @@ async def run_gate(
         "sample_errors": errors[:20],
         "readiness_checks": readiness_checks,
         "export_operation_states": export_operation_states,
+        "export_running_during_load": export_running_during_load,
     }
 
 
