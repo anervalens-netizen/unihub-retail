@@ -68,10 +68,17 @@ async function updateWorker(page: Page): Promise<void> {
   });
 }
 
-test('generated Workbox worker upgrades N to N+1 and rolls back to N', async ({ browser }) => {
+async function checkForNoopUpdate(page: Page): Promise<void> {
+  await page.evaluate(async () => {
+    const registration = await navigator.serviceWorker.getRegistration();
+    if (!registration) throw new Error('Workbox registration missing');
+    await registration.update();
+  });
+}
+
+test('generated Workbox worker handles upgrade, rollback, and unchanged releases', async ({ browser }) => {
   expect(previousArtifact.worker).toContain('precacheAndRoute');
   expect(candidateArtifact.worker).toContain('precacheAndRoute');
-  expect(candidateArtifact.workerSha256).not.toBe(previousArtifact.workerSha256);
   let artifact = previousArtifact;
   const server = createServer((request, response) => {
     const pathname = new URL(request.url ?? '/', 'http://localhost').pathname;
@@ -114,6 +121,14 @@ test('generated Workbox worker upgrades N to N+1 and rolls back to N', async ({ 
       release: 'N',
       workerSha256: previousArtifact.workerSha256,
     });
+    if (candidateArtifact.workerSha256 === previousArtifact.workerSha256) {
+      await checkForNoopUpdate(page);
+      await expect.poll(() => activeRelease(page)).toEqual({
+        release: 'N',
+        workerSha256: previousArtifact.workerSha256,
+      });
+      return;
+    }
     artifact = candidateArtifact;
     await updateWorker(page);
     await expect.poll(() => activeRelease(page)).toEqual({

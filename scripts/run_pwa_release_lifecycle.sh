@@ -34,7 +34,7 @@ git -C "$REPO_ROOT" archive --format=tar "$BASE_SHA" \
 (
   cd "$BASE_SOURCE"
   npm ci --include=dev
-  VITE_FRONTEND_GLITCHTIP_DSN="" npm run build
+  npm run build
 )
 [[ -s "$BASE_SOURCE/dist/sw.js" ]] \
   || die "previous release did not produce dist/sw.js"

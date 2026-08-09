@@ -356,6 +356,20 @@ jobs:
       - name: Browser and accessibility tests
         run: npm run test:e2e
 
+      - name: Real Workbox release lifecycle
+        env:
+          PWA_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          if [[ -z "$PWA_BASE_SHA" ]]; then
+            git fetch --no-tags --depth=2 origin "$GITHUB_SHA"
+            PWA_BASE_SHA="$(git rev-parse "$GITHUB_SHA^")"
+            export PWA_BASE_SHA
+          fi
+          if ! git cat-file -e "$PWA_BASE_SHA^{commit}" 2>/dev/null; then
+            git fetch --no-tags --depth=1 origin "$PWA_BASE_SHA"
+          fi
+          scripts/run_pwa_release_lifecycle.sh
+
       - name: Upload Playwright diagnostics
         if: failure()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
@@ -451,20 +465,6 @@ jobs:
 
       - name: Install Chromium
         run: npx playwright install chromium
-
-      - name: Real Workbox release lifecycle
-        env:
-          PWA_BASE_SHA: ${{ github.event.pull_request.base.sha }}
-        run: |
-          if [[ -z "$PWA_BASE_SHA" ]]; then
-            git fetch --no-tags --depth=2 origin "$GITHUB_SHA"
-            PWA_BASE_SHA="$(git rev-parse "$GITHUB_SHA^")"
-            export PWA_BASE_SHA
-          fi
-          if ! git cat-file -e "$PWA_BASE_SHA^{commit}" 2>/dev/null; then
-            git fetch --no-tags --depth=1 origin "$PWA_BASE_SHA"
-          fi
-          scripts/run_pwa_release_lifecycle.sh
 
       - name: Real full-stack integration gate
         env:
