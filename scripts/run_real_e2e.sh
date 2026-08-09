@@ -10,9 +10,10 @@ RUNTIME_DIR="$(mktemp -d)"
 BACKEND_PID=""
 OIDC_PID=""
 WORKER_PID=""
+EXPORT_WORKER_PID=""
 
 cleanup() {
-  for pid in "${WORKER_PID}" "${BACKEND_PID}" "${OIDC_PID}"; do
+  for pid in "${EXPORT_WORKER_PID}" "${WORKER_PID}" "${BACKEND_PID}" "${OIDC_PID}"; do
     if [[ -n "${pid}" ]]; then kill "${pid}" >/dev/null 2>&1 || true; fi
   done
   timeout 30 docker rm -f -v "${PG_CONTAINER}" >/dev/null 2>&1 || true
@@ -97,9 +98,27 @@ curl -fsS "${REAL_E2E_BASE_URL}/readyz" >/dev/null
 cd "${ROOT_DIR}"
 npx playwright test --config=playwright.real.config.ts
 
+export EXPORT_ARTIFACT_DIR="${RUNTIME_DIR}/export-artifacts"
+RETAIL_WORKER_ROLE=exports "${PYTHON}" backend/worker.py \
+  >test-results/real-e2e-runtime/export-worker.log 2>&1 &
+EXPORT_WORKER_PID=$!
+sleep 3
+if ! kill -0 "${EXPORT_WORKER_PID}" 2>/dev/null; then
+  printf 'Export worker failed to start.\n' >&2
+  cat test-results/real-e2e-runtime/export-worker.log >&2
+  exit 1
+fi
 "${PYTHON}" backend/scripts/run_mixed_load_gate.py \
   --base-url "${REAL_E2E_BASE_URL}" --token-url "${OIDC_STUB_ORIGIN}/test-token/admin" \
   --output test-results/real-e2e-load-gate.json
+kill "${EXPORT_WORKER_PID}"
+wait "${EXPORT_WORKER_PID}" || true
+EXPORT_WORKER_PID=""
+if rg -n 'Traceback|Config invalid|Worker startup failed|ERROR' \
+  test-results/real-e2e-runtime/export-worker.log; then
+  printf 'Export worker emitted an error.\n' >&2
+  exit 1
+fi
 
 docker exec "${PG_CONTAINER}" pg_dump -U unihub_test -Fc unihub_test >"${RUNTIME_DIR}/retail.dump"
 docker exec "${PG_CONTAINER}" createdb -U unihub_test unihub_restore
