@@ -197,6 +197,8 @@ class SalesGenerationManifest(StrictApiModel):
     site_day_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     site_days: list[SalesSiteDayManifest] | None = None
     business_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    stage_rows_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    parser_resources: dict[str, int | float | str | None] | None = None
     anomalies: list[SalesGenerationAnomaly] = Field(default_factory=list)
     generation_state: Literal["validated", "promoting", "promoted"] | None = None
 

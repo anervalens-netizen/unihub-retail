@@ -81,14 +81,31 @@ def _json_object(value: dict[str, Any]) -> Any:
     return value
 
 
-def _child_parse(payload: bytes, sheet_names: tuple[str, ...], limits: LegacyXlsLimits, output: str) -> None:
+def _child_parse(
+    payload: bytes,
+    sheet_references: tuple[str | int, ...],
+    limits: LegacyXlsLimits,
+    output: str,
+) -> None:
     try:
         resource.setrlimit(resource.RLIMIT_AS, (limits.memory_bytes, limits.memory_bytes))
         resource.setrlimit(resource.RLIMIT_CPU, (limits.cpu_seconds, limits.cpu_seconds + 1))
         resource.setrlimit(resource.RLIMIT_FSIZE, (limits.max_output_bytes, limits.max_output_bytes))
         book = xlrd.open_workbook(file_contents=payload, on_demand=True)
-        available = set(book.sheet_names())
-        missing = [name for name in sheet_names if name not in available]
+        available_names = book.sheet_names()
+        available = set(available_names)
+        sheet_names: list[str] = []
+        missing: list[str | int] = []
+        for reference in sheet_references:
+            if isinstance(reference, int):
+                if reference < 0 or reference >= len(available_names):
+                    missing.append(reference)
+                else:
+                    sheet_names.append(available_names[reference])
+            elif reference not in available:
+                missing.append(reference)
+            else:
+                sheet_names.append(reference)
         if missing:
             result: dict[str, Any] = {"ok": False, "missing": missing}
         else:
@@ -118,7 +135,7 @@ def _child_parse(payload: bytes, sheet_names: tuple[str, ...], limits: LegacyXls
 def parse_legacy_xls(
     source: bytes | bytearray | str | Path,
     *,
-    sheets: Sequence[str],
+    sheets: Sequence[str | int],
     limits: LegacyXlsLimits | None = None,
 ) -> LegacyXlsWorkbook:
     policy = limits or LegacyXlsLimits()
@@ -127,9 +144,11 @@ def parse_legacy_xls(
         raise SpreadsheetUploadError("Workbook-ul XLS depășește limita sursei")
     if not payload.startswith(OLE2_MAGIC):
         raise SpreadsheetUploadError("Fișierul .xls are o semnătură invalidă")
-    requested = tuple(dict.fromkeys(str(name) for name in sheets))
+    requested = tuple(dict.fromkeys(sheets))
     if not requested:
         raise ValueError("At least one XLS worksheet is required")
+    if any(isinstance(reference, int) and reference < 0 for reference in requested):
+        raise ValueError("sheet index must be non-negative")
 
     descriptor, output = tempfile.mkstemp(prefix="unihub-xls-", suffix=".json")
     os.close(descriptor)
@@ -193,16 +212,8 @@ def read_legacy_xls_frame(
     if isinstance(sheet_name, int):
         if sheet_name < 0:
             raise ValueError("sheet_name must be non-negative")
-        if len(payload) > policy.max_source_bytes or not payload.startswith(OLE2_MAGIC):
-            raise SpreadsheetUploadError("Fișierul .xls este invalid")
-        book = xlrd.open_workbook(file_contents=payload, on_demand=True)
-        try:
-            names = book.sheet_names()
-        finally:
-            book.release_resources()
-        if sheet_name >= len(names):
-            raise KeyError(sheet_name)
-        resolved = names[sheet_name]
+        parsed = parse_legacy_xls(payload, sheets=[sheet_name], limits=policy)
+        return _frame_from_rows(parsed.sheets[0].rows, header)
     else:
         resolved = sheet_name
     parsed = parse_legacy_xls(payload, sheets=[resolved], limits=policy)

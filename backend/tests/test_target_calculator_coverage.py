@@ -422,6 +422,8 @@ def test_frozen_profitability_rejects_incomplete_mismatched_and_bad_store_snapsh
     summary = service._frozen_profitability(scenario, [valid_row])
     assert summary["input_sha256"] == "a" * 64
     assert valid_row["profitability"] == {"agent_count": 2}
+    assert "profitability_snapshot" not in valid_row
+    assert valid_row["profitability"] == {"agent_count": 2}
 
     with pytest.raises(HTTPException, match="nu este JSON valid"):
         service._frozen_profitability(scenario, [{"profitability_snapshot": "{"}])

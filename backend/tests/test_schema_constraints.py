@@ -12,6 +12,8 @@ from models import (
     VisitMonthGroup,
     VisitReportRow,
 )
+from services.imports import _to_public_import_status
+from services.jobs import JobResult, JobStatus
 from schemas.agents import AgentEvaluationPeriod, AgentListItem, StoreCoverageItem
 
 
@@ -83,6 +85,44 @@ def test_public_status_contracts_reject_unknown_values() -> None:
                 "agent_count": 0,
             }
         )
+
+
+def test_completed_sales_status_accepts_persisted_manifest_integrity_fields() -> None:
+    result = _to_public_import_status(
+        JobResult(
+            job_id="sales-job-1",
+            status=JobStatus.COMPLETE,
+            result={
+                "import_month": "2026-08",
+                "rows_in_file": 1,
+                "rows_imported": 1,
+                "rows_filtered": 0,
+                "store_count": 1,
+                "agent_count": 1,
+                "snapshot_id": 1,
+                "filename": "sales.xlsx",
+                "is_month_final": False,
+                "manifest": {
+                    "stage_rows_sha256": "a" * 64,
+                    "parser_resources": {
+                        "format": "xlsx",
+                        "rows": 1,
+                        "parse_seconds": 0.01,
+                    },
+                    "generation_state": "validated",
+                },
+            },
+        )
+    )
+
+    assert result.result is not None
+    assert result.result.manifest is not None
+    assert result.result.manifest.stage_rows_sha256 == "a" * 64
+    assert result.result.manifest.parser_resources == {
+        "format": "xlsx",
+        "rows": 1,
+        "parse_seconds": 0.01,
+    }
 
     with pytest.raises(ValidationError):
         AgentListItem.model_validate(

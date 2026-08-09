@@ -1,5 +1,5 @@
 /* GENERATED FILE. Run npm run contracts:generate; do not edit manually. */
-export const RETAIL_OPENAPI_SHA256 = '76698afadc1f7e0f62a03a94fda7a273b232848fbc1a363b76b63aa2eba400fd' as const; // pragma: allowlist secret
+export const RETAIL_OPENAPI_SHA256 = '7a36b3b87e7d26d8d291558c6f34b39cfb4c1e46992edc02f797907553c9c3c5' as const; // pragma: allowlist secret
 
 export type RetailDecimal = string & { readonly __retailDecimal: unique symbol };
 
@@ -1794,6 +1794,7 @@ export interface RetailSalesGenerationManifest {
   "generation_state"?: "validated" | "promoting" | "promoted" | null;
   "import_month"?: string | null;
   "max_sale_date"?: string | null;
+  "parser_resources"?: Record<string, number | string | null> | null;
   "receipt_count"?: number | null;
   "rows_filtered"?: number | null;
   "rows_imported"?: number | null;
@@ -1803,6 +1804,7 @@ export interface RetailSalesGenerationManifest {
   "site_day_sha256"?: string | null;
   "site_days"?: Array<RetailSalesSiteDayManifest> | null;
   "source_sha256"?: string | null;
+  "stage_rows_sha256"?: string | null;
   "store_count"?: number | null;
   "total_quantity"?: number | null;
   "total_value"?: string | null;

@@ -83,6 +83,21 @@ async def wait_for_jobs(jobs: list[Any], *, timeout: float = 90) -> list[Any]:
     raise RuntimeError("timed out waiting for import worker results")
 
 
+async def prove_concurrent_worker_claims(jobs: list[Any], *, timeout: float = 15) -> None:
+    """Require two max_jobs=1 worker processes to own the jobs simultaneously."""
+    deadline = asyncio.get_running_loop().time() + timeout
+    while asyncio.get_running_loop().time() < deadline:
+        statuses = await asyncio.gather(*(job.status() for job in jobs))
+        if all(status == JobStatus.in_progress for status in statuses):
+            return
+        if any(status == JobStatus.complete for status in statuses):
+            raise RuntimeError(
+                "an overlap job completed before both worker processes claimed one job"
+            )
+        await asyncio.sleep(0.05)
+    raise RuntimeError("two import workers did not claim the overlap jobs concurrently")
+
+
 async def install_overlap_hold_trigger(pool: Any) -> None:
     async with pool.acquire() as conn:
         await conn.execute(
@@ -91,7 +106,7 @@ async def install_overlap_hold_trigger(pool: Any) -> None:
             RETURNS trigger LANGUAGE plpgsql AS $$
             BEGIN
                 IF NEW.import_month = '2099-11' THEN
-                    PERFORM pg_sleep(2);
+                    PERFORM pg_sleep(5);
                 END IF;
                 RETURN NEW;
             END;
@@ -113,6 +128,7 @@ def write_evidence(output_path: Path) -> None:
                 "worker_role": "imports",
                 "queue": "arq:retail:imports",
                 "worker_processes": 2,
+                "concurrent_worker_claims": True,
                 "worker_processed_imports": 3,
                 "overlapping_imports": 2,
                 "accepted": 1,
@@ -155,6 +171,7 @@ async def main(output_path: Path) -> None:
                 requested_by_sub="real-e2e",
             ),
         )
+        await prove_concurrent_worker_claims(list(jobs))
         results = await wait_for_jobs(list(jobs))
         successes = [result for result in results if result is not None and result.success]
         failures = [result for result in results if result is not None and not result.success]

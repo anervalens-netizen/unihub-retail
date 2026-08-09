@@ -270,10 +270,13 @@ async def test_artifact_intent_is_persisted_before_validation_and_reconciled(
 )
 async def test_retained_artifact_oserror_preserves_immutable_metadata(
     monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
     pool = await get_pool()
     month = "2099-05"
     digest = "c" * 64
+    retained_path = tmp_path / "retained" / f"{digest}.source"
+    monkeypatch.setenv("SALES_IMPORT_SPOOL_DIR", str(tmp_path))
     try:
         async with pool.acquire() as conn:
             await conn.execute("DELETE FROM import_snapshots WHERE import_month = $1", month)
@@ -289,14 +292,15 @@ async def test_retained_artifact_oserror_preserves_immutable_metadata(
                 ) VALUES (
                     $1, 'retained-oserror.xlsx', 'processing', 1, 0,
                     $2, gen_random_uuid(), gen_random_uuid(), now(),
-                    '/isolated-fixture/retained.source', true,
+                    $3, true,
                     'artifact_retained', $2, 12, now(),
-                    '/isolated-fixture/retained.source'
+                    $3
                 )
                 RETURNING id
                 """,
                 month,
                 digest,
+                str(retained_path),
             )
         monkeypatch.setattr(
             importer,
@@ -318,7 +322,7 @@ async def test_retained_artifact_oserror_preserves_immutable_metadata(
                 "source_artifact_state": "artifact_retained",
                 "source_artifact_sha256": digest,
                 "source_artifact_bytes": 12,
-                "source_artifact_retained_path": "/isolated-fixture/retained.source",
+                "source_artifact_retained_path": str(retained_path),
             }
             await conn.execute("DELETE FROM import_snapshots WHERE id = $1", snapshot_id)
     finally:
