@@ -85,6 +85,14 @@ def _validate_metric_rule(metric: str, rule: Any) -> tuple[float, float]:
     return max_ratio, max_zero_delta
 
 
+def _metric_value(statement: dict[str, Any], metric: str) -> float:
+    value = float(statement.get(metric, 0) or 0)
+    if metric == "temp_blocks_written":
+        calls = int(statement.get("calls", 0) or 0)
+        return value / calls if calls > 0 else 0.0
+    return value
+
+
 def compare_snapshots(
     baseline: dict[str, Any],
     candidate: dict[str, Any],
@@ -122,8 +130,8 @@ def compare_snapshots(
             ratio_limit = max_regression_ratio if max_regression_ratio is not None else configured_ratio
             if not 0 <= ratio_limit <= 10:
                 raise ValueError("max_regression_ratio must be between 0 and 10")
-            old_value = float(old.get(metric, 0) or 0)
-            new_value = float(new.get(metric, 0) or 0)
+            old_value = _metric_value(old, metric)
+            new_value = _metric_value(new, metric)
             absolute_delta = new_value - old_value
             ratio = absolute_delta / old_value if old_value > 0 else None
             breached = ratio is not None and ratio > ratio_limit
@@ -135,6 +143,9 @@ def compare_snapshots(
                         "fingerprint_sha256": fingerprint,
                         "owner": statement_policy["owner"],
                         "metric": metric,
+                        "normalization": (
+                            "per_call" if metric == "temp_blocks_written" else "native"
+                        ),
                         "baseline": round(old_value, 6),
                         "candidate": round(new_value, 6),
                         "absolute_delta": round(absolute_delta, 6),

@@ -12570,9 +12570,16 @@
             "type": "string"
           },
           "base_salary_high": {
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-            "title": "Base Salary High",
-            "type": "string"
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Salary High"
           },
           "default_store_agent_count": {
             "title": "Default Store Agent Count",
@@ -12599,8 +12606,15 @@
             "type": "string"
           },
           "sun_plaza_agent_count": {
-            "title": "Sun Plaza Agent Count",
-            "type": "integer"
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sun Plaza Agent Count"
           },
           "target_rule_set_hash": {
             "anyOf": [
@@ -12675,9 +12689,7 @@
           "sales_commission_rate",
           "salary_assumed_attainment",
           "default_store_agent_count",
-          "sun_plaza_agent_count",
-          "base_salary_default",
-          "base_salary_high"
+          "base_salary_default"
         ],
         "title": "TargetProfitabilityAssumptionsResponse",
         "type": "object"

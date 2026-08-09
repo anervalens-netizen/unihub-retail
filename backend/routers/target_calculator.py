@@ -277,9 +277,9 @@ class TargetProfitabilityAssumptionsResponse(StrictApiModel):
     sales_commission_rate: Decimal
     salary_assumed_attainment: Decimal
     default_store_agent_count: int
-    sun_plaza_agent_count: int
+    sun_plaza_agent_count: int | None = None
     base_salary_default: Decimal
-    base_salary_high: Decimal
+    base_salary_high: Decimal | None = None
     target_rule_set_id: str | None = None
     target_rule_set_hash: str | None = None
 

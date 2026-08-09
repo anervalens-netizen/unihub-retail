@@ -1,10 +1,16 @@
 from __future__ import annotations
 
 import sys
+from typing import Any
 
 import pytest
 
-from scripts.check_pg_workload_regression import DEFAULT_POLICY, load_policy, parse_args
+from scripts.check_pg_workload_regression import (
+    DEFAULT_POLICY,
+    compare_snapshots,
+    load_policy,
+    parse_args,
+)
 from scripts.report_pg_stat_statements import normalize_query, statement_payload
 
 
@@ -17,6 +23,47 @@ def test_workload_checker_uses_builtin_policy_when_cli_policy_is_omitted(
 
     assert args.policy is None
     assert load_policy(args.policy) == DEFAULT_POLICY
+
+
+def test_workload_checker_normalizes_temporary_writes_per_call() -> None:
+    fingerprint = "a" * 64
+    baseline: dict[str, Any] = {
+        "schema_version": 2,
+        "runtime_sha": "baseline",
+        "statements": [
+            {
+                "fingerprint_sha256": fingerprint,
+                "calls": 5,
+                "mean_exec_time_ms": 1,
+                "estimated_p95_exec_time_ms": 1,
+                "temp_blocks_written": 10,
+            }
+        ],
+    }
+    candidate: dict[str, Any] = {
+        "schema_version": 2,
+        "runtime_sha": "candidate",
+        "statements": [
+            {
+                "fingerprint_sha256": fingerprint,
+                "calls": 10,
+                "mean_exec_time_ms": 1,
+                "estimated_p95_exec_time_ms": 1,
+                "temp_blocks_written": 20,
+            }
+        ],
+    }
+
+    assert compare_snapshots(baseline, candidate)["passed"] is True
+
+    candidate["statements"][0]["temp_blocks_written"] = 30
+    regression = compare_snapshots(baseline, candidate)
+    temp_regression = next(
+        item for item in regression["regressions"] if item["metric"] == "temp_blocks_written"
+    )
+    assert temp_regression["baseline"] == 2.0
+    assert temp_regression["candidate"] == 3.0
+    assert temp_regression["normalization"] == "per_call"
 
 
 def test_normalize_query_compacts_and_bounds_statement_text() -> None:

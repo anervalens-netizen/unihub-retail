@@ -1,5 +1,5 @@
 /* GENERATED FILE. Run npm run contracts:generate; do not edit manually. */
-export const RETAIL_OPENAPI_SHA256 = '7a36b3b87e7d26d8d291558c6f34b39cfb4c1e46992edc02f797907553c9c3c5' as const; // pragma: allowlist secret
+export const RETAIL_OPENAPI_SHA256 = '40d92e0c005aabe1a60a0f2dc5d57467e8c918bcd511a6e94a60ecaf3d5ecb78' as const; // pragma: allowlist secret
 
 export type RetailDecimal = string & { readonly __retailDecimal: unique symbol };
 
@@ -2030,13 +2030,13 @@ export interface RetailTargetHistoryValue {
 
 export interface RetailTargetProfitabilityAssumptionsResponse {
   "base_salary_default": RetailDecimal;
-  "base_salary_high": RetailDecimal;
+  "base_salary_high"?: RetailDecimal | null;
   "default_store_agent_count": number;
   "meal_vouchers_per_agent": RetailDecimal;
   "salary_assumed_attainment": RetailDecimal;
   "salary_pnl_factor": RetailDecimal;
   "sales_commission_rate": RetailDecimal;
-  "sun_plaza_agent_count": number;
+  "sun_plaza_agent_count"?: number | null;
   "target_rule_set_hash"?: string | null;
   "target_rule_set_id"?: string | null;
   "vat_effective_from"?: string | null;
