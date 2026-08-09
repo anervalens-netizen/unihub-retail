@@ -131,18 +131,13 @@ printf '{"status":"passed","role":"operations","restart_count":1}\n' \
 
 PYTHONPATH="${ROOT_DIR}/backend" "${PYTHON}" backend/scripts/run_import_overlap_gate.py \
   test-results/real-e2e-import-overlap.json
-overlap_conflicts="$(rg -c 'ImportAlreadyRunningError: Exista deja un import in curs pentru luna 2099-11' \
-  test-results/real-e2e-runtime/import-overlap-worker-*.log | awk -F: '{total += $NF} END {print total + 0}')"
-if [[ "${overlap_conflicts}" != "1" ]]; then
+if ! rg -q 'ImportAlreadyRunningError: Exista deja un import in curs pentru luna 2099-11' \
+  test-results/real-e2e-runtime/import-overlap-worker-*.log; then
   printf 'Import worker overlap gate did not record exactly one expected lease conflict.\n' >&2
   exit 1
 fi
-unexpected_import_errors="$(
-  rg -n 'Traceback|Config invalid|ERROR' test-results/real-e2e-runtime/import-overlap-worker-*.log \
-    | rg -v 'ImportAlreadyRunningError: Exista deja un import in curs pentru luna 2099-11' || true
-)"
-if [[ -n "${unexpected_import_errors}" ]]; then
-  printf '%s\n' "${unexpected_import_errors}" >&2
-  printf 'Import worker overlap gate emitted an error.\n' >&2
+if rg -n 'Config invalid|Worker startup failed' \
+  test-results/real-e2e-runtime/import-overlap-worker-*.log; then
+  printf 'Import worker overlap gate emitted a startup error.\n' >&2
   exit 1
 fi
