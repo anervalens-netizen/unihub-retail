@@ -44,9 +44,13 @@ traffic are excluded from the request SLI so probes cannot dilute real errors.
 ## Versioned operations files
 
 - `ops/observability/retail-slo-rules.yml`: recording and alert rules;
+- `ops/observability/retail-slo-rules.test.yml`: synthetic recording and alert
+  contract exercised by `promtool`;
 - `ops/observability/retail-readiness-scrape.yml`: dedicated external probe;
 - `ops/systemd/unihub-backend.service`: web unit source of truth;
-- `unihub-worker.service`: worker unit source of truth;
+- `unihub-worker.service`, `unihub-import-worker.service`,
+  `unihub-grile-worker.service`, `unihub-export-worker.service`: worker unit
+  sources of truth;
 - `ops/systemd/unihub-retail-migrate.service`: one-shot migration unit.
 
 The production Prometheus rules directory is
@@ -62,7 +66,9 @@ curl -fsS http://127.0.0.1:9898/livez
 curl -fsS http://127.0.0.1:9898/readyz
 curl -fsS https://retail.unihub.ro/readyz
 
+backend/venv/bin/python scripts/check_prometheus_contract.py
 promtool check rules ops/observability/retail-slo-rules.yml
+promtool test rules ops/observability/retail-slo-rules.test.yml
 systemd-analyze verify \
   ops/systemd/unihub-backend.service \
   unihub-worker.service \
@@ -70,10 +76,14 @@ systemd-analyze verify \
 ```
 
 After Prometheus reload, verify `probe_success{job="blackbox_retail_readiness"}`
-and all three `unihub_retail:*` recording rules through the local Prometheus
-API. A normal deployment restarts only the units whose code or unit file
-changed. Never run the migration service unless a reviewed migration is
-actually pending.
+and all four `unihub_retail:*` HTTP recording rules through the local
+Prometheus API. The deploy gate creates one bounded Dashboard request so the
+Dashboard latency recording cannot pass only by being absent. Worker alerts
+cover scrape target absence/down, self-reported down, backlog/age, failure
+ratio, p95 duration and stale/failing Grile reconciliation. A normal deployment
+restarts only the units whose code or unit file changed. Never run the migration
+service unless a reviewed migration is actually pending.
 
-GitHub CI repeats both `systemd-analyze verify` and `promtool check rules`, so
-invalid service or alert configuration blocks the merge ref.
+GitHub CI repeats `systemd-analyze verify`, the selector/recording semantic
+checker and both `promtool` commands, so invalid or vacuous service/alert
+configuration blocks the merge ref.

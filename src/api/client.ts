@@ -9,7 +9,22 @@ type RequestOptions = {
   params?: QueryParams;
   responseType?: ResponseType;
   signal?: AbortSignal;
+  timeoutMs?: number;
 };
+
+export const API_READ_TIMEOUT_MS = 15_000;
+export const API_MUTATION_TIMEOUT_MS = 30_000;
+export const API_UPLOAD_TIMEOUT_MS = 120_000;
+
+export function requestSignal(
+  callerSignal: AbortSignal | undefined,
+  timeoutMs: number,
+): AbortSignal {
+  const timeoutSignal = AbortSignal.timeout(timeoutMs);
+  return callerSignal
+    ? AbortSignal.any([callerSignal, timeoutSignal])
+    : timeoutSignal;
+}
 
 export class ApiError extends Error {
   readonly status: number;
@@ -172,7 +187,7 @@ export const client = {
       method: 'GET',
       credentials: 'same-origin',
       headers: getSessionHeaders({ 'Content-Type': 'application/json', ...options?.headers }),
-      signal: options?.signal,
+      signal: requestSignal(options?.signal, options?.timeoutMs ?? API_READ_TIMEOUT_MS),
     });
 
     await handleResponse(response);
@@ -189,7 +204,10 @@ export const client = {
       credentials: 'same-origin',
       headers: makeJsonHeaders(data, options?.headers),
       body: makeJsonBody(data),
-      signal: options?.signal,
+      signal: requestSignal(
+        options?.signal,
+        options?.timeoutMs ?? (data instanceof FormData ? API_UPLOAD_TIMEOUT_MS : API_MUTATION_TIMEOUT_MS),
+      ),
     });
 
     await handleResponse(response);
@@ -206,7 +224,7 @@ export const client = {
       credentials: 'same-origin',
       headers: makeJsonHeaders(data, options?.headers),
       body: makeJsonBody(data),
-      signal: options?.signal,
+      signal: requestSignal(options?.signal, options?.timeoutMs ?? API_MUTATION_TIMEOUT_MS),
     });
     await handleResponse(response);
     return { data: await parseResponse<T>(response, options?.responseType) };
@@ -222,7 +240,7 @@ export const client = {
       credentials: 'same-origin',
       headers: makeJsonHeaders(data, options?.headers),
       body: makeJsonBody(data),
-      signal: options?.signal,
+      signal: requestSignal(options?.signal, options?.timeoutMs ?? API_MUTATION_TIMEOUT_MS),
     });
     await handleResponse(response);
     return { data: await parseResponse<T>(response, options?.responseType) };
@@ -236,7 +254,7 @@ export const client = {
       method: 'DELETE',
       credentials: 'same-origin',
       headers: getSessionHeaders(options?.headers, true),
-      signal: options?.signal,
+      signal: requestSignal(options?.signal, options?.timeoutMs ?? API_MUTATION_TIMEOUT_MS),
     });
     await handleResponse(response);
     return { data: await parseResponse<T>(response, options?.responseType) };

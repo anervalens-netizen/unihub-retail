@@ -128,3 +128,108 @@ groups:
         annotations:
           summary: "Retail Dashboard p95 exceeds 1 second"
           description: "Dashboard p95 is {{ $value | humanizeDuration }}."
+
+      - alert: UniHubRetailOperationsTargetMissing
+        expr: absent(up{job="unihub-retail-operations"})
+        for: 5m
+        labels: {severity: critical}
+        annotations:
+          summary: "Retail operations worker target is missing"
+          description: "Prometheus has no operations worker target for 5 minutes."
+
+      - alert: UniHubRetailImportsTargetMissing
+        expr: absent(up{job="unihub-retail-imports"})
+        for: 5m
+        labels: {severity: critical}
+        annotations:
+          summary: "Retail imports worker target is missing"
+          description: "Prometheus has no imports worker target for 5 minutes."
+
+      - alert: UniHubRetailGrileTargetMissing
+        expr: absent(up{job="unihub-retail-grile"})
+        for: 5m
+        labels: {severity: critical}
+        annotations:
+          summary: "Retail Grile worker target is missing"
+          description: "Prometheus has no Grile worker target for 5 minutes."
+
+      - alert: UniHubRetailExportsTargetMissing
+        expr: absent(up{job="unihub-retail-exports"})
+        for: 5m
+        labels: {severity: critical}
+        annotations:
+          summary: "Retail exports worker target is missing"
+          description: "Prometheus has no exports worker target for 5 minutes."
+
+      - alert: UniHubRetailWorkerTargetDown
+        expr: min by (job) (up{job=~"unihub-retail-(operations|imports|grile|exports)"}) == 0
+        for: 2m
+        labels: {severity: critical}
+        annotations:
+          summary: "Retail worker metrics target is down"
+          description: "{{ $labels.job }} has not been scraped successfully for 2 minutes."
+
+      - alert: UniHubRetailWorkerReportedDown
+        expr: unihub_worker_up{service_role=~"operations|imports|grile|exports"} == 0
+        for: 2m
+        labels: {severity: critical}
+        annotations:
+          summary: "Retail worker reports itself down"
+          description: "{{ $labels.job }} ({{ $labels.service_role }}) has reported down for 2 minutes."
+
+      - alert: UniHubRetailWorkerQueueBacklog
+        expr: unihub_worker_queue_backlog{service_role=~"operations|imports|grile|exports"} > 25
+        for: 10m
+        labels: {severity: warning}
+        annotations:
+          summary: "Retail worker queue backlog is elevated"
+          description: "{{ $labels.service_role }} has {{ $value | humanize }} queued jobs."
+
+      - alert: UniHubRetailWorkerQueueOldestAge
+        expr: unihub_worker_queue_oldest_age_seconds{service_role=~"operations|imports|grile|exports"} > 900
+        for: 10m
+        labels: {severity: critical}
+        annotations:
+          summary: "Retail queued job is stale"
+          description: "The oldest {{ $labels.service_role }} job is {{ $value | humanizeDuration }} old."
+
+      - alert: UniHubRetailWorkerFailureRatio
+        expr: >-
+          sum by (service_role) (rate(unihub_worker_job_results_total{result="failed"}[15m]))
+          /
+          clamp_min(sum by (service_role) (rate(unihub_worker_job_results_total[15m])), 0.001)
+          > 0.25
+          and
+          sum by (service_role) (rate(unihub_worker_job_results_total[15m])) > 0.01
+        for: 15m
+        labels: {severity: warning}
+        annotations:
+          summary: "Retail worker failure ratio is elevated"
+          description: "{{ $labels.service_role }} failure ratio is {{ $value | humanizePercentage }}."
+
+      - alert: UniHubRetailWorkerJobDuration
+        expr: >-
+          histogram_quantile(0.95,
+            sum by (le, service_role) (rate(unihub_worker_job_duration_seconds_bucket[30m]))
+          ) > 1200
+        for: 15m
+        labels: {severity: warning}
+        annotations:
+          summary: "Retail worker p95 duration exceeds 20 minutes"
+          description: "{{ $labels.service_role }} p95 is {{ $value | humanizeDuration }}."
+
+      - alert: UniHubRetailGrileReconciliationStale
+        expr: time() - unihub_grile_monthly_reconcile_last_success_timestamp_seconds > 180
+        for: 2m
+        labels: {severity: critical}
+        annotations:
+          summary: "Retail Grile monthly reconciliation is stale"
+          description: "The last successful reconciliation is {{ $value | humanizeDuration }} old."
+
+      - alert: UniHubRetailGrileReconciliationFailures
+        expr: unihub_grile_monthly_reconcile_consecutive_failures >= 3
+        for: 1m
+        labels: {severity: critical}
+        annotations:
+          summary: "Retail Grile reconciliation repeatedly fails"
+          description: "Monthly reconciliation has failed {{ $value | humanize }} consecutive times."

@@ -103,7 +103,17 @@ describe('client.get', () => {
     await client.get('/api/data', { signal: controller.signal });
 
     const [, opts] = fetchCall();
-    expect(opts.signal).toBe(controller.signal);
+    expect(opts.signal).not.toBe(controller.signal);
+    expect(opts.signal?.aborted).toBe(false);
+    controller.abort();
+    expect(opts.signal?.aborted).toBe(true);
+  });
+
+  it('applies a default deadline when the caller provides no signal', async () => {
+    mockFetch.mockResolvedValueOnce(okResponse({}));
+    await client.get('/api/data');
+    const [, opts] = fetchCall();
+    expect(opts.signal).toBeInstanceOf(AbortSignal);
   });
 
   it('preserves an explicit integration Authorization header', async () => {

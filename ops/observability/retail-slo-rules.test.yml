@@ -1,0 +1,56 @@
+rule_files:
+  - retail-slo-rules.yml
+
+evaluation_interval: 1m
+
+tests:
+  - name: HTTP recording rules use the live web job
+    interval: 1m
+    input_series:
+      - series: 'http_requests_total{job="unihub-retail-web",method="GET",status="2xx",handler="/api/dashboard/all"}'
+        values: '0+90x20'
+      - series: 'http_requests_total{job="unihub-retail-web",method="GET",status="5xx",handler="/api/dashboard/all"}'
+        values: '0+10x20'
+      - series: 'http_request_duration_seconds_bucket{job="unihub-retail-web",method="GET",status="2xx",handler="/api/dashboard/all",le="0.5"}'
+        values: '0+80x20'
+      - series: 'http_request_duration_seconds_bucket{job="unihub-retail-web",method="GET",status="2xx",handler="/api/dashboard/all",le="1"}'
+        values: '0+90x20'
+      - series: 'http_request_duration_seconds_bucket{job="unihub-retail-web",method="GET",status="2xx",handler="/api/dashboard/all",le="+Inf"}'
+        values: '0+100x20'
+    promql_expr_test:
+      - expr: unihub_retail:http_requests_excluding_probes:rate5m
+        eval_time: 5m
+        exp_samples:
+          - labels: '{__name__="unihub_retail:http_requests_excluding_probes:rate5m"}'
+            value: 1.6666666666666667
+      - expr: unihub_retail:http_5xx_ratio:rate5m
+        eval_time: 5m
+        exp_samples:
+          - labels: '{__name__="unihub_retail:http_5xx_ratio:rate5m"}'
+            value: 0.09999999999999999
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: UniHubRetailErrorRateSLO
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+            exp_annotations:
+              summary: Retail 5xx ratio exceeds the SLO guardrail
+              description: Non-probe 5xx ratio is 10%.
+
+  - name: Worker self-report down is alertable
+    interval: 1m
+    input_series:
+      - series: 'unihub_worker_up{job="unihub-retail-grile",service_role="grile"}'
+        values: '0x10'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: UniHubRetailWorkerReportedDown
+        exp_alerts:
+          - exp_labels:
+              job: unihub-retail-grile
+              service_role: grile
+              severity: critical
+            exp_annotations:
+              summary: Retail worker reports itself down
+              description: unihub-retail-grile (grile) has reported down for 2 minutes.

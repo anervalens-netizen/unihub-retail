@@ -838,10 +838,7 @@ class ErpReconciliationService:
                 cutoff_date=retail_cutoff_date,
                 source_suffix=Path(filename).suffix,
             )
-            parsed = (
-                parse() if Path(filename).suffix.casefold() == ".xls"
-                else await asyncio.to_thread(parse)
-            )
+            parsed = await asyncio.to_thread(parse)
         except ErpReportValidationError as exc:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 

@@ -196,9 +196,11 @@ describe("generated Retail client", () => {
         signal: controller.signal,
       },
     );
-    expect(fetchMock.mock.calls[0]?.[1]).toEqual(
-      expect.objectContaining({ signal: controller.signal }),
-    );
+    const forwarded = fetchMock.mock.calls[0]?.[1]?.signal;
+    expect(forwarded).toBeInstanceOf(AbortSignal);
+    expect(forwarded).not.toBe(controller.signal);
+    controller.abort();
+    expect(forwarded?.aborted).toBe(true);
   });
 
   it("wraps documented 409 and 422 responses with their operation identity", async () => {

@@ -1,9 +1,14 @@
 """Unit tests pentru grila de salarizare ASM (fără DB)."""
 from __future__ import annotations
 
+from decimal import Decimal
+
+import pytest
+
 from services.asm_salary import (
     ASM_FIXED_SALARY,
     HOMOGENEITY_COMMISSION,
+    asm_salary_rule_set_for_month,
     acc_focus_commission,
     compute_asm_salary,
     island_target_commission,
@@ -171,3 +176,53 @@ def test_total_formula_sums_all_components():
     assert res["homogeneity"]["commission"] == 500
     assert res["acc_focus"]["commission"] == 600
     assert res["total_salary"] == 4000 + 1500 + 500 + 500 + 600
+
+
+@pytest.mark.parametrize(
+    ("calculator", "threshold"),
+    [
+        *[(zone_target_commission, value) for value in (79, 84, 89, 94, 99, 109)],
+        *[(island_target_commission, value) for value in (79, 89, 99, 109)],
+        *[(acc_focus_commission, value) for value in (5, 5.5, 6, 6.5, 7)],
+    ],
+)
+def test_every_tier_uses_the_exact_unrounded_value(calculator, threshold):
+    exact = Decimal(str(threshold))
+    assert calculator(exact - Decimal("0.001")) < calculator(exact)
+    assert calculator(exact) == calculator(exact + Decimal("0.001"))
+
+
+def test_display_rounding_never_changes_zone_island_homogeneity_or_focus_decisions():
+    stores = [
+        _store("A", "A", "f", Decimal("10000"), Decimal("9896"), fq=Decimal("496"), tq=Decimal("10000")),
+        _store("B", "B", "f", Decimal("10000"), Decimal("5900"), fq=0, tq=0),
+    ]
+    result = compute_asm_salary(stores, Decimal("1"))
+
+    assert result["islands"][0]["pct_used"] == 99.0
+    assert result["islands"][0]["decision_pct_exact"] == "98.96"
+    assert result["islands"][0]["commission"] == 150
+    assert result["islands"][0]["homogeneity_qualifies"] is False
+    assert result["homogeneity"]["eligible"] is False
+    assert result["acc_focus"]["pct"] == 5.0
+    assert result["acc_focus"]["decision_pct_exact"] == "4.96"
+    assert result["acc_focus"]["commission"] == 0
+
+
+def test_7896_percent_is_displayed_as_79_but_does_not_receive_the_zone_tier():
+    result = compute_asm_salary(
+        [_store("A", "A", "f", Decimal("10000"), Decimal("7896"))],
+        Decimal("1"),
+    )
+    assert result["zone"]["pct_used"] == 79.0
+    assert result["zone"]["decision_pct_exact"] == "78.96"
+    assert result["zone"]["commission"] == 0
+
+
+def test_rule_registry_is_stable_and_auditable():
+    rules = asm_salary_rule_set_for_month("2026-08")
+    assert rules.rule_set_id == "asm-v1"
+    assert rules.sha256 == "95fe70c7f9383d0176ebe8d82f7a748b33578d5219e0780226d267956b3eaa16"  # pragma: allowlist secret
+    result = compute_asm_salary([], 1, rules=rules)
+    assert result["rule_set_id"] == rules.rule_set_id
+    assert result["rule_set_sha256"] == rules.sha256

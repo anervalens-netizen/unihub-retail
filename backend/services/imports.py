@@ -10,7 +10,6 @@ import shutil
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
-from io import BytesIO
 from pathlib import Path
 from typing import Literal
 from uuid import uuid4
@@ -67,6 +66,7 @@ from services.spreadsheet_safety import (
     SpreadsheetUploadError,
     validate_spreadsheet_upload,
 )
+from services.legacy_xls import read_spreadsheet_frame
 
 logger = logging.getLogger(__name__)
 DEFAULT_MAX_SALES_UPLOAD_BYTES = 32 * 1024 * 1024
@@ -848,10 +848,10 @@ class ImportsService:
         sheet_name: str = PROMO_REPORT_SHEET,
     ) -> PromoActualsParseResult:
         try:
-            dataframe = pd.read_excel(
-                BytesIO(content),
+            dataframe = read_spreadsheet_frame(
+                content,
                 sheet_name=sheet_name,
-                keep_default_na=False,
+                limits=PROMO_ACTUALS_SPREADSHEET_LIMITS,
             )
         except Exception as exc:
             raise HTTPException(

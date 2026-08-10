@@ -7028,6 +7028,17 @@
             "title": "Commission",
             "type": "number"
           },
+          "decision_pct_exact": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decision Pct Exact"
+          },
           "pct": {
             "anyOf": [
               {
@@ -7086,6 +7097,18 @@
             "title": "Month",
             "type": "string"
           },
+          "rule_effective_from": {
+            "title": "Rule Effective From",
+            "type": "string"
+          },
+          "rule_set_id": {
+            "title": "Rule Set Id",
+            "type": "string"
+          },
+          "rule_set_sha256": {
+            "title": "Rule Set Sha256",
+            "type": "string"
+          },
           "total_salary": {
             "title": "Total Salary",
             "type": "number"
@@ -7097,6 +7120,9 @@
         "required": [
           "asm",
           "month",
+          "rule_set_id",
+          "rule_set_sha256",
+          "rule_effective_from",
           "is_forecast",
           "forecast_factor",
           "fixed_salary",
@@ -7155,6 +7181,17 @@
             "title": "Commission",
             "type": "number"
           },
+          "decision_pct_exact": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decision Pct Exact"
+          },
           "firma": {
             "title": "Firma",
             "type": "string"
@@ -7173,6 +7210,10 @@
               }
             ],
             "title": "Forecast Target Pct"
+          },
+          "homogeneity_qualifies": {
+            "title": "Homogeneity Qualifies",
+            "type": "boolean"
           },
           "locatie": {
             "title": "Locatie",
@@ -7220,6 +7261,7 @@
           "total_sales",
           "total_target",
           "forecast_sales",
+          "homogeneity_qualifies",
           "commission"
         ],
         "title": "HrAsmSalaryIsland",
@@ -7231,6 +7273,17 @@
           "commission": {
             "title": "Commission",
             "type": "number"
+          },
+          "decision_pct_exact": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decision Pct Exact"
           },
           "forecast_sales": {
             "title": "Forecast Sales",

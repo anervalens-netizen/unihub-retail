@@ -936,6 +936,41 @@ if not required <= healthy:
   return 1
 }
 
+verify_prometheus_recording_series() {
+  if [[ "$TEST_MODE" == "1" ]]; then
+    test "$(grep -c '^      - record: unihub_retail:' "$PROMETHEUS_RETAIL_RULES")" -eq 4
+    return
+  fi
+  local attempt payload
+  for attempt in {1..30}; do
+    curl --silent --output /dev/null --max-time 2 \
+      http://127.0.0.1:9898/api/dashboard/all || true
+    payload="$(curl --silent --show-error --fail --max-time 5 --get \
+      --data-urlencode 'query=count({__name__=~"unihub_retail:(http_requests_excluding_probes|http_5xx_ratio|http_latency_p95_seconds|dashboard_latency_p95_seconds):rate5m"}) by (__name__)' \
+      http://127.0.0.1:9090/api/v1/query)" || payload=""
+    if python3 -c '
+import json
+import sys
+
+required = {
+    "unihub_retail:http_requests_excluding_probes:rate5m",
+    "unihub_retail:http_5xx_ratio:rate5m",
+    "unihub_retail:http_latency_p95_seconds:rate5m",
+    "unihub_retail:dashboard_latency_p95_seconds:rate5m",
+}
+result = json.load(sys.stdin).get("data", {}).get("result", [])
+present = {item.get("metric", {}).get("__name__") for item in result}
+if not required <= present:
+    raise SystemExit(1)
+' <<<"$payload"
+    then
+      return 0
+    fi
+    sleep 2
+  done
+  return 1
+}
+
 verify_active_runtime_assets() {
   local expected_sha="$1"
   local release_root="$RUNTIME_RELEASE_BASE/$expected_sha"
@@ -1276,6 +1311,7 @@ recover_forward_release() {
   verify_local_health
   reload_prometheus
   verify_prometheus_targets
+  verify_prometheus_recording_series
   verify_public_release
   [[ "$(git_service rev-parse HEAD)" == "$expected_sha" ]] || die "recovered Git SHA mismatch"
 
@@ -1618,6 +1654,7 @@ deploy_release() {
   verify_local_health
   reload_prometheus
   verify_prometheus_targets
+  verify_prometheus_recording_series
   verify_public_release
   [[ "$(git_service rev-parse HEAD)" == "$expected_sha" ]] || die "deployed Git SHA mismatch"
   write_release_manifest "$backup_dir" "$old_sha" "$expected_sha" "deployed"

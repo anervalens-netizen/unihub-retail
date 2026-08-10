@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+from io import BytesIO
 import multiprocessing
 import os
 from pathlib import Path
@@ -153,7 +154,9 @@ def parse_legacy_xls(
     descriptor, output = tempfile.mkstemp(prefix="unihub-xls-", suffix=".json")
     os.close(descriptor)
     try:
-        process = multiprocessing.get_context("fork").Process(
+        # ``spawn`` remains safe when the synchronous broker is awaited through
+        # ``asyncio.to_thread``; forking a multi-threaded worker is not safe.
+        process = multiprocessing.get_context("spawn").Process(
             target=_child_parse,
             args=(payload, requested, policy, output),
             daemon=True,
@@ -218,3 +221,24 @@ def read_legacy_xls_frame(
         resolved = sheet_name
     parsed = parse_legacy_xls(payload, sheets=[resolved], limits=policy)
     return _frame_from_rows(parsed.sheet(resolved).rows, header)
+
+
+def read_spreadsheet_frame(
+    source: bytes | bytearray,
+    *,
+    sheet_name: str | int,
+    limits: SpreadsheetUploadLimits,
+) -> pd.DataFrame:
+    """Read XLS/XLSX through one bounded boundary selected by source bytes."""
+    payload = bytes(source)
+    if payload.startswith(OLE2_MAGIC):
+        return read_legacy_xls_frame(
+            payload,
+            sheet_name=sheet_name,
+            limits=limits_from_upload_policy(limits),
+        ).fillna("")
+    return pd.read_excel(
+        BytesIO(payload),
+        sheet_name=sheet_name,
+        keep_default_na=False,
+    )

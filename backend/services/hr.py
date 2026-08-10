@@ -7,7 +7,7 @@ from fastapi import HTTPException
 
 from business_clock import business_today
 from repositories.hr import HrRepository
-from services.asm_salary import compute_asm_salary
+from services.asm_salary import asm_salary_rule_set_for_month, compute_asm_salary
 from services.forecast import get_forecast_factor
 
 
@@ -218,14 +218,18 @@ class HrService:
                 "site_code": r["site_code"],
                 "locatie": r["locatie"],
                 "firma": r["firma"],
-                "target_value": float(r["target_value"] or 0),
-                "total_sales": float(r["total_sales"] or 0),
-                "focus_quantity": float(r["focus_quantity"] or 0),
-                "total_quantity": float(r["total_quantity"] or 0),
+                "target_value": r["target_value"] or 0,
+                "total_sales": r["total_sales"] or 0,
+                "focus_quantity": r["focus_quantity"] or 0,
+                "total_quantity": r["total_quantity"] or 0,
             }
             for r in records
         ]
         async with self.repo.pool.acquire() as conn:
             forecast_factor = await get_forecast_factor(conn, month)
-        breakdown = compute_asm_salary(stores, forecast_factor)
+        breakdown = compute_asm_salary(
+            stores,
+            forecast_factor,
+            rules=asm_salary_rule_set_for_month(month),
+        )
         return {"asm": asm_name, "month": month, **breakdown}

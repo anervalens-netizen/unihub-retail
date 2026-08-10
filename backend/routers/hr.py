@@ -125,6 +125,8 @@ class HrAsmSalaryIsland(StrictApiModel):
     forecast_sales: float
     forecast_target_pct: float | None = None
     pct_used: float | None = None
+    decision_pct_exact: str | None = None
+    homogeneity_qualifies: bool
     commission: float
 
 
@@ -136,6 +138,7 @@ class HrAsmSalaryZone(StrictApiModel):
     forecast_sales: float
     forecast_target_pct: float | None = None
     pct_used: float | None = None
+    decision_pct_exact: str | None = None
     commission: float
 
 
@@ -150,6 +153,7 @@ class HrAsmSalaryHomogeneity(StrictApiModel):
 
 class HrAsmSalaryAccFocus(StrictApiModel):
     pct: float | None = None
+    decision_pct_exact: str | None = None
     commission: float
 
 
@@ -157,6 +161,9 @@ class HrAsmSalaryBreakdown(StrictApiModel):
 
     asm: str
     month: str
+    rule_set_id: str
+    rule_set_sha256: str
+    rule_effective_from: str
     is_forecast: bool
     forecast_factor: float
     fixed_salary: float
