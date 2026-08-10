@@ -195,6 +195,7 @@ jobs:
             "$systemd_root/opt/Mobiup/unihub-retail/.env.migrations" \
             "$systemd_root/opt/Mobiup/ops/prometheus/unihub-retail-network.env"
           cp /usr/bin/true "$systemd_root/usr/bin/true"
+          cp /usr/bin/false "$systemd_root/usr/bin/false"
           cp /usr/bin/timeout "$systemd_root/usr/bin/timeout"
           cp /usr/bin/true \
             "$systemd_root/opt/Mobiup/unihub-retail/backend/venv/bin/python"
