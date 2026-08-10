@@ -1,53 +1,7 @@
 [Unit]
-Description=UniHub Retail temporary pre-9.5 ARQ queue drain worker
-After=network-online.target docker.service mobiup-dwh-postgres.service
-Wants=network-online.target docker.service
-StartLimitIntervalSec=60
-StartLimitBurst=5
+Description=UniHub Retail retired pre-9.5 queue worker tombstone
+RefuseManualStart=yes
 
 [Service]
-Type=simple
-User=andrei
-WorkingDirectory=/opt/Mobiup/unihub-retail/backend
-Environment="PATH=/opt/Mobiup/unihub-retail/backend/venv/bin:/usr/bin:/bin"
-EnvironmentFile=/opt/Mobiup/unihub-retail/.env.worker
-EnvironmentFile=/opt/Mobiup/ops/prometheus/unihub-retail-network.env
-Environment="RETAIL_WORKER_ROLE=legacy"
-Environment=UNIHUB_DB_PROCESS_AUTHORITY=operations
-ExecStart=/opt/Mobiup/unihub-retail/backend/venv/bin/python worker.py
-Restart=always
-RestartSec=5
-TimeoutStartSec=120
-TimeoutStopSec=2460
-KillSignal=SIGTERM
-StandardOutput=journal
-StandardError=journal
-SyslogIdentifier=unihub-legacy-worker
-ProtectSystem=strict
-ReadWritePaths=/opt/Mobiup
-ProtectHome=read-only
-NoNewPrivileges=true
-PrivateTmp=true
-PrivateDevices=true
-ProtectClock=true
-ProtectControlGroups=true
-ProtectHostname=true
-ProtectKernelLogs=true
-ProtectKernelModules=true
-ProtectKernelTunables=true
-LockPersonality=true
-RestrictNamespaces=true
-RestrictRealtime=true
-RestrictSUIDSGID=true
-RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
-SystemCallArchitectures=native
-CapabilityBoundingSet=
-UMask=0077
-CPUWeight=200
-IOWeight=200
-MemoryHigh=768M
-MemoryMax=1024M
-MemorySwapMax=256M
-
-[Install]
-WantedBy=multi-user.target
+Type=oneshot
+ExecStart=/usr/bin/false

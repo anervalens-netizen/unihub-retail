@@ -7,7 +7,7 @@ from io import BytesIO
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, mock_open
 
 import pytest
 from openpyxl import load_workbook
@@ -309,7 +309,10 @@ def test_child_renderers_emit_hashed_artifacts_without_process_coverage_gaps(
         child_renderer.render_daily_metrics_xlsx(metrics_payload)
 
 
-def test_child_memory_and_output_fences_fail_closed(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_child_memory_and_output_fences_fail_closed(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
     with pytest.raises(ValueError, match="positive"):
         child_renderer._enforce_memory_limit(0)
 
@@ -327,19 +330,30 @@ def test_child_memory_and_output_fences_fail_closed(monkeypatch: pytest.MonkeyPa
     assert child_renderer._peak_rss_bytes() == 1024
     assert child_renderer._assert_memory_budget(2048) == 1024
 
+    with monkeypatch.context() as statm_context:
+        statm_context.setattr(Path, "open", mock_open(read_data="7 3\n"))
+        statm_context.setattr(child_renderer.resource, "getpagesize", lambda: 4096)
+        assert child_renderer._virtual_memory_bytes() == 7 * 4096
+
     set_limit = MagicMock()
     monkeypatch.setattr(child_renderer.resource, "setrlimit", set_limit)
+    monkeypatch.setattr(child_renderer, "_peak_rss_bytes", lambda: 1024)
+    monkeypatch.setattr(child_renderer, "_virtual_memory_bytes", lambda: 8192)
     monkeypatch.setattr(
         child_renderer.resource,
         "getrlimit",
         lambda *_args: (resource.RLIM_INFINITY, resource.RLIM_INFINITY),
     )
     child_renderer._enforce_memory_limit(4096)
-    set_limit.assert_called_with(resource.RLIMIT_AS, (4096, resource.RLIM_INFINITY))
+    set_limit.assert_called_with(resource.RLIMIT_AS, (11264, resource.RLIM_INFINITY))
 
-    monkeypatch.setattr(child_renderer.resource, "getrlimit", lambda *_args: (1024, 2048))
+    monkeypatch.setattr(child_renderer.resource, "getrlimit", lambda *_args: (10000, 12000))
     child_renderer._enforce_memory_limit(4096)
-    set_limit.assert_called_with(resource.RLIMIT_AS, (1024, 2048))
+    set_limit.assert_called_with(resource.RLIMIT_AS, (10000, 12000))
+
+    monkeypatch.setattr(child_renderer, "_peak_rss_bytes", lambda: 4096)
+    with pytest.raises(MemoryError, match="before rendering"):
+        child_renderer._enforce_memory_limit(4096)
 
     monkeypatch.setattr(child_renderer, "_assert_memory_budget", lambda _limit: 1)
     from openpyxl import Workbook
@@ -352,6 +366,12 @@ def test_child_memory_and_output_fences_fail_closed(monkeypatch: pytest.MonkeyPa
             max_peak_rss_bytes=100,
         )
     workbook.close()
+
+    explicit_output = tmp_path / "private" / "artifact.xlsx"
+    assert child_renderer._private_output_path(str(explicit_output)) == explicit_output
+    assert explicit_output.stat().st_mode & 0o777 == 0o600
+    with pytest.raises(FileExistsError):
+        child_renderer._private_output_path(str(explicit_output))
 
     assert days_filename_suffix(None) == ""
     assert days_filename_suffix([1, 2]) == "_zile_1-2"

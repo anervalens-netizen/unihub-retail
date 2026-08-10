@@ -2,10 +2,12 @@
 
 This directory plus repository-root `unihub-worker.service` are the versioned
 source of truth for the Retail web, four role-isolated workers (operations,
-imports, Grile and exports), one temporary pre-9.5 default-queue drain worker,
-and one-shot migration service. The exact-SHA deploy stores each reviewed set
+imports, Grile and exports), the retired pre-9.5 worker tombstone, and one-shot
+migration service. The exact-SHA deploy stores each reviewed set
 under `/var/lib/unihub-retail-deploy/runtime-releases/<SHA>/systemd/` and
-atomically switches the seven links under `/etc/systemd/system`.
+atomically switches the seven links under `/etc/systemd/system`. The legacy
+tombstone remains disabled and refuses manual starts so rollback can still
+restore an older release's exact unit set.
 
 Do not copy these units independently during a release. The artifact deploy
 backs up the active links, switches the exact-SHA set, runs `daemon-reload`,

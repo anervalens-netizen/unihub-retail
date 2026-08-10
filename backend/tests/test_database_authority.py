@@ -245,7 +245,6 @@ def test_versioned_units_declare_exclusive_process_authorities() -> None:
         root / "ops/systemd/unihub-import-worker.service": "sales_import",
         root / "ops/systemd/unihub-grile-worker.service": "operations",
         root / "ops/systemd/unihub-export-worker.service": "operations",
-        root / "ops/systemd/unihub-legacy-worker.service": "operations",
         root / "ops/systemd/unihub-retail-migrate.service": "migrate",
     }
     for path, authority in expected.items():
@@ -256,6 +255,12 @@ def test_versioned_units_declare_exclusive_process_authorities() -> None:
             if line.startswith("Environment=")
         }
         assert f"{DB_PROCESS_AUTHORITY_ENV}={authority}" in assignments
+
+    retired_unit = (root / "ops/systemd/unihub-legacy-worker.service").read_text(
+        encoding="utf-8"
+    )
+    assert "RefuseManualStart=yes" in retired_unit
+    assert DB_PROCESS_AUTHORITY_ENV not in retired_unit
 
     import_unit = (root / "ops/systemd/unihub-import-worker.service").read_text(
         encoding="utf-8"

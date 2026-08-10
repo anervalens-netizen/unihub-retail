@@ -34,14 +34,15 @@ cp "$SCRIPT_DIR/../unihub-worker.service" "$BUILDER/"
 cp "$SCRIPT_DIR/systemd/unihub-import-worker.service" "$BUILDER/ops/systemd/"
 cp "$SCRIPT_DIR/systemd/unihub-retail-migrate.service" "$BUILDER/ops/systemd/"
 cp "$SCRIPT_DIR/observability/retail-process-scrape.yml" "$BUILDER/ops/observability/"
+cp "$SCRIPT_DIR/observability/retail-slo-rules.yml" "$BUILDER/ops/observability/"
 git -C "$BUILDER" add .
 git -C "$BUILDER" commit --quiet -m old
 OLD_SHA="$(git -C "$BUILDER" rev-parse HEAD)"
 git -C "$BUILDER" push --quiet -u origin main
 git --git-dir="$REMOTE" symbolic-ref HEAD refs/heads/main
 
-# Retail 9.5 introduces isolated Grile/export workers plus a one-release
-# compatibility consumer; the old release intentionally has none of them.
+# The candidate has isolated Grile/export workers plus a disabled legacy
+# tombstone; the old release intentionally has none of them.
 cp "$SCRIPT_DIR/systemd/unihub-grile-worker.service" "$BUILDER/ops/systemd/"
 cp "$SCRIPT_DIR/systemd/unihub-export-worker.service" "$BUILDER/ops/systemd/"
 cp "$SCRIPT_DIR/systemd/unihub-legacy-worker.service" "$BUILDER/ops/systemd/"
@@ -190,15 +191,19 @@ for unit in \
   [[ "$(readlink -f "$ROOT/etc/systemd/system/$unit")" == "$ROOT/runtime-releases/$NEW_SHA/systemd/$unit" ]]
 done
 for unit in unihub-backend.service unihub-worker.service unihub-import-worker.service \
-  unihub-grile-worker.service unihub-export-worker.service unihub-legacy-worker.service; do
+  unihub-grile-worker.service unihub-export-worker.service; do
   [[ -e "$ROOT/enabled/$unit" ]]
 done
+[[ ! -e "$ROOT/enabled/unihub-legacy-worker.service" ]]
+[[ ! -e "$ROOT/node-exporter/textfile/unihub_retail_deploy.prom" ]]
 grep -Fxq 'PROMETHEUS_DOCKER_GATEWAY=172.23.0.1' "$OPS/prometheus/unihub-retail-network.env"
 grep -Fxq 'PROMETHEUS_DOCKER_SUBNET=172.23.0.0/16' "$OPS/prometheus/unihub-retail-network.env"
 grep -Fxq 'WORKER_METRICS_HOST=172.23.0.1' "$OPS/prometheus/unihub-retail-network.env"
 [[ "$(grep -Fc '172.23.0.1:' "$OPS/prometheus/scrape.d/unihub-retail.yml")" -eq 5 ]]
 ! grep -Eq '__PROMETHEUS_DOCKER_GATEWAY__|0\.0\.0\.0|127\.0\.0\.1' \
   "$OPS/prometheus/scrape.d/unihub-retail.yml"
+cmp "$SCRIPT_DIR/observability/retail-slo-rules.yml" \
+  "$OPS/prometheus/rules/retail-slo-rules.yml"
 [[ "$(<"$LIVE/docs/AUDIT_TEHNIC_RETAIL_UNIHUB_REAUDIT_2026-07-15.md")" == "published audit" ]]
 HANDLE="$(rg -l '^STATE=deployed$' "$OPS/backups/retail-deploy"/*/release.env | xargs -r -n1 dirname | tail -1)"
 [[ -n "$HANDLE" ]]
@@ -306,6 +311,7 @@ set -e
 [[ "$(<"$LIVE/dist/index.html")" == "old frontend" ]]
 [[ ! -e "$LIVE/docs/AUDIT_TEHNIC_RETAIL_UNIHUB_REAUDIT_2026-07-15.md" ]]
 [[ "$(find "$ROOT/approval-store" -maxdepth 1 -type f -name '*.failed' | wc -l)" -eq 1 ]]
+[[ ! -e "$ROOT/node-exporter/textfile/unihub_retail_deploy.prom" ]]
 
 approve_release "$CI_RUN_ID" "$NEW_SHA" "$ARTIFACT_SHA256" >/dev/null
 FAILED_BEFORE_PROMETHEUS="$(find "$ROOT/approval-store" -maxdepth 1 -type f -name '*.failed' | wc -l)"
@@ -323,6 +329,7 @@ grep -Fxq 'legacy unit unihub-backend.service' "$ROOT/etc/systemd/system/unihub-
 [[ ! -e "$OPS/prometheus/unihub-retail-network.env" ]]
 [[ ! -e "$OPS/prometheus/scrape.d/unihub-retail.yml" ]]
 [[ "$(find "$ROOT/approval-store" -maxdepth 1 -type f -name '*.failed' | wc -l)" -eq "$((FAILED_BEFORE_PROMETHEUS + 1))" ]]
+[[ ! -e "$ROOT/node-exporter/textfile/unihub_retail_deploy.prom" ]]
 
 approve_release "$CI_RUN_ID" "$NEW_SHA" "$ARTIFACT_SHA256" >/dev/null
 FAILED_BEFORE_PUBLIC_HEALTH="$(find "$ROOT/approval-store" -maxdepth 1 -type f -name '*.failed' | wc -l)"
@@ -337,6 +344,7 @@ set -e
 [[ "$(git -C "$LIVE" rev-parse HEAD)" == "$OLD_SHA" ]]
 [[ "$(<"$LIVE/dist/index.html")" == "old frontend" ]]
 [[ "$(find "$ROOT/approval-store" -maxdepth 1 -type f -name '*.failed' | wc -l)" -eq "$((FAILED_BEFORE_PUBLIC_HEALTH + 1))" ]]
+[[ ! -e "$ROOT/node-exporter/textfile/unihub_retail_deploy.prom" ]]
 
 mkdir -p "$ROOT/tampered"
 tar -xzf "$ARTIFACT" -C "$ROOT/tampered"

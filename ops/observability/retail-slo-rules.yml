@@ -5,20 +5,20 @@ groups:
       - record: unihub_retail:http_requests_excluding_probes:rate5m
         expr: >-
           sum(rate(http_requests_total{
-            job="unihub_retail",
+            job="unihub-retail-web",
             handler!~"/(health|readyz|livez)"
           }[5m]))
 
       - record: unihub_retail:http_5xx_ratio:rate5m
         expr: >-
           (sum(rate(http_requests_total{
-            job="unihub_retail",
+            job="unihub-retail-web",
             status="5xx",
             handler!~"/(health|readyz|livez)"
           }[5m])) or vector(0))
           /
           clamp_min(sum(rate(http_requests_total{
-            job="unihub_retail",
+            job="unihub-retail-web",
             handler!~"/(health|readyz|livez)"
           }[5m])), 0.001)
 
@@ -26,7 +26,7 @@ groups:
         expr: >-
           histogram_quantile(0.95,
             sum by (le) (rate(http_request_duration_seconds_bucket{
-              job="unihub_retail",
+              job="unihub-retail-web",
               handler!~"/(health|readyz|livez)"
             }[5m]))
           )
@@ -35,13 +35,21 @@ groups:
         expr: >-
           histogram_quantile(0.95,
             sum by (le) (rate(http_request_duration_seconds_bucket{
-              job="unihub_retail",
+              job="unihub-retail-web",
               handler="/api/dashboard/all"
             }[5m]))
           )
 
   - name: unihub-retail-slo-alerts
     rules:
+      - alert: UniHubRetailPlannedDeployment
+        expr: unihub_retail_deployment_in_progress == 1
+        labels:
+          severity: info
+        annotations:
+          summary: "Retail verified deployment is in progress"
+          description: "Only Retail availability alerts are inhibited while the exact-SHA deploy marker exists."
+
       - alert: UniHubRetailReadinessProbeMissing
         expr: absent(probe_success{job="blackbox_retail_readiness"})
         for: 5m
@@ -87,7 +95,7 @@ groups:
       - alert: UniHubRetailSingleSlowRequest
         expr: >-
           sum by (method, status, handler) (
-            increase(http_slow_requests_total{job="unihub_retail"}[5m])
+            increase(http_slow_requests_total{job="unihub-retail-web"}[5m])
           ) > 0
         labels:
           severity: warning
@@ -98,7 +106,7 @@ groups:
       - alert: UniHubRetailDashboardBudgetViolation
         expr: >-
           increase(dashboard_component_budget_violation_total{
-            job="unihub_retail"
+            job="unihub-retail-web"
           }[5m]) > 0
         labels:
           severity: critical
@@ -111,7 +119,7 @@ groups:
           unihub_retail:dashboard_latency_p95_seconds:rate5m > 1
           and
           sum(rate(http_requests_total{
-            job="unihub_retail",
+            job="unihub-retail-web",
             handler="/api/dashboard/all"
           }[5m])) > 0.05
         for: 15m

@@ -323,8 +323,9 @@ din evaluarea agentilor: acesta accepta si etichetele agregate
   256 KiB; spoolul este inchis inclusiv dupa terminarea raspunsului. Exporturile
   cu grafice/daily sheets sunt operatii durabile in `export_operations`, cu
   maximum trei operatii active global si una per owner. Workerul serializat
-  porneste rendererul intr-un proces `spawn` separat, aplica `RLIMIT_AS`,
-  verifica peak RSS, numarul de randuri/celule, dimensiunea si SHA-256, apoi
+  porneste rendererul intr-un proces `spawn` separat, aplica `RLIMIT_AS` pe
+  headroom-ul ramas peste spatiul virtual deja rezervat si verifica separat
+  plafonul absolut peak RSS, numarul de randuri/celule, dimensiunea si SHA-256, apoi
   adopta atomic artefactul privat `0600`. Lease-ul si epoch-ul fencesc workerii
   intarziati; starea DB terminala castiga fata de ARQ. UI persista operation ID
   separat pe identitatea autentificata, poate relua pollingul dupa reload,
