@@ -24,21 +24,21 @@ groups:
 
       - record: unihub_retail:http_latency_p95_seconds:rate5m
         expr: >-
-          histogram_quantile(0.95,
+          (histogram_quantile(0.95,
             sum by (le) (rate(http_request_duration_seconds_bucket{
               job="unihub-retail-web",
               handler!~"/(health|readyz|livez)"
             }[5m]))
-          )
+          )) or vector(0)
 
       - record: unihub_retail:dashboard_latency_p95_seconds:rate5m
         expr: >-
-          histogram_quantile(0.95,
+          (histogram_quantile(0.95,
             sum by (le) (rate(http_request_duration_seconds_bucket{
               job="unihub-retail-web",
               handler="/api/dashboard/all"
             }[5m]))
-          )
+          )) or vector(0)
 
   - name: unihub-retail-slo-alerts
     rules:

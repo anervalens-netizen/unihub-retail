@@ -4,6 +4,20 @@ rule_files:
 evaluation_interval: 1m
 
 tests:
+  - name: Latency recordings remain present without traffic
+    interval: 1m
+    promql_expr_test:
+      - expr: unihub_retail:http_latency_p95_seconds:rate5m
+        eval_time: 1m
+        exp_samples:
+          - labels: '{__name__="unihub_retail:http_latency_p95_seconds:rate5m"}'
+            value: 0
+      - expr: unihub_retail:dashboard_latency_p95_seconds:rate5m
+        eval_time: 1m
+        exp_samples:
+          - labels: '{__name__="unihub_retail:dashboard_latency_p95_seconds:rate5m"}'
+            value: 0
+
   - name: HTTP recording rules use the live web job
     interval: 1m
     input_series:
