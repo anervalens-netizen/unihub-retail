@@ -1,166 +1,197 @@
-"""Calcularea salariului ASM după grila de comisionare.
-
-Modul pur (fără DB și fără I/O) pentru a putea fi testat unitar.
-Tabelele de comision sunt date explicite, ușor de ajustat.
-
-Regula „cu excepție de 1% sub prag" este deja inclusă în pragurile
-afiliate în grilă (ex. 79 = 80 − 1, 99 = 100 − 1, pragul Acc Focus 5%
-= 6 − 1), deci se folosesc exact ca atare, fără o altă toleranță
-suplimentară. Astfel:
-
-  Zonă:    ≥109→1500  ≥99→1400  ≥94→1200  ≥89→1000  ≥84→800  ≥79→700  altfel 0
-  Insulă:  ≥109→250   ≥99→200   ≥89→150   ≥79→100   altfel 0
-  Omogenitate: >50% insule cu ≥99% realizare → 500, altfel 0
-  Acc Focus: ≥7→600  ≥6.5→500  ≥6→400  ≥5.5→300  ≥5→200  altfel 0
-
-Pentru luna curentă parțială, commissionele se calculează pe baza
-procentului prognozat la final de lună (vânzări * forecast_factor).
-Pentru luni finalizate (forecast_factor ≈ 1.0) se folosesc valorile
-actuale. Acc Focus % este un raport de cantități, deci nu se scalează
-cu forecast_factor — se folosește raportul lunii (aproape constant).
-"""
+"""Calcul salarial ASM pe procente exacte și reguli effective-dated."""
 from __future__ import annotations
 
+from dataclasses import dataclass
+from decimal import Decimal, InvalidOperation
+import hashlib
+import json
 from typing import Any, Iterable, Mapping, Sequence
 
-ASM_FIXED_SALARY = 4000
 
-# (minim inclusiv, comision). Evaluate descrescător; prima potrivire câștigă.
-ZONE_TARGET_TIERS: tuple[tuple[float, int], ...] = (
-    (109, 1500),
-    (99, 1400),
-    (94, 1200),
-    (89, 1000),
-    (84, 800),
-    (79, 700),
+@dataclass(frozen=True, slots=True)
+class AsmSalaryRuleSet:
+    rule_set_id: str
+    effective_from: str
+    fixed_salary: int
+    zone_target_tiers: tuple[tuple[Decimal, int], ...]
+    island_target_tiers: tuple[tuple[Decimal, int], ...]
+    acc_focus_tiers: tuple[tuple[Decimal, int], ...]
+    homogeneity_min_pct: Decimal
+    homogeneity_commission: int
+
+    @property
+    def sha256(self) -> str:
+        material = {
+            "rule_set_id": self.rule_set_id,
+            "effective_from": self.effective_from,
+            "fixed_salary": self.fixed_salary,
+            "zone_target_tiers": [[str(pct), amount] for pct, amount in self.zone_target_tiers],
+            "island_target_tiers": [[str(pct), amount] for pct, amount in self.island_target_tiers],
+            "acc_focus_tiers": [[str(pct), amount] for pct, amount in self.acc_focus_tiers],
+            "homogeneity_min_pct": str(self.homogeneity_min_pct),
+            "homogeneity_commission": self.homogeneity_commission,
+        }
+        encoded = json.dumps(material, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        return hashlib.sha256(encoded).hexdigest()
+
+
+ASM_SALARY_RULE_SETS: tuple[AsmSalaryRuleSet, ...] = (
+    AsmSalaryRuleSet(
+        rule_set_id="asm-v1",
+        effective_from="2000-01",
+        fixed_salary=4000,
+        zone_target_tiers=tuple(
+            (Decimal(pct), amount)
+            for pct, amount in (("109", 1500), ("99", 1400), ("94", 1200), ("89", 1000), ("84", 800), ("79", 700))
+        ),
+        island_target_tiers=tuple(
+            (Decimal(pct), amount)
+            for pct, amount in (("109", 250), ("99", 200), ("89", 150), ("79", 100))
+        ),
+        acc_focus_tiers=tuple(
+            (Decimal(pct), amount)
+            for pct, amount in (("7", 600), ("6.5", 500), ("6", 400), ("5.5", 300), ("5", 200))
+        ),
+        homogeneity_min_pct=Decimal("99"),
+        homogeneity_commission=500,
+    ),
 )
-ISLAND_TARGET_TIERS: tuple[tuple[float, int], ...] = (
-    (109, 250),
-    (99, 200),
-    (89, 150),
-    (79, 100),
-)
-ACC_FOCUS_TIERS: tuple[tuple[float, int], ...] = (
-    (7.0, 600),
-    (6.5, 500),
-    (6.0, 400),
-    (5.5, 300),
-    (5.0, 200),
-)
 
-HOMOGENEITY_MIN_PCT = 99.0
-HOMOGENEITY_COMMISSION = 500
+DEFAULT_ASM_SALARY_RULE_SET = ASM_SALARY_RULE_SETS[-1]
+ASM_FIXED_SALARY = DEFAULT_ASM_SALARY_RULE_SET.fixed_salary
+ZONE_TARGET_TIERS = DEFAULT_ASM_SALARY_RULE_SET.zone_target_tiers
+ISLAND_TARGET_TIERS = DEFAULT_ASM_SALARY_RULE_SET.island_target_tiers
+ACC_FOCUS_TIERS = DEFAULT_ASM_SALARY_RULE_SET.acc_focus_tiers
+HOMOGENEITY_MIN_PCT = float(DEFAULT_ASM_SALARY_RULE_SET.homogeneity_min_pct)
+HOMOGENEITY_COMMISSION = DEFAULT_ASM_SALARY_RULE_SET.homogeneity_commission
 
 
-def commission_for_tier(pct: float | None, tiers: Iterable[tuple[float, int]]) -> int:
-    """Returnează comisionul pentru primul prag atins (descrescător)."""
+def asm_salary_rule_set_for_month(month: str) -> AsmSalaryRuleSet:
+    matches = [rules for rules in ASM_SALARY_RULE_SETS if rules.effective_from <= month]
+    if not matches:
+        raise ValueError(f"Nu exista grila ASM pentru luna {month}")
+    return matches[-1]
+
+
+def _decimal(value: Any) -> Decimal:
+    if isinstance(value, Decimal):
+        return value
+    try:
+        return Decimal(str(value or 0))
+    except (InvalidOperation, ValueError) as exc:
+        raise ValueError("Valoare numerica ASM invalida") from exc
+
+
+def _exact_pct(numerator: Decimal, denominator: Decimal) -> Decimal | None:
+    if denominator == 0:
+        return None
+    return numerator / denominator * Decimal("100")
+
+
+def _display(value: Decimal | None, places: str = "0.1") -> float | None:
+    return None if value is None else float(value.quantize(Decimal(places)))
+
+
+def _exact_text(value: Decimal | None) -> str | None:
+    return None if value is None else format(value.normalize(), "f")
+
+
+def commission_for_tier(
+    pct: Decimal | float | int | None,
+    tiers: Iterable[tuple[Decimal, int]],
+) -> int:
+    """Decide comisionul pe valoarea exactă; rotunjirea este doar de afișare."""
     if pct is None:
         return 0
+    exact_pct = _decimal(pct)
     for threshold, amount in tiers:
-        if pct >= threshold:
+        if exact_pct >= threshold:
             return amount
     return 0
 
 
-def zone_target_commission(pct: float | None) -> int:
+def zone_target_commission(pct: Decimal | float | int | None) -> int:
     return commission_for_tier(pct, ZONE_TARGET_TIERS)
 
 
-def island_target_commission(pct: float | None) -> int:
+def island_target_commission(pct: Decimal | float | int | None) -> int:
     return commission_for_tier(pct, ISLAND_TARGET_TIERS)
 
 
-def acc_focus_commission(pct: float | None) -> int:
+def acc_focus_commission(pct: Decimal | float | int | None) -> int:
     return commission_for_tier(pct, ACC_FOCUS_TIERS)
-
-
-def _pct(numerator: float, denominator: float) -> float | None:
-    if not denominator:
-        return None
-    return round(numerator / denominator * 100, 1)
 
 
 def compute_asm_salary(
     stores: Sequence[Mapping[str, Any]],
-    forecast_factor: float,
+    forecast_factor: float | Decimal,
+    *,
+    rules: AsmSalaryRuleSet = DEFAULT_ASM_SALARY_RULE_SET,
 ) -> dict[str, Any]:
-    """Calculează defalcarea salarială ASM din datele pe magazin.
+    """Calculează defalcarea ASM fără rotunjire înaintea pragurilor."""
+    factor = _decimal(forecast_factor)
+    is_partial = factor > Decimal("1.001")
+    zone_sales = sum((_decimal(s.get("total_sales")) for s in stores), Decimal(0))
+    zone_target = sum((_decimal(s.get("target_value")) for s in stores), Decimal(0))
+    zone_focus_qty = sum((_decimal(s.get("focus_quantity")) for s in stores), Decimal(0))
+    zone_total_qty = sum((_decimal(s.get("total_quantity")) for s in stores), Decimal(0))
 
-    ``stores``: listă de dict-uri cu cheile ``site_code``, ``locatie``,
-    ``firma``, ``target_value``, ``total_sales``, ``focus_quantity``,
-    ``total_quantity`` (ultimele patru numerice).
-    ``forecast_factor``: extrapolarea la final de lună
-    (zile_lună / ultima_zi_vânzări); 1.0 pentru luni finalizate.
-    """
-    is_partial = forecast_factor > 1.001
-
-    zone_sales = sum(float(s.get("total_sales") or 0) for s in stores)
-    zone_target = sum(float(s.get("target_value") or 0) for s in stores)
-    zone_focus_qty = sum(float(s.get("focus_quantity") or 0) for s in stores)
-    zone_total_qty = sum(float(s.get("total_quantity") or 0) for s in stores)
-
-    zone_target_pct = _pct(zone_sales, zone_target)
-    zone_forecast_sales = zone_sales * forecast_factor
-    zone_forecast_target_pct = _pct(zone_forecast_sales, zone_target)
-    zone_focus_pct = _pct(zone_focus_qty, zone_total_qty)
-    zone_focus_pct_used = zone_focus_pct if zone_focus_pct is not None else 0.0
-
-    zone_pct_used = zone_forecast_target_pct if is_partial else zone_target_pct
-    zone_commission = zone_target_commission(zone_pct_used)
+    zone_target_pct_exact = _exact_pct(zone_sales, zone_target)
+    zone_forecast_sales = zone_sales * factor
+    zone_forecast_pct_exact = _exact_pct(zone_forecast_sales, zone_target)
+    zone_focus_pct_exact = _exact_pct(zone_focus_qty, zone_total_qty)
+    zone_pct_used_exact = zone_forecast_pct_exact if is_partial else zone_target_pct_exact
+    zone_commission = commission_for_tier(zone_pct_used_exact, rules.zone_target_tiers)
 
     islands: list[dict[str, Any]] = []
     qualifying = 0
-    for s in stores:
-        sales = float(s.get("total_sales") or 0)
-        target = float(s.get("target_value") or 0)
-        tgt_pct = _pct(sales, target)
-        fc_sales = sales * forecast_factor
-        fc_tgt_pct = _pct(fc_sales, target)
-        pct_used = fc_tgt_pct if is_partial else tgt_pct
-        commission = island_target_commission(pct_used)
-        if pct_used is not None and pct_used >= HOMOGENEITY_MIN_PCT:
-            qualifying += 1
+    for store in stores:
+        sales = _decimal(store.get("total_sales"))
+        target = _decimal(store.get("target_value"))
+        target_pct_exact = _exact_pct(sales, target)
+        forecast_sales = sales * factor
+        forecast_pct_exact = _exact_pct(forecast_sales, target)
+        pct_used_exact = forecast_pct_exact if is_partial else target_pct_exact
+        qualifies = pct_used_exact is not None and pct_used_exact >= rules.homogeneity_min_pct
+        qualifying += int(qualifies)
         islands.append({
-            "site_code": s.get("site_code"),
-            "locatie": s.get("locatie"),
-            "firma": s.get("firma"),
-            "total_sales": round(sales, 2),
-            "total_target": round(target, 2),
-            "target_pct": tgt_pct,
-            "forecast_sales": round(fc_sales, 2),
-            "forecast_target_pct": fc_tgt_pct,
-            "pct_used": pct_used,
-            "commission": commission,
+            "site_code": store.get("site_code"),
+            "locatie": store.get("locatie"),
+            "firma": store.get("firma"),
+            "total_sales": _display(sales, "0.01"),
+            "total_target": _display(target, "0.01"),
+            "target_pct": _display(target_pct_exact),
+            "forecast_sales": _display(forecast_sales, "0.01"),
+            "forecast_target_pct": _display(forecast_pct_exact),
+            "pct_used": _display(pct_used_exact),
+            "decision_pct_exact": _exact_text(pct_used_exact),
+            "homogeneity_qualifies": qualifies,
+            "commission": commission_for_tier(pct_used_exact, rules.island_target_tiers),
         })
 
-    islands_commission = sum(i["commission"] for i in islands)
     islands_count = len(islands)
-    qualifying_pct = round(qualifying / islands_count * 100, 1) if islands_count else 0.0
-    homog_eligible = islands_count > 0 and (qualifying / islands_count) > 0.5
-    homog_commission = HOMOGENEITY_COMMISSION if homog_eligible else 0
-
-    acc_focus_pct = zone_focus_pct_used
-    acc_focus_commission_val = acc_focus_commission(acc_focus_pct)
-
-    total_salary = (
-        ASM_FIXED_SALARY
-        + zone_commission
-        + islands_commission
-        + homog_commission
-        + acc_focus_commission_val
-    )
+    homogeneity_eligible = islands_count > 0 and Decimal(qualifying) / Decimal(islands_count) > Decimal("0.5")
+    focus_pct_for_decision = zone_focus_pct_exact or Decimal(0)
+    islands_commission = sum(island["commission"] for island in islands)
+    homogeneity_commission = rules.homogeneity_commission if homogeneity_eligible else 0
+    focus_commission = commission_for_tier(focus_pct_for_decision, rules.acc_focus_tiers)
+    total_salary = rules.fixed_salary + zone_commission + islands_commission + homogeneity_commission + focus_commission
 
     return {
+        "rule_set_id": rules.rule_set_id,
+        "rule_set_sha256": rules.sha256,
+        "rule_effective_from": rules.effective_from,
         "is_forecast": is_partial,
-        "forecast_factor": round(forecast_factor, 3),
-        "fixed_salary": ASM_FIXED_SALARY,
+        "forecast_factor": _display(factor, "0.001"),
+        "fixed_salary": rules.fixed_salary,
         "zone": {
-            "total_sales": round(zone_sales, 2),
-            "total_target": round(zone_target, 2),
-            "target_pct": zone_target_pct,
-            "forecast_sales": round(zone_forecast_sales, 2),
-            "forecast_target_pct": zone_forecast_target_pct,
-            "pct_used": zone_pct_used,
+            "total_sales": _display(zone_sales, "0.01"),
+            "total_target": _display(zone_target, "0.01"),
+            "target_pct": _display(zone_target_pct_exact),
+            "forecast_sales": _display(zone_forecast_sales, "0.01"),
+            "forecast_target_pct": _display(zone_forecast_pct_exact),
+            "pct_used": _display(zone_pct_used_exact),
+            "decision_pct_exact": _exact_text(zone_pct_used_exact),
             "commission": zone_commission,
         },
         "islands": islands,
@@ -168,14 +199,15 @@ def compute_asm_salary(
         "homogeneity": {
             "islands_count": islands_count,
             "qualifying_count": qualifying,
-            "qualifying_pct": qualifying_pct,
-            "min_pct": HOMOGENEITY_MIN_PCT,
-            "eligible": homog_eligible,
-            "commission": homog_commission,
+            "qualifying_pct": round(qualifying / islands_count * 100, 1) if islands_count else 0.0,
+            "min_pct": float(rules.homogeneity_min_pct),
+            "eligible": homogeneity_eligible,
+            "commission": homogeneity_commission,
         },
         "acc_focus": {
-            "pct": acc_focus_pct,
-            "commission": acc_focus_commission_val,
+            "pct": _display(zone_focus_pct_exact),
+            "decision_pct_exact": _exact_text(zone_focus_pct_exact),
+            "commission": focus_commission,
         },
         "total_salary": total_salary,
     }

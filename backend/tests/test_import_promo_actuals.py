@@ -6,6 +6,7 @@ from datetime import date
 from decimal import Decimal
 from io import BytesIO
 from pathlib import Path
+from unittest.mock import MagicMock
 
 import pandas as pd
 import pytest
@@ -309,6 +310,25 @@ def test_validate_promo_actuals_report_maps_read_errors(
         ImportsService._validate_promo_actuals_report(b"bad")
     assert exc.value.status_code == 400
     assert "AccesoriPromoLunar" in str(exc.value.detail)
+
+
+def test_validate_promo_xls_uses_the_resource_bounded_legacy_broker(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    dataframe = pd.DataFrame({
+        "SiteCode": ["S1"],
+        "Cod": ["I1"],
+        "Promo Luna Curenta": [2],
+    })
+    spreadsheet_reader = MagicMock(return_value=dataframe)
+    monkeypatch.setattr(imports_module, "read_spreadsheet_frame", spreadsheet_reader)
+
+    result = ImportsService._validate_promo_actuals_report(
+        bytes.fromhex("d0cf11e0a1b11ae1"),
+    )
+
+    assert result == (1, 2)
+    spreadsheet_reader.assert_called_once()
 
 
 def test_validate_promo_actuals_report_requires_expected_columns(

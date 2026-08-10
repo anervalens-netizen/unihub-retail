@@ -14,6 +14,7 @@ import services.importer
 import services.jobs
 import services.export_operations
 import services.erp_reconciliation
+import services.grile_reconciliation_supervisor as grile_supervisor
 import services.imports
 import repositories.grile
 import worker
@@ -329,6 +330,73 @@ async def test_grile_worker_reconciles_only_expired_leases(
     for task in tasks:
         task.cancel()
     await asyncio.gather(*tasks, return_exceptions=True)
+
+
+@pytest.mark.asyncio
+async def test_grile_monthly_reconciler_recovers_after_one_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    stop = asyncio.Event()
+    attempts = 0
+
+    async def reconcile(_pool: object, _adapter: object) -> None:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise RuntimeError("transient provider failure")
+        stop.set()
+
+    async def no_wait(awaitable, *, timeout: float) -> None:
+        del timeout
+        awaitable.close()
+        raise TimeoutError
+
+    success = MagicMock()
+    failure = MagicMock()
+    monkeypatch.setattr("services.grile_monthly.reconcile_monthly_operations", reconcile)
+    monkeypatch.setattr(grile_supervisor.asyncio, "wait_for", no_wait)
+    monkeypatch.setattr(
+        "observability.worker_metrics.observe_grile_reconciliation_success",
+        success,
+    )
+    monkeypatch.setattr(
+        "observability.worker_metrics.observe_grile_reconciliation_failure",
+        failure,
+    )
+
+    await grile_supervisor.run_monthly_reconciliation_loop({
+        "grile_monthly_reconcile_stop": stop,
+        "db_pool": object(),
+        "grile_monthly_google": object(),
+    })
+
+    assert attempts == 2
+    failure.assert_called_once()
+    success.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_invariant_task_exit_requests_worker_restart(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def complete() -> None:
+        return None
+
+    task = asyncio.create_task(complete())
+    await task
+    terminate = MagicMock()
+    monkeypatch.setattr(grile_supervisor.os, "kill", terminate)
+
+    grile_supervisor.terminate_on_invariant_task_exit(
+        task,
+        stop=asyncio.Event(),
+        name="critical-loop",
+    )
+
+    terminate.assert_called_once_with(
+        grile_supervisor.os.getpid(),
+        grile_supervisor.signal.SIGTERM,
+    )
 
 
 @pytest.mark.asyncio

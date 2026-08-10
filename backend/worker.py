@@ -11,6 +11,7 @@ from fastapi import HTTPException
 from config import load_runtime_config
 from logging_config import setup_logging
 from request_context import bind_request_id, reset_request_id
+import services.grile_reconciliation_supervisor as grile_supervisor
 from services.jobs import (
     EXPORT_QUEUE_NAME,
     GRILE_QUEUE_NAME,
@@ -69,18 +70,6 @@ async def _visits_snapshot_refresh_loop(ctx: dict) -> None:
                 await _refresh_visits_snapshot_once(pool)
             except Exception:
                 logger.exception("Periodic visits snapshot refresh failed; last good projection retained")
-    except asyncio.CancelledError:
-        return
-async def _grile_monthly_reconciliation_loop(ctx: dict) -> None:
-    from services.grile_monthly import reconcile_monthly_operations
-    stop = ctx["grile_monthly_reconcile_stop"]
-    pool = ctx["db_pool"]
-    adapter = ctx["grile_monthly_google"]
-    try:
-        while not stop.is_set():
-            await asyncio.sleep(60)
-            if not stop.is_set():
-                await reconcile_monthly_operations(pool, adapter)
     except asyncio.CancelledError:
         return
 async def _grile_run_reconciliation_loop(ctx: dict) -> None:
@@ -532,7 +521,6 @@ async def _startup_runtime(ctx: dict, *, worker_role: str) -> None:
         )
         return
     from repositories.grile import GrileRepository
-    from services.grile_monthly import reconcile_monthly_operations
     from services.grile_monthly_google import GoogleSyncAdapter
     grile_run_repo = GrileRepository(pool)
     reconciled_runs = await grile_run_repo.reconcile_stale_runs()
@@ -547,15 +535,25 @@ async def _startup_runtime(ctx: dict, *, worker_role: str) -> None:
     adapter = GoogleSyncAdapter()
     ctx["grile_monthly_google"] = adapter
     await adapter.start()
-    await reconcile_monthly_operations(pool, adapter)
+    await grile_supervisor.reconcile_once(pool, adapter)
     ctx["grile_monthly_reconcile_stop"] = asyncio.Event()
     ctx["grile_monthly_reconcile_task"] = asyncio.create_task(
-        _grile_monthly_reconciliation_loop(ctx),
+        grile_supervisor.run_monthly_reconciliation_loop(ctx),
+        name="grile-monthly-reconciler",
+    )
+    grile_supervisor.attach_invariant_restart(
+        ctx["grile_monthly_reconcile_task"],
+        stop=ctx["grile_monthly_reconcile_stop"],
         name="grile-monthly-reconciler",
     )
     ctx["grile_run_reconcile_stop"] = asyncio.Event()
     ctx["grile_run_reconcile_task"] = asyncio.create_task(
         _grile_run_reconciliation_loop(ctx),
+        name="grile-run-reconciler",
+    )
+    grile_supervisor.attach_invariant_restart(
+        ctx["grile_run_reconcile_task"],
+        stop=ctx["grile_run_reconcile_stop"],
         name="grile-run-reconciler",
     )
 async def _export_heartbeat_loop(

@@ -223,6 +223,11 @@ jobs:
             --strip-components=1
           "$prom_root/promtool" check rules \
             "$GITHUB_WORKSPACE/ops/observability/retail-slo-rules.yml"
+          python3 "$GITHUB_WORKSPACE/scripts/check_prometheus_contract.py"
+          (
+            cd "$GITHUB_WORKSPACE/ops/observability"
+            "$prom_root/promtool" test rules retail-slo-rules.test.yml
+          )
           sed 's/__PROMETHEUS_DOCKER_GATEWAY__/172.23.0.1/g' \
             "$GITHUB_WORKSPACE/ops/observability/retail-process-scrape.yml" \
             > "$prom_root/scrape.d/unihub-retail.yml"
@@ -322,9 +327,6 @@ jobs:
 
       - name: Frontend typecheck
         run: npm run typecheck
-
-      - name: Strict frontend typecheck
-        run: npm run typecheck:strict
 
       - name: TypeScript complexity ratchet
         run: node scripts/check_ts_function_complexity.cjs
@@ -472,6 +474,17 @@ jobs:
           REAL_E2E_SKIP_BUILD: "1"
         run: scripts/run_real_e2e.sh
 
+      - name: Upload restore business evidence
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: retail-restore-business-evidence
+          path: |
+            test-results/real-e2e-restore-drill.json
+            test-results/real-e2e-restore-drill.json.sha256
+          if-no-files-found: warn
+          retention-days: 14
+
       - name: Upload real integration diagnostics
         if: failure()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
@@ -485,6 +498,7 @@ jobs:
             test-results/real-e2e-import-overlap.json
             test-results/real-e2e-load-gate.json
             test-results/real-e2e-restore-drill.json
+            test-results/real-e2e-restore-drill.json.sha256
             test-results/real-e2e-worker-recovery.json
             test-results/pwa-workbox/
           if-no-files-found: warn

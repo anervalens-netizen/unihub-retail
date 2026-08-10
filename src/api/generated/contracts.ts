@@ -1,5 +1,5 @@
 /* GENERATED FILE. Run npm run contracts:generate; do not edit manually. */
-export const RETAIL_OPENAPI_SHA256 = 'd5bfbcbfcc682d2ed3cd85d3703b8a1a2c681a10558cd157288b8b57c0ef76b1' as const; // pragma: allowlist secret
+export const RETAIL_OPENAPI_SHA256 = 'b289a94bcf47902231044c3d76de8ec5423a5a6f53987688b8f4a3441790762b' as const; // pragma: allowlist secret
 
 export type RetailDecimal = string & { readonly __retailDecimal: unique symbol };
 
@@ -1113,6 +1113,7 @@ export interface RetailHrAsmPerformanceItem {
 
 export interface RetailHrAsmSalaryAccFocus {
   "commission": number;
+  "decision_pct_exact"?: string | null;
   "pct"?: number | null;
 }
 
@@ -1126,6 +1127,9 @@ export interface RetailHrAsmSalaryBreakdown {
   "islands"?: Array<RetailHrAsmSalaryIsland>;
   "islands_commission": number;
   "month": string;
+  "rule_effective_from": string;
+  "rule_set_id": string;
+  "rule_set_sha256": string;
   "total_salary": number;
   "zone": RetailHrAsmSalaryZone;
 }
@@ -1141,9 +1145,11 @@ export interface RetailHrAsmSalaryHomogeneity {
 
 export interface RetailHrAsmSalaryIsland {
   "commission": number;
+  "decision_pct_exact"?: string | null;
   "firma": string;
   "forecast_sales": number;
   "forecast_target_pct"?: number | null;
+  "homogeneity_qualifies": boolean;
   "locatie": string;
   "pct_used"?: number | null;
   "site_code": string;
@@ -1154,6 +1160,7 @@ export interface RetailHrAsmSalaryIsland {
 
 export interface RetailHrAsmSalaryZone {
   "commission": number;
+  "decision_pct_exact"?: string | null;
   "forecast_sales": number;
   "forecast_target_pct"?: number | null;
   "pct_used"?: number | null;

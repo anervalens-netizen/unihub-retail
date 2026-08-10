@@ -57,7 +57,9 @@ ops/verify-forensic-remediation-runtime.sh
 
 CI additionally proves migration integrity, secret scanning, Bandit, dependency
 policy, deterministic SBOM/provenance, real OIDC BFF session isolation,
-PostgreSQL/Valkey integration, mixed load, backup/restore, worker restart,
+PostgreSQL/Valkey integration, mixed load, backup/restore with deterministic
+hashes over ten representative business tables plus the migration ledger and a
+`/readyz` probe against the restored database, worker restart,
 Workbox N -> N+1 -> N, multi-browser smoke and exact artifact identity.
 
 ## Deploy and rollback

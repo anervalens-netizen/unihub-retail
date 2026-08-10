@@ -11,9 +11,10 @@ BACKEND_PID=""
 OIDC_PID=""
 WORKER_PID=""
 EXPORT_WORKER_PID=""
+RESTORE_BACKEND_PID=""
 
 cleanup() {
-  for pid in "${EXPORT_WORKER_PID}" "${WORKER_PID}" "${BACKEND_PID}" "${OIDC_PID}"; do
+  for pid in "${EXPORT_WORKER_PID}" "${RESTORE_BACKEND_PID}" "${WORKER_PID}" "${BACKEND_PID}" "${OIDC_PID}"; do
     if [[ -n "${pid}" ]]; then kill "${pid}" >/dev/null 2>&1 || true; fi
   done
   timeout 30 docker rm -f -v "${PG_CONTAINER}" >/dev/null 2>&1 || true
@@ -77,9 +78,74 @@ export VITE_FRONTEND_GLITCHTIP_DSN=""
 
 cd "${ROOT_DIR}/backend"
 "${PYTHON}" scripts/bootstrap_test_db.py
-docker exec "${PG_CONTAINER}" psql -U unihub_test -d unihub_test -v ON_ERROR_STOP=1 \
-  -c "CREATE TABLE fieldops_visits (asm text, data_raport date, completion_pct numeric, durata_vizita_ore numeric, magazin text, curatenie boolean, imagine boolean, uniforma boolean, afise boolean, produse_promo boolean, status text); INSERT INTO import_snapshots (import_month, filename, status, rows_in_file, rows_imported) VALUES ('2026-07', 'real-e2e.xlsx', 'completed', 0, 0)" \
-  >/dev/null
+docker exec -i "${PG_CONTAINER}" psql -U unihub_test -d unihub_test \
+  -v ON_ERROR_STOP=1 >/dev/null <<'SQL'
+CREATE TABLE fieldops_visits (
+  asm text, data_raport date, completion_pct numeric, durata_vizita_ore numeric,
+  magazin text, curatenie boolean, imagine boolean, uniforma boolean,
+  afise boolean, produse_promo boolean, status text
+);
+INSERT INTO fieldops_visits VALUES
+  ('ASM Restore', '2098-01-02', 100, 1.5, 'Restore Store', true, true, true, true, true, 'approved');
+INSERT INTO stores (site_code, locatie, firma, regional, asm, first_seen_month, last_seen_month)
+VALUES ('RESTORE-1', 'Restore Store', 'Mobiup', 'RM Restore', 'ASM Restore', '2098-01', '2098-01');
+INSERT INTO import_snapshots (
+  import_month, filename, status, rows_in_file, rows_imported, source_sha256,
+  cutoff_date, generation_token, owner_id, lease_until
+) VALUES (
+  '2098-01', 'restore-drill.xlsx', 'processing', 1, 1, repeat('a', 64),
+  '2098-01-02', '11111111-1111-4111-8111-111111111111',
+  '22222222-2222-4222-8222-222222222222', now() + interval '1 hour'
+);
+INSERT INTO sales_import_stage_rows (
+  snapshot_id, row_number, import_month, sale_date, site_code, locatie, firma,
+  regional, asm, bon_nr, item_code, item_name, quantity, unit_price,
+  total_value, agent, is_cartela, is_return
+)
+SELECT id, 1, '2098-01', '2098-01-02', 'RESTORE-1', 'Restore Store', 'Mobiup',
+  'RM Restore', 'ASM Restore', 'RESTORE-BON', 'RESTORE-SKU', 'Restore Item',
+  1, 10, 10, 'Restore Agent', false, false
+FROM import_snapshots WHERE filename = 'restore-drill.xlsx';
+UPDATE import_snapshots
+SET manifest = jsonb_build_object(
+      'generation_state', 'promoted',
+      'stage_rows_sha256', sales_stage_rows_sha256(id),
+      'rows_imported', 1,
+      'store_count', 1,
+      'total_quantity', 1,
+      'total_value', 10,
+      'max_sale_date', '2098-01-02',
+      'anomalies', '[]'::jsonb
+    ),
+    manifest_sha256 = repeat('b', 64)
+WHERE filename = 'restore-drill.xlsx';
+INSERT INTO sales_transactions (
+  import_month, sale_date, site_code, bon_nr, item_code, item_name,
+  quantity, unit_price, total_value, agent, snapshot_id
+)
+SELECT '2098-01', '2098-01-02', 'RESTORE-1', 'RESTORE-BON', 'RESTORE-SKU',
+  'Restore Item', 1, 10, 10, 'Restore Agent', id
+FROM import_snapshots WHERE filename = 'restore-drill.xlsx';
+INSERT INTO store_targets (import_month, site_code, target_value, source_file)
+VALUES ('2098-01', 'RESTORE-1', 100, 'restore-drill');
+INSERT INTO salary_private.people (person_id, normalized_name, identity_source)
+VALUES ('sp1_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'restore person', 'name');
+INSERT INTO salary_records (
+  year, month, full_name, total_salary, company_name, site_code, locatie, person_id
+) VALUES (
+  2098, 1, 'Restore Person', 4000, 'Mobiup', 'RESTORE-1', 'Restore Store',
+  'sp1_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+);
+INSERT INTO tasks (title, assignee, site_code, status, source)
+VALUES ('Restore drill task', 'Restore Agent', 'RESTORE-1', 'deschis', 'restore-drill');
+INSERT INTO grile_monthly_operations (op, closing_month, dry_run, status, result)
+VALUES ('archive', '2098-01', true, 'completed', '{"restore_drill":true}');
+INSERT INTO sales_generation_heads (import_month, snapshot_id, revision)
+SELECT '2098-01', id, 1 FROM import_snapshots WHERE filename = 'restore-drill.xlsx';
+UPDATE import_snapshots
+SET status = 'completed', promoted_at = now(), lease_until = NULL
+WHERE filename = 'restore-drill.xlsx';
+SQL
 
 "${PYTHON}" -m uvicorn scripts.oidc_e2e_stub:app --host 127.0.0.1 --port "${oidc_port}" \
   >"${ROOT_DIR}/test-results/real-e2e-runtime/oidc.log" 2>&1 &
@@ -121,13 +187,63 @@ if rg -n 'Traceback|Config invalid|Worker startup failed|ERROR' \
 fi
 
 docker exec "${PG_CONTAINER}" pg_dump -U unihub_test -Fc unihub_test >"${RUNTIME_DIR}/retail.dump"
-docker exec "${PG_CONTAINER}" createdb -U unihub_test unihub_restore
-docker exec -i "${PG_CONTAINER}" pg_restore -U unihub_test -d unihub_restore <"${RUNTIME_DIR}/retail.dump"
-source_count="$(docker exec "${PG_CONTAINER}" psql -U unihub_test -d unihub_test -Atc 'select count(*) from schema_migrations')"
-restore_count="$(docker exec "${PG_CONTAINER}" psql -U unihub_test -d unihub_restore -Atc 'select count(*) from schema_migrations')"
-if [[ "${source_count}" != "${restore_count}" ]]; then printf 'Restore migration count mismatch.\n' >&2; exit 1; fi
-printf '{"status":"passed","source_migrations":%s,"restored_migrations":%s}\n' \
-  "${source_count}" "${restore_count}" >test-results/real-e2e-restore-drill.json
+docker exec "${PG_CONTAINER}" createdb -U unihub_test unihub_restore_test
+docker exec -i "${PG_CONTAINER}" pg_restore --exit-on-error -U unihub_test -d unihub_restore_test <"${RUNTIME_DIR}/retail.dump"
+
+critical_tables=(schema_migrations stores import_snapshots sales_import_stage_rows sales_transactions store_targets salary_records tasks grile_monthly_operations sales_generation_heads fieldops_visits)
+business_state() {
+  local database="$1" output="$2" table state
+  : >"$output"
+  for table in "${critical_tables[@]}"; do
+    state="$(docker exec "${PG_CONTAINER}" psql -U unihub_test -d "$database" -Atc \
+      "SELECT count(*) || E'\\t' || md5(COALESCE(string_agg(row_hash, '' ORDER BY row_hash), '')) FROM (SELECT md5((to_jsonb(t) - 'cnp')::text) AS row_hash FROM ${table} AS t) AS rows")"
+    [[ "${state%%$'\t'*}" -gt 0 ]] || { printf 'Restore drill table is empty: %s\n' "$table" >&2; exit 1; }
+    printf '%s\t%s\n' "$table" "$state" >>"$output"
+  done
+}
+
+source_state="${RUNTIME_DIR}/restore-source.tsv"
+restored_state="${RUNTIME_DIR}/restore-target.tsv"
+business_state unihub_test "$source_state"
+business_state unihub_restore_test "$restored_state"
+cmp "$source_state" "$restored_state" || { printf 'Restore business hashes differ.\n' >&2; exit 1; }
+
+restore_backend_port="$(${PYTHON} -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()')"
+restore_database_url="postgresql://unihub_test:${password}@127.0.0.1:${pg_port}/unihub_restore_test"
+DATABASE_URL="$restore_database_url" SESSION_PUBLIC_ORIGIN="http://127.0.0.1:${restore_backend_port}" \
+  "${PYTHON}" -m uvicorn main:app --app-dir "${ROOT_DIR}/backend" \
+  --host 127.0.0.1 --port "$restore_backend_port" \
+  >test-results/real-e2e-runtime/restore-backend.log 2>&1 &
+RESTORE_BACKEND_PID=$!
+for _ in $(seq 1 30); do
+  curl -fsS "http://127.0.0.1:${restore_backend_port}/readyz" >/dev/null 2>&1 && break
+  sleep 1
+done
+curl -fsS "http://127.0.0.1:${restore_backend_port}/readyz" >/dev/null
+kill "$RESTORE_BACKEND_PID"
+wait "$RESTORE_BACKEND_PID" || true
+RESTORE_BACKEND_PID=""
+
+"${PYTHON}" - "$source_state" test-results/real-e2e-restore-drill.json <<'PY'
+from hashlib import sha256
+import json
+from pathlib import Path
+import sys
+
+state = Path(sys.argv[1]).read_text(encoding="utf-8")
+tables = {}
+for line in state.splitlines():
+    table, count, digest = line.split("\t")
+    tables[table] = {"rows": int(count), "business_hash": digest}
+evidence = {
+    "status": "passed",
+    "restored_app_ready": True,
+    "critical_tables": tables,
+    "business_state_sha256": sha256(state.encode("utf-8")).hexdigest(),
+}
+Path(sys.argv[2]).write_text(json.dumps(evidence, sort_keys=True) + "\n", encoding="utf-8")
+PY
+sha256sum test-results/real-e2e-restore-drill.json >test-results/real-e2e-restore-drill.json.sha256
 
 export RETAIL_WORKER_ROLE=operations
 "${PYTHON}" backend/worker.py >test-results/real-e2e-runtime/worker-first.log 2>&1 &

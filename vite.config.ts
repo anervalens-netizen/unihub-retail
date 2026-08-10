@@ -37,6 +37,7 @@ export default defineConfig(({ mode }) => {
           name: 'UniHub Retail',
           short_name: 'UniHub Retail',
           description: 'Platforma Mobiup pentru management vanzari si agenti',
+          lang: 'ro',
           theme_color: '#062B57',
           background_color: '#ffffff',
           display: 'standalone',
@@ -52,12 +53,6 @@ export default defineConfig(({ mode }) => {
               sizes: '512x512',
               type: 'image/png',
               purpose: 'any',
-            },
-            {
-              src: 'pwa-maskable-512x512.png',
-              sizes: '512x512',
-              type: 'image/png',
-              purpose: 'maskable',
             },
             {
               src: 'apple-touch-icon.png',

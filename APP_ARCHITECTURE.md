@@ -213,7 +213,10 @@ din evaluarea agentilor: acesta accepta si etichetele agregate
   aplica pe auth proxy, uploadul importurilor, exporturi server-side, joburi
   Grile, mutatii Target Calculator si scrieri business. Limitele sunt
   configurabile prin variabilele `RATE_LIMIT_*`; uploadul de vanzari ramane
-  limitat separat prin `MAX_SALES_UPLOAD_BYTES`.
+  limitat separat prin `MAX_SALES_UPLOAD_BYTES`. Middleware-ul ASGI pur aplica
+  inainte de parsarea JSON/multipart `MAX_HTTP_JSON_BODY_BYTES`, iar cele trei
+  rute de import folosesc limita fisierului plus overheadul multipart versionat
+  prin `MAX_HTTP_MULTIPART_OVERHEAD_BYTES`; body-urile chunked sunt contorizate.
 - Management cu subtab-uri pentru Manageri, Calculator Target, Salarii si P&L.
   Manageri foloseste `/api/hr/manager-overview` pentru structura operationala,
   acoperirea cu agenti, fluxul fata de luna precedenta si indicatorii Vizite;
@@ -536,7 +539,10 @@ evidence-ul fără date business este păstrat și durabil: Sales în manifestul
 generației, Promo în pointerul generației, iar ERP în rezultatul recuperabil al
 jobului. Web-ul validează extensia și limita de bytes, apoi scrie spoolul privat.
 Workerul reverifică SHA-ul și execută singurul preflight ZIP/XML, urmat de o
-singură deschidere a workbookului pentru antet și date.
+singură deschidere a workbookului pentru antet și date. Promo și ERP mută orice
+parsing XLSX în threadul workerului, iar legacy XLS/OLE rulează într-un proces
+`spawn` separat, cu limite CPU/memorie/output și timeout; parserul nesigur nu
+blochează event loop-ul și nu moștenește starea multi-threaded prin `fork`.
 
 ### P&L/TVA: shadow și protecție
 
@@ -914,7 +920,11 @@ se folosesc valorile finale. Acc Focus % este un raport de cantitati,
 astfel ca nu se scaleaza cu forecast_factor. Pragurile din grila
 (79/84/89/94/99/109, Acc Focus 5/5,5/6/6,5/7) includ deja regula
 „1% sub prag", deci se folosesc exact ca atare, fara o alta toleranta
-suplimentara. Grila este un calcul de comisionare independent de
+suplimentara. Decizia foloseste `Decimal` nerotunjit; procentul la o
+zecimala este numai pentru afisare. Registry-ul immutable din
+`services/asm_salary.py` selecteaza grila dupa luna si publica `rule_set_id`,
+data efectiva si SHA-256, astfel incat lunile istorice nu se recalculeaza cu o
+regula viitoare. Grila este un calcul de comisionare independent de
 `salary_records` (care ramane sursa de payroll a tabului Management ->
 Salarii); datele pe insule provin din `reporting_agent_month` agregat
 per `site_code` si din `store_targets`, cu apartenenta ASM curenta

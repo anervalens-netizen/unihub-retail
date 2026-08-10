@@ -63,6 +63,7 @@ from request_context import (
     normalize_request_id,
     reset_request_id,
 )
+from request_body_limits import RequestBodyLimitMiddleware
 
 configure_error_tracking()
 
@@ -240,6 +241,7 @@ app.add_middleware(
     expose_headers=[REQUEST_ID_HEADER],
 )
 app.add_middleware(RequestContextMiddleware)
+app.add_middleware(RequestBodyLimitMiddleware)
 
 
 @app.exception_handler(Exception)

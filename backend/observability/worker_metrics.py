@@ -36,6 +36,32 @@ JOB_RESULTS = Counter(
     "Terminal Retail worker job outcomes.",
     ("service_role", "result"),
 )
+GRILE_RECONCILE_LAST_SUCCESS = Gauge(
+    "unihub_grile_monthly_reconcile_last_success_timestamp_seconds",
+    "Unix timestamp of the last successful monthly Grile reconciliation.",
+)
+GRILE_RECONCILE_CONSECUTIVE_FAILURES = Gauge(
+    "unihub_grile_monthly_reconcile_consecutive_failures",
+    "Consecutive failures of the monthly Grile reconciliation loop.",
+)
+GRILE_RECONCILE_DURATION_SECONDS = Histogram(
+    "unihub_grile_monthly_reconcile_duration_seconds",
+    "Duration of monthly Grile reconciliation attempts.",
+)
+
+
+def observe_grile_reconciliation_success(duration_seconds: float) -> None:
+    GRILE_RECONCILE_DURATION_SECONDS.observe(max(0.0, duration_seconds))
+    GRILE_RECONCILE_CONSECUTIVE_FAILURES.set(0)
+    GRILE_RECONCILE_LAST_SUCCESS.set(time.time())
+
+
+def observe_grile_reconciliation_failure(
+    duration_seconds: float,
+    consecutive_failures: int,
+) -> None:
+    GRILE_RECONCILE_DURATION_SECONDS.observe(max(0.0, duration_seconds))
+    GRILE_RECONCILE_CONSECUTIVE_FAILURES.set(consecutive_failures)
 
 
 async def observe_queue(redis: Any, *, role: str, queue_name: str) -> None:

@@ -99,6 +99,27 @@ if not required <= healthy:
 ' unihub-retail-web unihub-retail-operations unihub-retail-imports \
   unihub-retail-grile unihub-retail-exports <<<"$targets"
 
+recordings="$(curl --fail --silent --show-error --max-time 10 --get \
+  --data-urlencode 'query=count({__name__=~"unihub_retail:(http_requests_excluding_probes|http_5xx_ratio|http_latency_p95_seconds|dashboard_latency_p95_seconds):rate5m"}) by (__name__)' \
+  http://127.0.0.1:9090/api/v1/query)"
+backend/venv/bin/python -c '
+import json
+import sys
+
+required = {
+    "unihub_retail:http_requests_excluding_probes:rate5m",
+    "unihub_retail:http_5xx_ratio:rate5m",
+    "unihub_retail:http_latency_p95_seconds:rate5m",
+    "unihub_retail:dashboard_latency_p95_seconds:rate5m",
+}
+present = {
+    item.get("metric", {}).get("__name__")
+    for item in json.load(sys.stdin).get("data", {}).get("result", [])
+}
+if not required <= present:
+    raise SystemExit("Retail recording series are missing")
+' <<<"$recordings"
+
 for path in /metrics /docs /redoc /openapi.json; do
   status="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' \
     --max-time 10 "https://retail.unihub.ro${path}")"

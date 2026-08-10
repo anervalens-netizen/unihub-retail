@@ -179,7 +179,7 @@ export function AsmSalaryGrila({ asm, defaultMonth }: Props) {
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                   {data.islands.map((i) => {
-                    const qualifies = i.pct_used !== null && i.pct_used >= data.homogeneity.min_pct;
+                    const qualifies = i.homogeneity_qualifies;
                     return (
                       <tr key={i.site_code} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30">
                         <td className="px-2 py-1.5 text-slate-700 dark:text-slate-200">

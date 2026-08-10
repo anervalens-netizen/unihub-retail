@@ -194,11 +194,10 @@ def test_parse_erp_report_rejects_cutoff_outside_selected_month() -> None:
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(("filename", "threaded"), [("report.xls", False), ("report.xlsx", True)])
-async def test_service_isolates_only_xlsx_parsing_in_thread(
+@pytest.mark.parametrize("filename", ["report.xls", "report.xlsx"])
+async def test_service_keeps_all_spreadsheet_parsing_off_the_event_loop(
     monkeypatch: pytest.MonkeyPatch,
     filename: str,
-    threaded: bool,
 ) -> None:
     repo = MagicMock()
     repo.fetch_retail_cutoff = AsyncMock(return_value=date(2026, 7, 16))
@@ -212,7 +211,7 @@ async def test_service_isolates_only_xlsx_parsing_in_thread(
             content=b"report", filename=filename, import_month="2026-07"
         )
 
-    assert to_thread.await_count == int(threaded)
+    assert to_thread.await_count == 1
 
 
 def test_parse_erp_report_rejects_summary_only_store_sheet_as_validation_error() -> None:
