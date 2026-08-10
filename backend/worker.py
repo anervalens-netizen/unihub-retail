@@ -1,16 +1,14 @@
 from __future__ import annotations
-
 import asyncio
 from datetime import date
 import json
 import logging
 import os
-from typing import Any
+from typing import Any, Awaitable, TypeVar
 from uuid import uuid4
-
 from arq.worker import create_worker, func
 from arq.constants import default_queue_name
-
+from fastapi import HTTPException
 from config import load_runtime_config
 from logging_config import setup_logging
 from request_context import bind_request_id, reset_request_id
@@ -26,16 +24,18 @@ from services.jobs import (
     retain_sales_import_spool_file,
     verify_sales_import_artifact,
 )
-
-
 setup_logging()
 logger = logging.getLogger(__name__)
 VISITS_SNAPSHOT_REFRESH_SECONDS = 15 * 60
 EXPORT_CLEANUP_SECONDS = 5 * 60
 GRILE_RUN_RECONCILE_SECONDS = 60
 QUEUE_METRICS_SECONDS = 15
-
-
+_ResultT = TypeVar("_ResultT")
+async def _await_pickle_safe(awaitable: Awaitable[_ResultT]) -> _ResultT:
+    try:
+        return await awaitable
+    except HTTPException as exc:
+        raise RuntimeError(str(exc.detail)) from exc
 async def _refresh_visits_snapshot_once(pool: Any) -> int:
     from services.visits_sync import sync_visits_snapshot
     async with pool.acquire() as conn:
@@ -284,12 +284,11 @@ async def import_promo_actuals_background(
         if pool is None:
             from db.connection import get_pool
             pool = await get_pool()
-        result = await ImportsService(ImportsRepository(pool), pool).process_promo_actuals(
-            content=content,
-            filename=filename,
-            import_month=import_month,
+        service = ImportsService(ImportsRepository(pool), pool)
+        result = await _await_pickle_safe(service.process_promo_actuals(
+            content=content, filename=filename, import_month=import_month,
             cutoff_date=date.fromisoformat(cutoff_date_iso),
-        )
+        ))
         payload = result.model_dump(mode="json")
         succeeded = True
         return payload
@@ -317,11 +316,10 @@ async def reconcile_erp_background(
         if pool is None:
             from db.connection import get_pool
             pool = await get_pool()
-        result = await ErpReconciliationService(ErpReconciliationRepository(pool), pool).process(
-            content=content,
-            filename=filename,
-            import_month=import_month,
-        )
+        service = ErpReconciliationService(ErpReconciliationRepository(pool), pool)
+        result = await _await_pickle_safe(service.process(
+            content=content, filename=filename, import_month=import_month,
+        ))
         payload = result.model_dump(mode="json")
         succeeded = True
         return payload

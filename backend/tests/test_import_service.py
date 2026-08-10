@@ -10,7 +10,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, call
 
 import pytest
-from arq.jobs import JobStatus as ArqJobStatus
+from arq.jobs import DeserializationError, JobStatus as ArqJobStatus
 from fastapi import HTTPException, UploadFile
 
 import services.imports as imports_service
@@ -142,6 +142,23 @@ async def test_sales_job_status_uses_import_worker_queue(
         pool,
         _queue_name=jobs_service.SALES_IMPORT_QUEUE_NAME,
     )
+
+
+@pytest.mark.asyncio
+async def test_corrupt_terminal_job_result_is_reported_without_api_500(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pool = MagicMock()
+    job = MagicMock()
+    job.status = AsyncMock(return_value=ArqJobStatus.complete)
+    job.result_info = AsyncMock(side_effect=DeserializationError("invalid pickle"))
+    monkeypatch.setattr(jobs_service, "get_arq_pool", AsyncMock(return_value=pool))
+    monkeypatch.setattr(job_queue_routing, "Job", MagicMock(return_value=job))
+
+    result = await jobs_service.get_job_status("erp-reconciliation:broken")
+
+    assert result.status is JobStatus.COMPLETE
+    assert result.error == "Job failed; result could not be decoded"
 
 
 @pytest.mark.asyncio
@@ -401,6 +418,33 @@ async def test_failed_spooled_erp_job_can_be_retried(
         assert call.args[4:] == ("erp.xlsx", "2026-08")
         assert call.kwargs["_job_id"].startswith("erp-reconciliation:")
     assert pool.enqueue_job.await_args_list[0].args[1] == pool.enqueue_job.await_args_list[1].args[1]
+
+
+@pytest.mark.asyncio
+async def test_undecodable_spooled_erp_job_can_be_retried(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("SALES_IMPORT_SPOOL_DIR", str(tmp_path))
+    replacement = SimpleNamespace(job_id="erp-reconciliation:replacement")
+    pool = MagicMock()
+    pool.enqueue_job = AsyncMock(side_effect=[None, replacement])
+    pool.delete = AsyncMock()
+    existing = MagicMock()
+    existing.status = AsyncMock(return_value=ArqJobStatus.complete)
+    existing.result_info = AsyncMock(side_effect=DeserializationError("invalid pickle"))
+    monkeypatch.setattr(jobs_service, "get_arq_pool", AsyncMock(return_value=pool))
+    monkeypatch.setattr(jobs_service, "Job", MagicMock(return_value=existing))
+
+    result = await jobs_service.enqueue_erp_reconciliation(
+        b"erp bytes",
+        filename="erp.xls",
+        import_month="2026-08",
+    )
+
+    assert result is replacement
+    pool.delete.assert_awaited_once()
+    assert pool.enqueue_job.await_count == 2
 
 
 @pytest.mark.asyncio

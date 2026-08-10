@@ -1,5 +1,4 @@
 from __future__ import annotations
-
 import asyncio
 import hashlib
 import json
@@ -8,15 +7,14 @@ import os
 from dataclasses import dataclass, replace
 from datetime import date
 from decimal import Decimal, InvalidOperation
+from functools import partial
 from io import BytesIO
 from pathlib import Path
 from typing import Any, Iterable, Literal, Mapping
-
 import asyncpg
 import pandas as pd
 from arq.jobs import Job
 from fastapi import HTTPException, UploadFile, status
-
 from repositories.erp_reconciliation import ErpReconciliationRepository
 from schemas.campaigns import PromoIncentiveSummary
 from schemas.erp_reconciliation import (
@@ -35,7 +33,6 @@ from services.spreadsheet_safety import (
     SpreadsheetUploadError,
     validate_spreadsheet_upload,
 )
-
 
 logger = logging.getLogger(__name__)
 DEFAULT_MAX_ERP_RECONCILIATION_BYTES = 16 * 1024 * 1024
@@ -71,7 +68,6 @@ STORE_REQUIRED_COLUMNS = (
 )
 AGENT_REQUIRED_COLUMNS = (*AGENT_IDENTITY_COLUMNS, *COMMON_METRIC_COLUMNS)
 
-
 class ErpReportValidationError(ValueError):
     pass
 
@@ -82,7 +78,6 @@ class ParsedErpReport:
     stores: dict[tuple[str], dict[str, Any]]
     agents: dict[tuple[str, str], dict[str, Any]]
     parser_resources: dict[str, int | float | str | None] | None = None
-
 
 def _cell_text(value: Any) -> str:
     if value is None or pd.isna(value):
@@ -837,12 +832,15 @@ class ErpReconciliationService:
                 detail=f"Nu exista date Retail importate cu succes pentru luna {import_month}",
             )
         try:
-            parsed = await asyncio.to_thread(
-                parse_erp_report,
+            parse = partial(parse_erp_report,
                 content,
                 import_month,
                 cutoff_date=retail_cutoff_date,
                 source_suffix=Path(filename).suffix,
+            )
+            parsed = (
+                parse() if Path(filename).suffix.casefold() == ".xls"
+                else await asyncio.to_thread(parse)
             )
         except ErpReportValidationError as exc:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc

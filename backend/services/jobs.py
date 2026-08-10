@@ -1,5 +1,4 @@
 from __future__ import annotations
-
 import asyncio
 import logging
 import os
@@ -12,20 +11,16 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Literal, Optional
 from uuid import uuid4
-
 from arq import create_pool
 from arq.connections import ArqRedis, RedisSettings
 from arq.constants import result_key_prefix
-from arq.jobs import Job, JobStatus as ArqJobStatus
+from arq.jobs import DeserializationError, Job, JobStatus as ArqJobStatus
 from fastapi import HTTPException
 from redis.exceptions import ConnectionError as RedisConnectionError
 from redis.exceptions import TimeoutError as RedisTimeoutError
-
 from config import ConfigError, load_runtime_config
 from request_context import get_request_id
 from services.job_queue_routing import resolve_status_job
-
-
 logger = logging.getLogger(__name__)
 
 
@@ -597,6 +592,8 @@ async def _enqueue_spooled_import_job(
             info = await existing.result_info()
         except ARQ_TRANSPORT_ERRORS as exc:
             raise JobPublishUncertainError(job_id=job_id) from exc
+        except DeserializationError:
+            info = None
         if info and info.success:
             await asyncio.to_thread(remove_sales_import_spool_file, spool_path)
             return existing
@@ -1004,6 +1001,9 @@ async def get_job_status(job_id: str) -> JobResult:
                 status=JobStatus.UNKNOWN,
                 error="Job result could not be determined",
             )
+        except DeserializationError:
+            return JobResult(job_id=job_id, status=JobStatus.COMPLETE,
+                             error="Job failed; result could not be decoded")
         if result_info and result_info.success:
             return JobResult(job_id=job_id, status=JobStatus.COMPLETE, result=result_info.result)
         error = str(result_info.result) if result_info else "Unknown error"

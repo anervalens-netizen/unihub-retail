@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from fastapi import HTTPException
 
 import db.connection
 import observability.worker_metrics
@@ -182,8 +183,14 @@ async def test_failed_erp_worker_keeps_spool_for_retry(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     remove = MagicMock()
-    monkeypatch.setattr(worker, "verify_sales_import_artifact", MagicMock(return_value=10))
-    monkeypatch.setattr(worker, "read_sales_import_spool_file", MagicMock(return_value=b"erp source"))
+    monkeypatch.setattr(
+        worker, "verify_sales_import_artifact", MagicMock(return_value=10)
+    )
+    monkeypatch.setattr(
+        worker,
+        "read_sales_import_spool_file",
+        MagicMock(return_value=b"erp source"),
+    )
     monkeypatch.setattr(worker, "remove_sales_import_spool_file", remove)
     monkeypatch.setattr(
         services.erp_reconciliation.ErpReconciliationService,
@@ -202,6 +209,30 @@ async def test_failed_erp_worker_keeps_spool_for_retry(
         )
 
     remove.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_erp_worker_converts_http_error_to_pickle_safe_runtime_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(worker, "verify_sales_import_artifact", MagicMock(return_value=10))
+    monkeypatch.setattr(worker, "read_sales_import_spool_file", MagicMock(return_value=b"erp source"))
+    monkeypatch.setattr(worker, "remove_sales_import_spool_file", MagicMock())
+    monkeypatch.setattr(
+        services.erp_reconciliation.ErpReconciliationService,
+        "process",
+        AsyncMock(side_effect=HTTPException(status_code=400, detail="raport invalid")),
+    )
+
+    with pytest.raises(RuntimeError, match="raport invalid"):
+        await worker.reconcile_erp_background(
+            {"db_pool": MagicMock()},
+            "/private/spool/erp.upload",
+            "b" * 64,
+            10,
+            "erp.xls",
+            "2026-08",
+        )
 
 
 @pytest.mark.asyncio

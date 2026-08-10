@@ -3,17 +3,21 @@ from __future__ import annotations
 from datetime import date
 from decimal import Decimal
 from io import BytesIO
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from fastapi import HTTPException
 from openpyxl import Workbook
 
 from schemas.campaigns import PromoIncentiveSummary
+import services.erp_reconciliation as erp_service
 from services.erp_reconciliation import (
     AGENT_REQUIRED_COLUMNS,
     COMMON_METRIC_COLUMNS,
     STORE_AGENT_DERIVED_METRIC_COLUMNS,
     STORE_REQUIRED_COLUMNS,
     ErpReportValidationError,
+    ErpReconciliationService,
     parse_erp_report,
     reconcile_erp_report,
 )
@@ -187,6 +191,28 @@ def test_parse_erp_report_rejects_cutoff_outside_selected_month() -> None:
             "2026-06",
             cutoff_date=date(2026, 7, 16),
         )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("filename", "threaded"), [("report.xls", False), ("report.xlsx", True)])
+async def test_service_isolates_only_xlsx_parsing_in_thread(
+    monkeypatch: pytest.MonkeyPatch,
+    filename: str,
+    threaded: bool,
+) -> None:
+    repo = MagicMock()
+    repo.fetch_retail_cutoff = AsyncMock(return_value=date(2026, 7, 16))
+    parse = MagicMock(side_effect=ErpReportValidationError("invalid report"))
+    to_thread = AsyncMock(side_effect=lambda callback: callback())
+    monkeypatch.setattr(erp_service, "parse_erp_report", parse)
+    monkeypatch.setattr(erp_service.asyncio, "to_thread", to_thread)
+
+    with pytest.raises(HTTPException, match="invalid report"):
+        await ErpReconciliationService(repo, MagicMock()).process(
+            content=b"report", filename=filename, import_month="2026-07"
+        )
+
+    assert to_thread.await_count == int(threaded)
 
 
 def test_parse_erp_report_rejects_summary_only_store_sheet_as_validation_error() -> None:
