@@ -32,7 +32,7 @@
     "backend/services/sales_generation_flow.py": 708,
     "backend/services/store_pnl_import.py": 725,
     "backend/worker.py": 1142,
-    "src/components/GrileSubtab.tsx": 675,
+    "src/components/GrileSubtab.tsx": 667,
     "src/components/PnlSubtab.tsx": 706,
     "src/components/SalariiSubtab.tsx": 729,
     "src/components/VisiteSubtab.tsx": 764,

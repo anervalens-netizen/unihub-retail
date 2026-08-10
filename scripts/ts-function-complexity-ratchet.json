@@ -6,7 +6,7 @@
     "src/components/ASMSubtab.tsx::ManagerCard": 122,
     "src/components/AsmSalaryGrila.tsx::AsmSalaryGrila": 195,
     "src/components/GrileMonthlyPanel.tsx::GrileMonthlyPanel": 307,
-    "src/components/GrileSubtab.tsx::GrileSubtab": 159,
+    "src/components/GrileSubtab.tsx::CurrentGrileSubtab": 159,
     "src/components/GrileSubtab.tsx::StoreRow": 166,
     "src/components/IncentiveDesktopDashboard.tsx::IncentiveDesktopDashboard": 159,
     "src/components/MainLayout.tsx::MainLayout": 283,

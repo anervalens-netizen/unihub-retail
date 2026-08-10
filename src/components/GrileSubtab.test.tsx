@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -205,5 +205,43 @@ describe('Grile run authority', () => {
     expect(refreshButtons.length).toBeGreaterThan(0);
     await user.click(refreshButtons[0]!);
     expect(await screen.findByRole('alert')).toHaveTextContent('Nu relansa verificarea');
+  });
+
+  it('keeps the official workflow separate from the five V2 pilot sheets', async () => {
+    api.getGrileOverview.mockResolvedValue(overviewWithStore());
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false, gcTime: 0 } },
+    });
+    const user = userEvent.setup();
+    render(
+      <QueryClientProvider client={client}>
+        <GrileSubtab initialMonth="2026-08" />
+      </QueryClientProvider>,
+    );
+
+    expect(await screen.findByRole('button', { name: 'Rulează verificare' })).toBeInTheDocument();
+    const monthPicker = document.querySelector<HTMLInputElement>('input[type="month"]');
+    expect(monthPicker).not.toBeNull();
+    fireEvent.change(monthPicker!, { target: { value: '2026-07' } });
+    await user.selectOptions(screen.getByLabelText('Stare grilă'), 'ERROR');
+    await user.click(screen.getByRole('tab', { name: 'V2 · pilot' }));
+
+    expect(screen.queryByRole('button', { name: 'Rulează verificare' })).not.toBeInTheDocument();
+    const links = screen.getAllByRole('link');
+    expect(links).toHaveLength(5);
+    expect(screen.getByRole('link', { name: /Mobicell Oradea Auchan/ })).toHaveAttribute(
+      'href',
+      'https://docs.google.com/spreadsheets/d/1ZxugdHXXhvPSFyxyOh9bipq11J2N872n7isAxRXMxuM',
+    );
+    expect(screen.getByRole('link', { name: /Mobiup Oradea Auchan/ })).toHaveAttribute(
+      'href',
+      'https://docs.google.com/spreadsheets/d/12ejRCcDRNdQqiz38S7BjTKNb-pSrJWW2UNclhFJUiCI',
+    );
+    expect(screen.getByText(/nu intră în fluxul oficial de închidere/i)).toBeInTheDocument();
+
+    await user.click(screen.getByRole('tab', { name: 'Grila actuală' }));
+    expect(await screen.findByRole('button', { name: 'Rulează verificare' })).toBeInTheDocument();
+    expect(monthPicker).toHaveValue('2026-07');
+    expect(screen.getByLabelText('Stare grilă')).toHaveValue('ERROR');
   });
 });

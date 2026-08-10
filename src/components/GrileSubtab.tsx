@@ -24,51 +24,19 @@ import { FirmaBadge } from './FirmaBadge';
 import { GrileMonthlyPanel } from './GrileMonthlyPanel';
 import { parseIsoTimestamp } from '../lib/dates';
 import { cn } from '../lib/utils';
+import { SegmentedTabs } from './common/SegmentedTabs';
+import { PilotV2Panel } from './grile/PilotV2Panel';
 import { RefreshStatusError } from './grile/RefreshStatusError';
+import {
+  GRILE_STATUS_FILTERS,
+  matchesGrileStatusFilter,
+  type StatusFilter,
+} from './grile/grileOverviewFilters';
 
 const NUMBER = new Intl.NumberFormat('ro-RO');
 
 function fmt(n: number | null | undefined): string {
   return n === null || n === undefined ? '—' : NUMBER.format(Math.round(n));
-}
-
-type StatusFilter = 'all' | 'NECOMPLETAT' | 'IN_URMA' | 'DIF_TARGET' | 'DIF_SALES' | 'ERROR' | 'STALE' | 'UNKNOWN' | 'OK';
-
-const FILTERS: { id: StatusFilter; label: string }[] = [
-  { id: 'all', label: 'Toate' },
-  { id: 'OK', label: 'OK' },
-  { id: 'NECOMPLETAT', label: 'Necompletat' },
-  { id: 'IN_URMA', label: 'În urmă' },
-  { id: 'DIF_TARGET', label: 'Dif. target' },
-  { id: 'DIF_SALES', label: 'Dif. vânzări' },
-  { id: 'ERROR', label: 'Eroare Google' },
-  { id: 'STALE', label: 'Date vechi' },
-  { id: 'UNKNOWN', label: 'Neverificat' },
-];
-
-function matchesFilter(s: GrileStore, f: StatusFilter): boolean {
-  switch (f) {
-    case 'all':
-      return true;
-    case 'OK':
-      return s.target_status === 'OK' && s.sales_status === 'OK';
-    case 'NECOMPLETAT':
-      return s.fill_status === 'NECOMPLETAT';
-    case 'IN_URMA':
-      return s.sales_status === 'IN_URMA';
-    case 'DIF_TARGET':
-      return s.target_status === 'DIFERENTA';
-    case 'DIF_SALES':
-      return s.sales_status === 'DIFERENTA';
-    case 'ERROR':
-      return s.provider_status.state === 'error';
-    case 'STALE':
-      return s.provider_status.state === 'stale';
-    case 'UNKNOWN':
-      return s.provider_status.state === 'unknown';
-    default:
-      return true;
-  }
 }
 
 function relTime(iso: string | null): string {
@@ -428,7 +396,7 @@ function ManagerGroup({ m, filter, month }: { m: GrileManager; filter: StatusFil
       .map((tl) => ({
         ...tl,
         firms: tl.firms
-          .map((f) => ({ ...f, stores: f.stores.filter((s) => matchesFilter(s, filter)) }))
+          .map((f) => ({ ...f, stores: f.stores.filter((s) => matchesGrileStatusFilter(s, filter)) }))
           .filter((f) => f.stores.length > 0),
       }))
       .filter((tl) => tl.firms.length > 0);
@@ -503,6 +471,30 @@ function ManagerGroup({ m, filter, month }: { m: GrileManager; filter: StatusFil
 const LEGACY_GRILE_MONTH_KEY = 'unihub_grile_month';
 
 export function GrileSubtab({ initialMonth }: { initialMonth?: string }) {
+  const [view, setView] = useState<'current' | 'pilot-v2'>('current');
+
+  return (
+    <div className="mx-auto max-w-6xl space-y-4 p-3 pb-24 pt-2 lg:max-w-none lg:p-0">
+      <SegmentedTabs
+        ariaLabel="Versiune grilă"
+        value={view}
+        onChange={setView}
+        options={[
+          { value: 'current', label: 'Grila actuală' },
+          { value: 'pilot-v2', label: 'V2 · pilot' },
+        ]}
+      />
+      <div hidden={view !== 'current'}>
+        <CurrentGrileSubtab initialMonth={initialMonth} />
+      </div>
+      <div hidden={view !== 'pilot-v2'}>
+        <PilotV2Panel />
+      </div>
+    </div>
+  );
+}
+
+function CurrentGrileSubtab({ initialMonth }: { initialMonth?: string }) {
   // month gol = lasa backend-ul sa aleaga ultima luna operationala;
   // selectiile vechi nu se persista, ca inchiderea de luna sa nu blocheze UI-ul pe luna anterioara.
   const [month, setMonth] = useState(initialMonth ?? '');
@@ -538,7 +530,7 @@ export function GrileSubtab({ initialMonth }: { initialMonth?: string }) {
     run && run.progress_total > 0 ? Math.round((run.progress_current / run.progress_total) * 100) : 0;
 
   return (
-    <div className="mx-auto max-w-6xl space-y-4 p-3 pb-24 pt-2 lg:max-w-none lg:p-0">
+    <div className="space-y-4">
       {/* ── Card status + actiune ── */}
       <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900">
         <div className="flex flex-wrap items-center justify-between gap-4">
@@ -624,11 +616,11 @@ export function GrileSubtab({ initialMonth }: { initialMonth?: string }) {
       <label className="block lg:hidden">
         <span className="mb-1 block text-xs font-bold text-slate-500">Stare grilă</span>
         <select value={filter} onChange={(event) => setFilter(event.target.value as StatusFilter)} className="min-h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">
-          {FILTERS.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
+          {GRILE_STATUS_FILTERS.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
         </select>
       </label>
       <div className="hidden flex-wrap gap-1.5 lg:flex">
-        {FILTERS.map((f) => (
+        {GRILE_STATUS_FILTERS.map((f) => (
           <button
             key={f.id}
             onClick={() => setFilter(f.id)}
