@@ -10,6 +10,7 @@ from uuid import uuid4
 
 from arq.worker import create_worker, func
 from arq.constants import default_queue_name
+from fastapi import HTTPException
 
 from config import load_runtime_config
 from logging_config import setup_logging
@@ -34,6 +35,11 @@ VISITS_SNAPSHOT_REFRESH_SECONDS = 15 * 60
 EXPORT_CLEANUP_SECONDS = 5 * 60
 GRILE_RUN_RECONCILE_SECONDS = 60
 QUEUE_METRICS_SECONDS = 15
+
+
+def _raise_pickle_safe_http_error(exc: HTTPException) -> None:
+    """Keep ARQ terminal failures readable by API status polling."""
+    raise RuntimeError(str(exc.detail)) from exc
 
 
 async def _refresh_visits_snapshot_once(pool: Any) -> int:
@@ -284,12 +290,17 @@ async def import_promo_actuals_background(
         if pool is None:
             from db.connection import get_pool
             pool = await get_pool()
-        result = await ImportsService(ImportsRepository(pool), pool).process_promo_actuals(
-            content=content,
-            filename=filename,
-            import_month=import_month,
-            cutoff_date=date.fromisoformat(cutoff_date_iso),
-        )
+        try:
+            result = await ImportsService(
+                ImportsRepository(pool), pool
+            ).process_promo_actuals(
+                content=content,
+                filename=filename,
+                import_month=import_month,
+                cutoff_date=date.fromisoformat(cutoff_date_iso),
+            )
+        except HTTPException as exc:
+            _raise_pickle_safe_http_error(exc)
         payload = result.model_dump(mode="json")
         succeeded = True
         return payload
@@ -317,11 +328,16 @@ async def reconcile_erp_background(
         if pool is None:
             from db.connection import get_pool
             pool = await get_pool()
-        result = await ErpReconciliationService(ErpReconciliationRepository(pool), pool).process(
-            content=content,
-            filename=filename,
-            import_month=import_month,
-        )
+        try:
+            result = await ErpReconciliationService(
+                ErpReconciliationRepository(pool), pool
+            ).process(
+                content=content,
+                filename=filename,
+                import_month=import_month,
+            )
+        except HTTPException as exc:
+            _raise_pickle_safe_http_error(exc)
         payload = result.model_dump(mode="json")
         succeeded = True
         return payload
