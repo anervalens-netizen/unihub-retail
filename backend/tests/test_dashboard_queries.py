@@ -189,6 +189,7 @@ class TestFetchRegionalStats:
     async def test_with_data(self, mock_conn):
         mock_conn.fetch.return_value = [
             FakeRow(
+                import_month="2026-05",
                 regional="R1", total_vanzari=Decimal("50000"), qty_total=500,
                 nr_bonuri=300, nr_agenti=10, zile_active=22, target=Decimal("60000"),
                 proc_realizare_target=Decimal("83.3"), promo_qty=20, incentive_qty=15,
@@ -199,6 +200,7 @@ class TestFetchRegionalStats:
         result = await _fetch_regional_stats(mock_conn, "2026-05", None, None, None, None, None)
         assert len(result) == 1
         assert result[0]["regional"] == "R1"
+        assert "import_month" not in result[0]
 
 
 class TestFetchAsmStats:
@@ -206,6 +208,25 @@ class TestFetchAsmStats:
     async def test_empty(self, mock_conn):
         result = await _fetch_asm_stats(mock_conn, "2026-05", None, None, None, None, None)
         assert result == []
+
+    @pytest.mark.asyncio
+    async def test_internal_month_is_not_exposed(self, mock_conn):
+        mock_conn.fetch.return_value = [
+            FakeRow(
+                import_month="2026-05", regional="R1", asm="A1",
+                total_vanzari=Decimal("50000"), qty_total=500, nr_bonuri=300,
+                nr_agenti=10, zile_active=22, target=Decimal("60000"),
+                proc_realizare_target=Decimal("83.3"), medie_zilnica=Decimal("2272"),
+                medie_produs=Decimal("100"), proc_bon2acc=Decimal("60.0"),
+                prc_focus_acc_qty=Decimal("25.0"),
+            ),
+        ]
+
+        result = await _fetch_asm_stats(
+            mock_conn, "2026-05", None, None, None, None, None
+        )
+
+        assert "import_month" not in result[0]
 
 
 class TestFetchPeriodComparison:

@@ -1,5 +1,5 @@
 /* GENERATED FILE. Run npm run contracts:generate; do not edit manually. */
-export const RETAIL_OPENAPI_SHA256 = '40d92e0c005aabe1a60a0f2dc5d57467e8c918bcd511a6e94a60ecaf3d5ecb78' as const; // pragma: allowlist secret
+export const RETAIL_OPENAPI_SHA256 = '3e1b65588af64d258549057a846f3837d5da3ce3d44936f41fcb09dd5ade0edc' as const; // pragma: allowlist secret
 
 export type RetailDecimal = string & { readonly __retailDecimal: unique symbol };
 
@@ -1690,7 +1690,7 @@ export interface RetailSalaryComparisonItem {
   "company_name": string;
   "locatie"?: string | null;
   "ratio": number;
-  "site_code": string;
+  "site_code": string | null;
   "total_salary": number;
   "total_sales": number;
 }

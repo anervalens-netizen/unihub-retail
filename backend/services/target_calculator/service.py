@@ -158,6 +158,14 @@ class TargetCalculatorService:
     async def list_scenarios(self) -> list[dict[str, Any]]:
         serialized = [serialize_header(dict(row)) for row in await self.repo.list_scenarios()]
         for row in serialized:
+            calculation_params = row.get("calculation_params")
+            if isinstance(calculation_params, dict) and isinstance(
+                calculation_params.get("profitability"), dict
+            ):
+                row["calculation_params"] = dict(calculation_params)
+                row["calculation_params"]["profitability"] = (
+                    self._saved_profitability_assumptions(row)
+                )
             if row.get("rule_set_snapshot") is None:
                 for key in (
                     "rule_set_id", "rule_set_hash", "rule_set_snapshot",

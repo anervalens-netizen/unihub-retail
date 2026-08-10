@@ -104,10 +104,14 @@ class TestSalariiEvolution:
     @pytest.mark.asyncio
     async def test_evolution_no_company(self, service, mock_repo):
         mock_repo.fetch_evolution_main.return_value = [
-            FakeRow(month="2026-04", total=Decimal("10000"), mobicell=Decimal("5000"), mobiup=Decimal("5000")),
+            FakeRow(sort_key=202604, month="2026-04", total=Decimal("10000"), mobicell=Decimal("5000"), mobiup=Decimal("5000")),
         ]
         result = await service.get_evolution(None, None, None, None)
         assert len(result) == 1
+        assert result[0] == {
+            "month": "2026-04", "total": 10000.0,
+            "mobicell": 5000.0, "mobiup": 5000.0,
+        }
 
     @pytest.mark.asyncio
     async def test_evolution_with_company(self, service, mock_repo):
@@ -351,6 +355,18 @@ class TestSalariiSummary:
         result = await service.get_summary(None, None, None, None, 2026, 4)
         assert result["month"] == "2026-04"
         assert result["items"][0]["ratio"] == 0
+
+    @pytest.mark.asyncio
+    async def test_summary_preserves_unassigned_site_as_unavailable(self, service, mock_repo):
+        mock_repo.fetch_summary_by_site.return_value = [
+            FakeRow(site_code=None, locatie=None, company_name="F1",
+                    total_salary=Decimal("3000"), agent_count=1, avg_agent_count=1,
+                    avg_salary=Decimal("3000"), total_sales=Decimal("0")),
+        ]
+
+        result = await service.get_summary(None, None, None, None, 2026, 4)
+
+        assert result["items"][0]["site_code"] is None
 
 
 class TestSalariiTrend:

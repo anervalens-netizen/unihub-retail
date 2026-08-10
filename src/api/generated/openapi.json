@@ -10334,8 +10334,15 @@
             "type": "number"
           },
           "site_code": {
-            "title": "Site Code",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Site Code"
           },
           "total_salary": {
             "title": "Total Salary",

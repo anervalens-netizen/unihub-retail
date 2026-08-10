@@ -86,7 +86,15 @@ class SalariiService:
             regional=regional,
             asm=asm,
         )
-        return [dict(r) for r in rows]
+        return [
+            {
+                "month": r["month"],
+                "total": float(r["total"]),
+                "mobicell": float(r["mobicell"]),
+                "mobiup": float(r["mobiup"]),
+            }
+            for r in rows
+        ]
 
     async def get_agents_summary(
         self,
