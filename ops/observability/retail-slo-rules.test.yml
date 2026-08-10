@@ -18,6 +18,25 @@ tests:
           - labels: '{__name__="unihub_retail:dashboard_latency_p95_seconds:rate5m"}'
             value: 0
 
+  - name: Latency recordings replace idle histogram NaN with zero
+    interval: 1m
+    input_series:
+      - series: 'http_request_duration_seconds_bucket{job="unihub-retail-web",method="GET",status="2xx",handler="/api/dashboard/all",le="0.5"}'
+        values: '0x10'
+      - series: 'http_request_duration_seconds_bucket{job="unihub-retail-web",method="GET",status="2xx",handler="/api/dashboard/all",le="+Inf"}'
+        values: '0x10'
+    promql_expr_test:
+      - expr: unihub_retail:http_latency_p95_seconds:rate5m
+        eval_time: 5m
+        exp_samples:
+          - labels: '{__name__="unihub_retail:http_latency_p95_seconds:rate5m"}'
+            value: 0
+      - expr: unihub_retail:dashboard_latency_p95_seconds:rate5m
+        eval_time: 5m
+        exp_samples:
+          - labels: '{__name__="unihub_retail:dashboard_latency_p95_seconds:rate5m"}'
+            value: 0
+
   - name: HTTP recording rules use the live web job
     interval: 1m
     input_series:
