@@ -25,6 +25,7 @@ from schemas.premium_glass import PremiumGlassAnalysis
 from services.campaigns import fetch_promo_incentive_summary, load_campaign_context
 from services.dashboard.metrics import observe_dashboard_component
 from services.dashboard.ports import DashboardServicePort
+from services.dashboard.projections import public_stats_row
 from services.dashboard.queries import (
     _enrich_store_stats_with_campaign,
     _fetch_agent_stats_rows,
@@ -361,7 +362,7 @@ async def load_dashboard_all(
                     level="regional",
                     site_regionals=site_regionals,
                 )
-        return [RegionalStats(**row) for row in row_dicts]
+        return [RegionalStats(**public_stats_row(row)) for row in row_dicts]
 
     async def get_asm_data() -> list[AsmStats]:
         async with service._pool_for(deadline).acquire() as conn:
@@ -376,7 +377,7 @@ async def load_dashboard_all(
                 current_scope=current_scope,
                 include_closed_stores=include_closed_stores,
             )
-        return [AsmStats(**r) for r in rows]
+        return [AsmStats(**public_stats_row(r)) for r in rows]
 
     components: dict[str, Awaitable[Any]] = {
         "summary": observe_dashboard_component(

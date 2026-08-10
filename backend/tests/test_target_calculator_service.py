@@ -1020,6 +1020,48 @@ async def test_scenario_list_and_missing_detail() -> None:
 
 
 @pytest.mark.asyncio
+async def test_scenario_list_normalizes_legacy_profitability_snapshot() -> None:
+    service, repo = make_service()
+    repo.list_scenarios.return_value = [scenario_header(
+        calculation_params='{"profitability":{"vat_rate":0.21}}',
+    )]
+
+    scenarios = await service.list_scenarios()
+
+    profitability = scenarios[0]["calculation_params"]["profitability"]
+    assert profitability["vat_ruleset_id"] == "legacy-unversioned"
+    assert profitability["vat_rule_id"] == "legacy-unversioned"
+    assert profitability["vat_multiplier"] == 1.21
+
+
+@pytest.mark.asyncio
+async def test_scenario_list_preserves_versioned_profitability_snapshot() -> None:
+    service, repo = make_service()
+    profitability = {
+        "vat_ruleset_id": "ro-standard-vat-v1",
+        "vat_rule_id": "ro-standard-vat-21",
+        "vat_multiplier": 1.21,
+        "vat_rate": 0.21,
+        "salary_pnl_factor": 1.5,
+        "meal_vouchers_per_agent": 100,
+        "sales_commission_rate": 0,
+        "salary_assumed_attainment": 0,
+        "default_store_agent_count": 2,
+        "base_salary_default": 3000,
+    }
+    repo.list_scenarios.return_value = [scenario_header(
+        calculation_params={"profitability": profitability},
+        rule_set_snapshot=target_rule_record(),
+    )]
+
+    scenarios = await service.list_scenarios()
+
+    assert scenarios[0]["calculation_params"]["profitability"] == profitability
+    assert "sun_plaza_agent_count" not in profitability
+    assert "base_salary_high" not in profitability
+
+
+@pytest.mark.asyncio
 async def test_save_final_targets_validates_rows_and_conflicts() -> None:
     service, repo = make_service()
     duplicate_rows = [

@@ -26,6 +26,7 @@ from services.dashboard.queries import (
     _fetch_regional_stats,
     _fetch_store_stats_rows,
 )
+from services.dashboard.projections import public_stats_row
 from services.promo_copurchase import PromoCoPurchaseResult
 from services.promotion_evaluation import (
     PromotionEvaluation,
@@ -189,6 +190,7 @@ class TestFetchRegionalStats:
     async def test_with_data(self, mock_conn):
         mock_conn.fetch.return_value = [
             FakeRow(
+                import_month="2026-05",
                 regional="R1", total_vanzari=Decimal("50000"), qty_total=500,
                 nr_bonuri=300, nr_agenti=10, zile_active=22, target=Decimal("60000"),
                 proc_realizare_target=Decimal("83.3"), promo_qty=20, incentive_qty=15,
@@ -206,6 +208,13 @@ class TestFetchAsmStats:
     async def test_empty(self, mock_conn):
         result = await _fetch_asm_stats(mock_conn, "2026-05", None, None, None, None, None)
         assert result == []
+
+
+
+def test_public_stats_row_removes_only_internal_month() -> None:
+    row = public_stats_row({"import_month": "2026-05", "regional": "R1"})
+
+    assert row == {"regional": "R1"}
 
 
 class TestFetchPeriodComparison:

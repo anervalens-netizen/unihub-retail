@@ -53,7 +53,7 @@ class SalaryEvolutionPoint(StrictApiModel):
 
 class SalaryComparisonItem(StrictApiModel):
 
-    site_code: str
+    site_code: str | None
     locatie: str | None = None
     company_name: str
     total_salary: float

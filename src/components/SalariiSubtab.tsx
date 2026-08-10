@@ -239,7 +239,7 @@ export function SalariiSubtab({ globalFilters }: SalariiSubtabProps) {
     const { key, dir } = summarySort;
     const sorted = [...summary].sort((a, b) => {
       let cmp: number;
-      if (key === 'locatie') cmp = (a.locatie ?? a.site_code).localeCompare(b.locatie ?? b.site_code);
+      if (key === 'locatie') cmp = (a.locatie ?? a.site_code ?? 'UNAVAILABLE').localeCompare(b.locatie ?? b.site_code ?? 'UNAVAILABLE');
       else if (key === 'company_name') cmp = a.company_name.localeCompare(b.company_name);
       else cmp = (a[key] as number) - (b[key] as number);
       return dir === 'asc' ? cmp : -cmp;
@@ -355,7 +355,7 @@ export function SalariiSubtab({ globalFilters }: SalariiSubtabProps) {
                 auditSalaryExport({ export_kind: 'store_summary', row_count: sortedSummary.length })
               }
               columns={[
-                { header: 'Locatie', value: (row) => row.locatie ?? row.site_code },
+                { header: 'Locatie', value: (row) => row.locatie ?? row.site_code ?? 'UNAVAILABLE' },
                 { header: 'Firma', value: (row) => row.company_name },
                 { header: 'Agenti', value: (row) => row.agent_count, format: 'integer' },
                 { header: 'Salarii', value: (row) => row.total_salary, format: 'currency' },
@@ -392,9 +392,9 @@ export function SalariiSubtab({ globalFilters }: SalariiSubtabProps) {
         </div>
         <div className="space-y-2 lg:hidden">
           {sortedSummary.map((item) => (
-            <article key={`${item.locatie ?? item.site_code}-${item.company_name}-mobile`} className="rounded-2xl border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-900">
+            <article key={`${item.locatie ?? item.site_code ?? 'UNAVAILABLE'}-${item.company_name}-mobile`} className="rounded-2xl border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-900">
               <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0"><p className="truncate text-sm font-bold">{item.locatie ?? item.site_code}</p><p className={`text-xs font-bold ${COMPANY_COLORS[item.company_name] ?? 'text-slate-500'}`}>{item.company_name} · {item.agent_count} agenți</p></div>
+                <div className="min-w-0"><p className="truncate text-sm font-bold">{item.locatie ?? item.site_code ?? 'UNAVAILABLE'}</p><p className={`text-xs font-bold ${COMPANY_COLORS[item.company_name] ?? 'text-slate-500'}`}>{item.company_name} · {item.agent_count} agenți</p></div>
                 <span className="rounded-xl bg-indigo-50 px-2 py-1 text-sm font-black text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300">{item.ratio.toFixed(1)}%</span>
               </div>
               <div className="mt-3 grid grid-cols-3 gap-2">
@@ -435,9 +435,9 @@ export function SalariiSubtab({ globalFilters }: SalariiSubtabProps) {
                 </tr>
               )}
               {sortedSummary.map((item) => (
-                <tr key={`${item.locatie ?? item.site_code}-${item.company_name}`} className="border-b border-slate-100 dark:border-slate-800">
+                <tr key={`${item.locatie ?? item.site_code ?? 'UNAVAILABLE'}-${item.company_name}`} className="border-b border-slate-100 dark:border-slate-800">
                   <td className="px-2 py-2 font-medium text-slate-700 dark:text-slate-200">
-                    {item.locatie ?? item.site_code}
+                    {item.locatie ?? item.site_code ?? 'UNAVAILABLE'}
                   </td>
                   <td className={`px-2 py-2 text-xs font-bold ${COMPANY_COLORS[item.company_name] ?? 'text-slate-500'}`}>
                     {item.company_name}
