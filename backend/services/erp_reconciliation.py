@@ -836,9 +836,6 @@ class ErpReconciliationService:
                 detail=f"Nu exista date Retail importate cu succes pentru luna {import_month}",
             )
         try:
-            # The legacy XLS parser already isolates untrusted work in a
-            # bounded child process.  Starting that fork from to_thread()
-            # is unsafe and can make the child exit before returning data.
             parsed = parse_erp_report(
                 content,
                 import_month,
