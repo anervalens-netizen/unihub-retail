@@ -23,6 +23,7 @@ from services.dashboard.queries import (
     _fetch_regional_stats,
     _fetch_store_stats_rows,
 )
+from services.dashboard.projections import public_stats_row
 from services.dashboard.scheduler import _gather_cancel_on_error
 from services.filters import normalize_filter
 from services.request_deadline import RequestDeadline
@@ -135,7 +136,7 @@ async def load_performance_detail(
                 current_scope=current_scope,
                 include_closed_stores=include_closed_stores,
             )
-            peers = [RegionalStats(**dict(row)) for row in regional_rows]
+            peers = [RegionalStats(**public_stats_row(row)) for row in regional_rows]
             selected = next((row for row in peers if row.regional == key), None)
             if selected is None:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="RM-ul nu are date in luna selectata.")

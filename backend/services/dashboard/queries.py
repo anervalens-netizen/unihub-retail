@@ -715,7 +715,6 @@ async def _fetch_regional_stats(
         for row in base_rows:
             row["promo_qty"] = 0
             row["incentive_qty"] = 0
-            row.pop("import_month", None)
         return base_rows
 
     metric_params, metric_positions = build_scoped_params(
@@ -777,7 +776,6 @@ async def _fetch_regional_stats(
         metrics = campaign_metrics.get((str(row["import_month"]), str(row["regional"])))
         row["promo_qty"] = int(metrics["promo_qty"]) if metrics else 0
         row["incentive_qty"] = int(metrics["incentive_qty"]) if metrics else 0
-        row.pop("import_month", None)
     return base_rows
 
 
@@ -904,7 +902,6 @@ async def _fetch_asm_stats(
         for row in base_rows:
             row["promo_qty"] = 0
             row["incentive_qty"] = 0
-            row.pop("import_month", None)
         return base_rows
 
     metric_params, metric_positions = build_scoped_params(
@@ -969,7 +966,6 @@ async def _fetch_asm_stats(
         )
         row["promo_qty"] = int(metrics["promo_qty"]) if metrics else 0
         row["incentive_qty"] = int(metrics["incentive_qty"]) if metrics else 0
-        row.pop("import_month", None)
     return base_rows
 
 
