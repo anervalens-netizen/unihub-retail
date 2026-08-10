@@ -21,10 +21,10 @@ check is green on the exact head SHA and all review threads are resolved.
 - Imports: `unihub-import-worker.service`, queue `arq:retail:imports`, metrics `9902`.
 - Grile: `unihub-grile-worker.service`, queue `arq:retail:grile`, metrics `9903`.
 - Exports: `unihub-export-worker.service`, queue `arq:retail:exports`, metrics `9904`.
-- Pre-9.5 drain: `unihub-legacy-worker.service`, default ARQ queue, no new
-  publishers and no metrics listener. Keep it for the 9.5 cutover release so
-  pending legacy Grile/export jobs drain; retire it only after the queue is
-  observed empty in a later verified release.
+- Pre-9.5 drain: retired on 2026-08-10 after the default ARQ queue and in-flight
+  set were both observed empty in a later release. The versioned
+  `unihub-legacy-worker.service` is now a disabled tombstone that refuses manual
+  starts and exists only for exact rollback accounting.
 - PostgreSQL is authoritative; Valkey transports bounded job/session state only.
 
 Owner access is unchanged. No allowlist, Authentik administrator group, SSH,

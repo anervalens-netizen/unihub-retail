@@ -22,16 +22,21 @@ systemctl is-active --quiet unihub-worker.service
 systemctl is-active --quiet unihub-import-worker.service
 systemctl is-active --quiet unihub-grile-worker.service
 systemctl is-active --quiet unihub-export-worker.service
-systemctl is-active --quiet unihub-legacy-worker.service
+! systemctl is-active --quiet unihub-legacy-worker.service
+! systemctl is-enabled --quiet unihub-legacy-worker.service
 for unit in \
   unihub-backend.service \
   unihub-worker.service \
   unihub-import-worker.service \
   unihub-grile-worker.service \
-  unihub-export-worker.service \
-  unihub-legacy-worker.service; do
+  unihub-export-worker.service; do
   systemctl is-enabled --quiet "$unit"
 done
+cmp /opt/Mobiup/infra/observability/prometheus/rules/retail-slo-rules.yml \
+  "/var/lib/unihub-retail-deploy/runtime-releases/$EXPECTED_SHA/retail-slo-rules.yml"
+grep -Fq 'job="unihub-retail-web"' \
+  /opt/Mobiup/infra/observability/prometheus/rules/retail-slo-rules.yml
+test ! -e /opt/Mobiup/infra/observability/node-exporter/textfile/unihub_retail_deploy.prom
 
 curl --fail --silent --show-error --max-time 10 http://127.0.0.1:9898/livez >/dev/null
 curl --fail --silent --show-error --max-time 10 http://127.0.0.1:9898/readyz >/dev/null

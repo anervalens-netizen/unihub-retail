@@ -7,7 +7,6 @@ import os
 from typing import Any, Awaitable, TypeVar
 from uuid import uuid4
 from arq.worker import create_worker, func
-from arq.constants import default_queue_name
 from fastapi import HTTPException
 from config import load_runtime_config
 from logging_config import setup_logging
@@ -1101,15 +1100,6 @@ def main() -> None:
         ],
         "exports": [func(build_complex_export_background, max_tries=1)],
         "operations": [func(refresh_visits_snapshot_background, max_tries=1)],
-        # One-release compatibility consumer for jobs published by pre-9.5
-        # web processes to ARQ's default queue. New jobs never target it.
-        "legacy": [
-            func(build_complex_export_background, max_tries=1),
-            grile_check_background,
-            func(grile_store_refresh_background, max_tries=1),
-            func(grile_monthly_background, timeout=runtime.arq_job_timeout_seconds, max_tries=1),
-            grile_agent_targets_background,
-        ],
     }
     functions = functions_by_role[worker_role]
     queue_name = {
@@ -1117,7 +1107,6 @@ def main() -> None:
         "grile": GRILE_QUEUE_NAME,
         "exports": EXPORT_QUEUE_NAME,
         "operations": OPERATIONS_QUEUE_NAME,
-        "legacy": default_queue_name,
     }[worker_role]
     from observability.worker_metrics import observe_job_end, observe_job_start
     worker_settings: dict[str, Any] = {

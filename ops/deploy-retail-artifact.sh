@@ -65,10 +65,14 @@ LEGACY_WORKER_SERVICE="unihub-legacy-worker.service"
 if [[ "$TEST_MODE" == "1" ]]; then
   SYSTEMD_ROOT="$TEST_ROOT/etc/systemd/system"
   PROMETHEUS_HOST_CONFIG="$TEST_ROOT/prometheus/prometheus.yml"
+  PROMETHEUS_RULES_ROOT="$OPS_ROOT/prometheus/rules"
+  NODE_EXPORTER_TEXTFILE_ROOT="$TEST_ROOT/node-exporter/textfile"
   RUNTIME_RELEASE_BASE="$TEST_ROOT/runtime-releases"
 else
   SYSTEMD_ROOT="/etc/systemd/system"
   PROMETHEUS_HOST_CONFIG="/opt/Mobiup/infra/observability/prometheus/prometheus.yml"
+  PROMETHEUS_RULES_ROOT="/opt/Mobiup/infra/observability/prometheus/rules"
+  NODE_EXPORTER_TEXTFILE_ROOT="/opt/Mobiup/infra/observability/node-exporter/textfile"
   RUNTIME_RELEASE_BASE="/var/lib/unihub-retail-deploy/runtime-releases"
 fi
 PROMETHEUS_CONTAINER="unihub-prometheus"
@@ -77,6 +81,8 @@ PROMETHEUS_CONTAINER_SCRAPE_ROOT="/etc/prometheus/scrape.d"
 PROMETHEUS_SCRAPE_ROOT="$OPS_ROOT/prometheus/scrape.d"
 PROMETHEUS_FRAGMENT="$PROMETHEUS_SCRAPE_ROOT/unihub-retail.yml"
 PROMETHEUS_NETWORK_ENV="$OPS_ROOT/prometheus/unihub-retail-network.env"
+PROMETHEUS_RETAIL_RULES="$PROMETHEUS_RULES_ROOT/retail-slo-rules.yml"
+DEPLOYMENT_METRIC_FILE="$NODE_EXPORTER_TEXTFILE_ROOT/unihub_retail_deploy.prom"
 if [[ "$TEST_MODE" != "1" && "${SUDO_USER:-}" == "unihub-deploy" ]]; then
   [[ "$READ_ONLY_MODE" == "0" && "$#" -eq 4 && "$1" == /* ]] \
     || die "deploy runner may invoke only the four-argument production deployment"
@@ -121,8 +127,20 @@ runtime_service_names() {
     "$WORKER_SERVICE" \
     "$IMPORT_WORKER_SERVICE" \
     "$GRILE_WORKER_SERVICE" \
-    "$EXPORT_WORKER_SERVICE" \
+    "$EXPORT_WORKER_SERVICE"
+}
+
+managed_runtime_service_names() {
+  runtime_service_names
+  printf '%s\n' \
     "$LEGACY_WORKER_SERVICE"
+}
+
+runtime_services_expected_active() {
+  runtime_service_names
+  if service_exists "$LEGACY_WORKER_SERVICE" && service_is_enabled "$LEGACY_WORKER_SERVICE"; then
+    printf '%s\n' "$LEGACY_WORKER_SERVICE"
+  fi
 }
 
 service_exists() {
@@ -160,6 +178,58 @@ set_service_disabled() {
   else
     systemctl disable "$unit"
   fi
+}
+
+mark_planned_deployment() {
+  local temporary="${DEPLOYMENT_METRIC_FILE}.new.$$"
+  mkdir -p "$NODE_EXPORTER_TEXTFILE_ROOT"
+  {
+    printf '# HELP unihub_retail_deployment_in_progress Exact-SHA Retail deployment marker.\n'
+    printf '# TYPE unihub_retail_deployment_in_progress gauge\n'
+    printf 'unihub_retail_deployment_in_progress 1\n'
+    printf '# HELP unihub_retail_deployment_started_timestamp_seconds Retail deployment start time.\n'
+    printf '# TYPE unihub_retail_deployment_started_timestamp_seconds gauge\n'
+    printf 'unihub_retail_deployment_started_timestamp_seconds %s\n' "$(current_epoch)"
+  } >"$temporary"
+  chmod 0644 "$temporary"
+  if [[ "$TEST_MODE" != "1" ]]; then
+    chown root:root "$temporary"
+  fi
+  mv -f -- "$temporary" "$DEPLOYMENT_METRIC_FILE"
+}
+
+clear_planned_deployment() {
+  rm -f -- "$DEPLOYMENT_METRIC_FILE" "${DEPLOYMENT_METRIC_FILE}.new.$$"
+}
+
+wait_for_planned_deployment_inhibition() {
+  if [[ "$TEST_MODE" == "1" ]]; then
+    [[ -s "$DEPLOYMENT_METRIC_FILE" ]]
+    return
+  fi
+
+  local attempt payload
+  for attempt in {1..45}; do
+    payload="$(curl --silent --show-error --fail --max-time 5 \
+      http://127.0.0.1:9093/api/v2/alerts)" || payload=""
+    if python3 -c '
+import json
+import sys
+
+alerts = json.load(sys.stdin)
+if not any(
+    item.get("labels", {}).get("alertname") == "UniHubRetailPlannedDeployment"
+    and item.get("status", {}).get("state") == "active"
+    for item in alerts
+):
+    raise SystemExit(1)
+' <<<"$payload"
+    then
+      return 0
+    fi
+    sleep 1
+  done
+  return 1
 }
 
 enable_runtime_services() {
@@ -253,6 +323,7 @@ required = {
     "ops/systemd/unihub-legacy-worker.service",
     "ops/systemd/unihub-retail-migrate.service",
     "ops/observability/retail-process-scrape.yml",
+    "ops/observability/retail-slo-rules.yml",
 }
 missing = sorted(required - seen)
 if missing:
@@ -594,7 +665,7 @@ prepare_runtime_release() {
     install -m 0644 -- "$artifact_tree/$unit_source" "$stage_root/systemd/$(basename "$unit_source")"
   done
   local worker_unit
-  for worker_unit in unihub-worker.service unihub-import-worker.service unihub-grile-worker.service unihub-export-worker.service unihub-legacy-worker.service; do
+  for worker_unit in unihub-worker.service unihub-import-worker.service unihub-grile-worker.service unihub-export-worker.service; do
     grep -Fq 'EnvironmentFile=/opt/Mobiup/ops/prometheus/unihub-retail-network.env' \
       "$stage_root/systemd/$worker_unit" \
       || die "worker unit is missing the Prometheus network environment"
@@ -639,6 +710,17 @@ if token in rendered or "0.0.0.0" in rendered or "127.0.0.1" in rendered:
 Path(sys.argv[2]).write_text(rendered, encoding="utf-8")
 PY
   chmod 0644 "$stage_root/unihub-retail.yml"
+
+  local rules_source="$artifact_tree/ops/observability/retail-slo-rules.yml"
+  [[ -f "$rules_source" && ! -L "$rules_source" ]] \
+    || die "Retail Prometheus rules are missing"
+  install -m 0644 -- "$rules_source" "$stage_root/retail-slo-rules.yml"
+  grep -Fq 'job="unihub-retail-web"' "$stage_root/retail-slo-rules.yml" \
+    || die "Retail Prometheus rules do not use the live web scrape job"
+  ! grep -Fq 'job="unihub_retail"' "$stage_root/retail-slo-rules.yml" \
+    || die "Retail Prometheus rules still use the retired scrape job"
+  grep -Fq 'alert: UniHubRetailPlannedDeployment' "$stage_root/retail-slo-rules.yml" \
+    || die "Retail Prometheus rules are missing the planned deployment marker"
 }
 
 runtime_asset_destinations() {
@@ -651,7 +733,8 @@ runtime_asset_destinations() {
     "$SYSTEMD_ROOT/unihub-legacy-worker.service" \
     "$SYSTEMD_ROOT/unihub-retail-migrate.service" \
     "$PROMETHEUS_NETWORK_ENV" \
-    "$PROMETHEUS_FRAGMENT"
+    "$PROMETHEUS_FRAGMENT" \
+    "$PROMETHEUS_RETAIL_RULES"
 }
 
 backup_runtime_assets() {
@@ -676,7 +759,7 @@ backup_runtime_assets() {
     else
       printf '%s=0\n' "$name" >>"$assets_dir/enabled.env"
     fi
-  done < <(runtime_service_names)
+  done < <(managed_runtime_service_names)
   chmod 0600 "$assets_dir/state.env"
   chmod 0600 "$assets_dir/enabled.env"
 }
@@ -751,7 +834,17 @@ install_runtime_assets() {
     chown root:root "$fragment_tmp"
   fi
   mv -f -- "$fragment_tmp" "$PROMETHEUS_FRAGMENT"
+  mkdir -p "$PROMETHEUS_RULES_ROOT"
+  local rules_tmp="${PROMETHEUS_RETAIL_RULES}.new.$$"
+  install -m 0644 -- "$release_root/retail-slo-rules.yml" "$rules_tmp"
+  if [[ "$TEST_MODE" != "1" ]]; then
+    chown root:root "$rules_tmp"
+  fi
+  mv -f -- "$rules_tmp" "$PROMETHEUS_RETAIL_RULES"
   service_action daemon-reload
+  if service_is_enabled "$LEGACY_WORKER_SERVICE"; then
+    set_service_disabled "$LEGACY_WORKER_SERVICE"
+  fi
   enable_runtime_services
 }
 
@@ -787,7 +880,7 @@ restore_runtime_assets() {
       elif service_is_enabled "$name"; then
         set_service_disabled "$name"
       fi
-    done < <(runtime_service_names)
+    done < <(managed_runtime_service_names)
   fi
 }
 
@@ -862,10 +955,18 @@ verify_active_runtime_assets() {
     [[ -L "$SYSTEMD_ROOT/$destination" && "$(readlink -f "$SYSTEMD_ROOT/$destination")" == "$expected" ]] \
       || die "active systemd unit is not the expected version: $destination"
   done
+  ! service_is_enabled "$LEGACY_WORKER_SERVICE" \
+    || die "retired legacy worker must stay disabled"
+  if [[ "$TEST_MODE" != "1" ]]; then
+    ! systemctl is-active --quiet "$LEGACY_WORKER_SERVICE" \
+      || die "retired legacy worker must stay inactive"
+  fi
   diff -q -- "$PROMETHEUS_NETWORK_ENV" "$release_root/unihub-retail-network.env" >/dev/null \
     || die "active Prometheus network environment differs from the expected version"
   diff -q -- "$PROMETHEUS_FRAGMENT" "$release_root/unihub-retail.yml" >/dev/null \
     || die "active Retail scrape fragment differs from the expected version"
+  diff -q -- "$PROMETHEUS_RETAIL_RULES" "$release_root/retail-slo-rules.yml" >/dev/null \
+    || die "active Retail Prometheus rules differ from the expected version"
   grep -Fxq "PROMETHEUS_DOCKER_GATEWAY=$PROMETHEUS_DOCKER_GATEWAY" "$PROMETHEUS_NETWORK_ENV"
   grep -Fxq "PROMETHEUS_DOCKER_SUBNET=$PROMETHEUS_DOCKER_SUBNET" "$PROMETHEUS_NETWORK_ENV"
   grep -Fxq "WORKER_METRICS_HOST=$PROMETHEUS_DOCKER_GATEWAY" "$PROMETHEUS_NETWORK_ENV"
@@ -1124,6 +1225,7 @@ recover_forward_release() {
   on_recovery_error() {
     local rc=$?
     trap - EXIT ERR
+    clear_planned_deployment || true
     start_runtime || true
     log "forward recovery failed; release remains recovery_required and requires a fresh one-time approval"
     if [[ "$approval_claimed" == "1" && -n "$APPROVAL_CLAIM" ]]; then
@@ -1156,6 +1258,9 @@ recover_forward_release() {
   mv -- "$prior_link" "$backup_dir/approval.failed.${prior_approval_id}.env"
   write_approval_link "$backup_dir" "$ci_run_id" "$expected_sha" "$expected_artifact_sha256"
 
+  mark_planned_deployment
+  wait_for_planned_deployment_inhibition \
+    || die "planned deployment inhibition did not become active"
   stop_runtime
   install_runtime_assets "$stage_root" "$expected_sha"
   if ! diff -qr -- "$LIVE_ROOT/dist" "$next_dist" >/dev/null; then
@@ -1176,6 +1281,7 @@ recover_forward_release() {
 
   write_release_manifest "$backup_dir" "$old_sha" "$expected_sha" "deployed"
   finalize_approval consumed "$backup_dir"
+  clear_planned_deployment
   approval_claimed=0
   trap - EXIT ERR
   rm -rf -- "$work_dir"
@@ -1279,7 +1385,7 @@ stop_runtime() {
   local -a existing=()
   while IFS= read -r unit; do
     service_exists "$unit" && existing+=("$unit")
-  done < <(runtime_service_names)
+  done < <(managed_runtime_service_names)
   ((${#existing[@]} > 0)) && service_action stop "${existing[@]}"
 }
 
@@ -1288,7 +1394,7 @@ start_runtime() {
   local -a existing=()
   while IFS= read -r unit; do
     service_exists "$unit" && existing+=("$unit")
-  done < <(runtime_service_names)
+  done < <(runtime_services_expected_active)
   ((${#existing[@]} > 0)) || die "no Retail runtime services are installed"
   service_action restart "${existing[@]}"
 }
@@ -1320,7 +1426,7 @@ verify_local_health() {
         all_active=0
         break
       fi
-    done < <(runtime_service_names)
+    done < <(runtime_services_expected_active)
     if [[ "$all_active" == "1" ]] \
       && curl --silent --show-error --fail --max-time 5 http://127.0.0.1:9898/health >/dev/null \
       && curl --silent --show-error --fail --max-time 5 http://127.0.0.1:9898/readyz >/dev/null; then
@@ -1463,6 +1569,7 @@ deploy_release() {
         start_runtime || true
       fi
     fi
+    clear_planned_deployment || true
     if [[ "$approval_claimed" == "1" && -n "$APPROVAL_CLAIM" ]]; then
       finalize_approval failed "$backup_dir" || true
     fi
@@ -1497,6 +1604,9 @@ deploy_release() {
   rollback_needed=1
 
   runtime_touched=1
+  mark_planned_deployment
+  wait_for_planned_deployment_inhibition \
+    || die "planned deployment inhibition did not become active"
   stop_runtime
   install_runtime_assets "$stage_root" "$expected_sha"
   switch_dist "$next_dist" "$backup_dir"
@@ -1512,6 +1622,7 @@ deploy_release() {
   [[ "$(git_service rev-parse HEAD)" == "$expected_sha" ]] || die "deployed Git SHA mismatch"
   write_release_manifest "$backup_dir" "$old_sha" "$expected_sha" "deployed"
   finalize_approval consumed "$backup_dir"
+  clear_planned_deployment
   trap - EXIT ERR
   log "deployment verified: $expected_sha"
   log "rollback handle: $backup_dir"

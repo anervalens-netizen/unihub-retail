@@ -27,6 +27,13 @@ def _peak_rss_bytes() -> int:
     return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * 1024
 
 
+def _virtual_memory_bytes() -> int:
+    """Return the current Linux virtual address-space size in bytes."""
+    with Path("/proc/self/statm").open(encoding="ascii") as status:
+        pages = int(status.read().split(maxsplit=1)[0])
+    return pages * resource.getpagesize()
+
+
 def _enforce_memory_limit(limit_bytes: int) -> None:
     """Fence a chart writer before it can allocate an unbounded cell graph.
 
@@ -36,8 +43,22 @@ def _enforce_memory_limit(limit_bytes: int) -> None:
     """
     if limit_bytes <= 0:
         raise ValueError("complex export memory limit must be positive")
+    peak_rss = _peak_rss_bytes()
+    if peak_rss >= limit_bytes:
+        raise MemoryError("complex export exceeded RSS budget before rendering")
+
+    # RLIMIT_AS controls virtual address space, not RSS. Native Python modules
+    # reserve substantial address space before rendering starts, so applying
+    # the RSS budget as an absolute RLIMIT_AS leaves almost no allocatable
+    # memory. Limit additional address space to the remaining RSS headroom;
+    # the explicit RSS checks below still enforce the absolute RSS budget.
+    address_space_limit = _virtual_memory_bytes() + (limit_bytes - peak_rss)
     soft, hard = resource.getrlimit(resource.RLIMIT_AS)
-    effective = limit_bytes if hard == resource.RLIM_INFINITY else min(limit_bytes, hard)
+    effective = (
+        address_space_limit
+        if hard == resource.RLIM_INFINITY
+        else min(address_space_limit, hard)
+    )
     if soft != resource.RLIM_INFINITY:
         effective = min(effective, soft)
     resource.setrlimit(resource.RLIMIT_AS, (effective, hard))

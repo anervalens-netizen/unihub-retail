@@ -329,17 +329,23 @@ def test_child_memory_and_output_fences_fail_closed(monkeypatch: pytest.MonkeyPa
 
     set_limit = MagicMock()
     monkeypatch.setattr(child_renderer.resource, "setrlimit", set_limit)
+    monkeypatch.setattr(child_renderer, "_peak_rss_bytes", lambda: 1024)
+    monkeypatch.setattr(child_renderer, "_virtual_memory_bytes", lambda: 8192)
     monkeypatch.setattr(
         child_renderer.resource,
         "getrlimit",
         lambda *_args: (resource.RLIM_INFINITY, resource.RLIM_INFINITY),
     )
     child_renderer._enforce_memory_limit(4096)
-    set_limit.assert_called_with(resource.RLIMIT_AS, (4096, resource.RLIM_INFINITY))
+    set_limit.assert_called_with(resource.RLIMIT_AS, (11264, resource.RLIM_INFINITY))
 
-    monkeypatch.setattr(child_renderer.resource, "getrlimit", lambda *_args: (1024, 2048))
+    monkeypatch.setattr(child_renderer.resource, "getrlimit", lambda *_args: (10000, 12000))
     child_renderer._enforce_memory_limit(4096)
-    set_limit.assert_called_with(resource.RLIMIT_AS, (1024, 2048))
+    set_limit.assert_called_with(resource.RLIMIT_AS, (10000, 12000))
+
+    monkeypatch.setattr(child_renderer, "_peak_rss_bytes", lambda: 4096)
+    with pytest.raises(MemoryError, match="before rendering"):
+        child_renderer._enforce_memory_limit(4096)
 
     monkeypatch.setattr(child_renderer, "_assert_memory_budget", lambda _limit: 1)
     from openpyxl import Workbook
