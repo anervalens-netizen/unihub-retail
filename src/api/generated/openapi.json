@@ -5699,6 +5699,243 @@
         "title": "GrilePermissionsResponse",
         "type": "object"
       },
+      "GrilePilotV2CheckResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "realized": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Realized"
+          },
+          "realized_diff": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Realized Diff"
+          },
+          "status": {
+            "enum": [
+              "ok",
+              "problem",
+              "unavailable"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "target": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target"
+          },
+          "target_diff": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Diff"
+          }
+        },
+        "required": [
+          "status",
+          "message"
+        ],
+        "title": "GrilePilotV2CheckResponse",
+        "type": "object"
+      },
+      "GrilePilotV2ManagerResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "stores": {
+            "items": {
+              "$ref": "#/components/schemas/GrilePilotV2StoreResponse"
+            },
+            "title": "Stores",
+            "type": "array"
+          }
+        },
+        "required": [
+          "name",
+          "stores"
+        ],
+        "title": "GrilePilotV2ManagerResponse",
+        "type": "object"
+      },
+      "GrilePilotV2OverviewResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "managers": {
+            "items": {
+              "$ref": "#/components/schemas/GrilePilotV2ManagerResponse"
+            },
+            "title": "Managers",
+            "type": "array"
+          },
+          "month": {
+            "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
+            "title": "Month",
+            "type": "string"
+          },
+          "store_count": {
+            "minimum": 0.0,
+            "title": "Store Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "month",
+          "store_count",
+          "managers"
+        ],
+        "title": "GrilePilotV2OverviewResponse",
+        "type": "object"
+      },
+      "GrilePilotV2StoreResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "firma": {
+            "title": "Firma",
+            "type": "string"
+          },
+          "forecast_pct_v2": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Forecast Pct V2"
+          },
+          "forecast_v2": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Forecast V2"
+          },
+          "locatie": {
+            "title": "Locatie",
+            "type": "string"
+          },
+          "manager": {
+            "title": "Manager",
+            "type": "string"
+          },
+          "realized_pct_v2": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Realized Pct V2"
+          },
+          "realized_v2": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Realized V2"
+          },
+          "report_check": {
+            "$ref": "#/components/schemas/GrilePilotV2CheckResponse"
+          },
+          "report_cutoff": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Report Cutoff"
+          },
+          "sheet_id": {
+            "title": "Sheet Id",
+            "type": "string"
+          },
+          "site_code": {
+            "title": "Site Code",
+            "type": "string"
+          },
+          "target_v2": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target V2"
+          },
+          "v1_check": {
+            "$ref": "#/components/schemas/GrilePilotV2CheckResponse"
+          }
+        },
+        "required": [
+          "site_code",
+          "sheet_id",
+          "locatie",
+          "firma",
+          "manager",
+          "report_check",
+          "v1_check"
+        ],
+        "title": "GrilePilotV2StoreResponse",
+        "type": "object"
+      },
       "GrileProviderStatus": {
         "additionalProperties": false,
         "properties": {
@@ -19402,6 +19639,54 @@
           }
         ],
         "summary": "Grile Overview",
+        "tags": [
+          "grile"
+        ]
+      }
+    },
+    "/api/grile/pilot-v2": {
+      "get": {
+        "operationId": "grile_pilot_v2_api_grile_pilot_v2_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "month",
+            "required": false,
+            "schema": {
+              "default": "2026-08",
+              "title": "Month",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GrilePilotV2OverviewResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Grile Pilot V2",
         "tags": [
           "grile"
         ]

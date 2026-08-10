@@ -1,5 +1,5 @@
 /* GENERATED FILE. Run npm run contracts:generate; do not edit manually. */
-export const RETAIL_OPENAPI_SHA256 = '3e1b65588af64d258549057a846f3837d5da3ce3d44936f41fcb09dd5ade0edc' as const; // pragma: allowlist secret
+export const RETAIL_OPENAPI_SHA256 = 'd5bfbcbfcc682d2ed3cd85d3703b8a1a2c681a10558cd157288b8b57c0ef76b1' as const; // pragma: allowlist secret
 
 export type RetailDecimal = string & { readonly __retailDecimal: unique symbol };
 
@@ -923,6 +923,42 @@ export interface RetailGrileOverviewSummary {
 
 export interface RetailGrilePermissionsResponse {
   "can_run": boolean;
+}
+
+export interface RetailGrilePilotV2CheckResponse {
+  "message": string;
+  "realized"?: RetailDecimal | null;
+  "realized_diff"?: RetailDecimal | null;
+  "status": "ok" | "problem" | "unavailable";
+  "target"?: RetailDecimal | null;
+  "target_diff"?: RetailDecimal | null;
+}
+
+export interface RetailGrilePilotV2ManagerResponse {
+  "name": string;
+  "stores": Array<RetailGrilePilotV2StoreResponse>;
+}
+
+export interface RetailGrilePilotV2OverviewResponse {
+  "managers": Array<RetailGrilePilotV2ManagerResponse>;
+  "month": string;
+  "store_count": number;
+}
+
+export interface RetailGrilePilotV2StoreResponse {
+  "firma": string;
+  "forecast_pct_v2"?: RetailDecimal | null;
+  "forecast_v2"?: RetailDecimal | null;
+  "locatie": string;
+  "manager": string;
+  "realized_pct_v2"?: RetailDecimal | null;
+  "realized_v2"?: RetailDecimal | null;
+  "report_check": RetailGrilePilotV2CheckResponse;
+  "report_cutoff"?: string | null;
+  "sheet_id": string;
+  "site_code": string;
+  "target_v2"?: RetailDecimal | null;
+  "v1_check": RetailGrilePilotV2CheckResponse;
 }
 
 export interface RetailGrileProviderStatus {
@@ -2484,6 +2520,7 @@ export type RetailOperationId =
   'grile_monthly_permissions_api_grile_monthly_permissions_get' |
   'grile_monthly_run_api_grile_monthly_run_post' |
   'grile_overview_api_grile_overview_get' |
+  'grile_pilot_v2_api_grile_pilot_v2_get' |
   'grile_run_api_grile_run_post' |
   'grile_run_status_api_grile_run_status_get' |
   'grile_store_refresh_operation_api_grile_store_refreshes__operation_id__get' |
@@ -2785,6 +2822,11 @@ export interface RetailOperationResponses {
 
   'grile_overview_api_grile_overview_get': {
     '200': RetailGrileOverviewResponse;
+    '422': RetailHTTPValidationError;
+  }
+
+  'grile_pilot_v2_api_grile_pilot_v2_get': {
+    '200': RetailGrilePilotV2OverviewResponse;
     '422': RetailHTTPValidationError;
   }
 
@@ -3128,6 +3170,7 @@ export interface RetailOperationSuccesses {
   'grile_monthly_permissions_api_grile_monthly_permissions_get': RetailGrilePermissionsResponse;
   'grile_monthly_run_api_grile_monthly_run_post': RetailGrileMonthlyRunResponse;
   'grile_overview_api_grile_overview_get': RetailGrileOverviewResponse;
+  'grile_pilot_v2_api_grile_pilot_v2_get': RetailGrilePilotV2OverviewResponse;
   'grile_run_api_grile_run_post': RetailGrileRunEnqueueResponse;
   'grile_run_status_api_grile_run_status_get': RetailGrileRunStatusResponse;
   'grile_store_refresh_operation_api_grile_store_refreshes__operation_id__get': RetailGrileStoreRefreshOperationEnvelope;
@@ -3236,6 +3279,7 @@ export interface RetailOperationErrors {
   'grile_monthly_permissions_api_grile_monthly_permissions_get': Record<never, never>;
   'grile_monthly_run_api_grile_monthly_run_post': { '422': RetailHTTPValidationError };
   'grile_overview_api_grile_overview_get': { '422': RetailHTTPValidationError };
+  'grile_pilot_v2_api_grile_pilot_v2_get': { '422': RetailHTTPValidationError };
   'grile_run_api_grile_run_post': { '422': RetailHTTPValidationError };
   'grile_run_status_api_grile_run_status_get': { '422': RetailHTTPValidationError };
   'grile_store_refresh_operation_api_grile_store_refreshes__operation_id__get': { '422': RetailHTTPValidationError };
@@ -3443,6 +3487,9 @@ export const RETAIL_OPERATION_ERROR_STATUSES: { readonly [Id in RetailOperationI
     '422',
   ]),
   'grile_overview_api_grile_overview_get': new Set<string>([
+    '422',
+  ]),
+  'grile_pilot_v2_api_grile_pilot_v2_get': new Set<string>([
     '422',
   ]),
   'grile_run_api_grile_run_post': new Set<string>([
@@ -3671,6 +3718,7 @@ export interface RetailOperationQueries {
   'grile_monthly_permissions_api_grile_monthly_permissions_get': Record<never, never>;
   'grile_monthly_run_api_grile_monthly_run_post': Record<never, never>;
   'grile_overview_api_grile_overview_get': { "month"?: string | null };
+  'grile_pilot_v2_api_grile_pilot_v2_get': { "month"?: string };
   'grile_run_api_grile_run_post': { "month"?: string | null };
   'grile_run_status_api_grile_run_status_get': { "month"?: string | null };
   'grile_store_refresh_operation_api_grile_store_refreshes__operation_id__get': Record<never, never>;
@@ -3779,6 +3827,7 @@ export interface RetailOperationPaths {
   'grile_monthly_permissions_api_grile_monthly_permissions_get': Record<never, never>;
   'grile_monthly_run_api_grile_monthly_run_post': Record<never, never>;
   'grile_overview_api_grile_overview_get': Record<never, never>;
+  'grile_pilot_v2_api_grile_pilot_v2_get': Record<never, never>;
   'grile_run_api_grile_run_post': Record<never, never>;
   'grile_run_status_api_grile_run_status_get': Record<never, never>;
   'grile_store_refresh_operation_api_grile_store_refreshes__operation_id__get': { "operation_id": number };
@@ -3887,6 +3936,7 @@ export interface RetailOperationBodies {
   'grile_monthly_permissions_api_grile_monthly_permissions_get': undefined;
   'grile_monthly_run_api_grile_monthly_run_post': RetailMonthlyRunRequest;
   'grile_overview_api_grile_overview_get': undefined;
+  'grile_pilot_v2_api_grile_pilot_v2_get': undefined;
   'grile_run_api_grile_run_post': undefined;
   'grile_run_status_api_grile_run_status_get': undefined;
   'grile_store_refresh_operation_api_grile_store_refreshes__operation_id__get': undefined;
@@ -3995,6 +4045,7 @@ export interface RetailOperationMeta {
   'grile_monthly_permissions_api_grile_monthly_permissions_get': { method: 'get'; path: '/api/grile/monthly/permissions'; responseType: 'json' };
   'grile_monthly_run_api_grile_monthly_run_post': { method: 'post'; path: '/api/grile/monthly/run'; responseType: 'json' };
   'grile_overview_api_grile_overview_get': { method: 'get'; path: '/api/grile/overview'; responseType: 'json' };
+  'grile_pilot_v2_api_grile_pilot_v2_get': { method: 'get'; path: '/api/grile/pilot-v2'; responseType: 'json' };
   'grile_run_api_grile_run_post': { method: 'post'; path: '/api/grile/run'; responseType: 'json' };
   'grile_run_status_api_grile_run_status_get': { method: 'get'; path: '/api/grile/run-status'; responseType: 'json' };
   'grile_store_refresh_operation_api_grile_store_refreshes__operation_id__get': { method: 'get'; path: '/api/grile/store-refreshes/{operation_id}'; responseType: 'json' };
@@ -4616,6 +4667,21 @@ export const RETAIL_DECIMAL_PATHS: { readonly [Id in RetailOperationId]: Readonl
     'managers/*/team_leaders/*/firms/*/stores/*/grila_target',
     'managers/*/team_leaders/*/firms/*/stores/*/sales_diff',
     'managers/*/team_leaders/*/firms/*/stores/*/target_diff',
+  ]),
+  'grile_pilot_v2_api_grile_pilot_v2_get': new Set<string>([
+    'managers/*/stores/*/forecast_pct_v2',
+    'managers/*/stores/*/forecast_v2',
+    'managers/*/stores/*/realized_pct_v2',
+    'managers/*/stores/*/realized_v2',
+    'managers/*/stores/*/report_check/realized',
+    'managers/*/stores/*/report_check/realized_diff',
+    'managers/*/stores/*/report_check/target',
+    'managers/*/stores/*/report_check/target_diff',
+    'managers/*/stores/*/target_v2',
+    'managers/*/stores/*/v1_check/realized',
+    'managers/*/stores/*/v1_check/realized_diff',
+    'managers/*/stores/*/v1_check/target',
+    'managers/*/stores/*/v1_check/target_diff',
   ]),
   'grile_run_api_grile_run_post': new Set<string>([
   ]),
@@ -5423,6 +5489,9 @@ export const RETAIL_DATE_PATHS: { readonly [Id in RetailOperationId]: ReadonlySe
     'managers/*/team_leaders/*/firms/*/stores/*/completion_as_of',
     'managers/*/team_leaders/*/firms/*/stores/*/db_max_sale_date',
   ]),
+  'grile_pilot_v2_api_grile_pilot_v2_get': new Set<string>([
+    'managers/*/stores/*/report_cutoff',
+  ]),
   'grile_run_api_grile_run_post': new Set<string>([
   ]),
   'grile_run_status_api_grile_run_status_get': new Set<string>([
@@ -5711,6 +5780,8 @@ export const RETAIL_DATETIME_PATHS: { readonly [Id in RetailOperationId]: Readon
     'run/heartbeat_at',
     'run/started_at',
   ]),
+  'grile_pilot_v2_api_grile_pilot_v2_get': new Set<string>([
+  ]),
   'grile_run_api_grile_run_post': new Set<string>([
     'run/created_at',
     'run/finished_at',
@@ -5890,6 +5961,7 @@ export const RETAIL_OPERATION_ROUTES = {
   'grile_monthly_permissions_api_grile_monthly_permissions_get': { method: 'get', path: '/api/grile/monthly/permissions', responseType: 'json' },
   'grile_monthly_run_api_grile_monthly_run_post': { method: 'post', path: '/api/grile/monthly/run', responseType: 'json' },
   'grile_overview_api_grile_overview_get': { method: 'get', path: '/api/grile/overview', responseType: 'json' },
+  'grile_pilot_v2_api_grile_pilot_v2_get': { method: 'get', path: '/api/grile/pilot-v2', responseType: 'json' },
   'grile_run_api_grile_run_post': { method: 'post', path: '/api/grile/run', responseType: 'json' },
   'grile_run_status_api_grile_run_status_get': { method: 'get', path: '/api/grile/run-status', responseType: 'json' },
   'grile_store_refresh_operation_api_grile_store_refreshes__operation_id__get': { method: 'get', path: '/api/grile/store-refreshes/{operation_id}', responseType: 'json' },

@@ -12,6 +12,7 @@ from services.grile_monthly import (
     get_latest_monthly_manifest,
     public_manifest_payload,
 )
+from services.grile_pilot_v2 import get_pilot_v2_overview
 
 
 class GrileQueryService:
@@ -27,6 +28,9 @@ class GrileQueryService:
     async def overview(self, month: str | None) -> dict[str, Any]:
         resolved = await self.resolve_month(month)
         return await get_overview(self.pool, resolved)
+
+    async def pilot_v2(self, month: str) -> dict[str, Any]:
+        return await get_pilot_v2_overview(self.repo, month)
 
     async def run_status(self, month: str | None) -> dict[str, Any]:
         resolved = await self.resolve_month(month)

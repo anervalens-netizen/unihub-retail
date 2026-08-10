@@ -6,6 +6,7 @@ import type {
   RetailGrileMonthlyManifestResponse,
   RetailGrileOverviewResponse,
   RetailGrileOverviewSummary,
+  RetailGrilePilotV2OverviewResponse,
   RetailGrileProviderStatus,
   RetailGrileRunEnqueueResponse,
   RetailGrileRunResponse,
@@ -28,6 +29,7 @@ export type GrileTeamLeader = RequiredRuntime<RetailGrileTeamLeaderResponse>;
 export type GrileManager = RequiredRuntime<RetailGrileManagerResponse>;
 export type GrileOverviewSummary = RequiredRuntime<RetailGrileOverviewSummary>;
 export type GrileOverview = RequiredRuntime<RetailGrileOverviewResponse>;
+export type GrilePilotV2Overview = RequiredRuntime<RetailGrilePilotV2OverviewResponse>;
 export type GrileStoreRefreshEnqueue = RequiredRuntime<RetailGrileStoreRefreshEnqueueResponse>;
 export type GrileStoreRefreshOperation = RequiredRuntime<RetailGrileStoreRefreshOperationResponse>;
 
@@ -39,6 +41,16 @@ export async function getGrileOverview(
 ): Promise<GrileOverview> {
   return generatedGet('grile_overview_api_grile_overview_get', {
     params: month ? { month } : undefined,
+    signal,
+  });
+}
+
+export async function getGrilePilotV2(
+  month = '2026-08',
+  signal?: AbortSignal,
+): Promise<GrilePilotV2Overview> {
+  return generatedGet('grile_pilot_v2_api_grile_pilot_v2_get', {
+    params: { month },
     signal,
   });
 }

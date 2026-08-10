@@ -19,6 +19,12 @@ rescrierea baseline-ului sau a migrărilor aplicate.
 
 ## Contractul verificării
 
+Pilotul V2 din `Agenti -> Grile` rămâne separat de cohorta oficială
+`grile_sheets`. Endpointul read-only `/api/grile/pilot-v2` citește numai cele
+cinci foi pilot, le grupează după managerul curent din Retail și compară targetul
+și realizatul cu raportarea Retail și cu ultima proiecție V1. Nu rezervă runuri,
+nu persistă observații și nu participă la finalizare, arhivare sau reset.
+
 `POST /api/grile/run` rezervă și pune în coadă exclusiv o verificare read-only.
 Jobul citește valorile și metadatele Google necesare, compară cu starea Retail și
 persistă rezultatul verificării; nu modifică `agent_targets` și nu scrie în

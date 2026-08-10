@@ -9,6 +9,7 @@ vi.mock('./generated/client', () => ({ generatedGet, generatedPost }));
 
 import {
   getGrileOverview,
+  getGrilePilotV2,
   refreshGrileStore,
 } from './grile';
 
@@ -54,6 +55,17 @@ describe('Grile generated API boundary', () => {
 
     expect(generatedGet).toHaveBeenCalledWith(
       'grile_overview_api_grile_overview_get',
+      { params: { month: '2026-08' }, signal: undefined },
+    );
+  });
+
+  it('uses the generated V2 pilot operation', async () => {
+    generatedGet.mockResolvedValue({ month: '2026-08', store_count: 0, managers: [] });
+
+    await getGrilePilotV2('2026-08');
+
+    expect(generatedGet).toHaveBeenCalledWith(
+      'grile_pilot_v2_api_grile_pilot_v2_get',
       { params: { month: '2026-08' }, signal: undefined },
     );
   });

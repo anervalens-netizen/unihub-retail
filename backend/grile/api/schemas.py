@@ -121,6 +121,42 @@ class GrileOverviewResponse(GrileApiModel):
     managers: list[GrileManagerResponse]
 
 
+class GrilePilotV2CheckResponse(GrileApiModel):
+    status: Literal["ok", "problem", "unavailable"]
+    message: str
+    target: Decimal | None = None
+    realized: Decimal | None = None
+    target_diff: Decimal | None = None
+    realized_diff: Decimal | None = None
+
+
+class GrilePilotV2StoreResponse(GrileApiModel):
+    site_code: str
+    sheet_id: str
+    locatie: str
+    firma: str
+    manager: str
+    target_v2: Decimal | None = None
+    realized_v2: Decimal | None = None
+    realized_pct_v2: Decimal | None = None
+    forecast_v2: Decimal | None = None
+    forecast_pct_v2: Decimal | None = None
+    report_cutoff: date | None = None
+    report_check: GrilePilotV2CheckResponse
+    v1_check: GrilePilotV2CheckResponse
+
+
+class GrilePilotV2ManagerResponse(GrileApiModel):
+    name: str
+    stores: list[GrilePilotV2StoreResponse]
+
+
+class GrilePilotV2OverviewResponse(GrileApiModel):
+    month: MonthStr
+    store_count: NonNegativeInt
+    managers: list[GrilePilotV2ManagerResponse]
+
+
 class GrileRunEnqueueResponse(GrileApiModel):
     status: Literal["enqueued", "already_running"]
     month: MonthStr | None = None

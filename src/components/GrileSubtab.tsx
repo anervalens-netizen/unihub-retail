@@ -488,7 +488,7 @@ export function GrileSubtab({ initialMonth }: { initialMonth?: string }) {
         <CurrentGrileSubtab initialMonth={initialMonth} />
       </div>
       <div hidden={view !== 'pilot-v2'}>
-        <PilotV2Panel />
+        <PilotV2Panel enabled={view === 'pilot-v2'} />
       </div>
     </div>
   );
