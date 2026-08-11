@@ -10,6 +10,7 @@ from urllib.parse import unquote, urlparse
 import asyncpg
 
 from config import DATABASE_AUTHORITY_CONTRACTS, DatabaseAuthority, configured_database_authority
+from env_loader import load_repository_env
 
 logger = logging.getLogger(__name__)
 
@@ -48,20 +49,7 @@ async def database_principal_has_direct_authority(
     )
 
 
-def _load_repo_env_file() -> None:
-    env_path = Path(__file__).resolve().parents[2] / ".env"
-    if not env_path.exists():
-        return
-
-    for raw_line in env_path.read_text(encoding="utf-8").splitlines():
-        line = raw_line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        key, value = line.split("=", 1)
-        os.environ.setdefault(key.strip(), value.strip())
-
-
-_load_repo_env_file()
+load_repository_env()
 
 
 def validate_test_database_url(database_url: str) -> None:

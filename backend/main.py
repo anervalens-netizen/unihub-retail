@@ -6,8 +6,9 @@ import time
 from contextlib import asynccontextmanager
 import logging
 
-from dotenv import find_dotenv, load_dotenv
-load_dotenv(find_dotenv())
+from env_loader import load_repository_env
+
+load_repository_env()
 
 from logging_config import attach_db_error_handler, detach_db_error_handler, setup_logging
 

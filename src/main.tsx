@@ -7,7 +7,7 @@ import { observeCoreWebVitals, webVitalDistributionName } from './lib/webVitals.
 
 import * as Sentry from '@sentry/react';
 
-const sentryDsn = import.meta.env.VITE_GLITCHTIP_DSN;
+const sentryDsn = import.meta.env.VITE_FRONTEND_GLITCHTIP_DSN;
 const supportsSentry = typeof Array.prototype.at === 'function';
 if (sentryDsn && supportsSentry) {
   const connection = (

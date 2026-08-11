@@ -52,10 +52,13 @@ export function getApiErrorMessage(error: unknown, fallback: string): string {
   return detail || fallback;
 }
 
-function resolveApiBaseUrl(): string {
-  const configuredBaseUrl = import.meta.env.VITE_API_BASE_URL;
+export function resolveApiBaseUrl(): string {
+  const configuredBaseUrl = import.meta.env.VITE_API_BASE_URL?.trim();
   if (configuredBaseUrl) {
-    return configuredBaseUrl;
+    if (!configuredBaseUrl.startsWith('/') || configuredBaseUrl.startsWith('//')) {
+      throw new Error('VITE_API_BASE_URL must be a same-origin absolute path');
+    }
+    return configuredBaseUrl.replace(/\/$/, '');
   }
 
   return '/';

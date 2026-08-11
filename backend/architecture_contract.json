@@ -1,0 +1,53 @@
+{
+  "version": 1,
+  "default_flow": "router -> service -> repository",
+  "service_data_access": {
+    "query_services": [
+      "services.agents",
+      "services.campaign_reporting",
+      "services.campaigns.aggregation",
+      "services.campaigns.summary",
+      "services.contest_reporting",
+      "services.dashboard.queries",
+      "services.dashboard.specials_data",
+      "services.exports.loaders",
+      "services.forecast",
+      "services.health",
+      "services.incentive_db",
+      "services.premium_glass",
+      "services.promo_copurchase",
+      "services.retail_metrics",
+      "services.visits_report"
+    ],
+    "transaction_scripts": [
+      "services.grile_agent_targets",
+      "services.importer",
+      "services.product_lists",
+      "services.reporting_refresh",
+      "services.sales_generation",
+      "services.sales_generation_flow",
+      "services.store_pnl_import",
+      "services.store_pnl_shadow",
+      "services.visits_sync"
+    ],
+    "orchestration_boundaries": [
+      "services.campaigns",
+      "services.contests",
+      "services.crm",
+      "services.dashboard.orchestration",
+      "services.erp_reconciliation",
+      "services.exports.service",
+      "services.grile_monthly",
+      "services.hr",
+      "services.imports",
+      "services.request_deadline",
+      "services.stores",
+      "services.target_calculator.proposal"
+    ]
+  },
+  "rules": {
+    "routers_may_access_database": false,
+    "domain_may_import_infrastructure": false,
+    "new_service_data_access_requires_allowlist_and_reasoned_category": true
+  }
+}

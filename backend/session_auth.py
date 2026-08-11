@@ -19,6 +19,7 @@ import httpx
 from cryptography.fernet import Fernet, InvalidToken
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import JSONResponse, RedirectResponse
+from prometheus_client import Counter, Gauge, Histogram
 from pydantic import BaseModel
 from redis.asyncio import Redis
 
@@ -32,19 +33,36 @@ FLOW_PREFIX = "unihub:retail:oidc-flow:v1:"
 SESSION_PREFIX = "unihub:retail:session:v1:"
 LOCK_PREFIX = "unihub:retail:session-refresh:v1:"
 TOKEN_EXCHANGE_TIMEOUT_SECONDS = 15.0
-MAX_JWKS_REFRESH_SECONDS = 30.0
-REFRESH_OWNER_BUFFER_SECONDS = 15.0
-REFRESH_LOCK_TTL_SECONDS = int(
-    TOKEN_EXCHANGE_TIMEOUT_SECONDS
-    + MAX_JWKS_REFRESH_SECONDS
-    + REFRESH_OWNER_BUFFER_SECONDS
-)
-REFRESH_OWNER_TIMEOUT_SECONDS = float(REFRESH_LOCK_TTL_SECONDS - 5)
-REFRESH_WAIT_SECONDS = float(REFRESH_LOCK_TTL_SECONDS + 5)
-REFRESH_POLL_SECONDS = 0.1
+# Refresh is a distributed single-flight operation.  The provider client still
+# has its own 15s transport bound, but the refresh owner is cancelled earlier
+# so one slow identity-provider call cannot consume the complete browser API
+# timeout.  Non-owners fail fast and retry instead of queueing behind the lock.
+REFRESH_OWNER_TIMEOUT_SECONDS = 10.0
+REFRESH_LOCK_TTL_SECONDS = 15
+REFRESH_WAIT_SECONDS = 1.0
+REFRESH_POLL_SECONDS = 0.05
+REFRESH_RETRY_AFTER_SECONDS = 2
 SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
 OPAQUE_RE = re.compile(r"^[A-Za-z0-9_-]{43}$")
 logger = logging.getLogger(__name__)
+SESSION_REFRESH_OWNER_SECONDS = Histogram(
+    "unihub_retail_session_refresh_owner_seconds",
+    "OIDC session refresh owner duration.",
+)
+SESSION_REFRESH_CONTENTION_TOTAL = Counter(
+    "unihub_retail_session_refresh_contention_total",
+    "Session refresh lock contention.",
+    ("scope",),
+)
+SESSION_REFRESH_TIMEOUTS_TOTAL = Counter(
+    "unihub_retail_session_refresh_timeouts_total",
+    "Bounded session refresh timeouts.",
+    ("role",),
+)
+SESSION_REFRESH_WAITERS = Gauge(
+    "unihub_retail_session_refresh_waiters",
+    "Current in-process session refresh waiters.",
+)
 
 
 class SessionProfileResponse(BaseModel):
@@ -101,6 +119,7 @@ _settings: SessionSettings | None = None
 _redis: Redis | None = None
 _cipher: Fernet | None = None
 _http: httpx.AsyncClient | None = None
+_local_refresh_tasks: dict[str, asyncio.Task[dict[str, Any] | None]] = {}
 
 
 def _bounded_text(value: str | None, maximum: int) -> str:
@@ -302,38 +321,31 @@ async def _delete_session_if_unchanged(
     return bool(result)
 
 
-async def _refresh(session_id: str, record: dict[str, Any]) -> dict[str, Any] | None:
-    settings, client, cipher, http = _runtime()
-    lock_key = LOCK_PREFIX + session_id
-    lock_token = secrets.token_urlsafe(24).encode("ascii")
-    if not await client.set(
-        lock_key,
-        lock_token,
-        ex=REFRESH_LOCK_TTL_SECONDS,
-        nx=True,
-    ):
-        deadline = time.monotonic() + REFRESH_WAIT_SECONDS
-        while time.monotonic() < deadline:
+async def _wait_for_distributed_refresh(
+    client: Redis, cipher: Fernet, session_id: str, lock_key: str,
+) -> dict[str, Any]:
+    deadline = time.monotonic() + REFRESH_WAIT_SECONDS
+    while time.monotonic() < deadline:
+        refreshed = _unpack(cipher, await client.get(SESSION_PREFIX + session_id))
+        if refreshed is not None and int(refreshed.get("exp", 0)) > int(time.time()) + 60:
+            return refreshed
+        if await client.get(lock_key) is None:
             refreshed = _unpack(cipher, await client.get(SESSION_PREFIX + session_id))
             if refreshed is not None and int(refreshed.get("exp", 0)) > int(time.time()) + 60:
                 return refreshed
-            if await client.get(lock_key) is None:
-                # The owner can store the refreshed session between our first
-                # session read and the lock read/release.  Re-read once after
-                # observing the released lock so a successful refresh is never
-                # mistaken for logout.
-                refreshed = _unpack(
-                    cipher,
-                    await client.get(SESSION_PREFIX + session_id),
-                )
-                if (
-                    refreshed is not None
-                    and int(refreshed.get("exp", 0)) > int(time.time()) + 60
-                ):
-                    return refreshed
-                raise ConcurrentSessionRefreshUnavailable
-            await asyncio.sleep(REFRESH_POLL_SECONDS)
-        raise ConcurrentSessionRefreshUnavailable
+            raise ConcurrentSessionRefreshUnavailable
+        await asyncio.sleep(REFRESH_POLL_SECONDS)
+    raise ConcurrentSessionRefreshUnavailable
+
+
+async def _refresh_distributed(session_id: str, record: dict[str, Any]) -> dict[str, Any] | None:
+    settings, client, cipher, http = _runtime()
+    lock_key = LOCK_PREFIX + session_id
+    lock_token = secrets.token_urlsafe(24).encode("ascii")
+    if not await client.set(lock_key, lock_token, ex=REFRESH_LOCK_TTL_SECONDS, nx=True):
+        SESSION_REFRESH_CONTENTION_TOTAL.labels(scope="distributed").inc()
+        return await _wait_for_distributed_refresh(client, cipher, session_id, lock_key)
+    owner_started = time.monotonic()
     try:
         async with asyncio.timeout(REFRESH_OWNER_TIMEOUT_SECONDS):
             refresh_token = record.get("refresh_token")
@@ -357,8 +369,10 @@ async def _refresh(session_id: str, record: dict[str, Any]) -> dict[str, Any] | 
                 record["refresh_token"] = tokens["refresh_token"]
             await _store_session(session_id, record)
             return record
+    except TimeoutError:
+        SESSION_REFRESH_TIMEOUTS_TOTAL.labels(role="owner").inc()
+        return None
     except (
-        TimeoutError,
         httpx.HTTPError,
         ValueError,
         json.JSONDecodeError,
@@ -366,10 +380,38 @@ async def _refresh(session_id: str, record: dict[str, Any]) -> dict[str, Any] | 
     ):
         return None
     finally:
+        SESSION_REFRESH_OWNER_SECONDS.observe(time.monotonic() - owner_started)
         try:
             await _release_refresh_lock(client, lock_key, lock_token)
         except Exception:  # noqa: BLE001 - the expiring lock must not discard a refreshed session
             logger.warning("Session refresh lock release failed")
+
+
+async def _refresh(session_id: str, record: dict[str, Any]) -> dict[str, Any] | None:
+    """Share one refresh task inside the process; Valkey fences other processes."""
+    task = _local_refresh_tasks.get(session_id)
+    owner = task is None
+    if task is None:
+        task = asyncio.create_task(_refresh_distributed(session_id, record))
+        _local_refresh_tasks[session_id] = task
+
+        def forget(completed: asyncio.Task[dict[str, Any] | None]) -> None:
+            if _local_refresh_tasks.get(session_id) is completed:
+                _local_refresh_tasks.pop(session_id, None)
+
+        task.add_done_callback(forget)
+    if owner:
+        return await asyncio.shield(task)
+    SESSION_REFRESH_CONTENTION_TOTAL.labels(scope="local").inc()
+    SESSION_REFRESH_WAITERS.inc()
+    try:
+        async with asyncio.timeout(REFRESH_WAIT_SECONDS):
+            return await asyncio.shield(task)
+    except TimeoutError as exc:
+        SESSION_REFRESH_TIMEOUTS_TOTAL.labels(role="waiter").inc()
+        raise ConcurrentSessionRefreshUnavailable from exc
+    finally:
+        SESSION_REFRESH_WAITERS.dec()
 
 
 async def authenticate_session(request: Request) -> AuthClaims:
@@ -389,6 +431,7 @@ async def authenticate_session(request: Request) -> AuthClaims:
             raise HTTPException(
                 status.HTTP_503_SERVICE_UNAVAILABLE,
                 "Session refresh temporarily unavailable",
+                headers={"Retry-After": str(REFRESH_RETRY_AFTER_SECONDS)},
             ) from exc
         if record is None:
             current = _unpack(cipher, await client.get(session_key))
@@ -416,6 +459,7 @@ async def authenticate_session(request: Request) -> AuthClaims:
                     raise HTTPException(
                         status.HTTP_503_SERVICE_UNAVAILABLE,
                         "Session refresh temporarily unavailable",
+                        headers={"Retry-After": str(REFRESH_RETRY_AFTER_SECONDS)},
                     )
     if request.method not in SAFE_METHODS:
         supplied = request.headers.get("X-CSRF-Token", "")

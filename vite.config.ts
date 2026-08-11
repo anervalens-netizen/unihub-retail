@@ -10,10 +10,7 @@ import {PWA_NAVIGATION_DENYLIST} from './src/lib/pwaNavigation';
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
   const backendTarget = process.env.VITE_PROXY_TARGET ?? 'http://localhost:8000';
-  const frontendErrorDsn = env.VITE_FRONTEND_GLITCHTIP_DSN
-    || env.VITE_GLITCHTIP_DSN
-    || env.SENTRY_DSN
-    || '';
+  const frontendErrorDsn = env.VITE_FRONTEND_GLITCHTIP_DSN || '';
   const manualChunks = (id: string) => {
     if (!id.includes('node_modules')) {
       return undefined;
@@ -103,7 +100,7 @@ export default defineConfig(({ mode }) => {
       },
     },
     define: {
-      'import.meta.env.VITE_GLITCHTIP_DSN': JSON.stringify(frontendErrorDsn),
+      'import.meta.env.VITE_FRONTEND_GLITCHTIP_DSN': JSON.stringify(frontendErrorDsn),
     },
     build: {
       modulePreload: {

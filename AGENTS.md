@@ -59,7 +59,10 @@ token; run `node scripts/verify_vendored_npm_packages.mjs` after package changes
 
 ## Architecture rules
 
-- Backend flow is router -> service -> repository. Keep SQL and business logic out of routers.
+- Backend flow defaults to router -> service -> repository. The truthful hybrid
+  exceptions (query services, transaction scripts and orchestration boundaries)
+  are explicit in `backend/architecture_contract.json`; CI rejects unclassified
+  service DB access and stale exceptions. Keep SQL and business logic out of routers.
 - Use `reporting_*` tables/views for reporting. Raw `sales_transactions` is allowed only for explicitly documented cases such as cartela quantity.
 - Retail excludes `Cartele` and locations matching `TR %` from normal retail KPIs.
 - When `site_code` is selected it dominates historical scope; do not also constrain by current company/RM/ASM.

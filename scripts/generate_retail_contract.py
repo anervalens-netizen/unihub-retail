@@ -14,6 +14,7 @@ BACKEND = ROOT / "backend"
 OUTPUT = ROOT / "src" / "api" / "generated"
 OPENAPI_PATH = OUTPUT / "openapi.json"
 TYPES_PATH = OUTPUT / "contracts.ts"
+RUNTIME_SCHEMAS_PATH = OUTPUT / "runtime-schemas.ts"
 HANDWRITTEN_BOUNDARY_PATHS = (
     OUTPUT / "client.ts",
     OUTPUT / "decoded.ts",
@@ -343,6 +344,49 @@ def generate_types(schema: dict[str, Any], operations: list[tuple[str, str, str,
     return "\n".join(lines) + "\n"
 
 
+def generate_runtime_schemas(
+    schema: dict[str, Any],
+    operations: list[tuple[str, str, str, dict[str, Any]]],
+) -> str:
+    """Emit the exact success schemas used to reject malformed live payloads."""
+    response_schemas: dict[str, Any] = {}
+    for identifier, _method, _path, operation in operations:
+        response = success_response(operation)
+        content = response.get("content", {}) if response else {}
+        response_schemas[identifier] = content.get("application/json", {}).get("schema")
+    components = schema.get("components", {}).get("schemas", {})
+    protected_markers = (
+        "session_status_",
+        "session_logout_",
+        "api_import_",
+        "export_operation_",
+        "grile_monthly_",
+        "grile_agent_targets_",
+        "grile_store_refresh_",
+        "finalize_scenario_",
+        "salary_",
+        "salarii_",
+    )
+    protected = [
+        identifier
+        for identifier in response_schemas
+        if any(marker in identifier for marker in protected_markers)
+    ]
+    return (
+        "/* GENERATED FILE. Run npm run contracts:generate; do not edit manually. */\n"
+        "export type RetailRuntimeSchema = Record<string, unknown>;\n\n"
+        "export const RETAIL_COMPONENT_SCHEMAS = "
+        + json.dumps(components, ensure_ascii=False, indent=2, sort_keys=True)
+        + " as const;\n\n"
+        "export const RETAIL_RESPONSE_SCHEMAS = "
+        + json.dumps(response_schemas, ensure_ascii=False, indent=2, sort_keys=True)
+        + " as const;\n\n"
+        "export const RETAIL_RUNTIME_VALIDATED_OPERATIONS = new Set([\n"
+        + "".join(f"  {identifier!r},\n" for identifier in protected)
+        + "] as const);\n"
+    )
+
+
 def build_schema() -> dict[str, Any]:
     sys.path.insert(0, str(BACKEND))
     from main import app  # pylint: disable=import-outside-toplevel
@@ -360,6 +404,7 @@ def main() -> int:
     digest = hashlib.sha256(encoded.encode("utf-8")).hexdigest()
     operations = validate_operations(schema)
     types = generate_types(schema, operations, digest)
+    runtime_schemas = generate_runtime_schemas(schema, operations)
     OUTPUT.mkdir(parents=True, exist_ok=True)
     if "--check" in sys.argv:
         if not OPENAPI_PATH.exists() or OPENAPI_PATH.read_text(encoding="utf-8") != encoded:
@@ -367,6 +412,9 @@ def main() -> int:
             return 1
         if not TYPES_PATH.exists() or TYPES_PATH.read_text(encoding="utf-8") != types:
             print(f"Contract drift: {TYPES_PATH}", file=sys.stderr)
+            return 1
+        if not RUNTIME_SCHEMAS_PATH.exists() or RUNTIME_SCHEMAS_PATH.read_text(encoding="utf-8") != runtime_schemas:
+            print(f"Contract drift: {RUNTIME_SCHEMAS_PATH}", file=sys.stderr)
             return 1
         for path in HANDWRITTEN_BOUNDARY_PATHS:
             if not path.exists() or HANDWRITTEN_BOUNDARY_MARKER not in path.read_text(encoding="utf-8"):
@@ -376,6 +424,7 @@ def main() -> int:
         return 0
     OPENAPI_PATH.write_text(encoded, encoding="utf-8")
     TYPES_PATH.write_text(types, encoding="utf-8")
+    RUNTIME_SCHEMAS_PATH.write_text(runtime_schemas, encoding="utf-8")
     print(f"Generated Retail contract ({len(operations)} operations, {digest}); handwritten BFF boundary retained")
     return 0
 

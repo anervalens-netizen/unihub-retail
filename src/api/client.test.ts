@@ -3,6 +3,7 @@ import {
   ApiError,
   client,
   getApiErrorMessage,
+  resolveApiBaseUrl,
   setCsrfTokenProvider,
   setUnauthorizedHandler,
 } from './client';
@@ -58,6 +59,23 @@ describe('getApiErrorMessage', () => {
   ])('uses the caller fallback for non-actionable errors', (error) => {
     expect(getApiErrorMessage(error, 'Mesaj sigur')).toBe('Mesaj sigur');
   });
+});
+
+describe('resolveApiBaseUrl', () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  it('accepts only normalized same-origin absolute paths', () => {
+    vi.stubEnv('VITE_API_BASE_URL', '/retail-api/');
+    expect(resolveApiBaseUrl()).toBe('/retail-api');
+  });
+
+  it.each(['https://other.example/api', '//other.example/api'])(
+    'rejects cross-origin base %s',
+    (value) => {
+      vi.stubEnv('VITE_API_BASE_URL', value);
+      expect(() => resolveApiBaseUrl()).toThrow('same-origin absolute path');
+    },
+  );
 });
 
 describe('client.get', () => {

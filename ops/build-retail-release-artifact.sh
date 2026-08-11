@@ -4,6 +4,7 @@ set -Eeuo pipefail
 umask 077
 
 PROGRAM="$(basename "$0")"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 die() {
   printf '%s: %s\n' "$PROGRAM" "$*" >&2
@@ -59,13 +60,34 @@ tar --create \
   .
 gzip -n "$BUILD_DIR/${ARCHIVE_NAME%.gz}"
 printf '%s\n' "$SOURCE_SHA" >"$BUILD_DIR/SOURCE_SHA"
+npm_sbom_source="${NPM_SBOM_PATH:-}"
+python_sbom_source="${PYTHON_SBOM_PATH:-}"
+if [[ -n "$npm_sbom_source" ]]; then
+  [[ -f "$npm_sbom_source" && ! -L "$npm_sbom_source" ]] || die "npm SBOM input is unsafe"
+  cp -- "$npm_sbom_source" "$BUILD_DIR/SBOM.npm.cdx.json"
+else
+  (cd "$REPO_ROOT" && npm sbom --package-lock-only --omit=dev --sbom-format cyclonedx --sbom-type application) \
+    >"$BUILD_DIR/SBOM.npm.cdx.json"
+fi
+if [[ -n "$python_sbom_source" ]]; then
+  [[ -f "$python_sbom_source" && ! -L "$python_sbom_source" ]] || die "Python SBOM input is unsafe"
+  cp -- "$python_sbom_source" "$BUILD_DIR/SBOM.python.cdx.json"
+else
+  cyclonedx_py="${CYCLONEDX_PY:-$SCRIPT_DIR/../backend/venv/bin/cyclonedx-py}"
+  [[ -x "$cyclonedx_py" ]] || die "cyclonedx-py is required for faithful Python SBOM generation"
+  "$cyclonedx_py" requirements "$REPO_ROOT/backend/requirements.lock" \
+    --output-reproducible --output-format JSON \
+    --output-file "$BUILD_DIR/SBOM.python.cdx.json"
+fi
+python3 "$SCRIPT_DIR/../scripts/validate_release_sbom.py" npm "$BUILD_DIR/SBOM.npm.cdx.json"
+python3 "$SCRIPT_DIR/../scripts/validate_release_sbom.py" pypi "$BUILD_DIR/SBOM.python.cdx.json"
+
 python3 - "$REPO_ROOT" "$BUILD_DIR" "$SOURCE_SHA" "$ARCHIVE_NAME" \
   "${RELEASE_BUILDER_ID:-local:ops/build-retail-release-artifact.sh}" \
   "${RELEASE_INVOCATION_ID:-local}" <<'PY'
 import hashlib
 import json
 import pathlib
-import re
 import sys
 
 repo, output, source_sha, archive_name, builder_id, invocation_id = sys.argv[1:]
@@ -73,28 +95,59 @@ repo_path = pathlib.Path(repo)
 output_path = pathlib.Path(output)
 archive_path = output_path / archive_name
 
-components = []
-lock = json.loads((repo_path / "package-lock.json").read_text(encoding="utf-8"))
-for package_path, package in sorted(lock.get("packages", {}).items()):
-    if not package_path or not package_path.startswith("node_modules/"):
-        continue
-    name = package.get("name") or package_path.removeprefix("node_modules/")
-    version = package.get("version")
-    if version:
-        components.append({"type": "library", "name": name, "version": version, "purl": f"pkg:npm/{name}@{version}"})
-requirement = re.compile(r"^([A-Za-z0-9_.-]+)==([^ ;\\]+)")
-for line in (repo_path / "backend/requirements.lock").read_text(encoding="utf-8").splitlines():
-    match = requirement.match(line)
-    if match:
-        name, version = match.groups()
-        components.append({"type": "library", "name": name, "version": version, "purl": f"pkg:pypi/{name.lower()}@{version}"})
-components.sort(key=lambda item: (item["purl"], item["name"]))
+def prefixed_inventory(filename, prefix, required_scope=False):
+    payload = json.loads((output_path / filename).read_text(encoding="utf-8"))
+    components = list(payload.get("components", []))
+    metadata_component = payload.get("metadata", {}).get("component")
+    if isinstance(metadata_component, dict):
+        components.append(metadata_component)
+    refs = {}
+    for component in components:
+        old_ref = component.get("bom-ref")
+        if isinstance(old_ref, str):
+            refs[old_ref] = f"{prefix}:{old_ref}"
+            component["bom-ref"] = refs[old_ref]
+        if required_scope and str(component.get("purl", "")).startswith("pkg:pypi/"):
+            component["scope"] = "required"
+    dependencies = []
+    for dependency in payload.get("dependencies", []):
+        ref = refs.get(dependency.get("ref"))
+        if not ref:
+            continue
+        dependencies.append({
+            "ref": ref,
+            "dependsOn": [refs[item] for item in dependency.get("dependsOn", []) if item in refs],
+        })
+    roots = []
+    if isinstance(metadata_component, dict) and isinstance(metadata_component.get("bom-ref"), str):
+        roots.append(metadata_component["bom-ref"])
+    elif prefix == "python":
+        roots.extend(component["bom-ref"] for component in components if component.get("scope") == "required")
+    return components, dependencies, roots
+
+npm_components, npm_dependencies, npm_roots = prefixed_inventory("SBOM.npm.cdx.json", "npm")
+python_components, python_dependencies, python_roots = prefixed_inventory(
+    "SBOM.python.cdx.json", "python", required_scope=True
+)
+root_ref = f"pkg:github/anervalens-netizen/unihub-retail@{source_sha}"
 sbom = {
     "bomFormat": "CycloneDX",
-    "specVersion": "1.5",
+    "specVersion": "1.6",
     "version": 1,
-    "metadata": {"component": {"type": "application", "name": "unihub-retail", "version": source_sha}},
-    "components": components,
+    "metadata": {"component": {
+        "bom-ref": root_ref,
+        "type": "application",
+        "name": "unihub-retail",
+        "version": source_sha,
+        "purl": root_ref,
+    }},
+    "components": npm_components + python_components,
+    "dependencies": [
+        {"ref": root_ref, "dependsOn": npm_roots + python_roots},
+        *npm_dependencies,
+        *python_dependencies,
+    ],
+    "compositions": [{"aggregate": "complete", "assemblies": [root_ref]}],
 }
 (output_path / "SBOM.cdx.json").write_text(json.dumps(sbom, sort_keys=True, separators=(",", ":")) + "\n", encoding="utf-8")
 
@@ -116,14 +169,18 @@ provenance = {
 (output_path / "PROVENANCE.json").write_text(json.dumps(provenance, sort_keys=True, separators=(",", ":")) + "\n", encoding="utf-8")
 
 evidence = {}
-for name in (archive_name, "SOURCE_SHA", "SBOM.cdx.json", "PROVENANCE.json"):
+for name in (
+    archive_name, "SOURCE_SHA", "SBOM.cdx.json", "SBOM.npm.cdx.json",
+    "SBOM.python.cdx.json", "PROVENANCE.json",
+):
     evidence[name] = hashlib.sha256((output_path / name).read_bytes()).hexdigest()
 manifest = {"schemaVersion": 1, "sourceSha": source_sha, "archive": archive_name, "sha256": evidence}
 (output_path / "RELEASE_MANIFEST.json").write_text(json.dumps(manifest, sort_keys=True, separators=(",", ":")) + "\n", encoding="utf-8")
 PY
 (
   cd "$BUILD_DIR"
-  sha256sum SOURCE_SHA "$ARCHIVE_NAME" SBOM.cdx.json PROVENANCE.json RELEASE_MANIFEST.json > SHA256SUMS
+  sha256sum SOURCE_SHA "$ARCHIVE_NAME" SBOM.cdx.json SBOM.npm.cdx.json \
+    SBOM.python.cdx.json PROVENANCE.json RELEASE_MANIFEST.json > SHA256SUMS
 )
 
 mv -- "$BUILD_DIR" "$OUTPUT_DIR"

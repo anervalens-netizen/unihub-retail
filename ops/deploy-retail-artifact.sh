@@ -449,7 +449,11 @@ import sys
 
 root = pathlib.Path(sys.argv[1])
 archive_name, expected_sha, expected_digest = sys.argv[2:]
-required = {"SOURCE_SHA", "SHA256SUMS", "SBOM.cdx.json", "PROVENANCE.json", "RELEASE_MANIFEST.json", archive_name}
+required = {
+    "SOURCE_SHA", "SHA256SUMS", "SBOM.cdx.json", "SBOM.npm.cdx.json",
+    "SBOM.python.cdx.json", "PROVENANCE.json", "RELEASE_MANIFEST.json",
+    archive_name,
+}
 for name in required:
     path = root / name
     if not path.is_file() or path.is_symlink():
@@ -468,6 +472,10 @@ if len(subjects) != 1 or subjects[0].get("name") != archive_name or subjects[0].
 sbom = json.loads((root / "SBOM.cdx.json").read_text(encoding="utf-8"))
 if sbom.get("bomFormat") != "CycloneDX" or sbom.get("metadata", {}).get("component", {}).get("version") != expected_sha:
     raise SystemExit("release SBOM identity mismatch")
+if not sbom.get("components") or not sbom.get("dependencies"):
+    raise SystemExit("release SBOM inventory or dependency graph is empty")
+if any("node_modules" in str(item.get("purl", "")) for item in sbom["components"]):
+    raise SystemExit("release SBOM contains an invalid node_modules PURL")
 seen = set()
 for line in (root / "SHA256SUMS").read_text(encoding="utf-8").splitlines():
     digest, name = line.split(maxsplit=1)

@@ -1,0 +1,12 @@
+{
+	auto_https off
+}
+
+(security_headers) {
+}
+
+(proxy_defaults) {
+	import security_headers
+}
+
+import retail.caddy
