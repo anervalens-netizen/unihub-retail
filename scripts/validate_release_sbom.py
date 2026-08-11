@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -48,12 +49,84 @@ def validate(path: Path, ecosystem: str) -> dict[str, Any]:
     return payload
 
 
+def _has_hashes(component: dict[str, Any]) -> bool:
+    candidates = list(component.get("hashes", []))
+    for reference in component.get("externalReferences", []):
+        if isinstance(reference, dict):
+            candidates.extend(reference.get("hashes", []))
+    return any(
+        isinstance(item, dict) and item.get("alg") and item.get("content")
+        for item in candidates
+    )
+
+
+def validate_aggregate(path: Path, expected_sha: str | None) -> dict[str, Any]:
+    payload = validate(path, "npm")
+    validate(path, "pypi")
+    serial_number = payload.get("serialNumber")
+    if not isinstance(serial_number, str) or not serial_number.startswith("urn:uuid:"):
+        raise ValueError(f"{path}: aggregate serialNumber is missing")
+    try:
+        uuid.UUID(serial_number.removeprefix("urn:uuid:"))
+    except ValueError as exc:
+        raise ValueError(f"{path}: aggregate serialNumber is invalid") from exc
+
+    root = payload.get("metadata", {}).get("component", {})
+    root_ref = root.get("bom-ref")
+    if (
+        root.get("type") != "application"
+        or root.get("name") != "unihub-retail"
+        or not isinstance(root_ref, str)
+        or root.get("purl") != root_ref
+    ):
+        raise ValueError(f"{path}: aggregate application identity is invalid")
+    if expected_sha is not None and root.get("version") != expected_sha:
+        raise ValueError(f"{path}: aggregate source SHA mismatch")
+
+    compositions = payload.get("compositions", [])
+    if not any(
+        isinstance(item, dict)
+        and item.get("aggregate") == "complete"
+        and root_ref in item.get("assemblies", [])
+        for item in compositions
+    ):
+        raise ValueError(f"{path}: aggregate completeness declaration is missing")
+
+    refs: set[str] = set()
+    for component in payload["components"]:
+        if not isinstance(component, dict):
+            raise ValueError(f"{path}: aggregate component is invalid")
+        ref = component.get("bom-ref")
+        purl = component.get("purl")
+        if not isinstance(ref, str):
+            raise ValueError(f"{path}: aggregate component bom-ref is missing")
+        if ref in refs:
+            raise ValueError(f"{path}: aggregate component bom-ref is duplicated: {ref}")
+        if not isinstance(purl, str):
+            raise ValueError(f"{path}: aggregate component PURL is missing: {ref}")
+        refs.add(ref)
+        if component.get("scope") not in {"required", "optional", "excluded"}:
+            raise ValueError(f"{path}: aggregate component scope is missing: {purl}")
+        if (
+            component.get("type") != "application"
+            and purl.startswith(("pkg:npm/", "pkg:pypi/"))
+            and not _has_hashes(component)
+        ):
+            raise ValueError(f"{path}: aggregate component hash evidence is missing: {purl}")
+    return payload
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("ecosystem", choices=("npm", "pypi"))
+    parser.add_argument("ecosystem", choices=("npm", "pypi", "aggregate"))
     parser.add_argument("path", type=Path)
+    parser.add_argument("--expected-sha")
     args = parser.parse_args()
-    payload = validate(args.path, args.ecosystem)
+    payload = (
+        validate_aggregate(args.path, args.expected_sha)
+        if args.ecosystem == "aggregate"
+        else validate(args.path, args.ecosystem)
+    )
     print(
         f"CycloneDX {args.ecosystem} valid: {len(payload['components'])} components, "
         f"{len(payload['dependencies'])} graph nodes"

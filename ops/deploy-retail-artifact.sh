@@ -446,6 +446,7 @@ import hashlib
 import json
 import pathlib
 import sys
+import uuid
 
 root = pathlib.Path(sys.argv[1])
 archive_name, expected_sha, expected_digest = sys.argv[2:]
@@ -472,10 +473,36 @@ if len(subjects) != 1 or subjects[0].get("name") != archive_name or subjects[0].
 sbom = json.loads((root / "SBOM.cdx.json").read_text(encoding="utf-8"))
 if sbom.get("bomFormat") != "CycloneDX" or sbom.get("metadata", {}).get("component", {}).get("version") != expected_sha:
     raise SystemExit("release SBOM identity mismatch")
+serial_number = sbom.get("serialNumber", "")
+try:
+    if not serial_number.startswith("urn:uuid:"):
+        raise ValueError
+    uuid.UUID(serial_number.removeprefix("urn:uuid:"))
+except (AttributeError, ValueError):
+    raise SystemExit("release SBOM serialNumber is missing or invalid")
 if not sbom.get("components") or not sbom.get("dependencies"):
     raise SystemExit("release SBOM inventory or dependency graph is empty")
 if any("node_modules" in str(item.get("purl", "")) for item in sbom["components"]):
     raise SystemExit("release SBOM contains an invalid node_modules PURL")
+root_ref = sbom.get("metadata", {}).get("component", {}).get("bom-ref")
+if not any(
+    item.get("aggregate") == "complete" and root_ref in item.get("assemblies", [])
+    for item in sbom.get("compositions", [])
+):
+    raise SystemExit("release SBOM completeness declaration is missing")
+for component in sbom["components"]:
+    purl = str(component.get("purl", ""))
+    if component.get("scope") not in {"required", "optional", "excluded"}:
+        raise SystemExit(f"release SBOM component scope is missing: {purl}")
+    hashes = list(component.get("hashes", []))
+    for reference in component.get("externalReferences", []):
+        hashes.extend(reference.get("hashes", []))
+    if (
+        component.get("type") != "application"
+        and purl.startswith(("pkg:npm/", "pkg:pypi/"))
+        and not any(item.get("alg") and item.get("content") for item in hashes)
+    ):
+        raise SystemExit(f"release SBOM component hash evidence is missing: {purl}")
 seen = set()
 for line in (root / "SHA256SUMS").read_text(encoding="utf-8").splitlines():
     digest, name = line.split(maxsplit=1)
