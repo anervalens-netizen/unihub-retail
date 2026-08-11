@@ -314,6 +314,10 @@ jobs:
           cat backend-test-report.txt
           exit $status
 
+      - name: Targeted business mutation gate
+        working-directory: .
+        run: backend/venv/bin/python scripts/run_targeted_mutation_tests.py
+
       - name: Backend changed-line coverage gate
         if: github.event_name == 'pull_request'
         env:
@@ -394,9 +398,6 @@ jobs:
             --base "$COVERAGE_BASE_SHA" \
             --frontend-lcov coverage/frontend/lcov.info \
             --minimum 80
-
-      - name: Targeted mutation gate
-        run: npm run test:mutation
 
       - name: Runtime dependency audit
         run: npm audit --omit=dev --audit-level=high

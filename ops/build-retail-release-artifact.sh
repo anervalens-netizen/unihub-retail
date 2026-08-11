@@ -89,6 +89,7 @@ import hashlib
 import json
 import pathlib
 import sys
+import uuid
 
 repo, output, source_sha, archive_name, builder_id, invocation_id = sys.argv[1:]
 repo_path = pathlib.Path(repo)
@@ -133,6 +134,7 @@ root_ref = f"pkg:github/anervalens-netizen/unihub-retail@{source_sha}"
 sbom = {
     "bomFormat": "CycloneDX",
     "specVersion": "1.6",
+    "serialNumber": f"urn:uuid:{uuid.uuid5(uuid.NAMESPACE_URL, root_ref)}",
     "version": 1,
     "metadata": {"component": {
         "bom-ref": root_ref,
@@ -177,6 +179,8 @@ for name in (
 manifest = {"schemaVersion": 1, "sourceSha": source_sha, "archive": archive_name, "sha256": evidence}
 (output_path / "RELEASE_MANIFEST.json").write_text(json.dumps(manifest, sort_keys=True, separators=(",", ":")) + "\n", encoding="utf-8")
 PY
+python3 "$SCRIPT_DIR/../scripts/validate_release_sbom.py" aggregate \
+  "$BUILD_DIR/SBOM.cdx.json" --expected-sha "$SOURCE_SHA"
 (
   cd "$BUILD_DIR"
   sha256sum SOURCE_SHA "$ARCHIVE_NAME" SBOM.cdx.json SBOM.npm.cdx.json \

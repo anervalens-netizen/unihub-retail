@@ -233,7 +233,10 @@ groups:
           description: "{{ $labels.service_role }} p95 is {{ $value | humanizeDuration }}."
 
       - alert: UniHubRetailGrileReconciliationStale
-        expr: time() - unihub_grile_monthly_reconcile_last_success_timestamp_seconds > 180
+        expr: >-
+          time() - unihub_grile_monthly_reconcile_last_success_timestamp_seconds{
+            service_role="grile"
+          } > 180
         for: 2m
         labels: {severity: critical}
         annotations:
@@ -241,7 +244,10 @@ groups:
           description: "The last successful reconciliation is {{ $value | humanizeDuration }} old."
 
       - alert: UniHubRetailGrileReconciliationFailures
-        expr: unihub_grile_monthly_reconcile_consecutive_failures >= 3
+        expr: >-
+          unihub_grile_monthly_reconcile_consecutive_failures{
+            service_role="grile"
+          } >= 3
         for: 1m
         labels: {severity: critical}
         annotations:

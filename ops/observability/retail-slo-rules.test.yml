@@ -87,3 +87,36 @@ tests:
             exp_annotations:
               summary: Retail worker reports itself down
               description: unihub-retail-grile (grile) has reported down for 2 minutes.
+
+  - name: Grile reconciliation alerts ignore zero gauges exported by other worker roles
+    interval: 1m
+    input_series:
+      - series: 'unihub_grile_monthly_reconcile_last_success_timestamp_seconds{job="unihub-retail-operations",service_role="operations"}'
+        values: '0x10'
+      - series: 'unihub_grile_monthly_reconcile_last_success_timestamp_seconds{job="unihub-retail-grile",service_role="grile"}'
+        values: '0x10'
+      - series: 'unihub_grile_monthly_reconcile_consecutive_failures{job="unihub-retail-imports",service_role="imports"}'
+        values: '4x10'
+      - series: 'unihub_grile_monthly_reconcile_consecutive_failures{job="unihub-retail-grile",service_role="grile"}'
+        values: '4x10'
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: UniHubRetailGrileReconciliationStale
+        exp_alerts:
+          - exp_labels:
+              job: unihub-retail-grile
+              service_role: grile
+              severity: critical
+            exp_annotations:
+              summary: Retail Grile monthly reconciliation is stale
+              description: The last successful reconciliation is 6m 0s old.
+      - eval_time: 5m
+        alertname: UniHubRetailGrileReconciliationFailures
+        exp_alerts:
+          - exp_labels:
+              job: unihub-retail-grile
+              service_role: grile
+              severity: critical
+            exp_annotations:
+              summary: Retail Grile reconciliation repeatedly fails
+              description: Monthly reconciliation has failed 4 consecutive times.

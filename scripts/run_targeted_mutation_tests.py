@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Deterministic mutation gate for money and Target state transitions."""
+"""Deterministic mutation gate for critical Retail business boundaries."""
 
 from __future__ import annotations
 
 import importlib.util
+import sys
 import tempfile
 from decimal import Decimal
 from pathlib import Path
@@ -25,7 +26,12 @@ def load_mutant(source: Path, old: str, new: str, name: str) -> ModuleType:
         if spec is None or spec.loader is None:
             raise RuntimeError(f"Cannot load mutant {name}")
         module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
+        sys.modules[name] = module
+        try:
+            spec.loader.exec_module(module)
+        except Exception:
+            sys.modules.pop(name, None)
+            raise
         return module
 
 
@@ -41,6 +47,9 @@ def expect_killed(label: str, probe: Callable[[], None]) -> None:
 def main() -> int:
     calculations = ROOT / "backend/services/target_calculator/calculations.py"
     scenarios = ROOT / "backend/services/target_calculator/scenarios.py"
+    asm_salary = ROOT / "backend/services/asm_salary.py"
+    sales_generation = ROOT / "backend/services/sales_generation.py"
+    grile_monthly_state = ROOT / "backend/grile/domain/monthly_state.py"
 
     rounding = load_mutant(
         calculations,
@@ -67,7 +76,57 @@ def main() -> int:
             (False, True),
         ),
     )
-    print("Mutation score: 3/3 = 100%")
+
+    asm_boundary = load_mutant(
+        asm_salary,
+        "if exact_pct >= threshold:",
+        "if exact_pct > threshold:",
+        "mutant_asm_boundary",
+    )
+    expect_killed(
+        "asm-tier-inclusive-boundary",
+        lambda: assert_equal(
+            asm_boundary.commission_for_tier(Decimal("79"), asm_boundary.ZONE_TARGET_TIERS),
+            700,
+        ),
+    )
+
+    import_promotion = load_mutant(
+        sales_generation,
+        "if classification == SalesAnomalyClassification.STRUCTURAL_CONTRADICTION.value:",
+        "if classification != SalesAnomalyClassification.STRUCTURAL_CONTRADICTION.value:",
+        "mutant_import_promotion",
+    )
+    expect_killed(
+        "import-structural-anomaly-blocks-promotion",
+        lambda: assert_equal(
+            (
+                import_promotion.manifest_has_structural_contradictions(
+                    {"anomalies": [{"classification": "structural_contradiction"}]}
+                ),
+                import_promotion.manifest_has_structural_contradictions(
+                    {"anomalies": [{"classification": "informational"}]}
+                ),
+            ),
+            (True, False),
+        ),
+    )
+
+    grile_completion = load_mutant(
+        grile_monthly_state,
+        "(MonthlyOperationState.RUNNING, MonthlyOperationEvent.COMPLETE): MonthlyOperationState.COMPLETED,",
+        "(MonthlyOperationState.RUNNING, MonthlyOperationEvent.COMPLETE): MonthlyOperationState.FAILED,",
+        "mutant_grile_completion",
+    )
+    expect_killed(
+        "grile-running-completes-successfully",
+        lambda: assert_equal(
+            grile_completion.transition_monthly_operation("running", "complete").current.value,
+            "completed",
+        ),
+    )
+
+    print("Mutation score: 6/6 = 100%")
     return 0
 
 

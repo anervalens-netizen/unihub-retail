@@ -17,7 +17,7 @@
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage.enabled",
-    "test:mutation": "python3 scripts/run_targeted_mutation_tests.py",
+    "test:mutation": "backend/venv/bin/python scripts/run_targeted_mutation_tests.py",
     "test:watch": "vitest",
     "lint": "eslint . --max-warnings=0",
     "typecheck": "tsc --noEmit",
