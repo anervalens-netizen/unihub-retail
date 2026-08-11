@@ -102,15 +102,11 @@ def test_session_settings_use_provider_endpoints_not_issuer_children() -> None:
     assert settings.redirect_uri == "https://retail.example.invalid/auth/callback"
 
 
-def test_refresh_singleflight_window_covers_bounded_owner_work() -> None:
-    bounded_provider_work = (
-        session_auth.TOKEN_EXCHANGE_TIMEOUT_SECONDS
-        + session_auth.MAX_JWKS_REFRESH_SECONDS
-    )
-    assert session_auth.REFRESH_LOCK_TTL_SECONDS >= bounded_provider_work + 10
-    assert bounded_provider_work + 10 <= session_auth.REFRESH_OWNER_TIMEOUT_SECONDS
+def test_refresh_singleflight_window_is_bounded_below_browser_timeout() -> None:
+    assert session_auth.REFRESH_OWNER_TIMEOUT_SECONDS < 15
     assert session_auth.REFRESH_OWNER_TIMEOUT_SECONDS < session_auth.REFRESH_LOCK_TTL_SECONDS
-    assert session_auth.REFRESH_WAIT_SECONDS > session_auth.REFRESH_LOCK_TTL_SECONDS
+    assert session_auth.REFRESH_WAIT_SECONDS <= 2
+    assert session_auth.REFRESH_WAIT_SECONDS < session_auth.REFRESH_OWNER_TIMEOUT_SECONDS
 
 
 def test_production_session_settings_fail_closed_without_leaking_values(
@@ -284,7 +280,7 @@ async def test_expired_concurrent_session_requests_singleflight_refresh(
 
 
 @pytest.mark.anyio
-async def test_slow_session_refresh_does_not_log_out_waiting_request(
+async def test_slow_session_refresh_fails_waiters_fast_without_herding(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     redis = FakeRedis()
@@ -311,12 +307,29 @@ async def test_slow_session_refresh_does_not_log_out_waiting_request(
     )
     monkeypatch.setattr(session_auth, "verify_oidc_token", AsyncMock(return_value=refreshed))
 
-    claims = await asyncio.gather(
-        session_auth.authenticate_session(_request("GET", session_id)),
+    owner = asyncio.create_task(
         session_auth.authenticate_session(_request("GET", session_id)),
     )
+    await asyncio.sleep(0)
+    started = time.monotonic()
+    waiters = await asyncio.gather(
+        *(
+            session_auth.authenticate_session(_request("GET", session_id))
+            for _ in range(12)
+        ),
+        return_exceptions=True,
+    )
+    elapsed = time.monotonic() - started
+    claims = await owner
 
-    assert [claim.sub for claim in claims] == ["subject", "subject"]
+    assert claims.sub == "subject"
+    assert elapsed < 1.5
+    assert all(
+        isinstance(result, session_auth.HTTPException)
+        and result.status_code == 503
+        and result.headers == {"Retry-After": "2"}
+        for result in waiters
+    )
     assert len(http.posts) == 1
     assert session_auth.SESSION_PREFIX + session_id in redis.values
 
@@ -394,6 +407,7 @@ async def test_refresh_waiter_timeout_preserves_owner_session(
         await session_auth.authenticate_session(_request("GET", session_id))
 
     assert unavailable.value.status_code == 503
+    assert unavailable.value.headers == {"Retry-After": "2"}
     assert session_key in redis.values
     assert redis.values[lock_key] == b"other-owner"
 

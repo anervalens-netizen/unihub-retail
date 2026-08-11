@@ -13,11 +13,7 @@ from repositories.target_calculator import (
     TargetScenarioFinalizedError,
     TargetScenarioVersionConflict,
 )
-from services.target_calculator.calculations import (
-    MONEY,
-    TargetBudgetInfeasibleError,
-    money,
-)
+from services.target_calculator.calculations import TargetBudgetInfeasibleError, money
 from services.target_calculator.profitability import (
     ProfitabilityConstants,
     forecast_coverage,
@@ -27,16 +23,13 @@ from services.target_calculator.profitability import (
 )
 from services.target_calculator.rules import (
     canonical_input_hash,
-    clamp_decimal,
     realized_for_calculation,
     unique_months,
-    weighted_available,
 )
+from services.target_calculator.proposal_rows import _calculated_rows
 from services.target_calculator.seasonality import (
     build_source_month_configuration,
     seasonality_pair_configuration,
-    shift_month,
-    weighted_ratio,
 )
 from services.target_calculator.warnings import unique_warnings
 from services.target_rule_registry import (
@@ -121,9 +114,61 @@ class ProposalContext:
     canonical_input_hash: Callable[[Any], str] = canonical_input_hash
 
 
-async def calculate_proposal(
-    context: ProposalContext, payload: dict[str, Any]
-) -> dict[str, Any]:
+@dataclass(frozen=True)
+class ProposalParameters:
+    total_target: Decimal
+    min_floor: Decimal
+    floor_pct: Decimal
+    cap_pct: Decimal
+    trend_weight: Decimal
+    seasonality_min: Decimal
+    seasonality_max: Decimal
+    trend_min: Decimal
+    trend_max: Decimal
+
+
+@dataclass(frozen=True)
+class ProposalScope:
+    target_month: str
+    cohort_month: str
+    seasonality_years: int
+    source_pairs: list[Any]
+    source_months: list[dict[str, Any]]
+    cohort: list[Any]
+    rule_set: Any
+    parameters: ProposalParameters
+
+
+@dataclass(frozen=True)
+class ProposalMetrics:
+    months: list[str]
+    site_codes: list[str]
+    metric_map: dict[tuple[str, str], SourceMetric]
+    totals: dict[str, PeriodTotals]
+    regional_month_values: dict[tuple[str, str], Decimal]
+    forecast_factors: dict[str, Decimal]
+    input_sha256: str
+
+
+def _proposal_parameters(context: ProposalContext, payload: dict[str, Any]) -> ProposalParameters:
+    try:
+        values = normalize_proposal_parameters(
+            payload,
+            default_min_floor=context.default_min_floor,
+            default_floor_pct=context.default_floor_pct,
+            default_cap_pct=context.default_cap_pct,
+            default_trend_weight=context.default_trend_weight,
+            default_seasonality_min=context.default_seasonality_min,
+            default_seasonality_max=context.default_seasonality_max,
+            default_trend_min=context.default_trend_min,
+            default_trend_max=context.default_trend_max,
+        )
+    except (KeyError, ValueError, ArithmeticError):
+        raise HTTPException(status_code=400, detail="Parametrii de calcul nu sunt valizi.") from None
+    return ProposalParameters(*values)
+
+
+async def _proposal_scope(context: ProposalContext, payload: dict[str, Any]) -> ProposalScope:
     target_month = payload["target_month"]
     seasonality_years = int(payload.get("seasonality_years") or context.default_seasonality_years)
     seasonality_years = max(1, min(seasonality_years, context.max_seasonality_years))
@@ -145,32 +190,7 @@ async def calculate_proposal(
     cohort = await context.repo.get_active_cohort(cohort_month, target_month)
     if not cohort:
         raise HTTPException(status_code=400, detail="Luna de cohorta nu are magazine active.")
-
-    try:
-        (
-            total_target,
-            min_floor,
-            floor_pct,
-            cap_pct,
-            trend_weight,
-            seasonality_min,
-            seasonality_max,
-            trend_min,
-            trend_max,
-        ) = normalize_proposal_parameters(
-            payload,
-            default_min_floor=context.default_min_floor,
-            default_floor_pct=context.default_floor_pct,
-            default_cap_pct=context.default_cap_pct,
-            default_trend_weight=context.default_trend_weight,
-            default_seasonality_min=context.default_seasonality_min,
-            default_seasonality_max=context.default_seasonality_max,
-            default_trend_min=context.default_trend_min,
-            default_trend_max=context.default_trend_max,
-        )
-    except (KeyError, ValueError, ArithmeticError):
-        raise HTTPException(status_code=400, detail="Parametrii de calcul nu sunt valizi.") from None
-
+    parameters = _proposal_parameters(context, payload)
     rule_record = await context.repo.get_effective_target_rule_set(target_month)
     if not rule_record:
         raise HTTPException(
@@ -198,23 +218,29 @@ async def calculate_proposal(
                 status_code=409,
                 detail=f"Rule-set-ul Target nu se reconciliaza cu master/cohort; nu s-a creat nicio propunere. {exc}",
             ) from None
+    return ProposalScope(
+        target_month=target_month,
+        cohort_month=cohort_month,
+        seasonality_years=seasonality_years,
+        source_pairs=source_pairs,
+        source_months=source_months,
+        cohort=list(cohort),
+        rule_set=target_rule_set,
+        parameters=parameters,
+    )
 
-    months = unique_months([item["month"] for item in source_months])
-    site_codes = [row["site_code"] for row in cohort]
-    metrics = await context.repo.get_source_metrics(site_codes, months)
-    async with context.repo.pool.acquire() as conn:
-        forecast_factors = {
-            month: Decimal(str(await context.get_forecast_factor(conn, month)))
-            for month in months
-        }
-    calculation_input_sha256 = context.canonical_input_hash({
-        "target_month": target_month,
-        "cohort_month": cohort_month,
-        "source_months": source_months,
-        "cohort": [dict(row) for row in cohort],
-        "source_metrics": [dict(row) for row in metrics],
-        "forecast_factors": {month: str(forecast_factors[month]) for month in sorted(forecast_factors)},
-    })
+
+def _metric_aggregates(
+    cohort: list[Any],
+    metrics: list[Any],
+    months: list[str],
+    site_codes: list[str],
+    forecast_factors: dict[str, Decimal],
+) -> tuple[
+    dict[tuple[str, str], SourceMetric],
+    dict[str, PeriodTotals],
+    dict[tuple[str, str], Decimal],
+]:
     metric_map: dict[tuple[str, str], SourceMetric] = {
         (row["site_code"], row["import_month"]): {
             "target": Decimal(row["target"] or 0),
@@ -246,7 +272,7 @@ async def calculate_proposal(
     }
     regionals = sorted({row["regional"] for row in cohort})
     site_regional = {row["site_code"]: row["regional"] for row in cohort}
-    regional_month_values: dict[tuple[str, str], Decimal] = {
+    regional_month_values = {
         (regional, month): sum(
             (
                 metric_map[(site_code, month)]["realized"]
@@ -258,286 +284,169 @@ async def calculate_proposal(
         for regional in regionals
         for month in months
     }
+    return metric_map, totals, regional_month_values
 
+
+async def _proposal_metrics(context: ProposalContext, scope: ProposalScope) -> ProposalMetrics:
+    months = unique_months([item["month"] for item in scope.source_months])
+    cohort = scope.cohort
+    site_codes = [row["site_code"] for row in cohort]
+    metrics = await context.repo.get_source_metrics(site_codes, months)
+    async with context.repo.pool.acquire() as conn:
+        forecast_factors = {
+            month: Decimal(str(await context.get_forecast_factor(conn, month)))
+            for month in months
+        }
+    input_sha256 = context.canonical_input_hash({
+        "target_month": scope.target_month, "cohort_month": scope.cohort_month,
+        "source_months": scope.source_months, "cohort": [dict(row) for row in cohort],
+        "source_metrics": [dict(row) for row in metrics],
+        "forecast_factors": {month: str(forecast_factors[month]) for month in sorted(forecast_factors)},
+    })
+    metric_map, totals, regional_values = _metric_aggregates(
+        cohort, list(metrics), months, site_codes, forecast_factors,
+    )
+    return ProposalMetrics(
+        months=months,
+        site_codes=site_codes,
+        metric_map=metric_map,
+        totals=totals,
+        regional_month_values=regional_values,
+        forecast_factors=forecast_factors,
+        input_sha256=input_sha256,
+    )
+
+
+def _source_warnings(scope: ProposalScope, metrics: ProposalMetrics) -> list[str]:
     warnings: list[str] = []
-    for item in source_months:
-        total = totals[item["month"]]
+    for item in scope.source_months:
+        total = metrics.totals[item["month"]]
         if total["target"] == 0 and total["realized"] == 0:
             warnings.append(f"Nu exista date pentru perioada de referinta {item['month']}.")
-        if forecast_factors[item["month"]] > Decimal("1"):
+        if metrics.forecast_factors[item["month"]] > Decimal("1"):
             warnings.append(
                 f"Perioada {item['month']} este partiala; vanzarile folosite in calcul sunt forecastate "
-                f"cu factor {forecast_factors[item['month']]:.4f}x pe baza importului disponibil."
+                f"cu factor {metrics.forecast_factors[item['month']]:.4f}x pe baza importului disponibil."
             )
-    if seasonality_years > 1:
+    if scope.seasonality_years > 1:
         warnings.append(
-            f"Formula foloseste sezonalitate multi-year pe pana la {seasonality_years} ani; anii fara date suficiente sunt sariti automat."
+            f"Formula foloseste sezonalitate multi-year pe pana la {scope.seasonality_years} ani; anii fara date suficiente sunt sariti automat."
         )
+    return warnings
 
-    calculated_rows: list[dict[str, Any]] = []
-    current_month = shift_month(target_month, -1)
-    network_values = {month: totals[month]["realized"] for month in months}
-    network_factor, network_years = weighted_ratio(source_pairs, network_values)
-    if network_factor is None:
-        network_factor = Decimal("1")
-    for cohort_row in cohort:
-        site_code = cohort_row["site_code"]
-        regional = cohort_row["regional"]
-        history: list[dict[str, Any]] = []
-        for item in source_months:
-            metric = metric_map[(site_code, item["month"])]
-            total = totals[item["month"]]
-            shares: list[Decimal] = []
-            if total["target"] > 0:
-                shares.append(metric["target"] / total["target"])
-            if total["realized"] > 0:
-                shares.append(metric["realized"] / total["realized"])
-            period_weight = sum(shares, Decimal("0")) / Decimal(len(shares)) if shares else Decimal("0")
-            attainment = (
-                metric["realized"] / metric["target"] * Decimal("100")
-                if metric["target"] > 0 else None
-            )
-            history.append({
-                "month": item["month"],
-                "label": item["label"],
-                "role": item["role"],
-                "target": float(money(metric["target"])),
-                "realized": float(money(metric["realized"])),
-                "actual_realized": float(money(metric["actual_realized"])),
-                "is_forecast": metric["is_forecast"],
-                "forecast_factor": float(metric["forecast_factor"]),
-                "attainment_pct": float(attainment.quantize(MONEY)) if attainment is not None else None,
-                "weight": float(period_weight),
-            })
 
-        store_values = {month: metric_map[(site_code, month)]["realized"] for month in months}
-        regional_values = {month: regional_month_values[(regional, month)] for month in months}
-        store_factor, store_years = weighted_ratio(
-            source_pairs,
-            store_values,
-            minimum_base=context.minimum_seasonality_base,
-        )
-        zone_factor, zone_years = weighted_ratio(source_pairs, regional_values)
-        last_year_store_factor, _ = weighted_ratio(source_pairs[:1], store_values, minimum_base=context.minimum_seasonality_base)
-        multiyear_store_factor, _ = weighted_ratio(source_pairs, store_values, minimum_base=context.minimum_seasonality_base)
 
-        weights = context.strong_seasonality_weights
-        flags: list[str] = []
-        usable_store_years = sum(1 for item in store_years if item["ratio"] is not None)
-        store_ratios = [
-            Decimal(str(item["ratio"]))
-            for item in store_years
-            if item["ratio"] is not None
-        ]
-        if store_factor is None:
-            weights = context.new_store_seasonality_weights
-            flags.extend(["NEW_STORE", "LOW_HISTORY"])
-        elif usable_store_years <= 1 and seasonality_years > 1:
-            weights = context.weak_seasonality_weights
-            flags.append("LOW_HISTORY")
-        elif (
-            seasonality_years > 1
-            and any(item["year_offset"] == 1 and item["ratio"] is None for item in store_years)
-        ):
-            weights = context.weak_seasonality_weights
-            flags.append("LOW_RECENT_HISTORY")
-        if store_ratios and (min(store_ratios) < Decimal("0.50") or max(store_ratios) > Decimal("2.00")):
-            weights = context.weak_seasonality_weights
-            flags.append("EXTREME_SEASONALITY")
-
-        blended = weighted_available({
-            "store": (store_factor, weights["store"]),
-            "zone": (zone_factor, weights["zone"]),
-            "network": (network_factor, weights["network"]),
-        })
-        raw_blended = blended if blended is not None else Decimal("1")
-        seasonality_factor = clamp_decimal(raw_blended, seasonality_min, seasonality_max)
-        if seasonality_factor != raw_blended:
-            flags.append("SEASONALITY_CAPPED")
-
-        current_forecast = metric_map[(site_code, current_month)]["realized"]
-        trend_base = metric_map[(site_code, source_pairs[0]["base_month"])]["realized"]
-        if trend_base > context.minimum_seasonality_base:
-            trend_ratio = current_forecast / trend_base
-            trend_adjustment_raw = Decimal("1") + ((trend_ratio - Decimal("1")) * trend_weight)
-        else:
-            trend_ratio = None
-            trend_adjustment_raw = Decimal("1")
-        trend_adjustment = clamp_decimal(trend_adjustment_raw, trend_min, trend_max)
-        if trend_adjustment != trend_adjustment_raw:
-            flags.append("TREND_ADJUSTMENT_CAPPED")
-
-        raw_estimate = money(current_forecast * seasonality_factor * trend_adjustment)
-        floor_target = max(min_floor, money(current_forecast * floor_pct))
-        cap_target = max(floor_target, money(current_forecast * cap_pct))
-        calculation_details = {
-            "method": context.calculation_method,
-            "seasonality_years": seasonality_years,
-            "current_month": current_month,
-            "current_forecast": float(money(current_forecast)),
-            "seasonality": {
-                "store_factor": float(store_factor.quantize(Decimal("0.0001"))) if store_factor is not None else None,
-                "zone_factor": float(zone_factor.quantize(Decimal("0.0001"))) if zone_factor is not None else None,
-                "network_factor": float(network_factor.quantize(Decimal("0.0001"))),
-                "blended_factor": float(raw_blended.quantize(Decimal("0.0001"))),
-                "used_factor": float(seasonality_factor.quantize(Decimal("0.0001"))),
-                "last_year_store_factor": (
-                    float(last_year_store_factor.quantize(Decimal("0.0001")))
-                    if last_year_store_factor is not None else None
-                ),
-                "multiyear_store_factor": (
-                    float(multiyear_store_factor.quantize(Decimal("0.0001")))
-                    if multiyear_store_factor is not None else None
-                ),
-                "weights": {key: float(value) for key, value in weights.items()},
-                "store_years": store_years,
-                "zone_years": zone_years,
-                "network_years": network_years,
-                "min": float(seasonality_min),
-                "max": float(seasonality_max),
-            },
-            "trend": {
-                "base_month": source_pairs[0]["base_month"],
-                "ratio": float(trend_ratio.quantize(Decimal("0.0001"))) if trend_ratio is not None else None,
-                "weight": float(trend_weight),
-                "raw_adjustment": float(trend_adjustment_raw.quantize(Decimal("0.0001"))),
-                "used_adjustment": float(trend_adjustment.quantize(Decimal("0.0001"))),
-                "min": float(trend_min),
-                "max": float(trend_max),
-            },
-            "raw_estimate": float(raw_estimate),
-            "floor_target": float(floor_target),
-            "cap_target": float(cap_target),
-            "flags": [],
-            "allocation_reason": "proportional",
-        }
-        calculated_rows.append({
-            "site_code": site_code,
-            "locatie": cohort_row["locatie"],
-            "firma": cohort_row["firma"],
-            "regional": regional,
-            "asm": cohort_row["asm"],
-            "calculated_weight": raw_estimate,
-            "floor_target": floor_target,
-            "cap_target": cap_target,
-            "proposed_target": Decimal("0"),
-            "is_floor_limited": False,
-            "is_cap_limited": False,
-            "allocation_reason": "proportional",
-            "flags": flags,
-            "history": history,
-            "calculation_details": calculation_details,
-        })
-
-    if sum((row["calculated_weight"] for row in calculated_rows), Decimal("0")) == 0:
-        equal_weight = Decimal("1") / Decimal(len(calculated_rows))
-        for row in calculated_rows:
+def _allocate_rows(
+    context: ProposalContext,
+    rows: list[dict[str, Any]],
+    total_target: Decimal,
+    warnings: list[str],
+) -> list[str]:
+    if sum((row["calculated_weight"] for row in rows), Decimal("0")) == 0:
+        equal_weight = Decimal("1") / Decimal(len(rows))
+        for row in rows:
             row["calculated_weight"] = equal_weight
             row["flags"].append("LOW_HISTORY")
         warnings.append("Datele istorice nu contin estimari sezoniere utilizabile; targetul a fost distribuit uniform.")
     else:
-        raw_total = sum((row["calculated_weight"] for row in calculated_rows), Decimal("0"))
-        for row in calculated_rows:
+        raw_total = sum((row["calculated_weight"] for row in rows), Decimal("0"))
+        for row in rows:
             row["calculated_weight"] = row["calculated_weight"] / raw_total
-
-    floor_total = sum((row["floor_target"] for row in calculated_rows), Decimal("0"))
-    cap_total = sum((row["cap_target"] for row in calculated_rows), Decimal("0"))
+    floor_total = sum((row["floor_target"] for row in rows), Decimal("0"))
+    cap_total = sum((row["cap_target"] for row in rows), Decimal("0"))
     if total_target < floor_total:
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                f"Targetul total {total_target:,.0f} RON este sub suma floor-urilor calculate "
-                f"{floor_total:,.0f} RON. Ajusteaza bugetul sau floor-ul operational; propunerea nu a fost salvata."
-            ).replace(",", "."),
-        )
+        detail = f"Targetul total {total_target:,.0f} RON este sub suma floor-urilor calculate {floor_total:,.0f} RON. Ajusteaza bugetul sau floor-ul operational; propunerea nu a fost salvata."
+        raise HTTPException(status_code=400, detail=detail.replace(",", "."))
     if cap_total < total_target:
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                f"Targetul total {total_target:,.0f} RON depaseste cap-ul maxim calculat "
-                f"{cap_total:,.0f} RON. Verifica valoarea bugetului sau mareste cap-ul operational."
-            ).replace(",", "."),
-        )
-
+        detail = f"Targetul total {total_target:,.0f} RON depaseste cap-ul maxim calculat {cap_total:,.0f} RON. Verifica valoarea bugetului sau mareste cap-ul operational."
+        raise HTTPException(status_code=400, detail=detail.replace(",", "."))
     try:
-        calculated_rows, allocation_warnings = context.allocate_with_bounds(calculated_rows, total_target)
+        _, allocation_warnings = context.allocate_with_bounds(rows, total_target)
     except TargetBudgetInfeasibleError as exc:
         raise HTTPException(
             status_code=400,
             detail=f"Bugetul Target este infezabil; propunerea nu a fost salvata. {exc}",
         ) from None
     warnings.extend(allocation_warnings)
-    warnings = unique_warnings(warnings)
-    for row in calculated_rows:
+    for row in rows:
         flags = list(dict.fromkeys(row["flags"]))
-        row["calculation_details"]["flags"] = flags
-        row["calculation_details"]["allocation_reason"] = row["allocation_reason"]
-        row["calculation_details"]["is_floor_limited"] = row["is_floor_limited"]
-        row["calculation_details"]["is_cap_limited"] = row["is_cap_limited"]
+        row["calculation_details"].update({
+            "flags": flags, "allocation_reason": row["allocation_reason"],
+            "is_floor_limited": row["is_floor_limited"], "is_cap_limited": row["is_cap_limited"],
+        })
+    return unique_warnings(warnings)
 
-    profitability_inputs = await context.repo.get_profitability_inputs(
-        site_codes=site_codes,
-        target_month=target_month,
+
+async def _apply_profitability(
+    context: ProposalContext,
+    scope: ProposalScope,
+    metrics: ProposalMetrics,
+    rows: list[dict[str, Any]],
+) -> tuple[str, dict[str, Any]]:
+    inputs = await context.repo.get_profitability_inputs(
+        site_codes=metrics.site_codes, target_month=scope.target_month,
     )
-    coverage, _forecast_values = forecast_coverage(
-        calculated_rows,
-        profitability_inputs,
-    )
-    profitability_inputs["forecast_coverage"] = coverage
+    coverage, _forecast_values = forecast_coverage(rows, inputs)
+    inputs["forecast_coverage"] = coverage
     if coverage["mode"] != "uniform":
         raise forecast_coverage_error(coverage)
-    profitability_input_sha256 = context.canonical_input_hash(
-        profitability_input_payload(profitability_inputs)
-    )
-    profitability_summary = populate_profitability(
+    input_sha256 = context.canonical_input_hash(profitability_input_payload(inputs))
+    summary = populate_profitability(
         {
-            "target_month": target_month,
-            "rule_set_snapshot": target_rule_set.snapshot(),
+            "target_month": scope.target_month,
+            "rule_set_snapshot": scope.rule_set.snapshot(),
             "calculation_params": {
-                "profitability": rule_set_profitability_assumptions(target_rule_set),
+                "profitability": rule_set_profitability_assumptions(scope.rule_set),
             },
         },
-        calculated_rows,
-        profitability_inputs,
+        rows,
+        inputs,
         context.profitability_constants,
     )
-    profitability_summary["input_sha256"] = profitability_input_sha256
-    for row in calculated_rows:
+    summary["input_sha256"] = input_sha256
+    for row in rows:
         row["profitability_snapshot"] = row.pop("profitability")
+    return input_sha256, summary
+
+
+async def _save_proposal(
+    context: ProposalContext,
+    payload: dict[str, Any],
+    scope: ProposalScope,
+    metrics: ProposalMetrics,
+    rows: list[dict[str, Any]],
+    warnings: list[str],
+    profitability_input_sha256: str,
+    profitability_summary: dict[str, Any],
+) -> int:
+    parameters = scope.parameters
+    calculation_params = {
+        "seasonality_years": scope.seasonality_years,
+        "seasonality_min": float(parameters.seasonality_min),
+        "seasonality_max": float(parameters.seasonality_max),
+        "trend_weight": float(parameters.trend_weight),
+        "trend_adjustment_min": float(parameters.trend_min),
+        "trend_adjustment_max": float(parameters.trend_max),
+        "previous_month_cap_pct": float(parameters.cap_pct),
+        "minimum_seasonality_base": float(context.minimum_seasonality_base),
+        "strong_weights": {key: float(value) for key, value in context.strong_seasonality_weights.items()},
+        "weak_weights": {key: float(value) for key, value in context.weak_seasonality_weights.items()},
+        "new_store_weights": {key: float(value) for key, value in context.new_store_seasonality_weights.items()},
+        "profitability": rule_set_profitability_assumptions(scope.rule_set),
+        "profitability_summary": profitability_summary,
+    }
+    scenario = {
+        "target_month": scope.target_month, "cohort_month": scope.cohort_month,
+        "total_target": parameters.total_target, "min_floor": parameters.min_floor,
+        "previous_month_floor_pct": parameters.floor_pct, "calculation_method": context.calculation_method,
+        "source_months": scope.source_months, "warnings": warnings,
+        "rule_set_id": scope.rule_set.rule_set_id, "rule_set_hash": scope.rule_set.rules_hash,
+        "rule_set_snapshot": scope.rule_set.snapshot(), "calculation_input_sha256": metrics.input_sha256,
+        "profitability_input_sha256": profitability_input_sha256, "calculation_params": calculation_params,
+    }
     try:
-        scenario_id = await context.repo.save_draft_scenario(
-            {
-                "target_month": target_month,
-                "cohort_month": cohort_month,
-                "total_target": total_target,
-                "min_floor": min_floor,
-                "previous_month_floor_pct": floor_pct,
-                "calculation_method": context.calculation_method,
-                "source_months": source_months,
-                "warnings": warnings,
-                "rule_set_id": target_rule_set.rule_set_id,
-                "rule_set_hash": target_rule_set.rules_hash,
-                "rule_set_snapshot": target_rule_set.snapshot(),
-                "calculation_input_sha256": calculation_input_sha256,
-                "profitability_input_sha256": profitability_input_sha256,
-                "calculation_params": {
-                    "seasonality_years": seasonality_years,
-                    "seasonality_min": float(seasonality_min),
-                    "seasonality_max": float(seasonality_max),
-                    "trend_weight": float(trend_weight),
-                    "trend_adjustment_min": float(trend_min),
-                    "trend_adjustment_max": float(trend_max),
-                    "previous_month_cap_pct": float(cap_pct),
-                    "minimum_seasonality_base": float(context.minimum_seasonality_base),
-                    "strong_weights": {key: float(value) for key, value in context.strong_seasonality_weights.items()},
-                    "weak_weights": {key: float(value) for key, value in context.weak_seasonality_weights.items()},
-                    "new_store_weights": {key: float(value) for key, value in context.new_store_seasonality_weights.items()},
-                    "profitability": rule_set_profitability_assumptions(target_rule_set),
-                    "profitability_summary": profitability_summary,
-                },
-            },
-            calculated_rows,
-            payload.get("expected_revision"),
+        return await context.repo.save_draft_scenario(
+            scenario, rows, payload.get("expected_revision"),
         )
     except TargetScenarioFinalizedError:
         raise HTTPException(
@@ -552,9 +461,23 @@ async def calculate_proposal(
     except TargetScenarioVersionConflict:
         raise HTTPException(
             status_code=409,
-            detail=(
-                "Scenariul a fost modificat de alt utilizator. "
-                "Reincarca datele inainte de recalculare."
-            ),
+            detail="Scenariul a fost modificat de alt utilizator. Reincarca datele inainte de recalculare.",
         ) from None
+
+
+async def calculate_proposal(
+    context: ProposalContext, payload: dict[str, Any]
+) -> dict[str, Any]:
+    scope = await _proposal_scope(context, payload)
+    metrics = await _proposal_metrics(context, scope)
+    warnings = _source_warnings(scope, metrics)
+    rows = _calculated_rows(context, scope, metrics)
+    warnings = _allocate_rows(context, rows, scope.parameters.total_target, warnings)
+    profitability_hash, profitability_summary = await _apply_profitability(
+        context, scope, metrics, rows,
+    )
+    scenario_id = await _save_proposal(
+        context, payload, scope, metrics, rows, warnings,
+        profitability_hash, profitability_summary,
+    )
     return await context.get_scenario_detail(scenario_id)

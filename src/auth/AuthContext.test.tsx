@@ -70,4 +70,31 @@ describe('AuthProvider bootstrap recovery', () => {
 
     await waitFor(() => expect(onSessionCleared).toHaveBeenCalledOnce());
   });
+
+  it('validates the server logout response before clearing the session', async () => {
+    const onSessionCleared = vi.fn();
+    fetchMock
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        profile: { sub: 'user-1', groups: [] },
+        csrf_token: 'csrf',
+      }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        logout_url: '/auth/session/login?logged_out=1',
+      }), { status: 200 }));
+
+    function LogoutButton() {
+      const { logout } = useAuth();
+      return <button type="button" onClick={() => void logout()}>Ieșire</button>;
+    }
+
+    render(
+      <AuthProvider onSessionCleared={onSessionCleared}>
+        <LogoutButton />
+      </AuthProvider>,
+    );
+    fireEvent.click(await screen.findByRole('button', { name: 'Ieșire' }));
+
+    await waitFor(() => expect(onSessionCleared).toHaveBeenCalledOnce());
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
 });

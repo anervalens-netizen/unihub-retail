@@ -7,7 +7,6 @@
   },
   "legacy_max_lines": {
     "backend/logging_config.py": 794,
-    "backend/repositories/exports.py": 889,
     "backend/repositories/grile.py": 867,
     "backend/repositories/grile_monthly_operations.py": 1572,
     "backend/repositories/salarii.py": 715,
@@ -48,7 +47,6 @@
     "backend/repositories/dashboard.py::DashboardRepository.fetch_summary": 127,
     "backend/repositories/erp_reconciliation.py::ErpReconciliationRepository.fetch_reference": 157,
     "backend/repositories/exports.py::ExportsRepository.fetch_daily_comparison_rows": 164,
-    "backend/repositories/exports.py::ExportsRepository.fetch_report_rows": 476,
     "backend/repositories/grile_monthly_operations.py::reserve": 242,
     "backend/repositories/salarii.py::SalariiRepository.fetch_agents_summary": 126,
     "backend/repositories/target_calculator.py::TargetCalculatorRepository.get_profitability_inputs": 125,
@@ -68,10 +66,8 @@
     "backend/services/campaigns/aggregation.py::build_incentive_agent_rows": 123,
     "backend/services/campaigns/incentives.py::project_incentive": 342,
     "backend/services/campaigns/promotions.py::project_promotion": 139,
-    "backend/services/campaigns/summary.py::fetch_promo_incentive_summary": 383,
     "backend/services/contest_reporting.py::ContestReportingPublisher.publish_month": 151,
     "backend/services/contests.py::ContestsService._build": 275,
-    "backend/services/dashboard/orchestration.py::load_dashboard_all": 444,
     "backend/services/dashboard/performance.py::load_performance_detail": 194,
     "backend/services/dashboard/queries.py::_fetch_agent_stats_rows": 231,
     "backend/services/dashboard/queries.py::_fetch_asm_stats": 188,
@@ -105,7 +101,6 @@
     "backend/services/store_pnl_import.py::stage_generation": 121,
     "backend/services/target_calculator/export.py::build_target_excel": 296,
     "backend/services/target_calculator/profitability.py::populate_profitability": 135,
-    "backend/services/target_calculator/proposal.py::calculate_proposal": 437,
     "backend/worker.py::build_complex_export_background": 131
   }
 }

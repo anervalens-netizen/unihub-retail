@@ -63,14 +63,20 @@ def evaluate_coverage(
             if statement_count:
                 details = {
                     "summary": {
-                        "percent_covered": covered_count * 100 / statement_count,
+                        "num_statements": statement_count,
+                        "covered_lines": covered_count,
                     }
                 }
         covered: float | None = None
         if isinstance(details, dict):
             summary = details.get("summary")
-            if isinstance(summary, dict) and "percent_covered" in summary:
-                covered = float(summary["percent_covered"])
+            if isinstance(summary, dict):
+                statements = int(summary.get("num_statements", 0))
+                covered_lines = int(summary.get("covered_lines", 0))
+                if statements:
+                    covered = covered_lines * 100 / statements
+                elif "percent_covered" in summary:
+                    covered = float(summary["percent_covered"])
         results.append(
             CoverageResult(
                 module=module,

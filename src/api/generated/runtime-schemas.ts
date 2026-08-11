@@ -1,0 +1,16112 @@
+/* GENERATED FILE. Run npm run contracts:generate; do not edit manually. */
+export type RetailRuntimeSchema = Record<string, unknown>;
+
+export const RETAIL_COMPONENT_SCHEMAS = {
+  "AgentEvaluationOption": {
+    "additionalProperties": false,
+    "properties": {
+      "label": {
+        "title": "Label",
+        "type": "string"
+      },
+      "value": {
+        "title": "Value",
+        "type": "string"
+      }
+    },
+    "required": [
+      "value",
+      "label"
+    ],
+    "title": "AgentEvaluationOption",
+    "type": "object"
+  },
+  "AgentEvaluationResponse": {
+    "additionalProperties": false,
+    "properties": {
+      "asms": {
+        "items": {
+          "$ref": "#/components/schemas/AgentEvaluationOption"
+        },
+        "title": "Asms",
+        "type": "array"
+      },
+      "firmas": {
+        "items": {
+          "$ref": "#/components/schemas/AgentEvaluationOption"
+        },
+        "title": "Firmas",
+        "type": "array"
+      },
+      "months": {
+        "items": {
+          "$ref": "#/components/schemas/AgentEvaluationOption"
+        },
+        "title": "Months",
+        "type": "array"
+      },
+      "rows": {
+        "items": {
+          "$ref": "#/components/schemas/AgentEvaluationRow"
+        },
+        "title": "Rows",
+        "type": "array"
+      },
+      "stores": {
+        "items": {
+          "$ref": "#/components/schemas/AgentEvaluationOption"
+        },
+        "title": "Stores",
+        "type": "array"
+      }
+    },
+    "required": [
+      "months",
+      "firmas",
+      "asms",
+      "stores",
+      "rows"
+    ],
+    "title": "AgentEvaluationResponse",
+    "type": "object"
+  },
+  "AgentEvaluationRow": {
+    "additionalProperties": false,
+    "properties": {
+      "agent": {
+        "title": "Agent",
+        "type": "string"
+      },
+      "asm": {
+        "title": "Asm",
+        "type": "string"
+      },
+      "bonuri_pct": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Bonuri Pct"
+      },
+      "bonuri_points": {
+        "title": "Bonuri Points",
+        "type": "integer"
+      },
+      "daily_average": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Daily Average"
+      },
+      "daily_points": {
+        "title": "Daily Points",
+        "type": "integer"
+      },
+      "firma": {
+        "title": "Firma",
+        "type": "string"
+      },
+      "focus_pct": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Focus Pct"
+      },
+      "focus_points": {
+        "title": "Focus Points",
+        "type": "integer"
+      },
+      "focus_quantity": {
+        "title": "Focus Quantity",
+        "type": "integer"
+      },
+      "glass_qty": {
+        "title": "Glass Qty",
+        "type": "integer"
+      },
+      "has_red_segment": {
+        "title": "Has Red Segment",
+        "type": "boolean"
+      },
+      "locatie": {
+        "title": "Locatie",
+        "type": "string"
+      },
+      "month": {
+        "pattern": "^(?:\\d{4}-(?:0[1-9]|1[0-2])(?:\\.\\.curent)?|custom)$",
+        "title": "Month",
+        "type": "string"
+      },
+      "peer_daily_average": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Peer Daily Average"
+      },
+      "premium_glass_pct": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Premium Glass Pct"
+      },
+      "premium_glass_points": {
+        "title": "Premium Glass Points",
+        "type": "integer"
+      },
+      "premium_glass_qty": {
+        "title": "Premium Glass Qty",
+        "type": "integer"
+      },
+      "qualifier": {
+        "enum": [
+          "Excelent",
+          "Foarte Bun",
+          "Bun",
+          "Mediu",
+          "Scazut"
+        ],
+        "title": "Qualifier",
+        "type": "string"
+      },
+      "receipt_2plus_count": {
+        "title": "Receipt 2Plus Count",
+        "type": "integer"
+      },
+      "receipt_count": {
+        "title": "Receipt Count",
+        "type": "integer"
+      },
+      "regional": {
+        "title": "Regional",
+        "type": "string"
+      },
+      "site_code": {
+        "title": "Site Code",
+        "type": "string"
+      },
+      "store_target": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Store Target",
+        "type": "string"
+      },
+      "store_working_days": {
+        "title": "Store Working Days",
+        "type": "integer"
+      },
+      "target_pct": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Target Pct"
+      },
+      "target_points": {
+        "title": "Target Points",
+        "type": "integer"
+      },
+      "target_value": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Target Value",
+        "type": "string"
+      },
+      "total_points": {
+        "title": "Total Points",
+        "type": "integer"
+      },
+      "total_quantity": {
+        "title": "Total Quantity",
+        "type": "integer"
+      },
+      "total_sales": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Total Sales",
+        "type": "string"
+      },
+      "value_reper": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Value Reper"
+      },
+      "value_reper_points": {
+        "title": "Value Reper Points",
+        "type": "integer"
+      },
+      "working_days": {
+        "title": "Working Days",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "month",
+      "firma",
+      "site_code",
+      "locatie",
+      "regional",
+      "asm",
+      "agent",
+      "total_sales",
+      "total_quantity",
+      "working_days",
+      "store_target",
+      "store_working_days",
+      "target_value",
+      "target_pct",
+      "daily_average",
+      "peer_daily_average",
+      "value_reper",
+      "receipt_count",
+      "receipt_2plus_count",
+      "bonuri_pct",
+      "focus_quantity",
+      "focus_pct",
+      "glass_qty",
+      "premium_glass_qty",
+      "premium_glass_pct",
+      "target_points",
+      "daily_points",
+      "value_reper_points",
+      "bonuri_points",
+      "focus_points",
+      "premium_glass_points",
+      "total_points",
+      "has_red_segment",
+      "qualifier"
+    ],
+    "title": "AgentEvaluationRow",
+    "type": "object"
+  },
+  "AgentEvaluationV2Response": {
+    "additionalProperties": false,
+    "properties": {
+      "asms": {
+        "items": {
+          "$ref": "#/components/schemas/AgentEvaluationOption"
+        },
+        "title": "Asms",
+        "type": "array"
+      },
+      "firmas": {
+        "items": {
+          "$ref": "#/components/schemas/AgentEvaluationOption"
+        },
+        "title": "Firmas",
+        "type": "array"
+      },
+      "months": {
+        "items": {
+          "$ref": "#/components/schemas/AgentEvaluationOption"
+        },
+        "title": "Months",
+        "type": "array"
+      },
+      "rows": {
+        "items": {
+          "$ref": "#/components/schemas/AgentEvaluationV2Row"
+        },
+        "title": "Rows",
+        "type": "array"
+      },
+      "stores": {
+        "items": {
+          "$ref": "#/components/schemas/AgentEvaluationOption"
+        },
+        "title": "Stores",
+        "type": "array"
+      }
+    },
+    "required": [
+      "months",
+      "firmas",
+      "asms",
+      "stores",
+      "rows"
+    ],
+    "title": "AgentEvaluationV2Response",
+    "type": "object"
+  },
+  "AgentEvaluationV2Row": {
+    "additionalProperties": false,
+    "properties": {
+      "agent": {
+        "title": "Agent",
+        "type": "string"
+      },
+      "asm": {
+        "title": "Asm",
+        "type": "string"
+      },
+      "bonuri_pct": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Bonuri Pct"
+      },
+      "bonuri_score": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Bonuri Score"
+      },
+      "confidence_flags": {
+        "items": {
+          "type": "string"
+        },
+        "title": "Confidence Flags",
+        "type": "array"
+      },
+      "daily_average": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Daily Average"
+      },
+      "daily_reference": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Daily Reference"
+      },
+      "daily_reference_type": {
+        "enum": [
+          "colegi",
+          "istoric_locatie",
+          "media_manager",
+          "none"
+        ],
+        "title": "Daily Reference Type",
+        "type": "string"
+      },
+      "daily_score": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Daily Score"
+      },
+      "daily_vs_reference_pct": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Daily Vs Reference Pct"
+      },
+      "eligibility_status": {
+        "enum": [
+          "eligibil",
+          "insuficient"
+        ],
+        "title": "Eligibility Status",
+        "type": "string"
+      },
+      "final_month_count": {
+        "title": "Final Month Count",
+        "type": "integer"
+      },
+      "firma": {
+        "title": "Firma",
+        "type": "string"
+      },
+      "focus_pct": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Focus Pct"
+      },
+      "focus_quantity": {
+        "title": "Focus Quantity",
+        "type": "integer"
+      },
+      "focus_score": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Focus Score"
+      },
+      "forecast_factor": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Forecast Factor",
+        "type": "string"
+      },
+      "forecast_sales": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Forecast Sales",
+        "type": "string"
+      },
+      "glass_qty": {
+        "title": "Glass Qty",
+        "type": "integer"
+      },
+      "is_partial": {
+        "title": "Is Partial",
+        "type": "boolean"
+      },
+      "locatie": {
+        "title": "Locatie",
+        "type": "string"
+      },
+      "max_score": {
+        "default": 100,
+        "title": "Max Score",
+        "type": "integer"
+      },
+      "month": {
+        "pattern": "^(?:\\d{4}-(?:0[1-9]|1[0-2])(?:\\.\\.curent)?|custom)$",
+        "title": "Month",
+        "type": "string"
+      },
+      "partial_month_count": {
+        "title": "Partial Month Count",
+        "type": "integer"
+      },
+      "period_month_count": {
+        "title": "Period Month Count",
+        "type": "integer"
+      },
+      "premium_glass_pct": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Premium Glass Pct"
+      },
+      "premium_glass_qty": {
+        "title": "Premium Glass Qty",
+        "type": "integer"
+      },
+      "premium_glass_score": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Premium Glass Score"
+      },
+      "rating": {
+        "enum": [
+          "Insuficient",
+          "Fara scor",
+          "Excelent",
+          "Foarte Bun",
+          "Bun",
+          "Risc",
+          "Critic"
+        ],
+        "title": "Rating",
+        "type": "string"
+      },
+      "receipt_2plus_count": {
+        "title": "Receipt 2Plus Count",
+        "type": "integer"
+      },
+      "receipt_count": {
+        "title": "Receipt Count",
+        "type": "integer"
+      },
+      "regional": {
+        "title": "Regional",
+        "type": "string"
+      },
+      "site_code": {
+        "title": "Site Code",
+        "type": "string"
+      },
+      "target_forecast_pct": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Target Forecast Pct"
+      },
+      "target_pct": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Target Pct"
+      },
+      "target_score": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Target Score"
+      },
+      "target_source": {
+        "enum": [
+          "partial_agent_target",
+          "allocated_store_target"
+        ],
+        "title": "Target Source",
+        "type": "string"
+      },
+      "target_value": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Target Value",
+        "type": "string"
+      },
+      "total_quantity": {
+        "title": "Total Quantity",
+        "type": "integer"
+      },
+      "total_sales": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Total Sales",
+        "type": "string"
+      },
+      "total_score": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Total Score"
+      },
+      "trend_daily_pct": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Trend Daily Pct"
+      },
+      "trend_direction": {
+        "enum": [
+          "up",
+          "down",
+          "flat"
+        ],
+        "title": "Trend Direction",
+        "type": "string"
+      },
+      "value_reper": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Value Reper"
+      },
+      "value_reper_score": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Value Reper Score"
+      },
+      "working_days": {
+        "title": "Working Days",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "month",
+      "firma",
+      "site_code",
+      "locatie",
+      "regional",
+      "asm",
+      "agent",
+      "total_sales",
+      "forecast_sales",
+      "total_quantity",
+      "working_days",
+      "receipt_count",
+      "target_value",
+      "target_source",
+      "target_pct",
+      "target_forecast_pct",
+      "is_partial",
+      "period_month_count",
+      "partial_month_count",
+      "final_month_count",
+      "forecast_factor",
+      "daily_average",
+      "daily_reference",
+      "daily_reference_type",
+      "daily_vs_reference_pct",
+      "value_reper",
+      "receipt_2plus_count",
+      "bonuri_pct",
+      "focus_quantity",
+      "focus_pct",
+      "glass_qty",
+      "premium_glass_qty",
+      "premium_glass_pct",
+      "trend_daily_pct",
+      "trend_direction",
+      "eligibility_status",
+      "confidence_flags",
+      "target_score",
+      "daily_score",
+      "bonuri_score",
+      "focus_score",
+      "premium_glass_score",
+      "value_reper_score",
+      "total_score",
+      "rating"
+    ],
+    "title": "AgentEvaluationV2Row",
+    "type": "object"
+  },
+  "AgentHistoryPoint": {
+    "additionalProperties": false,
+    "properties": {
+      "active_store_count": {
+        "title": "Active Store Count",
+        "type": "integer"
+      },
+      "is_active": {
+        "title": "Is Active",
+        "type": "boolean"
+      },
+      "month": {
+        "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
+        "title": "Month",
+        "type": "string"
+      },
+      "receipt_count": {
+        "title": "Receipt Count",
+        "type": "integer"
+      },
+      "total_quantity": {
+        "title": "Total Quantity",
+        "type": "integer"
+      },
+      "total_sales": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Total Sales",
+        "type": "string"
+      }
+    },
+    "required": [
+      "month",
+      "total_sales",
+      "total_quantity",
+      "receipt_count",
+      "active_store_count",
+      "is_active"
+    ],
+    "title": "AgentHistoryPoint",
+    "type": "object"
+  },
+  "AgentHistoryResponse": {
+    "additionalProperties": false,
+    "properties": {
+      "history": {
+        "items": {
+          "$ref": "#/components/schemas/AgentHistoryPoint"
+        },
+        "title": "History",
+        "type": "array"
+      }
+    },
+    "required": [
+      "history"
+    ],
+    "title": "AgentHistoryResponse",
+    "type": "object"
+  },
+  "AgentListItem": {
+    "additionalProperties": false,
+    "properties": {
+      "active_in_month": {
+        "title": "Active In Month",
+        "type": "boolean"
+      },
+      "agent": {
+        "title": "Agent",
+        "type": "string"
+      },
+      "current_status": {
+        "enum": [
+          "active",
+          "inactive_recent",
+          "churned"
+        ],
+        "title": "Current Status",
+        "type": "string"
+      },
+      "firma": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Firma"
+      },
+      "is_new": {
+        "title": "Is New",
+        "type": "boolean"
+      },
+      "is_reactivated": {
+        "title": "Is Reactivated",
+        "type": "boolean"
+      },
+      "store_name": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Store Name"
+      },
+      "total_quantity": {
+        "title": "Total Quantity",
+        "type": "integer"
+      },
+      "total_sales": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Total Sales",
+        "type": "string"
+      }
+    },
+    "required": [
+      "agent",
+      "active_in_month",
+      "is_new",
+      "is_reactivated",
+      "total_sales",
+      "total_quantity",
+      "current_status"
+    ],
+    "title": "AgentListItem",
+    "type": "object"
+  },
+  "AgentListResponse": {
+    "additionalProperties": false,
+    "properties": {
+      "items": {
+        "items": {
+          "$ref": "#/components/schemas/AgentListItem"
+        },
+        "title": "Items",
+        "type": "array"
+      }
+    },
+    "required": [
+      "items"
+    ],
+    "title": "AgentListResponse",
+    "type": "object"
+  },
+  "AgentMovementPoint": {
+    "additionalProperties": false,
+    "properties": {
+      "active": {
+        "title": "Active",
+        "type": "integer"
+      },
+      "churned": {
+        "title": "Churned",
+        "type": "integer"
+      },
+      "is_baseline": {
+        "default": false,
+        "title": "Is Baseline",
+        "type": "boolean"
+      },
+      "month": {
+        "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
+        "title": "Month",
+        "type": "string"
+      },
+      "net_growth": {
+        "default": 0,
+        "title": "Net Growth",
+        "type": "integer"
+      },
+      "new": {
+        "title": "New",
+        "type": "integer"
+      },
+      "reactivated": {
+        "title": "Reactivated",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "month",
+      "active",
+      "new",
+      "reactivated",
+      "churned"
+    ],
+    "title": "AgentMovementPoint",
+    "type": "object"
+  },
+  "AgentMovementResponse": {
+    "additionalProperties": false,
+    "properties": {
+      "history": {
+        "items": {
+          "$ref": "#/components/schemas/AgentMovementPoint"
+        },
+        "title": "History",
+        "type": "array"
+      }
+    },
+    "required": [
+      "history"
+    ],
+    "title": "AgentMovementResponse",
+    "type": "object"
+  },
+  "AgentOption": {
+    "additionalProperties": false,
+    "properties": {
+      "agent": {
+        "title": "Agent",
+        "type": "string"
+      },
+      "asm": {
+        "title": "Asm",
+        "type": "string"
+      },
+      "firma": {
+        "title": "Firma",
+        "type": "string"
+      },
+      "locatie": {
+        "title": "Locatie",
+        "type": "string"
+      },
+      "regional": {
+        "title": "Regional",
+        "type": "string"
+      },
+      "site_code": {
+        "title": "Site Code",
+        "type": "string"
+      }
+    },
+    "required": [
+      "agent",
+      "site_code",
+      "locatie",
+      "firma",
+      "regional",
+      "asm"
+    ],
+    "title": "AgentOption",
+    "type": "object"
+  },
+  "AgentProfileResponse": {
+    "additionalProperties": false,
+    "properties": {
+      "active_months_count": {
+        "title": "Active Months Count",
+        "type": "integer"
+      },
+      "agent": {
+        "title": "Agent",
+        "type": "string"
+      },
+      "avg_monthly_sales": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Avg Monthly Sales",
+        "type": "string"
+      },
+      "best_month": {
+        "anyOf": [
+          {
+            "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Best Month"
+      },
+      "best_month_sales": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Best Month Sales",
+        "type": "string"
+      },
+      "career_total_quantity": {
+        "title": "Career Total Quantity",
+        "type": "integer"
+      },
+      "career_total_sales": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Career Total Sales",
+        "type": "string"
+      },
+      "current_status": {
+        "enum": [
+          "active",
+          "inactive_recent",
+          "churned"
+        ],
+        "title": "Current Status",
+        "type": "string"
+      },
+      "distinct_asm_count": {
+        "title": "Distinct Asm Count",
+        "type": "integer"
+      },
+      "distinct_firma_count": {
+        "title": "Distinct Firma Count",
+        "type": "integer"
+      },
+      "distinct_regional_count": {
+        "title": "Distinct Regional Count",
+        "type": "integer"
+      },
+      "distinct_store_count": {
+        "title": "Distinct Store Count",
+        "type": "integer"
+      },
+      "first_seen_month": {
+        "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
+        "title": "First Seen Month",
+        "type": "string"
+      },
+      "last_seen_month": {
+        "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
+        "title": "Last Seen Month",
+        "type": "string"
+      },
+      "longest_active_streak": {
+        "title": "Longest Active Streak",
+        "type": "integer"
+      },
+      "months_since_last_seen": {
+        "title": "Months Since Last Seen",
+        "type": "integer"
+      },
+      "reactivation_count": {
+        "title": "Reactivation Count",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "agent",
+      "first_seen_month",
+      "last_seen_month",
+      "active_months_count",
+      "distinct_store_count",
+      "distinct_firma_count",
+      "distinct_regional_count",
+      "distinct_asm_count",
+      "months_since_last_seen",
+      "reactivation_count",
+      "longest_active_streak",
+      "career_total_sales",
+      "career_total_quantity",
+      "avg_monthly_sales",
+      "best_month",
+      "best_month_sales",
+      "current_status"
+    ],
+    "title": "AgentProfileResponse",
+    "type": "object"
+  },
+  "AgentSalaryLinkPublic": {
+    "additionalProperties": false,
+    "properties": {
+      "agent_code": {
+        "title": "Agent Code",
+        "type": "string"
+      },
+      "confidence": {
+        "enum": [
+          "high",
+          "medium",
+          "low",
+          "unknown"
+        ],
+        "title": "Confidence",
+        "type": "string"
+      },
+      "effective_from_month": {
+        "anyOf": [
+          {
+            "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Effective From Month"
+      },
+      "match_source": {
+        "enum": [
+          "auto",
+          "manual"
+        ],
+        "title": "Match Source",
+        "type": "string"
+      },
+      "match_status": {
+        "enum": [
+          "confirmed",
+          "unknown"
+        ],
+        "title": "Match Status",
+        "type": "string"
+      },
+      "note": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Note"
+      },
+      "person_id": {
+        "anyOf": [
+          {
+            "pattern": "^sp1_[0-9a-f]{64}$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Person Id"
+      },
+      "salary_full_name": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Salary Full Name"
+      },
+      "site_code": {
+        "title": "Site Code",
+        "type": "string"
+      }
+    },
+    "required": [
+      "agent_code",
+      "site_code",
+      "salary_full_name",
+      "person_id",
+      "match_status",
+      "match_source",
+      "confidence",
+      "effective_from_month",
+      "note"
+    ],
+    "title": "AgentSalaryLinkPublic",
+    "type": "object"
+  },
+  "AgentStats": {
+    "additionalProperties": false,
+    "properties": {
+      "acc_focus_qty": {
+        "title": "Acc Focus Qty",
+        "type": "integer"
+      },
+      "acc_qty_realizat": {
+        "title": "Acc Qty Realizat",
+        "type": "integer"
+      },
+      "agent": {
+        "title": "Agent",
+        "type": "string"
+      },
+      "asm": {
+        "title": "Asm",
+        "type": "string"
+      },
+      "firma": {
+        "title": "Firma",
+        "type": "string"
+      },
+      "import_month": {
+        "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
+        "title": "Import Month",
+        "type": "string"
+      },
+      "incentive_qty": {
+        "default": 0,
+        "title": "Incentive Qty",
+        "type": "integer"
+      },
+      "locatie": {
+        "title": "Locatie",
+        "type": "string"
+      },
+      "medie_produs": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Medie Produs"
+      },
+      "medie_zilnica": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Medie Zilnica"
+      },
+      "nr_bon2acc": {
+        "title": "Nr Bon2Acc",
+        "type": "integer"
+      },
+      "nr_bonuri": {
+        "title": "Nr Bonuri",
+        "type": "integer"
+      },
+      "prc_focus_acc_qty": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Prc Focus Acc Qty"
+      },
+      "proc_bon2acc": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Proc Bon2Acc"
+      },
+      "proc_realizare_target": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Proc Realizare Target"
+      },
+      "promo_discount_value": {
+        "default": "0",
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Promo Discount Value",
+        "type": "string"
+      },
+      "promo_qty": {
+        "default": 0,
+        "title": "Promo Qty",
+        "type": "integer"
+      },
+      "regional": {
+        "title": "Regional",
+        "type": "string"
+      },
+      "return_receipt_count": {
+        "default": 0,
+        "title": "Return Receipt Count",
+        "type": "integer"
+      },
+      "site_code": {
+        "title": "Site Code",
+        "type": "string"
+      },
+      "target": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Target"
+      },
+      "total_vanzari": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Total Vanzari",
+        "type": "string"
+      },
+      "zile_lucrate": {
+        "title": "Zile Lucrate",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "import_month",
+      "agent",
+      "site_code",
+      "locatie",
+      "firma",
+      "regional",
+      "asm",
+      "acc_qty_realizat",
+      "nr_bonuri",
+      "nr_bon2acc",
+      "proc_bon2acc",
+      "total_vanzari",
+      "zile_lucrate",
+      "medie_zilnica",
+      "acc_focus_qty",
+      "prc_focus_acc_qty"
+    ],
+    "title": "AgentStats",
+    "type": "object"
+  },
+  "AgentTargetRunRequest": {
+    "additionalProperties": false,
+    "properties": {
+      "month": {
+        "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
+        "title": "Month",
+        "type": "string"
+      }
+    },
+    "required": [
+      "month"
+    ],
+    "title": "AgentTargetRunRequest",
+    "type": "object"
+  },
+  "AgentsOverviewResponse": {
+    "additionalProperties": false,
+    "properties": {
+      "active_count": {
+        "title": "Active Count",
+        "type": "integer"
+      },
+      "avg_seniority_months": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Avg Seniority Months"
+      },
+      "churned_total_count": {
+        "title": "Churned Total Count",
+        "type": "integer"
+      },
+      "left_this_month_count": {
+        "title": "Left This Month Count",
+        "type": "integer"
+      },
+      "new_count": {
+        "title": "New Count",
+        "type": "integer"
+      },
+      "reactivated_count": {
+        "title": "Reactivated Count",
+        "type": "integer"
+      },
+      "retention_rate": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Retention Rate"
+      },
+      "stability_rate": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Stability Rate"
+      },
+      "total_unique_agents": {
+        "title": "Total Unique Agents",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "active_count",
+      "new_count",
+      "reactivated_count",
+      "left_this_month_count",
+      "retention_rate",
+      "total_unique_agents",
+      "avg_seniority_months",
+      "stability_rate",
+      "churned_total_count"
+    ],
+    "title": "AgentsOverviewResponse",
+    "type": "object"
+  },
+  "AiForecastDailyPoint": {
+    "additionalProperties": false,
+    "properties": {
+      "actual_sales": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Actual Sales",
+        "type": "string"
+      },
+      "cumulative_actual": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Cumulative Actual",
+        "type": "string"
+      },
+      "cumulative_forecast": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Cumulative Forecast",
+        "type": "string"
+      },
+      "forecast_date": {
+        "format": "date",
+        "title": "Forecast Date",
+        "type": "string"
+      },
+      "forecast_sales": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Forecast Sales",
+        "type": "string"
+      },
+      "has_actual": {
+        "title": "Has Actual",
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "forecast_date",
+      "forecast_sales",
+      "actual_sales",
+      "has_actual",
+      "cumulative_forecast",
+      "cumulative_actual"
+    ],
+    "title": "AiForecastDailyPoint",
+    "type": "object"
+  },
+  "AiForecastManagerRow": {
+    "additionalProperties": false,
+    "properties": {
+      "actual_sales": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Actual Sales",
+        "type": "string"
+      },
+      "delta_pct": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Delta Pct"
+      },
+      "delta_sales": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Delta Sales",
+        "type": "string"
+      },
+      "expected_sales_to_date": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Expected Sales To Date",
+        "type": "string"
+      },
+      "forecast_sales": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Forecast Sales",
+        "type": "string"
+      },
+      "manager": {
+        "title": "Manager",
+        "type": "string"
+      },
+      "store_count": {
+        "title": "Store Count",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "manager",
+      "store_count",
+      "forecast_sales",
+      "expected_sales_to_date",
+      "actual_sales",
+      "delta_sales"
+    ],
+    "title": "AiForecastManagerRow",
+    "type": "object"
+  },
+  "AiForecastResponse": {
+    "additionalProperties": false,
+    "properties": {
+      "daily": {
+        "items": {
+          "$ref": "#/components/schemas/AiForecastDailyPoint"
+        },
+        "title": "Daily",
+        "type": "array"
+      },
+      "managers": {
+        "items": {
+          "$ref": "#/components/schemas/AiForecastManagerRow"
+        },
+        "title": "Managers",
+        "type": "array"
+      },
+      "run": {
+        "$ref": "#/components/schemas/AiForecastRunInfo"
+      },
+      "stores": {
+        "items": {
+          "$ref": "#/components/schemas/AiForecastStoreRow"
+        },
+        "title": "Stores",
+        "type": "array"
+      },
+      "summary": {
+        "$ref": "#/components/schemas/AiForecastSummary"
+      }
+    },
+    "required": [
+      "run",
+      "summary"
+    ],
+    "title": "AiForecastResponse",
+    "type": "object"
+  },
+  "AiForecastRollingManagerRow": {
+    "additionalProperties": false,
+    "properties": {
+      "actual_sales": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Actual Sales"
+      },
+      "delta_pct": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Delta Pct"
+      },
+      "delta_sales": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Delta Sales"
+      },
+      "forecast_sales": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Forecast Sales",
+        "type": "string"
+      },
+      "manager": {
+        "title": "Manager",
+        "type": "string"
+      },
+      "store_count": {
+        "title": "Store Count",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "manager",
+      "store_count",
+      "forecast_sales"
+    ],
+    "title": "AiForecastRollingManagerRow",
+    "type": "object"
+  },
+  "AiForecastRollingMonthlyPoint": {
+    "additionalProperties": false,
+    "properties": {
+      "actual_sales": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Actual Sales"
+      },
+      "delta_pct": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Delta Pct"
+      },
+      "delta_sales": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Delta Sales"
+      },
+      "forecast_month": {
+        "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
+        "title": "Forecast Month",
+        "type": "string"
+      },
+      "forecast_sales": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Forecast Sales",
+        "type": "string"
+      },
+      "store_count": {
+        "title": "Store Count",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "forecast_month",
+      "store_count",
+      "forecast_sales"
+    ],
+    "title": "AiForecastRollingMonthlyPoint",
+    "type": "object"
+  },
+  "AiForecastRollingResponse": {
+    "additionalProperties": false,
+    "properties": {
+      "managers": {
+        "items": {
+          "$ref": "#/components/schemas/AiForecastRollingManagerRow"
+        },
+        "title": "Managers",
+        "type": "array"
+      },
+      "months": {
+        "items": {
+          "$ref": "#/components/schemas/AiForecastRollingMonthlyPoint"
+        },
+        "title": "Months",
+        "type": "array"
+      },
+      "runs": {
+        "items": {
+          "$ref": "#/components/schemas/AiForecastRunInfo"
+        },
+        "title": "Runs",
+        "type": "array"
+      },
+      "stores": {
+        "items": {
+          "$ref": "#/components/schemas/AiForecastRollingStoreRow"
+        },
+        "title": "Stores",
+        "type": "array"
+      },
+      "summary": {
+        "$ref": "#/components/schemas/AiForecastRollingSummary"
+      }
+    },
+    "required": [
+      "summary"
+    ],
+    "title": "AiForecastRollingResponse",
+    "type": "object"
+  },
+  "AiForecastRollingStoreRow": {
+    "additionalProperties": false,
+    "properties": {
+      "actual_sales": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Actual Sales"
+      },
+      "asm": {
+        "title": "Asm",
+        "type": "string"
+      },
+      "delta_pct": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Delta Pct"
+      },
+      "delta_sales": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Delta Sales"
+      },
+      "firma": {
+        "title": "Firma",
+        "type": "string"
+      },
+      "forecast_sales": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Forecast Sales",
+        "type": "string"
+      },
+      "locatie": {
+        "title": "Locatie",
+        "type": "string"
+      },
+      "regional": {
+        "title": "Regional",
+        "type": "string"
+      },
+      "site_code": {
+        "title": "Site Code",
+        "type": "string"
+      }
+    },
+    "required": [
+      "site_code",
+      "locatie",
+      "firma",
+      "regional",
+      "asm",
+      "forecast_sales"
+    ],
+    "title": "AiForecastRollingStoreRow",
+    "type": "object"
+  },
+  "AiForecastRollingSummary": {
+    "additionalProperties": false,
+    "properties": {
+      "actual_sales": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Actual Sales"
+      },
+      "delta_pct": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Delta Pct"
+      },
+      "delta_sales": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Delta Sales"
+      },
+      "end_month": {
+        "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
+        "title": "End Month",
+        "type": "string"
+      },
+      "forecast_sales": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Forecast Sales",
+        "type": "string"
+      },
+      "month_count": {
+        "title": "Month Count",
+        "type": "integer"
+      },
+      "source_month": {
+        "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
+        "title": "Source Month",
+        "type": "string"
+      },
+      "start_month": {
+        "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
+        "title": "Start Month",
+        "type": "string"
+      },
+      "store_count": {
+        "title": "Store Count",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "source_month",
+      "start_month",
+      "end_month",
+      "month_count",
+      "store_count",
+      "forecast_sales"
+    ],
+    "title": "AiForecastRollingSummary",
+    "type": "object"
+  },
+  "AiForecastRunInfo": {
+    "additionalProperties": false,
+    "properties": {
+      "forecast_month": {
+        "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
+        "title": "Forecast Month",
+        "type": "string"
+      },
+      "generated_at": {
+        "format": "date-time",
+        "title": "Generated At",
+        "type": "string"
+      },
+      "horizon": {
+        "default": "current_month",
+        "enum": [
+          "current_month",
+          "rolling_12m"
+        ],
+        "title": "Horizon",
+        "type": "string"
+      },
+      "id": {
+        "title": "Id",
+        "type": "integer"
+      },
+      "metadata": {
+        "additionalProperties": true,
+        "title": "Metadata",
+        "type": "object"
+      },
+      "metric": {
+        "default": "sales_value",
+        "enum": [
+          "sales_value",
+          "units"
+        ],
+        "title": "Metric",
+        "type": "string"
+      },
+      "model_mode": {
+        "title": "Model Mode",
+        "type": "string"
+      },
+      "model_name": {
+        "title": "Model Name",
+        "type": "string"
+      },
+      "source_month": {
+        "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
+        "title": "Source Month",
+        "type": "string"
+      },
+      "variant": {
+        "title": "Variant",
+        "type": "string"
+      }
+    },
+    "required": [
+      "id",
+      "forecast_month",
+      "source_month",
+      "model_name",
+      "model_mode",
+      "variant",
+      "generated_at"
+    ],
+    "title": "AiForecastRunInfo",
+    "type": "object"
+  },
+  "AiForecastStoreRow": {
+    "additionalProperties": false,
+    "properties": {
+      "actual_sales": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Actual Sales",
+        "type": "string"
+      },
+      "asm": {
+        "title": "Asm",
+        "type": "string"
+      },
+      "delta_pct": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Delta Pct"
+      },
+      "delta_sales": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Delta Sales",
+        "type": "string"
+      },
+      "expected_sales_to_date": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Expected Sales To Date",
+        "type": "string"
+      },
+      "firma": {
+        "title": "Firma",
+        "type": "string"
+      },
+      "forecast_sales": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Forecast Sales",
+        "type": "string"
+      },
+      "locatie": {
+        "title": "Locatie",
+        "type": "string"
+      },
+      "regional": {
+        "title": "Regional",
+        "type": "string"
+      },
+      "site_code": {
+        "title": "Site Code",
+        "type": "string"
+      }
+    },
+    "required": [
+      "site_code",
+      "locatie",
+      "firma",
+      "regional",
+      "asm",
+      "forecast_sales",
+      "expected_sales_to_date",
+      "actual_sales",
+      "delta_sales"
+    ],
+    "title": "AiForecastStoreRow",
+    "type": "object"
+  },
+  "AiForecastSummary": {
+    "additionalProperties": false,
+    "properties": {
+      "actual_last_date": {
+        "anyOf": [
+          {
+            "format": "date",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Actual Last Date"
+      },
+      "actual_sales": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Actual Sales",
+        "type": "string"
+      },
+      "days_elapsed": {
+        "default": 0,
+        "title": "Days Elapsed",
+        "type": "integer"
+      },
+      "days_in_month": {
+        "title": "Days In Month",
+        "type": "integer"
+      },
+      "delta_pct": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Delta Pct"
+      },
+      "delta_sales": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Delta Sales",
+        "type": "string"
+      },
+      "expected_sales_to_date": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Expected Sales To Date",
+        "type": "string"
+      },
+      "forecast_month": {
+        "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
+        "title": "Forecast Month",
+        "type": "string"
+      },
+      "forecast_sales": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Forecast Sales",
+        "type": "string"
+      },
+      "source_month": {
+        "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
+        "title": "Source Month",
+        "type": "string"
+      },
+      "store_count": {
+        "title": "Store Count",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "forecast_month",
+      "source_month",
+      "days_in_month",
+      "store_count",
+      "forecast_sales",
+      "expected_sales_to_date",
+      "actual_sales",
+      "delta_sales"
+    ],
+    "title": "AiForecastSummary",
+    "type": "object"
+  },
+  "AsmStats": {
+    "additionalProperties": false,
+    "properties": {
+      "asm": {
+        "title": "Asm",
+        "type": "string"
+      },
+      "incentive_qty": {
+        "default": 0,
+        "title": "Incentive Qty",
+        "type": "integer"
+      },
+      "medie_produs": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Medie Produs"
+      },
+      "medie_zilnica": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Medie Zilnica"
+      },
+      "nr_agenti": {
+        "title": "Nr Agenti",
+        "type": "integer"
+      },
+      "nr_bonuri": {
+        "title": "Nr Bonuri",
+        "type": "integer"
+      },
+      "prc_focus_acc_qty": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Prc Focus Acc Qty"
+      },
+      "proc_bon2acc": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Proc Bon2Acc"
+      },
+      "proc_realizare_target": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Proc Realizare Target"
+      },
+      "promo_discount_value": {
+        "default": "0",
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Promo Discount Value",
+        "type": "string"
+      },
+      "promo_qty": {
+        "default": 0,
+        "title": "Promo Qty",
+        "type": "integer"
+      },
+      "qty_total": {
+        "title": "Qty Total",
+        "type": "integer"
+      },
+      "regional": {
+        "title": "Regional",
+        "type": "string"
+      },
+      "target": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Target",
+        "type": "string"
+      },
+      "total_vanzari": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Total Vanzari",
+        "type": "string"
+      },
+      "zile_active": {
+        "title": "Zile Active",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "asm",
+      "regional",
+      "total_vanzari",
+      "qty_total",
+      "nr_bonuri",
+      "nr_agenti",
+      "zile_active",
+      "target",
+      "proc_realizare_target",
+      "medie_zilnica",
+      "proc_bon2acc",
+      "prc_focus_acc_qty"
+    ],
+    "title": "AsmStats",
+    "type": "object"
+  },
+  "Body_reconcile_erp_report_file_api_import_erp_reconciliation_post": {
+    "properties": {
+      "file": {
+        "contentMediaType": "application/octet-stream",
+        "title": "File",
+        "type": "string"
+      },
+      "import_month": {
+        "title": "Import Month",
+        "type": "string"
+      }
+    },
+    "required": [
+      "import_month",
+      "file"
+    ],
+    "title": "Body_reconcile_erp_report_file_api_import_erp_reconciliation_post",
+    "type": "object"
+  },
+  "Body_upload_promo_actuals_file_api_import_promo_actuals_post": {
+    "properties": {
+      "cutoff_date": {
+        "format": "date",
+        "title": "Cutoff Date",
+        "type": "string"
+      },
+      "file": {
+        "contentMediaType": "application/octet-stream",
+        "title": "File",
+        "type": "string"
+      },
+      "import_month": {
+        "title": "Import Month",
+        "type": "string"
+      }
+    },
+    "required": [
+      "import_month",
+      "cutoff_date",
+      "file"
+    ],
+    "title": "Body_upload_promo_actuals_file_api_import_promo_actuals_post",
+    "type": "object"
+  },
+  "Body_upload_sales_file_api_import_sales_post": {
+    "properties": {
+      "cutoff_date": {
+        "format": "date",
+        "title": "Cutoff Date",
+        "type": "string"
+      },
+      "file": {
+        "contentMediaType": "application/octet-stream",
+        "title": "File",
+        "type": "string"
+      }
+    },
+    "required": [
+      "file",
+      "cutoff_date"
+    ],
+    "title": "Body_upload_sales_file_api_import_sales_post",
+    "type": "object"
+  },
+  "BrandMixItem": {
+    "additionalProperties": false,
+    "properties": {
+      "brand": {
+        "title": "Brand",
+        "type": "string"
+      },
+      "quantity_total": {
+        "title": "Quantity Total",
+        "type": "integer"
+      },
+      "sales_total": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Sales Total",
+        "type": "string"
+      },
+      "share_pct": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Share Pct"
+      }
+    },
+    "required": [
+      "brand",
+      "sales_total",
+      "quantity_total",
+      "share_pct"
+    ],
+    "title": "BrandMixItem",
+    "type": "object"
+  },
+  "CampaignOverview": {
+    "additionalProperties": false,
+    "properties": {
+      "active_focus_products": {
+        "title": "Active Focus Products",
+        "type": "integer"
+      },
+      "active_focus_stores": {
+        "title": "Active Focus Stores",
+        "type": "integer"
+      },
+      "focus_share_pct": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Focus Share Pct"
+      },
+      "month": {
+        "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
+        "title": "Month",
+        "type": "string"
+      },
+      "total_focus_qty": {
+        "title": "Total Focus Qty",
+        "type": "integer"
+      },
+      "total_focus_sales": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Total Focus Sales",
+        "type": "string"
+      }
+    },
+    "required": [
+      "month",
+      "total_focus_sales",
+      "total_focus_qty",
+      "focus_share_pct",
+      "active_focus_products",
+      "active_focus_stores"
+    ],
+    "title": "CampaignOverview",
+    "type": "object"
+  },
+  "CampaignProductStat": {
+    "additionalProperties": false,
+    "properties": {
+      "item_code": {
+        "title": "Item Code",
+        "type": "string"
+      },
+      "item_name": {
+        "title": "Item Name",
+        "type": "string"
+      },
+      "qty_total": {
+        "title": "Qty Total",
+        "type": "integer"
+      },
+      "sales_total": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Sales Total",
+        "type": "string"
+      },
+      "store_count": {
+        "title": "Store Count",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "item_code",
+      "item_name",
+      "qty_total",
+      "sales_total",
+      "store_count"
+    ],
+    "title": "CampaignProductStat",
+    "type": "object"
+  },
+  "CampaignPromotionOption": {
+    "additionalProperties": false,
+    "properties": {
+      "key": {
+        "title": "Key",
+        "type": "string"
+      },
+      "label": {
+        "title": "Label",
+        "type": "string"
+      }
+    },
+    "required": [
+      "key",
+      "label"
+    ],
+    "title": "CampaignPromotionOption",
+    "type": "object"
+  },
+  "CampaignSnapshot": {
+    "additionalProperties": false,
+    "properties": {
+      "overview": {
+        "$ref": "#/components/schemas/CampaignOverview"
+      },
+      "products": {
+        "items": {
+          "$ref": "#/components/schemas/CampaignProductStat"
+        },
+        "title": "Products",
+        "type": "array"
+      },
+      "stores": {
+        "items": {
+          "$ref": "#/components/schemas/CampaignStoreStat"
+        },
+        "title": "Stores",
+        "type": "array"
+      }
+    },
+    "required": [
+      "overview",
+      "products",
+      "stores"
+    ],
+    "title": "CampaignSnapshot",
+    "type": "object"
+  },
+  "CampaignStoreStat": {
+    "additionalProperties": false,
+    "properties": {
+      "active_products": {
+        "title": "Active Products",
+        "type": "integer"
+      },
+      "locatie": {
+        "title": "Locatie",
+        "type": "string"
+      },
+      "qty_total": {
+        "title": "Qty Total",
+        "type": "integer"
+      },
+      "sales_total": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Sales Total",
+        "type": "string"
+      },
+      "site_code": {
+        "title": "Site Code",
+        "type": "string"
+      }
+    },
+    "required": [
+      "site_code",
+      "locatie",
+      "qty_total",
+      "sales_total",
+      "active_products"
+    ],
+    "title": "CampaignStoreStat",
+    "type": "object"
+  },
+  "CampaignsPromotionsResponse": {
+    "additionalProperties": false,
+    "properties": {
+      "calculation_warnings": {
+        "items": {
+          "type": "string"
+        },
+        "title": "Calculation Warnings",
+        "type": "array"
+      },
+      "has_active_promotion": {
+        "default": false,
+        "title": "Has Active Promotion",
+        "type": "boolean"
+      },
+      "incentive_calculation_status": {
+        "default": "not_configured",
+        "enum": [
+          "complete",
+          "invalid",
+          "not_configured"
+        ],
+        "title": "Incentive Calculation Status",
+        "type": "string"
+      },
+      "incentive_categories": {
+        "items": {
+          "$ref": "#/components/schemas/IncentiveCategory"
+        },
+        "title": "Incentive Categories",
+        "type": "array"
+      },
+      "incentive_category_breakdown": {
+        "items": {
+          "$ref": "#/components/schemas/IncentiveCategoryBreakdown"
+        },
+        "title": "Incentive Category Breakdown",
+        "type": "array"
+      },
+      "incentive_description": {
+        "default": "",
+        "title": "Incentive Description",
+        "type": "string"
+      },
+      "incentive_periods": {
+        "items": {
+          "$ref": "#/components/schemas/IncentivePeriodStat"
+        },
+        "title": "Incentive Periods",
+        "type": "array"
+      },
+      "incentive_potential": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": 0.0,
+        "title": "Incentive Potential"
+      },
+      "incentive_product_count": {
+        "default": 0,
+        "title": "Incentive Product Count",
+        "type": "integer"
+      },
+      "incentive_qty": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": 0,
+        "title": "Incentive Qty"
+      },
+      "incentive_qualified_agents": {
+        "default": 0,
+        "title": "Incentive Qualified Agents",
+        "type": "integer"
+      },
+      "incentive_qualified_agents_full": {
+        "default": 0,
+        "title": "Incentive Qualified Agents Full",
+        "type": "integer"
+      },
+      "incentive_qualified_agents_half": {
+        "default": 0,
+        "title": "Incentive Qualified Agents Half",
+        "type": "integer"
+      },
+      "incentive_qualified_qty": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": 0,
+        "title": "Incentive Qualified Qty"
+      },
+      "incentive_qualified_stores": {
+        "default": 0,
+        "title": "Incentive Qualified Stores",
+        "type": "integer"
+      },
+      "incentive_qualified_stores_full": {
+        "default": 0,
+        "title": "Incentive Qualified Stores Full",
+        "type": "integer"
+      },
+      "incentive_qualified_stores_half": {
+        "default": 0,
+        "title": "Incentive Qualified Stores Half",
+        "type": "integer"
+      },
+      "incentive_sold_qty": {
+        "default": 0,
+        "title": "Incentive Sold Qty",
+        "type": "integer"
+      },
+      "incentive_title": {
+        "default": "",
+        "title": "Incentive Title",
+        "type": "string"
+      },
+      "incentive_value": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": 0.0,
+        "title": "Incentive Value"
+      },
+      "promo_active_agents": {
+        "default": 0,
+        "title": "Promo Active Agents",
+        "type": "integer"
+      },
+      "promo_active_stores": {
+        "default": 0,
+        "title": "Promo Active Stores",
+        "type": "integer"
+      },
+      "promo_agents": {
+        "items": {
+          "$ref": "#/components/schemas/PromoTopAgent"
+        },
+        "title": "Promo Agents",
+        "type": "array"
+      },
+      "promo_calculation_status": {
+        "default": "not_configured",
+        "enum": [
+          "complete",
+          "partial",
+          "invalid",
+          "not_configured"
+        ],
+        "title": "Promo Calculation Status",
+        "type": "string"
+      },
+      "promo_category_qty": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Promo Category Qty"
+      },
+      "promo_description": {
+        "default": "",
+        "title": "Promo Description",
+        "type": "string"
+      },
+      "promo_discount_value": {
+        "default": "0",
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Promo Discount Value",
+        "type": "string"
+      },
+      "promo_discounted_units": {
+        "default": 0,
+        "title": "Promo Discounted Units",
+        "type": "integer"
+      },
+      "promo_impact": {
+        "default": 0.0,
+        "title": "Promo Impact",
+        "type": "number"
+      },
+      "promo_qty": {
+        "default": 0,
+        "title": "Promo Qty",
+        "type": "integer"
+      },
+      "promo_qualifying_bons": {
+        "default": 0,
+        "title": "Promo Qualifying Bons",
+        "type": "integer"
+      },
+      "promo_title": {
+        "default": "",
+        "title": "Promo Title",
+        "type": "string"
+      },
+      "promo_total_qty": {
+        "default": 0,
+        "title": "Promo Total Qty",
+        "type": "integer"
+      },
+      "promotions": {
+        "items": {
+          "$ref": "#/components/schemas/CampaignPromotionOption"
+        },
+        "title": "Promotions",
+        "type": "array"
+      },
+      "selected_promotion_key": {
+        "default": "",
+        "title": "Selected Promotion Key",
+        "type": "string"
+      },
+      "top_agents": {
+        "items": {
+          "$ref": "#/components/schemas/IncentiveTopAgent"
+        },
+        "title": "Top Agents",
+        "type": "array"
+      },
+      "top_stores": {
+        "items": {
+          "$ref": "#/components/schemas/PromoTopStore"
+        },
+        "title": "Top Stores",
+        "type": "array"
+      }
+    },
+    "title": "CampaignsPromotionsResponse",
+    "type": "object"
+  },
+  "CategoryMixItem": {
+    "additionalProperties": false,
+    "properties": {
+      "category": {
+        "title": "Category",
+        "type": "string"
+      },
+      "quantity_total": {
+        "title": "Quantity Total",
+        "type": "integer"
+      },
+      "sales_total": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Sales Total",
+        "type": "string"
+      },
+      "share_pct": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Share Pct"
+      }
+    },
+    "required": [
+      "category",
+      "sales_total",
+      "quantity_total",
+      "share_pct"
+    ],
+    "title": "CategoryMixItem",
+    "type": "object"
+  },
+  "ContestLeaderboardRow": {
+    "additionalProperties": false,
+    "properties": {
+      "agent": {
+        "title": "Agent",
+        "type": "string"
+      },
+      "firma": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Firma"
+      },
+      "focus_points": {
+        "default": 0,
+        "title": "Focus Points",
+        "type": "integer"
+      },
+      "focus_units": {
+        "default": 0,
+        "title": "Focus Units",
+        "type": "integer"
+      },
+      "price_points": {
+        "default": 0,
+        "title": "Price Points",
+        "type": "integer"
+      },
+      "price_units": {
+        "default": 0,
+        "title": "Price Units",
+        "type": "integer"
+      },
+      "prize": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Prize"
+      },
+      "promo_bonuri": {
+        "default": 0,
+        "title": "Promo Bonuri",
+        "type": "integer"
+      },
+      "promo_points": {
+        "default": 0,
+        "title": "Promo Points",
+        "type": "integer"
+      },
+      "rank": {
+        "title": "Rank",
+        "type": "integer"
+      },
+      "site_code": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Site Code"
+      },
+      "store_name": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Store Name"
+      },
+      "total_points": {
+        "default": 0,
+        "title": "Total Points",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "rank",
+      "agent"
+    ],
+    "title": "ContestLeaderboardRow",
+    "type": "object"
+  },
+  "ContestPrizeInfo": {
+    "additionalProperties": false,
+    "properties": {
+      "label": {
+        "title": "Label",
+        "type": "string"
+      },
+      "rank_from": {
+        "title": "Rank From",
+        "type": "integer"
+      },
+      "rank_to": {
+        "title": "Rank To",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "rank_from",
+      "rank_to",
+      "label"
+    ],
+    "title": "ContestPrizeInfo",
+    "type": "object"
+  },
+  "ContestResponse": {
+    "additionalProperties": false,
+    "properties": {
+      "end_date": {
+        "title": "End Date",
+        "type": "string"
+      },
+      "identity_policy": {
+        "default": "site_agent",
+        "enum": [
+          "site_agent",
+          "person_id"
+        ],
+        "title": "Identity Policy",
+        "type": "string"
+      },
+      "key": {
+        "title": "Key",
+        "type": "string"
+      },
+      "leaderboard": {
+        "items": {
+          "$ref": "#/components/schemas/ContestLeaderboardRow"
+        },
+        "title": "Leaderboard",
+        "type": "array"
+      },
+      "month": {
+        "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
+        "title": "Month",
+        "type": "string"
+      },
+      "prizes": {
+        "items": {
+          "$ref": "#/components/schemas/ContestPrizeInfo"
+        },
+        "title": "Prizes",
+        "type": "array"
+      },
+      "rules": {
+        "items": {
+          "$ref": "#/components/schemas/ContestRuleInfo"
+        },
+        "title": "Rules",
+        "type": "array"
+      },
+      "scope_label": {
+        "default": "",
+        "title": "Scope Label",
+        "type": "string"
+      },
+      "start_date": {
+        "title": "Start Date",
+        "type": "string"
+      },
+      "store_count": {
+        "default": 0,
+        "title": "Store Count",
+        "type": "integer"
+      },
+      "subtitle": {
+        "default": "",
+        "title": "Subtitle",
+        "type": "string"
+      },
+      "title": {
+        "title": "Title",
+        "type": "string"
+      }
+    },
+    "required": [
+      "key",
+      "title",
+      "month",
+      "start_date",
+      "end_date"
+    ],
+    "title": "ContestResponse",
+    "type": "object"
+  },
+  "ContestRuleInfo": {
+    "additionalProperties": false,
+    "properties": {
+      "label": {
+        "title": "Label",
+        "type": "string"
+      },
+      "points": {
+        "title": "Points",
+        "type": "integer"
+      },
+      "threshold": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Threshold"
+      },
+      "type": {
+        "title": "Type",
+        "type": "string"
+      }
+    },
+    "required": [
+      "type",
+      "points",
+      "label"
+    ],
+    "title": "ContestRuleInfo",
+    "type": "object"
+  },
+  "CrmAlertResponse": {
+    "additionalProperties": false,
+    "properties": {
+      "asm": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Asm"
+      },
+      "locatie": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Locatie"
+      },
+      "reasons": {
+        "items": {
+          "type": "string"
+        },
+        "title": "Reasons",
+        "type": "array"
+      },
+      "regional": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Regional"
+      },
+      "score": {
+        "title": "Score",
+        "type": "number"
+      },
+      "site_code": {
+        "title": "Site Code",
+        "type": "string"
+      }
+    },
+    "required": [
+      "site_code",
+      "score"
+    ],
+    "title": "CrmAlertResponse",
+    "type": "object"
+  },
+  "CrmBreakdownResponse": {
+    "additionalProperties": false,
+    "properties": {
+      "avg_completion": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Avg Completion"
+      },
+      "forecast_factor": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Forecast Factor"
+      },
+      "kpi_bon2acc": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Kpi Bon2Acc"
+      },
+      "kpi_bon2acc_avg": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Kpi Bon2Acc Avg"
+      },
+      "kpi_bon2acc_score": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Kpi Bon2Acc Score"
+      },
+      "kpi_focus": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Kpi Focus"
+      },
+      "kpi_focus_avg": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Kpi Focus Avg"
+      },
+      "kpi_focus_score": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Kpi Focus Score"
+      },
+      "kpi_pct": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Kpi Pct"
+      },
+      "nr_vizite": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Nr Vizite"
+      },
+      "target_attainment": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Target Attainment"
+      },
+      "target_pct": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Target Pct"
+      },
+      "trend_pct": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Trend Pct"
+      },
+      "visits_pct": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Visits Pct"
+      }
+    },
+    "title": "CrmBreakdownResponse",
+    "type": "object"
+  },
+  "CrmRecalculateResponse": {
+    "additionalProperties": false,
+    "properties": {
+      "month": {
+        "title": "Month",
+        "type": "string"
+      },
+      "recalculated": {
+        "title": "Recalculated",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "recalculated",
+      "month"
+    ],
+    "title": "CrmRecalculateResponse",
+    "type": "object"
+  },
+  "CrmScoreResponse": {
+    "additionalProperties": false,
+    "properties": {
+      "asm": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Asm"
+      },
+      "breakdown": {
+        "$ref": "#/components/schemas/CrmBreakdownResponse"
+      },
+      "calculated_at": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Calculated At"
+      },
+      "locatie": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Locatie"
+      },
+      "regional": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Regional"
+      },
+      "score": {
+        "title": "Score",
+        "type": "number"
+      },
+      "site_code": {
+        "title": "Site Code",
+        "type": "string"
+      }
+    },
+    "required": [
+      "site_code",
+      "score",
+      "breakdown"
+    ],
+    "title": "CrmScoreResponse",
+    "type": "object"
+  },
+  "DailySalesPoint": {
+    "additionalProperties": false,
+    "properties": {
+      "receipt_count": {
+        "title": "Receipt Count",
+        "type": "integer"
+      },
+      "sale_date": {
+        "format": "date",
+        "title": "Sale Date",
+        "type": "string"
+      },
+      "total_quantity": {
+        "title": "Total Quantity",
+        "type": "integer"
+      },
+      "total_sales": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Total Sales",
+        "type": "string"
+      }
+    },
+    "required": [
+      "sale_date",
+      "total_sales",
+      "total_quantity",
+      "receipt_count"
+    ],
+    "title": "DailySalesPoint",
+    "type": "object"
+  },
+  "DashboardAllBatchRequest": {
+    "additionalProperties": false,
+    "properties": {
+      "queries": {
+        "items": {
+          "$ref": "#/components/schemas/DashboardAllQuery"
+        },
+        "maxItems": 12,
+        "minItems": 1,
+        "title": "Queries",
+        "type": "array"
+      }
+    },
+    "required": [
+      "queries"
+    ],
+    "title": "DashboardAllBatchRequest",
+    "type": "object"
+  },
+  "DashboardAllBatchResponse": {
+    "additionalProperties": false,
+    "properties": {
+      "results": {
+        "items": {
+          "$ref": "#/components/schemas/DashboardAllResponse"
+        },
+        "title": "Results",
+        "type": "array"
+      }
+    },
+    "required": [
+      "results"
+    ],
+    "title": "DashboardAllBatchResponse",
+    "type": "object"
+  },
+  "DashboardAllQuery": {
+    "additionalProperties": false,
+    "properties": {
+      "agent": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Agent"
+      },
+      "asm": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Asm"
+      },
+      "current_scope": {
+        "default": false,
+        "title": "Current Scope",
+        "type": "boolean"
+      },
+      "firma": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Firma"
+      },
+      "include_closed_stores": {
+        "default": false,
+        "title": "Include Closed Stores",
+        "type": "boolean"
+      },
+      "month": {
+        "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
+        "title": "Month",
+        "type": "string"
+      },
+      "regional": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Regional"
+      },
+      "site_code": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Site Code"
+      }
+    },
+    "required": [
+      "month"
+    ],
+    "title": "DashboardAllQuery",
+    "type": "object"
+  },
+  "DashboardAllResponse": {
+    "additionalProperties": false,
+    "properties": {
+      "agents": {
+        "items": {
+          "$ref": "#/components/schemas/AgentStats"
+        },
+        "title": "Agents",
+        "type": "array"
+      },
+      "asms": {
+        "items": {
+          "$ref": "#/components/schemas/AsmStats"
+        },
+        "title": "Asms",
+        "type": "array"
+      },
+      "brand_mix": {
+        "items": {
+          "$ref": "#/components/schemas/BrandMixItem"
+        },
+        "title": "Brand Mix",
+        "type": "array"
+      },
+      "category_mix": {
+        "items": {
+          "$ref": "#/components/schemas/CategoryMixItem"
+        },
+        "title": "Category Mix",
+        "type": "array"
+      },
+      "daily": {
+        "items": {
+          "$ref": "#/components/schemas/DailySalesPoint"
+        },
+        "title": "Daily",
+        "type": "array"
+      },
+      "daily_last_year": {
+        "items": {
+          "$ref": "#/components/schemas/DailySalesPoint"
+        },
+        "title": "Daily Last Year",
+        "type": "array"
+      },
+      "focus_subcategory_mix": {
+        "items": {
+          "$ref": "#/components/schemas/CategoryMixItem"
+        },
+        "title": "Focus Subcategory Mix",
+        "type": "array"
+      },
+      "period_comparison": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/PeriodComparisonPayload"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "premium_glass": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/PremiumGlassAnalysis"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "promo_incentive": {
+        "$ref": "#/components/schemas/PromoIncentiveSummary"
+      },
+      "receipt_bucket_mix": {
+        "items": {
+          "$ref": "#/components/schemas/ReceiptBucketItem"
+        },
+        "title": "Receipt Bucket Mix",
+        "type": "array"
+      },
+      "regionals": {
+        "items": {
+          "$ref": "#/components/schemas/RegionalStats"
+        },
+        "title": "Regionals",
+        "type": "array"
+      },
+      "special_cards": {
+        "items": {
+          "$ref": "#/components/schemas/DashboardSpecialCard"
+        },
+        "title": "Special Cards",
+        "type": "array"
+      },
+      "stores": {
+        "items": {
+          "$ref": "#/components/schemas/StoreStats"
+        },
+        "title": "Stores",
+        "type": "array"
+      },
+      "summary": {
+        "$ref": "#/components/schemas/DashboardSummary"
+      }
+    },
+    "required": [
+      "summary",
+      "agents",
+      "stores",
+      "daily"
+    ],
+    "title": "DashboardAllResponse",
+    "type": "object"
+  },
+  "DashboardHistoryResponse": {
+    "additionalProperties": false,
+    "properties": {
+      "history": {
+        "items": {
+          "$ref": "#/components/schemas/MonthlyHistoryPoint"
+        },
+        "title": "History",
+        "type": "array"
+      }
+    },
+    "required": [
+      "history"
+    ],
+    "title": "DashboardHistoryResponse",
+    "type": "object"
+  },
+  "DashboardSpecialCard": {
+    "additionalProperties": false,
+    "properties": {
+      "coverage_note": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Coverage Note"
+      },
+      "description": {
+        "title": "Description",
+        "type": "string"
+      },
+      "highlight_value": {
+        "title": "Highlight Value",
+        "type": "string"
+      },
+      "key": {
+        "enum": [
+          "promotion",
+          "incentive",
+          "premium_glass"
+        ],
+        "title": "Key",
+        "type": "string"
+      },
+      "metrics": {
+        "items": {
+          "$ref": "#/components/schemas/DashboardSpecialCardMetric"
+        },
+        "title": "Metrics",
+        "type": "array"
+      },
+      "status": {
+        "enum": [
+          "ready",
+          "inactive",
+          "no_data",
+          "missing_config",
+          "missing_source",
+          "limited_scope"
+        ],
+        "title": "Status",
+        "type": "string"
+      },
+      "status_label": {
+        "title": "Status Label",
+        "type": "string"
+      },
+      "subtitle": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Subtitle"
+      },
+      "title": {
+        "title": "Title",
+        "type": "string"
+      }
+    },
+    "required": [
+      "key",
+      "title",
+      "status",
+      "status_label",
+      "highlight_value",
+      "description"
+    ],
+    "title": "DashboardSpecialCard",
+    "type": "object"
+  },
+  "DashboardSpecialCardMetric": {
+    "additionalProperties": false,
+    "properties": {
+      "label": {
+        "title": "Label",
+        "type": "string"
+      },
+      "value": {
+        "title": "Value",
+        "type": "string"
+      }
+    },
+    "required": [
+      "label",
+      "value"
+    ],
+    "title": "DashboardSpecialCardMetric",
+    "type": "object"
+  },
+  "DashboardSpecialCardsResponse": {
+    "additionalProperties": false,
+    "properties": {
+      "cards": {
+        "items": {
+          "$ref": "#/components/schemas/DashboardSpecialCard"
+        },
+        "title": "Cards",
+        "type": "array"
+      }
+    },
+    "title": "DashboardSpecialCardsResponse",
+    "type": "object"
+  },
+  "DashboardSummary": {
+    "additionalProperties": false,
+    "properties": {
+      "cartele_qty": {
+        "default": 0,
+        "title": "Cartele Qty",
+        "type": "integer"
+      },
+      "daily_average": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Daily Average"
+      },
+      "days_in_month": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Days In Month"
+      },
+      "forecast_sales": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Forecast Sales"
+      },
+      "forecast_target_progress_pct": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Forecast Target Progress Pct"
+      },
+      "imported_day_of_month": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Imported Day Of Month"
+      },
+      "is_month_final": {
+        "default": true,
+        "title": "Is Month Final",
+        "type": "boolean"
+      },
+      "last_sale_date": {
+        "anyOf": [
+          {
+            "format": "date",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Last Sale Date"
+      },
+      "medie_produs": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Medie Produs"
+      },
+      "month": {
+        "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
+        "title": "Month",
+        "type": "string"
+      },
+      "prc_focus_acc_qty": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Prc Focus Acc Qty"
+      },
+      "proc_bon2acc": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Proc Bon2Acc"
+      },
+      "target_progress_pct": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Target Progress Pct"
+      },
+      "total_agents": {
+        "title": "Total Agents",
+        "type": "integer"
+      },
+      "total_quantity": {
+        "title": "Total Quantity",
+        "type": "integer"
+      },
+      "total_receipts": {
+        "title": "Total Receipts",
+        "type": "integer"
+      },
+      "total_sales": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Total Sales",
+        "type": "string"
+      },
+      "total_stores": {
+        "title": "Total Stores",
+        "type": "integer"
+      },
+      "total_target": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Total Target",
+        "type": "string"
+      },
+      "working_days": {
+        "title": "Working Days",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "month",
+      "total_sales",
+      "total_target",
+      "target_progress_pct",
+      "total_quantity",
+      "total_receipts",
+      "proc_bon2acc",
+      "prc_focus_acc_qty",
+      "total_stores",
+      "total_agents",
+      "working_days",
+      "daily_average"
+    ],
+    "title": "DashboardSummary",
+    "type": "object"
+  },
+  "ErpReconciliationAppMetric": {
+    "additionalProperties": false,
+    "properties": {
+      "key": {
+        "title": "Key",
+        "type": "string"
+      },
+      "label": {
+        "title": "Label",
+        "type": "string"
+      },
+      "note": {
+        "title": "Note",
+        "type": "string"
+      },
+      "unit": {
+        "enum": [
+          "RON",
+          "buc"
+        ],
+        "title": "Unit",
+        "type": "string"
+      },
+      "value": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Value"
+      }
+    },
+    "required": [
+      "key",
+      "label",
+      "unit",
+      "note"
+    ],
+    "title": "ErpReconciliationAppMetric",
+    "type": "object"
+  },
+  "ErpReconciliationIssue": {
+    "additionalProperties": false,
+    "properties": {
+      "difference": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Difference"
+      },
+      "entity": {
+        "title": "Entity",
+        "type": "string"
+      },
+      "metric": {
+        "title": "Metric",
+        "type": "string"
+      },
+      "note": {
+        "title": "Note",
+        "type": "string"
+      },
+      "report_value": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Report Value"
+      },
+      "retail_value": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Retail Value"
+      },
+      "scope": {
+        "enum": [
+          "report",
+          "store",
+          "agent"
+        ],
+        "title": "Scope",
+        "type": "string"
+      },
+      "severity": {
+        "enum": [
+          "warning",
+          "error"
+        ],
+        "title": "Severity",
+        "type": "string"
+      },
+      "site_code": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Site Code"
+      }
+    },
+    "required": [
+      "severity",
+      "scope",
+      "entity",
+      "metric",
+      "note"
+    ],
+    "title": "ErpReconciliationIssue",
+    "type": "object"
+  },
+  "ErpReconciliationMetric": {
+    "additionalProperties": false,
+    "properties": {
+      "difference": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Difference"
+      },
+      "key": {
+        "title": "Key",
+        "type": "string"
+      },
+      "label": {
+        "title": "Label",
+        "type": "string"
+      },
+      "note": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Note"
+      },
+      "report_value": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Report Value"
+      },
+      "retail_value": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Retail Value"
+      },
+      "status": {
+        "enum": [
+          "ok",
+          "explained",
+          "difference",
+          "not_comparable"
+        ],
+        "title": "Status",
+        "type": "string"
+      },
+      "unit": {
+        "enum": [
+          "RON",
+          "buc",
+          "bonuri",
+          "magazine",
+          "agenti"
+        ],
+        "title": "Unit",
+        "type": "string"
+      }
+    },
+    "required": [
+      "key",
+      "label",
+      "unit",
+      "status"
+    ],
+    "title": "ErpReconciliationMetric",
+    "type": "object"
+  },
+  "ErpReconciliationResponse": {
+    "additionalProperties": false,
+    "properties": {
+      "app_only_metrics": {
+        "items": {
+          "$ref": "#/components/schemas/ErpReconciliationAppMetric"
+        },
+        "title": "App Only Metrics",
+        "type": "array"
+      },
+      "cutoff_matches": {
+        "title": "Cutoff Matches",
+        "type": "boolean"
+      },
+      "file_digest": {
+        "title": "File Digest",
+        "type": "string"
+      },
+      "filename": {
+        "title": "Filename",
+        "type": "string"
+      },
+      "import_month": {
+        "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
+        "title": "Import Month",
+        "type": "string"
+      },
+      "issue_count": {
+        "minimum": 0.0,
+        "title": "Issue Count",
+        "type": "integer"
+      },
+      "issues": {
+        "items": {
+          "$ref": "#/components/schemas/ErpReconciliationIssue"
+        },
+        "title": "Issues",
+        "type": "array"
+      },
+      "metrics": {
+        "items": {
+          "$ref": "#/components/schemas/ErpReconciliationMetric"
+        },
+        "title": "Metrics",
+        "type": "array"
+      },
+      "notes": {
+        "items": {
+          "type": "string"
+        },
+        "title": "Notes",
+        "type": "array"
+      },
+      "omitted_issue_count": {
+        "minimum": 0.0,
+        "title": "Omitted Issue Count",
+        "type": "integer"
+      },
+      "report_agent_count": {
+        "minimum": 0.0,
+        "title": "Report Agent Count",
+        "type": "integer"
+      },
+      "report_cutoff_date": {
+        "format": "date",
+        "title": "Report Cutoff Date",
+        "type": "string"
+      },
+      "report_store_count": {
+        "minimum": 0.0,
+        "title": "Report Store Count",
+        "type": "integer"
+      },
+      "retail_agent_count": {
+        "minimum": 0.0,
+        "title": "Retail Agent Count",
+        "type": "integer"
+      },
+      "retail_cutoff_date": {
+        "anyOf": [
+          {
+            "format": "date",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Retail Cutoff Date"
+      },
+      "retail_store_count": {
+        "minimum": 0.0,
+        "title": "Retail Store Count",
+        "type": "integer"
+      },
+      "status": {
+        "enum": [
+          "ok",
+          "differences"
+        ],
+        "title": "Status",
+        "type": "string"
+      }
+    },
+    "required": [
+      "status",
+      "import_month",
+      "report_cutoff_date",
+      "retail_cutoff_date",
+      "cutoff_matches",
+      "filename",
+      "file_digest",
+      "report_store_count",
+      "retail_store_count",
+      "report_agent_count",
+      "retail_agent_count",
+      "metrics",
+      "app_only_metrics",
+      "issues",
+      "issue_count",
+      "omitted_issue_count",
+      "notes"
+    ],
+    "title": "ErpReconciliationResponse",
+    "type": "object"
+  },
+  "ExportCatalogResponse": {
+    "additionalProperties": false,
+    "properties": {
+      "comparison_levels": {
+        "items": {
+          "$ref": "#/components/schemas/ExportComparisonLevel"
+        },
+        "title": "Comparison Levels",
+        "type": "array"
+      },
+      "daily_metrics": {
+        "items": {
+          "$ref": "#/components/schemas/ExportColumnDef"
+        },
+        "title": "Daily Metrics",
+        "type": "array"
+      },
+      "datasets": {
+        "items": {
+          "$ref": "#/components/schemas/ExportDataset"
+        },
+        "title": "Datasets",
+        "type": "array"
+      },
+      "metrics": {
+        "items": {
+          "$ref": "#/components/schemas/ExportColumnDef"
+        },
+        "title": "Metrics",
+        "type": "array"
+      },
+      "monthly_metrics": {
+        "items": {
+          "$ref": "#/components/schemas/ExportColumnDef"
+        },
+        "title": "Monthly Metrics",
+        "type": "array"
+      }
+    },
+    "required": [
+      "datasets",
+      "metrics",
+      "monthly_metrics",
+      "daily_metrics",
+      "comparison_levels"
+    ],
+    "title": "ExportCatalogResponse",
+    "type": "object"
+  },
+  "ExportColumnDef": {
+    "additionalProperties": false,
+    "properties": {
+      "group": {
+        "title": "Group",
+        "type": "string"
+      },
+      "key": {
+        "title": "Key",
+        "type": "string"
+      },
+      "label": {
+        "title": "Label",
+        "type": "string"
+      },
+      "type": {
+        "title": "Type",
+        "type": "string"
+      }
+    },
+    "required": [
+      "key",
+      "label",
+      "type",
+      "group"
+    ],
+    "title": "ExportColumnDef",
+    "type": "object"
+  },
+  "ExportComparisonLevel": {
+    "additionalProperties": false,
+    "properties": {
+      "key": {
+        "title": "Key",
+        "type": "string"
+      },
+      "label": {
+        "title": "Label",
+        "type": "string"
+      }
+    },
+    "required": [
+      "key",
+      "label"
+    ],
+    "title": "ExportComparisonLevel",
+    "type": "object"
+  },
+  "ExportDataset": {
+    "additionalProperties": false,
+    "properties": {
+      "description": {
+        "title": "Description",
+        "type": "string"
+      },
+      "dimensions": {
+        "items": {
+          "$ref": "#/components/schemas/ExportColumnDef"
+        },
+        "title": "Dimensions",
+        "type": "array"
+      },
+      "key": {
+        "title": "Key",
+        "type": "string"
+      },
+      "label": {
+        "title": "Label",
+        "type": "string"
+      }
+    },
+    "required": [
+      "key",
+      "label",
+      "description",
+      "dimensions"
+    ],
+    "title": "ExportDataset",
+    "type": "object"
+  },
+  "ExportFilters": {
+    "additionalProperties": false,
+    "properties": {
+      "agent": {
+        "items": {
+          "type": "string"
+        },
+        "title": "Agent",
+        "type": "array"
+      },
+      "asm": {
+        "items": {
+          "type": "string"
+        },
+        "title": "Asm",
+        "type": "array"
+      },
+      "firma": {
+        "items": {
+          "type": "string"
+        },
+        "title": "Firma",
+        "type": "array"
+      },
+      "regional": {
+        "items": {
+          "type": "string"
+        },
+        "title": "Regional",
+        "type": "array"
+      },
+      "site_code": {
+        "items": {
+          "type": "string"
+        },
+        "title": "Site Code",
+        "type": "array"
+      }
+    },
+    "title": "ExportFilters",
+    "type": "object"
+  },
+  "ExportOperationPublishUncertainDetail": {
+    "additionalProperties": false,
+    "properties": {
+      "job_id": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Job Id"
+      },
+      "operation_id": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Operation Id"
+      },
+      "status": {
+        "const": "unknown",
+        "title": "Status",
+        "type": "string"
+      }
+    },
+    "required": [
+      "status"
+    ],
+    "title": "ExportOperationPublishUncertainDetail",
+    "type": "object"
+  },
+  "ExportOperationResponse": {
+    "additionalProperties": false,
+    "properties": {
+      "artifact_sha256": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Artifact Sha256"
+      },
+      "artifact_size": {
+        "anyOf": [
+          {
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Artifact Size"
+      },
+      "build_seconds": {
+        "anyOf": [
+          {
+            "minimum": 0.0,
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Build Seconds"
+      },
+      "can_download": {
+        "default": false,
+        "title": "Can Download",
+        "type": "boolean"
+      },
+      "cell_count": {
+        "anyOf": [
+          {
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Cell Count"
+      },
+      "created_at": {
+        "format": "date-time",
+        "title": "Created At",
+        "type": "string"
+      },
+      "error_code": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Error Code"
+      },
+      "expires_at": {
+        "anyOf": [
+          {
+            "format": "date-time",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Expires At"
+      },
+      "filename": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Filename"
+      },
+      "finished_at": {
+        "anyOf": [
+          {
+            "format": "date-time",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Finished At"
+      },
+      "id": {
+        "exclusiveMinimum": 0.0,
+        "title": "Id",
+        "type": "integer"
+      },
+      "job_id": {
+        "title": "Job Id",
+        "type": "string"
+      },
+      "kind": {
+        "enum": [
+          "daily_metrics",
+          "daily_comparison"
+        ],
+        "title": "Kind",
+        "type": "string"
+      },
+      "peak_rss_bytes": {
+        "anyOf": [
+          {
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Peak Rss Bytes"
+      },
+      "started_at": {
+        "anyOf": [
+          {
+            "format": "date-time",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Started At"
+      },
+      "status": {
+        "enum": [
+          "queued",
+          "running",
+          "completed",
+          "failed",
+          "cancelled",
+          "expired"
+        ],
+        "title": "Status",
+        "type": "string"
+      }
+    },
+    "required": [
+      "id",
+      "kind",
+      "status",
+      "job_id",
+      "created_at"
+    ],
+    "title": "ExportOperationResponse",
+    "type": "object"
+  },
+  "ExportOperationUnavailableResponse": {
+    "additionalProperties": false,
+    "properties": {
+      "detail": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "$ref": "#/components/schemas/ExportOperationPublishUncertainDetail"
+          }
+        ],
+        "title": "Detail"
+      }
+    },
+    "required": [
+      "detail"
+    ],
+    "title": "ExportOperationUnavailableResponse",
+    "type": "object"
+  },
+  "ExportPreviewResponse": {
+    "additionalProperties": false,
+    "properties": {
+      "columns": {
+        "items": {
+          "$ref": "#/components/schemas/ExportColumnDef"
+        },
+        "title": "Columns",
+        "type": "array"
+      },
+      "rows": {
+        "items": {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        "title": "Rows",
+        "type": "array"
+      },
+      "total_rows": {
+        "title": "Total Rows",
+        "type": "integer"
+      },
+      "truncated": {
+        "title": "Truncated",
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "columns",
+      "rows",
+      "total_rows",
+      "truncated"
+    ],
+    "title": "ExportPreviewResponse",
+    "type": "object"
+  },
+  "ExportRequest": {
+    "additionalProperties": false,
+    "properties": {
+      "comparison_levels": {
+        "items": {
+          "type": "string"
+        },
+        "title": "Comparison Levels",
+        "type": "array"
+      },
+      "daily_metrics": {
+        "items": {
+          "type": "string"
+        },
+        "title": "Daily Metrics",
+        "type": "array"
+      },
+      "dataset": {
+        "title": "Dataset",
+        "type": "string"
+      },
+      "dimensions": {
+        "items": {
+          "type": "string"
+        },
+        "title": "Dimensions",
+        "type": "array"
+      },
+      "export_mode": {
+        "default": "table",
+        "title": "Export Mode",
+        "type": "string"
+      },
+      "filename": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Filename"
+      },
+      "filters": {
+        "$ref": "#/components/schemas/ExportFilters"
+      },
+      "include_closed_stores": {
+        "default": false,
+        "title": "Include Closed Stores",
+        "type": "boolean"
+      },
+      "metrics": {
+        "items": {
+          "type": "string"
+        },
+        "title": "Metrics",
+        "type": "array"
+      },
+      "monthly_metrics": {
+        "items": {
+          "type": "string"
+        },
+        "title": "Monthly Metrics",
+        "type": "array"
+      },
+      "months": {
+        "items": {
+          "type": "string"
+        },
+        "maxItems": 144,
+        "minItems": 1,
+        "title": "Months",
+        "type": "array"
+      },
+      "preview_limit": {
+        "default": 100,
+        "maximum": 500.0,
+        "minimum": 1.0,
+        "title": "Preview Limit",
+        "type": "integer"
+      },
+      "selected_days": {
+        "items": {
+          "type": "integer"
+        },
+        "maxItems": 31,
+        "title": "Selected Days",
+        "type": "array"
+      }
+    },
+    "required": [
+      "dataset",
+      "months"
+    ],
+    "title": "ExportRequest",
+    "type": "object"
+  },
+  "FilterOptions": {
+    "additionalProperties": false,
+    "properties": {
+      "agenti": {
+        "items": {
+          "$ref": "#/components/schemas/AgentOption"
+        },
+        "title": "Agenti",
+        "type": "array"
+      },
+      "asmi": {
+        "items": {
+          "type": "string"
+        },
+        "title": "Asmi",
+        "type": "array"
+      },
+      "firme": {
+        "items": {
+          "type": "string"
+        },
+        "title": "Firme",
+        "type": "array"
+      },
+      "magazine": {
+        "items": {
+          "$ref": "#/components/schemas/StoreOption"
+        },
+        "title": "Magazine",
+        "type": "array"
+      },
+      "regionali": {
+        "items": {
+          "type": "string"
+        },
+        "title": "Regionali",
+        "type": "array"
+      }
+    },
+    "required": [
+      "firme",
+      "regionali",
+      "asmi",
+      "magazine",
+      "agenti"
+    ],
+    "title": "FilterOptions",
+    "type": "object"
+  },
+  "FocusHistoryPoint": {
+    "additionalProperties": false,
+    "properties": {
+      "active_focus_products": {
+        "title": "Active Focus Products",
+        "type": "integer"
+      },
+      "active_focus_stores": {
+        "title": "Active Focus Stores",
+        "type": "integer"
+      },
+      "focus_share_pct": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Focus Share Pct"
+      },
+      "month": {
+        "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
+        "title": "Month",
+        "type": "string"
+      },
+      "total_focus_qty": {
+        "title": "Total Focus Qty",
+        "type": "integer"
+      },
+      "total_focus_sales": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Total Focus Sales",
+        "type": "string"
+      }
+    },
+    "required": [
+      "month",
+      "total_focus_sales",
+      "total_focus_qty",
+      "focus_share_pct",
+      "active_focus_products",
+      "active_focus_stores"
+    ],
+    "title": "FocusHistoryPoint",
+    "type": "object"
+  },
+  "FocusHistoryResponse": {
+    "additionalProperties": false,
+    "properties": {
+      "history": {
+        "items": {
+          "$ref": "#/components/schemas/FocusHistoryPoint"
+        },
+        "title": "History",
+        "type": "array"
+      }
+    },
+    "required": [
+      "history"
+    ],
+    "title": "FocusHistoryResponse",
+    "type": "object"
+  },
+  "GrileAgentTargetEnqueueResponse": {
+    "additionalProperties": false,
+    "properties": {
+      "job_id": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Job Id"
+      },
+      "operation": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/GrileAgentTargetOperationResponse"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "operation_id": {
+        "title": "Operation Id",
+        "type": "integer"
+      },
+      "status": {
+        "title": "Status",
+        "type": "string"
+      }
+    },
+    "required": [
+      "status",
+      "operation_id"
+    ],
+    "title": "GrileAgentTargetEnqueueResponse",
+    "type": "object"
+  },
+  "GrileAgentTargetOperationEnvelope": {
+    "additionalProperties": false,
+    "properties": {
+      "operation": {
+        "$ref": "#/components/schemas/GrileAgentTargetOperationResponse"
+      }
+    },
+    "required": [
+      "operation"
+    ],
+    "title": "GrileAgentTargetOperationEnvelope",
+    "type": "object"
+  },
+  "GrileAgentTargetOperationResponse": {
+    "additionalProperties": false,
+    "properties": {
+      "after_count": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "After Count"
+      },
+      "after_sha256": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "After Sha256"
+      },
+      "before_count": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Before Count"
+      },
+      "before_sha256": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Before Sha256"
+      },
+      "created_at": {
+        "anyOf": [
+          {
+            "format": "date-time",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Created At"
+      },
+      "diff": {
+        "anyOf": [
+          {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Diff"
+      },
+      "error_message": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Error Message"
+      },
+      "finished_at": {
+        "anyOf": [
+          {
+            "format": "date-time",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Finished At"
+      },
+      "id": {
+        "title": "Id",
+        "type": "integer"
+      },
+      "job_id": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Job Id"
+      },
+      "mode": {
+        "enum": [
+          "dry_run",
+          "sync"
+        ],
+        "title": "Mode",
+        "type": "string"
+      },
+      "run_month": {
+        "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
+        "title": "Run Month",
+        "type": "string"
+      },
+      "started_at": {
+        "anyOf": [
+          {
+            "format": "date-time",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Started At"
+      },
+      "status": {
+        "title": "Status",
+        "type": "string"
+      }
+    },
+    "required": [
+      "id",
+      "run_month",
+      "mode",
+      "status"
+    ],
+    "title": "GrileAgentTargetOperationResponse",
+    "type": "object"
+  },
+  "GrileFirmResponse": {
+    "additionalProperties": false,
+    "properties": {
+      "name": {
+        "title": "Name",
+        "type": "string"
+      },
+      "stores": {
+        "items": {
+          "$ref": "#/components/schemas/GrileStoreResponse"
+        },
+        "title": "Stores",
+        "type": "array"
+      }
+    },
+    "required": [
+      "name",
+      "stores"
+    ],
+    "title": "GrileFirmResponse",
+    "type": "object"
+  },
+  "GrileManagerResponse": {
+    "additionalProperties": false,
+    "properties": {
+      "avg_completion": {
+        "anyOf": [
+          {
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Avg Completion"
+      },
+      "business_unknown": {
+        "minimum": 0.0,
+        "title": "Business Unknown",
+        "type": "integer"
+      },
+      "legacy_completion_windows": {
+        "minimum": 0.0,
+        "title": "Legacy Completion Windows",
+        "type": "integer"
+      },
+      "name": {
+        "title": "Name",
+        "type": "string"
+      },
+      "ok": {
+        "minimum": 0.0,
+        "title": "Ok",
+        "type": "integer"
+      },
+      "problems": {
+        "minimum": 0.0,
+        "title": "Problems",
+        "type": "integer"
+      },
+      "provider_errors": {
+        "minimum": 0.0,
+        "title": "Provider Errors",
+        "type": "integer"
+      },
+      "provider_fresh": {
+        "minimum": 0.0,
+        "title": "Provider Fresh",
+        "type": "integer"
+      },
+      "provider_stale": {
+        "minimum": 0.0,
+        "title": "Provider Stale",
+        "type": "integer"
+      },
+      "provider_unknown": {
+        "minimum": 0.0,
+        "title": "Provider Unknown",
+        "type": "integer"
+      },
+      "store_count": {
+        "minimum": 0.0,
+        "title": "Store Count",
+        "type": "integer"
+      },
+      "team_leaders": {
+        "items": {
+          "$ref": "#/components/schemas/GrileTeamLeaderResponse"
+        },
+        "title": "Team Leaders",
+        "type": "array"
+      }
+    },
+    "required": [
+      "name",
+      "store_count",
+      "ok",
+      "problems",
+      "business_unknown",
+      "provider_fresh",
+      "provider_errors",
+      "provider_stale",
+      "provider_unknown",
+      "legacy_completion_windows",
+      "team_leaders"
+    ],
+    "title": "GrileManagerResponse",
+    "type": "object"
+  },
+  "GrileMonthlyJobResponse": {
+    "additionalProperties": false,
+    "properties": {
+      "error": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Error"
+      },
+      "job_id": {
+        "title": "Job Id",
+        "type": "string"
+      },
+      "result": {
+        "anyOf": [
+          {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Result"
+      },
+      "status": {
+        "enum": [
+          "queued",
+          "in_progress",
+          "complete",
+          "not_found"
+        ],
+        "title": "Status",
+        "type": "string"
+      }
+    },
+    "required": [
+      "job_id",
+      "status"
+    ],
+    "title": "GrileMonthlyJobResponse",
+    "type": "object"
+  },
+  "GrileMonthlyManifestEnvelope": {
+    "additionalProperties": false,
+    "properties": {
+      "manifest": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/GrileMonthlyManifestResponse"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "title": "GrileMonthlyManifestEnvelope",
+    "type": "object"
+  },
+  "GrileMonthlyManifestResponse": {
+    "additionalProperties": false,
+    "properties": {
+      "approved": {
+        "title": "Approved",
+        "type": "boolean"
+      },
+      "approved_at": {
+        "anyOf": [
+          {
+            "format": "date-time",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Approved At"
+      },
+      "consumed_at": {
+        "anyOf": [
+          {
+            "format": "date-time",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Consumed At"
+      },
+      "created_at": {
+        "anyOf": [
+          {
+            "format": "date-time",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Created At"
+      },
+      "error_count": {
+        "minimum": 0.0,
+        "title": "Error Count",
+        "type": "integer"
+      },
+      "expected": {
+        "additionalProperties": true,
+        "title": "Expected",
+        "type": "object"
+      },
+      "id": {
+        "title": "Id",
+        "type": "integer"
+      },
+      "manifest_sha256": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Manifest Sha256"
+      },
+      "month": {
+        "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
+        "title": "Month",
+        "type": "string"
+      },
+      "operation": {
+        "enum": [
+          "finalize",
+          "archive",
+          "reset"
+        ],
+        "title": "Operation",
+        "type": "string"
+      },
+      "operation_id": {
+        "title": "Operation Id",
+        "type": "integer"
+      },
+      "processed": {
+        "additionalProperties": true,
+        "title": "Processed",
+        "type": "object"
+      },
+      "status": {
+        "enum": [
+          "building",
+          "failed",
+          "verified",
+          "approved",
+          "consumed",
+          "rolled_back",
+          "uncertain"
+        ],
+        "title": "Status",
+        "type": "string"
+      },
+      "verified_at": {
+        "anyOf": [
+          {
+            "format": "date-time",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Verified At"
+      }
+    },
+    "required": [
+      "id",
+      "operation_id",
+      "month",
+      "operation",
+      "status",
+      "error_count",
+      "approved"
+    ],
+    "title": "GrileMonthlyManifestResponse",
+    "type": "object"
+  },
+  "GrileMonthlyRunResponse": {
+    "additionalProperties": false,
+    "properties": {
+      "dry_run": {
+        "anyOf": [
+          {
+            "type": "boolean"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Dry Run"
+      },
+      "job_id": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Job Id"
+      },
+      "month": {
+        "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
+        "title": "Month",
+        "type": "string"
+      },
+      "month_label": {
+        "title": "Month Label",
+        "type": "string"
+      },
+      "next_month_label": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Next Month Label"
+      },
+      "op": {
+        "enum": [
+          "finalize",
+          "archive",
+          "reset"
+        ],
+        "title": "Op",
+        "type": "string"
+      },
+      "operation": {
+        "anyOf": [
+          {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Operation"
+      },
+      "operation_id": {
+        "title": "Operation Id",
+        "type": "integer"
+      },
+      "status": {
+        "enum": [
+          "enqueued",
+          "already_running",
+          "already_completed"
+        ],
+        "title": "Status",
+        "type": "string"
+      }
+    },
+    "required": [
+      "status",
+      "operation_id",
+      "op",
+      "month",
+      "month_label"
+    ],
+    "title": "GrileMonthlyRunResponse",
+    "type": "object"
+  },
+  "GrileOverviewResponse": {
+    "additionalProperties": false,
+    "properties": {
+      "managers": {
+        "items": {
+          "$ref": "#/components/schemas/GrileManagerResponse"
+        },
+        "title": "Managers",
+        "type": "array"
+      },
+      "month": {
+        "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
+        "title": "Month",
+        "type": "string"
+      },
+      "run": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/GrileRunResponse"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "summary": {
+        "$ref": "#/components/schemas/GrileOverviewSummary"
+      },
+      "total_sheets": {
+        "minimum": 0.0,
+        "title": "Total Sheets",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "month",
+      "total_sheets",
+      "summary",
+      "managers"
+    ],
+    "title": "GrileOverviewResponse",
+    "type": "object"
+  },
+  "GrileOverviewSummary": {
+    "additionalProperties": false,
+    "properties": {
+      "business_ok": {
+        "minimum": 0.0,
+        "title": "Business Ok",
+        "type": "integer"
+      },
+      "business_problems": {
+        "minimum": 0.0,
+        "title": "Business Problems",
+        "type": "integer"
+      },
+      "business_unknown": {
+        "minimum": 0.0,
+        "title": "Business Unknown",
+        "type": "integer"
+      },
+      "legacy_completion_windows": {
+        "minimum": 0.0,
+        "title": "Legacy Completion Windows",
+        "type": "integer"
+      },
+      "provider_errors": {
+        "minimum": 0.0,
+        "title": "Provider Errors",
+        "type": "integer"
+      },
+      "provider_fresh": {
+        "minimum": 0.0,
+        "title": "Provider Fresh",
+        "type": "integer"
+      },
+      "provider_stale": {
+        "minimum": 0.0,
+        "title": "Provider Stale",
+        "type": "integer"
+      },
+      "provider_unknown": {
+        "minimum": 0.0,
+        "title": "Provider Unknown",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "business_ok",
+      "business_problems",
+      "business_unknown",
+      "provider_fresh",
+      "provider_errors",
+      "provider_stale",
+      "provider_unknown",
+      "legacy_completion_windows"
+    ],
+    "title": "GrileOverviewSummary",
+    "type": "object"
+  },
+  "GrilePermissionsResponse": {
+    "additionalProperties": false,
+    "properties": {
+      "can_run": {
+        "title": "Can Run",
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "can_run"
+    ],
+    "title": "GrilePermissionsResponse",
+    "type": "object"
+  },
+  "GrilePilotV2CheckResponse": {
+    "additionalProperties": false,
+    "properties": {
+      "message": {
+        "title": "Message",
+        "type": "string"
+      },
+      "realized": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Realized"
+      },
+      "realized_diff": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Realized Diff"
+      },
+      "status": {
+        "enum": [
+          "ok",
+          "problem",
+          "unavailable"
+        ],
+        "title": "Status",
+        "type": "string"
+      },
+      "target": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Target"
+      },
+      "target_diff": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Target Diff"
+      }
+    },
+    "required": [
+      "status",
+      "message"
+    ],
+    "title": "GrilePilotV2CheckResponse",
+    "type": "object"
+  },
+  "GrilePilotV2ManagerResponse": {
+    "additionalProperties": false,
+    "properties": {
+      "name": {
+        "title": "Name",
+        "type": "string"
+      },
+      "stores": {
+        "items": {
+          "$ref": "#/components/schemas/GrilePilotV2StoreResponse"
+        },
+        "title": "Stores",
+        "type": "array"
+      }
+    },
+    "required": [
+      "name",
+      "stores"
+    ],
+    "title": "GrilePilotV2ManagerResponse",
+    "type": "object"
+  },
+  "GrilePilotV2OverviewResponse": {
+    "additionalProperties": false,
+    "properties": {
+      "managers": {
+        "items": {
+          "$ref": "#/components/schemas/GrilePilotV2ManagerResponse"
+        },
+        "title": "Managers",
+        "type": "array"
+      },
+      "month": {
+        "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
+        "title": "Month",
+        "type": "string"
+      },
+      "store_count": {
+        "minimum": 0.0,
+        "title": "Store Count",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "month",
+      "store_count",
+      "managers"
+    ],
+    "title": "GrilePilotV2OverviewResponse",
+    "type": "object"
+  },
+  "GrilePilotV2StoreResponse": {
+    "additionalProperties": false,
+    "properties": {
+      "firma": {
+        "title": "Firma",
+        "type": "string"
+      },
+      "forecast_pct_v2": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Forecast Pct V2"
+      },
+      "forecast_v2": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Forecast V2"
+      },
+      "locatie": {
+        "title": "Locatie",
+        "type": "string"
+      },
+      "manager": {
+        "title": "Manager",
+        "type": "string"
+      },
+      "realized_pct_v2": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Realized Pct V2"
+      },
+      "realized_v2": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Realized V2"
+      },
+      "report_check": {
+        "$ref": "#/components/schemas/GrilePilotV2CheckResponse"
+      },
+      "report_cutoff": {
+        "anyOf": [
+          {
+            "format": "date",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Report Cutoff"
+      },
+      "sheet_id": {
+        "title": "Sheet Id",
+        "type": "string"
+      },
+      "site_code": {
+        "title": "Site Code",
+        "type": "string"
+      },
+      "target_v2": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Target V2"
+      },
+      "v1_check": {
+        "$ref": "#/components/schemas/GrilePilotV2CheckResponse"
+      }
+    },
+    "required": [
+      "site_code",
+      "sheet_id",
+      "locatie",
+      "firma",
+      "manager",
+      "report_check",
+      "v1_check"
+    ],
+    "title": "GrilePilotV2StoreResponse",
+    "type": "object"
+  },
+  "GrileProviderStatus": {
+    "additionalProperties": false,
+    "properties": {
+      "last_attempt_at": {
+        "anyOf": [
+          {
+            "format": "date-time",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Last Attempt At"
+      },
+      "last_error_at": {
+        "anyOf": [
+          {
+            "format": "date-time",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Last Error At"
+      },
+      "last_error_code": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Last Error Code"
+      },
+      "last_error_message": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Last Error Message"
+      },
+      "last_success_at": {
+        "anyOf": [
+          {
+            "format": "date-time",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Last Success At"
+      },
+      "stale_age_seconds": {
+        "anyOf": [
+          {
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Stale Age Seconds"
+      },
+      "state": {
+        "enum": [
+          "fresh",
+          "stale",
+          "error",
+          "unknown"
+        ],
+        "title": "State",
+        "type": "string"
+      }
+    },
+    "required": [
+      "state"
+    ],
+    "title": "GrileProviderStatus",
+    "type": "object"
+  },
+  "GrileRunEnqueueResponse": {
+    "additionalProperties": false,
+    "properties": {
+      "job_id": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Job Id"
+      },
+      "month": {
+        "anyOf": [
+          {
+            "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Month"
+      },
+      "run": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/GrileRunResponse"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "run_id": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Run Id"
+      },
+      "status": {
+        "enum": [
+          "enqueued",
+          "already_running"
+        ],
+        "title": "Status",
+        "type": "string"
+      }
+    },
+    "required": [
+      "status"
+    ],
+    "title": "GrileRunEnqueueResponse",
+    "type": "object"
+  },
+  "GrileRunResponse": {
+    "additionalProperties": false,
+    "properties": {
+      "active": {
+        "title": "Active",
+        "type": "boolean"
+      },
+      "created_at": {
+        "anyOf": [
+          {
+            "format": "date-time",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Created At"
+      },
+      "duration_ms": {
+        "anyOf": [
+          {
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Duration Ms"
+      },
+      "error_count": {
+        "minimum": 0.0,
+        "title": "Error Count",
+        "type": "integer"
+      },
+      "error_message": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Error Message"
+      },
+      "finished_at": {
+        "anyOf": [
+          {
+            "format": "date-time",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Finished At"
+      },
+      "heartbeat_at": {
+        "anyOf": [
+          {
+            "format": "date-time",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Heartbeat At"
+      },
+      "id": {
+        "title": "Id",
+        "type": "integer"
+      },
+      "ok_count": {
+        "minimum": 0.0,
+        "title": "Ok Count",
+        "type": "integer"
+      },
+      "problem_count": {
+        "minimum": 0.0,
+        "title": "Problem Count",
+        "type": "integer"
+      },
+      "progress_current": {
+        "minimum": 0.0,
+        "title": "Progress Current",
+        "type": "integer"
+      },
+      "progress_total": {
+        "minimum": 0.0,
+        "title": "Progress Total",
+        "type": "integer"
+      },
+      "run_month": {
+        "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
+        "title": "Run Month",
+        "type": "string"
+      },
+      "source": {
+        "enum": [
+          "manual",
+          "auto"
+        ],
+        "title": "Source",
+        "type": "string"
+      },
+      "source_snapshot_id": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Source Snapshot Id"
+      },
+      "started_at": {
+        "anyOf": [
+          {
+            "format": "date-time",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Started At"
+      },
+      "status": {
+        "enum": [
+          "queued",
+          "running",
+          "completed",
+          "failed"
+        ],
+        "title": "Status",
+        "type": "string"
+      }
+    },
+    "required": [
+      "id",
+      "run_month",
+      "source",
+      "status",
+      "active",
+      "progress_current",
+      "progress_total",
+      "ok_count",
+      "problem_count",
+      "error_count"
+    ],
+    "title": "GrileRunResponse",
+    "type": "object"
+  },
+  "GrileRunStatusResponse": {
+    "additionalProperties": false,
+    "properties": {
+      "run": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/GrileRunResponse"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "title": "GrileRunStatusResponse",
+    "type": "object"
+  },
+  "GrileStoreRefreshEnqueueResponse": {
+    "additionalProperties": false,
+    "properties": {
+      "job_id": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Job Id"
+      },
+      "month": {
+        "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
+        "title": "Month",
+        "type": "string"
+      },
+      "operation_id": {
+        "title": "Operation Id",
+        "type": "integer"
+      },
+      "status": {
+        "enum": [
+          "enqueued",
+          "already_running"
+        ],
+        "title": "Status",
+        "type": "string"
+      }
+    },
+    "required": [
+      "status",
+      "month",
+      "operation_id"
+    ],
+    "title": "GrileStoreRefreshEnqueueResponse",
+    "type": "object"
+  },
+  "GrileStoreRefreshOperationEnvelope": {
+    "additionalProperties": false,
+    "properties": {
+      "operation": {
+        "$ref": "#/components/schemas/GrileStoreRefreshOperationResponse"
+      }
+    },
+    "required": [
+      "operation"
+    ],
+    "title": "GrileStoreRefreshOperationEnvelope",
+    "type": "object"
+  },
+  "GrileStoreRefreshOperationResponse": {
+    "additionalProperties": false,
+    "properties": {
+      "created_at": {
+        "format": "date-time",
+        "title": "Created At",
+        "type": "string"
+      },
+      "error_code": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Error Code"
+      },
+      "error_message": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Error Message"
+      },
+      "finished_at": {
+        "anyOf": [
+          {
+            "format": "date-time",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Finished At"
+      },
+      "heartbeat_at": {
+        "anyOf": [
+          {
+            "format": "date-time",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Heartbeat At"
+      },
+      "id": {
+        "title": "Id",
+        "type": "integer"
+      },
+      "projection_applied": {
+        "anyOf": [
+          {
+            "type": "boolean"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Projection Applied"
+      },
+      "run_month": {
+        "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
+        "title": "Run Month",
+        "type": "string"
+      },
+      "site_code": {
+        "title": "Site Code",
+        "type": "string"
+      },
+      "started_at": {
+        "anyOf": [
+          {
+            "format": "date-time",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Started At"
+      },
+      "status": {
+        "enum": [
+          "queued",
+          "running",
+          "completed",
+          "failed",
+          "cancelled",
+          "unknown"
+        ],
+        "title": "Status",
+        "type": "string"
+      }
+    },
+    "required": [
+      "id",
+      "run_month",
+      "site_code",
+      "status",
+      "created_at"
+    ],
+    "title": "GrileStoreRefreshOperationResponse",
+    "type": "object"
+  },
+  "GrileStoreResponse": {
+    "additionalProperties": false,
+    "properties": {
+      "asm": {
+        "title": "Asm",
+        "type": "string"
+      },
+      "checked_at": {
+        "anyOf": [
+          {
+            "format": "date-time",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Checked At"
+      },
+      "completion_algorithm_version": {
+        "minimum": 1.0,
+        "title": "Completion Algorithm Version",
+        "type": "integer"
+      },
+      "completion_as_of": {
+        "anyOf": [
+          {
+            "format": "date",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Completion As Of"
+      },
+      "completion_pct": {
+        "anyOf": [
+          {
+            "maximum": 100.0,
+            "minimum": 0.0,
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Completion Pct"
+      },
+      "completion_window_status": {
+        "enum": [
+          "current",
+          "legacy_incomplete_window"
+        ],
+        "title": "Completion Window Status",
+        "type": "string"
+      },
+      "days_elapsed": {
+        "anyOf": [
+          {
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Days Elapsed"
+      },
+      "db_max_sale_date": {
+        "anyOf": [
+          {
+            "format": "date",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Db Max Sale Date"
+      },
+      "db_sales_mtd": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Db Sales Mtd"
+      },
+      "db_target": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Db Target"
+      },
+      "error_code": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Error Code"
+      },
+      "error_message": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Error Message"
+      },
+      "fill_status": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Fill Status"
+      },
+      "firma": {
+        "title": "Firma",
+        "type": "string"
+      },
+      "grila_sales": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Grila Sales"
+      },
+      "grila_target": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Grila Target"
+      },
+      "last_edit": {
+        "anyOf": [
+          {
+            "format": "date-time",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Last Edit"
+      },
+      "locatie": {
+        "title": "Locatie",
+        "type": "string"
+      },
+      "missing_days": {
+        "anyOf": [
+          {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Missing Days"
+      },
+      "provider_status": {
+        "$ref": "#/components/schemas/GrileProviderStatus"
+      },
+      "regional": {
+        "title": "Regional",
+        "type": "string"
+      },
+      "sales_diff": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Sales Diff"
+      },
+      "sales_status": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Sales Status"
+      },
+      "sheet_id": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Sheet Id"
+      },
+      "site_code": {
+        "title": "Site Code",
+        "type": "string"
+      },
+      "target_diff": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Target Diff"
+      },
+      "target_status": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Target Status"
+      },
+      "team_leader_name": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Team Leader Name"
+      }
+    },
+    "required": [
+      "site_code",
+      "locatie",
+      "firma",
+      "regional",
+      "asm",
+      "completion_algorithm_version",
+      "completion_window_status",
+      "provider_status"
+    ],
+    "title": "GrileStoreResponse",
+    "type": "object"
+  },
+  "GrileTeamLeaderResponse": {
+    "additionalProperties": false,
+    "properties": {
+      "firms": {
+        "items": {
+          "$ref": "#/components/schemas/GrileFirmResponse"
+        },
+        "title": "Firms",
+        "type": "array"
+      },
+      "name": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Name"
+      }
+    },
+    "required": [
+      "firms"
+    ],
+    "title": "GrileTeamLeaderResponse",
+    "type": "object"
+  },
+  "HTTPValidationError": {
+    "properties": {
+      "detail": {
+        "items": {
+          "$ref": "#/components/schemas/ValidationError"
+        },
+        "title": "Detail",
+        "type": "array"
+      }
+    },
+    "title": "HTTPValidationError",
+    "type": "object"
+  },
+  "HrAgentPerformanceItem": {
+    "additionalProperties": false,
+    "properties": {
+      "active_days": {
+        "title": "Active Days",
+        "type": "integer"
+      },
+      "import_month": {
+        "title": "Import Month",
+        "type": "string"
+      },
+      "target_pct": {
+        "title": "Target Pct",
+        "type": "number"
+      },
+      "total_value": {
+        "title": "Total Value",
+        "type": "number"
+      },
+      "transaction_count": {
+        "title": "Transaction Count",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "import_month",
+      "total_value",
+      "transaction_count",
+      "active_days",
+      "target_pct"
+    ],
+    "title": "HrAgentPerformanceItem",
+    "type": "object"
+  },
+  "HrAsmHistoryItem": {
+    "additionalProperties": false,
+    "properties": {
+      "active_stores": {
+        "title": "Active Stores",
+        "type": "integer"
+      },
+      "avg_completion": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Avg Completion"
+      },
+      "avg_duration": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Avg Duration"
+      },
+      "forecast_sales": {
+        "title": "Forecast Sales",
+        "type": "number"
+      },
+      "forecast_target_pct": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Forecast Target Pct"
+      },
+      "is_forecast": {
+        "title": "Is Forecast",
+        "type": "boolean"
+      },
+      "month": {
+        "title": "Month",
+        "type": "string"
+      },
+      "target_pct": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Target Pct"
+      },
+      "total_sales": {
+        "title": "Total Sales",
+        "type": "number"
+      },
+      "total_target": {
+        "title": "Total Target",
+        "type": "number"
+      },
+      "total_visits": {
+        "title": "Total Visits",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "month",
+      "total_sales",
+      "total_target",
+      "forecast_sales",
+      "is_forecast",
+      "active_stores",
+      "total_visits"
+    ],
+    "title": "HrAsmHistoryItem",
+    "type": "object"
+  },
+  "HrAsmPerformanceItem": {
+    "additionalProperties": false,
+    "properties": {
+      "active_agents": {
+        "title": "Active Agents",
+        "type": "integer"
+      },
+      "active_stores": {
+        "title": "Active Stores",
+        "type": "integer"
+      },
+      "approved_pct": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Approved Pct"
+      },
+      "asm": {
+        "title": "Asm",
+        "type": "string"
+      },
+      "avg_completion": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Avg Completion"
+      },
+      "avg_duration": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Avg Duration"
+      },
+      "checklist_score": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Checklist Score"
+      },
+      "distinct_stores_visited": {
+        "title": "Distinct Stores Visited",
+        "type": "integer"
+      },
+      "forecast_sales": {
+        "title": "Forecast Sales",
+        "type": "number"
+      },
+      "forecast_target_pct": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Forecast Target Pct"
+      },
+      "is_forecast": {
+        "title": "Is Forecast",
+        "type": "boolean"
+      },
+      "pct_bon2acc": {
+        "title": "Pct Bon2Acc",
+        "type": "number"
+      },
+      "pct_focus": {
+        "title": "Pct Focus",
+        "type": "number"
+      },
+      "regional": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Regional"
+      },
+      "target_pct": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Target Pct"
+      },
+      "total_sales": {
+        "title": "Total Sales",
+        "type": "number"
+      },
+      "total_target": {
+        "title": "Total Target",
+        "type": "number"
+      },
+      "total_visits": {
+        "title": "Total Visits",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "asm",
+      "total_sales",
+      "total_target",
+      "forecast_sales",
+      "is_forecast",
+      "active_stores",
+      "active_agents",
+      "pct_bon2acc",
+      "pct_focus",
+      "total_visits",
+      "distinct_stores_visited"
+    ],
+    "title": "HrAsmPerformanceItem",
+    "type": "object"
+  },
+  "HrAsmSalaryAccFocus": {
+    "additionalProperties": false,
+    "properties": {
+      "commission": {
+        "title": "Commission",
+        "type": "number"
+      },
+      "decision_pct_exact": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Decision Pct Exact"
+      },
+      "pct": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Pct"
+      }
+    },
+    "required": [
+      "commission"
+    ],
+    "title": "HrAsmSalaryAccFocus",
+    "type": "object"
+  },
+  "HrAsmSalaryBreakdown": {
+    "additionalProperties": false,
+    "properties": {
+      "acc_focus": {
+        "$ref": "#/components/schemas/HrAsmSalaryAccFocus"
+      },
+      "asm": {
+        "title": "Asm",
+        "type": "string"
+      },
+      "fixed_salary": {
+        "title": "Fixed Salary",
+        "type": "number"
+      },
+      "forecast_factor": {
+        "title": "Forecast Factor",
+        "type": "number"
+      },
+      "homogeneity": {
+        "$ref": "#/components/schemas/HrAsmSalaryHomogeneity"
+      },
+      "is_forecast": {
+        "title": "Is Forecast",
+        "type": "boolean"
+      },
+      "islands": {
+        "items": {
+          "$ref": "#/components/schemas/HrAsmSalaryIsland"
+        },
+        "title": "Islands",
+        "type": "array"
+      },
+      "islands_commission": {
+        "title": "Islands Commission",
+        "type": "number"
+      },
+      "month": {
+        "title": "Month",
+        "type": "string"
+      },
+      "rule_effective_from": {
+        "title": "Rule Effective From",
+        "type": "string"
+      },
+      "rule_set_id": {
+        "title": "Rule Set Id",
+        "type": "string"
+      },
+      "rule_set_sha256": {
+        "title": "Rule Set Sha256",
+        "type": "string"
+      },
+      "total_salary": {
+        "title": "Total Salary",
+        "type": "number"
+      },
+      "zone": {
+        "$ref": "#/components/schemas/HrAsmSalaryZone"
+      }
+    },
+    "required": [
+      "asm",
+      "month",
+      "rule_set_id",
+      "rule_set_sha256",
+      "rule_effective_from",
+      "is_forecast",
+      "forecast_factor",
+      "fixed_salary",
+      "zone",
+      "islands_commission",
+      "homogeneity",
+      "acc_focus",
+      "total_salary"
+    ],
+    "title": "HrAsmSalaryBreakdown",
+    "type": "object"
+  },
+  "HrAsmSalaryHomogeneity": {
+    "additionalProperties": false,
+    "properties": {
+      "commission": {
+        "title": "Commission",
+        "type": "number"
+      },
+      "eligible": {
+        "title": "Eligible",
+        "type": "boolean"
+      },
+      "islands_count": {
+        "title": "Islands Count",
+        "type": "integer"
+      },
+      "min_pct": {
+        "title": "Min Pct",
+        "type": "number"
+      },
+      "qualifying_count": {
+        "title": "Qualifying Count",
+        "type": "integer"
+      },
+      "qualifying_pct": {
+        "title": "Qualifying Pct",
+        "type": "number"
+      }
+    },
+    "required": [
+      "islands_count",
+      "qualifying_count",
+      "qualifying_pct",
+      "min_pct",
+      "eligible",
+      "commission"
+    ],
+    "title": "HrAsmSalaryHomogeneity",
+    "type": "object"
+  },
+  "HrAsmSalaryIsland": {
+    "additionalProperties": false,
+    "properties": {
+      "commission": {
+        "title": "Commission",
+        "type": "number"
+      },
+      "decision_pct_exact": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Decision Pct Exact"
+      },
+      "firma": {
+        "title": "Firma",
+        "type": "string"
+      },
+      "forecast_sales": {
+        "title": "Forecast Sales",
+        "type": "number"
+      },
+      "forecast_target_pct": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Forecast Target Pct"
+      },
+      "homogeneity_qualifies": {
+        "title": "Homogeneity Qualifies",
+        "type": "boolean"
+      },
+      "locatie": {
+        "title": "Locatie",
+        "type": "string"
+      },
+      "pct_used": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Pct Used"
+      },
+      "site_code": {
+        "title": "Site Code",
+        "type": "string"
+      },
+      "target_pct": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Target Pct"
+      },
+      "total_sales": {
+        "title": "Total Sales",
+        "type": "number"
+      },
+      "total_target": {
+        "title": "Total Target",
+        "type": "number"
+      }
+    },
+    "required": [
+      "site_code",
+      "locatie",
+      "firma",
+      "total_sales",
+      "total_target",
+      "forecast_sales",
+      "homogeneity_qualifies",
+      "commission"
+    ],
+    "title": "HrAsmSalaryIsland",
+    "type": "object"
+  },
+  "HrAsmSalaryZone": {
+    "additionalProperties": false,
+    "properties": {
+      "commission": {
+        "title": "Commission",
+        "type": "number"
+      },
+      "decision_pct_exact": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Decision Pct Exact"
+      },
+      "forecast_sales": {
+        "title": "Forecast Sales",
+        "type": "number"
+      },
+      "forecast_target_pct": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Forecast Target Pct"
+      },
+      "pct_used": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Pct Used"
+      },
+      "target_pct": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Target Pct"
+      },
+      "total_sales": {
+        "title": "Total Sales",
+        "type": "number"
+      },
+      "total_target": {
+        "title": "Total Target",
+        "type": "number"
+      }
+    },
+    "required": [
+      "total_sales",
+      "total_target",
+      "forecast_sales",
+      "commission"
+    ],
+    "title": "HrAsmSalaryZone",
+    "type": "object"
+  },
+  "HrManagerOverviewItem": {
+    "additionalProperties": false,
+    "properties": {
+      "active_agents": {
+        "title": "Active Agents",
+        "type": "integer"
+      },
+      "active_stores": {
+        "title": "Active Stores",
+        "type": "integer"
+      },
+      "agent_delta": {
+        "title": "Agent Delta",
+        "type": "integer"
+      },
+      "agents_added": {
+        "title": "Agents Added",
+        "type": "integer"
+      },
+      "agents_left": {
+        "title": "Agents Left",
+        "type": "integer"
+      },
+      "agents_per_store": {
+        "title": "Agents Per Store",
+        "type": "number"
+      },
+      "approved_pct": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Approved Pct"
+      },
+      "avg_visit_completion": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Avg Visit Completion"
+      },
+      "checklist_score": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Checklist Score"
+      },
+      "manager": {
+        "title": "Manager",
+        "type": "string"
+      },
+      "month": {
+        "title": "Month",
+        "type": "string"
+      },
+      "previous_active_agents": {
+        "title": "Previous Active Agents",
+        "type": "integer"
+      },
+      "regional": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Regional"
+      },
+      "reporting_available": {
+        "title": "Reporting Available",
+        "type": "boolean"
+      },
+      "stores": {
+        "items": {
+          "$ref": "#/components/schemas/HrManagerStoreItem"
+        },
+        "title": "Stores",
+        "type": "array"
+      },
+      "stores_without_agents": {
+        "title": "Stores Without Agents",
+        "type": "integer"
+      },
+      "total_visits": {
+        "title": "Total Visits",
+        "type": "integer"
+      },
+      "visit_coverage_pct": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Visit Coverage Pct"
+      },
+      "visited_stores": {
+        "title": "Visited Stores",
+        "type": "integer"
+      },
+      "visits_available": {
+        "title": "Visits Available",
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "manager",
+      "month",
+      "reporting_available",
+      "active_stores",
+      "active_agents",
+      "previous_active_agents",
+      "agent_delta",
+      "agents_added",
+      "agents_left",
+      "stores_without_agents",
+      "agents_per_store",
+      "visits_available",
+      "total_visits",
+      "visited_stores"
+    ],
+    "title": "HrManagerOverviewItem",
+    "type": "object"
+  },
+  "HrManagerStoreItem": {
+    "additionalProperties": false,
+    "properties": {
+      "active_agents": {
+        "title": "Active Agents",
+        "type": "integer"
+      },
+      "agent_delta": {
+        "title": "Agent Delta",
+        "type": "integer"
+      },
+      "firma": {
+        "title": "Firma",
+        "type": "string"
+      },
+      "locatie": {
+        "title": "Locatie",
+        "type": "string"
+      },
+      "previous_active_agents": {
+        "title": "Previous Active Agents",
+        "type": "integer"
+      },
+      "site_code": {
+        "title": "Site Code",
+        "type": "string"
+      }
+    },
+    "required": [
+      "site_code",
+      "locatie",
+      "firma",
+      "active_agents",
+      "previous_active_agents",
+      "agent_delta"
+    ],
+    "title": "HrManagerStoreItem",
+    "type": "object"
+  },
+  "ImportCoverageReport": {
+    "additionalProperties": false,
+    "properties": {
+      "active_store_count_before": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Active Store Count Before"
+      },
+      "active_store_coverage_pct": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Active Store Coverage Pct"
+      },
+      "anomalies": {
+        "anyOf": [
+          {
+            "items": {
+              "$ref": "#/components/schemas/SalesGenerationAnomaly"
+            },
+            "type": "array"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Anomalies"
+      },
+      "company_count": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Company Count"
+      },
+      "incoming_set_sha256": {
+        "anyOf": [
+          {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Incoming Set Sha256"
+      },
+      "incoming_store_count": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Incoming Store Count"
+      },
+      "metadata_change_count": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Metadata Change Count"
+      },
+      "missing_active_set_sha256": {
+        "anyOf": [
+          {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Missing Active Set Sha256"
+      },
+      "missing_active_store_count": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Missing Active Store Count"
+      },
+      "missing_prior_set_sha256": {
+        "anyOf": [
+          {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Missing Prior Set Sha256"
+      },
+      "missing_prior_store_count": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Missing Prior Store Count"
+      },
+      "new_store_count": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "New Store Count"
+      },
+      "new_store_set_sha256": {
+        "anyOf": [
+          {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "New Store Set Sha256"
+      },
+      "prior_snapshot_coverage_pct": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Prior Snapshot Coverage Pct"
+      },
+      "prior_snapshot_store_count": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Prior Snapshot Store Count"
+      },
+      "store_activity_writes": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Store Activity Writes"
+      },
+      "stores_missing_count": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Stores Missing Count"
+      },
+      "stores_present_count": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Stores Present Count"
+      }
+    },
+    "title": "ImportCoverageReport",
+    "type": "object"
+  },
+  "ImportHistoryEntry": {
+    "additionalProperties": false,
+    "properties": {
+      "coverage_report": {
+        "$ref": "#/components/schemas/ImportCoverageReport"
+      },
+      "created_at": {
+        "format": "date-time",
+        "title": "Created At",
+        "type": "string"
+      },
+      "duration_seconds": {
+        "anyOf": [
+          {
+            "minimum": 0.0,
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Duration Seconds"
+      },
+      "error_message": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Error Message"
+      },
+      "filename": {
+        "title": "Filename",
+        "type": "string"
+      },
+      "finished_at": {
+        "anyOf": [
+          {
+            "format": "date-time",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Finished At"
+      },
+      "id": {
+        "title": "Id",
+        "type": "integer"
+      },
+      "import_month": {
+        "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
+        "title": "Import Month",
+        "type": "string"
+      },
+      "is_month_final": {
+        "title": "Is Month Final",
+        "type": "boolean"
+      },
+      "rows_imported": {
+        "anyOf": [
+          {
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Rows Imported"
+      },
+      "rows_in_file": {
+        "anyOf": [
+          {
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Rows In File"
+      },
+      "status": {
+        "enum": [
+          "processing",
+          "completed",
+          "failed"
+        ],
+        "title": "Status",
+        "type": "string"
+      },
+      "upload_date": {
+        "format": "date",
+        "title": "Upload Date",
+        "type": "string"
+      }
+    },
+    "required": [
+      "id",
+      "import_month",
+      "filename",
+      "upload_date",
+      "is_month_final",
+      "rows_in_file",
+      "rows_imported",
+      "status",
+      "error_message",
+      "created_at"
+    ],
+    "title": "ImportHistoryEntry",
+    "type": "object"
+  },
+  "ImportJobStatus": {
+    "additionalProperties": false,
+    "properties": {
+      "erp_result": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/ErpReconciliationResponse"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "error": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Error"
+      },
+      "job_id": {
+        "title": "Job Id",
+        "type": "string"
+      },
+      "job_kind": {
+        "default": "sales",
+        "enum": [
+          "sales",
+          "promo_actuals",
+          "erp_reconciliation"
+        ],
+        "title": "Job Kind",
+        "type": "string"
+      },
+      "promo_result": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/PromoActualImportResponse"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "result": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/ImportResponse"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "status": {
+        "enum": [
+          "queued",
+          "in_progress",
+          "complete",
+          "not_found"
+        ],
+        "title": "Status",
+        "type": "string"
+      }
+    },
+    "required": [
+      "job_id",
+      "status"
+    ],
+    "title": "ImportJobStatus",
+    "type": "object"
+  },
+  "ImportResponse": {
+    "additionalProperties": false,
+    "properties": {
+      "agent_count": {
+        "minimum": 0.0,
+        "title": "Agent Count",
+        "type": "integer"
+      },
+      "coverage_report": {
+        "$ref": "#/components/schemas/ImportCoverageReport"
+      },
+      "filename": {
+        "title": "Filename",
+        "type": "string"
+      },
+      "generation_state": {
+        "default": "promoted",
+        "enum": [
+          "validated",
+          "promoted"
+        ],
+        "title": "Generation State",
+        "type": "string"
+      },
+      "generation_token": {
+        "anyOf": [
+          {
+            "pattern": "^[0-9a-f-]{36}$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Generation Token"
+      },
+      "import_month": {
+        "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
+        "title": "Import Month",
+        "type": "string"
+      },
+      "is_month_final": {
+        "title": "Is Month Final",
+        "type": "boolean"
+      },
+      "manifest": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/SalesGenerationManifest"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "manifest_sha256": {
+        "anyOf": [
+          {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Manifest Sha256"
+      },
+      "rows_filtered": {
+        "minimum": 0.0,
+        "title": "Rows Filtered",
+        "type": "integer"
+      },
+      "rows_imported": {
+        "minimum": 0.0,
+        "title": "Rows Imported",
+        "type": "integer"
+      },
+      "rows_in_file": {
+        "minimum": 0.0,
+        "title": "Rows In File",
+        "type": "integer"
+      },
+      "snapshot_id": {
+        "minimum": 0.0,
+        "title": "Snapshot Id",
+        "type": "integer"
+      },
+      "store_count": {
+        "minimum": 0.0,
+        "title": "Store Count",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "import_month",
+      "rows_in_file",
+      "rows_imported",
+      "rows_filtered",
+      "store_count",
+      "agent_count",
+      "snapshot_id",
+      "filename",
+      "is_month_final"
+    ],
+    "title": "ImportResponse",
+    "type": "object"
+  },
+  "IncentiveCategory": {
+    "additionalProperties": false,
+    "properties": {
+      "label": {
+        "title": "Label",
+        "type": "string"
+      },
+      "qty": {
+        "title": "Qty",
+        "type": "integer"
+      },
+      "value": {
+        "title": "Value",
+        "type": "number"
+      }
+    },
+    "required": [
+      "label",
+      "qty",
+      "value"
+    ],
+    "title": "IncentiveCategory",
+    "type": "object"
+  },
+  "IncentiveCategoryBreakdown": {
+    "additionalProperties": false,
+    "properties": {
+      "label": {
+        "title": "Label",
+        "type": "string"
+      },
+      "potential": {
+        "title": "Potential",
+        "type": "number"
+      },
+      "qty": {
+        "title": "Qty",
+        "type": "integer"
+      },
+      "qualified_qty": {
+        "title": "Qualified Qty",
+        "type": "integer"
+      },
+      "value": {
+        "title": "Value",
+        "type": "number"
+      }
+    },
+    "required": [
+      "label",
+      "qty",
+      "qualified_qty",
+      "potential",
+      "value"
+    ],
+    "title": "IncentiveCategoryBreakdown",
+    "type": "object"
+  },
+  "IncentivePeriodStat": {
+    "additionalProperties": false,
+    "properties": {
+      "end_date": {
+        "title": "End Date",
+        "type": "string"
+      },
+      "label": {
+        "title": "Label",
+        "type": "string"
+      },
+      "potential": {
+        "default": 0.0,
+        "title": "Potential",
+        "type": "number"
+      },
+      "product_count": {
+        "title": "Product Count",
+        "type": "integer"
+      },
+      "qty": {
+        "default": 0,
+        "title": "Qty",
+        "type": "integer"
+      },
+      "reward_values": {
+        "items": {
+          "type": "number"
+        },
+        "title": "Reward Values",
+        "type": "array"
+      },
+      "start_date": {
+        "title": "Start Date",
+        "type": "string"
+      },
+      "value": {
+        "default": 0.0,
+        "title": "Value",
+        "type": "number"
+      }
+    },
+    "required": [
+      "label",
+      "start_date",
+      "end_date",
+      "product_count"
+    ],
+    "title": "IncentivePeriodStat",
+    "type": "object"
+  },
+  "IncentiveTopAgent": {
+    "additionalProperties": false,
+    "properties": {
+      "achievement": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Achievement"
+      },
+      "agent_name": {
+        "title": "Agent Name",
+        "type": "string"
+      },
+      "firma": {
+        "default": "",
+        "title": "Firma",
+        "type": "string"
+      },
+      "incentive_potential": {
+        "default": 0.0,
+        "title": "Incentive Potential",
+        "type": "number"
+      },
+      "qty_sold": {
+        "title": "Qty Sold",
+        "type": "integer"
+      },
+      "store_name": {
+        "default": "",
+        "title": "Store Name",
+        "type": "string"
+      },
+      "val_incentive": {
+        "title": "Val Incentive",
+        "type": "number"
+      }
+    },
+    "required": [
+      "agent_name",
+      "qty_sold",
+      "val_incentive"
+    ],
+    "title": "IncentiveTopAgent",
+    "type": "object"
+  },
+  "LeaveRequestCreate": {
+    "additionalProperties": false,
+    "properties": {
+      "agent_name": {
+        "maxLength": 120,
+        "minLength": 1,
+        "title": "Agent Name",
+        "type": "string"
+      },
+      "end_date": {
+        "format": "date",
+        "title": "End Date",
+        "type": "string"
+      },
+      "leave_type": {
+        "maxLength": 64,
+        "minLength": 1,
+        "title": "Leave Type",
+        "type": "string"
+      },
+      "notes": {
+        "anyOf": [
+          {
+            "maxLength": 2000,
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Notes"
+      },
+      "start_date": {
+        "format": "date",
+        "title": "Start Date",
+        "type": "string"
+      }
+    },
+    "required": [
+      "agent_name",
+      "start_date",
+      "end_date",
+      "leave_type"
+    ],
+    "title": "LeaveRequestCreate",
+    "type": "object"
+  },
+  "LeaveRequestItem": {
+    "additionalProperties": false,
+    "properties": {
+      "agent_name": {
+        "title": "Agent Name",
+        "type": "string"
+      },
+      "created_at": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Created At"
+      },
+      "end_date": {
+        "title": "End Date",
+        "type": "string"
+      },
+      "id": {
+        "title": "Id",
+        "type": "integer"
+      },
+      "leave_type": {
+        "title": "Leave Type",
+        "type": "string"
+      },
+      "notes": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Notes"
+      },
+      "start_date": {
+        "title": "Start Date",
+        "type": "string"
+      },
+      "status": {
+        "title": "Status",
+        "type": "string"
+      },
+      "updated_at": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Updated At"
+      }
+    },
+    "required": [
+      "id",
+      "agent_name",
+      "start_date",
+      "end_date",
+      "leave_type",
+      "status"
+    ],
+    "title": "LeaveRequestItem",
+    "type": "object"
+  },
+  "LeaveRequestListResponse": {
+    "additionalProperties": false,
+    "properties": {
+      "items": {
+        "items": {
+          "$ref": "#/components/schemas/LeaveRequestItem"
+        },
+        "title": "Items",
+        "type": "array"
+      },
+      "limit": {
+        "maximum": 100.0,
+        "minimum": 1.0,
+        "title": "Limit",
+        "type": "integer"
+      },
+      "offset": {
+        "minimum": 0.0,
+        "title": "Offset",
+        "type": "integer"
+      },
+      "total": {
+        "minimum": 0.0,
+        "title": "Total",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "items",
+      "total",
+      "limit",
+      "offset"
+    ],
+    "title": "LeaveRequestListResponse",
+    "type": "object"
+  },
+  "LeaveStatusUpdate": {
+    "additionalProperties": false,
+    "properties": {
+      "status": {
+        "maxLength": 16,
+        "minLength": 1,
+        "title": "Status",
+        "type": "string"
+      }
+    },
+    "required": [
+      "status"
+    ],
+    "title": "LeaveStatusUpdate",
+    "type": "object"
+  },
+  "MonthlyHistoryPoint": {
+    "additionalProperties": false,
+    "properties": {
+      "daily_average": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Daily Average"
+      },
+      "medie_produs": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Medie Produs"
+      },
+      "month": {
+        "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
+        "title": "Month",
+        "type": "string"
+      },
+      "prc_focus_acc_qty": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Prc Focus Acc Qty"
+      },
+      "proc_bon2acc": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Proc Bon2Acc"
+      },
+      "return_receipt_count": {
+        "default": 0,
+        "title": "Return Receipt Count",
+        "type": "integer"
+      },
+      "target_progress_pct": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Target Progress Pct"
+      },
+      "total_agents": {
+        "title": "Total Agents",
+        "type": "integer"
+      },
+      "total_quantity": {
+        "title": "Total Quantity",
+        "type": "integer"
+      },
+      "total_receipts": {
+        "title": "Total Receipts",
+        "type": "integer"
+      },
+      "total_sales": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Total Sales",
+        "type": "string"
+      },
+      "total_stores": {
+        "title": "Total Stores",
+        "type": "integer"
+      },
+      "total_target": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Total Target",
+        "type": "string"
+      },
+      "working_days": {
+        "title": "Working Days",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "month",
+      "total_sales",
+      "total_target",
+      "target_progress_pct",
+      "total_quantity",
+      "total_receipts",
+      "proc_bon2acc",
+      "prc_focus_acc_qty",
+      "total_stores",
+      "total_agents",
+      "working_days",
+      "daily_average"
+    ],
+    "title": "MonthlyHistoryPoint",
+    "type": "object"
+  },
+  "MonthlyRunRequest": {
+    "additionalProperties": false,
+    "properties": {
+      "approved_manifest_id": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Approved Manifest Id"
+      },
+      "dry_run": {
+        "default": true,
+        "title": "Dry Run",
+        "type": "boolean"
+      },
+      "month": {
+        "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
+        "title": "Month",
+        "type": "string"
+      },
+      "op": {
+        "enum": [
+          "finalize",
+          "archive",
+          "reset"
+        ],
+        "title": "Op",
+        "type": "string"
+      }
+    },
+    "required": [
+      "op",
+      "month"
+    ],
+    "title": "MonthlyRunRequest",
+    "type": "object"
+  },
+  "PerformanceDetailResponse": {
+    "additionalProperties": false,
+    "properties": {
+      "context_summary": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/DashboardSummary"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "daily": {
+        "items": {
+          "$ref": "#/components/schemas/DailySalesPoint"
+        },
+        "title": "Daily",
+        "type": "array"
+      },
+      "history": {
+        "items": {
+          "$ref": "#/components/schemas/MonthlyHistoryPoint"
+        },
+        "title": "History",
+        "type": "array"
+      },
+      "key": {
+        "title": "Key",
+        "type": "string"
+      },
+      "level": {
+        "enum": [
+          "regional",
+          "store",
+          "agent"
+        ],
+        "title": "Level",
+        "type": "string"
+      },
+      "month": {
+        "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
+        "title": "Month",
+        "type": "string"
+      },
+      "note": {
+        "title": "Note",
+        "type": "string"
+      },
+      "peer_rows": {
+        "items": {
+          "$ref": "#/components/schemas/PerformancePeerRow"
+        },
+        "title": "Peer Rows",
+        "type": "array"
+      },
+      "risks": {
+        "items": {
+          "type": "string"
+        },
+        "title": "Risks",
+        "type": "array"
+      },
+      "score": {
+        "title": "Score",
+        "type": "integer"
+      },
+      "score_breakdown": {
+        "$ref": "#/components/schemas/PerformanceScoreBreakdown"
+      },
+      "score_label": {
+        "title": "Score Label",
+        "type": "string"
+      },
+      "strengths": {
+        "items": {
+          "type": "string"
+        },
+        "title": "Strengths",
+        "type": "array"
+      },
+      "subtitle": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Subtitle"
+      },
+      "summary": {
+        "$ref": "#/components/schemas/DashboardSummary"
+      },
+      "title": {
+        "title": "Title",
+        "type": "string"
+      }
+    },
+    "required": [
+      "level",
+      "key",
+      "title",
+      "month",
+      "summary",
+      "score",
+      "score_breakdown",
+      "score_label",
+      "note"
+    ],
+    "title": "PerformanceDetailResponse",
+    "type": "object"
+  },
+  "PerformancePeerRow": {
+    "additionalProperties": false,
+    "properties": {
+      "forecast_target_pct": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Forecast Target Pct"
+      },
+      "is_selected": {
+        "default": false,
+        "title": "Is Selected",
+        "type": "boolean"
+      },
+      "label": {
+        "title": "Label",
+        "type": "string"
+      },
+      "prc_focus_acc_qty": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Prc Focus Acc Qty"
+      },
+      "proc_bon2acc": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Proc Bon2Acc"
+      },
+      "rank": {
+        "title": "Rank",
+        "type": "integer"
+      },
+      "sublabel": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Sublabel"
+      },
+      "target_progress_pct": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Target Progress Pct"
+      },
+      "total_sales": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Total Sales",
+        "type": "string"
+      }
+    },
+    "required": [
+      "label",
+      "total_sales",
+      "rank"
+    ],
+    "title": "PerformancePeerRow",
+    "type": "object"
+  },
+  "PerformanceScoreBreakdown": {
+    "additionalProperties": false,
+    "properties": {
+      "bon2acc_points": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Bon2Acc Points",
+        "type": "string"
+      },
+      "focus_points": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Focus Points",
+        "type": "string"
+      },
+      "target_points": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Target Points",
+        "type": "string"
+      }
+    },
+    "required": [
+      "target_points",
+      "bon2acc_points",
+      "focus_points"
+    ],
+    "title": "PerformanceScoreBreakdown",
+    "type": "object"
+  },
+  "PeriodComparisonPayload": {
+    "additionalProperties": false,
+    "properties": {
+      "current": {
+        "$ref": "#/components/schemas/PeriodComparisonPoint"
+      },
+      "previous": {
+        "$ref": "#/components/schemas/PeriodComparisonPoint"
+      },
+      "year_over_year": {
+        "$ref": "#/components/schemas/PeriodComparisonPoint"
+      }
+    },
+    "required": [
+      "current",
+      "previous",
+      "year_over_year"
+    ],
+    "title": "PeriodComparisonPayload",
+    "type": "object"
+  },
+  "PeriodComparisonPoint": {
+    "additionalProperties": false,
+    "properties": {
+      "avg_receipt_value": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Avg Receipt Value"
+      },
+      "cartele_qty": {
+        "default": 0,
+        "title": "Cartele Qty",
+        "type": "integer"
+      },
+      "daily_average": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Daily Average"
+      },
+      "day_range": {
+        "title": "Day Range",
+        "type": "string"
+      },
+      "label": {
+        "title": "Label",
+        "type": "string"
+      },
+      "medie_produs": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Medie Produs"
+      },
+      "month": {
+        "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
+        "title": "Month",
+        "type": "string"
+      },
+      "prc_focus_acc_qty": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Prc Focus Acc Qty"
+      },
+      "proc_bon2acc": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Proc Bon2Acc"
+      },
+      "total_quantity": {
+        "title": "Total Quantity",
+        "type": "integer"
+      },
+      "total_receipts": {
+        "title": "Total Receipts",
+        "type": "integer"
+      },
+      "total_sales": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Total Sales",
+        "type": "string"
+      },
+      "working_days": {
+        "title": "Working Days",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "label",
+      "month",
+      "day_range",
+      "total_sales",
+      "total_quantity",
+      "total_receipts",
+      "working_days",
+      "daily_average",
+      "avg_receipt_value",
+      "proc_bon2acc",
+      "prc_focus_acc_qty"
+    ],
+    "title": "PeriodComparisonPoint",
+    "type": "object"
+  },
+  "PnlAnnualItemResponse": {
+    "additionalProperties": false,
+    "properties": {
+      "cogs": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Cogs",
+        "type": "string"
+      },
+      "depreciation": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Depreciation",
+        "type": "string"
+      },
+      "ebit": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Ebit",
+        "type": "string"
+      },
+      "ebitda": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Ebitda",
+        "type": "string"
+      },
+      "gross_margin": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Gross Margin",
+        "type": "string"
+      },
+      "is_estimated": {
+        "title": "Is Estimated",
+        "type": "boolean"
+      },
+      "month_count": {
+        "title": "Month Count",
+        "type": "integer"
+      },
+      "operating_costs": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Operating Costs",
+        "type": "string"
+      },
+      "revenue": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Revenue",
+        "type": "string"
+      },
+      "store_count": {
+        "title": "Store Count",
+        "type": "integer"
+      },
+      "year": {
+        "title": "Year",
+        "type": "string"
+      }
+    },
+    "required": [
+      "year",
+      "store_count",
+      "month_count",
+      "is_estimated",
+      "revenue",
+      "cogs",
+      "gross_margin",
+      "operating_costs",
+      "ebitda",
+      "depreciation",
+      "ebit"
+    ],
+    "title": "PnlAnnualItemResponse",
+    "type": "object"
+  },
+  "PnlAnnualResponse": {
+    "additionalProperties": false,
+    "properties": {
+      "annual": {
+        "items": {
+          "$ref": "#/components/schemas/PnlAnnualItemResponse"
+        },
+        "title": "Annual",
+        "type": "array"
+      }
+    },
+    "required": [
+      "annual"
+    ],
+    "title": "PnlAnnualResponse",
+    "type": "object"
+  },
+  "PnlMetricsResponse": {
+    "additionalProperties": false,
+    "properties": {
+      "cogs": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Cogs",
+        "type": "string"
+      },
+      "depreciation": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Depreciation",
+        "type": "string"
+      },
+      "ebit": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Ebit",
+        "type": "string"
+      },
+      "ebitda": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Ebitda",
+        "type": "string"
+      },
+      "gross_margin": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Gross Margin",
+        "type": "string"
+      },
+      "operating_costs": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Operating Costs",
+        "type": "string"
+      },
+      "revenue": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Revenue",
+        "type": "string"
+      }
+    },
+    "required": [
+      "revenue",
+      "cogs",
+      "gross_margin",
+      "operating_costs",
+      "ebitda",
+      "depreciation",
+      "ebit"
+    ],
+    "title": "PnlMetricsResponse",
+    "type": "object"
+  },
+  "PnlMonthResponse": {
+    "additionalProperties": false,
+    "properties": {
+      "has_actual": {
+        "title": "Has Actual",
+        "type": "boolean"
+      },
+      "has_estimated": {
+        "title": "Has Estimated",
+        "type": "boolean"
+      },
+      "month": {
+        "title": "Month",
+        "type": "string"
+      }
+    },
+    "required": [
+      "month",
+      "has_actual",
+      "has_estimated"
+    ],
+    "title": "PnlMonthResponse",
+    "type": "object"
+  },
+  "PnlMonthlyItemResponse": {
+    "additionalProperties": false,
+    "properties": {
+      "cogs": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Cogs",
+        "type": "string"
+      },
+      "depreciation": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Depreciation",
+        "type": "string"
+      },
+      "ebit": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Ebit",
+        "type": "string"
+      },
+      "ebitda": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Ebitda",
+        "type": "string"
+      },
+      "gross_margin": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Gross Margin",
+        "type": "string"
+      },
+      "is_estimated": {
+        "title": "Is Estimated",
+        "type": "boolean"
+      },
+      "month": {
+        "title": "Month",
+        "type": "string"
+      },
+      "operating_costs": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Operating Costs",
+        "type": "string"
+      },
+      "revenue": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Revenue",
+        "type": "string"
+      }
+    },
+    "required": [
+      "month",
+      "is_estimated",
+      "revenue",
+      "cogs",
+      "gross_margin",
+      "operating_costs",
+      "ebitda",
+      "depreciation",
+      "ebit"
+    ],
+    "title": "PnlMonthlyItemResponse",
+    "type": "object"
+  },
+  "PnlMonthsResponse": {
+    "additionalProperties": false,
+    "properties": {
+      "months": {
+        "items": {
+          "$ref": "#/components/schemas/PnlMonthResponse"
+        },
+        "title": "Months",
+        "type": "array"
+      }
+    },
+    "required": [
+      "months"
+    ],
+    "title": "PnlMonthsResponse",
+    "type": "object"
+  },
+  "PnlOverviewResponse": {
+    "additionalProperties": false,
+    "properties": {
+      "categories": {
+        "additionalProperties": {
+          "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+          "type": "string"
+        },
+        "title": "Categories",
+        "type": "object"
+      },
+      "company": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Company"
+      },
+      "end_month": {
+        "title": "End Month",
+        "type": "string"
+      },
+      "monthly": {
+        "items": {
+          "$ref": "#/components/schemas/PnlMonthlyItemResponse"
+        },
+        "title": "Monthly",
+        "type": "array"
+      },
+      "reconciliation": {
+        "items": {
+          "$ref": "#/components/schemas/PnlReconciliationResponse"
+        },
+        "title": "Reconciliation",
+        "type": "array"
+      },
+      "regional": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Regional"
+      },
+      "site_code": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Site Code"
+      },
+      "site_company": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Site Company"
+      },
+      "start_month": {
+        "title": "Start Month",
+        "type": "string"
+      },
+      "stores": {
+        "items": {
+          "$ref": "#/components/schemas/PnlStoreResponse"
+        },
+        "title": "Stores",
+        "type": "array"
+      },
+      "summary": {
+        "$ref": "#/components/schemas/PnlMetricsResponse"
+      }
+    },
+    "required": [
+      "start_month",
+      "end_month",
+      "summary"
+    ],
+    "title": "PnlOverviewResponse",
+    "type": "object"
+  },
+  "PnlPermissionsResponse": {
+    "additionalProperties": false,
+    "properties": {
+      "can_view": {
+        "title": "Can View",
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "can_view"
+    ],
+    "title": "PnlPermissionsResponse",
+    "type": "object"
+  },
+  "PnlReconciliationResponse": {
+    "additionalProperties": false,
+    "properties": {
+      "difference_to_net": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Difference To Net",
+        "type": "string"
+      },
+      "month": {
+        "title": "Month",
+        "type": "string"
+      },
+      "pnl_revenue": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Pnl Revenue",
+        "type": "string"
+      },
+      "pnl_to_net_sales_pct": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Pnl To Net Sales Pct"
+      },
+      "retail_sales_gross": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Retail Sales Gross",
+        "type": "string"
+      },
+      "retail_sales_net": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Retail Sales Net",
+        "type": "string"
+      }
+    },
+    "required": [
+      "month",
+      "pnl_revenue",
+      "retail_sales_gross",
+      "retail_sales_net",
+      "difference_to_net"
+    ],
+    "title": "PnlReconciliationResponse",
+    "type": "object"
+  },
+  "PnlRegionsResponse": {
+    "additionalProperties": false,
+    "properties": {
+      "regions": {
+        "items": {
+          "type": "string"
+        },
+        "title": "Regions",
+        "type": "array"
+      }
+    },
+    "required": [
+      "regions"
+    ],
+    "title": "PnlRegionsResponse",
+    "type": "object"
+  },
+  "PnlStoreOptionResponse": {
+    "additionalProperties": false,
+    "properties": {
+      "company_name": {
+        "title": "Company Name",
+        "type": "string"
+      },
+      "location": {
+        "title": "Location",
+        "type": "string"
+      },
+      "regional": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Regional"
+      },
+      "scope_company": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Scope Company"
+      },
+      "site_code": {
+        "title": "Site Code",
+        "type": "string"
+      }
+    },
+    "required": [
+      "company_name",
+      "site_code",
+      "location"
+    ],
+    "title": "PnlStoreOptionResponse",
+    "type": "object"
+  },
+  "PnlStoreResponse": {
+    "additionalProperties": false,
+    "properties": {
+      "cogs": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Cogs",
+        "type": "string"
+      },
+      "company": {
+        "title": "Company",
+        "type": "string"
+      },
+      "depreciation": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Depreciation",
+        "type": "string"
+      },
+      "ebit": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Ebit",
+        "type": "string"
+      },
+      "ebitda": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Ebitda",
+        "type": "string"
+      },
+      "gross_margin": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Gross Margin",
+        "type": "string"
+      },
+      "has_estimates": {
+        "title": "Has Estimates",
+        "type": "boolean"
+      },
+      "location": {
+        "title": "Location",
+        "type": "string"
+      },
+      "operating_costs": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Operating Costs",
+        "type": "string"
+      },
+      "regional": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Regional"
+      },
+      "revenue": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Revenue",
+        "type": "string"
+      },
+      "site_code": {
+        "title": "Site Code",
+        "type": "string"
+      },
+      "source_site_code": {
+        "title": "Source Site Code",
+        "type": "string"
+      }
+    },
+    "required": [
+      "company",
+      "site_code",
+      "source_site_code",
+      "location",
+      "has_estimates",
+      "revenue",
+      "cogs",
+      "gross_margin",
+      "operating_costs",
+      "ebitda",
+      "depreciation",
+      "ebit"
+    ],
+    "title": "PnlStoreResponse",
+    "type": "object"
+  },
+  "PnlStoresResponse": {
+    "additionalProperties": false,
+    "properties": {
+      "stores": {
+        "items": {
+          "$ref": "#/components/schemas/PnlStoreOptionResponse"
+        },
+        "title": "Stores",
+        "type": "array"
+      }
+    },
+    "required": [
+      "stores"
+    ],
+    "title": "PnlStoresResponse",
+    "type": "object"
+  },
+  "PremiumGlassAgentStat": {
+    "additionalProperties": false,
+    "properties": {
+      "agent": {
+        "title": "Agent",
+        "type": "string"
+      },
+      "firma": {
+        "title": "Firma",
+        "type": "string"
+      },
+      "locatie": {
+        "title": "Locatie",
+        "type": "string"
+      },
+      "premium_qty": {
+        "default": 0,
+        "title": "Premium Qty",
+        "type": "integer"
+      },
+      "premium_qty_share_pct": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Premium Qty Share Pct"
+      },
+      "premium_sales": {
+        "default": "0",
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Premium Sales",
+        "type": "string"
+      },
+      "regular_qty": {
+        "default": 0,
+        "title": "Regular Qty",
+        "type": "integer"
+      },
+      "regular_sales": {
+        "default": "0",
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Regular Sales",
+        "type": "string"
+      },
+      "site_code": {
+        "title": "Site Code",
+        "type": "string"
+      },
+      "total_qty": {
+        "default": 0,
+        "title": "Total Qty",
+        "type": "integer"
+      },
+      "total_sales": {
+        "default": "0",
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Total Sales",
+        "type": "string"
+      }
+    },
+    "required": [
+      "agent",
+      "site_code",
+      "locatie",
+      "firma"
+    ],
+    "title": "PremiumGlassAgentStat",
+    "type": "object"
+  },
+  "PremiumGlassAnalysis": {
+    "additionalProperties": false,
+    "properties": {
+      "agents": {
+        "items": {
+          "$ref": "#/components/schemas/PremiumGlassAgentStat"
+        },
+        "title": "Agents",
+        "type": "array"
+      },
+      "managers": {
+        "items": {
+          "$ref": "#/components/schemas/PremiumGlassManagerStat"
+        },
+        "title": "Managers",
+        "type": "array"
+      },
+      "models": {
+        "items": {
+          "$ref": "#/components/schemas/PremiumGlassModelStat"
+        },
+        "title": "Models",
+        "type": "array"
+      },
+      "products": {
+        "items": {
+          "$ref": "#/components/schemas/PremiumGlassProductStat"
+        },
+        "title": "Products",
+        "type": "array"
+      },
+      "stores": {
+        "items": {
+          "$ref": "#/components/schemas/PremiumGlassStoreStat"
+        },
+        "title": "Stores",
+        "type": "array"
+      },
+      "summary": {
+        "$ref": "#/components/schemas/PremiumGlassSummary"
+      },
+      "surfaces": {
+        "items": {
+          "$ref": "#/components/schemas/PremiumGlassSurfaceStat"
+        },
+        "title": "Surfaces",
+        "type": "array"
+      }
+    },
+    "required": [
+      "summary"
+    ],
+    "title": "PremiumGlassAnalysis",
+    "type": "object"
+  },
+  "PremiumGlassManagerStat": {
+    "additionalProperties": false,
+    "properties": {
+      "agent_count": {
+        "default": 0,
+        "title": "Agent Count",
+        "type": "integer"
+      },
+      "manager": {
+        "title": "Manager",
+        "type": "string"
+      },
+      "premium_qty": {
+        "default": 0,
+        "title": "Premium Qty",
+        "type": "integer"
+      },
+      "premium_qty_share_pct": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Premium Qty Share Pct"
+      },
+      "premium_sales": {
+        "default": "0",
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Premium Sales",
+        "type": "string"
+      },
+      "regular_qty": {
+        "default": 0,
+        "title": "Regular Qty",
+        "type": "integer"
+      },
+      "regular_sales": {
+        "default": "0",
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Regular Sales",
+        "type": "string"
+      },
+      "store_count": {
+        "default": 0,
+        "title": "Store Count",
+        "type": "integer"
+      },
+      "total_qty": {
+        "default": 0,
+        "title": "Total Qty",
+        "type": "integer"
+      },
+      "total_sales": {
+        "default": "0",
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Total Sales",
+        "type": "string"
+      }
+    },
+    "required": [
+      "manager"
+    ],
+    "title": "PremiumGlassManagerStat",
+    "type": "object"
+  },
+  "PremiumGlassModelStat": {
+    "additionalProperties": false,
+    "properties": {
+      "model_key": {
+        "title": "Model Key",
+        "type": "string"
+      },
+      "model_label": {
+        "title": "Model Label",
+        "type": "string"
+      },
+      "premium_item_count": {
+        "default": 0,
+        "title": "Premium Item Count",
+        "type": "integer"
+      },
+      "premium_qty": {
+        "default": 0,
+        "title": "Premium Qty",
+        "type": "integer"
+      },
+      "premium_qty_share_pct": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Premium Qty Share Pct"
+      },
+      "premium_sales": {
+        "default": "0",
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Premium Sales",
+        "type": "string"
+      },
+      "regular_item_count": {
+        "default": 0,
+        "title": "Regular Item Count",
+        "type": "integer"
+      },
+      "regular_qty": {
+        "default": 0,
+        "title": "Regular Qty",
+        "type": "integer"
+      },
+      "regular_sales": {
+        "default": "0",
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Regular Sales",
+        "type": "string"
+      },
+      "total_qty": {
+        "default": 0,
+        "title": "Total Qty",
+        "type": "integer"
+      },
+      "total_sales": {
+        "default": "0",
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Total Sales",
+        "type": "string"
+      }
+    },
+    "required": [
+      "model_key",
+      "model_label"
+    ],
+    "title": "PremiumGlassModelStat",
+    "type": "object"
+  },
+  "PremiumGlassProductStat": {
+    "additionalProperties": false,
+    "properties": {
+      "is_premium": {
+        "title": "Is Premium",
+        "type": "boolean"
+      },
+      "item_code": {
+        "title": "Item Code",
+        "type": "string"
+      },
+      "item_name": {
+        "title": "Item Name",
+        "type": "string"
+      },
+      "model_labels": {
+        "items": {
+          "type": "string"
+        },
+        "title": "Model Labels",
+        "type": "array"
+      },
+      "qty": {
+        "default": 0,
+        "title": "Qty",
+        "type": "integer"
+      },
+      "sales": {
+        "default": "0",
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Sales",
+        "type": "string"
+      },
+      "store_count": {
+        "default": 0,
+        "title": "Store Count",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "item_code",
+      "item_name",
+      "is_premium"
+    ],
+    "title": "PremiumGlassProductStat",
+    "type": "object"
+  },
+  "PremiumGlassStoreStat": {
+    "additionalProperties": false,
+    "properties": {
+      "firma": {
+        "title": "Firma",
+        "type": "string"
+      },
+      "locatie": {
+        "title": "Locatie",
+        "type": "string"
+      },
+      "premium_qty": {
+        "default": 0,
+        "title": "Premium Qty",
+        "type": "integer"
+      },
+      "premium_qty_share_pct": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Premium Qty Share Pct"
+      },
+      "premium_sales": {
+        "default": "0",
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Premium Sales",
+        "type": "string"
+      },
+      "regular_qty": {
+        "default": 0,
+        "title": "Regular Qty",
+        "type": "integer"
+      },
+      "regular_sales": {
+        "default": "0",
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Regular Sales",
+        "type": "string"
+      },
+      "site_code": {
+        "title": "Site Code",
+        "type": "string"
+      },
+      "total_qty": {
+        "default": 0,
+        "title": "Total Qty",
+        "type": "integer"
+      },
+      "total_sales": {
+        "default": "0",
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Total Sales",
+        "type": "string"
+      }
+    },
+    "required": [
+      "site_code",
+      "locatie",
+      "firma"
+    ],
+    "title": "PremiumGlassStoreStat",
+    "type": "object"
+  },
+  "PremiumGlassSummary": {
+    "additionalProperties": false,
+    "properties": {
+      "active_agents": {
+        "default": 0,
+        "title": "Active Agents",
+        "type": "integer"
+      },
+      "active_stores": {
+        "default": 0,
+        "title": "Active Stores",
+        "type": "integer"
+      },
+      "month": {
+        "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
+        "title": "Month",
+        "type": "string"
+      },
+      "premium_active_agents": {
+        "default": 0,
+        "title": "Premium Active Agents",
+        "type": "integer"
+      },
+      "premium_active_stores": {
+        "default": 0,
+        "title": "Premium Active Stores",
+        "type": "integer"
+      },
+      "premium_qty": {
+        "default": 0,
+        "title": "Premium Qty",
+        "type": "integer"
+      },
+      "premium_qty_share_pct": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Premium Qty Share Pct"
+      },
+      "premium_sales": {
+        "default": "0",
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Premium Sales",
+        "type": "string"
+      },
+      "premium_sales_share_pct": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Premium Sales Share Pct"
+      },
+      "regular_qty": {
+        "default": 0,
+        "title": "Regular Qty",
+        "type": "integer"
+      },
+      "regular_sales": {
+        "default": "0",
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Regular Sales",
+        "type": "string"
+      },
+      "target_model_count": {
+        "default": 0,
+        "title": "Target Model Count",
+        "type": "integer"
+      },
+      "total_qty": {
+        "default": 0,
+        "title": "Total Qty",
+        "type": "integer"
+      },
+      "total_sales": {
+        "default": "0",
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Total Sales",
+        "type": "string"
+      }
+    },
+    "required": [
+      "month"
+    ],
+    "title": "PremiumGlassSummary",
+    "type": "object"
+  },
+  "PremiumGlassSurfaceStat": {
+    "additionalProperties": false,
+    "properties": {
+      "premium_qty": {
+        "default": 0,
+        "title": "Premium Qty",
+        "type": "integer"
+      },
+      "premium_qty_share_pct": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Premium Qty Share Pct"
+      },
+      "premium_sales": {
+        "default": "0",
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Premium Sales",
+        "type": "string"
+      },
+      "regular_qty": {
+        "default": 0,
+        "title": "Regular Qty",
+        "type": "integer"
+      },
+      "regular_sales": {
+        "default": "0",
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Regular Sales",
+        "type": "string"
+      },
+      "surface_key": {
+        "enum": [
+          "screen",
+          "camera"
+        ],
+        "title": "Surface Key",
+        "type": "string"
+      },
+      "surface_label": {
+        "title": "Surface Label",
+        "type": "string"
+      },
+      "total_qty": {
+        "default": 0,
+        "title": "Total Qty",
+        "type": "integer"
+      },
+      "total_sales": {
+        "default": "0",
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Total Sales",
+        "type": "string"
+      }
+    },
+    "required": [
+      "surface_key",
+      "surface_label"
+    ],
+    "title": "PremiumGlassSurfaceStat",
+    "type": "object"
+  },
+  "PromoActualImportResponse": {
+    "additionalProperties": false,
+    "properties": {
+      "config_sha256": {
+        "pattern": "^[0-9a-f]{64}$",
+        "title": "Config Sha256",
+        "type": "string"
+      },
+      "cutoff_date": {
+        "format": "date",
+        "title": "Cutoff Date",
+        "type": "string"
+      },
+      "filename": {
+        "title": "Filename",
+        "type": "string"
+      },
+      "generation_id": {
+        "pattern": "^[0-9a-f]{32}$",
+        "title": "Generation Id",
+        "type": "string"
+      },
+      "import_month": {
+        "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
+        "title": "Import Month",
+        "type": "string"
+      },
+      "material_sha256": {
+        "pattern": "^[0-9a-f]{64}$",
+        "title": "Material Sha256",
+        "type": "string"
+      },
+      "promo_units": {
+        "minimum": 0.0,
+        "title": "Promo Units",
+        "type": "integer"
+      },
+      "report_rows": {
+        "minimum": 0.0,
+        "title": "Report Rows",
+        "type": "integer"
+      },
+      "source_sha256": {
+        "pattern": "^[0-9a-f]{64}$",
+        "title": "Source Sha256",
+        "type": "string"
+      },
+      "updated_promotions": {
+        "minimum": 0.0,
+        "title": "Updated Promotions",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "import_month",
+      "cutoff_date",
+      "filename",
+      "report_rows",
+      "promo_units",
+      "updated_promotions",
+      "generation_id",
+      "config_sha256",
+      "source_sha256",
+      "material_sha256"
+    ],
+    "title": "PromoActualImportResponse",
+    "type": "object"
+  },
+  "PromoIncentiveSummary": {
+    "additionalProperties": false,
+    "properties": {
+      "calculation_status": {
+        "default": "complete",
+        "enum": [
+          "complete",
+          "invalid"
+        ],
+        "title": "Calculation Status",
+        "type": "string"
+      },
+      "calculation_warnings": {
+        "items": {
+          "type": "string"
+        },
+        "title": "Calculation Warnings",
+        "type": "array"
+      },
+      "incentive_potential": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": "0",
+        "title": "Incentive Potential"
+      },
+      "incentive_qty": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": 0,
+        "title": "Incentive Qty"
+      },
+      "incentive_qualified_agents": {
+        "default": 0,
+        "title": "Incentive Qualified Agents",
+        "type": "integer"
+      },
+      "incentive_qualified_agents_full": {
+        "default": 0,
+        "title": "Incentive Qualified Agents Full",
+        "type": "integer"
+      },
+      "incentive_qualified_agents_half": {
+        "default": 0,
+        "title": "Incentive Qualified Agents Half",
+        "type": "integer"
+      },
+      "incentive_qualified_qty": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": 0,
+        "title": "Incentive Qualified Qty"
+      },
+      "incentive_qualified_stores": {
+        "default": 0,
+        "title": "Incentive Qualified Stores",
+        "type": "integer"
+      },
+      "incentive_qualified_stores_full": {
+        "default": 0,
+        "title": "Incentive Qualified Stores Full",
+        "type": "integer"
+      },
+      "incentive_qualified_stores_half": {
+        "default": 0,
+        "title": "Incentive Qualified Stores Half",
+        "type": "integer"
+      },
+      "incentive_sales": {
+        "default": "0",
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Incentive Sales",
+        "type": "string"
+      },
+      "incentive_sold_qty": {
+        "default": 0,
+        "title": "Incentive Sold Qty",
+        "type": "integer"
+      },
+      "incentive_value": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": "0",
+        "title": "Incentive Value"
+      },
+      "promo_impact": {
+        "default": "0",
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Promo Impact",
+        "type": "string"
+      },
+      "promo_qty": {
+        "default": 0,
+        "title": "Promo Qty",
+        "type": "integer"
+      },
+      "promo_sales": {
+        "default": "0",
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Promo Sales",
+        "type": "string"
+      }
+    },
+    "title": "PromoIncentiveSummary",
+    "type": "object"
+  },
+  "PromoTopAgent": {
+    "additionalProperties": false,
+    "properties": {
+      "agent_name": {
+        "title": "Agent Name",
+        "type": "string"
+      },
+      "firma": {
+        "default": "",
+        "title": "Firma",
+        "type": "string"
+      },
+      "promo_bons": {
+        "default": 0,
+        "title": "Promo Bons",
+        "type": "integer"
+      },
+      "store_name": {
+        "default": "",
+        "title": "Store Name",
+        "type": "string"
+      }
+    },
+    "required": [
+      "agent_name"
+    ],
+    "title": "PromoTopAgent",
+    "type": "object"
+  },
+  "PromoTopStore": {
+    "additionalProperties": false,
+    "properties": {
+      "achievement": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Achievement"
+      },
+      "category_qty": {
+        "title": "Category Qty",
+        "type": "integer"
+      },
+      "firma": {
+        "default": "",
+        "title": "Firma",
+        "type": "string"
+      },
+      "incentive_potential": {
+        "default": 0.0,
+        "title": "Incentive Potential",
+        "type": "number"
+      },
+      "incentive_value": {
+        "default": 0.0,
+        "title": "Incentive Value",
+        "type": "number"
+      },
+      "promo_bons": {
+        "default": 0,
+        "title": "Promo Bons",
+        "type": "integer"
+      },
+      "qty": {
+        "title": "Qty",
+        "type": "integer"
+      },
+      "store_name": {
+        "title": "Store Name",
+        "type": "string"
+      },
+      "total_qty": {
+        "title": "Total Qty",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "store_name",
+      "qty",
+      "total_qty",
+      "category_qty"
+    ],
+    "title": "PromoTopStore",
+    "type": "object"
+  },
+  "ReceiptBucketItem": {
+    "additionalProperties": false,
+    "properties": {
+      "bucket": {
+        "title": "Bucket",
+        "type": "string"
+      },
+      "receipt_count": {
+        "title": "Receipt Count",
+        "type": "integer"
+      },
+      "share_pct": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Share Pct"
+      }
+    },
+    "required": [
+      "bucket",
+      "receipt_count",
+      "share_pct"
+    ],
+    "title": "ReceiptBucketItem",
+    "type": "object"
+  },
+  "RegionalStats": {
+    "additionalProperties": false,
+    "properties": {
+      "forecast_target_pct": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Forecast Target Pct"
+      },
+      "incentive_qty": {
+        "default": 0,
+        "title": "Incentive Qty",
+        "type": "integer"
+      },
+      "medie_produs": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Medie Produs"
+      },
+      "medie_zilnica": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Medie Zilnica"
+      },
+      "nr_agenti": {
+        "title": "Nr Agenti",
+        "type": "integer"
+      },
+      "nr_bonuri": {
+        "title": "Nr Bonuri",
+        "type": "integer"
+      },
+      "prc_focus_acc_qty": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Prc Focus Acc Qty"
+      },
+      "proc_bon2acc": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Proc Bon2Acc"
+      },
+      "proc_realizare_target": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Proc Realizare Target"
+      },
+      "promo_discount_value": {
+        "default": "0",
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Promo Discount Value",
+        "type": "string"
+      },
+      "promo_qty": {
+        "default": 0,
+        "title": "Promo Qty",
+        "type": "integer"
+      },
+      "qty_total": {
+        "title": "Qty Total",
+        "type": "integer"
+      },
+      "regional": {
+        "title": "Regional",
+        "type": "string"
+      },
+      "return_receipt_count": {
+        "default": 0,
+        "title": "Return Receipt Count",
+        "type": "integer"
+      },
+      "target": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Target",
+        "type": "string"
+      },
+      "total_vanzari": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Total Vanzari",
+        "type": "string"
+      },
+      "zile_active": {
+        "title": "Zile Active",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "regional",
+      "total_vanzari",
+      "qty_total",
+      "nr_bonuri",
+      "nr_agenti",
+      "zile_active",
+      "target",
+      "proc_realizare_target",
+      "medie_zilnica",
+      "proc_bon2acc",
+      "prc_focus_acc_qty"
+    ],
+    "title": "RegionalStats",
+    "type": "object"
+  },
+  "SalaryAgentSummaryPublic": {
+    "additionalProperties": false,
+    "properties": {
+      "avg_month_count": {
+        "title": "Avg Month Count",
+        "type": "integer"
+      },
+      "avg_salary": {
+        "title": "Avg Salary",
+        "type": "number"
+      },
+      "company_name": {
+        "title": "Company Name",
+        "type": "string"
+      },
+      "full_name": {
+        "title": "Full Name",
+        "type": "string"
+      },
+      "locatie": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Locatie"
+      },
+      "month_count": {
+        "title": "Month Count",
+        "type": "integer"
+      },
+      "person_id": {
+        "pattern": "^sp1_[0-9a-f]{64}$",
+        "title": "Person Id",
+        "type": "string"
+      },
+      "total_salary": {
+        "title": "Total Salary",
+        "type": "number"
+      }
+    },
+    "required": [
+      "person_id",
+      "full_name",
+      "company_name",
+      "locatie",
+      "month_count",
+      "avg_month_count",
+      "total_salary",
+      "avg_salary"
+    ],
+    "title": "SalaryAgentSummaryPublic",
+    "type": "object"
+  },
+  "SalaryAgentsSummaryResponse": {
+    "additionalProperties": false,
+    "properties": {
+      "items": {
+        "items": {
+          "$ref": "#/components/schemas/SalaryAgentSummaryPublic"
+        },
+        "title": "Items",
+        "type": "array"
+      },
+      "total": {
+        "title": "Total",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "items",
+      "total"
+    ],
+    "title": "SalaryAgentsSummaryResponse",
+    "type": "object"
+  },
+  "SalaryCompanyTotal": {
+    "additionalProperties": false,
+    "properties": {
+      "company": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Company"
+      },
+      "name": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Name"
+      },
+      "total": {
+        "title": "Total",
+        "type": "number"
+      }
+    },
+    "required": [
+      "total"
+    ],
+    "title": "SalaryCompanyTotal",
+    "type": "object"
+  },
+  "SalaryComparisonItem": {
+    "additionalProperties": false,
+    "properties": {
+      "agent_count": {
+        "title": "Agent Count",
+        "type": "integer"
+      },
+      "avg_agent_count": {
+        "title": "Avg Agent Count",
+        "type": "integer"
+      },
+      "avg_salary": {
+        "title": "Avg Salary",
+        "type": "number"
+      },
+      "company_name": {
+        "title": "Company Name",
+        "type": "string"
+      },
+      "locatie": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Locatie"
+      },
+      "ratio": {
+        "title": "Ratio",
+        "type": "number"
+      },
+      "site_code": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Site Code"
+      },
+      "total_salary": {
+        "title": "Total Salary",
+        "type": "number"
+      },
+      "total_sales": {
+        "title": "Total Sales",
+        "type": "number"
+      }
+    },
+    "required": [
+      "site_code",
+      "company_name",
+      "total_salary",
+      "agent_count",
+      "avg_agent_count",
+      "avg_salary",
+      "total_sales",
+      "ratio"
+    ],
+    "title": "SalaryComparisonItem",
+    "type": "object"
+  },
+  "SalaryEvolutionPoint": {
+    "additionalProperties": false,
+    "properties": {
+      "mobicell": {
+        "title": "Mobicell",
+        "type": "number"
+      },
+      "mobiup": {
+        "title": "Mobiup",
+        "type": "number"
+      },
+      "month": {
+        "title": "Month",
+        "type": "string"
+      },
+      "total": {
+        "title": "Total",
+        "type": "number"
+      }
+    },
+    "required": [
+      "month",
+      "total",
+      "mobicell",
+      "mobiup"
+    ],
+    "title": "SalaryEvolutionPoint",
+    "type": "object"
+  },
+  "SalaryExportAudit": {
+    "additionalProperties": false,
+    "properties": {
+      "export_kind": {
+        "enum": [
+          "store_summary",
+          "monthly_trend",
+          "agents_page"
+        ],
+        "title": "Export Kind",
+        "type": "string"
+      },
+      "row_count": {
+        "maximum": 5000.0,
+        "minimum": 0.0,
+        "title": "Row Count",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "export_kind",
+      "row_count"
+    ],
+    "title": "SalaryExportAudit",
+    "type": "object"
+  },
+  "SalaryHistoryRecordPublic": {
+    "additionalProperties": false,
+    "properties": {
+      "company_name": {
+        "title": "Company Name",
+        "type": "string"
+      },
+      "locatie": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Locatie"
+      },
+      "month": {
+        "title": "Month",
+        "type": "integer"
+      },
+      "site_code": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Site Code"
+      },
+      "total_salary": {
+        "title": "Total Salary",
+        "type": "number"
+      },
+      "year": {
+        "title": "Year",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "year",
+      "month",
+      "company_name",
+      "total_salary",
+      "site_code",
+      "locatie"
+    ],
+    "title": "SalaryHistoryRecordPublic",
+    "type": "object"
+  },
+  "SalaryHistoryResponse": {
+    "additionalProperties": false,
+    "properties": {
+      "avg": {
+        "title": "Avg",
+        "type": "number"
+      },
+      "avg_month_count": {
+        "title": "Avg Month Count",
+        "type": "integer"
+      },
+      "link": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/AgentSalaryLinkPublic"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "month_count": {
+        "title": "Month Count",
+        "type": "integer"
+      },
+      "records": {
+        "items": {
+          "$ref": "#/components/schemas/SalaryHistoryRecordPublic"
+        },
+        "title": "Records",
+        "type": "array"
+      },
+      "total": {
+        "title": "Total",
+        "type": "number"
+      }
+    },
+    "required": [
+      "records",
+      "total",
+      "avg",
+      "month_count",
+      "avg_month_count"
+    ],
+    "title": "SalaryHistoryResponse",
+    "type": "object"
+  },
+  "SalaryOverviewResponse": {
+    "additionalProperties": false,
+    "properties": {
+      "agent_count": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Agent Count"
+      },
+      "agent_month_count": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Agent Month Count"
+      },
+      "avg_agent_month_count": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Avg Agent Month Count"
+      },
+      "avg_salary": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Avg Salary"
+      },
+      "by_company": {
+        "items": {
+          "$ref": "#/components/schemas/SalaryCompanyTotal"
+        },
+        "title": "By Company",
+        "type": "array"
+      },
+      "months_span": {
+        "anyOf": [
+          {
+            "maxItems": 4,
+            "minItems": 4,
+            "prefixItems": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "integer"
+              }
+            ],
+            "type": "array"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Months Span"
+      },
+      "record_count": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Record Count"
+      },
+      "total": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Total"
+      }
+    },
+    "title": "SalaryOverviewResponse",
+    "type": "object"
+  },
+  "SalaryRecordPublic": {
+    "additionalProperties": false,
+    "properties": {
+      "company_name": {
+        "title": "Company Name",
+        "type": "string"
+      },
+      "full_name": {
+        "title": "Full Name",
+        "type": "string"
+      },
+      "id": {
+        "title": "Id",
+        "type": "integer"
+      },
+      "locatie": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Locatie"
+      },
+      "month": {
+        "title": "Month",
+        "type": "integer"
+      },
+      "person_id": {
+        "pattern": "^sp1_[0-9a-f]{64}$",
+        "title": "Person Id",
+        "type": "string"
+      },
+      "site_code": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Site Code"
+      },
+      "total_salary": {
+        "title": "Total Salary",
+        "type": "number"
+      },
+      "year": {
+        "title": "Year",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "id",
+      "year",
+      "month",
+      "full_name",
+      "person_id",
+      "total_salary",
+      "company_name",
+      "site_code",
+      "locatie"
+    ],
+    "title": "SalaryRecordPublic",
+    "type": "object"
+  },
+  "SalaryStoreOption": {
+    "additionalProperties": false,
+    "properties": {
+      "locatie": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Locatie"
+      },
+      "site_code": {
+        "title": "Site Code",
+        "type": "string"
+      }
+    },
+    "required": [
+      "site_code"
+    ],
+    "title": "SalaryStoreOption",
+    "type": "object"
+  },
+  "SalarySummaryResponse": {
+    "additionalProperties": false,
+    "properties": {
+      "items": {
+        "items": {
+          "$ref": "#/components/schemas/SalaryComparisonItem"
+        },
+        "title": "Items",
+        "type": "array"
+      },
+      "month": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Month"
+      }
+    },
+    "title": "SalarySummaryResponse",
+    "type": "object"
+  },
+  "SalaryTrendPoint": {
+    "additionalProperties": false,
+    "properties": {
+      "agent_count": {
+        "title": "Agent Count",
+        "type": "integer"
+      },
+      "avg_agent_count": {
+        "title": "Avg Agent Count",
+        "type": "integer"
+      },
+      "avg_salary": {
+        "title": "Avg Salary",
+        "type": "number"
+      },
+      "by_company": {
+        "additionalProperties": true,
+        "title": "By Company",
+        "type": "object"
+      },
+      "month": {
+        "title": "Month",
+        "type": "string"
+      },
+      "total_salary": {
+        "title": "Total Salary",
+        "type": "number"
+      },
+      "total_sales": {
+        "title": "Total Sales",
+        "type": "number"
+      }
+    },
+    "required": [
+      "month",
+      "total_salary",
+      "total_sales",
+      "agent_count",
+      "avg_agent_count",
+      "avg_salary"
+    ],
+    "title": "SalaryTrendPoint",
+    "type": "object"
+  },
+  "SalesGenerationAnomaly": {
+    "additionalProperties": false,
+    "properties": {
+      "blocking": {
+        "title": "Blocking",
+        "type": "boolean"
+      },
+      "classification": {
+        "anyOf": [
+          {
+            "enum": [
+              "informational",
+              "structural_contradiction"
+            ],
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Classification"
+      },
+      "code": {
+        "title": "Code",
+        "type": "string"
+      },
+      "count": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Count"
+      },
+      "cutoff_date": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Cutoff Date"
+      },
+      "drop_pct": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Drop Pct"
+      },
+      "import_month": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Import Month"
+      },
+      "incoming": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Incoming"
+      },
+      "max_sale_date": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Max Sale Date"
+      },
+      "message": {
+        "title": "Message",
+        "type": "string"
+      },
+      "months": {
+        "anyOf": [
+          {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Months"
+      },
+      "previous": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Previous"
+      },
+      "set_sha256": {
+        "anyOf": [
+          {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Set Sha256"
+      },
+      "site_days": {
+        "anyOf": [
+          {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Site Days"
+      },
+      "threshold_pct": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Threshold Pct"
+      }
+    },
+    "required": [
+      "code",
+      "blocking",
+      "message"
+    ],
+    "title": "SalesGenerationAnomaly",
+    "type": "object"
+  },
+  "SalesGenerationManifest": {
+    "additionalProperties": false,
+    "properties": {
+      "agent_count": {
+        "anyOf": [
+          {
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Agent Count"
+      },
+      "anomalies": {
+        "items": {
+          "$ref": "#/components/schemas/SalesGenerationAnomaly"
+        },
+        "title": "Anomalies",
+        "type": "array"
+      },
+      "business_sha256": {
+        "anyOf": [
+          {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Business Sha256"
+      },
+      "cutoff_date": {
+        "anyOf": [
+          {
+            "format": "date",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Cutoff Date"
+      },
+      "generation_state": {
+        "anyOf": [
+          {
+            "enum": [
+              "validated",
+              "promoting",
+              "promoted"
+            ],
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Generation State"
+      },
+      "import_month": {
+        "anyOf": [
+          {
+            "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Import Month"
+      },
+      "max_sale_date": {
+        "anyOf": [
+          {
+            "format": "date",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Max Sale Date"
+      },
+      "parser_resources": {
+        "anyOf": [
+          {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Parser Resources"
+      },
+      "receipt_count": {
+        "anyOf": [
+          {
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Receipt Count"
+      },
+      "rows_filtered": {
+        "anyOf": [
+          {
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Rows Filtered"
+      },
+      "rows_imported": {
+        "anyOf": [
+          {
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Rows Imported"
+      },
+      "rows_in_file": {
+        "anyOf": [
+          {
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Rows In File"
+      },
+      "schema_version": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Schema Version"
+      },
+      "site_day_count": {
+        "anyOf": [
+          {
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Site Day Count"
+      },
+      "site_day_sha256": {
+        "anyOf": [
+          {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Site Day Sha256"
+      },
+      "site_days": {
+        "anyOf": [
+          {
+            "items": {
+              "$ref": "#/components/schemas/SalesSiteDayManifest"
+            },
+            "type": "array"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Site Days"
+      },
+      "source_sha256": {
+        "anyOf": [
+          {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Source Sha256"
+      },
+      "stage_rows_sha256": {
+        "anyOf": [
+          {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Stage Rows Sha256"
+      },
+      "store_count": {
+        "anyOf": [
+          {
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Store Count"
+      },
+      "total_quantity": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Total Quantity"
+      },
+      "total_value": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Total Value"
+      }
+    },
+    "title": "SalesGenerationManifest",
+    "type": "object"
+  },
+  "SalesGenerationPromotionRequest": {
+    "additionalProperties": false,
+    "properties": {
+      "generation_token": {
+        "pattern": "^[0-9a-f-]{36}$",
+        "title": "Generation Token",
+        "type": "string"
+      },
+      "manifest_sha256": {
+        "pattern": "^[0-9a-f]{64}$",
+        "title": "Manifest Sha256",
+        "type": "string"
+      },
+      "override_reason": {
+        "anyOf": [
+          {
+            "maxLength": 500,
+            "minLength": 10,
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Override Reason"
+      }
+    },
+    "required": [
+      "generation_token",
+      "manifest_sha256"
+    ],
+    "title": "SalesGenerationPromotionRequest",
+    "type": "object"
+  },
+  "SalesSiteDayManifest": {
+    "additionalProperties": false,
+    "properties": {
+      "quantity": {
+        "title": "Quantity",
+        "type": "integer"
+      },
+      "receipts": {
+        "minimum": 0.0,
+        "title": "Receipts",
+        "type": "integer"
+      },
+      "rows": {
+        "minimum": 0.0,
+        "title": "Rows",
+        "type": "integer"
+      },
+      "sale_date": {
+        "format": "date",
+        "title": "Sale Date",
+        "type": "string"
+      },
+      "site_code": {
+        "title": "Site Code",
+        "type": "string"
+      },
+      "value": {
+        "title": "Value",
+        "type": "string"
+      }
+    },
+    "required": [
+      "site_code",
+      "sale_date",
+      "rows",
+      "receipts",
+      "quantity",
+      "value"
+    ],
+    "title": "SalesSiteDayManifest",
+    "type": "object"
+  },
+  "SessionLogoutResponse": {
+    "properties": {
+      "logout_url": {
+        "title": "Logout Url",
+        "type": "string"
+      }
+    },
+    "required": [
+      "logout_url"
+    ],
+    "title": "SessionLogoutResponse",
+    "type": "object"
+  },
+  "SessionProfileResponse": {
+    "properties": {
+      "email": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Email"
+      },
+      "groups": {
+        "items": {
+          "type": "string"
+        },
+        "title": "Groups",
+        "type": "array"
+      },
+      "preferred_username": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Preferred Username"
+      },
+      "sub": {
+        "title": "Sub",
+        "type": "string"
+      }
+    },
+    "required": [
+      "sub",
+      "groups"
+    ],
+    "title": "SessionProfileResponse",
+    "type": "object"
+  },
+  "SessionStatusResponse": {
+    "properties": {
+      "csrf_token": {
+        "title": "Csrf Token",
+        "type": "string"
+      },
+      "profile": {
+        "$ref": "#/components/schemas/SessionProfileResponse"
+      }
+    },
+    "required": [
+      "profile",
+      "csrf_token"
+    ],
+    "title": "SessionStatusResponse",
+    "type": "object"
+  },
+  "StoreActivityChangeRequest": {
+    "additionalProperties": false,
+    "properties": {
+      "expected_is_active": {
+        "title": "Expected Is Active",
+        "type": "boolean"
+      },
+      "is_active": {
+        "title": "Is Active",
+        "type": "boolean"
+      },
+      "reason": {
+        "maxLength": 500,
+        "minLength": 10,
+        "title": "Reason",
+        "type": "string"
+      }
+    },
+    "required": [
+      "is_active",
+      "expected_is_active",
+      "reason"
+    ],
+    "title": "StoreActivityChangeRequest",
+    "type": "object"
+  },
+  "StoreActivityChangeResponse": {
+    "additionalProperties": false,
+    "properties": {
+      "event_id": {
+        "title": "Event Id",
+        "type": "integer"
+      },
+      "is_active": {
+        "title": "Is Active",
+        "type": "boolean"
+      },
+      "previous_is_active": {
+        "title": "Previous Is Active",
+        "type": "boolean"
+      },
+      "site_code": {
+        "title": "Site Code",
+        "type": "string"
+      }
+    },
+    "required": [
+      "site_code",
+      "previous_is_active",
+      "is_active",
+      "event_id"
+    ],
+    "title": "StoreActivityChangeResponse",
+    "type": "object"
+  },
+  "StoreCoverageItem": {
+    "additionalProperties": false,
+    "properties": {
+      "added_agents_count": {
+        "default": 0,
+        "title": "Added Agents Count",
+        "type": "integer"
+      },
+      "agent_count": {
+        "title": "Agent Count",
+        "type": "integer"
+      },
+      "asm": {
+        "title": "Asm",
+        "type": "string"
+      },
+      "change_reason": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Change Reason"
+      },
+      "firma": {
+        "title": "Firma",
+        "type": "string"
+      },
+      "has_changes": {
+        "default": false,
+        "title": "Has Changes",
+        "type": "boolean"
+      },
+      "locatie": {
+        "title": "Locatie",
+        "type": "string"
+      },
+      "previous_agent_count": {
+        "default": 0,
+        "title": "Previous Agent Count",
+        "type": "integer"
+      },
+      "regional": {
+        "title": "Regional",
+        "type": "string"
+      },
+      "removed_agents_count": {
+        "default": 0,
+        "title": "Removed Agents Count",
+        "type": "integer"
+      },
+      "site_code": {
+        "title": "Site Code",
+        "type": "string"
+      },
+      "status": {
+        "enum": [
+          "covered",
+          "uncovered",
+          "closed",
+          "inactive"
+        ],
+        "title": "Status",
+        "type": "string"
+      }
+    },
+    "required": [
+      "site_code",
+      "locatie",
+      "firma",
+      "regional",
+      "asm",
+      "status",
+      "agent_count"
+    ],
+    "title": "StoreCoverageItem",
+    "type": "object"
+  },
+  "StoreCoverageResponse": {
+    "additionalProperties": false,
+    "properties": {
+      "active_stores_count": {
+        "title": "Active Stores Count",
+        "type": "integer"
+      },
+      "closed_stores_count": {
+        "title": "Closed Stores Count",
+        "type": "integer"
+      },
+      "items": {
+        "items": {
+          "$ref": "#/components/schemas/StoreCoverageItem"
+        },
+        "title": "Items",
+        "type": "array"
+      },
+      "modified_stores_count": {
+        "default": 0,
+        "title": "Modified Stores Count",
+        "type": "integer"
+      },
+      "uncovered_stores_count": {
+        "title": "Uncovered Stores Count",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "active_stores_count",
+      "uncovered_stores_count",
+      "closed_stores_count",
+      "items"
+    ],
+    "title": "StoreCoverageResponse",
+    "type": "object"
+  },
+  "StoreOption": {
+    "additionalProperties": false,
+    "properties": {
+      "asm": {
+        "title": "Asm",
+        "type": "string"
+      },
+      "firma": {
+        "title": "Firma",
+        "type": "string"
+      },
+      "locatie": {
+        "title": "Locatie",
+        "type": "string"
+      },
+      "regional": {
+        "title": "Regional",
+        "type": "string"
+      },
+      "site_code": {
+        "title": "Site Code",
+        "type": "string"
+      }
+    },
+    "required": [
+      "site_code",
+      "locatie",
+      "firma",
+      "regional",
+      "asm"
+    ],
+    "title": "StoreOption",
+    "type": "object"
+  },
+  "StoreStats": {
+    "additionalProperties": false,
+    "properties": {
+      "asm": {
+        "title": "Asm",
+        "type": "string"
+      },
+      "firma": {
+        "title": "Firma",
+        "type": "string"
+      },
+      "forecast_target_pct": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Forecast Target Pct"
+      },
+      "import_month": {
+        "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
+        "title": "Import Month",
+        "type": "string"
+      },
+      "incentive_qty": {
+        "default": 0,
+        "title": "Incentive Qty",
+        "type": "integer"
+      },
+      "locatie": {
+        "title": "Locatie",
+        "type": "string"
+      },
+      "medie_produs": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Medie Produs"
+      },
+      "nr_agenti": {
+        "title": "Nr Agenti",
+        "type": "integer"
+      },
+      "nr_bonuri": {
+        "title": "Nr Bonuri",
+        "type": "integer"
+      },
+      "prc_focus_acc_qty": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Prc Focus Acc Qty"
+      },
+      "proc_bon2acc": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Proc Bon2Acc"
+      },
+      "proc_realizare_target": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Proc Realizare Target"
+      },
+      "promo_discount_value": {
+        "default": "0",
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Promo Discount Value",
+        "type": "string"
+      },
+      "promo_qty": {
+        "default": 0,
+        "title": "Promo Qty",
+        "type": "integer"
+      },
+      "qty_total": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Qty Total"
+      },
+      "regional": {
+        "title": "Regional",
+        "type": "string"
+      },
+      "return_receipt_count": {
+        "default": 0,
+        "title": "Return Receipt Count",
+        "type": "integer"
+      },
+      "site_code": {
+        "title": "Site Code",
+        "type": "string"
+      },
+      "target": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Target",
+        "type": "string"
+      },
+      "total_vanzari": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Total Vanzari",
+        "type": "string"
+      },
+      "zile_active": {
+        "title": "Zile Active",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "import_month",
+      "site_code",
+      "locatie",
+      "firma",
+      "regional",
+      "asm",
+      "total_vanzari",
+      "qty_total",
+      "nr_bonuri",
+      "nr_agenti",
+      "zile_active",
+      "target",
+      "proc_realizare_target"
+    ],
+    "title": "StoreStats",
+    "type": "object"
+  },
+  "StoreTargetInput": {
+    "additionalProperties": false,
+    "properties": {
+      "import_month": {
+        "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
+        "title": "Import Month",
+        "type": "string"
+      },
+      "site_code": {
+        "title": "Site Code",
+        "type": "string"
+      },
+      "target_value": {
+        "anyOf": [
+          {
+            "minimum": 0.0,
+            "type": "number"
+          },
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          }
+        ],
+        "title": "Target Value"
+      }
+    },
+    "required": [
+      "site_code",
+      "import_month",
+      "target_value"
+    ],
+    "title": "StoreTargetInput",
+    "type": "object"
+  },
+  "StoreTargetsSaveResponse": {
+    "additionalProperties": false,
+    "properties": {
+      "inserted": {
+        "minimum": 0.0,
+        "title": "Inserted",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "inserted"
+    ],
+    "title": "StoreTargetsSaveResponse",
+    "type": "object"
+  },
+  "TargetApiErrorResponse": {
+    "additionalProperties": false,
+    "description": "Documented shape of explicit Target HTTPException responses.",
+    "properties": {
+      "detail": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "additionalProperties": true,
+            "type": "object"
+          }
+        ],
+        "title": "Detail"
+      }
+    },
+    "required": [
+      "detail"
+    ],
+    "title": "TargetApiErrorResponse",
+    "type": "object"
+  },
+  "TargetCalculationDetails": {
+    "additionalProperties": false,
+    "properties": {
+      "allocation_reason": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Allocation Reason"
+      },
+      "cap_target": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Cap Target"
+      },
+      "current_forecast": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Current Forecast"
+      },
+      "current_month": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Current Month"
+      },
+      "flags": {
+        "items": {
+          "type": "string"
+        },
+        "title": "Flags",
+        "type": "array"
+      },
+      "floor_target": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Floor Target"
+      },
+      "is_cap_limited": {
+        "anyOf": [
+          {
+            "type": "boolean"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Is Cap Limited"
+      },
+      "is_floor_limited": {
+        "anyOf": [
+          {
+            "type": "boolean"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Is Floor Limited"
+      },
+      "method": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Method"
+      },
+      "raw_estimate": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Raw Estimate"
+      },
+      "seasonality": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/TargetSeasonalityDetails"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "seasonality_years": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Seasonality Years"
+      },
+      "trend": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/TargetTrendDetails"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "title": "TargetCalculationDetails",
+    "type": "object"
+  },
+  "TargetCalculationParams": {
+    "additionalProperties": false,
+    "properties": {
+      "minimum_seasonality_base": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Minimum Seasonality Base"
+      },
+      "new_store_weights": {
+        "additionalProperties": {
+          "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+          "type": "string"
+        },
+        "title": "New Store Weights",
+        "type": "object"
+      },
+      "previous_month_cap_pct": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Previous Month Cap Pct"
+      },
+      "profitability": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/TargetProfitabilityAssumptionsResponse"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "profitability_summary": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/TargetProfitabilitySummaryResponse"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "seasonality_max": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Seasonality Max"
+      },
+      "seasonality_min": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Seasonality Min"
+      },
+      "seasonality_years": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Seasonality Years"
+      },
+      "strong_weights": {
+        "additionalProperties": {
+          "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+          "type": "string"
+        },
+        "title": "Strong Weights",
+        "type": "object"
+      },
+      "trend_adjustment_max": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Trend Adjustment Max"
+      },
+      "trend_adjustment_min": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Trend Adjustment Min"
+      },
+      "trend_weight": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Trend Weight"
+      },
+      "weak_weights": {
+        "additionalProperties": {
+          "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+          "type": "string"
+        },
+        "title": "Weak Weights",
+        "type": "object"
+      }
+    },
+    "title": "TargetCalculationParams",
+    "type": "object"
+  },
+  "TargetCalculationRequest": {
+    "additionalProperties": false,
+    "properties": {
+      "cohort_month": {
+        "anyOf": [
+          {
+            "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Cohort Month"
+      },
+      "expected_revision": {
+        "anyOf": [
+          {
+            "minimum": 1.0,
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Expected Revision"
+      },
+      "min_floor": {
+        "anyOf": [
+          {
+            "minimum": 0.0,
+            "type": "number"
+          },
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          }
+        ],
+        "default": "35000",
+        "title": "Min Floor"
+      },
+      "previous_month_cap_pct": {
+        "anyOf": [
+          {
+            "exclusiveMinimum": 0.0,
+            "maximum": 3.0,
+            "type": "number"
+          },
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          }
+        ],
+        "default": "1.70",
+        "title": "Previous Month Cap Pct"
+      },
+      "previous_month_floor_pct": {
+        "anyOf": [
+          {
+            "maximum": 2.0,
+            "minimum": 0.0,
+            "type": "number"
+          },
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          }
+        ],
+        "default": "0.90",
+        "title": "Previous Month Floor Pct"
+      },
+      "seasonality_years": {
+        "default": 3,
+        "maximum": 3.0,
+        "minimum": 1.0,
+        "title": "Seasonality Years",
+        "type": "integer"
+      },
+      "target_month": {
+        "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
+        "title": "Target Month",
+        "type": "string"
+      },
+      "total_target": {
+        "anyOf": [
+          {
+            "exclusiveMinimum": 0.0,
+            "type": "number"
+          },
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          }
+        ],
+        "title": "Total Target"
+      }
+    },
+    "required": [
+      "target_month",
+      "total_target"
+    ],
+    "title": "TargetCalculationRequest",
+    "type": "object"
+  },
+  "TargetContextResponse": {
+    "additionalProperties": false,
+    "properties": {
+      "active_store_count": {
+        "title": "Active Store Count",
+        "type": "integer"
+      },
+      "can_finalize": {
+        "title": "Can Finalize",
+        "type": "boolean"
+      },
+      "default_min_floor": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Default Min Floor",
+        "type": "string"
+      },
+      "default_previous_month_cap_pct": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Default Previous Month Cap Pct",
+        "type": "string"
+      },
+      "default_previous_month_floor_pct": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Default Previous Month Floor Pct",
+        "type": "string"
+      },
+      "default_seasonality_years": {
+        "title": "Default Seasonality Years",
+        "type": "integer"
+      },
+      "latest_sales_month": {
+        "title": "Latest Sales Month",
+        "type": "string"
+      },
+      "regionals": {
+        "items": {
+          "type": "string"
+        },
+        "title": "Regionals",
+        "type": "array"
+      },
+      "suggested_cohort_month": {
+        "title": "Suggested Cohort Month",
+        "type": "string"
+      },
+      "suggested_target_month": {
+        "title": "Suggested Target Month",
+        "type": "string"
+      },
+      "suggested_total_target": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Suggested Total Target",
+        "type": "string"
+      }
+    },
+    "required": [
+      "latest_sales_month",
+      "suggested_target_month",
+      "suggested_cohort_month",
+      "suggested_total_target",
+      "default_min_floor",
+      "default_previous_month_floor_pct",
+      "default_previous_month_cap_pct",
+      "default_seasonality_years",
+      "active_store_count",
+      "regionals",
+      "can_finalize"
+    ],
+    "title": "TargetContextResponse",
+    "type": "object"
+  },
+  "TargetFinalRow": {
+    "additionalProperties": false,
+    "properties": {
+      "final_target": {
+        "anyOf": [
+          {
+            "minimum": 0.0,
+            "type": "number"
+          },
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Final Target"
+      },
+      "note": {
+        "anyOf": [
+          {
+            "maxLength": 500,
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Note"
+      },
+      "override_reason": {
+        "anyOf": [
+          {
+            "maxLength": 500,
+            "minLength": 1,
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Override Reason"
+      },
+      "site_code": {
+        "title": "Site Code",
+        "type": "string"
+      }
+    },
+    "required": [
+      "site_code"
+    ],
+    "title": "TargetFinalRow",
+    "type": "object"
+  },
+  "TargetFinalRowsRequest": {
+    "additionalProperties": false,
+    "properties": {
+      "expected_revision": {
+        "minimum": 1.0,
+        "title": "Expected Revision",
+        "type": "integer"
+      },
+      "rows": {
+        "items": {
+          "$ref": "#/components/schemas/TargetFinalRow"
+        },
+        "minItems": 1,
+        "title": "Rows",
+        "type": "array"
+      }
+    },
+    "required": [
+      "expected_revision",
+      "rows"
+    ],
+    "title": "TargetFinalRowsRequest",
+    "type": "object"
+  },
+  "TargetFinalizeRequest": {
+    "additionalProperties": false,
+    "properties": {
+      "expected_revision": {
+        "minimum": 1.0,
+        "title": "Expected Revision",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "expected_revision"
+    ],
+    "title": "TargetFinalizeRequest",
+    "type": "object"
+  },
+  "TargetForecastCoverageResponse": {
+    "additionalProperties": false,
+    "properties": {
+      "covered_store_count": {
+        "title": "Covered Store Count",
+        "type": "integer"
+      },
+      "cutoff": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Cutoff"
+      },
+      "cutoff_max": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Cutoff Max"
+      },
+      "cutoff_min": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Cutoff Min"
+      },
+      "expected_store_count": {
+        "title": "Expected Store Count",
+        "type": "integer"
+      },
+      "missing_site_codes": {
+        "items": {
+          "type": "string"
+        },
+        "title": "Missing Site Codes",
+        "type": "array"
+      },
+      "mode": {
+        "title": "Mode",
+        "type": "string"
+      }
+    },
+    "required": [
+      "mode",
+      "expected_store_count",
+      "covered_store_count"
+    ],
+    "title": "TargetForecastCoverageResponse",
+    "type": "object"
+  },
+  "TargetForecastRunResponse": {
+    "additionalProperties": false,
+    "properties": {
+      "generated_at": {
+        "title": "Generated At",
+        "type": "string"
+      },
+      "id": {
+        "title": "Id",
+        "type": "integer"
+      },
+      "model_mode": {
+        "title": "Model Mode",
+        "type": "string"
+      },
+      "model_name": {
+        "title": "Model Name",
+        "type": "string"
+      },
+      "source_month": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Source Month"
+      },
+      "variant": {
+        "title": "Variant",
+        "type": "string"
+      }
+    },
+    "required": [
+      "id",
+      "model_name",
+      "model_mode",
+      "variant",
+      "generated_at"
+    ],
+    "title": "TargetForecastRunResponse",
+    "type": "object"
+  },
+  "TargetHistoryValue": {
+    "additionalProperties": false,
+    "properties": {
+      "actual_realized": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Actual Realized"
+      },
+      "attainment_pct": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Attainment Pct"
+      },
+      "forecast_factor": {
+        "default": "1",
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Forecast Factor",
+        "type": "string"
+      },
+      "is_forecast": {
+        "default": false,
+        "title": "Is Forecast",
+        "type": "boolean"
+      },
+      "label": {
+        "title": "Label",
+        "type": "string"
+      },
+      "month": {
+        "title": "Month",
+        "type": "string"
+      },
+      "realized": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Realized",
+        "type": "string"
+      },
+      "role": {
+        "title": "Role",
+        "type": "string"
+      },
+      "target": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Target",
+        "type": "string"
+      },
+      "weight": {
+        "default": "0",
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Weight",
+        "type": "string"
+      }
+    },
+    "required": [
+      "month",
+      "label",
+      "role",
+      "target",
+      "realized"
+    ],
+    "title": "TargetHistoryValue",
+    "type": "object"
+  },
+  "TargetProfitabilityAssumptionsResponse": {
+    "additionalProperties": false,
+    "properties": {
+      "base_salary_default": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Base Salary Default",
+        "type": "string"
+      },
+      "base_salary_high": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Base Salary High"
+      },
+      "default_store_agent_count": {
+        "title": "Default Store Agent Count",
+        "type": "integer"
+      },
+      "meal_vouchers_per_agent": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Meal Vouchers Per Agent",
+        "type": "string"
+      },
+      "salary_assumed_attainment": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Salary Assumed Attainment",
+        "type": "string"
+      },
+      "salary_pnl_factor": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Salary Pnl Factor",
+        "type": "string"
+      },
+      "sales_commission_rate": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Sales Commission Rate",
+        "type": "string"
+      },
+      "sun_plaza_agent_count": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Sun Plaza Agent Count"
+      },
+      "target_rule_set_hash": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Target Rule Set Hash"
+      },
+      "target_rule_set_id": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Target Rule Set Id"
+      },
+      "vat_effective_from": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Vat Effective From"
+      },
+      "vat_multiplier": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Vat Multiplier",
+        "type": "string"
+      },
+      "vat_rate": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Vat Rate",
+        "type": "string"
+      },
+      "vat_rule_id": {
+        "title": "Vat Rule Id",
+        "type": "string"
+      },
+      "vat_ruleset_hash": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Vat Ruleset Hash"
+      },
+      "vat_ruleset_id": {
+        "title": "Vat Ruleset Id",
+        "type": "string"
+      }
+    },
+    "required": [
+      "vat_ruleset_id",
+      "vat_rule_id",
+      "vat_multiplier",
+      "vat_rate",
+      "salary_pnl_factor",
+      "meal_vouchers_per_agent",
+      "sales_commission_rate",
+      "salary_assumed_attainment",
+      "default_store_agent_count",
+      "base_salary_default"
+    ],
+    "title": "TargetProfitabilityAssumptionsResponse",
+    "type": "object"
+  },
+  "TargetProfitabilityResponse": {
+    "additionalProperties": false,
+    "properties": {
+      "accessory_margin_pct": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Accessory Margin Pct"
+      },
+      "agent_count": {
+        "title": "Agent Count",
+        "type": "integer"
+      },
+      "anomaly_flags": {
+        "items": {
+          "type": "string"
+        },
+        "title": "Anomaly Flags",
+        "type": "array"
+      },
+      "base_salary_per_agent": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Base Salary Per Agent",
+        "type": "string"
+      },
+      "break_even_gross_sales": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Break Even Gross Sales"
+      },
+      "forecast_sales": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Forecast Sales"
+      },
+      "operating_costs": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Operating Costs"
+      },
+      "salary_cost_at_90_pct": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Salary Cost At 90 Pct",
+        "type": "string"
+      }
+    },
+    "required": [
+      "agent_count",
+      "base_salary_per_agent",
+      "salary_cost_at_90_pct"
+    ],
+    "title": "TargetProfitabilityResponse",
+    "type": "object"
+  },
+  "TargetProfitabilitySummaryResponse": {
+    "additionalProperties": false,
+    "properties": {
+      "assumptions": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/TargetProfitabilityAssumptionsResponse"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "break_even_total": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Break Even Total"
+      },
+      "forecast_below_break_even_count": {
+        "title": "Forecast Below Break Even Count",
+        "type": "integer"
+      },
+      "forecast_coverage": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/TargetForecastCoverageResponse"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "forecast_run": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/TargetForecastRunResponse"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "forecast_store_count": {
+        "title": "Forecast Store Count",
+        "type": "integer"
+      },
+      "forecast_total": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Forecast Total"
+      },
+      "input_sha256": {
+        "anyOf": [
+          {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Input Sha256"
+      },
+      "operating_costs_total": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Operating Costs Total"
+      },
+      "pnl_months": {
+        "items": {
+          "type": "string"
+        },
+        "title": "Pnl Months",
+        "type": "array"
+      },
+      "pnl_store_count": {
+        "title": "Pnl Store Count",
+        "type": "integer"
+      },
+      "salary_total": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Salary Total",
+        "type": "string"
+      },
+      "status": {
+        "title": "Status",
+        "type": "string"
+      },
+      "target_below_break_even_count": {
+        "title": "Target Below Break Even Count",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "status",
+      "pnl_store_count",
+      "forecast_store_count",
+      "salary_total",
+      "forecast_below_break_even_count",
+      "target_below_break_even_count"
+    ],
+    "title": "TargetProfitabilitySummaryResponse",
+    "type": "object"
+  },
+  "TargetRegionalSummaryResponse": {
+    "additionalProperties": false,
+    "properties": {
+      "current_forecast_total": {
+        "default": "0",
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Current Forecast Total",
+        "type": "string"
+      },
+      "current_month": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Current Month"
+      },
+      "final_growth_vs_current_pct": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Final Growth Vs Current Pct"
+      },
+      "final_total": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Final Total",
+        "type": "string"
+      },
+      "floor_total": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Floor Total",
+        "type": "string"
+      },
+      "last_year_base_month": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Last Year Base Month"
+      },
+      "last_year_base_total": {
+        "default": "0",
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Last Year Base Total",
+        "type": "string"
+      },
+      "last_year_growth_pct": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Last Year Growth Pct"
+      },
+      "last_year_target_month": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Last Year Target Month"
+      },
+      "last_year_target_total": {
+        "default": "0",
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Last Year Target Total",
+        "type": "string"
+      },
+      "proposed_growth_vs_current_pct": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Proposed Growth Vs Current Pct"
+      },
+      "proposed_total": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Proposed Total",
+        "type": "string"
+      },
+      "regional": {
+        "title": "Regional",
+        "type": "string"
+      },
+      "store_count": {
+        "title": "Store Count",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "regional",
+      "store_count",
+      "floor_total",
+      "proposed_total",
+      "final_total"
+    ],
+    "title": "TargetRegionalSummaryResponse",
+    "type": "object"
+  },
+  "TargetScenarioResponse": {
+    "additionalProperties": false,
+    "properties": {
+      "calculation_input_sha256": {
+        "anyOf": [
+          {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Calculation Input Sha256"
+      },
+      "calculation_method": {
+        "title": "Calculation Method",
+        "type": "string"
+      },
+      "calculation_params": {
+        "$ref": "#/components/schemas/TargetCalculationParams"
+      },
+      "cap_limited_count": {
+        "default": 0,
+        "title": "Cap Limited Count",
+        "type": "integer"
+      },
+      "cohort_month": {
+        "title": "Cohort Month",
+        "type": "string"
+      },
+      "created_at": {
+        "title": "Created At",
+        "type": "string"
+      },
+      "final_total": {
+        "default": "0",
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Final Total",
+        "type": "string"
+      },
+      "finalized_at": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Finalized At"
+      },
+      "floor_limited_count": {
+        "title": "Floor Limited Count",
+        "type": "integer"
+      },
+      "id": {
+        "title": "Id",
+        "type": "integer"
+      },
+      "manager_overrides_count": {
+        "default": 0,
+        "title": "Manager Overrides Count",
+        "type": "integer"
+      },
+      "manual_adjustments_count": {
+        "title": "Manual Adjustments Count",
+        "type": "integer"
+      },
+      "min_floor": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Min Floor",
+        "type": "string"
+      },
+      "pending_final_count": {
+        "title": "Pending Final Count",
+        "type": "integer"
+      },
+      "previous_month_floor_pct": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Previous Month Floor Pct",
+        "type": "string"
+      },
+      "profitability_input_sha256": {
+        "anyOf": [
+          {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Profitability Input Sha256"
+      },
+      "profitability_summary": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/TargetProfitabilitySummaryResponse"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "proposed_total": {
+        "default": "0",
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Proposed Total",
+        "type": "string"
+      },
+      "regional_summary": {
+        "items": {
+          "$ref": "#/components/schemas/TargetRegionalSummaryResponse"
+        },
+        "title": "Regional Summary",
+        "type": "array"
+      },
+      "remaining_difference": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Remaining Difference",
+        "type": "string"
+      },
+      "revision": {
+        "title": "Revision",
+        "type": "integer"
+      },
+      "rows": {
+        "items": {
+          "$ref": "#/components/schemas/TargetScenarioRowResponse"
+        },
+        "title": "Rows",
+        "type": "array"
+      },
+      "rule_set_hash": {
+        "anyOf": [
+          {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Rule Set Hash"
+      },
+      "rule_set_id": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Rule Set Id"
+      },
+      "rule_set_snapshot": {
+        "anyOf": [
+          {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Rule Set Snapshot"
+      },
+      "source_months": {
+        "items": {
+          "$ref": "#/components/schemas/TargetSourceMonth"
+        },
+        "title": "Source Months",
+        "type": "array"
+      },
+      "source_summary": {
+        "items": {
+          "$ref": "#/components/schemas/TargetSourceSummaryResponse"
+        },
+        "title": "Source Summary",
+        "type": "array"
+      },
+      "status": {
+        "title": "Status",
+        "type": "string"
+      },
+      "store_count": {
+        "default": 0,
+        "title": "Store Count",
+        "type": "integer"
+      },
+      "target_month": {
+        "title": "Target Month",
+        "type": "string"
+      },
+      "total_target": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Total Target",
+        "type": "string"
+      },
+      "updated_at": {
+        "title": "Updated At",
+        "type": "string"
+      },
+      "warnings": {
+        "items": {
+          "type": "string"
+        },
+        "title": "Warnings",
+        "type": "array"
+      }
+    },
+    "required": [
+      "id",
+      "target_month",
+      "cohort_month",
+      "total_target",
+      "min_floor",
+      "previous_month_floor_pct",
+      "status",
+      "revision",
+      "calculation_method",
+      "pending_final_count",
+      "created_at",
+      "updated_at",
+      "remaining_difference",
+      "floor_limited_count",
+      "manual_adjustments_count",
+      "rows"
+    ],
+    "title": "TargetScenarioResponse",
+    "type": "object"
+  },
+  "TargetScenarioRowResponse": {
+    "additionalProperties": false,
+    "properties": {
+      "asm": {
+        "title": "Asm",
+        "type": "string"
+      },
+      "calculated_weight": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Calculated Weight",
+        "type": "string"
+      },
+      "calculation_details": {
+        "$ref": "#/components/schemas/TargetCalculationDetails"
+      },
+      "cap_target": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Cap Target"
+      },
+      "final_target": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Final Target"
+      },
+      "firma": {
+        "title": "Firma",
+        "type": "string"
+      },
+      "floor_target": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Floor Target",
+        "type": "string"
+      },
+      "history": {
+        "items": {
+          "$ref": "#/components/schemas/TargetHistoryValue"
+        },
+        "title": "History",
+        "type": "array"
+      },
+      "is_cap_limited": {
+        "default": false,
+        "title": "Is Cap Limited",
+        "type": "boolean"
+      },
+      "is_floor_limited": {
+        "default": false,
+        "title": "Is Floor Limited",
+        "type": "boolean"
+      },
+      "locatie": {
+        "title": "Locatie",
+        "type": "string"
+      },
+      "manager_override_at": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Manager Override At"
+      },
+      "manager_override_reason": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Manager Override Reason"
+      },
+      "manager_override_revision": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Manager Override Revision"
+      },
+      "manager_override_target": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Manager Override Target"
+      },
+      "normalized_weight": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Normalized Weight"
+      },
+      "note": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Note"
+      },
+      "profitability": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/TargetProfitabilityResponse"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "proposed_target": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Proposed Target",
+        "type": "string"
+      },
+      "regional": {
+        "title": "Regional",
+        "type": "string"
+      },
+      "site_code": {
+        "title": "Site Code",
+        "type": "string"
+      },
+      "updated_at": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Updated At"
+      }
+    },
+    "required": [
+      "site_code",
+      "locatie",
+      "firma",
+      "regional",
+      "asm",
+      "calculated_weight",
+      "floor_target",
+      "proposed_target"
+    ],
+    "title": "TargetScenarioRowResponse",
+    "type": "object"
+  },
+  "TargetScenarioSummaryResponse": {
+    "additionalProperties": false,
+    "properties": {
+      "calculation_input_sha256": {
+        "anyOf": [
+          {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Calculation Input Sha256"
+      },
+      "calculation_method": {
+        "title": "Calculation Method",
+        "type": "string"
+      },
+      "calculation_params": {
+        "$ref": "#/components/schemas/TargetCalculationParams"
+      },
+      "cohort_month": {
+        "title": "Cohort Month",
+        "type": "string"
+      },
+      "created_at": {
+        "title": "Created At",
+        "type": "string"
+      },
+      "final_total": {
+        "default": "0",
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Final Total",
+        "type": "string"
+      },
+      "finalized_at": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Finalized At"
+      },
+      "id": {
+        "title": "Id",
+        "type": "integer"
+      },
+      "min_floor": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Min Floor",
+        "type": "string"
+      },
+      "pending_final_count": {
+        "default": 0,
+        "title": "Pending Final Count",
+        "type": "integer"
+      },
+      "previous_month_floor_pct": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Previous Month Floor Pct",
+        "type": "string"
+      },
+      "profitability_input_sha256": {
+        "anyOf": [
+          {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Profitability Input Sha256"
+      },
+      "proposed_total": {
+        "default": "0",
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Proposed Total",
+        "type": "string"
+      },
+      "revision": {
+        "title": "Revision",
+        "type": "integer"
+      },
+      "rule_set_hash": {
+        "anyOf": [
+          {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Rule Set Hash"
+      },
+      "rule_set_id": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Rule Set Id"
+      },
+      "rule_set_snapshot": {
+        "anyOf": [
+          {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Rule Set Snapshot"
+      },
+      "source_months": {
+        "items": {
+          "$ref": "#/components/schemas/TargetSourceMonth"
+        },
+        "title": "Source Months",
+        "type": "array"
+      },
+      "status": {
+        "title": "Status",
+        "type": "string"
+      },
+      "store_count": {
+        "default": 0,
+        "title": "Store Count",
+        "type": "integer"
+      },
+      "target_month": {
+        "title": "Target Month",
+        "type": "string"
+      },
+      "total_target": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Total Target",
+        "type": "string"
+      },
+      "updated_at": {
+        "title": "Updated At",
+        "type": "string"
+      },
+      "warnings": {
+        "items": {
+          "type": "string"
+        },
+        "title": "Warnings",
+        "type": "array"
+      }
+    },
+    "required": [
+      "id",
+      "target_month",
+      "cohort_month",
+      "total_target",
+      "min_floor",
+      "previous_month_floor_pct",
+      "status",
+      "revision",
+      "calculation_method",
+      "created_at",
+      "updated_at"
+    ],
+    "title": "TargetScenarioSummaryResponse",
+    "type": "object"
+  },
+  "TargetSeasonalityDetails": {
+    "additionalProperties": false,
+    "properties": {
+      "blended_factor": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Blended Factor"
+      },
+      "last_year_store_factor": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Last Year Store Factor"
+      },
+      "max": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Max"
+      },
+      "min": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Min"
+      },
+      "multiyear_store_factor": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Multiyear Store Factor"
+      },
+      "network_factor": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Network Factor"
+      },
+      "network_years": {
+        "items": {
+          "$ref": "#/components/schemas/TargetSeasonalityYear"
+        },
+        "title": "Network Years",
+        "type": "array"
+      },
+      "store_factor": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Store Factor"
+      },
+      "store_years": {
+        "items": {
+          "$ref": "#/components/schemas/TargetSeasonalityYear"
+        },
+        "title": "Store Years",
+        "type": "array"
+      },
+      "used_factor": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Used Factor"
+      },
+      "weights": {
+        "anyOf": [
+          {
+            "additionalProperties": {
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
+            },
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Weights"
+      },
+      "zone_factor": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Zone Factor"
+      },
+      "zone_years": {
+        "items": {
+          "$ref": "#/components/schemas/TargetSeasonalityYear"
+        },
+        "title": "Zone Years",
+        "type": "array"
+      }
+    },
+    "title": "TargetSeasonalityDetails",
+    "type": "object"
+  },
+  "TargetSeasonalityYear": {
+    "additionalProperties": false,
+    "properties": {
+      "base_month": {
+        "title": "Base Month",
+        "type": "string"
+      },
+      "base_value": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Base Value",
+        "type": "string"
+      },
+      "ratio": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Ratio"
+      },
+      "target_month": {
+        "title": "Target Month",
+        "type": "string"
+      },
+      "target_value": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Target Value",
+        "type": "string"
+      },
+      "year_offset": {
+        "title": "Year Offset",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "year_offset",
+      "base_month",
+      "target_month",
+      "base_value",
+      "target_value"
+    ],
+    "title": "TargetSeasonalityYear",
+    "type": "object"
+  },
+  "TargetSourceMonth": {
+    "additionalProperties": false,
+    "properties": {
+      "label": {
+        "title": "Label",
+        "type": "string"
+      },
+      "month": {
+        "title": "Month",
+        "type": "string"
+      },
+      "role": {
+        "title": "Role",
+        "type": "string"
+      }
+    },
+    "required": [
+      "month",
+      "label",
+      "role"
+    ],
+    "title": "TargetSourceMonth",
+    "type": "object"
+  },
+  "TargetSourceSummaryResponse": {
+    "additionalProperties": false,
+    "properties": {
+      "actual_realized": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Actual Realized",
+        "type": "string"
+      },
+      "attainment_pct": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Attainment Pct"
+      },
+      "forecast_factor": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Forecast Factor",
+        "type": "string"
+      },
+      "is_forecast": {
+        "title": "Is Forecast",
+        "type": "boolean"
+      },
+      "label": {
+        "title": "Label",
+        "type": "string"
+      },
+      "month": {
+        "title": "Month",
+        "type": "string"
+      },
+      "realized": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Realized",
+        "type": "string"
+      },
+      "target": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Target",
+        "type": "string"
+      }
+    },
+    "required": [
+      "month",
+      "label",
+      "target",
+      "realized",
+      "actual_realized",
+      "is_forecast",
+      "forecast_factor"
+    ],
+    "title": "TargetSourceSummaryResponse",
+    "type": "object"
+  },
+  "TargetStoreAgentResponse": {
+    "additionalProperties": false,
+    "properties": {
+      "active_months_16": {
+        "title": "Active Months 16",
+        "type": "integer"
+      },
+      "agent": {
+        "title": "Agent",
+        "type": "string"
+      },
+      "avg_receipt": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Avg Receipt"
+      },
+      "bon2acc_pct": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Bon2Acc Pct"
+      },
+      "focus_pct": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Focus Pct"
+      },
+      "receipt_count": {
+        "title": "Receipt Count",
+        "type": "integer"
+      },
+      "sales_16m": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Sales 16M",
+        "type": "string"
+      },
+      "sales_share_pct": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Sales Share Pct",
+        "type": "string"
+      },
+      "total_quantity": {
+        "title": "Total Quantity",
+        "type": "integer"
+      },
+      "total_sales": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Total Sales",
+        "type": "string"
+      }
+    },
+    "required": [
+      "agent",
+      "total_sales",
+      "sales_share_pct",
+      "total_quantity",
+      "receipt_count",
+      "active_months_16",
+      "sales_16m"
+    ],
+    "title": "TargetStoreAgentResponse",
+    "type": "object"
+  },
+  "TargetStoreDetailResponse": {
+    "additionalProperties": false,
+    "properties": {
+      "agents": {
+        "items": {
+          "$ref": "#/components/schemas/TargetStoreAgentResponse"
+        },
+        "title": "Agents",
+        "type": "array"
+      },
+      "asm": {
+        "title": "Asm",
+        "type": "string"
+      },
+      "avg_sales_16m": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Avg Sales 16M",
+        "type": "string"
+      },
+      "best_month": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/TargetStoreHistoryPointResponse"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "cohort_month": {
+        "title": "Cohort Month",
+        "type": "string"
+      },
+      "final_target": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Final Target"
+      },
+      "firma": {
+        "title": "Firma",
+        "type": "string"
+      },
+      "history": {
+        "items": {
+          "$ref": "#/components/schemas/TargetStoreHistoryPointResponse"
+        },
+        "title": "History",
+        "type": "array"
+      },
+      "latest": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/TargetStoreHistoryPointResponse"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "locatie": {
+        "title": "Locatie",
+        "type": "string"
+      },
+      "proposed_target": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Proposed Target",
+        "type": "string"
+      },
+      "regional": {
+        "title": "Regional",
+        "type": "string"
+      },
+      "site_code": {
+        "title": "Site Code",
+        "type": "string"
+      },
+      "target_month": {
+        "title": "Target Month",
+        "type": "string"
+      }
+    },
+    "required": [
+      "site_code",
+      "locatie",
+      "firma",
+      "regional",
+      "asm",
+      "target_month",
+      "cohort_month",
+      "proposed_target",
+      "avg_sales_16m"
+    ],
+    "title": "TargetStoreDetailResponse",
+    "type": "object"
+  },
+  "TargetStoreHistoryPointResponse": {
+    "additionalProperties": false,
+    "properties": {
+      "active_agents": {
+        "title": "Active Agents",
+        "type": "integer"
+      },
+      "avg_receipt": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Avg Receipt"
+      },
+      "bon2acc_pct": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Bon2Acc Pct"
+      },
+      "cartele_qty": {
+        "title": "Cartele Qty",
+        "type": "integer"
+      },
+      "focus_pct": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Focus Pct"
+      },
+      "month": {
+        "title": "Month",
+        "type": "string"
+      },
+      "receipt_count": {
+        "title": "Receipt Count",
+        "type": "integer"
+      },
+      "target_pct": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Target Pct"
+      },
+      "target_value": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Target Value",
+        "type": "string"
+      },
+      "total_quantity": {
+        "title": "Total Quantity",
+        "type": "integer"
+      },
+      "total_sales": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Total Sales",
+        "type": "string"
+      },
+      "working_days": {
+        "title": "Working Days",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "month",
+      "total_sales",
+      "target_value",
+      "total_quantity",
+      "receipt_count",
+      "cartele_qty",
+      "active_agents",
+      "working_days"
+    ],
+    "title": "TargetStoreHistoryPointResponse",
+    "type": "object"
+  },
+  "TargetTrendDetails": {
+    "additionalProperties": false,
+    "properties": {
+      "base_month": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Base Month"
+      },
+      "max": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Max"
+      },
+      "min": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Min"
+      },
+      "ratio": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Ratio"
+      },
+      "raw_adjustment": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Raw Adjustment"
+      },
+      "used_adjustment": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Used Adjustment"
+      },
+      "weight": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Weight"
+      }
+    },
+    "title": "TargetTrendDetails",
+    "type": "object"
+  },
+  "TaskCreate": {
+    "additionalProperties": false,
+    "properties": {
+      "assignee": {
+        "anyOf": [
+          {
+            "maxLength": 120,
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Assignee"
+      },
+      "deadline": {
+        "anyOf": [
+          {
+            "maxLength": 10,
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Deadline"
+      },
+      "site_code": {
+        "anyOf": [
+          {
+            "maxLength": 64,
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Site Code"
+      },
+      "source": {
+        "default": "manual",
+        "maxLength": 64,
+        "minLength": 1,
+        "title": "Source",
+        "type": "string"
+      },
+      "source_meta": {
+        "anyOf": [
+          {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Source Meta"
+      },
+      "status": {
+        "default": "deschis",
+        "maxLength": 32,
+        "minLength": 1,
+        "title": "Status",
+        "type": "string"
+      },
+      "title": {
+        "maxLength": 200,
+        "minLength": 1,
+        "title": "Title",
+        "type": "string"
+      }
+    },
+    "required": [
+      "title"
+    ],
+    "title": "TaskCreate",
+    "type": "object"
+  },
+  "TaskDeleteResponse": {
+    "additionalProperties": false,
+    "properties": {
+      "ok": {
+        "title": "Ok",
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "ok"
+    ],
+    "title": "TaskDeleteResponse",
+    "type": "object"
+  },
+  "TaskItem": {
+    "additionalProperties": false,
+    "properties": {
+      "assignee": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Assignee"
+      },
+      "created_at": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Created At"
+      },
+      "deadline": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Deadline"
+      },
+      "id": {
+        "title": "Id",
+        "type": "integer"
+      },
+      "site_code": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Site Code"
+      },
+      "source": {
+        "title": "Source",
+        "type": "string"
+      },
+      "source_meta": {
+        "anyOf": [
+          {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Source Meta"
+      },
+      "status": {
+        "title": "Status",
+        "type": "string"
+      },
+      "title": {
+        "title": "Title",
+        "type": "string"
+      },
+      "updated_at": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Updated At"
+      }
+    },
+    "required": [
+      "id",
+      "title",
+      "status",
+      "source"
+    ],
+    "title": "TaskItem",
+    "type": "object"
+  },
+  "TaskListResponse": {
+    "additionalProperties": false,
+    "properties": {
+      "items": {
+        "items": {
+          "$ref": "#/components/schemas/TaskItem"
+        },
+        "title": "Items",
+        "type": "array"
+      },
+      "limit": {
+        "maximum": 100.0,
+        "minimum": 1.0,
+        "title": "Limit",
+        "type": "integer"
+      },
+      "offset": {
+        "minimum": 0.0,
+        "title": "Offset",
+        "type": "integer"
+      },
+      "total": {
+        "minimum": 0.0,
+        "title": "Total",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "items",
+      "total",
+      "limit",
+      "offset"
+    ],
+    "title": "TaskListResponse",
+    "type": "object"
+  },
+  "TaskUpdate": {
+    "additionalProperties": false,
+    "properties": {
+      "assignee": {
+        "anyOf": [
+          {
+            "maxLength": 120,
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Assignee"
+      },
+      "deadline": {
+        "anyOf": [
+          {
+            "maxLength": 10,
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Deadline"
+      },
+      "site_code": {
+        "anyOf": [
+          {
+            "maxLength": 64,
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Site Code"
+      },
+      "status": {
+        "anyOf": [
+          {
+            "maxLength": 32,
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Status"
+      },
+      "title": {
+        "anyOf": [
+          {
+            "maxLength": 200,
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Title"
+      }
+    },
+    "title": "TaskUpdate",
+    "type": "object"
+  },
+  "TeamLeaderGroup": {
+    "additionalProperties": false,
+    "properties": {
+      "months": {
+        "items": {
+          "$ref": "#/components/schemas/VisitMonthGroup"
+        },
+        "title": "Months",
+        "type": "array"
+      },
+      "nr_vizite": {
+        "minimum": 0.0,
+        "title": "Nr Vizite",
+        "type": "integer"
+      },
+      "team_leader": {
+        "title": "Team Leader",
+        "type": "string"
+      }
+    },
+    "required": [
+      "team_leader",
+      "nr_vizite",
+      "months"
+    ],
+    "title": "TeamLeaderGroup",
+    "type": "object"
+  },
+  "ValidationError": {
+    "properties": {
+      "ctx": {
+        "title": "Context",
+        "type": "object"
+      },
+      "input": {
+        "title": "Input"
+      },
+      "loc": {
+        "items": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "integer"
+            }
+          ]
+        },
+        "title": "Location",
+        "type": "array"
+      },
+      "msg": {
+        "title": "Message",
+        "type": "string"
+      },
+      "type": {
+        "title": "Error Type",
+        "type": "string"
+      }
+    },
+    "required": [
+      "loc",
+      "msg",
+      "type"
+    ],
+    "title": "ValidationError",
+    "type": "object"
+  },
+  "VisitDayGroup": {
+    "additionalProperties": false,
+    "properties": {
+      "date": {
+        "title": "Date",
+        "type": "string"
+      },
+      "nr_vizite": {
+        "minimum": 0.0,
+        "title": "Nr Vizite",
+        "type": "integer"
+      },
+      "visits": {
+        "items": {
+          "$ref": "#/components/schemas/VisitSummaryItem"
+        },
+        "title": "Visits",
+        "type": "array"
+      }
+    },
+    "required": [
+      "date",
+      "nr_vizite",
+      "visits"
+    ],
+    "title": "VisitDayGroup",
+    "type": "object"
+  },
+  "VisitDetail": {
+    "additionalProperties": false,
+    "properties": {
+      "afise": {
+        "title": "Afise",
+        "type": "boolean"
+      },
+      "agent1_analiza": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Agent1 Analiza"
+      },
+      "agent1_doi_pe_bon": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Agent1 Doi Pe Bon"
+      },
+      "agent1_focus": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Agent1 Focus"
+      },
+      "agent1_nume": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Agent1 Nume"
+      },
+      "agent1_perf": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Agent1 Perf"
+      },
+      "agent1_plan": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Agent1 Plan"
+      },
+      "agent2_analiza": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Agent2 Analiza"
+      },
+      "agent2_doi_pe_bon": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Agent2 Doi Pe Bon"
+      },
+      "agent2_focus": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Agent2 Focus"
+      },
+      "agent2_nume": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Agent2 Nume"
+      },
+      "agent2_perf": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Agent2 Perf"
+      },
+      "agent2_plan": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Agent2 Plan"
+      },
+      "altele": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Altele"
+      },
+      "asm": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Asm"
+      },
+      "avizat": {
+        "title": "Avizat",
+        "type": "boolean"
+      },
+      "casa": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Casa"
+      },
+      "charisma": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Charisma"
+      },
+      "completion_pct": {
+        "title": "Completion Pct",
+        "type": "integer"
+      },
+      "curatenie": {
+        "title": "Curatenie",
+        "type": "boolean"
+      },
+      "data_raport": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Data Raport"
+      },
+      "durata_vizita_ore": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Durata Vizita Ore"
+      },
+      "firma": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Firma"
+      },
+      "id": {
+        "title": "Id",
+        "type": "string"
+      },
+      "imagine": {
+        "title": "Imagine",
+        "type": "boolean"
+      },
+      "incarcari_charisma": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Incarcari Charisma"
+      },
+      "incarcari_epay": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Incarcari Epay"
+      },
+      "magazin": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Magazin"
+      },
+      "notes": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Notes"
+      },
+      "ora_trimitere": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Ora Trimitere"
+      },
+      "photos": {
+        "items": {
+          "type": "string"
+        },
+        "title": "Photos",
+        "type": "array"
+      },
+      "produse_promo": {
+        "title": "Produse Promo",
+        "type": "boolean"
+      },
+      "regional": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Regional"
+      },
+      "sticla": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Sticla"
+      },
+      "team_leader": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Team Leader"
+      },
+      "tpu": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Tpu"
+      },
+      "uniforma": {
+        "title": "Uniforma",
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "id",
+      "data_raport",
+      "ora_trimitere",
+      "firma",
+      "regional",
+      "asm",
+      "team_leader",
+      "magazin",
+      "durata_vizita_ore",
+      "curatenie",
+      "imagine",
+      "uniforma",
+      "afise",
+      "produse_promo",
+      "tpu",
+      "sticla",
+      "altele",
+      "avizat",
+      "charisma",
+      "casa",
+      "incarcari_epay",
+      "incarcari_charisma",
+      "agent1_nume",
+      "agent1_perf",
+      "agent1_doi_pe_bon",
+      "agent1_focus",
+      "agent1_analiza",
+      "agent1_plan",
+      "agent2_nume",
+      "agent2_perf",
+      "agent2_doi_pe_bon",
+      "agent2_focus",
+      "agent2_analiza",
+      "agent2_plan",
+      "photos",
+      "completion_pct",
+      "notes"
+    ],
+    "title": "VisitDetail",
+    "type": "object"
+  },
+  "VisitMonthGroup": {
+    "additionalProperties": false,
+    "properties": {
+      "days": {
+        "items": {
+          "$ref": "#/components/schemas/VisitDayGroup"
+        },
+        "title": "Days",
+        "type": "array"
+      },
+      "month": {
+        "anyOf": [
+          {
+            "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
+            "type": "string"
+          },
+          {
+            "const": "—",
+            "type": "string"
+          }
+        ],
+        "title": "Month"
+      },
+      "nr_vizite": {
+        "minimum": 0.0,
+        "title": "Nr Vizite",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "month",
+      "nr_vizite",
+      "days"
+    ],
+    "title": "VisitMonthGroup",
+    "type": "object"
+  },
+  "VisitReportResponse": {
+    "additionalProperties": false,
+    "properties": {
+      "avg_completion": {
+        "maximum": 100.0,
+        "minimum": 0.0,
+        "title": "Avg Completion",
+        "type": "number"
+      },
+      "magazine_unice": {
+        "minimum": 0.0,
+        "title": "Magazine Unice",
+        "type": "integer"
+      },
+      "month": {
+        "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
+        "title": "Month",
+        "type": "string"
+      },
+      "rows": {
+        "items": {
+          "$ref": "#/components/schemas/VisitReportRow"
+        },
+        "title": "Rows",
+        "type": "array"
+      },
+      "total_vizite": {
+        "minimum": 0.0,
+        "title": "Total Vizite",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "month",
+      "total_vizite",
+      "magazine_unice",
+      "avg_completion",
+      "rows"
+    ],
+    "title": "VisitReportResponse",
+    "type": "object"
+  },
+  "VisitReportRow": {
+    "additionalProperties": false,
+    "properties": {
+      "afise_pct": {
+        "maximum": 100.0,
+        "minimum": 0.0,
+        "title": "Afise Pct",
+        "type": "number"
+      },
+      "asm": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Asm"
+      },
+      "avg_completion": {
+        "maximum": 100.0,
+        "minimum": 0.0,
+        "title": "Avg Completion",
+        "type": "number"
+      },
+      "curatenie_pct": {
+        "maximum": 100.0,
+        "minimum": 0.0,
+        "title": "Curatenie Pct",
+        "type": "number"
+      },
+      "firma": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Firma"
+      },
+      "imagine_pct": {
+        "maximum": 100.0,
+        "minimum": 0.0,
+        "title": "Imagine Pct",
+        "type": "number"
+      },
+      "last_visit": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Last Visit"
+      },
+      "magazin": {
+        "title": "Magazin",
+        "type": "string"
+      },
+      "nr_vizite": {
+        "minimum": 0.0,
+        "title": "Nr Vizite",
+        "type": "integer"
+      },
+      "produse_promo_pct": {
+        "maximum": 100.0,
+        "minimum": 0.0,
+        "title": "Produse Promo Pct",
+        "type": "number"
+      },
+      "regional": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Regional"
+      },
+      "uniforma_pct": {
+        "maximum": 100.0,
+        "minimum": 0.0,
+        "title": "Uniforma Pct",
+        "type": "number"
+      }
+    },
+    "required": [
+      "magazin",
+      "asm",
+      "regional",
+      "firma",
+      "nr_vizite",
+      "avg_completion",
+      "curatenie_pct",
+      "imagine_pct",
+      "uniforma_pct",
+      "afise_pct",
+      "produse_promo_pct",
+      "last_visit"
+    ],
+    "title": "VisitReportRow",
+    "type": "object"
+  },
+  "VisitSummaryItem": {
+    "additionalProperties": false,
+    "properties": {
+      "completion_pct": {
+        "maximum": 100.0,
+        "minimum": 0.0,
+        "title": "Completion Pct",
+        "type": "integer"
+      },
+      "firma": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Firma"
+      },
+      "has_photos": {
+        "title": "Has Photos",
+        "type": "boolean"
+      },
+      "id": {
+        "title": "Id",
+        "type": "string"
+      },
+      "locatie": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Locatie"
+      },
+      "magazin": {
+        "title": "Magazin",
+        "type": "string"
+      },
+      "ora": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Ora"
+      }
+    },
+    "required": [
+      "id",
+      "magazin",
+      "locatie",
+      "ora",
+      "completion_pct",
+      "firma",
+      "has_photos"
+    ],
+    "title": "VisitSummaryItem",
+    "type": "object"
+  },
+  "VisitTreeResponse": {
+    "additionalProperties": false,
+    "properties": {
+      "team_leaders": {
+        "items": {
+          "$ref": "#/components/schemas/TeamLeaderGroup"
+        },
+        "title": "Team Leaders",
+        "type": "array"
+      }
+    },
+    "required": [
+      "team_leaders"
+    ],
+    "title": "VisitTreeResponse",
+    "type": "object"
+  },
+  "YearHistoryPoint": {
+    "additionalProperties": false,
+    "properties": {
+      "is_aggregate": {
+        "title": "Is Aggregate",
+        "type": "boolean"
+      },
+      "label": {
+        "title": "Label",
+        "type": "string"
+      },
+      "sort_key": {
+        "title": "Sort Key",
+        "type": "string"
+      },
+      "total_quantity": {
+        "title": "Total Quantity",
+        "type": "integer"
+      },
+      "total_sales": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Total Sales",
+        "type": "string"
+      },
+      "total_target": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Total Target",
+        "type": "string"
+      }
+    },
+    "required": [
+      "label",
+      "sort_key",
+      "total_sales",
+      "total_target",
+      "total_quantity",
+      "is_aggregate"
+    ],
+    "title": "YearHistoryPoint",
+    "type": "object"
+  },
+  "YearHistoryResponse": {
+    "additionalProperties": false,
+    "properties": {
+      "points": {
+        "items": {
+          "$ref": "#/components/schemas/YearHistoryPoint"
+        },
+        "title": "Points",
+        "type": "array"
+      }
+    },
+    "required": [
+      "points"
+    ],
+    "title": "YearHistoryResponse",
+    "type": "object"
+  }
+} as const;
+
+export const RETAIL_RESPONSE_SCHEMAS = {
+  "agent_history_by_retail_code_salarii_agents_history_by_retail_code_get": {
+    "$ref": "#/components/schemas/SalaryHistoryResponse"
+  },
+  "agent_history_salarii_agents__person_id__history_get": {
+    "$ref": "#/components/schemas/SalaryHistoryResponse"
+  },
+  "agents_summary_salarii_agents_summary_get": {
+    "$ref": "#/components/schemas/SalaryAgentsSummaryResponse"
+  },
+  "annual_api_store_pnl_annual_get": {
+    "$ref": "#/components/schemas/PnlAnnualResponse"
+  },
+  "audit_salary_export_salarii_audit_export_post": null,
+  "calculate_scenario_api_target_calculator_scenarios_calculate_post": {
+    "$ref": "#/components/schemas/TargetScenarioResponse"
+  },
+  "cancel_export_operation_api_exports_operations__operation_id__cancel_post": {
+    "$ref": "#/components/schemas/ExportOperationResponse"
+  },
+  "change_store_activity_api_stores__site_code__activity_post": {
+    "$ref": "#/components/schemas/StoreActivityChangeResponse"
+  },
+  "create_export_operation_api_exports_operations_post": {
+    "$ref": "#/components/schemas/ExportOperationResponse"
+  },
+  "download_export_api_exports_download_post": {},
+  "download_export_operation_api_exports_operations__operation_id__download_get": {},
+  "export_scenario_api_target_calculator_scenarios__scenario_id__export_get": {},
+  "finalize_scenario_api_target_calculator_scenarios__scenario_id__finalize_post": {
+    "$ref": "#/components/schemas/TargetScenarioResponse"
+  },
+  "get_active_contest_api_contests_active_get": {
+    "anyOf": [
+      {
+        "$ref": "#/components/schemas/ContestResponse"
+      },
+      {
+        "type": "null"
+      }
+    ],
+    "title": "Response Get Active Contest Api Contests Active Get"
+  },
+  "get_active_contests_api_contests_active_all_get": {
+    "items": {
+      "$ref": "#/components/schemas/ContestResponse"
+    },
+    "title": "Response Get Active Contests Api Contests Active All Get",
+    "type": "array"
+  },
+  "get_agent_evaluation_api_agents_evaluation_get": {
+    "$ref": "#/components/schemas/AgentEvaluationResponse"
+  },
+  "get_agent_evaluation_v2_api_agents_evaluation_v2_get": {
+    "$ref": "#/components/schemas/AgentEvaluationV2Response"
+  },
+  "get_agent_history_api_agents_history_get": {
+    "$ref": "#/components/schemas/AgentHistoryResponse"
+  },
+  "get_agent_profile_api_agents_profile_get": {
+    "$ref": "#/components/schemas/AgentProfileResponse"
+  },
+  "get_agents_list_api_agents_list_get": {
+    "$ref": "#/components/schemas/AgentListResponse"
+  },
+  "get_agents_movement_api_agents_movement_get": {
+    "$ref": "#/components/schemas/AgentMovementResponse"
+  },
+  "get_agents_overview_api_agents_overview_get": {
+    "$ref": "#/components/schemas/AgentsOverviewResponse"
+  },
+  "get_alerts_api_crm_alerts_get": {
+    "items": {
+      "$ref": "#/components/schemas/CrmAlertResponse"
+    },
+    "title": "Response Get Alerts Api Crm Alerts Get",
+    "type": "array"
+  },
+  "get_asm_perf_api_hr_asm_performance_get": {
+    "items": {
+      "$ref": "#/components/schemas/HrAsmPerformanceItem"
+    },
+    "title": "Response Get Asm Perf Api Hr Asm Performance Get",
+    "type": "array"
+  },
+  "get_asm_perf_history_api_hr_asm_performance__asm_name__history_get": {
+    "items": {
+      "$ref": "#/components/schemas/HrAsmHistoryItem"
+    },
+    "title": "Response Get Asm Perf History Api Hr Asm Performance  Asm Name  History Get",
+    "type": "array"
+  },
+  "get_asm_salary_api_hr_asm_salary__asm_name__get": {
+    "$ref": "#/components/schemas/HrAsmSalaryBreakdown"
+  },
+  "get_available_months_api_filters_months_get": {
+    "items": {
+      "type": "string"
+    },
+    "title": "Response Get Available Months Api Filters Months Get",
+    "type": "array"
+  },
+  "get_campaign_overview_api_campaigns_overview_get": {
+    "$ref": "#/components/schemas/CampaignSnapshot"
+  },
+  "get_catalog_api_exports_catalog_get": {
+    "$ref": "#/components/schemas/ExportCatalogResponse"
+  },
+  "get_context_api_target_calculator_context_get": {
+    "$ref": "#/components/schemas/TargetContextResponse"
+  },
+  "get_current_ai_forecast_api_ai_forecast_current_get": {
+    "$ref": "#/components/schemas/AiForecastResponse"
+  },
+  "get_daily_sales_api_dashboard_daily_get": {
+    "items": {
+      "$ref": "#/components/schemas/DailySalesPoint"
+    },
+    "title": "Response Get Daily Sales Api Dashboard Daily Get",
+    "type": "array"
+  },
+  "get_dashboard_all_api_dashboard_all_get": {
+    "$ref": "#/components/schemas/DashboardAllResponse"
+  },
+  "get_dashboard_all_batch_api_dashboard_all_batch_post": {
+    "$ref": "#/components/schemas/DashboardAllBatchResponse"
+  },
+  "get_dashboard_history_details_batch_api_dashboard_history_details_batch_post": {
+    "$ref": "#/components/schemas/DashboardAllBatchResponse"
+  },
+  "get_export_operation_api_exports_operations__operation_id__get": {
+    "$ref": "#/components/schemas/ExportOperationResponse"
+  },
+  "get_filter_options_api_filters_options_get": {
+    "$ref": "#/components/schemas/FilterOptions"
+  },
+  "get_focus_history_api_campaigns_history_get": {
+    "$ref": "#/components/schemas/FocusHistoryResponse"
+  },
+  "get_history_by_year_api_dashboard_history_year_get": {
+    "$ref": "#/components/schemas/YearHistoryResponse"
+  },
+  "get_import_history_api_import_history_get": {
+    "items": {
+      "$ref": "#/components/schemas/ImportHistoryEntry"
+    },
+    "title": "Response Get Import History Api Import History Get",
+    "type": "array"
+  },
+  "get_import_job_status_api_import_jobs__job_id__get": {
+    "$ref": "#/components/schemas/ImportJobStatus"
+  },
+  "get_leave_requests_api_hr_leave_requests_get": {
+    "$ref": "#/components/schemas/LeaveRequestListResponse"
+  },
+  "get_manager_overview_api_hr_manager_overview_get": {
+    "items": {
+      "$ref": "#/components/schemas/HrManagerOverviewItem"
+    },
+    "title": "Response Get Manager Overview Api Hr Manager Overview Get",
+    "type": "array"
+  },
+  "get_monthly_history_api_dashboard_history_get": {
+    "$ref": "#/components/schemas/DashboardHistoryResponse"
+  },
+  "get_performance_api_hr_performance__agent_name__get": {
+    "items": {
+      "$ref": "#/components/schemas/HrAgentPerformanceItem"
+    },
+    "title": "Response Get Performance Api Hr Performance  Agent Name  Get",
+    "type": "array"
+  },
+  "get_performance_detail_api_dashboard_performance_detail_get": {
+    "$ref": "#/components/schemas/PerformanceDetailResponse"
+  },
+  "get_premium_glass_api_dashboard_premium_glass_get": {
+    "$ref": "#/components/schemas/PremiumGlassAnalysis"
+  },
+  "get_promotions_incentives_api_campaigns_promotions_incentives_get": {
+    "$ref": "#/components/schemas/CampaignsPromotionsResponse"
+  },
+  "get_resumable_export_operation_api_exports_operations_resumable_get": {
+    "anyOf": [
+      {
+        "$ref": "#/components/schemas/ExportOperationResponse"
+      },
+      {
+        "type": "null"
+      }
+    ],
+    "title": "Response Get Resumable Export Operation Api Exports Operations Resumable Get"
+  },
+  "get_rolling_12_ai_forecast_api_ai_forecast_rolling_12_get": {
+    "$ref": "#/components/schemas/AiForecastRollingResponse"
+  },
+  "get_scenario_api_target_calculator_scenarios__scenario_id__get": {
+    "$ref": "#/components/schemas/TargetScenarioResponse"
+  },
+  "get_scores_api_crm_scores_get": {
+    "items": {
+      "$ref": "#/components/schemas/CrmScoreResponse"
+    },
+    "title": "Response Get Scores Api Crm Scores Get",
+    "type": "array"
+  },
+  "get_special_cards_api_dashboard_special_cards_get": {
+    "$ref": "#/components/schemas/DashboardSpecialCardsResponse"
+  },
+  "get_store_detail_api_target_calculator_scenarios__scenario_id__stores__site_code__get": {
+    "$ref": "#/components/schemas/TargetStoreDetailResponse"
+  },
+  "get_stores_coverage_api_agents_stores_coverage_get": {
+    "$ref": "#/components/schemas/StoreCoverageResponse"
+  },
+  "get_summary_api_dashboard_summary_get": {
+    "$ref": "#/components/schemas/DashboardSummary"
+  },
+  "get_tasks_api_tasks_get": {
+    "$ref": "#/components/schemas/TaskListResponse"
+  },
+  "get_visit_detail_api_visits_report_visit__visit_id__get": {
+    "$ref": "#/components/schemas/VisitDetail"
+  },
+  "get_visit_photo_api_visits_report_photo__visit_id___filename__get": {},
+  "get_visits_report_api_visits_report_get": {
+    "$ref": "#/components/schemas/VisitReportResponse"
+  },
+  "get_visits_tree_api_visits_report_tree_get": {
+    "$ref": "#/components/schemas/VisitTreeResponse"
+  },
+  "grile_agent_targets_diff_api_grile_agent_targets_diff_post": {
+    "$ref": "#/components/schemas/GrileAgentTargetEnqueueResponse"
+  },
+  "grile_agent_targets_operation_api_grile_agent_targets_operations__operation_id__get": {
+    "$ref": "#/components/schemas/GrileAgentTargetOperationEnvelope"
+  },
+  "grile_agent_targets_sync_api_grile_agent_targets_sync_post": {
+    "$ref": "#/components/schemas/GrileAgentTargetEnqueueResponse"
+  },
+  "grile_monthly_download_api_grile_monthly_download__kind___month__get": {},
+  "grile_monthly_job_api_grile_monthly_job__job_id__get": {
+    "$ref": "#/components/schemas/GrileMonthlyJobResponse"
+  },
+  "grile_monthly_manifest_api_grile_monthly_manifests__month__get": {
+    "$ref": "#/components/schemas/GrileMonthlyManifestEnvelope"
+  },
+  "grile_monthly_manifest_approve_api_grile_monthly_manifests__manifest_id__approve_post": {
+    "$ref": "#/components/schemas/GrileMonthlyManifestEnvelope"
+  },
+  "grile_monthly_permissions_api_grile_monthly_permissions_get": {
+    "$ref": "#/components/schemas/GrilePermissionsResponse"
+  },
+  "grile_monthly_run_api_grile_monthly_run_post": {
+    "$ref": "#/components/schemas/GrileMonthlyRunResponse"
+  },
+  "grile_overview_api_grile_overview_get": {
+    "$ref": "#/components/schemas/GrileOverviewResponse"
+  },
+  "grile_pilot_v2_api_grile_pilot_v2_get": {
+    "$ref": "#/components/schemas/GrilePilotV2OverviewResponse"
+  },
+  "grile_run_api_grile_run_post": {
+    "$ref": "#/components/schemas/GrileRunEnqueueResponse"
+  },
+  "grile_run_status_api_grile_run_status_get": {
+    "$ref": "#/components/schemas/GrileRunStatusResponse"
+  },
+  "grile_store_refresh_api_grile_stores__site_code__refresh_post": {
+    "$ref": "#/components/schemas/GrileStoreRefreshEnqueueResponse"
+  },
+  "grile_store_refresh_operation_api_grile_store_refreshes__operation_id__get": {
+    "$ref": "#/components/schemas/GrileStoreRefreshOperationEnvelope"
+  },
+  "list_records_salarii_records_get": {
+    "items": {
+      "$ref": "#/components/schemas/SalaryRecordPublic"
+    },
+    "title": "Response List Records Salarii Records Get",
+    "type": "array"
+  },
+  "list_scenarios_api_target_calculator_scenarios_get": {
+    "items": {
+      "$ref": "#/components/schemas/TargetScenarioSummaryResponse"
+    },
+    "title": "Response List Scenarios Api Target Calculator Scenarios Get",
+    "type": "array"
+  },
+  "list_stores_api_stores_get": {
+    "items": {
+      "$ref": "#/components/schemas/StoreOption"
+    },
+    "title": "Response List Stores Api Stores Get",
+    "type": "array"
+  },
+  "metrics_metrics_get": {},
+  "months_api_store_pnl_months_get": {
+    "$ref": "#/components/schemas/PnlMonthsResponse"
+  },
+  "overview_api_store_pnl_overview_get": {
+    "$ref": "#/components/schemas/PnlOverviewResponse"
+  },
+  "patch_leave_request_api_hr_leave_requests__request_id__patch": {
+    "$ref": "#/components/schemas/LeaveRequestItem"
+  },
+  "patch_task_api_tasks__task_id__patch": {
+    "$ref": "#/components/schemas/TaskItem"
+  },
+  "pnl_permissions_api_store_pnl_permissions_get": {
+    "$ref": "#/components/schemas/PnlPermissionsResponse"
+  },
+  "post_leave_request_api_hr_leave_requests_post": {
+    "$ref": "#/components/schemas/LeaveRequestItem"
+  },
+  "post_task_api_tasks_post": {
+    "$ref": "#/components/schemas/TaskItem"
+  },
+  "preview_export_api_exports_preview_post": {
+    "$ref": "#/components/schemas/ExportPreviewResponse"
+  },
+  "promote_sales_generation_api_import_sales__snapshot_id__promote_post": {
+    "$ref": "#/components/schemas/ImportJobStatus"
+  },
+  "recalculate_scores_api_crm_scores_recalculate_post": {
+    "$ref": "#/components/schemas/CrmRecalculateResponse"
+  },
+  "reconcile_erp_report_file_api_import_erp_reconciliation_post": {
+    "$ref": "#/components/schemas/ImportJobStatus"
+  },
+  "regions_api_store_pnl_regions_get": {
+    "$ref": "#/components/schemas/PnlRegionsResponse"
+  },
+  "remove_task_api_tasks__task_id__delete": {
+    "$ref": "#/components/schemas/TaskDeleteResponse"
+  },
+  "salarii_evolution_salarii_evolution_get": {
+    "items": {
+      "$ref": "#/components/schemas/SalaryEvolutionPoint"
+    },
+    "title": "Response Salarii Evolution Salarii Evolution Get",
+    "type": "array"
+  },
+  "salarii_overview_salarii_overview_get": {
+    "$ref": "#/components/schemas/SalaryOverviewResponse"
+  },
+  "salarii_stores_salarii_stores_get": {
+    "items": {
+      "$ref": "#/components/schemas/SalaryStoreOption"
+    },
+    "title": "Response Salarii Stores Salarii Stores Get",
+    "type": "array"
+  },
+  "salarii_summary_salarii_summary_get": {
+    "$ref": "#/components/schemas/SalarySummaryResponse"
+  },
+  "salarii_trend_salarii_trend_get": {
+    "items": {
+      "$ref": "#/components/schemas/SalaryTrendPoint"
+    },
+    "title": "Response Salarii Trend Salarii Trend Get",
+    "type": "array"
+  },
+  "save_targets_api_stores_targets_post": {
+    "$ref": "#/components/schemas/StoreTargetsSaveResponse"
+  },
+  "session_login_auth_session_login_get": {},
+  "session_logout_auth_session_logout_post": {
+    "$ref": "#/components/schemas/SessionLogoutResponse"
+  },
+  "session_status_auth_session_get": {
+    "$ref": "#/components/schemas/SessionStatusResponse"
+  },
+  "stores_api_store_pnl_stores_get": {
+    "$ref": "#/components/schemas/PnlStoresResponse"
+  },
+  "update_final_targets_api_target_calculator_scenarios__scenario_id__rows_patch": {
+    "$ref": "#/components/schemas/TargetScenarioResponse"
+  },
+  "upload_promo_actuals_file_api_import_promo_actuals_post": {
+    "$ref": "#/components/schemas/ImportJobStatus"
+  },
+  "upload_sales_file_api_import_sales_post": {
+    "$ref": "#/components/schemas/ImportJobStatus"
+  }
+} as const;
+
+export const RETAIL_RUNTIME_VALIDATED_OPERATIONS = new Set([
+  'create_export_operation_api_exports_operations_post',
+  'get_resumable_export_operation_api_exports_operations_resumable_get',
+  'get_export_operation_api_exports_operations__operation_id__get',
+  'cancel_export_operation_api_exports_operations__operation_id__cancel_post',
+  'download_export_operation_api_exports_operations__operation_id__download_get',
+  'grile_agent_targets_diff_api_grile_agent_targets_diff_post',
+  'grile_agent_targets_operation_api_grile_agent_targets_operations__operation_id__get',
+  'grile_agent_targets_sync_api_grile_agent_targets_sync_post',
+  'grile_monthly_download_api_grile_monthly_download__kind___month__get',
+  'grile_monthly_job_api_grile_monthly_job__job_id__get',
+  'grile_monthly_manifest_approve_api_grile_monthly_manifests__manifest_id__approve_post',
+  'grile_monthly_manifest_api_grile_monthly_manifests__month__get',
+  'grile_monthly_permissions_api_grile_monthly_permissions_get',
+  'grile_monthly_run_api_grile_monthly_run_post',
+  'grile_store_refresh_operation_api_grile_store_refreshes__operation_id__get',
+  'grile_store_refresh_api_grile_stores__site_code__refresh_post',
+  'get_asm_salary_api_hr_asm_salary__asm_name__get',
+  'reconcile_erp_report_file_api_import_erp_reconciliation_post',
+  'get_import_history_api_import_history_get',
+  'get_import_job_status_api_import_jobs__job_id__get',
+  'upload_promo_actuals_file_api_import_promo_actuals_post',
+  'upload_sales_file_api_import_sales_post',
+  'promote_sales_generation_api_import_sales__snapshot_id__promote_post',
+  'finalize_scenario_api_target_calculator_scenarios__scenario_id__finalize_post',
+  'session_status_auth_session_get',
+  'session_logout_auth_session_logout_post',
+  'agent_history_by_retail_code_salarii_agents_history_by_retail_code_get',
+  'agents_summary_salarii_agents_summary_get',
+  'agent_history_salarii_agents__person_id__history_get',
+  'audit_salary_export_salarii_audit_export_post',
+  'salarii_evolution_salarii_evolution_get',
+  'salarii_overview_salarii_overview_get',
+  'list_records_salarii_records_get',
+  'salarii_stores_salarii_stores_get',
+  'salarii_summary_salarii_summary_get',
+  'salarii_trend_salarii_trend_get',
+] as const);

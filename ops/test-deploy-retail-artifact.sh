@@ -24,7 +24,7 @@ git -C "$BUILDER" config user.email "deploy-test@example.invalid"
 git -C "$BUILDER" remote add origin "$REMOTE"
 
 mkdir -p "$BUILDER/backend" "$BUILDER/ops/systemd" "$BUILDER/ops/observability"
-printf '{"name":"retail-deploy-test"}\n' >"$BUILDER/package.json"
+printf '{"name":"retail-deploy-test","version":"1.0.0"}\n' >"$BUILDER/package.json"
 cp "$SCRIPT_DIR/../package-lock.json" "$BUILDER/package-lock.json"
 cp "$SCRIPT_DIR/../backend/requirements.lock" "$BUILDER/backend/requirements.lock"
 printf 'print("old")\n' >"$BUILDER/backend/main.py"

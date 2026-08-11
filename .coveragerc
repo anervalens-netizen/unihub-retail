@@ -1,0 +1,14 @@
+[run]
+branch = True
+source = .
+omit =
+    tests/*
+    venv/*
+    scripts/*
+
+[report]
+show_missing = True
+skip_empty = True
+exclude_also =
+    if TYPE_CHECKING:
+    if __name__ == .__main__.:

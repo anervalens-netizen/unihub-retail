@@ -1,0 +1,39 @@
+http://retail.unihub.ro {
+	import proxy_defaults
+
+	# cloudflared is local to the active writer and reaches the published Caddy
+	# port through the fixed unihub-net gateway. The connector host address is
+	# SNATed before Caddy sees it, so matching .68/.43 rejects legitimate traffic.
+	@outside_tunnel not remote_ip 192.168.0.68 192.168.0.43 172.23.0.1
+	respond @outside_tunnel 403
+
+	@private_diagnostics path /metrics /docs /redoc /openapi.json
+	respond @private_diagnostics 404
+
+	# Edge limits include the documented 1 MiB multipart envelope above each
+	# application upload cap. Every other request body is capped at 1 MiB.
+	@sales_upload path /api/import/sales
+	request_body @sales_upload {
+		max_size 34603008
+	}
+	@promo_upload path /api/import/promo-actuals
+	request_body @promo_upload {
+		max_size 34603008
+	}
+	@erp_upload path /api/import/erp-reconciliation
+	request_body @erp_upload {
+		max_size 17825792
+	}
+	@regular_body not path /api/import/sales /api/import/promo-actuals /api/import/erp-reconciliation
+	request_body @regular_body {
+		max_size 1048576
+	}
+
+	reverse_proxy 192.168.0.68:9898 {
+		header_up -X-Forwarded-For
+		header_up -X-Real-IP
+		header_up -Forwarded
+		header_up -CF-Connecting-IP
+		header_up CF-Connecting-IP {client_ip}
+	}
+}

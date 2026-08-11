@@ -15,6 +15,7 @@ import type {
   RetailSessionProfileResponse,
   RetailSessionStatusResponse,
 } from '../api/generated/contracts';
+import { decodeRetail } from '../api/generated/decoded';
 import { bindRetailBrowserSession, clearRetailBrowserSession } from './browserSession';
 
 export type SessionProfile = RetailSessionProfileResponse;
@@ -66,10 +67,10 @@ export function AuthProvider({
           return;
         }
         if (!response.ok) throw new Error(`Session bootstrap failed: ${response.status}`);
-        const payload = await response.json() as RetailSessionStatusResponse;
-        if (!payload.profile?.sub || !Array.isArray(payload.profile.groups) || !payload.csrf_token) {
-          throw new Error('Session bootstrap returned an invalid contract');
-        }
+        const payload = decodeRetail<
+          'session_status_auth_session_get',
+          RetailSessionStatusResponse
+        >('session_status_auth_session_get', await response.json());
         bindRetailBrowserSession(payload.profile.sub);
         csrfRef.current = payload.csrf_token;
         setUser({ profile: payload.profile });
@@ -99,8 +100,11 @@ export function AuthProvider({
         signal: requestSignal(undefined, 10_000),
       });
       if (response.ok) {
-        const payload = await response.json() as RetailSessionLogoutResponse;
-        if (typeof payload.logout_url === 'string' && payload.logout_url) {
+        const payload = decodeRetail<
+          'session_logout_auth_session_logout_post',
+          RetailSessionLogoutResponse
+        >('session_logout_auth_session_logout_post', await response.json());
+        if (payload.logout_url) {
           redirect = payload.logout_url;
         }
       }

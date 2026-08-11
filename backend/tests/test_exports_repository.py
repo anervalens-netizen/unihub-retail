@@ -61,20 +61,18 @@ async def test_export_queries_execute_with_campaign_gate_on_postgres() -> None:
     pool = await get_pool()
     repo = ExportsRepository(pool)
     try:
-        assert await repo.fetch_report_rows(
-            dataset="stores",
-            months=["2099-01"],
-            filters={},
-            include_closed_stores=False,
-            include_campaign_metrics=False,
-        ) == []
-        assert await repo.fetch_report_rows(
-            dataset="stores",
-            months=["2099-01"],
-            filters={},
-            include_closed_stores=False,
-            include_campaign_metrics=True,
-        ) == []
+        for dataset in ("agents", "stores", "regionals", "asms"):
+            for period in (None, "month", "day"):
+                assert await repo.fetch_report_rows(
+                    dataset=dataset,
+                    months=["2099-01"],
+                    filters={},
+                    include_closed_stores=False,
+                    include_campaign_metrics=True,
+                    period=period,
+                    limit=10,
+                    include_total_count=True,
+                ) == []
         assert await repo.fetch_daily_evolution_rows(
             months=["2099-01"],
             filters={},

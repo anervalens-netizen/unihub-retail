@@ -1077,8 +1077,8 @@ async def shutdown(ctx: dict) -> None:
     if metrics_server is not None:
         await asyncio.to_thread(metrics_server.close)
 def main() -> None:
-    from dotenv import find_dotenv, load_dotenv
-    load_dotenv(find_dotenv())
+    from env_loader import load_repository_env
+    load_repository_env()
     raw_worker_role = os.getenv("RETAIL_WORKER_ROLE", "operations").strip().lower()
     runtime = load_runtime_config("import" if raw_worker_role == "imports" else "worker")
     worker_role = runtime.worker_role or "operations"

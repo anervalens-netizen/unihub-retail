@@ -385,7 +385,13 @@ backend).
 
 ## Arhitectura backend
 
-Backend-ul foloseste modelul `router -> service -> repository`.
+Backend-ul folosește implicit modelul `router -> service -> repository`.
+Contractul real este hibrid și este versionat în
+`backend/architecture_contract.json`: read/query services, transaction scripts
+și câteva orchestration boundaries existente pot accesa baza de date numai
+dacă sunt clasificate explicit acolo. Routerele nu conțin SQL și nu importă
+repository-uri; domeniul nu importă infrastructură. CI respinge SQL/acces DB
+nou într-un service neclasificat și respinge intrările stale din contract.
 
 | Domeniu | Exemple |
 | --- | --- |

@@ -7,6 +7,11 @@ import {
   generatedPost,
   isGeneratedApiError,
 } from "./client";
+import {
+  RetailContractError,
+  validateRetailResponse,
+  validateRetailSchema,
+} from "./decoded";
 
 const fetchMock = vi.fn();
 
@@ -16,6 +21,69 @@ beforeEach(() => {
 });
 
 describe("generated Retail client", () => {
+  it.each([
+    "session_status_auth_session_get",
+    "get_import_job_status_api_import_jobs__job_id__get",
+    "get_export_operation_api_exports_operations__operation_id__get",
+    "finalize_scenario_api_target_calculator_scenarios__scenario_id__finalize_post",
+    "grile_monthly_job_api_grile_monthly_job__job_id__get",
+    "salarii_summary_salarii_summary_get",
+  ] as const)("rejects malformed high-impact %s payloads at runtime", (operationId) => {
+    expect(() => validateRetailResponse(operationId, null)).toThrow(RetailContractError);
+  });
+
+  it("enforces unions, enums and closed objects in protected import responses", () => {
+    const operationId = "get_import_job_status_api_import_jobs__job_id__get";
+    expect(() => validateRetailResponse(operationId, {
+      job_id: "job-1",
+      status: "queued",
+      job_kind: "sales",
+      error: null,
+    })).not.toThrow();
+    expect(() => validateRetailResponse(operationId, {
+      job_id: "job-1",
+      status: "invalid",
+    })).toThrow("value is outside enum");
+    expect(() => validateRetailResponse(operationId, {
+      job_id: "job-1",
+      status: "queued",
+      error: 42,
+    })).toThrow("does not match any allowed schema");
+    expect(() => validateRetailResponse(operationId, {
+      job_id: "job-1",
+      status: "queued",
+      unexpected: true,
+    })).toThrow("unexpected field");
+  });
+
+  it("enforces the complete runtime schema constraint set", () => {
+    const operationId = "session_status_auth_session_get";
+    expect(() => validateRetailSchema(operationId, {
+      oneOf: [{ type: "string" }, { const: "same" }],
+    }, "same")).toThrow("exactly one schema");
+    expect(() => validateRetailSchema(operationId, {
+      allOf: [{ type: "string" }, { minLength: 2, maxLength: 3 }],
+    }, "ok")).not.toThrow();
+    expect(() => validateRetailSchema(operationId, { minLength: 2 }, "x"))
+      .toThrow("too short");
+    expect(() => validateRetailSchema(operationId, { maxLength: 2 }, "long"))
+      .toThrow("too long");
+    expect(() => validateRetailSchema(operationId, { pattern: "^ok$" }, "bad"))
+      .toThrow("does not match pattern");
+    expect(() => validateRetailSchema(operationId, { minimum: 1 }, 0))
+      .toThrow("below minimum");
+    expect(() => validateRetailSchema(operationId, { maximum: 1 }, 2))
+      .toThrow("above maximum");
+    expect(() => validateRetailSchema(operationId, { minItems: 1 }, []))
+      .toThrow("array is too short");
+    expect(() => validateRetailSchema(operationId, { maxItems: 1 }, [1, 2]))
+      .toThrow("array is too long");
+    expect(() => validateRetailSchema(operationId, {
+      type: "object",
+      additionalProperties: { type: "integer" },
+    }, { count: 1 })).not.toThrow();
+  });
+
   it("keeps request contracts type-checked", () => {
     if (import.meta.env.MODE === "typecheck-only") {
       // @ts-expect-error required query parameters cannot be omitted
@@ -112,6 +180,14 @@ describe("generated Retail client", () => {
       new Response(
         JSON.stringify([
           {
+            id: 1,
+            filename: "sales.xlsx",
+            import_month: "2026-08",
+            is_month_final: false,
+            rows_imported: null,
+            rows_in_file: null,
+            status: "processing",
+            error_message: null,
             upload_date: "2026-08-05",
             created_at: "not-a-date-time",
             finished_at: null,
