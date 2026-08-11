@@ -98,8 +98,12 @@ def validate_aggregate(path: Path, expected_sha: str | None) -> dict[str, Any]:
             raise ValueError(f"{path}: aggregate component is invalid")
         ref = component.get("bom-ref")
         purl = component.get("purl")
-        if not isinstance(ref, str) or ref in refs or not isinstance(purl, str):
-            raise ValueError(f"{path}: aggregate component identity is invalid")
+        if not isinstance(ref, str):
+            raise ValueError(f"{path}: aggregate component bom-ref is missing")
+        if ref in refs:
+            raise ValueError(f"{path}: aggregate component bom-ref is duplicated: {ref}")
+        if not isinstance(purl, str):
+            raise ValueError(f"{path}: aggregate component PURL is missing: {ref}")
         refs.add(ref)
         if component.get("scope") not in {"required", "optional", "excluded"}:
             raise ValueError(f"{path}: aggregate component scope is missing: {purl}")

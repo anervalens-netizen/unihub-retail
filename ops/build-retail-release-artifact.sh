@@ -100,31 +100,57 @@ def prefixed_inventory(filename, prefix, required_scope=False):
     payload = json.loads((output_path / filename).read_text(encoding="utf-8"))
     components = list(payload.get("components", []))
     metadata_component = payload.get("metadata", {}).get("component")
-    if isinstance(metadata_component, dict):
+    metadata_ref = (
+        metadata_component.get("bom-ref")
+        if isinstance(metadata_component, dict)
+        else None
+    )
+    component_refs = {
+        component.get("bom-ref")
+        for component in components
+        if isinstance(component, dict)
+    }
+    if isinstance(metadata_component, dict) and metadata_ref not in component_refs:
         components.append(metadata_component)
     refs = {}
+    canonical_components = []
+    canonical_by_ref = {}
     for component in components:
         old_ref = component.get("bom-ref")
         if isinstance(old_ref, str):
+            identity = tuple(component.get(key) for key in ("type", "name", "version", "purl"))
+            existing = canonical_by_ref.get(old_ref)
+            if existing is not None:
+                existing_identity = tuple(existing.get(key) for key in ("type", "name", "version", "purl"))
+                if identity != existing_identity:
+                    raise SystemExit(f"conflicting duplicate CycloneDX identity: {prefix}:{old_ref}")
+                continue
             refs[old_ref] = f"{prefix}:{old_ref}"
             component["bom-ref"] = refs[old_ref]
+            canonical_by_ref[old_ref] = component
+            canonical_components.append(component)
         if required_scope and str(component.get("purl", "")).startswith("pkg:pypi/"):
             component["scope"] = "required"
-    dependencies = []
+    dependencies_by_ref = {}
     for dependency in payload.get("dependencies", []):
         ref = refs.get(dependency.get("ref"))
         if not ref:
             continue
-        dependencies.append({
-            "ref": ref,
-            "dependsOn": [refs[item] for item in dependency.get("dependsOn", []) if item in refs],
-        })
+        depends_on = dependencies_by_ref.setdefault(ref, [])
+        for item in dependency.get("dependsOn", []):
+            target = refs.get(item)
+            if target and target not in depends_on:
+                depends_on.append(target)
+    dependencies = [
+        {"ref": ref, "dependsOn": depends_on}
+        for ref, depends_on in dependencies_by_ref.items()
+    ]
     roots = []
-    if isinstance(metadata_component, dict) and isinstance(metadata_component.get("bom-ref"), str):
-        roots.append(metadata_component["bom-ref"])
+    if isinstance(metadata_ref, str) and metadata_ref in refs:
+        roots.append(refs[metadata_ref])
     elif prefix == "python":
         roots.extend(component["bom-ref"] for component in components if component.get("scope") == "required")
-    return components, dependencies, roots
+    return canonical_components, dependencies, roots
 
 npm_components, npm_dependencies, npm_roots = prefixed_inventory("SBOM.npm.cdx.json", "npm")
 python_components, python_dependencies, python_roots = prefixed_inventory(
