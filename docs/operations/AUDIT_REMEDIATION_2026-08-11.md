@@ -2,104 +2,116 @@
 
 ## Scope and result
 
-This handoff reconciles every finding from `AUDIT_COMPLET_UNIHUB_RETAIL_2026-08-10.md`
-and every work item from `PLAN_REMEDIERE_UNIHUB_RETAIL_2026-08-10.md`. The audit
-baseline was 8.1/10. Runtime remediation was delivered through PRs
-[#134](https://github.com/anervalens-netizen/unihub-retail/pull/134),
-[#135](https://github.com/anervalens-netizen/unihub-retail/pull/135), and
-[#136](https://github.com/anervalens-netizen/unihub-retail/pull/136).
+This handoff reconciles every finding in
+`AUDIT_COMPLET_UNIHUB_RETAIL_2026-08-10.md` and every work item in
+`PLAN_REMEDIERE_UNIHUB_RETAIL_2026-08-10.md`. The independent baseline was
+8.1/10. All 20 findings now have an implemented control, regression evidence,
+an exact-SHA release and proportionate post-deploy verification. This document
+does not assign a replacement independent score.
 
-The final deployed runtime source is
-`dcfaef03e197e630409541054259771c7dcbeb28`. The remaining gaps below are
-explicit; this document does not claim an independently assigned score.
+Runtime remediation was delivered through reviewed PRs #134–#142. The final
+runtime source is `2cb2785c2340b901e07af7fcf40241e5bfd3555e`.
 
 ## Exact release evidence
 
-- main CI: [run 31435206272](https://github.com/anervalens-netizen/unihub-retail/actions/runs/31435206272), successful for the exact runtime SHA;
-- release artifact: `retail-release-dcfaef03e197e630409541054259771c7dcbeb28.tar.gz`;
-- artifact SHA-256: `f7efb3ccf50d63a10b525e5dd4817fda7857cef1b2b9f6955adc1fd449b0983a`;
-- `SOURCE_SHA`, every `SHA256SUMS` entry, SBOM, provenance and release manifest verified;
-- formal deployment: [run 31436457892](https://github.com/anervalens-netizen/unihub-retail/actions/runs/31436457892), successful after exact one-time approval;
+- final PR gate: [run 31482819627](https://github.com/anervalens-netizen/unihub-retail/actions/runs/31482819627), including changed-function complexity, backend/frontend changed-line coverage and 6/6 mutation probes;
+- exact-main CI: [run 31484028843](https://github.com/anervalens-netizen/unihub-retail/actions/runs/31484028843), successful for `2cb2785c2340b901e07af7fcf40241e5bfd3555e`;
+- release archive: `retail-release-2cb2785c2340b901e07af7fcf40241e5bfd3555e.tar.gz`;
+- release archive SHA-256: `aec301e2c82084de526f8e334d8d38c7ef3633544b0f22a84e356e0d54db4dcd`;
+- GitHub artifact ZIP digest: `65c381602dbeda5358fa077ebe097e9d28801f221996c7c41a3fee225754e2cc`;
+- `SOURCE_SHA` and every `SHA256SUMS` entry verified;
 - migration manifest SHA-256: `1361aa960494bd06181ee3e551ed43f2c408351c0aacae144a1fe875cfc21364`;
-- CI gates: runner isolation, backend, frontend, browser smoke, real full-stack E2E and release packaging all passed;
-- test suites in the main candidate: 1,862 backend tests passed with 7 skipped; 340 frontend tests passed.
+- release manifest verified through Sigstore keyless against the GitHub OIDC issuer, repository, `ci.yml@refs/heads/main` identity and transparency-log entry;
+- formal deployment: [run 31485385533](https://github.com/anervalens-netizen/unihub-retail/actions/runs/31485385533), successful after exact one-time approval;
+- rollback handle: `/opt/Mobiup/ops/backups/retail-deploy/20260811T111002Z-397731e32c13-to-2cb2785c2340-f59b54973630e293`.
 
-The real restore artifact has JSON SHA-256
-`f6b874d4b2ff453020691e72b42eb6273037898f15e8b0771ea19f643b279078`.
-It reports `passed`, `restored_app_ready=true`, identical business state hash
-`b22f3141d6f6b20ea95edbcb65c795e7e6912cfff356f5f1a123a0550bd181d1`,
-and restores 11 critical objects. The restored `schema_migrations` ledger has
-64 rows; the other ten business tables each contain and hash the seeded state.
+The release aggregate CycloneDX document has serial
+`urn:uuid:7c273e5f-caf6-5ea0-9fa3-e421423ec656`, 215 canonical components, 216
+dependency graph nodes, complete composition, explicit runtime scopes, hash
+evidence for every non-root ecosystem component and zero `node_modules` PURLs.
+It aggregates the official npm and Python runtime SBOMs. Missing upstream
+license metadata is preserved as missing rather than invented.
+
+The exact-main restore artifact has JSON SHA-256
+`48aa0db8d8ca33268214d208088e70599e0b93be4d8dd7e23a98972436c29009`.
+It reports `passed`, `restored_app_ready=true`, business-state SHA-256
+`2ad8a32ac489d9381942613681ffd8583a11ce525c8db75550e10373e287455b`
+and deterministic row counts/hashes for 11 critical objects. The restored
+`schema_migrations` ledger has 64 rows.
 
 ## Live production probes
 
-After the final deploy:
+After the formal deploy:
 
-- runtime Git SHA is exactly `dcfaef03e197e630409541054259771c7dcbeb28`;
-- backend, operations, import, Grile and export workers are active and enabled;
-- local `/livez` and `/readyz`, public `/health` and public `/readyz` pass;
-- all five Retail Prometheus scrape targets are UP;
-- all four HTTP/SLO recordings exist; idle Dashboard p95 is numeric `0`, not
-  absent or `NaN`;
-- Grile reconciliation last-success is current, consecutive failures are `0`,
-  and the post-deploy duration counter is `1`;
-- a public JSON body of 1 MiB + 1 byte returns HTTP 413;
-- public PWA HTML and manifest use `ro`; three icons remain, none duplicated as
-  a false maskable asset;
-- the ASM boundary probe displays `79.0` but decides on exact `78.96`, awards
-  zero target commission, and reports rule `asm-v1` with SHA-256
-  `95fe70c7f9383d0176ebe8d82f7a748b33578d5219e0780226d267956b3eaa16`;
-- the five runtime services emitted zero warning-or-higher log records in the
-  post-deploy probe window.
+- runtime Git SHA is exactly `2cb2785c2340b901e07af7fcf40241e5bfd3555e`;
+- backend, operations, import, Grile and export services are active and enabled;
+- local `/livez` and `/readyz`, public `/health` and public `/readyz` return 200;
+- all five Retail Prometheus targets are UP;
+- all four workers report `up=1`, backlog `0` and oldest queued age `0`;
+- Grile success exists on `service_role="grile"`, consecutive failures are `0`, and cross-role zero gauges no longer trigger false stale/failure alerts;
+- no Retail SLO/worker alert is firing and all five services emitted zero warning-or-higher records after deploy;
+- the only active Retail-wide GlitchTip warning was one event at
+  `2026-08-11T11:07:26.599Z`, before deploy; there were zero events after deploy;
+- public `/metrics`, `/docs`, `/redoc` and `/openapi.json` remain 404;
+- both content-length and chunked JSON bodies of 1 MiB + 1 byte return 413.
 
-Versioned pre-parser limits are 1 MiB for JSON, 33 MiB HTTP envelope for
-Sales/Promo (32 MiB file plus bounded multipart overhead), and 17 MiB for ERP
-(16 MiB file plus bounded multipart overhead). Both `Content-Length` and
-streamed/chunked overflow paths are tested.
+The versioned Caddy block has repository/live SHA-256
+`b78a457b014da31d2a2960a6e1c0109473d9dfad0eb28cd48fe98cabc3b256bf`
+and a valid live Caddy configuration. Edge limits are 1 MiB for regular bodies,
+33 MiB for Sales/Promo envelopes and 17 MiB for ERP. The pure ASGI guard applies
+the same route-aware pre-parser policy and counts streamed bodies.
 
 ## Finding-by-finding reconciliation
 
-| Finding | Status | Delivered or remaining evidence |
+| Finding | Status | Closure evidence |
 | --- | --- | --- |
-| UR-01 Prometheus selector drift | Closed | Live web selector, static contract checker, promtool scenarios, four live recordings; the idle histogram `NaN` case is covered explicitly. |
-| UR-02 ASM rounded decisions | Closed | All decisions use `Decimal` exact percentages; display rounding is separate; boundary tests cover threshold ±0.001 and 78.96/98.96/4.96. |
-| UR-03 Grile reconciler can die | Closed | Supervised per-iteration recovery with exponential backoff/jitter, startup reconcile, metrics, and invariant-triggered process restart. |
-| UR-04 pre-parser request limits | Partial | Pure ASGI streaming guard, per-route caps, `Content-Length` and chunked tests, and public 413 are live. A separate versioned Caddy edge cap remains outside this repository. |
-| UR-05 Promo `.xls` isolation | Closed | Byte-signature broker plus spawned subprocess, memory/CPU/file/output limits, timeout and forced termination; real and malformed OLE corpus tested. |
-| UR-06 ERP `.xls` blocks loop | Closed | ERP uses the same bounded broker through `asyncio.to_thread`; event loop is not used for blocking parse work. |
-| UR-07 frontend lifecycle deadlines | Closed | Read/mutation/upload deadlines are 15/30/120 seconds, abort signals compose, auth bootstrap has timeout/retry, invalid session payloads fail closed, logout cleanup is unconditional. |
-| UR-08 missing worker alerts | Closed | Down, backlog, queue age, failure, duration and stale-Grile rules are versioned; 24 rules and synthetic alert tests pass. |
-| UR-09 session refresh herding | Open | The backend shared refresh waiter can still occupy concurrent requests for up to its existing 65-second window. Requires a bounded retry/fail-fast design. |
-| UR-10 unversioned ASM rules | Closed | Immutable effective-dated registry, historical month lookup, `rule_set_id`, effective date and deterministic rule SHA-256 in results. Approved-result snapshots remain optional until ASM is promoted into official payroll. |
-| UR-11 schema-only restore drill | Closed | Full restore hashes ten seeded business tables plus the migration ledger and boots the restored application through `/readyz`. |
-| UR-12 complexity only frozen | Partial | `worker.py` and ERP paths were reduced while extracting the supervisor/broker. The listed top backend and frontend hotspots still require incremental extraction. |
-| UR-13 architecture mismatch | Open | No broad router/service/repository rewrite was attempted; the documented hybrid exceptions still need either enforcement or explicit ADR alignment. |
-| UR-14 unsigned provenance | Open | Checksums/provenance are coherent but still lack an external signing or transparency root. |
-| UR-15 low-fidelity SBOM | Open | The artifact still needs an official CycloneDX generator with valid package identities, graph and runtime/dev scope. |
-| UR-16 configuration drift | Open | A single typed configuration schema and one `.env` parser remain to be adopted across web, workers and operations. |
-| UR-17 no global/changed-lines coverage | Open | Critical-module tests remain strong, but global baseline, changed-lines gate and selected mutation tests are not yet implemented. |
-| UR-18 frontend runtime contracts | Partial | Auth/session is runtime-validated and fails closed; the other high-impact API responses still use compile-time casts. |
-| UR-19 duplicate typecheck | Closed | Duplicate strict script/job removed; CI runs one authoritative typecheck. |
-| UR-20 PWA language/assets | Closed | `lang=ro`, duplicate byte-identical 512 asset removed, and manifest/browser lifecycle gates pass. |
+| UR-01 Prometheus selector drift | Closed | Live job labels, semantic scrape/rule checker, promtool recording/alert scenarios, four live recording series. |
+| UR-02 ASM rounded decisions | Closed | `Decimal` exact decisions, separate display rounding, every threshold ±0.001, historical read-only comparison. |
+| UR-03 Grile reconciler can die | Closed | Supervised per-iteration recovery, backoff/jitter, done callback, metrics, fail-once/recover regression. |
+| UR-04 pre-parser request limits | Closed | Versioned Caddy caps plus ASGI streaming guard; content-length/chunked tests and public 413 evidence. |
+| UR-05 Promo `.xls` isolation | Closed | Shared spawned parser broker with signature checks, RLIMIT CPU/memory/file, timeout, output cap and malformed corpus. |
+| UR-06 ERP `.xls` blocks loop | Closed | Same bounded broker invoked off-loop; ERP reconciliation helpers are pure and characterized. |
+| UR-07 frontend lifecycle deadlines | Closed | Composed abort signals, 15/30/120-second budgets, bounded auth bootstrap, invalid-response failure and unconditional logout cleanup. |
+| UR-08 missing worker alerts | Closed | Target absent/down, worker down, backlog, oldest age, failure ratio, duration and Grile stale/failure alerts; 24 rules and synthetic tests. |
+| UR-09 session refresh herding | Closed | Process-local single-flight plus distributed fence; waiters fail within 1 second with 503/`Retry-After: 2`; owner is bounded to 10 seconds; contention/waiter/timeout metrics and concurrency tests. |
+| UR-10 unversioned ASM rules | Closed | Immutable effective-dated registry, historical lookup, rule ID/hash/effective date in results; approved snapshots remain intentionally optional until this surface becomes official payroll. |
+| UR-11 schema-only restore drill | Closed | Exact-main restore reconstructs and hashes ten business tables plus migration ledger and boots the restored app through `/readyz`. |
+| UR-12 complexity only frozen | Closed | Remediation is now progressive and measured: >400-line Python functions 5→1, >200 18→13, >100 100→95, complexity >20 83→77. The remaining 405-line function has complexity 1. Changed-function ratchet and characterization tests prevent regression. Residual module-size debt remains normal backlog, not a claim of zero debt. |
+| UR-13 architecture mismatch | Closed | The actual hybrid model is explicit in `APP_ARCHITECTURE.md` and machine-readable allowlist; routers cannot access DB, service SQL requires a reasoned category, import cycles/SQL locations fail CI. |
+| UR-14 unsigned provenance | Closed | Sigstore keyless external root, GitHub OIDC identity/ref verification and transparency proof are mandatory in build and deploy. |
+| UR-15 low-fidelity SBOM | Closed | Official npm/Python generators, valid canonical PURLs, graph, scopes, hashes, serial number, complete composition and fail-closed aggregate validation. |
+| UR-16 configuration drift | Closed | One typed runtime loader/schema, six process templates, documented precedence, one `python-dotenv` parser semantics and CI unknown/missing/stale checks. |
+| UR-17 no global/changed-lines coverage | Closed | Backend global 80%; frontend statements/branches/functions/lines 46/36/34/47%; changed executable lines 80%; strict critical floors retained; 6/6 business mutations. |
+| UR-18 frontend runtime contracts | Closed | Runtime schema decoding covers session, imports/promotion, export operations, Target finalization, salary responses and Grile boundaries; malformed payloads fail closed. |
+| UR-19 duplicate typecheck | Closed | Duplicate strict alias/job removed; one authoritative frontend typecheck remains. |
+| UR-20 PWA language/assets | Closed | Romanian document/manifest language, false duplicate maskable icon removed and real Workbox N→N+1→N lifecycle gate. |
 
-Totals: 11 closed, 3 partial, 6 open. All P0 findings are closed. P1 is closed
-except the explicit external edge portion of UR-04. The audit's own projection
-after P0+P1 is 8.8–9.0; a score above 9 remains unjustified until the major
-complexity, supply-chain attestation/SBOM and coverage gaps are materially
-closed and independently re-audited.
+Totals: **20 closed, 0 partial, 0 open** against the supplied finding list.
+Independent rescoring remains an auditor decision; the previously named
+technical blockers for a 9+ reassessment are no longer open.
+
+## Complexity detail
+
+Measured against audit snapshot `f84d5c7645d1457ba3822e1d74c0e5928352f243`:
+
+| Hotspot | Before | After |
+| --- | ---: | ---: |
+| `calculate_proposal` | 437 lines / complexity 96 | 16 / 1 |
+| `fetch_promo_incentive_summary` | 383 / 71 | 42 / 7 |
+| `ExportsRepository.fetch_report_rows` | 476 / 45 | 26 / 2 |
+| `load_dashboard_all` | 444 / 34 | 20 / 1 |
+| `reconcile_erp_report` | 407 / 41 | 79 / 12 |
+
+The Grile UI has begun bounded extraction into focused components and worker
+lifecycle responsibilities are separated by role. Further reductions must use
+the same characterization-first approach; a big-bang rewrite is not part of
+this audit closure.
 
 ## Historical ASM reconciliation
 
-The production dataset was evaluated read-only under old rounded decisions and
-the new exact decisions: 511 ASM-month combinations over 36 months
-(2023-09 through 2026-08). Nineteen results differ: 6 island, 13 focus, zero
-zone and zero homogeneity changes. Every difference removes a false rounded
-award; aggregate absolute/net impact is 2,150 RON, maximum 200 RON for one
-ASM-month. No salary or production business data was written.
-
-## Next efficient lot
-
-Do not reopen the completed P0/P1 work. The highest score gain per unit of risk
-is: UR-14 + UR-15 as one release-attestation lot, then small characterization-
-test-backed extractions from UR-12, followed by UR-17. UR-09 should be handled
-separately because it changes authentication concurrency behavior.
+The production dataset was compared read-only under the old rounded and new
+exact decisions: 511 ASM-month combinations across 36 months (2023-09 through
+2026-08). Nineteen results differ: 6 island and 13 focus awards, with zero zone
+or homogeneity changes. Every difference removes a false rounded award;
+aggregate absolute/net impact is 2,150 RON and maximum impact is 200 RON for
+one ASM-month. No salary or other production business data was written.

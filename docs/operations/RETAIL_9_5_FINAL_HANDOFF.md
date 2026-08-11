@@ -1,18 +1,21 @@
 # Retail 9.5 final handoff
 
-Status: PR #127 candidate only. Do not merge or deploy until every required PR
-check is green on the exact head SHA and all review threads are resolved.
+Status: deployed and verified in production on
+`2cb2785c2340b901e07af7fcf40241e5bfd3555e`.
 
-## Source and delivery boundary
+## Delivery identity
 
-- Branch: `agent/retail-9-5-complete-hardening-20260808`.
-- Every Retail 9.5 source, test and operational change is a normal Git file.
-- No bootstrap workflow, external payload, Filebin object or recovery materializer
-  is part of the delivery path.
-- `.github/workflows/ci.yml` is based on `main`; its additions are limited to
-  Retail 9.5 security, architecture, browser, integration and release evidence gates.
-- Runtime delivery remains ADR-006: exact-SHA CI artifact, verified digest,
-  one-time owner approval, formal deploy, probes and compatible rollback.
+- reviewed remediation PRs: #134–#142;
+- final PR CI: [31482819627](https://github.com/anervalens-netizen/unihub-retail/actions/runs/31482819627);
+- exact-main CI: [31484028843](https://github.com/anervalens-netizen/unihub-retail/actions/runs/31484028843);
+- release archive SHA-256: `aec301e2c82084de526f8e334d8d38c7ef3633544b0f22a84e356e0d54db4dcd`;
+- formal deploy: [31485385533](https://github.com/anervalens-netizen/unihub-retail/actions/runs/31485385533);
+- rollback handle: `/opt/Mobiup/ops/backups/retail-deploy/20260811T111002Z-397731e32c13-to-2cb2785c2340-f59b54973630e293`.
+
+The deployed artifact passed exact-SHA identity, checksums, aggregate SBOM,
+Sigstore issuer/repository/workflow/ref verification, migration compatibility,
+service restart and post-deploy runtime checks. Do not reconstruct this release
+from a checkout.
 
 ## Runtime topology
 
@@ -21,60 +24,41 @@ check is green on the exact head SHA and all review threads are resolved.
 - Imports: `unihub-import-worker.service`, queue `arq:retail:imports`, metrics `9902`.
 - Grile: `unihub-grile-worker.service`, queue `arq:retail:grile`, metrics `9903`.
 - Exports: `unihub-export-worker.service`, queue `arq:retail:exports`, metrics `9904`.
-- Pre-9.5 drain: retired on 2026-08-10 after the default ARQ queue and in-flight
-  set were both observed empty in a later release. The versioned
-  `unihub-legacy-worker.service` is now a disabled tombstone that refuses manual
-  starts and exists only for exact rollback accounting.
+- Legacy default queue: drained and retired; `unihub-legacy-worker.service` is a disabled rollback tombstone.
 - PostgreSQL is authoritative; Valkey transports bounded job/session state only.
 
-Owner access is unchanged. No allowlist, Authentik administrator group, SSH,
-sudoers, service identity or credential boundary is narrowed by Retail 9.5.
+Owner access is unchanged. No Authentik group, SSH/sudoers boundary, service
+identity or credential was changed by the audit remediation.
 
-## Mandatory merge gates
+## Verified production state
 
-Run sequentially where build output is shared:
+- deployed Git SHA equals the delivery identity;
+- all five runtime services are active and enabled;
+- local `/livez` and `/readyz`, public `/health` and `/readyz` return 200;
+- public diagnostics return 404;
+- all five Prometheus targets are UP;
+- all workers report up, backlog 0 and oldest queued age 0;
+- no Retail worker/SLO alert fires after the Grile role selector correction;
+- no warning-or-higher service logs occurred after deploy;
+- content-length and chunked regular bodies above 1 MiB return 413;
+- exact-main restore evidence reports passed, 11 business objects and restored app ready.
 
-```bash
-npm run typecheck
-npm run complexity:ts
-npm run lint
-npm test
-npm audit --audit-level=high
-npm run build
-PYTHONPATH=backend backend/venv/bin/python scripts/generate_retail_contract.py --check
-(cd backend && venv/bin/mypy . --ignore-missing-imports --explicit-package-bases)
-backend/scripts/run_tests_isolated.sh
-backend/venv/bin/python scripts/check_backend_architecture.py
-backend/venv/bin/python scripts/check_bandit_waivers.py
-scripts/run_shellcheck.sh
-npm run test:e2e
-npm run test:e2e:browsers
-npm run test:e2e:pwa-real
-scripts/run_real_e2e.sh
-ops/test-deploy-retail-artifact.sh
-ops/verify-forensic-remediation-runtime.sh
-```
+The GlitchTip warning visible immediately after deploy represents one event at
+`2026-08-11T11:07:26.599Z`, before deployment began; the post-deploy count is
+zero. Historical unresolved issues remain informational when recent events are
+zero.
 
-CI additionally proves migration integrity, secret scanning, Bandit, dependency
-policy, deterministic SBOM/provenance, real OIDC BFF session isolation,
-PostgreSQL/Valkey integration, mixed load, backup/restore with deterministic
-hashes over ten representative business tables plus the migration ledger and a
-`/readyz` probe against the restored database, worker restart,
-Workbox N -> N+1 -> N, multi-browser smoke and exact artifact identity.
+## Validation and rollback contract
 
-## Deploy and rollback
-
-After merge, dispatch `ci.yml` on the new `main`. Deploy only the uploaded
-`retail-release-<SHA>` bundle whose `SOURCE_SHA`, `SHA256SUMS`, CycloneDX SBOM,
-SLSA provenance and release manifest agree. The deploy gate installs all seven
-systemd units, verifies all five Prometheus targets, `/livez`, `/readyz`,
-`/health`, changed authenticated paths and the deployed Git SHA.
-
-The deploy snapshots and restores service enablement, enables every long-lived
-runtime unit, tolerates units absent in the pre-9.5 release, and disables newly
-introduced units again on a compatible rollback. The migration unit remains
-one-shot and is never enabled.
+CI remains authoritative for typecheck, lint, tests, global/critical/changed-
+line coverage, changed-function complexity, mutation probes, security checks,
+environment/architecture contracts, browser/PWA lifecycle, real integration,
+restore, official ecosystem SBOMs and signed release packaging.
 
 Rollback is allowed only when migration manifests are compatible. An
-incompatible database boundary fails closed as `recovery_required`; it is not
-bypassed. Preserve the last good generation and use verified roll-forward.
+incompatible database boundary fails closed as `recovery_required`; recover by
+reviewed roll-forward. The migration unit remains one-shot and is never
+enabled.
+
+The complete UR-01–UR-20 evidence matrix is in
+`docs/operations/AUDIT_REMEDIATION_2026-08-11.md`.

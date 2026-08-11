@@ -16,13 +16,14 @@ to `/opt/Mobiup/ops/scripts/`, makes the files and parent directory root-owned
 and non-writable by the runner, and verifies the installed SHA-256 values match
 the reviewed sources exactly.
 
-The deploy also owns the versioned Retail runtime assets: four systemd units,
+The deploy also owns the versioned Retail runtime assets: five long-running
+systemd units plus the migration one-shot and legacy rollback tombstone,
 the detected Prometheus bridge environment, and the rendered Retail scrape
 fragment. The shared observability stack is provisioned once with
 `scrape_config_files: /etc/prometheus/scrape.d/*.yml` and a read-only host mount
 from `/opt/Mobiup/ops/prometheus/scrape.d`; the Retail deploy validates but
 never rewrites the shared Prometheus config or Compose topology. Missing mount,
-include, bridge data, `promtool` success or any of the three UP targets is a
+include, bridge data, `promtool` success or any of the five UP targets is a
 fail-closed release gate. Rollback restores the prior units, environment and
 fragment together with code and `dist/`.
 
@@ -50,7 +51,14 @@ depasesc bugetul; valorile volatile nu se copiaza in arhitectura fara data.
 
 ## Evidență Gate 0 și P0
 
-Candidatul documentat este `f9c0b1efe15686bcda532d22528e6e2644925aec`. Gate 0 rămâne artifact -> deploy -> reverify -> rollback pe SHA identic; verificarea locală fără deploy se rulează cu `bash ops/test-deploy-retail-artifact.sh`. Approval-ul și deployul formal consumă numai `head_sha`, `SOURCE_SHA` și digestul `SHA256SUMS` ale aceluiași run CI.
+Release-ul auditat curent este
+`2cb2785c2340b901e07af7fcf40241e5bfd3555e`: CI main `31484028843`, arhivă
+SHA-256 `aec301e2c82084de526f8e334d8d38c7ef3633544b0f22a84e356e0d54db4dcd`
+și deploy formal `31485385533`. Gate 0 rămâne artifact -> deploy -> reverify ->
+rollback pe SHA identic; verificarea locală fără deploy se rulează cu
+`bash ops/test-deploy-retail-artifact.sh`. Approval-ul și deployul formal
+consumă numai `head_sha`, `SOURCE_SHA` și digestul `SHA256SUMS` ale aceluiași
+run CI.
 
 Pentru P0, migration manifest-ul este verificat înaintea restartului, iar recovery-ul este roll-forward sau rollback numai între manifeste identice. Nu se aplică Finance/TVA și nu se aplică salarii live din această cale: P&L effective-dated rămâne shadow-only, iar salariile rămân NO-GO până la HR.
 
