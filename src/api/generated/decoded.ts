@@ -51,7 +51,8 @@ export function validateRetailSchema(
 ): void {
   const reference = schema.$ref;
   if (typeof reference === "string") {
-    const name = reference.split("/").at(-1);
+    const referenceParts = reference.split("/");
+    const name = referenceParts[referenceParts.length - 1];
     const target = name
       ? schemaRecord((RETAIL_COMPONENT_SCHEMAS as Record<string, unknown>)[name])
       : null;

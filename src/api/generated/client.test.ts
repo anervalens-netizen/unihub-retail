@@ -84,6 +84,19 @@ describe("generated Retail client", () => {
     }, { count: 1 })).not.toThrow();
   });
 
+  it("resolves schema references without requiring Array.at", () => {
+    const descriptor = Object.getOwnPropertyDescriptor(Array.prototype, "at");
+    Reflect.deleteProperty(Array.prototype, "at");
+    try {
+      expect(() => validateRetailResponse("session_status_auth_session_get", {
+        profile: { sub: "user-1", groups: [] },
+        csrf_token: "csrf",
+      })).not.toThrow();
+    } finally {
+      if (descriptor) Object.defineProperty(Array.prototype, "at", descriptor);
+    }
+  });
+
   it("keeps request contracts type-checked", () => {
     if (import.meta.env.MODE === "typecheck-only") {
       // @ts-expect-error required query parameters cannot be omitted
