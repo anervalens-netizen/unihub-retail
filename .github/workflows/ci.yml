@@ -600,11 +600,15 @@ jobs:
 
       - name: Install externally rooted signer
         uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        env:
+          HOME: ${{ runner.temp }}
         with:
           cosign-release: v3.1.3
           install-dir: ${{ runner.temp }}/cosign
 
       - name: Sign and verify release evidence with Sigstore
+        env:
+          HOME: ${{ runner.temp }}
         run: |
           cosign sign-blob --yes \
             --bundle release-artifact/RELEASE_MANIFEST.sigstore.json \
