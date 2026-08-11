@@ -12,6 +12,12 @@ does not assign a replacement independent score.
 Runtime remediation was delivered through reviewed PRs #134–#142. The final
 runtime source is `2cb2785c2340b901e07af7fcf40241e5bfd3555e`.
 
+Repository coordination may advance `main` after that SHA only through the
+documented non-runtime path. Dell, the primary server checkout and GitHub must
+then share the same clean `main`; the diff from the runtime SHA must contain
+only audit/operations documentation. Any code, configuration, frontend,
+systemd or worker difference requires a new exact-SHA artifact and deployment.
+
 ## Exact release evidence
 
 - final PR gate: [run 31482819627](https://github.com/anervalens-netizen/unihub-retail/actions/runs/31482819627), including changed-function complexity, backend/frontend changed-line coverage and 6/6 mutation probes;

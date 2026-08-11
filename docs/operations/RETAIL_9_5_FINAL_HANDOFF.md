@@ -17,6 +17,11 @@ Sigstore issuer/repository/workflow/ref verification, migration compatibility,
 service restart and post-deploy runtime checks. Do not reconstruct this release
 from a checkout.
 
+`main` may be ahead of the deployed artifact only by direct documentation-only
+handoff commits permitted by ADR-006. Dell, the primary checkout and GitHub
+must still have the same clean `main`, and `git diff --name-only
+2cb2785c2340b901e07af7fcf40241e5bfd3555e..main` must contain no runtime file.
+
 ## Runtime topology
 
 - Web: `unihub-backend.service`, metrics `9898`.
