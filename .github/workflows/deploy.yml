@@ -56,6 +56,8 @@ jobs:
 
       - name: Install external signature verifier
         uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        env:
+          HOME: ${{ runner.temp }}
         with:
           cosign-release: v3.1.3
           install-dir: ${{ runner.temp }}/cosign
@@ -63,6 +65,7 @@ jobs:
       - name: Verify artifact manifest
         env:
           EXPECTED_SHA: ${{ inputs.source_sha }}
+          HOME: ${{ runner.temp }}
         run: |
           set -euo pipefail
           cd verified-release
