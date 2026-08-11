@@ -342,7 +342,7 @@ jobs:
     runs-on: [self-hosted, Linux, X64, dell-compute, unihub-build, unihub-retail-build]
     timeout-minutes: 25
     env:
-      VITE_FRONTEND_GLITCHTIP_DSN: ${{ secrets.VITE_FRONTEND_GLITCHTIP_DSN }}
+      VITE_FRONTEND_GLITCHTIP_DSN: ${{ secrets.VITE_GLITCHTIP_DSN }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
 
