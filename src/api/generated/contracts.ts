@@ -1,5 +1,5 @@
 /* GENERATED FILE. Run npm run contracts:generate; do not edit manually. */
-export const RETAIL_OPENAPI_SHA256 = 'b289a94bcf47902231044c3d76de8ec5423a5a6f53987688b8f4a3441790762b' as const; // pragma: allowlist secret
+export const RETAIL_OPENAPI_SHA256 = '420756d13c95101303697ebcec05ab83fe1679c27203c4589031e6d537cb6844' as const; // pragma: allowlist secret
 
 export type RetailDecimal = string & { readonly __retailDecimal: unique symbol };
 
@@ -579,14 +579,14 @@ export interface RetailDashboardAllBatchResponse {
 }
 
 export interface RetailDashboardAllQuery {
-  "agent"?: string | null;
+  "agent"?: Array<string> | null;
   "asm"?: string | null;
   "current_scope"?: boolean;
   "firma"?: string | null;
   "include_closed_stores"?: boolean;
   "month": string;
   "regional"?: string | null;
-  "site_code"?: string | null;
+  "site_code"?: Array<string> | null;
 }
 
 export interface RetailDashboardAllResponse {
@@ -760,8 +760,9 @@ export interface RetailExportOperationResponse {
   "finished_at"?: string | null;
   "id": number;
   "job_id": string;
-  "kind": "daily_metrics" | "daily_comparison";
+  "kind": "daily_metrics" | "daily_comparison" | "salary_store_summary" | "salary_monthly_trend" | "salary_agents";
   "peak_rss_bytes"?: number | null;
+  "row_count"?: number | null;
   "started_at"?: string | null;
   "status": "queued" | "running" | "completed" | "failed" | "cancelled" | "expired";
 }
@@ -1706,13 +1707,13 @@ export interface RetailRegionalStats {
 
 export interface RetailSalaryAgentSummaryPublic {
   "avg_month_count": number;
-  "avg_salary": number;
+  "avg_salary": RetailDecimal;
   "company_name": string;
   "full_name": string;
   "locatie": string | null;
   "month_count": number;
   "person_id": string;
-  "total_salary": number;
+  "total_salary": RetailDecimal;
 }
 
 export interface RetailSalaryAgentsSummaryResponse {
@@ -1723,31 +1724,37 @@ export interface RetailSalaryAgentsSummaryResponse {
 export interface RetailSalaryCompanyTotal {
   "company"?: string | null;
   "name"?: string | null;
-  "total": number;
+  "total": RetailDecimal;
 }
 
 export interface RetailSalaryComparisonItem {
   "agent_count": number;
   "avg_agent_count": number;
-  "avg_salary": number;
+  "avg_salary": RetailDecimal;
   "company_name": string;
   "locatie"?: string | null;
-  "ratio": number;
+  "ratio": RetailDecimal;
   "site_code": string | null;
-  "total_salary": number;
-  "total_sales": number;
+  "total_salary": RetailDecimal;
+  "total_sales": RetailDecimal;
 }
 
 export interface RetailSalaryEvolutionPoint {
-  "mobicell": number;
-  "mobiup": number;
+  "mobicell": RetailDecimal;
+  "mobiup": RetailDecimal;
   "month": string;
-  "total": number;
+  "total": RetailDecimal;
 }
 
-export interface RetailSalaryExportAudit {
-  "export_kind": "store_summary" | "monthly_trend" | "agents_page";
-  "row_count": number;
+export interface RetailSalaryExportRequest {
+  "asm"?: string | null;
+  "company_name"?: string | null;
+  "export_kind": "store_summary" | "monthly_trend" | "agents";
+  "month"?: number | null;
+  "q"?: string | null;
+  "regional"?: string | null;
+  "site_code"?: Array<string>;
+  "year"?: number | null;
 }
 
 export interface RetailSalaryHistoryRecordPublic {
@@ -1755,28 +1762,28 @@ export interface RetailSalaryHistoryRecordPublic {
   "locatie": string | null;
   "month": number;
   "site_code": string | null;
-  "total_salary": number;
+  "total_salary": RetailDecimal;
   "year": number;
 }
 
 export interface RetailSalaryHistoryResponse {
-  "avg": number;
+  "avg": RetailDecimal;
   "avg_month_count": number;
   "link"?: RetailAgentSalaryLinkPublic | null;
   "month_count": number;
   "records": Array<RetailSalaryHistoryRecordPublic>;
-  "total": number;
+  "total": RetailDecimal;
 }
 
 export interface RetailSalaryOverviewResponse {
   "agent_count"?: number | null;
   "agent_month_count"?: number | null;
   "avg_agent_month_count"?: number | null;
-  "avg_salary"?: number | null;
+  "avg_salary"?: RetailDecimal | null;
   "by_company"?: Array<RetailSalaryCompanyTotal>;
   "months_span"?: [number, number, number, number] | null;
   "record_count"?: number | null;
-  "total"?: number | null;
+  "total"?: RetailDecimal | null;
 }
 
 export interface RetailSalaryRecordPublic {
@@ -1787,7 +1794,7 @@ export interface RetailSalaryRecordPublic {
   "month": number;
   "person_id": string;
   "site_code": string | null;
-  "total_salary": number;
+  "total_salary": RetailDecimal;
   "year": number;
 }
 
@@ -1804,11 +1811,11 @@ export interface RetailSalarySummaryResponse {
 export interface RetailSalaryTrendPoint {
   "agent_count": number;
   "avg_agent_count": number;
-  "avg_salary": number;
+  "avg_salary": RetailDecimal;
   "by_company"?: Record<string, unknown>;
   "month": string;
-  "total_salary": number;
-  "total_sales": number;
+  "total_salary": RetailDecimal;
+  "total_sales": RetailDecimal;
 }
 
 export interface RetailSalesGenerationAnomaly {
@@ -2578,8 +2585,8 @@ export type RetailOperationId =
   'agent_history_by_retail_code_salarii_agents_history_by_retail_code_get' |
   'agents_summary_salarii_agents_summary_get' |
   'agent_history_salarii_agents__person_id__history_get' |
-  'audit_salary_export_salarii_audit_export_post' |
   'salarii_evolution_salarii_evolution_get' |
+  'create_salary_export_operation_salarii_exports_operations_post' |
   'salarii_overview_salarii_overview_get' |
   'list_records_salarii_records_get' |
   'salarii_stores_salarii_stores_get' |
@@ -3091,14 +3098,17 @@ export interface RetailOperationResponses {
     '422': RetailHTTPValidationError;
   }
 
-  'audit_salary_export_salarii_audit_export_post': {
-    '204': void;
-    '422': RetailHTTPValidationError;
-  }
-
   'salarii_evolution_salarii_evolution_get': {
     '200': Array<RetailSalaryEvolutionPoint>;
     '422': RetailHTTPValidationError;
+  }
+
+  'create_salary_export_operation_salarii_exports_operations_post': {
+    '200': RetailExportOperationResponse;
+    '400': void;
+    '409': void;
+    '422': RetailHTTPValidationError;
+    '503': RetailExportOperationUnavailableResponse;
   }
 
   'salarii_overview_salarii_overview_get': {
@@ -3228,8 +3238,8 @@ export interface RetailOperationSuccesses {
   'agent_history_by_retail_code_salarii_agents_history_by_retail_code_get': RetailSalaryHistoryResponse;
   'agents_summary_salarii_agents_summary_get': RetailSalaryAgentsSummaryResponse;
   'agent_history_salarii_agents__person_id__history_get': RetailSalaryHistoryResponse;
-  'audit_salary_export_salarii_audit_export_post': void;
   'salarii_evolution_salarii_evolution_get': Array<RetailSalaryEvolutionPoint>;
+  'create_salary_export_operation_salarii_exports_operations_post': RetailExportOperationResponse;
   'salarii_overview_salarii_overview_get': RetailSalaryOverviewResponse;
   'list_records_salarii_records_get': Array<RetailSalaryRecordPublic>;
   'salarii_stores_salarii_stores_get': Array<RetailSalaryStoreOption>;
@@ -3337,8 +3347,8 @@ export interface RetailOperationErrors {
   'agent_history_by_retail_code_salarii_agents_history_by_retail_code_get': { '422': RetailHTTPValidationError };
   'agents_summary_salarii_agents_summary_get': { '422': RetailHTTPValidationError };
   'agent_history_salarii_agents__person_id__history_get': { '422': RetailHTTPValidationError };
-  'audit_salary_export_salarii_audit_export_post': { '422': RetailHTTPValidationError };
   'salarii_evolution_salarii_evolution_get': { '422': RetailHTTPValidationError };
+  'create_salary_export_operation_salarii_exports_operations_post': { '400': void; '409': void; '422': RetailHTTPValidationError; '503': RetailExportOperationUnavailableResponse };
   'salarii_overview_salarii_overview_get': { '422': RetailHTTPValidationError };
   'list_records_salarii_records_get': { '422': RetailHTTPValidationError };
   'salarii_stores_salarii_stores_get': { '422': RetailHTTPValidationError };
@@ -3653,11 +3663,14 @@ export const RETAIL_OPERATION_ERROR_STATUSES: { readonly [Id in RetailOperationI
   'agent_history_salarii_agents__person_id__history_get': new Set<string>([
     '422',
   ]),
-  'audit_salary_export_salarii_audit_export_post': new Set<string>([
-    '422',
-  ]),
   'salarii_evolution_salarii_evolution_get': new Set<string>([
     '422',
+  ]),
+  'create_salary_export_operation_salarii_exports_operations_post': new Set<string>([
+    '400',
+    '409',
+    '422',
+    '503',
   ]),
   'salarii_overview_salarii_overview_get': new Set<string>([
     '422',
@@ -3677,34 +3690,34 @@ export const RETAIL_OPERATION_ERROR_STATUSES: { readonly [Id in RetailOperationI
 };
 
 export interface RetailOperationQueries {
-  'get_agent_evaluation_api_agents_evaluation_get': { "month"?: string | null; "months"?: string | null; "firma"?: string | null; "asm"?: string | null; "site_code"?: string | null };
-  'get_agent_evaluation_v2_api_agents_evaluation_v2_get': { "month"?: string | null; "months"?: string | null; "firma"?: string | null; "asm"?: string | null; "site_code"?: string | null };
+  'get_agent_evaluation_api_agents_evaluation_get': { "month"?: string | null; "months"?: string | null; "firma"?: string | null; "asm"?: string | null; "site_code"?: Array<string> | null };
+  'get_agent_evaluation_v2_api_agents_evaluation_v2_get': { "month"?: string | null; "months"?: string | null; "firma"?: string | null; "asm"?: string | null; "site_code"?: Array<string> | null };
   'get_agent_history_api_agents_history_get': { "agent": string };
-  'get_agents_list_api_agents_list_get': { "selected_month": string; "search"?: string | null; "firma"?: string | null; "regional"?: string | null; "asm"?: string | null; "site_code"?: string | null };
-  'get_agents_movement_api_agents_movement_get': { "selected_month": string; "firma"?: string | null; "regional"?: string | null; "asm"?: string | null; "site_code"?: string | null; "agent"?: string | null };
-  'get_agents_overview_api_agents_overview_get': { "selected_month": string; "firma"?: string | null; "regional"?: string | null; "asm"?: string | null; "site_code"?: string | null; "agent"?: string | null };
+  'get_agents_list_api_agents_list_get': { "selected_month": string; "search"?: string | null; "firma"?: string | null; "regional"?: string | null; "asm"?: string | null; "site_code"?: Array<string> | null };
+  'get_agents_movement_api_agents_movement_get': { "selected_month": string; "firma"?: string | null; "regional"?: string | null; "asm"?: string | null; "site_code"?: Array<string> | null; "agent"?: Array<string> | null };
+  'get_agents_overview_api_agents_overview_get': { "selected_month": string; "firma"?: string | null; "regional"?: string | null; "asm"?: string | null; "site_code"?: Array<string> | null; "agent"?: Array<string> | null };
   'get_agent_profile_api_agents_profile_get': { "agent": string; "selected_month": string };
   'get_stores_coverage_api_agents_stores_coverage_get': { "selected_month": string; "firma"?: string | null; "regional"?: string | null; "asm"?: string | null };
-  'get_current_ai_forecast_api_ai_forecast_current_get': { "month": string; "metric"?: string; "firma"?: string | null; "regional"?: string | null; "asm"?: string | null; "site_code"?: string | null };
-  'get_rolling_12_ai_forecast_api_ai_forecast_rolling_12_get': { "month": string; "metric"?: string; "firma"?: string | null; "regional"?: string | null; "asm"?: string | null; "site_code"?: string | null };
-  'get_focus_history_api_campaigns_history_get': { "month": string; "months_back"?: number; "firma"?: string | null; "regional"?: string | null; "asm"?: string | null; "site_code"?: string | null; "agent"?: string | null };
-  'get_campaign_overview_api_campaigns_overview_get': { "month": string; "firma"?: string | null; "regional"?: string | null; "asm"?: string | null; "site_code"?: string | null; "agent"?: string | null };
-  'get_promotions_incentives_api_campaigns_promotions_incentives_get': { "start_date": string; "end_date": string; "firma"?: string | null; "regional"?: string | null; "asm"?: string | null; "site_code"?: string | null; "agent"?: string | null; "promotion_key"?: string | null; "view"?: "all" | "promo" | "incentive"; "current_scope"?: boolean; "include_closed_stores"?: boolean };
-  'get_active_contest_api_contests_active_get': { "month": string; "site_codes"?: string | null };
-  'get_active_contests_api_contests_active_all_get': { "month": string; "site_codes"?: string | null };
+  'get_current_ai_forecast_api_ai_forecast_current_get': { "month": string; "metric"?: string; "firma"?: string | null; "regional"?: string | null; "asm"?: string | null; "site_code"?: Array<string> | null };
+  'get_rolling_12_ai_forecast_api_ai_forecast_rolling_12_get': { "month": string; "metric"?: string; "firma"?: string | null; "regional"?: string | null; "asm"?: string | null; "site_code"?: Array<string> | null };
+  'get_focus_history_api_campaigns_history_get': { "month": string; "months_back"?: number; "firma"?: string | null; "regional"?: string | null; "asm"?: string | null; "site_code"?: Array<string> | null; "agent"?: Array<string> | null };
+  'get_campaign_overview_api_campaigns_overview_get': { "month": string; "firma"?: string | null; "regional"?: string | null; "asm"?: string | null; "site_code"?: Array<string> | null; "agent"?: Array<string> | null };
+  'get_promotions_incentives_api_campaigns_promotions_incentives_get': { "start_date": string; "end_date": string; "firma"?: string | null; "regional"?: string | null; "asm"?: string | null; "site_code"?: Array<string> | null; "agent"?: Array<string> | null; "promotion_key"?: string | null; "view"?: "all" | "promo" | "incentive"; "current_scope"?: boolean; "include_closed_stores"?: boolean };
+  'get_active_contest_api_contests_active_get': { "month": string; "site_codes"?: Array<string> | null };
+  'get_active_contests_api_contests_active_all_get': { "month": string; "site_codes"?: Array<string> | null };
   'get_alerts_api_crm_alerts_get': { "month": string };
   'get_scores_api_crm_scores_get': { "month": string };
   'recalculate_scores_api_crm_scores_recalculate_post': { "month": string };
-  'get_dashboard_all_api_dashboard_all_get': { "month": string; "firma"?: string | null; "regional"?: string | null; "asm"?: string | null; "site_code"?: string | null; "agent"?: string | null; "current_scope"?: boolean; "include_closed_stores"?: boolean };
+  'get_dashboard_all_api_dashboard_all_get': { "month": string; "firma"?: string | null; "regional"?: string | null; "asm"?: string | null; "site_code"?: Array<string> | null; "agent"?: Array<string> | null; "current_scope"?: boolean; "include_closed_stores"?: boolean };
   'get_dashboard_all_batch_api_dashboard_all_batch_post': Record<never, never>;
-  'get_daily_sales_api_dashboard_daily_get': { "month": string; "firma"?: string | null; "regional"?: string | null; "asm"?: string | null; "site_code"?: string | null; "agent"?: string | null };
-  'get_monthly_history_api_dashboard_history_get': { "month": string; "months_back"?: number; "firma"?: string | null; "regional"?: string | null; "asm"?: string | null; "site_code"?: string | null; "agent"?: string | null; "current_scope"?: boolean; "include_closed_stores"?: boolean };
+  'get_daily_sales_api_dashboard_daily_get': { "month": string; "firma"?: string | null; "regional"?: string | null; "asm"?: string | null; "site_code"?: Array<string> | null; "agent"?: Array<string> | null };
+  'get_monthly_history_api_dashboard_history_get': { "month": string; "months_back"?: number; "firma"?: string | null; "regional"?: string | null; "asm"?: string | null; "site_code"?: Array<string> | null; "agent"?: Array<string> | null; "current_scope"?: boolean; "include_closed_stores"?: boolean };
   'get_dashboard_history_details_batch_api_dashboard_history_details_batch_post': Record<never, never>;
-  'get_history_by_year_api_dashboard_history_year_get': { "year": number; "firma"?: string | null; "regional"?: string | null; "asm"?: string | null; "site_code"?: string | null; "agent"?: string | null; "current_scope"?: boolean; "include_closed_stores"?: boolean };
-  'get_performance_detail_api_dashboard_performance_detail_get': { "month": string; "level": "regional" | "store" | "agent"; "key": string; "firma"?: string | null; "regional"?: string | null; "asm"?: string | null; "site_code"?: string | null; "agent"?: string | null; "current_scope"?: boolean; "include_closed_stores"?: boolean };
-  'get_premium_glass_api_dashboard_premium_glass_get': { "month": string; "firma"?: string | null; "regional"?: string | null; "asm"?: string | null; "site_code"?: string | null; "agent"?: string | null; "surface"?: "all" | "screen" | "camera"; "current_scope"?: boolean; "include_closed_stores"?: boolean };
-  'get_special_cards_api_dashboard_special_cards_get': { "month": string; "firma"?: string | null; "regional"?: string | null; "asm"?: string | null; "site_code"?: string | null; "agent"?: string | null };
-  'get_summary_api_dashboard_summary_get': { "month": string; "firma"?: string | null; "regional"?: string | null; "asm"?: string | null; "site_code"?: string | null; "agent"?: string | null };
+  'get_history_by_year_api_dashboard_history_year_get': { "year": number; "firma"?: string | null; "regional"?: string | null; "asm"?: string | null; "site_code"?: Array<string> | null; "agent"?: Array<string> | null; "current_scope"?: boolean; "include_closed_stores"?: boolean };
+  'get_performance_detail_api_dashboard_performance_detail_get': { "month": string; "level": "regional" | "store" | "agent"; "key": string; "firma"?: string | null; "regional"?: string | null; "asm"?: string | null; "site_code"?: Array<string> | null; "agent"?: Array<string> | null; "current_scope"?: boolean; "include_closed_stores"?: boolean };
+  'get_premium_glass_api_dashboard_premium_glass_get': { "month": string; "firma"?: string | null; "regional"?: string | null; "asm"?: string | null; "site_code"?: Array<string> | null; "agent"?: Array<string> | null; "surface"?: "all" | "screen" | "camera"; "current_scope"?: boolean; "include_closed_stores"?: boolean };
+  'get_special_cards_api_dashboard_special_cards_get': { "month": string; "firma"?: string | null; "regional"?: string | null; "asm"?: string | null; "site_code"?: Array<string> | null; "agent"?: Array<string> | null };
+  'get_summary_api_dashboard_summary_get': { "month": string; "firma"?: string | null; "regional"?: string | null; "asm"?: string | null; "site_code"?: Array<string> | null; "agent"?: Array<string> | null };
   'get_catalog_api_exports_catalog_get': Record<never, never>;
   'download_export_api_exports_download_post': Record<never, never>;
   'create_export_operation_api_exports_operations_post': Record<never, never>;
@@ -3765,24 +3778,24 @@ export interface RetailOperationQueries {
   'post_task_api_tasks_post': Record<never, never>;
   'remove_task_api_tasks__task_id__delete': Record<never, never>;
   'patch_task_api_tasks__task_id__patch': Record<never, never>;
-  'get_visits_report_api_visits_report_get': { "month": string; "firma"?: string | null; "rm"?: string | null; "asm"?: string | null; "magazin"?: string | null };
+  'get_visits_report_api_visits_report_get': { "month": string; "firma"?: string | null; "rm"?: string | null; "asm"?: string | null; "magazin"?: Array<string> | null };
   'get_visit_photo_api_visits_report_photo__visit_id___filename__get': Record<never, never>;
-  'get_visits_tree_api_visits_report_tree_get': { "month": string; "firma"?: string | null; "rm"?: string | null; "asm"?: string | null; "magazin"?: string | null };
+  'get_visits_tree_api_visits_report_tree_get': { "month": string; "firma"?: string | null; "rm"?: string | null; "asm"?: string | null; "magazin"?: Array<string> | null };
   'get_visit_detail_api_visits_report_visit__visit_id__get': Record<never, never>;
   'session_status_auth_session_get': Record<never, never>;
   'session_login_auth_session_login_get': Record<never, never>;
   'session_logout_auth_session_logout_post': Record<never, never>;
   'metrics_metrics_get': Record<never, never>;
   'agent_history_by_retail_code_salarii_agents_history_by_retail_code_get': { "agent_code": string; "site_code": string };
-  'agents_summary_salarii_agents_summary_get': { "q"?: string | null; "company_name"?: string | null; "site_code"?: string | null; "regional"?: string | null; "asm"?: string | null; "year"?: number | null; "month"?: number | null; "limit"?: number; "offset"?: number };
+  'agents_summary_salarii_agents_summary_get': { "q"?: string | null; "company_name"?: string | null; "site_code"?: Array<string> | null; "regional"?: string | null; "asm"?: string | null; "year"?: number | null; "month"?: number | null; "limit"?: number; "offset"?: number };
   'agent_history_salarii_agents__person_id__history_get': Record<never, never>;
-  'audit_salary_export_salarii_audit_export_post': Record<never, never>;
-  'salarii_evolution_salarii_evolution_get': { "company_name"?: string | null; "site_code"?: string | null; "regional"?: string | null; "asm"?: string | null };
-  'salarii_overview_salarii_overview_get': { "company_name"?: string | null; "site_code"?: string | null; "regional"?: string | null; "asm"?: string | null };
-  'list_records_salarii_records_get': { "company_name"?: string | null; "year"?: number | null; "month"?: number | null; "site_code"?: string | null; "limit"?: number; "offset"?: number };
+  'salarii_evolution_salarii_evolution_get': { "company_name"?: string | null; "site_code"?: Array<string> | null; "regional"?: string | null; "asm"?: string | null };
+  'create_salary_export_operation_salarii_exports_operations_post': Record<never, never>;
+  'salarii_overview_salarii_overview_get': { "company_name"?: string | null; "site_code"?: Array<string> | null; "regional"?: string | null; "asm"?: string | null };
+  'list_records_salarii_records_get': { "company_name"?: string | null; "year"?: number | null; "month"?: number | null; "site_code"?: Array<string> | null; "limit"?: number; "offset"?: number };
   'salarii_stores_salarii_stores_get': { "company_name"?: string | null };
-  'salarii_summary_salarii_summary_get': { "company_name"?: string | null; "site_code"?: string | null; "regional"?: string | null; "asm"?: string | null; "year"?: number | null; "month"?: number | null };
-  'salarii_trend_salarii_trend_get': { "company_name"?: string | null; "site_code"?: string | null; "regional"?: string | null; "asm"?: string | null };
+  'salarii_summary_salarii_summary_get': { "company_name"?: string | null; "site_code"?: Array<string> | null; "regional"?: string | null; "asm"?: string | null; "year"?: number | null; "month"?: number | null };
+  'salarii_trend_salarii_trend_get': { "company_name"?: string | null; "site_code"?: Array<string> | null; "regional"?: string | null; "asm"?: string | null };
 }
 
 export interface RetailOperationPaths {
@@ -3885,8 +3898,8 @@ export interface RetailOperationPaths {
   'agent_history_by_retail_code_salarii_agents_history_by_retail_code_get': Record<never, never>;
   'agents_summary_salarii_agents_summary_get': Record<never, never>;
   'agent_history_salarii_agents__person_id__history_get': { "person_id": string };
-  'audit_salary_export_salarii_audit_export_post': Record<never, never>;
   'salarii_evolution_salarii_evolution_get': Record<never, never>;
+  'create_salary_export_operation_salarii_exports_operations_post': Record<never, never>;
   'salarii_overview_salarii_overview_get': Record<never, never>;
   'list_records_salarii_records_get': Record<never, never>;
   'salarii_stores_salarii_stores_get': Record<never, never>;
@@ -3994,8 +4007,8 @@ export interface RetailOperationBodies {
   'agent_history_by_retail_code_salarii_agents_history_by_retail_code_get': undefined;
   'agents_summary_salarii_agents_summary_get': undefined;
   'agent_history_salarii_agents__person_id__history_get': undefined;
-  'audit_salary_export_salarii_audit_export_post': RetailSalaryExportAudit;
   'salarii_evolution_salarii_evolution_get': undefined;
+  'create_salary_export_operation_salarii_exports_operations_post': RetailSalaryExportRequest;
   'salarii_overview_salarii_overview_get': undefined;
   'list_records_salarii_records_get': undefined;
   'salarii_stores_salarii_stores_get': undefined;
@@ -4103,8 +4116,8 @@ export interface RetailOperationMeta {
   'agent_history_by_retail_code_salarii_agents_history_by_retail_code_get': { method: 'get'; path: '/salarii/agents/history-by-retail-code'; responseType: 'json' };
   'agents_summary_salarii_agents_summary_get': { method: 'get'; path: '/salarii/agents/summary'; responseType: 'json' };
   'agent_history_salarii_agents__person_id__history_get': { method: 'get'; path: '/salarii/agents/{person_id}/history'; responseType: 'json' };
-  'audit_salary_export_salarii_audit_export_post': { method: 'post'; path: '/salarii/audit/export'; responseType: 'json' };
   'salarii_evolution_salarii_evolution_get': { method: 'get'; path: '/salarii/evolution'; responseType: 'json' };
+  'create_salary_export_operation_salarii_exports_operations_post': { method: 'post'; path: '/salarii/exports/operations'; responseType: 'json' };
   'salarii_overview_salarii_overview_get': { method: 'get'; path: '/salarii/overview'; responseType: 'json' };
   'list_records_salarii_records_get': { method: 'get'; path: '/salarii/records'; responseType: 'json' };
   'salarii_stores_salarii_stores_get': { method: 'get'; path: '/salarii/stores'; responseType: 'json' };
@@ -5360,24 +5373,46 @@ export const RETAIL_DECIMAL_PATHS: { readonly [Id in RetailOperationId]: Readonl
   'metrics_metrics_get': new Set<string>([
   ]),
   'agent_history_by_retail_code_salarii_agents_history_by_retail_code_get': new Set<string>([
+    'avg',
+    'records/*/total_salary',
+    'total',
   ]),
   'agents_summary_salarii_agents_summary_get': new Set<string>([
+    'items/*/avg_salary',
+    'items/*/total_salary',
   ]),
   'agent_history_salarii_agents__person_id__history_get': new Set<string>([
-  ]),
-  'audit_salary_export_salarii_audit_export_post': new Set<string>([
+    'avg',
+    'records/*/total_salary',
+    'total',
   ]),
   'salarii_evolution_salarii_evolution_get': new Set<string>([
+    '*/mobicell',
+    '*/mobiup',
+    '*/total',
+  ]),
+  'create_salary_export_operation_salarii_exports_operations_post': new Set<string>([
   ]),
   'salarii_overview_salarii_overview_get': new Set<string>([
+    'avg_salary',
+    'by_company/*/total',
+    'total',
   ]),
   'list_records_salarii_records_get': new Set<string>([
+    '*/total_salary',
   ]),
   'salarii_stores_salarii_stores_get': new Set<string>([
   ]),
   'salarii_summary_salarii_summary_get': new Set<string>([
+    'items/*/avg_salary',
+    'items/*/ratio',
+    'items/*/total_salary',
+    'items/*/total_sales',
   ]),
   'salarii_trend_salarii_trend_get': new Set<string>([
+    '*/avg_salary',
+    '*/total_salary',
+    '*/total_sales',
   ]),
 };
 
@@ -5630,9 +5665,9 @@ export const RETAIL_DATE_PATHS: { readonly [Id in RetailOperationId]: ReadonlySe
   ]),
   'agent_history_salarii_agents__person_id__history_get': new Set<string>([
   ]),
-  'audit_salary_export_salarii_audit_export_post': new Set<string>([
-  ]),
   'salarii_evolution_salarii_evolution_get': new Set<string>([
+  ]),
+  'create_salary_export_operation_salarii_exports_operations_post': new Set<string>([
   ]),
   'salarii_overview_salarii_overview_get': new Set<string>([
   ]),
@@ -5903,9 +5938,13 @@ export const RETAIL_DATETIME_PATHS: { readonly [Id in RetailOperationId]: Readon
   ]),
   'agent_history_salarii_agents__person_id__history_get': new Set<string>([
   ]),
-  'audit_salary_export_salarii_audit_export_post': new Set<string>([
-  ]),
   'salarii_evolution_salarii_evolution_get': new Set<string>([
+  ]),
+  'create_salary_export_operation_salarii_exports_operations_post': new Set<string>([
+    'created_at',
+    'expires_at',
+    'finished_at',
+    'started_at',
   ]),
   'salarii_overview_salarii_overview_get': new Set<string>([
   ]),
@@ -6019,8 +6058,8 @@ export const RETAIL_OPERATION_ROUTES = {
   'agent_history_by_retail_code_salarii_agents_history_by_retail_code_get': { method: 'get', path: '/salarii/agents/history-by-retail-code', responseType: 'json' },
   'agents_summary_salarii_agents_summary_get': { method: 'get', path: '/salarii/agents/summary', responseType: 'json' },
   'agent_history_salarii_agents__person_id__history_get': { method: 'get', path: '/salarii/agents/{person_id}/history', responseType: 'json' },
-  'audit_salary_export_salarii_audit_export_post': { method: 'post', path: '/salarii/audit/export', responseType: 'json' },
   'salarii_evolution_salarii_evolution_get': { method: 'get', path: '/salarii/evolution', responseType: 'json' },
+  'create_salary_export_operation_salarii_exports_operations_post': { method: 'post', path: '/salarii/exports/operations', responseType: 'json' },
   'salarii_overview_salarii_overview_get': { method: 'get', path: '/salarii/overview', responseType: 'json' },
   'list_records_salarii_records_get': { method: 'get', path: '/salarii/records', responseType: 'json' },
   'salarii_stores_salarii_stores_get': { method: 'get', path: '/salarii/stores', responseType: 'json' },

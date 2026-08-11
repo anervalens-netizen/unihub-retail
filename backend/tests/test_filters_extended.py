@@ -50,7 +50,7 @@ def test_base_filter_values_no_filters():
 
 def test_base_filter_values_all_filters():
     params, positions = base_filter_values("2026-05", "F1", "R1", "A1", "SITE01", "Agent1")
-    assert params == ["2026-05", "SITE01", "Agent1"]
+    assert params == ["2026-05", ["SITE01"], ["Agent1"]]
     assert "firma" not in positions
     assert "regional" not in positions
     assert "asm" not in positions
@@ -61,7 +61,7 @@ def test_base_filter_values_all_filters():
 
 def test_base_filter_values_partial():
     params, positions = base_filter_values("2026-05", "F1", "Toate", None, "SITE01", None)
-    assert params == ["2026-05", "SITE01"]
+    assert params == ["2026-05", ["SITE01"]]
     assert "regional" not in positions
     assert "firma" not in positions
     assert positions["site_code"] == 2
@@ -76,7 +76,7 @@ def test_build_scoped_params_preserves_initial_offset_and_site_dominance():
         site_code="SITE01",
         agent="Agent1",
     )
-    assert params == ["2026-05", ["SKU1", "SKU2"], "SITE01", "Agent1"]
+    assert params == ["2026-05", ["SKU1", "SKU2"], ["SITE01"], ["Agent1"]]
     assert positions == {"site_code": 3, "agent": 4}
 
 
@@ -101,8 +101,8 @@ def test_scoped_clauses_with_filters():
     assert "s.locatie NOT ILIKE 'TR %'" in result
     assert not any("s.firma" in clause for clause in result)
     assert not any("s.regional" in clause for clause in result)
-    assert "st.site_code = ANY(string_to_array($4::TEXT, ','))" in result
-    assert "st.agent = ANY(string_to_array($5::TEXT, ','))" in result
+    assert "st.site_code = ANY($4::TEXT[])" in result
+    assert "st.agent = ANY($5::TEXT[])" in result
 
 
 def test_scoped_clauses_cartela_filter():
@@ -128,13 +128,13 @@ def test_where_clauses_no_filters():
 def test_where_clauses_with_agent():
     clauses, params = where_clauses("2026-05", None, None, None, None, "Agent1", include_agent=True)
     assert any("agent" in c for c in clauses)
-    assert "Agent1" in params
+    assert ["Agent1"] in params
 
 
 def test_where_clauses_all_filters():
     clauses, params = where_clauses("2026-05", "F1", "R1", "A1", "SITE01", "Agent1", include_agent=True)
     assert len(clauses) == 4
-    assert params == ["2026-05", "SITE01", "Agent1"]
+    assert params == ["2026-05", ["SITE01"], ["Agent1"]]
     assert not any("firma" in clause for clause in clauses)
     assert not any("regional" in clause for clause in clauses)
     assert not any("asm" in clause for clause in clauses)
@@ -150,10 +150,28 @@ def test_transaction_filter_parts_no_filters():
 
 def test_transaction_filter_parts_all_filters():
     clauses, params = transaction_filter_parts("2026-05", "F1", "R1", "A1", "SITE01", "Agent1")
-    assert params == ["2026-05", "SITE01", "Agent1"]
+    assert params == ["2026-05", ["SITE01"], ["Agent1"]]
     assert not any("s.firma" in c for c in clauses)
     assert not any("s.regional" in c for c in clauses)
     assert not any("s.asm" in c for c in clauses)
     assert any("st.site_code" in c for c in clauses)
     assert any("st.agent" in c for c in clauses)
     assert any("is_cartela" in c for c in clauses)
+
+
+def test_repeated_filter_values_preserve_commas_as_data():
+    params, positions = build_scoped_params(
+        ["2026-05"],
+        firma=None,
+        regional=None,
+        asm=None,
+        site_code=["STORE, ONE", "STORE TWO"],
+        agent=["Nume, Prenume", "Alt Agent"],
+    )
+
+    assert params == [
+        "2026-05",
+        ["STORE, ONE", "STORE TWO"],
+        ["Nume, Prenume", "Alt Agent"],
+    ]
+    assert positions == {"site_code": 2, "agent": 3}

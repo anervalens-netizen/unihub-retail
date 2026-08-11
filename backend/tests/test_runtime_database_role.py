@@ -155,6 +155,7 @@ def test_provisioner_declares_only_no_login_authority_contracts() -> None:
         "unihub_sales_import",
         "unihub_finance_import",
         "unihub_operations",
+        "unihub_salary_export",
         "unihub_migrate",
     }
     assert AUTHORITY_CONTRACTS == {
@@ -162,6 +163,7 @@ def test_provisioner_declares_only_no_login_authority_contracts() -> None:
         frozenset({"unihub_sales_import"}),
         frozenset({"unihub_finance_import"}),
         frozenset({"unihub_operations"}),
+        frozenset({"unihub_salary_export"}),
         frozenset({"unihub_migrate"}),
     }
 

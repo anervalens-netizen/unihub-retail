@@ -34,9 +34,11 @@ class ConfigError(RuntimeError):
 
 
 RuntimeRole = Literal["web", "worker", "import"]
-WorkerRole = Literal["operations", "imports", "grile", "exports"]
+WorkerRole = Literal[
+    "operations", "imports", "grile", "exports", "salary_exports"
+]
 DatabaseAuthority = Literal[
-    "web", "operations", "sales_import", "finance_import", "migrate"
+    "web", "operations", "salary_export", "sales_import", "finance_import", "migrate"
 ]
 ARQ_CONNECTION_BUDGET_SECONDS = 3
 WEB_MIN_DB_POOL_MAX_SIZE = 2
@@ -58,6 +60,7 @@ _ALL_DATABASE_AUTHORITIES = frozenset(
         "unihub_web_read",
         "unihub_business_write",
         "unihub_operations",
+        "unihub_salary_export",
         "unihub_sales_import",
         "unihub_finance_import",
         "unihub_migrate",
@@ -77,6 +80,13 @@ DATABASE_AUTHORITY_CONTRACTS: dict[DatabaseAuthority, DatabaseAuthorityContract]
         principal="unihub_operations_worker",
         required_memberships=("unihub_operations",),
         forbidden_memberships=tuple(sorted(_ALL_DATABASE_AUTHORITIES - {"unihub_operations"})),
+    ),
+    "salary_export": DatabaseAuthorityContract(
+        principal="unihub_salary_export_worker",
+        required_memberships=("unihub_salary_export",),
+        forbidden_memberships=tuple(
+            sorted(_ALL_DATABASE_AUTHORITIES - {"unihub_salary_export"})
+        ),
     ),
     "sales_import": DatabaseAuthorityContract(
         principal="unihub_import_worker",
@@ -109,12 +119,17 @@ def configured_database_authority() -> DatabaseAuthority | None:
     if value not in DATABASE_AUTHORITY_CONTRACTS:
         raise ConfigError(
             f"{DB_PROCESS_AUTHORITY_ENV} trebuie să fie web, operations, sales_import, "
-            "finance_import sau migrate"
+            "finance_import, salary_export sau migrate"
         )
     return cast(DatabaseAuthority, value)
 
 
-def expected_database_authority(role: RuntimeRole) -> DatabaseAuthority:
+def expected_database_authority(
+    role: RuntimeRole,
+    worker_role: WorkerRole | None = None,
+) -> DatabaseAuthority:
+    if role == "worker" and worker_role == "salary_exports":
+        return "salary_export"
     return cast(
         DatabaseAuthority,
         {"web": "web", "worker": "operations", "import": "sales_import"}[role],
@@ -195,13 +210,34 @@ def _configured_worker_role(
     configured = raw.strip().lower() if raw is not None else (
         "imports" if role == "import" else "operations"
     )
-    allowed = {"operations", "imports", "grile", "exports"}
+    allowed = {"operations", "imports", "grile", "exports", "salary_exports"}
     if configured not in allowed:
         errors.append(
-            "RETAIL_WORKER_ROLE trebuie să fie operations, imports, grile sau exports"
+            "RETAIL_WORKER_ROLE trebuie să fie operations, imports, grile, exports sau salary_exports"
         )
         return None
     return cast(WorkerRole, configured)
+
+
+def _validated_database_authority(
+    process_role: RuntimeRole,
+    worker_role: WorkerRole | None,
+    errors: list[str],
+) -> DatabaseAuthority | None:
+    try:
+        authority = configured_database_authority()
+    except ConfigError as exc:
+        errors.append(str(exc))
+        return None
+    if authority is None and _is_production():
+        errors.append(f"{DB_PROCESS_AUTHORITY_ENV} este obligatoriu în producție")
+    elif authority is not None and authority != expected_database_authority(
+        process_role, worker_role
+    ):
+        errors.append(
+            f"{DB_PROCESS_AUTHORITY_ENV}={authority} nu corespunde procesului {process_role}"
+        )
+    return authority
 
 
 def load_runtime_config(role: RuntimeRole | None = None) -> RuntimeConfig:
@@ -223,23 +259,9 @@ def load_runtime_config(role: RuntimeRole | None = None) -> RuntimeConfig:
     if process_role == "worker" and worker_role == "imports":
         errors.append("role=worker nu poate folosi RETAIL_WORKER_ROLE=imports")
 
-    database_authority: DatabaseAuthority | None = None
-    try:
-        database_authority = configured_database_authority()
-    except ConfigError as exc:
-        errors.append(str(exc))
-    else:
-        if database_authority is None and _is_production():
-            errors.append(
-                f"{DB_PROCESS_AUTHORITY_ENV} este obligatoriu în producție"
-            )
-        if (
-            database_authority is not None
-            and database_authority != expected_database_authority(process_role)
-        ):
-            errors.append(
-                f"{DB_PROCESS_AUTHORITY_ENV}={database_authority} nu corespunde procesului {process_role}"
-            )
+    database_authority = _validated_database_authority(
+        process_role, worker_role, errors
+    )
 
     db_pool_min_size = _parse_runtime_int("DB_POOL_MIN_SIZE", 3, errors, maximum=100)
     db_pool_max_size = _parse_runtime_int("DB_POOL_MAX_SIZE", 10, errors, maximum=100)

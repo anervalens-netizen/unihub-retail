@@ -1,10 +1,13 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 from fastapi import HTTPException
 from fastapi.routing import APIRoute, RouteContext, iter_route_contexts
+from pydantic import ValidationError
 from starlette.requests import Request
 
 from auth import AuthClaims
@@ -19,7 +22,8 @@ from permissions import (
     require_report_export_access,
     require_salary_access,
 )
-from routers.salarii import SalaryExportAudit, audit_salary_export
+from routers.salarii import create_salary_export_operation
+from schemas.salarii import SalaryExportRequest
 
 
 def claims(groups: list[str]) -> AuthClaims:
@@ -268,19 +272,38 @@ def test_target_row_write_uses_target_owner_dependency() -> None:
 
 
 @pytest.mark.asyncio
-async def test_salary_export_audit_logs_metadata_only(caplog: pytest.LogCaptureFixture) -> None:
+async def test_salary_export_is_reserved_server_side_with_authenticated_actor() -> None:
     export_request = request()
     user_claims = claims(["unihub-manager"])
     require_salary_access(export_request, user_claims)
+    operation = object()
+    service = SimpleNamespace(reserve_salary=AsyncMock(return_value=operation))
 
-    with caplog.at_level("INFO", logger="routers.salarii"):
-        response = await audit_salary_export(
-            SalaryExportAudit(export_kind="agents_page", row_count=17),
-            export_request,
+    response = await create_salary_export_operation(
+        SalaryExportRequest(export_kind="agents", site_code=["B, Nord", "B, Nord"]),
+        export_request,
+        None,
+        cast(Any, service),
+    )
+
+    assert response is operation
+    service.reserve_salary.assert_awaited_once_with(
+        {
+            "export_kind": "agents",
+            "company_name": None,
+            "site_code": ["B, Nord"],
+            "regional": None,
+            "asm": None,
+            "year": None,
+            "month": None,
+            "q": None,
+        },
+        requested_by_sub="subject-1",
+    )
+
+
+def test_salary_export_rejects_browser_declared_row_count() -> None:
+    with pytest.raises(ValidationError):
+        SalaryExportRequest.model_validate(
+            {"export_kind": "agents", "row_count": 17}
         )
-
-    assert response.status_code == 204
-    assert "subject=subject-1" in caplog.text
-    assert "kind=agents_page" in caplog.text
-    assert "rows=17" in caplog.text
-    assert user_claims.email not in caplog.text

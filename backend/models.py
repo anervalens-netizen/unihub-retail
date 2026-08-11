@@ -269,7 +269,13 @@ class ImportJobStatus(StrictApiModel):
 
 class ExportOperationResponse(StrictApiModel):
     id: int = Field(gt=0)
-    kind: Literal["daily_metrics", "daily_comparison"]
+    kind: Literal[
+        "daily_metrics",
+        "daily_comparison",
+        "salary_store_summary",
+        "salary_monthly_trend",
+        "salary_agents",
+    ]
     status: Literal["queued", "running", "completed", "failed", "cancelled", "expired"]
     job_id: str
     filename: str | None = None
@@ -278,6 +284,7 @@ class ExportOperationResponse(StrictApiModel):
     peak_rss_bytes: int | None = Field(default=None, ge=0)
     build_seconds: float | None = Field(default=None, ge=0)
     cell_count: int | None = Field(default=None, ge=0)
+    row_count: int | None = Field(default=None, ge=0)
     error_code: str | None = None
     created_at: datetime
     started_at: datetime | None = None

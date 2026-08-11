@@ -44,8 +44,8 @@ async def get_campaign_overview(
     firma: str | None = None,
     regional: str | None = None,
     asm: str | None = None,
-    site_code: str | None = None,
-    agent: str | None = None,
+    site_code: list[str] | None = Query(None),
+    agent: list[str] | None = Query(None),
     svc: CampaignsService = Depends(get_campaigns_service),
 ) -> CampaignSnapshot:
     return await svc.get_campaign_overview(month, firma, regional, asm, site_code, agent)
@@ -57,8 +57,8 @@ async def get_focus_history(
     firma: str | None = None,
     regional: str | None = None,
     asm: str | None = None,
-    site_code: str | None = None,
-    agent: str | None = None,
+    site_code: list[str] | None = Query(None),
+    agent: list[str] | None = Query(None),
     svc: CampaignsService = Depends(get_campaigns_service),
 ) -> FocusHistoryResponse:
     return await svc.get_focus_history(month, months_back, firma, regional, asm, site_code, agent)
@@ -70,8 +70,8 @@ async def get_promotions_incentives(
     firma: str | None = None,
     regional: str | None = None,
     asm: str | None = None,
-    site_code: str | None = None,
-    agent: str | None = None,
+    site_code: list[str] | None = Query(None),
+    agent: list[str] | None = Query(None),
     promotion_key: str | None = None,
     view: Literal["all", "promo", "incentive"] = "all",
     current_scope: bool = Query(False),

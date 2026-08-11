@@ -20,8 +20,8 @@ describe('defaultAppFilters', () => {
     const f = defaultAppFilters();
     expect(f.firma).toBe(ALL_FIRMS);
     expect(f.rm).toBe(ALL_SCOPE);
-    expect(f.magazin).toBe(ALL_STORES);
-    expect(f.agent).toBe(ALL_SCOPE);
+    expect(f.magazin).toEqual([]);
+    expect(f.agent).toEqual([]);
   });
 
   it('returns a new object each call', () => {
@@ -36,13 +36,41 @@ describe('normalizeAppFilters', () => {
       firma: 'Mobiup',
       rm: 'Maria',
       asm: 'Mihai',
-      magazin: 'STORE01',
-      agent: 'Agent1',
+      magazin: ['STORE01'],
+      agent: ['Agent1'],
     })).toEqual({
       firma: 'Mobiup',
       rm: 'Maria',
-      magazin: 'STORE01',
-      agent: 'Agent1',
+      magazin: ['STORE01'],
+      agent: ['Agent1'],
+    });
+  });
+
+  it('migrates legacy CSV session state once', () => {
+    expect(normalizeAppFilters({ magazin: 'S1,S2', agent: 'A1,A2' })).toMatchObject({
+      magazin: ['S1', 'S2'],
+      agent: ['A1', 'A2'],
+    });
+  });
+
+  it('canonicalizes arrays without splitting values that contain commas', () => {
+    expect(normalizeAppFilters({
+      magazin: [' B, Nord ', 'B, Nord', '', 7],
+      agent: [' Popescu, Ana ', 'Popescu, Ana'],
+    })).toMatchObject({
+      magazin: ['B, Nord'],
+      agent: ['Popescu, Ana'],
+    });
+  });
+
+  it('maps legacy all sentinels and invalid selections to empty arrays', () => {
+    expect(normalizeAppFilters({ magazin: ALL_STORES, agent: ALL_SCOPE })).toMatchObject({
+      magazin: [],
+      agent: [],
+    });
+    expect(normalizeAppFilters({ magazin: 7, agent: null })).toMatchObject({
+      magazin: [],
+      agent: [],
     });
   });
 });

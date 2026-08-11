@@ -22,8 +22,8 @@ test.describe('Insight contextual deep links', () => {
       .toEqual({
         firma: 'Firma 1',
         rm: 'Regional 1',
-        magazin: 'S1',
-        agent: 'Agent 1',
+        magazin: ['S1'],
+        agent: ['Agent 1'],
       });
   });
 

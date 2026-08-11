@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import time
 from dataclasses import dataclass
 from typing import Callable
@@ -15,10 +16,23 @@ from prometheus_client import Counter, Gauge
 from oidc_settings import OIDCVerifierSettings, load_oidc_verifier_settings
 
 _MAX_BODY = 256 * 1024
+_READINESS_REFRESH_TIMEOUT_SECONDS = 0.5
 _refresh = Counter("jwks_refresh_total", "JWKS refreshes.", ("outcome",))
 _cache_use = Counter("jwks_cache_use_total", "JWKS cache use.", ("state",))
 _unknown = Counter("jwks_unknown_kid_total", "Unknown JWKS key IDs.")
 _age = Gauge("jwks_cache_age_seconds", "JWKS cache age.")
+_readiness = Gauge(
+    "jwks_readiness_state",
+    "Current JWKS readiness state as a one-hot gauge.",
+    ("state",),
+)
+_READINESS_STATES = ("disabled", "absent", "fresh", "stale", "failed")
+logger = logging.getLogger(__name__)
+
+
+def _observe_readiness(state: str) -> None:
+    for candidate in _READINESS_STATES:
+        _readiness.labels(state=candidate).set(candidate == state)
 
 
 def _invalid(detail: str = "Invalid authentication token") -> HTTPException:
@@ -57,6 +71,65 @@ class OIDCVerifier:
             and now - self.last_refresh_completed_at < self.settings.refresh_failure_retry_seconds
         )
 
+    def _record_refresh_failure(self) -> None:
+        self.refresh_attempt_serial += 1
+        self.last_refresh_outcome = "failure"
+        self.last_refresh_completed_at = self.clock()
+        _refresh.labels("failure").inc()
+
+    async def ensure_ready(self, *, refresh_timeout_seconds: float | None = None) -> None:
+        """Prewarm or refresh JWKS while accepting a bounded stale cache."""
+        now = self.clock()
+        cache = self.cache
+        if cache is not None and now - cache.fetched_at < self.settings.cache_ttl_seconds:
+            _age.set(max(now - cache.fetched_at, 0))
+            _observe_readiness("fresh")
+            return
+        async with self.lock:
+            now = self.clock()
+            cache = self.cache
+            cache_age = now - cache.fetched_at if cache is not None else None
+            if cache_age is not None and cache_age < self.settings.cache_ttl_seconds:
+                _age.set(max(cache_age, 0))
+                _observe_readiness("fresh")
+                return
+            stale_available = (
+                cache_age is not None and cache_age <= self.settings.max_stale_seconds
+            )
+            if self._failure_retry_active(now):
+                if stale_available:
+                    _age.set(max(cache_age or 0, 0))
+                    _observe_readiness("stale")
+                    return
+                _observe_readiness("failed")
+                raise _unavailable()
+            try:
+                if refresh_timeout_seconds is None:
+                    await self._fetch()
+                else:
+                    async with asyncio.timeout(refresh_timeout_seconds):
+                        await self._fetch()
+            except TimeoutError:
+                self._record_refresh_failure()
+                now = self.clock()
+                cache = self.cache
+                if cache is not None and now - cache.fetched_at <= self.settings.max_stale_seconds:
+                    _age.set(max(now - cache.fetched_at, 0))
+                    _observe_readiness("stale")
+                    return
+                _observe_readiness("failed")
+                raise _unavailable()
+            except HTTPException:
+                now = self.clock()
+                cache = self.cache
+                if cache is not None and now - cache.fetched_at <= self.settings.max_stale_seconds:
+                    _age.set(max(now - cache.fetched_at, 0))
+                    _observe_readiness("stale")
+                    return
+                _observe_readiness("failed")
+                raise
+            _observe_readiness("fresh")
+
     async def _fetch(self) -> JWKSCache:
         try:
             async with self.client.stream("GET", self.settings.jwks_url, timeout=self.settings.fetch_timeout_seconds, follow_redirects=False) as response:
@@ -84,10 +157,7 @@ class OIDCVerifier:
                     raise ValueError("duplicate")
                 keys[kid] = jwt.PyJWK(value)
         except Exception:
-            self.refresh_attempt_serial += 1
-            self.last_refresh_outcome = "failure"
-            self.last_refresh_completed_at = self.clock()
-            _refresh.labels("failure").inc()
+            self._record_refresh_failure()
             raise _unavailable()
         cache = JWKSCache(keys, self.clock(), (self.cache.generation + 1) if self.cache else 1)
         self.cache = cache
@@ -173,7 +243,9 @@ async def init_oidc_runtime() -> None:
     global _verifier, _client
     if _client is not None: return
     settings = load_oidc_verifier_settings()
-    if settings is None: return
+    if settings is None:
+        _observe_readiness("disabled")
+        return
     client = httpx.AsyncClient(follow_redirects=False)
     try:
         verifier = OIDCVerifier(settings, client)
@@ -181,12 +253,31 @@ async def init_oidc_runtime() -> None:
         await client.aclose()
         raise
     _client, _verifier = client, verifier
+    try:
+        await verifier.ensure_ready()
+    except HTTPException:
+        logger.warning("OIDC JWKS prewarm unavailable; readiness remains degraded")
 
 async def close_oidc_runtime() -> None:
     global _verifier, _client
     client, _client, _verifier = _client, None, None
     if client is not None:
         await client.aclose()
+    _observe_readiness("absent")
+
+async def verify_oidc_runtime_ready() -> None:
+    if _verifier is None:
+        if load_oidc_verifier_settings() is None:
+            _observe_readiness("disabled")
+            return
+        _observe_readiness("failed")
+        raise RuntimeError("OIDC verifier unavailable")
+    try:
+        await _verifier.ensure_ready(
+            refresh_timeout_seconds=_READINESS_REFRESH_TIMEOUT_SECONDS
+        )
+    except HTTPException as exc:
+        raise RuntimeError("OIDC JWKS unavailable") from exc
 
 def get_oidc_verifier() -> OIDCVerifier:
     if _verifier is None: raise _unavailable()

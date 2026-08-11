@@ -61,6 +61,7 @@ WORKER_SERVICE="unihub-worker.service"
 IMPORT_WORKER_SERVICE="unihub-import-worker.service"
 GRILE_WORKER_SERVICE="unihub-grile-worker.service"
 EXPORT_WORKER_SERVICE="unihub-export-worker.service"
+SALARY_EXPORT_WORKER_SERVICE="unihub-salary-export-worker.service"
 LEGACY_WORKER_SERVICE="unihub-legacy-worker.service"
 if [[ "$TEST_MODE" == "1" ]]; then
   SYSTEMD_ROOT="$TEST_ROOT/etc/systemd/system"
@@ -127,7 +128,8 @@ runtime_service_names() {
     "$WORKER_SERVICE" \
     "$IMPORT_WORKER_SERVICE" \
     "$GRILE_WORKER_SERVICE" \
-    "$EXPORT_WORKER_SERVICE"
+    "$EXPORT_WORKER_SERVICE" \
+    "$SALARY_EXPORT_WORKER_SERVICE"
 }
 
 managed_runtime_service_names() {
@@ -246,6 +248,20 @@ set_service_ownership() {
   fi
 }
 
+ensure_export_artifact_namespaces() {
+  local artifact_root="$LIVE_ROOT/data/export_artifacts"
+  local salary_root="$artifact_root/salary"
+  [[ ! -L "$LIVE_ROOT/data" && ! -L "$artifact_root" && ! -L "$salary_root" ]] \
+    || die "export artifact namespace must not contain symlinks"
+  if [[ "$TEST_MODE" == "1" ]]; then
+    mkdir -p "$salary_root"
+    chmod 0700 "$artifact_root" "$salary_root"
+  else
+    install -d -m 0700 -o "$SERVICE_USER" -g "$SERVICE_GROUP" \
+      "$artifact_root" "$salary_root"
+  fi
+}
+
 ensure_backup_root() {
   if [[ "$TEST_MODE" == "1" ]]; then
     mkdir -p "$BACKUP_ROOT"
@@ -320,6 +336,7 @@ required = {
     "ops/systemd/unihub-import-worker.service",
     "ops/systemd/unihub-grile-worker.service",
     "ops/systemd/unihub-export-worker.service",
+    "ops/systemd/unihub-salary-export-worker.service",
     "ops/systemd/unihub-legacy-worker.service",
     "ops/systemd/unihub-retail-migrate.service",
     "ops/observability/retail-process-scrape.yml",
@@ -691,6 +708,7 @@ prepare_runtime_release() {
     "ops/systemd/unihub-import-worker.service"
     "ops/systemd/unihub-grile-worker.service"
     "ops/systemd/unihub-export-worker.service"
+    "ops/systemd/unihub-salary-export-worker.service"
     "ops/systemd/unihub-legacy-worker.service"
     "ops/systemd/unihub-retail-migrate.service"
   )
@@ -700,7 +718,8 @@ prepare_runtime_release() {
     install -m 0644 -- "$artifact_tree/$unit_source" "$stage_root/systemd/$(basename "$unit_source")"
   done
   local worker_unit
-  for worker_unit in unihub-worker.service unihub-import-worker.service unihub-grile-worker.service unihub-export-worker.service; do
+  for worker_unit in unihub-worker.service unihub-import-worker.service unihub-grile-worker.service \
+    unihub-export-worker.service unihub-salary-export-worker.service; do
     grep -Fq 'EnvironmentFile=/opt/Mobiup/ops/prometheus/unihub-retail-network.env' \
       "$stage_root/systemd/$worker_unit" \
       || die "worker unit is missing the Prometheus network environment"
@@ -718,6 +737,7 @@ prepare_runtime_release() {
       "$stage_root/systemd/unihub-import-worker.service" \
       "$stage_root/systemd/unihub-grile-worker.service" \
       "$stage_root/systemd/unihub-export-worker.service" \
+      "$stage_root/systemd/unihub-salary-export-worker.service" \
       "$stage_root/systemd/unihub-legacy-worker.service" \
       "$stage_root/systemd/unihub-retail-migrate.service"
   fi
@@ -737,8 +757,8 @@ import sys
 
 source = Path(sys.argv[1]).read_text(encoding="utf-8")
 token = "__PROMETHEUS_DOCKER_GATEWAY__"
-if source.count(token) != 5:
-    raise SystemExit("Retail scrape template must contain exactly five gateway placeholders")
+if source.count(token) != 6:
+    raise SystemExit("Retail scrape template must contain exactly six gateway placeholders")
 rendered = source.replace(token, sys.argv[3])
 if token in rendered or "0.0.0.0" in rendered or "127.0.0.1" in rendered:
     raise SystemExit("Retail scrape fragment contains a forbidden target")
@@ -765,6 +785,7 @@ runtime_asset_destinations() {
     "$SYSTEMD_ROOT/unihub-import-worker.service" \
     "$SYSTEMD_ROOT/unihub-grile-worker.service" \
     "$SYSTEMD_ROOT/unihub-export-worker.service" \
+    "$SYSTEMD_ROOT/unihub-salary-export-worker.service" \
     "$SYSTEMD_ROOT/unihub-legacy-worker.service" \
     "$SYSTEMD_ROOT/unihub-retail-migrate.service" \
     "$PROMETHEUS_NETWORK_ENV" \
@@ -855,6 +876,7 @@ install_runtime_assets() {
   atomic_symlink "$release_root/systemd/unihub-import-worker.service" "$SYSTEMD_ROOT/unihub-import-worker.service"
   atomic_symlink "$release_root/systemd/unihub-grile-worker.service" "$SYSTEMD_ROOT/unihub-grile-worker.service"
   atomic_symlink "$release_root/systemd/unihub-export-worker.service" "$SYSTEMD_ROOT/unihub-export-worker.service"
+  atomic_symlink "$release_root/systemd/unihub-salary-export-worker.service" "$SYSTEMD_ROOT/unihub-salary-export-worker.service"
   atomic_symlink "$release_root/systemd/unihub-legacy-worker.service" "$SYSTEMD_ROOT/unihub-legacy-worker.service"
   atomic_symlink "$release_root/systemd/unihub-retail-migrate.service" "$SYSTEMD_ROOT/unihub-retail-migrate.service"
   local network_env_tmp="${PROMETHEUS_NETWORK_ENV}.new.$$"
@@ -962,7 +984,8 @@ healthy = {
 }
 if not required <= healthy:
     raise SystemExit(1)
-' unihub-retail-web unihub-retail-operations unihub-retail-imports unihub-retail-grile unihub-retail-exports <<<"$payload"
+' unihub-retail-web unihub-retail-operations unihub-retail-imports unihub-retail-grile \
+    unihub-retail-exports unihub-retail-salary-exports <<<"$payload"
     then
       return 0
     fi
@@ -1017,6 +1040,7 @@ verify_active_runtime_assets() {
     unihub-import-worker.service
     unihub-grile-worker.service
     unihub-export-worker.service
+    unihub-salary-export-worker.service
     unihub-legacy-worker.service
     unihub-retail-migrate.service
   )
@@ -1332,6 +1356,7 @@ recover_forward_release() {
   wait_for_planned_deployment_inhibition \
     || die "planned deployment inhibition did not become active"
   stop_runtime
+  ensure_export_artifact_namespaces
   install_runtime_assets "$stage_root" "$expected_sha"
   if ! diff -qr -- "$LIVE_ROOT/dist" "$next_dist" >/dev/null; then
     failed_dist="$backup_dir/dist.recovery.failed.$(date -u +%Y%m%dT%H%M%SZ)"
@@ -1679,6 +1704,7 @@ deploy_release() {
   wait_for_planned_deployment_inhibition \
     || die "planned deployment inhibition did not become active"
   stop_runtime
+  ensure_export_artifact_namespaces
   install_runtime_assets "$stage_root" "$expected_sha"
   switch_dist "$next_dist" "$backup_dir"
   git_service merge --ff-only "$expected_sha"

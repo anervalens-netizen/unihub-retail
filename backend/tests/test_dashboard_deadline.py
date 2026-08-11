@@ -146,13 +146,13 @@ async def test_dashboard_boundary_canonicalizes_site_codes_before_service_call()
 
     await get_summary(
         month="2026-05",
-        site_code=" def, ABC,def ",
+        site_code=[" def, ABC ", "def, ABC", "S2"],
         deadline=RequestDeadline(5),
         svc=service,
     )
 
     call = service.get_summary.await_args
-    assert call.args[4] == "def,ABC"
+    assert call.args[4] == ["def, ABC", "S2"]
     assert isinstance(call.kwargs["deadline"], RequestDeadline)
 
 
@@ -164,12 +164,14 @@ async def test_performance_detail_store_key_uses_the_same_canonical_boundary() -
     await get_performance_detail(
         month="2026-05",
         level="store",
-        key=" S1,S1, S2 ",
+        key=" B, Nord ",
+        site_code=None,
+        agent=None,
         deadline=RequestDeadline(5),
         svc=service,
     )
 
-    assert service.get_performance_detail.await_args.args[2] == "S1,S2"
+    assert service.get_performance_detail.await_args.args[2] == "B, Nord"
 
 
 @pytest.mark.asyncio
@@ -178,15 +180,21 @@ async def test_dashboard_boundary_maps_typed_deadline_expiry_to_504() -> None:
     service.get_summary = AsyncMock(side_effect=RequestDeadlineExceeded())
 
     with pytest.raises(HTTPException) as exc:
-        await get_summary(month="2026-05", deadline=RequestDeadline(5), svc=service)
+        await get_summary(
+            month="2026-05",
+            site_code=None,
+            agent=None,
+            deadline=RequestDeadline(5),
+            svc=service,
+        )
 
     assert exc.value.status_code == 504
 
 
 def test_dashboard_batch_boundary_canonicalizes_store_selection_once() -> None:
-    query = DashboardAllQuery(month="2026-05", site_code=" z9, A1,z9 ")
+    query = DashboardAllQuery(month="2026-05", site_code=[" z9 ", "A1", "z9"])
 
-    assert query.site_code == "z9,A1"
+    assert query.site_code == ["z9", "A1"]
 
 
 @pytest.mark.asyncio
@@ -195,21 +203,22 @@ async def test_both_dashboard_batch_routes_receive_the_same_canonical_site_scope
     service.get_dashboard_all_batch = AsyncMock(return_value=MagicMock())
     service.get_dashboard_history_details_batch = AsyncMock(return_value=MagicMock())
     request = DashboardAllBatchRequest(
-        queries=[DashboardAllQuery(month="2026-05", site_code=" S1,S1, S2 ")]
+        queries=[DashboardAllQuery(month="2026-05", site_code=[" S1", "S1", "S2 "])]
     )
     deadline = RequestDeadline(5)
 
     await get_dashboard_all_batch(request, deadline=deadline, svc=service)
     await get_dashboard_history_details_batch(request, deadline=deadline, svc=service)
 
-    assert service.get_dashboard_all_batch.await_args.args[0][0].site_code == "S1,S2"
-    assert service.get_dashboard_history_details_batch.await_args.args[0][0].site_code == "S1,S2"
+    assert service.get_dashboard_all_batch.await_args.args[0][0].site_code == ["S1", "S2"]
+    assert service.get_dashboard_history_details_batch.await_args.args[0][0].site_code == ["S1", "S2"]
 
 
 def test_dashboard_site_scope_keeps_case_order_and_drops_sentinels() -> None:
-    assert canonical_dashboard_site_codes(" S1,S1, S2 ") == "S1,S2"
-    assert canonical_dashboard_site_codes("s1,S1") == "s1,S1"
-    assert canonical_dashboard_site_codes(" Toate, , Toti ") is None
+    assert canonical_dashboard_site_codes([" S1", "S1", "S2 "]) == ["S1", "S2"]
+    assert canonical_dashboard_site_codes(["s1", "S1"]) == ["s1", "S1"]
+    assert canonical_dashboard_site_codes([" Toate", "", "Toti "]) is None
+    assert canonical_dashboard_site_codes(" S1,S2 ") == ["S1,S2"]
 
 
 def test_request_deadline_reads_the_validated_web_runtime_value() -> None:

@@ -200,7 +200,7 @@ class TestGetSummary:
         result = await service.get_summary("2026-05", "FirmaA", "R1", "A1", "SITE01", "Agent1")
         assert result.total_sales == Decimal("5000")
         call = mock_repo.fetch_summary.call_args
-        assert call[0][1] == ["2026-05", "SITE01", "Agent1"]
+        assert call[0][1] == ["2026-05", ["SITE01"], ["Agent1"]]
 
     def test_agent_target_reuses_business_forecast(self, service):
         summary = DashboardSummary(**_make_summary_row(
@@ -430,7 +430,7 @@ class TestGetMonthlyHistory:
         result = await service.get_monthly_history("2026-05", 12, "FirmaA", "R1", None, "SITE01", None)
         assert result.history == []
         call = mock_repo.fetch_monthly_history.call_args
-        assert call[0][1] == ["2026-05", 12, "SITE01"]
+        assert call[0][1] == ["2026-05", 12, ["SITE01"]]
 
     @pytest.mark.asyncio
     async def test_current_scope_regional_filter_matches_current_manager(self, service, mock_repo):
@@ -440,7 +440,7 @@ class TestGetMonthlyHistory:
         )
         assert result.history == []
         clauses = mock_repo.fetch_monthly_history.call_args[0][0]
-        assert "(s.regional = ANY(string_to_array($3::TEXT, ',')) OR s.asm = ANY(string_to_array($3::TEXT, ',')))" in clauses
+        assert "(s.regional = ANY($3::TEXT[]) OR s.asm = ANY($3::TEXT[]))" in clauses
         assert "s.regional = ANY(string_to_array($3::TEXT, ','))" not in [
             clause for clause in clauses if not clause.startswith("(")
         ]
@@ -453,8 +453,8 @@ class TestGetMonthlyHistory:
         )
         assert result.history == []
         clauses = mock_repo.fetch_monthly_history.call_args[0][0]
-        assert "s.regional = ANY(string_to_array($3::TEXT, ','))" in clauses
-        assert "s.asm = ANY(string_to_array($4::TEXT, ','))" in clauses
+        assert "s.regional = ANY($3::TEXT[])" in clauses
+        assert "s.asm = ANY($4::TEXT[])" in clauses
         assert not any(clause.startswith("(s.regional") for clause in clauses)
 
 
@@ -515,6 +515,21 @@ class TestGetHistoryByYear:
         result = await service.get_history_by_year(2025, "FirmaA", "R1", None, None, None)
         assert len(result.points) == 1
         assert result.points[0].label == "Mar"
+
+    @pytest.mark.asyncio
+    async def test_year_store_scope_dominates_parent_hierarchy(self, service, mock_repo):
+        await service.get_history_by_year(
+            2025,
+            "FirmaA",
+            "R1",
+            "A1",
+            ["B, Nord"],
+            None,
+        )
+
+        clauses, params = mock_repo.fetch_year_history_monthly.call_args.args[:2]
+        assert clauses == ["agg.site_code = ANY($3::TEXT[])"]
+        assert params == ["2025-01", "2025-12", ["B, Nord"]]
 
 
 class TestGetSpecialCards:

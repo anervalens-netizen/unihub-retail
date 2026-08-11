@@ -70,31 +70,100 @@ def test_worker_metrics_rejects_wildcard_loopback_and_wrong_gateway(
             start_worker_metrics("operations")
 
 
-def test_systemd_uses_multiprocess_web_metrics_and_detected_gateway_env() -> None:
-    root = Path(__file__).resolve().parents[2]
-    web = (root / "ops/systemd/unihub-backend.service").read_text(encoding="utf-8")
-    operations = (root / "unihub-worker.service").read_text(encoding="utf-8")
-    imports = (root / "ops/systemd/unihub-import-worker.service").read_text(encoding="utf-8")
-    grile = (root / "ops/systemd/unihub-grile-worker.service").read_text(encoding="utf-8")
-    exports = (root / "ops/systemd/unihub-export-worker.service").read_text(encoding="utf-8")
+def _read_retail_units(root: Path) -> dict[str, str]:
+    paths = {
+        "web": "ops/systemd/unihub-backend.service",
+        "operations": "unihub-worker.service",
+        "imports": "ops/systemd/unihub-import-worker.service",
+        "grile": "ops/systemd/unihub-grile-worker.service",
+        "exports": "ops/systemd/unihub-export-worker.service",
+        "salary_exports": "ops/systemd/unihub-salary-export-worker.service",
+        "migrations": "ops/systemd/unihub-retail-migrate.service",
+    }
+    return {
+        name: (root / path).read_text(encoding="utf-8")
+        for name, path in paths.items()
+    }
 
+
+def _assert_metrics_topology(units: dict[str, str]) -> None:
+    web, operations, imports = units["web"], units["operations"], units["imports"]
     assert "--host 0.0.0.0" in web
     assert "PROMETHEUS_MULTIPROC_DIR=/run/unihub-retail-prometheus" in web
-    assert "EnvironmentFile=/opt/Mobiup/ops/prometheus/unihub-retail-network.env" in web
-    assert "EnvironmentFile=/opt/Mobiup/ops/prometheus/unihub-retail-network.env" in operations
-    assert "WORKER_METRICS_HOST=127.0.0.1" not in operations
-    assert "WORKER_METRICS_HOST=0.0.0.0" not in operations
-    assert "WORKER_METRICS_PORT=9901" in operations
-    assert "EnvironmentFile=/opt/Mobiup/ops/prometheus/unihub-retail-network.env" in imports
-    assert "WORKER_METRICS_HOST=127.0.0.1" not in imports
-    assert "WORKER_METRICS_HOST=0.0.0.0" not in imports
-    assert "WORKER_METRICS_PORT=9902" in imports
-    assert "WORKER_METRICS_PORT=9903" in grile
-    assert "WORKER_METRICS_PORT=9904" in exports
-    for unit in (grile, exports):
+    for unit in (web, operations, imports, units["grile"], units["exports"], units["salary_exports"]):
         assert "EnvironmentFile=/opt/Mobiup/ops/prometheus/unihub-retail-network.env" in unit
+    for unit in (operations, imports, units["grile"], units["exports"], units["salary_exports"]):
         assert "WORKER_METRICS_HOST=127.0.0.1" not in unit
         assert "WORKER_METRICS_HOST=0.0.0.0" not in unit
+    assert "WORKER_METRICS_PORT=9901" in operations
+    assert "WORKER_METRICS_PORT=9902" in imports
+    assert "WORKER_METRICS_PORT=9903" in units["grile"]
+    assert "WORKER_METRICS_PORT=9904" in units["exports"]
+    assert "WORKER_METRICS_PORT=9905" in units["salary_exports"]
+
+
+def _assert_exact_write_paths(units: dict[str, str]) -> None:
+    web = units["web"]
+    operations, imports = units["operations"], units["imports"]
+    grile, exports = units["grile"], units["exports"]
+    salary_exports, migrations = units["salary_exports"], units["migrations"]
+    assert "ReadWritePaths=/opt/Mobiup/unihub-retail/data/import_spool" in web
+    assert "ReadWritePaths=" not in operations
+    assert "ReadWritePaths=" not in migrations
+    assert "ReadWritePaths=/opt/Mobiup/unihub-retail/data/import_spool" in imports
+    assert "ReadWritePaths=/opt/Mobiup/unihub-retail/data/promo_generations" in imports
+    assert "ReadWritePaths=/opt/Mobiup/unihub-retail/backend/outputs/grile" in grile
+    assert "ReadWritePaths=/opt/Mobiup/unihub-retail/data/export_artifacts" in exports
+    assert (
+        "ReadWritePaths=/opt/Mobiup/unihub-retail/data/export_artifacts/salary"
+        in salary_exports
+    )
+    salary_namespace_mask = (
+        "InaccessiblePaths=-/opt/Mobiup/unihub-retail/data/export_artifacts/salary"
+    )
+    assert all(
+        salary_namespace_mask in unit
+        for unit in (operations, imports, grile, exports, migrations)
+    )
+    assert salary_namespace_mask not in web
+    assert salary_namespace_mask not in salary_exports
+
+
+def _assert_no_broad_write_paths(units: dict[str, str]) -> None:
+    approved_write_paths = {
+        "/opt/Mobiup/unihub-retail/data/import_spool",
+        "/opt/Mobiup/unihub-retail/data/promo_generations",
+        "/opt/Mobiup/unihub-retail/backend/outputs/grile",
+        "/opt/Mobiup/unihub-retail/data/export_artifacts",
+        "/opt/Mobiup/unihub-retail/data/export_artifacts/salary",
+    }
+    for unit in units.values():
+        write_paths = {
+            line.removeprefix("ReadWritePaths=")
+            for line in unit.splitlines()
+            if line.startswith("ReadWritePaths=")
+        }
+        assert write_paths <= approved_write_paths
+        assert not any(
+            path.endswith(("/backend", "/src", "/ops", "/config"))
+            or path == "/opt/Mobiup/unihub-retail"
+            for path in write_paths
+        )
+
+
+def _assert_systemd_write_boundaries(units: dict[str, str]) -> None:
+    all_units = tuple(units.values())
+    assert all("ReadWritePaths=/opt/Mobiup\n" not in unit for unit in all_units)
+    assert all("ProtectSystem=strict" in unit for unit in all_units)
+    assert all("PYTHONDONTWRITEBYTECODE=1" in unit for unit in all_units)
+    _assert_exact_write_paths(units)
+    _assert_no_broad_write_paths(units)
+
+
+def test_systemd_uses_multiprocess_web_metrics_and_detected_gateway_env() -> None:
+    units = _read_retail_units(Path(__file__).resolve().parents[2])
+    _assert_metrics_topology(units)
+    _assert_systemd_write_boundaries(units)
 
 
 def test_runtime_verifier_sets_backend_pythonpath_itself() -> None:

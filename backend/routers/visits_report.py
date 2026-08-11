@@ -26,7 +26,7 @@ async def get_visits_report(
     firma: str | None = None,
     rm: str | None = None,
     asm: str | None = None,
-    magazin: str | None = None,
+    magazin: list[str] | None = Query(None),
     svc: VisitsReportService = Depends(get_visits_service),
 ) -> VisitReportResponse:
     return await svc.get_visits_report(month, firma, rm, asm, magazin)
@@ -38,7 +38,7 @@ async def get_visits_tree(
     firma: str | None = None,
     rm: str | None = None,
     asm: str | None = None,
-    magazin: str | None = None,
+    magazin: list[str] | None = Query(None),
     svc: VisitsReportService = Depends(get_visits_service),
 ) -> VisitTreeResponse:
     return await svc.get_visits_tree(firma, rm, asm, magazin, month)

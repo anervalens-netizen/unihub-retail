@@ -7,6 +7,7 @@ from typing import Literal
 
 from fastapi import HTTPException, status
 
+from domain.filter_scope import FilterInput
 from schemas.dashboard import (
     AgentStats,
     DashboardSummary,
@@ -91,6 +92,19 @@ def score_label(score: int) -> str:
     return "Necesita interventie"
 
 
+def _validated_performance_key(
+    level: Literal["regional", "store", "agent"],
+    key: str | None,
+) -> str:
+    normalized = key.strip() if level != "store" and key is not None else key
+    if not normalized:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cheia entitatii lipseste.",
+        )
+    return normalized
+
+
 async def load_performance_detail(
     service: DashboardServicePort,
     month: str,
@@ -99,22 +113,19 @@ async def load_performance_detail(
     firma: str | None,
     regional: str | None,
     asm: str | None,
-    site_code: str | None,
-    agent: str | None,
+    site_code: FilterInput,
+    agent: FilterInput,
     current_scope: bool = True,
     include_closed_stores: bool = False,
     *,
     deadline: RequestDeadline | None = None,
 ) -> PerformanceDetailResponse:
     del regional, asm, agent
-    if level != "store" and key is not None:
-        key = key.strip()
-    if not key:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cheia entitatii lipseste.")
+    key = _validated_performance_key(level, key)
 
     effective_firma = normalize_filter(firma)
     effective_regional: str | None = None
-    effective_site_code: str | None = None
+    effective_site_code: FilterInput = None
     effective_agent: str | None = None
     title = key
     subtitle: str | None = None

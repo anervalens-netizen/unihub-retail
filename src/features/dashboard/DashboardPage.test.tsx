@@ -72,7 +72,7 @@ const baseData = () => ({
 const props = {
   currentMonth: "2026-08",
   months: ["2026-08", "2026-07"],
-  filters: { firma: "all", rm: "all", magazin: "all", agent: "all" },
+  filters: { firma: "all", rm: "all", magazin: [], agent: [] },
 };
 
 describe("Dashboard owner states", () => {

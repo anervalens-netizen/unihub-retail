@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import resource
 import time
+from hashlib import sha256
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
@@ -215,7 +216,13 @@ class XlsxRenderers:
         )
 
     @staticmethod
-    def _spool_workbook(wb: Workbook, filename: str, *, cells: int = 0) -> XlsxArtifact:
+    def _spool_workbook(
+        wb: Workbook,
+        filename: str,
+        *,
+        cells: int = 0,
+        row_count: int | None = None,
+    ) -> XlsxArtifact:
         stream = SpooledTemporaryFile(max_size=XLSX_SPOOL_MAX_MEMORY_BYTES, mode="w+b")
         started_at = time.perf_counter()
         baseline_peak_rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * 1024
@@ -234,9 +241,14 @@ class XlsxRenderers:
                 EXPORT_REJECTED_TOTAL.labels("output_bytes").inc()
                 raise ExportValidationError("Fisierul XLSX depaseste limita de dimensiune de output.")
             stream.seek(0)
+            digest = sha256()
+            for chunk in iter(lambda: stream.read(256 * 1024), b""):
+                digest.update(chunk)
+            stream.seek(0)
             peak_rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * 1024
             current_rss = _current_rss_bytes()
-            EXPORT_BUILD_SECONDS.observe(time.perf_counter() - started_at)
+            build_seconds = time.perf_counter() - started_at
+            EXPORT_BUILD_SECONDS.observe(build_seconds)
             EXPORT_OUTPUT_BYTES.set(size)
             EXPORT_CELLS.set(cells)
             EXPORT_PEAK_RSS_BYTES.set(peak_rss)
@@ -251,7 +263,16 @@ class XlsxRenderers:
             ):
                 EXPORT_REJECTED_TOTAL.labels("peak_rss_bytes").inc()
                 raise ExportValidationError("Exportul depaseste limita de memorie RSS.")
-            return XlsxArtifact(stream=stream, filename=filename, size=size)
+            return XlsxArtifact(
+                stream=stream,
+                filename=filename,
+                size=size,
+                sha256=digest.hexdigest(),
+                peak_rss_bytes=peak_rss,
+                build_seconds=build_seconds,
+                cell_count=cells,
+                row_count=row_count,
+            )
         except Exception:
             stream.close()
             raise

@@ -38,7 +38,7 @@ def load_mutant(source: Path, old: str, new: str, name: str) -> ModuleType:
 def expect_killed(label: str, probe: Callable[[], None]) -> None:
     try:
         probe()
-    except AssertionError:
+    except Exception:
         print(f"KILLED {label}")
         return
     raise RuntimeError(f"SURVIVED {label}")
@@ -58,6 +58,34 @@ def main() -> int:
         "mutant_rounding",
     )
     expect_killed("money-half-up-to-down", lambda: assert_equal(rounding.money("1.005"), Decimal("1.01")))
+
+    stale_bounds = load_mutant(
+        calculations,
+        'if value < row["floor_target"]:',
+        'if False and value < row["floor_target"]:',
+        "mutant_stale_bounds",
+    )
+    expect_killed(
+        "target-floor-cap-active-set-recomputation",
+        lambda: assert_equal(
+            target_allocations(stale_bounds),
+            ([Decimal("50.00"), Decimal("54.00"), Decimal("6.00")], [["FLOOR_APPLIED"], [], []]),
+        ),
+    )
+
+    wrong_remainder = load_mutant(
+        calculations,
+        "assigned[index] - bases[index]",
+        "bases[index] - assigned[index]",
+        "mutant_wrong_remainder",
+    )
+    expect_killed(
+        "target-largest-remainder-order",
+        lambda: assert_equal(
+            remainder_allocations(wrong_remainder),
+            [Decimal("0.33"), Decimal("0.67")],
+        ),
+    )
 
     editable = load_mutant(scenarios, '== "draft"', '!= "draft"', "mutant_editable")
     expect_killed(
@@ -126,12 +154,44 @@ def main() -> int:
         ),
     )
 
-    print("Mutation score: 6/6 = 100%")
+    print("Mutation score: 8/8 = 100%")
     return 0
 
 
 def assert_equal(actual: object, expected: object) -> None:
     assert actual == expected, f"expected {expected!r}, got {actual!r}"
+
+
+def target_row(weight: str, floor: str, cap: str, site_code: str) -> dict[str, object]:
+    return {
+        "calculated_weight": Decimal(weight),
+        "floor_target": Decimal(floor),
+        "cap_target": Decimal(cap),
+        "site_code": site_code,
+        "flags": [],
+    }
+
+
+def target_allocations(module: ModuleType) -> tuple[list[Decimal], list[list[str]]]:
+    rows = [
+        target_row("1", "50", "100", "A"),
+        target_row("9", "0", "80", "B"),
+        target_row("1", "0", "100", "C"),
+    ]
+    allocated, _ = module.allocate_with_bounds(rows, Decimal("110"))
+    return (
+        [row["proposed_target"] for row in allocated],
+        [row["flags"] for row in allocated],
+    )
+
+
+def remainder_allocations(module: ModuleType) -> list[Decimal]:
+    rows = [
+        target_row("1", "0", "100", "A"),
+        target_row("2", "0", "100", "Z"),
+    ]
+    allocated, _ = module.allocate_with_bounds(rows, Decimal("1"))
+    return [row["proposed_target"] for row in allocated]
 
 
 if __name__ == "__main__":

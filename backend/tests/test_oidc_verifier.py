@@ -8,6 +8,7 @@ import jwt
 import pytest
 from cryptography.hazmat.primitives.asymmetric import rsa
 
+import oidc_verifier
 from oidc_settings import OIDCVerifierSettings
 from oidc_verifier import OIDCVerifier, _MAX_BODY, _safe_text
 
@@ -65,6 +66,173 @@ def _jwks(kid: str = "A") -> bytes:
 
 async def _key(verifier: OIDCVerifier, kid: str = "A") -> jwt.PyJWK:
     return await verifier.signing_key({"alg": "RS256", "kid": kid})
+
+
+@pytest.mark.anyio
+async def test_readiness_prewarms_jwks_before_the_first_token() -> None:
+    calls = 0
+
+    async def handler(_: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(200, content=_jwks())
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        verifier = OIDCVerifier(_settings(), client)
+        await verifier.ensure_ready()
+        await verifier.ensure_ready()
+        assert verifier.cache is not None
+        assert await _key(verifier)
+    assert calls == 1
+
+
+@pytest.mark.anyio
+async def test_readiness_fails_without_cache_and_accepts_bounded_stale_cache() -> None:
+    calls = 0
+
+    async def handler(_: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(200, content=_jwks()) if calls == 1 else httpx.Response(503)
+
+    clock = Clock()
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        verifier = OIDCVerifier(_settings(), client, clock)
+        await verifier.ensure_ready()
+        clock.advance(10)
+        await verifier.ensure_ready()
+        assert verifier.cache is not None
+        clock.advance(21)
+        with pytest.raises(Exception) as unavailable:
+            await verifier.ensure_ready()
+    assert getattr(unavailable.value, "status_code", None) == 503
+    assert calls == 3
+
+
+@pytest.mark.anyio
+async def test_readiness_refresh_timeout_uses_bounded_stale_cache() -> None:
+    calls = 0
+
+    async def handler(_: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        if calls > 1:
+            await asyncio.sleep(1)
+        return httpx.Response(200, content=_jwks())
+
+    clock = Clock()
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        verifier = OIDCVerifier(_settings(), client, clock)
+        await verifier.ensure_ready()
+        clock.advance(10)
+        await verifier.ensure_ready(refresh_timeout_seconds=0.001)
+
+    assert verifier.cache is not None
+    assert verifier.last_refresh_outcome == "failure"
+    assert calls == 2
+
+
+@pytest.mark.anyio
+async def test_concurrent_readiness_rechecks_fresh_cache_inside_lock() -> None:
+    calls = 0
+    entered = asyncio.Event()
+    release = asyncio.Event()
+
+    async def handler(_: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        entered.set()
+        await release.wait()
+        return httpx.Response(200, content=_jwks())
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        verifier = OIDCVerifier(_settings(), client)
+        first = asyncio.create_task(verifier.ensure_ready())
+        await entered.wait()
+        second = asyncio.create_task(verifier.ensure_ready())
+        await asyncio.sleep(0)
+        release.set()
+        await asyncio.gather(first, second)
+
+    assert calls == 1
+
+
+@pytest.mark.anyio
+async def test_readiness_failure_backoff_accepts_stale_then_fails_closed() -> None:
+    calls = 0
+
+    async def handler(_: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(200, content=_jwks()) if calls == 1 else httpx.Response(503)
+
+    clock = Clock()
+    settings = _settings(cache_ttl_seconds=0.5, max_stale_seconds=1.0)
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        verifier = OIDCVerifier(settings, client, clock)
+        await verifier.ensure_ready()
+        clock.advance(0.5)
+        await verifier.ensure_ready()
+        await verifier.ensure_ready()
+        clock.advance(0.6)
+        with pytest.raises(Exception) as unavailable:
+            await verifier.ensure_ready()
+
+    assert getattr(unavailable.value, "status_code", None) == 503
+    assert calls == 2
+
+
+@pytest.mark.anyio
+async def test_readiness_timeout_without_cache_is_unavailable() -> None:
+    async def handler(_: httpx.Request) -> httpx.Response:
+        await asyncio.sleep(1)
+        return httpx.Response(200, content=_jwks())
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        verifier = OIDCVerifier(_settings(), client)
+        with pytest.raises(Exception) as unavailable:
+            await verifier.ensure_ready(refresh_timeout_seconds=0.001)
+
+    assert getattr(unavailable.value, "status_code", None) == 503
+
+
+@pytest.mark.anyio
+async def test_runtime_prewarm_failure_is_degraded_and_closed_cleanly(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def unavailable(*_args: object, **_kwargs: object) -> None:
+        raise oidc_verifier._unavailable()
+
+    monkeypatch.setattr(oidc_verifier, "_client", None)
+    monkeypatch.setattr(oidc_verifier, "_verifier", None)
+    monkeypatch.setattr(oidc_verifier, "load_oidc_verifier_settings", _settings)
+    monkeypatch.setattr(OIDCVerifier, "ensure_ready", unavailable)
+
+    await oidc_verifier.init_oidc_runtime()
+    assert oidc_verifier._verifier is not None
+    await oidc_verifier.close_oidc_runtime()
+    assert oidc_verifier._verifier is None
+
+
+@pytest.mark.anyio
+async def test_runtime_readiness_distinguishes_disabled_absent_and_failed_jwks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(oidc_verifier, "_verifier", None)
+    monkeypatch.setattr(oidc_verifier, "load_oidc_verifier_settings", lambda: None)
+    await oidc_verifier.verify_oidc_runtime_ready()
+
+    monkeypatch.setattr(oidc_verifier, "load_oidc_verifier_settings", _settings)
+    with pytest.raises(RuntimeError, match="verifier unavailable"):
+        await oidc_verifier.verify_oidc_runtime_ready()
+
+    class FailedVerifier:
+        async def ensure_ready(self, **_kwargs: object) -> None:
+            raise oidc_verifier._unavailable()
+
+    monkeypatch.setattr(oidc_verifier, "_verifier", FailedVerifier())
+    with pytest.raises(RuntimeError, match="JWKS unavailable"):
+        await oidc_verifier.verify_oidc_runtime_ready()
 
 
 @pytest.mark.parametrize("value,valid", [("A", True), ("", False), ("has space", False), ("x" * 257, False), (1, False), (None, False)])

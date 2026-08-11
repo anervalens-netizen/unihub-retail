@@ -5,6 +5,7 @@ from __future__ import annotations
 from decimal import Decimal
 from typing import Literal
 
+from domain.filter_scope import FilterInput
 from schemas.dashboard import (
     DashboardSpecialCardsResponse,
     DashboardSummary,
@@ -25,8 +26,8 @@ async def load_summary(
     firma: str | None,
     regional: str | None,
     asm: str | None,
-    site_code: str | None,
-    agent: str | None,
+    site_code: FilterInput,
+    agent: FilterInput,
     current_scope: bool = False,
     include_closed_stores: bool = False,
     *,
@@ -98,8 +99,8 @@ async def load_daily_sales(
     firma: str | None,
     regional: str | None,
     asm: str | None,
-    site_code: str | None,
-    agent: str | None,
+    site_code: FilterInput,
+    agent: FilterInput,
     current_scope: bool = False,
     include_closed_stores: bool = False,
     *,
@@ -135,8 +136,8 @@ async def load_special_cards(
     firma: str | None,
     regional: str | None,
     asm: str | None,
-    site_code: str | None,
-    agent: str | None,
+    site_code: FilterInput,
+    agent: FilterInput,
     *,
     deadline: RequestDeadline | None = None,
 ) -> DashboardSpecialCardsResponse:
@@ -170,8 +171,8 @@ async def load_premium_glass(
     firma: str | None,
     regional: str | None,
     asm: str | None,
-    site_code: str | None,
-    agent: str | None,
+    site_code: FilterInput,
+    agent: FilterInput,
     surface: Literal["all", "screen", "camera"] = "all",
     current_scope: bool = True,
     include_closed_stores: bool = False,
@@ -191,4 +192,3 @@ async def load_premium_glass(
             current_scope=current_scope,
             include_closed_stores=include_closed_stores,
         )
-

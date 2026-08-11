@@ -14,7 +14,7 @@ describe('Insight contextual deep links', () => {
       tab: 'hub',
       hubSection: 'history',
       period: '2026-08',
-      filters: { firma: 'Mobicell', rm: 'Nord', magazin: 'S001', agent: 'Agent Test' },
+      filters: { firma: 'Mobicell', rm: 'Nord', magazin: ['S001'], agent: ['Agent Test'] },
     });
   });
 
@@ -32,13 +32,13 @@ describe('Insight contextual deep links', () => {
     ).toEqual(expected);
   });
 
-  it('does not let a multi-store scope silently become one selected store', () => {
+  it('preserves and deduplicates a multi-store scope', () => {
     expect(
       parseInsightDeepLink({
         pathname: '/agenti',
         search: '?source_context=insight&stores=S001,S002,S001',
       } as Location)?.filters,
-    ).toEqual({});
+    ).toEqual({ magazin: ['S001', 'S002'] });
   });
 
   it('ignores ordinary Retail URLs and malformed context', () => {

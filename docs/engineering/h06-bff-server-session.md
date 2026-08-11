@@ -49,6 +49,10 @@ controlled integrations and smoke tooling.
   nonce use the existing hardened verifier. Access tokens are validated
   against `OIDC_AUDIENCE`; ID tokens are validated against the confidential
   client's `OIDC_CLIENT_ID`, as required when those identifiers differ.
+- Callback accepts the token pair only when the independently verified access
+  token and ID token have identical `(iss, sub)`. Refresh accepts a new access
+  token only when `(iss, sub)` matches the encrypted session record; mismatch
+  invalidates the session and increments a finite stage-labelled counter.
 - Authentication and CSRF failures return generic bounded errors without
   tokens, cookies, secrets or provider responses.
 - Configuration fails closed in production if the encryption key, client
@@ -62,6 +66,10 @@ controlled integrations and smoke tooling.
   hard-bounded to 55 seconds, waiters use a 65-second window, and failure
   cleanup uses compare-and-delete against the original encrypted record so it
   cannot remove a session rotated concurrently.
+- On SIGTERM, new local refresh ownership is refused. Existing local owner
+  tasks receive a bounded drain before Valkey and the token HTTP client close;
+  overdue tasks are cancelled and awaited, so no refresh task outlives its
+  dependencies.
 
 ## Configuration
 

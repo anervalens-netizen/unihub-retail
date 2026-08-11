@@ -19,16 +19,14 @@ from models import (
 )
 from retail_filters import distribution_location_clause
 from repositories.visits_report_postgres import VisitsReportPostgresRepository
-from services.filters import normalize_filter
+from domain.filter_scope import FilterInput
+from services.filters import normalize_filter, normalize_filter_values
 
 logger = logging.getLogger(__name__)
 
 
-def _split_filter_values(value: str | None) -> list[str]:
-    normalized = normalize_filter(value)
-    if normalized is None:
-        return []
-    return [item.strip() for item in normalized.split(",") if item.strip()]
+def _filter_values(value: FilterInput) -> list[str]:
+    return normalize_filter_values(value) or []
 
 
 class VisitsReportService:
@@ -72,13 +70,13 @@ class VisitsReportService:
         firma: str | None,
         rm: str | None,
         asm: str | None,
-        magazin: str | None,
+        magazin: FilterInput,
     ) -> VisitReportResponse:
         filters = {
             "firma": normalize_filter(firma),
             "rm": normalize_filter(rm),
             "asm": normalize_filter(asm),
-            "magazin": normalize_filter(magazin),
+            "magazin": magazin,
         }
         store_metadata, site_codes = await self._resolve_store_scope(filters)
 
@@ -122,14 +120,14 @@ class VisitsReportService:
         firma: str | None,
         rm: str | None,
         asm: str | None,
-        magazin: str | None,
+        magazin: FilterInput,
         month: str | None = None,
     ) -> VisitTreeResponse:
         filters = {
             "firma": normalize_filter(firma),
             "rm": normalize_filter(rm),
             "asm": normalize_filter(asm),
-            "magazin": normalize_filter(magazin),
+            "magazin": magazin,
         }
         store_metadata, site_codes = await self._resolve_store_scope(filters)
 
@@ -184,12 +182,12 @@ class VisitsReportService:
 
     async def _resolve_store_scope(
         self,
-        filters: dict[str, str | None],
+        filters: dict[str, FilterInput],
     ) -> tuple[dict[str, dict[str, str]], list[str] | None]:
-        firma_values = _split_filter_values(filters.get("firma"))
-        regional_values = _split_filter_values(filters.get("rm"))
-        asm_values = _split_filter_values(filters.get("asm"))
-        site_values = _split_filter_values(filters.get("magazin"))
+        firma_values = _filter_values(filters.get("firma"))
+        regional_values = _filter_values(filters.get("rm"))
+        asm_values = _filter_values(filters.get("asm"))
+        site_values = _filter_values(filters.get("magazin"))
 
         clauses = [distribution_location_clause()]
         params: list[object] = []
@@ -200,9 +198,10 @@ class VisitsReportService:
             params.append(values)
             clauses.append(f"{column} = ANY(${len(params)}::text[])")
 
-        add_any_clause("firma", firma_values)
-        add_any_clause("regional", regional_values)
-        add_any_clause("asm", asm_values)
+        if not site_values:
+            add_any_clause("firma", firma_values)
+            add_any_clause("regional", regional_values)
+            add_any_clause("asm", asm_values)
         add_any_clause("site_code", site_values)
 
         has_scope_filter = bool(firma_values or regional_values or asm_values or site_values)

@@ -1,11 +1,11 @@
 # Retail systemd units
 
 This directory plus repository-root `unihub-worker.service` are the versioned
-source of truth for the Retail web, four role-isolated workers (operations,
-imports, Grile and exports), the retired pre-9.5 worker tombstone, and one-shot
-migration service. The exact-SHA deploy stores each reviewed set
+source of truth for the Retail web, five role-isolated workers (operations,
+imports, Grile, exports and salary-exports), the retired pre-9.5 worker
+tombstone, and one-shot migration service. The exact-SHA deploy stores each reviewed set
 under `/var/lib/unihub-retail-deploy/runtime-releases/<SHA>/systemd/` and
-atomically switches the seven links under `/etc/systemd/system`. The legacy
+atomically switches the eight links under `/etc/systemd/system`. The legacy
 tombstone remains disabled and refuses manual starts so rollback can still
 restore an older release's exact unit set.
 
@@ -23,6 +23,7 @@ systemd-analyze verify \
   ops/systemd/unihub-import-worker.service \
   ops/systemd/unihub-grile-worker.service \
   ops/systemd/unihub-export-worker.service \
+  ops/systemd/unihub-salary-export-worker.service \
   ops/systemd/unihub-legacy-worker.service \
   ops/systemd/unihub-retail-migrate.service
 ```
@@ -30,6 +31,17 @@ systemd-analyze verify \
 After a backend restart, `/livez` proves that the process responds and
 `/readyz` proves that PostgreSQL and the BFF session backend are usable.
 `/health` remains a compatibility alias for `/readyz`.
+
+Every active unit uses `ProtectSystem=strict` and disables Python bytecode
+writes. Never grant an ancestor such as `/opt/Mobiup` or the Retail release root
+through `ReadWritePaths`. The only versioned exceptions are the exact runtime
+data directories required by that authority: web/import spool, import promo
+generations, Grile output, generic export artifacts and the nested salary-export
+namespace. All non-salary worker/migration units mask the salary namespace with
+`InaccessiblePaths`; only web may read it for owner-bound download, while the
+salary worker may write it. Operations and migration have no repository write exception.
+`backend/tests/test_prometheus_topology.py`
+enforces the allowlist and proves code/config/release paths stay outside it.
 
 ## Prometheus bridge boundary
 
@@ -43,8 +55,8 @@ to the detected gateway, never loopback or `0.0.0.0`.
 The web `/metrics` route trusts only the direct socket peer and returns 200
 solely inside the detected Prometheus subnet; forwarded headers are ignored
 and every other peer receives 404. The exact-SHA fragment supplies the web,
-operations, import, Grile and export targets on ports 9898 and 9901–9904.
-`promtool`, HUP reload and all five targets UP are deployment gates.
+operations, import, Grile, export and salary-export targets on ports 9898 and
+9901–9905. `promtool`, HUP reload and all six targets UP are deployment gates.
 
 ## P0 lifecycle și evidence
 
@@ -57,21 +69,23 @@ Recovery-ul P0 păstrează ultima generație bună: sales folosește generation 
 ## P1-A — identități DB per proces
 
 Unitățile declară fail-closed `UNIHUB_DB_PROCESS_AUTHORITY`: backend `web`,
-workerul normal `operations`, import workerul `sales_import`, iar one-shotul
-`migrate`. Fișierele root-protected sunt separate: `.env`, `.env.worker`,
-`.env.import-worker`, `.env.migrations`. Fiecare conține DSN-ul unui singur
-LOGIN: `unihub_web`, `unihub_operations_worker`, `unihub_import_worker`,
-respectiv `unihub_migration_runner`. Orice proces production fără autoritate
+workerul normal/generic export `operations`, import workerul `sales_import`,
+salary-export workerul `salary_export`, iar one-shotul `migrate`. Fișierele
+root-protected sunt separate: `.env`, `.env.worker`, `.env.import-worker`,
+`.env.salary-export-worker`, `.env.migrations`. Fiecare conține DSN-ul unui
+singur LOGIN: `unihub_web`, `unihub_operations_worker`, `unihub_import_worker`,
+`unihub_salary_export_worker`, respectiv `unihub_migration_runner`. Orice proces
+production fără autoritate
 explicită refuză startupul. Nu copia același DSN între procese și nu
 introduce `DATABASE_URL` ca fallback în fișierul de migrare.
 Fișierele sunt `root:<service-group>` mode `0640`: root este singurul writer,
 iar userul serviciilor are read deoarece bootstrapul Python recitește `.env`
 după încărcarea systemd. Mode `0600 root:root` blochează startupul.
 
-Ordinea de cutover este: oprește backendul și cei doi workeri; backup și business hashes;
+Ordinea de cutover este: oprește backendul și toți workerii; backup și business hashes;
 aplică 040/041 cu identitatea administrativă existentă și flagul one-shot
-`UNIHUB_DB_AUTHORITY_CUTOVER_BOOTSTRAP=1`, fără autoritate de proces; creează cele patru
-LOGIN-uri în boundary-ul operațional separat; atașează contractele exacte cu
+`UNIHUB_DB_AUTHORITY_CUTOVER_BOOTSTRAP=1`, fără autoritate de proces; creează
+LOGIN-urile în boundary-ul operațional separat; atașează contractele exacte cu
 provisionerul; verifică zero sesiuni/membri și setează `unihub_runtime NOLOGIN`
 cu scriptul controlat; scrie DSN-urile fără a le afișa; instalează unitățile și rulează
 `daemon-reload`; execută deployul formal care repornește toate procesele. Orice
@@ -95,7 +109,7 @@ Valkey rămân obligatorii. Cu portul cozii închis, `/readyz` trebuie să răm�
 503. Recovery-ul cozii este lazy, single-flight și fără restart; publish-ul
 incert se reconciliază prin job ID și rezervarea PostgreSQL, fără retry orb.
 
-Configul este validat separat pentru web/operations/import. Relațiile minime
+Configul este validat separat pentru web/operations/import/salary-export. Relațiile minime
 sunt `DB_POOL_MIN_SIZE <= DB_POOL_MAX_SIZE`, minimum două conexiuni web,
 `DB_LOCK_TIMEOUT_MS < DB_STATEMENT_TIMEOUT_MS`, buget ARQ de conectare <=3s,
 `ARQ_MAX_CONNECTIONS >= ARQ_MAX_JOBS`, completion wait >= job timeout și

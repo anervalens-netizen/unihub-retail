@@ -6,7 +6,7 @@ from typing import Any
 import asyncpg
 
 from business_rules import CAMPAIGN_RANKING_LIMIT
-from domain.filter_scope import build_scoped_params, scoped_clauses
+from domain.filter_scope import FilterInput, build_scoped_params, scoped_clauses
 
 
 def build_campaign_clauses(
@@ -14,8 +14,8 @@ def build_campaign_clauses(
     firma: str | None,
     regional: str | None,
     asm: str | None,
-    site_code: str | None,
-    agent: str | None,
+    site_code: FilterInput,
+    agent: FilterInput,
     *,
     alias: str,
 ) -> tuple[list[str], list[Any]]:
@@ -44,8 +44,8 @@ def build_campaign_history_clauses(
     firma: str | None,
     regional: str | None,
     asm: str | None,
-    site_code: str | None,
-    agent: str | None,
+    site_code: FilterInput,
+    agent: FilterInput,
 ) -> tuple[list[str], list[str], list[Any]]:
     params, positions = build_scoped_params(
         [month, months_back],
@@ -65,8 +65,8 @@ def build_campaign_history_clauses(
         ("agent", "agg.agent", "tot.agent"),
     ]:
         if key in positions:
-            focus_clauses.append(f"{focus_column} = ANY(string_to_array(${positions[key]}::TEXT, ','))")
-            totals_clauses.append(f"{totals_column} = ANY(string_to_array(${positions[key]}::TEXT, ','))")
+            focus_clauses.append(f"{focus_column} = ANY(${positions[key]}::TEXT[])")
+            totals_clauses.append(f"{totals_column} = ANY(${positions[key]}::TEXT[])")
     return focus_clauses, totals_clauses, params
 
 
@@ -79,8 +79,8 @@ def _promo_scope(
     firma: str | None,
     regional: str | None,
     asm: str | None,
-    site_code: str | None,
-    agent: str | None,
+    site_code: FilterInput,
+    agent: FilterInput,
     current_scope: bool,
     include_closed_stores: bool,
 ) -> tuple[list[str], list[Any], str]:
@@ -118,8 +118,8 @@ def _incentive_scope(
     firma: str | None,
     regional: str | None,
     asm: str | None,
-    site_code: str | None,
-    agent: str | None,
+    site_code: FilterInput,
+    agent: FilterInput,
     current_scope: bool,
     include_closed_stores: bool,
 ) -> tuple[list[str], list[Any], str]:
@@ -160,8 +160,8 @@ class CampaignsRepository:
         firma: str | None,
         regional: str | None,
         asm: str | None,
-        site_code: str | None,
-        agent: str | None,
+        site_code: FilterInput,
+        agent: FilterInput,
     ) -> dict:
         focus_clauses, params = build_campaign_clauses(
             month,
@@ -257,8 +257,8 @@ class CampaignsRepository:
         firma: str | None,
         regional: str | None,
         asm: str | None,
-        site_code: str | None,
-        agent: str | None,
+        site_code: FilterInput,
+        agent: FilterInput,
     ) -> list[asyncpg.Record]:
         focus_clauses, totals_clauses, params = build_campaign_history_clauses(
             month,
@@ -331,8 +331,8 @@ class CampaignsRepository:
         firma: str | None,
         regional: str | None,
         asm: str | None,
-        site_code: str | None,
-        agent: str | None,
+        site_code: FilterInput,
+        agent: FilterInput,
         current_scope: bool = False,
         include_closed_stores: bool = False,
     ) -> asyncpg.Record | None:
@@ -370,8 +370,8 @@ class CampaignsRepository:
         firma: str | None,
         regional: str | None,
         asm: str | None,
-        site_code: str | None,
-        agent: str | None,
+        site_code: FilterInput,
+        agent: FilterInput,
         current_scope: bool = False,
         include_closed_stores: bool = False,
     ) -> list[asyncpg.Record]:
@@ -416,8 +416,8 @@ class CampaignsRepository:
         firma: str | None,
         regional: str | None,
         asm: str | None,
-        site_code: str | None,
-        agent: str | None,
+        site_code: FilterInput,
+        agent: FilterInput,
         current_scope: bool = False,
         include_closed_stores: bool = False,
     ) -> list[asyncpg.Record]:
@@ -476,8 +476,8 @@ class CampaignsRepository:
         firma: str | None,
         regional: str | None,
         asm: str | None,
-        site_code: str | None,
-        agent: str | None,
+        site_code: FilterInput,
+        agent: FilterInput,
         current_scope: bool = False,
         include_closed_stores: bool = False,
     ) -> list[asyncpg.Record]:

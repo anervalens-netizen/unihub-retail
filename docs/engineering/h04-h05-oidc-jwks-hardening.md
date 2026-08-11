@@ -309,3 +309,13 @@ The demonstrable closure bounds NumericDate before conversion, measures
 unknown-key cooldown from refresh completion, and applies a typed 1–60 second
 failure-retry window. OIDC runtime publication is atomic: construction failure
 closes its local client and leaves no global runtime handle.
+
+## 2026-08-11 readiness follow-up
+
+The runtime now calls `ensure_ready()` during startup and `/readyz` checks the
+same cache contract. Prewarm failure does not crash the process, but leaves the
+instance degraded and readiness returns 503 unless a validated cache remains
+inside the bounded stale window. `jwks_readiness_state` publishes exactly one
+of `disabled`, `absent`, `fresh`, `stale` or `failed`; no key ID, URL, issuer or
+subject enters a label. This closes the gap where an instance could advertise
+ready before the first token forced JWKS I/O.

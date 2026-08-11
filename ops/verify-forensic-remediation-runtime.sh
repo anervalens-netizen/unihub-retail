@@ -22,6 +22,7 @@ systemctl is-active --quiet unihub-worker.service
 systemctl is-active --quiet unihub-import-worker.service
 systemctl is-active --quiet unihub-grile-worker.service
 systemctl is-active --quiet unihub-export-worker.service
+systemctl is-active --quiet unihub-salary-export-worker.service
 ! systemctl is-active --quiet unihub-legacy-worker.service
 ! systemctl is-enabled --quiet unihub-legacy-worker.service
 for unit in \
@@ -29,7 +30,8 @@ for unit in \
   unihub-worker.service \
   unihub-import-worker.service \
   unihub-grile-worker.service \
-  unihub-export-worker.service; do
+  unihub-export-worker.service \
+  unihub-salary-export-worker.service; do
   systemctl is-enabled --quiet "$unit"
 done
 cmp /opt/Mobiup/infra/observability/prometheus/rules/retail-slo-rules.yml \
@@ -64,18 +66,20 @@ for unit in \
   unihub-import-worker.service \
   unihub-grile-worker.service \
   unihub-export-worker.service \
+  unihub-salary-export-worker.service \
   unihub-legacy-worker.service \
   unihub-retail-migrate.service; do
   test "$(readlink "/etc/systemd/system/$unit")" = \
     "/var/lib/unihub-retail-deploy/runtime-releases/$EXPECTED_SHA/systemd/$unit"
 done
 
-listeners="$(ss -H -ltn '( sport = :9901 or sport = :9902 or sport = :9903 or sport = :9904 )')"
+listeners="$(ss -H -ltn '( sport = :9901 or sport = :9902 or sport = :9903 or sport = :9904 or sport = :9905 )')"
 grep -Fq "$gateway:9901" <<<"$listeners"
 grep -Fq "$gateway:9902" <<<"$listeners"
 grep -Fq "$gateway:9903" <<<"$listeners"
 grep -Fq "$gateway:9904" <<<"$listeners"
-! grep -Eq '(^|[[:space:]])(0\.0\.0\.0|127\.0\.0\.1):990[1-4]([[:space:]]|$)' <<<"$listeners"
+grep -Fq "$gateway:9905" <<<"$listeners"
+! grep -Eq '(^|[[:space:]])(0\.0\.0\.0|127\.0\.0\.1):990[1-5]([[:space:]]|$)' <<<"$listeners"
 
 status="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' \
   --max-time 10 http://127.0.0.1:9898/metrics)"
@@ -97,7 +101,7 @@ healthy = {
 if not required <= healthy:
     raise SystemExit("Retail Prometheus targets are not all UP")
 ' unihub-retail-web unihub-retail-operations unihub-retail-imports \
-  unihub-retail-grile unihub-retail-exports <<<"$targets"
+  unihub-retail-grile unihub-retail-exports unihub-retail-salary-exports <<<"$targets"
 
 recordings="$(curl --fail --silent --show-error --max-time 10 --get \
   --data-urlencode 'query=count({__name__=~"unihub_retail:(http_requests_excluding_probes|http_5xx_ratio|http_latency_p95_seconds|dashboard_latency_p95_seconds):rate5m"}) by (__name__)' \

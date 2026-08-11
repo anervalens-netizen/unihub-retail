@@ -40,8 +40,8 @@ def _scope_clause_for_stores(scope: dict[str, Any]) -> tuple[str, list[Any]]:
     params: list[Any] = []
     clauses = [distribution_location_clause("s")]
     if scope.get("site_codes"):
-        params.append(",".join(str(c) for c in scope["site_codes"]))
-        clauses.append(f"s.site_code = ANY(string_to_array(${len(params)}::TEXT, ','))")
+        params.append([str(code) for code in scope["site_codes"]])
+        clauses.append(f"s.site_code = ANY(${len(params)}::TEXT[])")
     else:
         for key in ("asm", "regional", "firma"):
             if scope.get(key):
@@ -60,7 +60,7 @@ def _promo_scope_kwargs(scope: dict[str, Any]) -> dict[str, Any]:
         "agent": None,
     }
     if scope.get("site_codes"):
-        kwargs["site_code"] = ",".join(str(c) for c in scope["site_codes"])
+        kwargs["site_code"] = [str(code) for code in scope["site_codes"]]
     elif scope.get("asm"):
         kwargs["asm"] = scope["asm"]
     elif scope.get("regional"):
@@ -77,6 +77,33 @@ def _scope_label(scope: dict[str, Any]) -> str:
     if scope.get("site_codes"):
         return "Magazine selectate"
     return ""
+
+
+def _agent_score_scope(
+    contest: ContestDefinition,
+    month: str,
+    threshold: Any,
+) -> tuple[list[str], list[Any]]:
+    params: list[Any] = [month, contest.start_date, contest.end_date, threshold]
+    clauses = [
+        "st.import_month = $1",
+        "st.sale_date BETWEEN $2 AND $3",
+        cartela_exclusion_clause("st"),
+        "NOT st.is_return",
+        distribution_location_clause("s"),
+        "st.agent IS NOT NULL",
+        "st.agent <> '-'",
+    ]
+    if contest.scope.get("site_codes"):
+        params.append([str(code) for code in contest.scope["site_codes"]])
+        clauses.append(f"st.site_code = ANY(${len(params)}::TEXT[])")
+    else:
+        for key in ("asm", "regional", "firma"):
+            if contest.scope.get(key):
+                params.append(contest.scope[key])
+                clauses.append(f"s.{key} = ${len(params)}")
+                break
+    return clauses, params
 
 
 class ContestsService:
@@ -127,25 +154,7 @@ class ContestsService:
 
         # --- focus + price (per unitate) din sales_transactions ---
         scope_store_sql, scope_store_params = _scope_clause_for_stores(contest.scope)
-        params: list[Any] = [month, contest.start_date, contest.end_date, threshold]
-        clauses = [
-            "st.import_month = $1",
-            "st.sale_date BETWEEN $2 AND $3",
-            cartela_exclusion_clause("st"),
-            "NOT st.is_return",
-            distribution_location_clause("s"),
-            "st.agent IS NOT NULL",
-            "st.agent <> '-'",
-        ]
-        if contest.scope.get("site_codes"):
-            params.append(",".join(str(c) for c in contest.scope["site_codes"]))
-            clauses.append(f"st.site_code = ANY(string_to_array(${len(params)}::TEXT, ','))")
-        else:
-            for key in ("asm", "regional", "firma"):
-                if contest.scope.get(key):
-                    params.append(contest.scope[key])
-                    clauses.append(f"s.{key} = ${len(params)}")
-                    break
+        clauses, params = _agent_score_scope(contest, month, threshold)
         agent_rows = await self.repo.fetch_agent_scores(" AND ".join(clauses), params)
 
         # --- promo: bonuri calificate per agent (co-purchase) ---

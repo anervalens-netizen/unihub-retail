@@ -14,6 +14,7 @@ const queued: ExportOperation = {
   peak_rss_bytes: null,
   build_seconds: null,
   cell_count: null,
+  row_count: null,
   error_code: null,
   created_at: '2026-08-06T12:00:00Z',
   started_at: null,

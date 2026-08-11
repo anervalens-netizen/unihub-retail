@@ -16,6 +16,7 @@ class XlsxArtifact:
     peak_rss_bytes: int | None = None
     build_seconds: float | None = None
     cell_count: int | None = None
+    row_count: int | None = None
 
     def iter_chunks(self, chunk_size: int = XLSX_STREAM_CHUNK_BYTES) -> Iterator[bytes]:
         self.stream.seek(0)

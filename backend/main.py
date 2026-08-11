@@ -230,6 +230,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         return response
 
 
+app.add_middleware(RequestBodyLimitMiddleware)
 app.add_middleware(SecurityHeadersMiddleware)
 
 cors_origins = get_cors_origins()
@@ -242,7 +243,6 @@ app.add_middleware(
     expose_headers=[REQUEST_ID_HEADER],
 )
 app.add_middleware(RequestContextMiddleware)
-app.add_middleware(RequestBodyLimitMiddleware)
 
 
 @app.exception_handler(Exception)

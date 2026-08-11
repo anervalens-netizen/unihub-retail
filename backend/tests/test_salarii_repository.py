@@ -103,10 +103,12 @@ async def test_overview_total_includes_low_salary_but_average_excludes_it() -> N
             asm=None,
         )
 
-        assert data["total"] == 8500.0
+        assert data["total"] == Decimal("8500.00")
+        assert isinstance(data["total"], Decimal)
         assert data["agent_month_count"] == 3
         assert data["avg_agent_month_count"] == 2
-        assert data["avg_salary"] == 3500.0
+        assert data["avg_salary"] == Decimal("3500.0000000000000000")
+        assert isinstance(data["avg_salary"], Decimal)
     finally:
         await _reset_salary_fixture()
 
@@ -128,10 +130,12 @@ async def test_summary_total_includes_low_salary_but_average_excludes_it() -> No
 
         assert len(rows) == 1
         row = rows[0]
-        assert float(row["total_salary"]) == 4500.0
+        assert row["total_salary"] == Decimal("4500.00")
+        assert isinstance(row["total_salary"], Decimal)
         assert row["agent_count"] == 2
         assert row["avg_agent_count"] == 1
-        assert float(row["avg_salary"]) == 3000.0
+        assert row["avg_salary"] == Decimal("3000.0000000000000000")
+        assert isinstance(row["avg_salary"], Decimal)
     finally:
         await _reset_salary_fixture()
 
@@ -235,6 +239,14 @@ async def _seed_provenance_fixture() -> None:
         )
 
 
+def _assert_provenance_overview(overview: dict) -> None:
+    assert overview["total"] == Decimal("3000.00")
+    assert overview["record_count"] == 2
+    assert overview["agent_count"] == overview["agent_month_count"] == 1
+    assert overview["avg_agent_month_count"] == 1
+    assert overview["avg_salary"] == Decimal("3000.0000000000000000")
+
+
 @pytest.mark.anyio
 async def test_salary_components_with_distinct_provenance_keep_all_read_surfaces_consistent() -> None:
     await _reset_provenance_fixture()
@@ -249,11 +261,7 @@ async def test_salary_components_with_distinct_provenance_keep_all_read_surfaces
         }
 
         overview = await repo.fetch_overview(**scope)
-        assert overview["total"] == 3000.0
-        assert overview["record_count"] == 2
-        assert overview["agent_count"] == overview["agent_month_count"] == 1
-        assert overview["avg_agent_month_count"] == 1
-        assert overview["avg_salary"] == 3000.0
+        _assert_provenance_overview(overview)
 
         evolution = await repo.fetch_evolution_main(**scope)
         assert len(evolution) == 1
@@ -337,7 +345,7 @@ async def test_salary_component_scope_filters_do_not_multiply_rows(scope: dict[s
     await _seed_provenance_fixture()
     try:
         overview = await SalariiRepository(await get_pool()).fetch_overview(**scope)
-        assert overview["total"] == 3000.0
+        assert overview["total"] == Decimal("3000.00")
         assert overview["record_count"] == 2
         assert overview["agent_count"] == 1
     finally:

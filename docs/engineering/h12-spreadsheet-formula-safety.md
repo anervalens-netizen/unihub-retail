@@ -165,3 +165,8 @@ Revert the H-12 implementation commit. No schema or data rollback is required. G
 ## Production verification
 
 After the approved Wave 1 deployment, generate controlled reports containing synthetic harmless formula-prefix values in a non-production fixture or approved test scope. Open the generated workbooks in a protected environment and confirm that untrusted cells are text while application-owned formulas still calculate. Do not use command/DDE payloads against employee workstations.
+
+The durable salary exporter also uses this boundary. Its regression workbook
+contains a harmless formula-prefixed agent name, proves the cell remains text,
+asserts private `person_id` values are absent and verifies the emitted artifact
+against its SHA-256 before persistence.

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { ApiError } from "./client";
 import { GeneratedApiError } from "./generated/client";
-import { uncertainExportOperationId } from "./exports";
+import { isExportOperationNotFound, uncertainExportOperationId } from "./exports";
 
 const operationId = "create_export_operation_api_exports_operations_post" as const;
 
@@ -35,5 +35,29 @@ describe("uncertainExportOperationId", () => {
         ),
       ),
     ).toBeNull();
+  });
+});
+
+describe("isExportOperationNotFound", () => {
+  const getOperationId =
+    "get_export_operation_api_exports_operations__operation_id__get" as const;
+
+  it("recognizes only the owner-bound operation 404", () => {
+    expect(
+      isExportOperationNotFound(
+        new GeneratedApiError(
+          getOperationId,
+          new ApiError(404, "not found", { detail: "not found" }),
+        ),
+      ),
+    ).toBe(true);
+    expect(
+      isExportOperationNotFound(
+        new GeneratedApiError(
+          getOperationId,
+          new ApiError(503, "unavailable", { detail: "unavailable" }),
+        ),
+      ),
+    ).toBe(false);
   });
 });

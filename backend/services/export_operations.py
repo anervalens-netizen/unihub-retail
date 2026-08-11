@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import logging
 import os
 import re
 import stat
@@ -31,10 +32,17 @@ from services.exports.metrics import (
     EXPORT_OUTPUT_BYTES,
     EXPORT_PEAK_RSS_BYTES,
 )
-from services.jobs import JobPublishUncertainError, enqueue_complex_export
+from services.export_artifact_cleanup import enqueue_export_artifact_cleanup
+from services.jobs import (
+    JobPublishUncertainError,
+    enqueue_complex_export,
+    enqueue_salary_export,
+)
 
 
-EXPORT_ARTIFACT_KEY = re.compile(r"^[0-9a-f]{32}\.xlsx$")
+logger = logging.getLogger(__name__)
+ExportArtifactNamespace = Literal["generic", "salary"]
+EXPORT_ARTIFACT_KEY = re.compile(r"^(?:salary/)?[0-9a-f]{32}\.xlsx$")
 EXPORT_ARTIFACT_TTL_DEFAULT_SECONDS = 60 * 60
 EXPORT_ARTIFACT_TTL_MIN_SECONDS = 5 * 60
 EXPORT_ARTIFACT_TTL_MAX_SECONDS = 24 * 60 * 60
@@ -71,6 +79,7 @@ class StoredExportArtifact:
     peak_rss_bytes: int
     build_seconds: float
     cell_count: int
+    row_count: int | None = None
 
 
 def _bounded_env(name: str, default: int, minimum: int, maximum: int) -> int:
@@ -92,23 +101,38 @@ def export_artifact_ttl_seconds() -> int:
     )
 
 
-def get_export_artifact_dir() -> Path:
+def get_export_artifact_dir(
+    *,
+    namespace: ExportArtifactNamespace = "generic",
+    create: bool = False,
+) -> Path:
     configured = os.getenv("EXPORT_ARTIFACT_DIR")
-    root = (
+    configured_path = (
         Path(configured).expanduser()
         if configured
         else Path(__file__).resolve().parents[2] / "data" / "export_artifacts"
-    ).resolve()
-    root.mkdir(parents=True, exist_ok=True, mode=0o700)
-    root.chmod(0o700)
+    )
+    if configured_path.is_symlink():
+        raise ExportArtifactIntegrityError("Export artifact root symlink is not allowed")
+    base = configured_path.resolve()
+    root_path = base if namespace == "generic" else base / "salary"
+    if root_path.is_symlink():
+        raise ExportArtifactIntegrityError("Export artifact namespace symlink is not allowed")
+    if create:
+        root_path.mkdir(parents=True, exist_ok=True, mode=0o700)
+        root_path.chmod(0o700)
+    root = root_path.resolve()
+    if namespace == "salary" and root.parent != base:
+        raise ExportArtifactIntegrityError("Export artifact namespace escapes its root")
     return root
 
 
 def _artifact_path(key: str) -> Path:
     if not EXPORT_ARTIFACT_KEY.fullmatch(key):
         raise ExportArtifactIntegrityError("Invalid export artifact identity")
-    root = get_export_artifact_dir()
-    candidate = root / key
+    namespace: ExportArtifactNamespace = "salary" if key.startswith("salary/") else "generic"
+    root = get_export_artifact_dir(namespace=namespace)
+    candidate = root / key.removeprefix("salary/")
     if candidate.parent != root:
         raise ExportArtifactIntegrityError("Export artifact escapes its private directory")
     return candidate
@@ -121,12 +145,17 @@ def remove_export_artifact(key: str) -> None:
     path.unlink(missing_ok=True)
 
 
-def persist_export_artifact(artifact: XlsxArtifact) -> StoredExportArtifact:
+def persist_export_artifact(
+    artifact: XlsxArtifact,
+    *,
+    namespace: ExportArtifactNamespace = "generic",
+) -> StoredExportArtifact:
     """Copy an attested process result into the private durable artifact root."""
-    root = get_export_artifact_dir()
-    key = f"{uuid4().hex}.xlsx"
+    root = get_export_artifact_dir(namespace=namespace, create=True)
+    basename = f"{uuid4().hex}.xlsx"
+    key = basename if namespace == "generic" else f"salary/{basename}"
     destination = _artifact_path(key)
-    temporary = root / f".{key}.{uuid4().hex}.tmp"
+    temporary = root / f".{basename}.{uuid4().hex}.tmp"
     digest = hashlib.sha256()
     size = 0
     try:
@@ -152,6 +181,7 @@ def persist_export_artifact(artifact: XlsxArtifact) -> StoredExportArtifact:
             or artifact.build_seconds < 0
             or artifact.cell_count is None
             or artifact.cell_count < 0
+            or (artifact.row_count is not None and artifact.row_count < 0)
         ):
             raise ExportArtifactIntegrityError("Export artifact metrics are missing")
         temporary.replace(destination)
@@ -169,6 +199,7 @@ def persist_export_artifact(artifact: XlsxArtifact) -> StoredExportArtifact:
             peak_rss_bytes=artifact.peak_rss_bytes,
             build_seconds=artifact.build_seconds,
             cell_count=artifact.cell_count,
+            row_count=artifact.row_count,
         )
     except BaseException:
         temporary.unlink(missing_ok=True)
@@ -217,16 +248,25 @@ async def cleanup_export_operations(repo: ExportOperationsRepository) -> None:
         await asyncio.to_thread(remove_export_artifact, key)
 
 
-async def sweep_orphan_export_artifacts(repo: ExportOperationsRepository) -> None:
+async def sweep_orphan_export_artifacts(
+    repo: ExportOperationsRepository,
+    *,
+    namespace: ExportArtifactNamespace = "generic",
+) -> None:
     """Filesystem sweep reserved for operations-worker startup/job boundaries."""
     # Recover private artifacts left between atomic rename and DB completion.
     active_keys = await repo.active_artifact_keys()
+    active_names = {
+        key.removeprefix("salary/") if namespace == "salary" else key
+        for key in active_keys
+        if (namespace == "salary") == key.startswith("salary/")
+    }
     cutoff = time.time() - max(EXPORT_ORPHAN_GRACE_SECONDS, export_artifact_ttl_seconds())
-    root = get_export_artifact_dir()
+    root = get_export_artifact_dir(namespace=namespace, create=True)
     for path in root.iterdir():
         if not path.is_file() or path.is_symlink() or path.stat().st_mtime >= cutoff:
             continue
-        if path.name in active_keys:
+        if path.name in active_names:
             continue
         if EXPORT_ARTIFACT_KEY.fullmatch(path.name) or path.name.startswith("."):
             path.unlink(missing_ok=True)
@@ -254,7 +294,16 @@ def public_export_operation(operation: dict[str, Any]) -> ExportOperationRespons
         EXPORT_OUTPUT_BYTES.set(output_bytes)
     return ExportOperationResponse(
         id=int(operation["id"]),
-        kind=cast(Literal["daily_metrics", "daily_comparison"], str(operation["kind"])),
+        kind=cast(
+            Literal[
+                "daily_metrics",
+                "daily_comparison",
+                "salary_store_summary",
+                "salary_monthly_trend",
+                "salary_agents",
+            ],
+            str(operation["kind"]),
+        ),
         status=cast(
             Literal["queued", "running", "completed", "failed", "cancelled", "expired"],
             status,
@@ -266,6 +315,7 @@ def public_export_operation(operation: dict[str, Any]) -> ExportOperationRespons
         peak_rss_bytes=operation.get("peak_rss_bytes"),
         build_seconds=operation.get("build_seconds"),
         cell_count=operation.get("cell_count"),
+        row_count=operation.get("row_count"),
         error_code=operation.get("error_code"),
         created_at=operation["created_at"],
         started_at=operation.get("started_at"),
@@ -287,16 +337,51 @@ class ExportOperationsService:
         requested_by_sub: str,
     ) -> ExportOperationResponse:
         kind = ExportsService(ExportsRepository(self.pool)).validate_complex_request(request)
+        return await self._reserve_validated(
+            request,
+            kind=kind,
+            requested_by_sub=requested_by_sub,
+            salary_export=False,
+        )
+
+    async def reserve_salary(
+        self,
+        request: dict[str, Any],
+        *,
+        requested_by_sub: str,
+    ) -> ExportOperationResponse:
+        from services.salary_exports import SalaryExportsService
+
+        normalized, kind = SalaryExportsService.validate_request(request)
+        return await self._reserve_validated(
+            normalized,
+            kind=kind,
+            requested_by_sub=requested_by_sub,
+            salary_export=True,
+        )
+
+    async def _reserve_validated(
+        self,
+        request: dict[str, Any],
+        *,
+        kind: str,
+        requested_by_sub: str,
+        salary_export: bool,
+    ) -> ExportOperationResponse:
         encoded = json.dumps(request, sort_keys=True, separators=(",", ":"))
         operation = await self.repo.reserve(
             kind=kind,
             request_payload=request,
             request_sha256=hashlib.sha256(encoded.encode("utf-8")).hexdigest(),
             requested_by_sub=requested_by_sub,
+            job_prefix="salary-export" if salary_export else "export-complex",
         )
         operation_id = int(operation["id"])
         try:
-            await enqueue_complex_export(operation_id)
+            if salary_export:
+                await enqueue_salary_export(operation_id)
+            else:
+                await enqueue_complex_export(operation_id)
         except JobPublishUncertainError as exc:
             exc.attach_operation_id(operation_id)
             raise
@@ -381,7 +466,17 @@ class ExportOperationsService:
             )
         except ExportArtifactIntegrityError:
             if await self.repo.mark_corrupt(operation_id, artifact_key=key):
-                await asyncio.to_thread(remove_export_artifact, key)
+                try:
+                    await enqueue_export_artifact_cleanup(key)
+                except Exception:
+                    # The owning worker's periodic orphan sweep is the bounded
+                    # fallback. Cleanup availability must never turn the
+                    # integrity response into an unbounded web error.
+                    logger.warning(
+                        "Failed to enqueue corrupt export artifact cleanup operation=%s",
+                        operation_id,
+                        exc_info=True,
+                    )
             raise
 
 

@@ -166,6 +166,7 @@ async def test_corrupt_terminal_job_result_is_reported_without_api_500(
     ("job_id", "queue_name"),
     [
         ("export-complex:7", jobs_service.EXPORT_QUEUE_NAME),
+        ("salary-export:7", jobs_service.SALARY_EXPORT_QUEUE_NAME),
         ("grile-check:8", jobs_service.GRILE_QUEUE_NAME),
         ("grile-store-refresh:9", jobs_service.GRILE_QUEUE_NAME),
         ("grile-monthly:10", jobs_service.GRILE_QUEUE_NAME),

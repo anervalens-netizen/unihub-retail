@@ -5,19 +5,22 @@
 | Endpoint | Meaning | Dependencies | Success |
 | --- | --- | --- | --- |
 | `/livez` | the uvicorn process and event loop can answer | none | `200 {"status":"alive"}` |
-| `/readyz` | authenticated Retail requests can be served | PostgreSQL and Valkey-backed BFF sessions | `200 {"status":"ok"}` |
+| `/readyz` | authenticated Retail requests can be served | PostgreSQL, Valkey-backed BFF sessions and usable JWKS state | `200 {"status":"ok"}` |
 | `/health` | compatibility alias for `/readyz` | same as `/readyz` | same as `/readyz` |
 
 Readiness has one total two-second deadline. Dependency failures and timeouts
 return the same bounded `503 {"status":"unhealthy"}` response; connection
 strings, hosts, paths and exception details remain in server logs only.
 
-OIDC discovery/JWKS network access is intentionally not a readiness dependency:
-the verifier has a bounded stale-key policy and authenticated requests must not
-be removed from service by a transient provider fetch. ARQ is also excluded
-because queue availability does not prevent the read-heavy application from
-serving established sessions. Valkey is checked because every authenticated
-request depends on the server-side session.
+Startup prewarms JWKS before the instance can be considered healthy. Readiness
+does not require a successful live IdP request on every probe: a validated cache
+inside `JWKS_MAX_STALE_SECONDS` is usable and reports `stale`; absent/expired
+keys after a failed refresh return 503. The one-hot metric
+`jwks_readiness_state{state="disabled|absent|fresh|stale|failed"}` distinguishes
+bootstrap, healthy cache, bounded degradation and failure without high-cardinality
+labels. ARQ remains excluded because queue availability does not prevent the
+read-heavy application from serving established sessions. Valkey is checked
+because every authenticated request depends on the server-side session.
 
 ## Service levels
 
@@ -49,8 +52,8 @@ traffic are excluded from the request SLI so probes cannot dilute real errors.
 - `ops/observability/retail-readiness-scrape.yml`: dedicated external probe;
 - `ops/systemd/unihub-backend.service`: web unit source of truth;
 - `unihub-worker.service`, `unihub-import-worker.service`,
-  `unihub-grile-worker.service`, `unihub-export-worker.service`: worker unit
-  sources of truth;
+  `unihub-grile-worker.service`, `unihub-export-worker.service`,
+  `unihub-salary-export-worker.service`: worker unit sources of truth;
 - `ops/systemd/unihub-retail-migrate.service`: one-shot migration unit.
 
 The production Prometheus rules directory is
@@ -72,11 +75,16 @@ promtool test rules ops/observability/retail-slo-rules.test.yml
 systemd-analyze verify \
   ops/systemd/unihub-backend.service \
   unihub-worker.service \
+  ops/systemd/unihub-import-worker.service \
+  ops/systemd/unihub-grile-worker.service \
+  ops/systemd/unihub-export-worker.service \
+  ops/systemd/unihub-salary-export-worker.service \
   ops/systemd/unihub-retail-migrate.service
 ```
 
 After Prometheus reload, verify `probe_success{job="blackbox_retail_readiness"}`
-and all four `unihub_retail:*` HTTP recording rules through the local
+and `jwks_readiness_state{state="fresh"} == 1` (or bounded `stale` during an
+explicit IdP incident), plus all four `unihub_retail:*` HTTP recording rules through the local
 Prometheus API. The deploy gate creates one bounded Dashboard request so the
 Dashboard latency recording cannot pass only by being absent. Worker alerts
 cover scrape target absence/down, self-reported down, backlog/age, failure

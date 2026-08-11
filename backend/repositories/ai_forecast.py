@@ -6,6 +6,8 @@ from typing import Any, Literal
 
 import asyncpg
 
+from domain.filter_scope import FilterInput, normalize_filter_values
+
 
 class AiForecastRepository:
     def __init__(self, pool: asyncpg.Pool):
@@ -17,22 +19,23 @@ class AiForecastRepository:
         firma: str | None,
         regional: str | None,
         asm: str | None,
-        site_code: str | None,
+        site_code: FilterInput,
     ) -> tuple[str, list[Any]]:
         clauses = ["s.locatie NOT ILIKE 'TR %'"]
         params: list[Any] = []
-        if firma:
+        site_codes = normalize_filter_values(site_code)
+        if firma and not site_codes:
             params.append(firma)
             clauses.append(f"s.firma = ${len(params)}")
-        if regional:
+        if regional and not site_codes:
             params.append(regional)
             clauses.append(f"s.regional = ${len(params)}")
-        if asm:
+        if asm and not site_codes:
             params.append(asm)
             clauses.append(f"s.asm = ${len(params)}")
-        if site_code:
-            params.append(site_code)
-            clauses.append(f"s.site_code = ${len(params)}")
+        if site_codes:
+            params.append(site_codes)
+            clauses.append(f"s.site_code = ANY(${len(params)}::TEXT[])")
         return " AND ".join(clauses), params
 
     @staticmethod
@@ -76,7 +79,7 @@ class AiForecastRepository:
         firma: str | None,
         regional: str | None,
         asm: str | None,
-        site_code: str | None,
+        site_code: FilterInput,
     ) -> dict[str, Any] | None:
         filter_sql, filter_params = self._filter_clause(
             firma=firma,
@@ -298,7 +301,7 @@ class AiForecastRepository:
         firma: str | None,
         regional: str | None,
         asm: str | None,
-        site_code: str | None,
+        site_code: FilterInput,
     ) -> dict[str, Any] | None:
         if not run_ids:
             return None

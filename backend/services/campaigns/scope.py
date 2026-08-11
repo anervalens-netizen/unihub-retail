@@ -22,14 +22,11 @@ def _expand_current_manager_scope(
     if not regional_position or "asm" in positions or "site_code" in positions:
         return clauses
     regional_clause = (
-        f"{store_alias}.regional = ANY("
-        f"string_to_array(${regional_position}::TEXT, ','))"
+        f"{store_alias}.regional = ANY(${regional_position}::TEXT[])"
     )
     manager_clause = (
-        f"({store_alias}.regional = ANY("
-        f"string_to_array(${regional_position}::TEXT, ',')) "
-        f"OR {store_alias}.asm = ANY("
-        f"string_to_array(${regional_position}::TEXT, ',')))"
+        f"({store_alias}.regional = ANY(${regional_position}::TEXT[]) "
+        f"OR {store_alias}.asm = ANY(${regional_position}::TEXT[]))"
     )
     return [manager_clause if clause == regional_clause else clause for clause in clauses]
 

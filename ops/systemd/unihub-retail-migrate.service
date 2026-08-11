@@ -10,13 +10,14 @@ User=andrei
 WorkingDirectory=/opt/Mobiup/unihub-retail/backend
 EnvironmentFile=/opt/Mobiup/unihub-retail/.env.migrations
 Environment="UNIHUB_DB_PROCESS_AUTHORITY=migrate"
+Environment="PYTHONDONTWRITEBYTECODE=1"
 ExecStart=/opt/Mobiup/unihub-retail/backend/venv/bin/python scripts/run_migrations.py
 TimeoutStartSec=300
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=unihub-retail-migrate
 ProtectSystem=strict
-ReadWritePaths=/opt/Mobiup
+InaccessiblePaths=-/opt/Mobiup/unihub-retail/data/export_artifacts/salary
 ProtectHome=read-only
 NoNewPrivileges=true
 PrivateTmp=true

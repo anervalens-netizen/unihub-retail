@@ -6,19 +6,46 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from auth import AuthClaims
+from routers.contests import _internal_site_codes_override
+from services.contests import (
+    ContestsService,
+    _promo_scope_kwargs,
+    _scope_clause_for_stores,
+)
 from services.contests_config import (
     ContestDefinition,
     get_active_contest,
     get_active_contests,
     parse_contests,
 )
-from services.contests import ContestsService
 from services.promo_copurchase import PromoCoPurchaseResult
 
 
 class FakeRow(dict):
     def __getattr__(self, name: str):
         return self[name]
+
+
+def test_contest_store_scope_uses_exact_arrays_without_comma_protocol() -> None:
+    scope = {"site_codes": ["B, Nord", "C"], "asm": "ignored"}
+
+    clause, params = _scope_clause_for_stores(scope)
+
+    assert "s.site_code = ANY($1::TEXT[])" in clause
+    assert "string_to_array" not in clause
+    assert params == [["B, Nord", "C"]]
+    assert _promo_scope_kwargs(scope)["site_code"] == ["B, Nord", "C"]
+
+
+def test_internal_contest_override_uses_repeated_exact_values() -> None:
+    claims = AuthClaims(
+        "internal", "", "", [], "hub-internal", "retail", 0, 1, {},
+    )
+
+    assert _internal_site_codes_override(
+        [" B, Nord ", "B, Nord", "C"], claims,
+    ) == ["B, Nord", "C"]
 
 
 # ----------------------------- config parsing -----------------------------

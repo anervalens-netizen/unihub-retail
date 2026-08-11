@@ -16,14 +16,14 @@ to `/opt/Mobiup/ops/scripts/`, makes the files and parent directory root-owned
 and non-writable by the runner, and verifies the installed SHA-256 values match
 the reviewed sources exactly.
 
-The deploy also owns the versioned Retail runtime assets: five long-running
+The deploy also owns the versioned Retail runtime assets: six long-running
 systemd units plus the migration one-shot and legacy rollback tombstone,
 the detected Prometheus bridge environment, and the rendered Retail scrape
 fragment. The shared observability stack is provisioned once with
 `scrape_config_files: /etc/prometheus/scrape.d/*.yml` and a read-only host mount
 from `/opt/Mobiup/ops/prometheus/scrape.d`; the Retail deploy validates but
 never rewrites the shared Prometheus config or Compose topology. Missing mount,
-include, bridge data, `promtool` success or any of the five UP targets is a
+include, bridge data, `promtool` success or any of the six UP targets is a
 fail-closed release gate. Rollback restores the prior units, environment and
 fragment together with code and `dist/`.
 

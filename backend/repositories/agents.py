@@ -3,6 +3,8 @@ from __future__ import annotations
 from typing import Any
 import asyncpg
 
+from domain.filter_scope import FilterInput
+
 from repositories.agent_evaluation import (
     AGENT_EVALUATION_OPTIONS_QUERY,
     AGENT_EVALUATION_V2_QUERY,
@@ -63,7 +65,7 @@ class AgentsRepository:
         month_filter: str | None,
         firma: str | None,
         asm: str | None,
-        site_code: str | None,
+        site_code: FilterInput,
     ) -> list[asyncpg.Record]:
         async with self.pool.acquire() as conn:
             return await conn.fetch(

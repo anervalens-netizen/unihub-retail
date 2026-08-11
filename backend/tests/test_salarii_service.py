@@ -136,16 +136,19 @@ class TestSalariiEvolution:
         }
 
     @pytest.mark.asyncio
-    async def test_evolution_company_with_regional(self, service, mock_repo):
-        mock_repo.fetch_evolution_single_company.return_value = []
-        result = await service.get_evolution("FirmaA", "SITE01", "Region1", None)
-        call = mock_repo.fetch_evolution_single_company.call_args
+    async def test_evolution_site_scope_dominates_company_branch(self, service, mock_repo):
+        mock_repo.fetch_evolution_main.return_value = []
+        await service.get_evolution(
+            "FirmaA", ["SITE, ONE"], "Region1", None
+        )
+        call = mock_repo.fetch_evolution_main.call_args
         assert call.kwargs == {
             "company_name": "FirmaA",
-            "site_code": "SITE01",
+            "site_code": ["SITE, ONE"],
             "regional": "Region1",
             "asm": None,
         }
+        mock_repo.fetch_evolution_single_company.assert_not_awaited()
 
 
 class TestSalariiAgentsSummary:

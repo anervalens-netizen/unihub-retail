@@ -31,7 +31,7 @@ selected_months AS (
       AND ($1::TEXT IS NULL OR ram.import_month = ANY(string_to_array($1::TEXT, ',')))
       AND ($2::TEXT IS NULL OR LOWER(ca.firma) = LOWER($2))
       AND ($3::TEXT IS NULL OR ca.asm = $3 OR ca.regional = $3)
-      AND ($4::TEXT IS NULL OR ca.site_code = ANY(string_to_array($4::TEXT, ',')))
+      AND ($4::TEXT[] IS NULL OR ca.site_code = ANY($4::TEXT[]))
 ),
 selected_context AS (
     SELECT
@@ -153,7 +153,7 @@ monthly_base AS (
       AND ($1::TEXT IS NULL OR ram.import_month = ANY(string_to_array($1::TEXT, ',')))
       AND ($2::TEXT IS NULL OR LOWER(ca.firma) = LOWER($2))
       AND ($3::TEXT IS NULL OR ca.asm = $3 OR ca.regional = $3)
-      AND ($4::TEXT IS NULL OR ca.site_code = ANY(string_to_array($4::TEXT, ',')))
+      AND ($4::TEXT[] IS NULL OR ca.site_code = ANY($4::TEXT[]))
       AND ram.agent IS NOT NULL
       AND TRIM(ram.agent) != ''
       AND ram.agent != '-'
@@ -310,7 +310,7 @@ premium_by_agent AS (
       AND ($1::TEXT IS NULL OR rim.import_month = ANY(string_to_array($1::TEXT, ',')))
       AND ($2::TEXT IS NULL OR LOWER(ca.firma) = LOWER($2))
       AND ($3::TEXT IS NULL OR ca.asm = $3 OR ca.regional = $3)
-      AND ($4::TEXT IS NULL OR ca.site_code = ANY(string_to_array($4::TEXT, ',')))
+      AND ($4::TEXT[] IS NULL OR ca.site_code = ANY($4::TEXT[]))
     GROUP BY 1, rim.agent
 )
 SELECT

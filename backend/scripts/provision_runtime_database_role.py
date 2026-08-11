@@ -44,6 +44,7 @@ AUTHORITY_ROLES = frozenset({
     "unihub_sales_import",
     "unihub_finance_import",
     "unihub_operations",
+    "unihub_salary_export",
     "unihub_migrate",
 })
 AUTHORITY_CONTRACTS = frozenset({
@@ -51,6 +52,7 @@ AUTHORITY_CONTRACTS = frozenset({
     frozenset({"unihub_sales_import"}),
     frozenset({"unihub_finance_import"}),
     frozenset({"unihub_operations"}),
+    frozenset({"unihub_salary_export"}),
     frozenset({"unihub_migrate"}),
 })
 SCHEMA_OWNER_ROLE = "unihub_schema_owner"
@@ -241,6 +243,7 @@ async def main() -> None:
     authority_name_by_cli_roles: dict[frozenset[str], DatabaseAuthority] = {
         frozenset({"unihub_web_read", "unihub_business_write"}): "web",
         frozenset({"unihub_operations"}): "operations",
+        frozenset({"unihub_salary_export"}): "salary_export",
         frozenset({"unihub_sales_import"}): "sales_import",
         frozenset({"unihub_finance_import"}): "finance_import",
         frozenset({"unihub_migrate"}): "migrate",

@@ -3486,7 +3486,10 @@
           "agent": {
             "anyOf": [
               {
-                "type": "string"
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
               },
               {
                 "type": "null"
@@ -3545,7 +3548,10 @@
           "site_code": {
             "anyOf": [
               {
-                "type": "string"
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
               },
               {
                 "type": "null"
@@ -4667,7 +4673,10 @@
           "kind": {
             "enum": [
               "daily_metrics",
-              "daily_comparison"
+              "daily_comparison",
+              "salary_store_summary",
+              "salary_monthly_trend",
+              "salary_agents"
             ],
             "title": "Kind",
             "type": "string"
@@ -4683,6 +4692,18 @@
               }
             ],
             "title": "Peak Rss Bytes"
+          },
+          "row_count": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Row Count"
           },
           "started_at": {
             "anyOf": [
@@ -10482,8 +10503,9 @@
             "type": "integer"
           },
           "avg_salary": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Avg Salary",
-            "type": "number"
+            "type": "string"
           },
           "company_name": {
             "title": "Company Name",
@@ -10514,8 +10536,9 @@
             "type": "string"
           },
           "total_salary": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Total Salary",
-            "type": "number"
+            "type": "string"
           }
         },
         "required": [
@@ -10579,8 +10602,9 @@
             "title": "Name"
           },
           "total": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Total",
-            "type": "number"
+            "type": "string"
           }
         },
         "required": [
@@ -10601,8 +10625,9 @@
             "type": "integer"
           },
           "avg_salary": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Avg Salary",
-            "type": "number"
+            "type": "string"
           },
           "company_name": {
             "title": "Company Name",
@@ -10620,8 +10645,9 @@
             "title": "Locatie"
           },
           "ratio": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Ratio",
-            "type": "number"
+            "type": "string"
           },
           "site_code": {
             "anyOf": [
@@ -10635,12 +10661,14 @@
             "title": "Site Code"
           },
           "total_salary": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Total Salary",
-            "type": "number"
+            "type": "string"
           },
           "total_sales": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Total Sales",
-            "type": "number"
+            "type": "string"
           }
         },
         "required": [
@@ -10660,20 +10688,23 @@
         "additionalProperties": false,
         "properties": {
           "mobicell": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Mobicell",
-            "type": "number"
+            "type": "string"
           },
           "mobiup": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Mobiup",
-            "type": "number"
+            "type": "string"
           },
           "month": {
             "title": "Month",
             "type": "string"
           },
           "total": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Total",
-            "type": "number"
+            "type": "string"
           }
         },
         "required": [
@@ -10685,30 +10716,106 @@
         "title": "SalaryEvolutionPoint",
         "type": "object"
       },
-      "SalaryExportAudit": {
+      "SalaryExportRequest": {
         "additionalProperties": false,
+        "description": "Canonical, server-owned request for a sensitive salary artifact.",
         "properties": {
+          "asm": {
+            "anyOf": [
+              {
+                "maxLength": 120,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Asm"
+          },
+          "company_name": {
+            "anyOf": [
+              {
+                "maxLength": 120,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Company Name"
+          },
           "export_kind": {
             "enum": [
               "store_summary",
               "monthly_trend",
-              "agents_page"
+              "agents"
             ],
             "title": "Export Kind",
             "type": "string"
           },
-          "row_count": {
-            "maximum": 5000.0,
-            "minimum": 0.0,
-            "title": "Row Count",
-            "type": "integer"
+          "month": {
+            "anyOf": [
+              {
+                "maximum": 12.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Month"
+          },
+          "q": {
+            "anyOf": [
+              {
+                "maxLength": 160,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Q"
+          },
+          "regional": {
+            "anyOf": [
+              {
+                "maxLength": 120,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Regional"
+          },
+          "site_code": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 200,
+            "title": "Site Code",
+            "type": "array"
+          },
+          "year": {
+            "anyOf": [
+              {
+                "maximum": 2100.0,
+                "minimum": 2000.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Year"
           }
         },
         "required": [
-          "export_kind",
-          "row_count"
+          "export_kind"
         ],
-        "title": "SalaryExportAudit",
+        "title": "SalaryExportRequest",
         "type": "object"
       },
       "SalaryHistoryRecordPublic": {
@@ -10745,8 +10852,9 @@
             "title": "Site Code"
           },
           "total_salary": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Total Salary",
-            "type": "number"
+            "type": "string"
           },
           "year": {
             "title": "Year",
@@ -10768,8 +10876,9 @@
         "additionalProperties": false,
         "properties": {
           "avg": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Avg",
-            "type": "number"
+            "type": "string"
           },
           "avg_month_count": {
             "title": "Avg Month Count",
@@ -10797,8 +10906,9 @@
             "type": "array"
           },
           "total": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Total",
-            "type": "number"
+            "type": "string"
           }
         },
         "required": [
@@ -10850,7 +10960,8 @@
           "avg_salary": {
             "anyOf": [
               {
-                "type": "number"
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
               },
               {
                 "type": "null"
@@ -10906,7 +11017,8 @@
           "total": {
             "anyOf": [
               {
-                "type": "number"
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
               },
               {
                 "type": "null"
@@ -10965,8 +11077,9 @@
             "title": "Site Code"
           },
           "total_salary": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Total Salary",
-            "type": "number"
+            "type": "string"
           },
           "year": {
             "title": "Year",
@@ -11049,8 +11162,9 @@
             "type": "integer"
           },
           "avg_salary": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Avg Salary",
-            "type": "number"
+            "type": "string"
           },
           "by_company": {
             "additionalProperties": true,
@@ -11062,12 +11176,14 @@
             "type": "string"
           },
           "total_salary": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Total Salary",
-            "type": "number"
+            "type": "string"
           },
           "total_sales": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
             "title": "Total Sales",
-            "type": "number"
+            "type": "string"
           }
         },
         "required": [
@@ -15774,7 +15890,10 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
                 },
                 {
                   "type": "null"
@@ -15893,7 +16012,10 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
                 },
                 {
                   "type": "null"
@@ -16067,7 +16189,10 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
                 },
                 {
                   "type": "null"
@@ -16178,7 +16303,10 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
                 },
                 {
                   "type": "null"
@@ -16194,7 +16322,10 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
                 },
                 {
                   "type": "null"
@@ -16305,7 +16436,10 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
                 },
                 {
                   "type": "null"
@@ -16321,7 +16455,10 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
                 },
                 {
                   "type": "null"
@@ -16594,7 +16731,10 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
                 },
                 {
                   "type": "null"
@@ -16716,7 +16856,10 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
                 },
                 {
                   "type": "null"
@@ -16839,7 +16982,10 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
                 },
                 {
                   "type": "null"
@@ -16855,7 +17001,10 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
                 },
                 {
                   "type": "null"
@@ -16966,7 +17115,10 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
                 },
                 {
                   "type": "null"
@@ -16982,7 +17134,10 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
                 },
                 {
                   "type": "null"
@@ -17104,7 +17259,10 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
                 },
                 {
                   "type": "null"
@@ -17120,7 +17278,10 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
                 },
                 {
                   "type": "null"
@@ -17229,20 +17390,23 @@
             }
           },
           {
-            "description": "Optional: lista comma-separated de site_code-uri care suprascrie scope-ul din config. Onorat DOAR pentru apeluri interne (principalul hub via X-Hub-Internal). Ignorat pentru useri normali.",
+            "description": "Optional: parametru repetat de site_code-uri care suprascrie scope-ul din config. Onorat DOAR pentru apeluri interne (principalul hub via X-Hub-Internal). Ignorat pentru useri normali.",
             "in": "query",
             "name": "site_codes",
             "required": false,
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
                 },
                 {
                   "type": "null"
                 }
               ],
-              "description": "Optional: lista comma-separated de site_code-uri care suprascrie scope-ul din config. Onorat DOAR pentru apeluri interne (principalul hub via X-Hub-Internal). Ignorat pentru useri normali.",
+              "description": "Optional: parametru repetat de site_code-uri care suprascrie scope-ul din config. Onorat DOAR pentru apeluri interne (principalul hub via X-Hub-Internal). Ignorat pentru useri normali.",
               "title": "Site Codes"
             }
           }
@@ -17303,20 +17467,23 @@
             }
           },
           {
-            "description": "Optional: lista comma-separated de site_code-uri care suprascrie scope-ul din config. Onorat DOAR pentru apeluri interne (principalul hub via X-Hub-Internal). Ignorat pentru useri normali.",
+            "description": "Optional: parametru repetat de site_code-uri care suprascrie scope-ul din config. Onorat DOAR pentru apeluri interne (principalul hub via X-Hub-Internal). Ignorat pentru useri normali.",
             "in": "query",
             "name": "site_codes",
             "required": false,
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
                 },
                 {
                   "type": "null"
                 }
               ],
-              "description": "Optional: lista comma-separated de site_code-uri care suprascrie scope-ul din config. Onorat DOAR pentru apeluri interne (principalul hub via X-Hub-Internal). Ignorat pentru useri normali.",
+              "description": "Optional: parametru repetat de site_code-uri care suprascrie scope-ul din config. Onorat DOAR pentru apeluri interne (principalul hub via X-Hub-Internal). Ignorat pentru useri normali.",
               "title": "Site Codes"
             }
           }
@@ -17575,7 +17742,10 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
                 },
                 {
                   "type": "null"
@@ -17591,7 +17761,10 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
                 },
                 {
                   "type": "null"
@@ -17768,7 +17941,10 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
                 },
                 {
                   "type": "null"
@@ -17784,7 +17960,10 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
                 },
                 {
                   "type": "null"
@@ -17911,7 +18090,10 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
                 },
                 {
                   "type": "null"
@@ -17927,7 +18109,10 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
                 },
                 {
                   "type": "null"
@@ -18106,7 +18291,10 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
                 },
                 {
                   "type": "null"
@@ -18122,7 +18310,10 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
                 },
                 {
                   "type": "null"
@@ -18276,7 +18467,10 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
                 },
                 {
                   "type": "null"
@@ -18292,7 +18486,10 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
                 },
                 {
                   "type": "null"
@@ -18423,7 +18620,10 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
                 },
                 {
                   "type": "null"
@@ -18439,7 +18639,10 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
                 },
                 {
                   "type": "null"
@@ -18585,7 +18788,10 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
                 },
                 {
                   "type": "null"
@@ -18601,7 +18807,10 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
                 },
                 {
                   "type": "null"
@@ -18712,7 +18921,10 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
                 },
                 {
                   "type": "null"
@@ -18728,7 +18940,10 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
                 },
                 {
                   "type": "null"
@@ -22107,7 +22322,10 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
                 },
                 {
                   "type": "null"
@@ -22278,7 +22496,10 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
                 },
                 {
                   "type": "null"
@@ -22545,7 +22766,10 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
                 },
                 {
                   "type": "null"
@@ -22721,45 +22945,6 @@
         ]
       }
     },
-    "/salarii/audit/export": {
-      "post": {
-        "operationId": "audit_salary_export_salarii_audit_export_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/SalaryExportAudit"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "204": {
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "summary": "Audit Salary Export",
-        "tags": [
-          "salarii"
-        ]
-      }
-    },
     "/salarii/evolution": {
       "get": {
         "operationId": "salarii_evolution_salarii_evolution_get",
@@ -22787,7 +22972,10 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
                 },
                 {
                   "type": "null"
@@ -22866,6 +23054,68 @@
         ]
       }
     },
+    "/salarii/exports/operations": {
+      "post": {
+        "operationId": "create_salary_export_operation_salarii_exports_operations_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SalaryExportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExportOperationResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "description": "Cerere salariala invalida"
+          },
+          "409": {
+            "description": "Capacitate activa epuizata"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExportOperationUnavailableResponse"
+                }
+              }
+            },
+            "description": "Publicare ARQ indisponibila sau neconfirmata"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create Salary Export Operation",
+        "tags": [
+          "salarii"
+        ]
+      }
+    },
     "/salarii/overview": {
       "get": {
         "operationId": "salarii_overview_salarii_overview_get",
@@ -22893,7 +23143,10 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
                 },
                 {
                   "type": "null"
@@ -23027,7 +23280,10 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
                 },
                 {
                   "type": "null"
@@ -23180,7 +23436,10 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
                 },
                 {
                   "type": "null"
@@ -23314,7 +23573,10 @@
             "schema": {
               "anyOf": [
                 {
-                  "type": "string"
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
                 },
                 {
                   "type": "null"

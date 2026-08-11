@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 import repositories.visits_report_postgres as postgres_repository_module
+import services.visits_report as visits_service_module
 from repositories.visits_report_postgres import VisitsReportPostgresRepository
 from services.visits_report import VisitsReportService
 
@@ -54,6 +55,38 @@ async def test_postgres_primary_does_not_require_sqlite(
     response = await service.get_visits_tree(None, None, None, None)
 
     assert response.team_leaders == []
+
+
+@pytest.mark.asyncio
+async def test_visit_store_scope_preserves_commas_and_dominates_hierarchy(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    connection = AsyncMock()
+    connection.fetch.return_value = []
+    pool = MagicMock()
+    pool.acquire.return_value = _Acquire(connection)
+    monkeypatch.setattr(
+        visits_service_module,
+        "get_pool",
+        AsyncMock(return_value=pool),
+    )
+    service = VisitsReportService(MagicMock())
+
+    await service._resolve_store_scope(
+        {
+            "firma": "Wrong company",
+            "rm": "Wrong manager",
+            "asm": "Wrong ASM",
+            "magazin": ["B, Nord", "C"],
+        }
+    )
+
+    sql, values = connection.fetch.await_args.args
+    assert "firma = ANY" not in sql
+    assert "regional = ANY" not in sql
+    assert "asm = ANY" not in sql
+    assert "site_code = ANY($1::text[])" in sql
+    assert values == ["B, Nord", "C"]
 
 
 @pytest.mark.asyncio

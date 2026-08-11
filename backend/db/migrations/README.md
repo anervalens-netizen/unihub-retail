@@ -66,6 +66,14 @@ release-ului `v2.1.0` include:
 | 056 | `056_fieldops_visits_operations_authority.sql` | `36c2bda0adf6b2e15298403e164e99b75d78e46369b44510c500fdf7dcd838db` | autoritate operațională minimă pentru snapshotul local Visits, fără extinderea accesului la sursa FieldOps |
 | 057 | `057_insight_contest_grile_campaign_v3.sql` | `b66ba6287f2e842be7e6be2047cf6c23e6048f92419044f0b45d639e6a83bc8e` | Campaign v3 cu variantă canonică, Concurs v1 publicat immutable, Grile v1 fenced și snapshot Insight v5; v2/v4 rămân N-1 |
 | 058 | `058_insight_grile_historical_v2.sql` | `c2d369aab988931e35e32b91d90a4df650a801b1b5a9f14fa13d4f5fe3d9d4ec` | Grile v2: o singură sursă pe perioadă, proiecția fenced curentă nenulă sau, determinist, ultimul full run finalizat immutable; v1/v5 rămân N-1 |
+| 059 | `059_insight_full_visibility_read_models.sql` | `e587202acff59b7d98f2d8d23dc3c0a917b583c616f97c1b6bf8af8ebcad7ed8` | read-model-uri Insight complete pentru Compensation și Finance, fără expunerea CNP |
+| 060 | `060_insight_finance_v2_performance.sql` | `67975c4e926996b26a650e6cbac46d597a4c5a0f915979a7180568d4d1489e09` | materializare per-query a contractului Finance v2 fără schimbare semantică |
+| 061 | `061_insight_finance_v2_period_pushdown.sql` | `7dff26f8268923cf644dcd00a1d5292f53f34b3338952d0b4be645f8bcd4b4eb` | pushdown pe perioadă pentru Finance v2 cu precedența actual/estimat păstrată |
+| 062 | `062_grile_v2_read_contract.sql` | `146ac39fc6c2ec7d3f0ddc599d60e43bdbe76ad0344fe837e4439841ebb05ccc` | contractul read-only Grile V2 folosit de pilotul separat |
+| 063 | `063_leave_request_date_contract.sql` | `dba80346ea5fe02213a0e39ebf9c3f408168b9b048efba75e78fff6544487df4` | contract strict pentru datele calendaristice ale cererilor de concediu |
+| 064 | `064_ai_forecast_cutoff_read_model.sql` | `3fe8d8f32d51ec8a25450d3fc45bc7d64f8bdfb663949054862ea41a1805b6f4` | cutoff oficial al generației sales promovate pentru forecast, fără evidence expus webului |
+| 065 | `065_salary_export_evidence.sql` | `c6bf02313f4dfeeebe3796cdf6607a1e5e797ca6aa0d76b4ee654a5773cd42bf` | export salarial durabil owner-bound, cu request/actor immutable, artefact în namespace separat și row count real atestat de worker |
+| 066 | `066_salary_export_authority.sql` | `ab13ccc87b3da126f9935f1bb4ee66773afcc01417e08e3193242ddc2ed88fa5` | autoritate DB dedicată exporturilor salariale, granturi column-level și RLS care separă operațiile salariale de workerul generic |
 
 Aplicarea se face numai prin `unihub-retail-migrate.service`, cu `MIGRATION_DATABASE_URL`, backup/read-only reconciliation și verificarea checksumului. Nu edita 032–036 după aplicare; corecția este o migrare nouă.
 

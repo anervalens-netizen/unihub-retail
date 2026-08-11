@@ -4,13 +4,17 @@ import errno
 import hashlib
 import os
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 import asyncpg
 
 import services.jobs as jobs
 import services.importer as importer
+import services.sales_artifacts as sales_artifacts
+import services.sales_generation_flow as sales_generation_flow
+import services.sales_import_worker as sales_import_worker
+import worker
 from db.connection import close_db_pool, get_pool
 from services.sales_generation import SalesGenerationValidationError
 from services.sales_generation_flow import promote_sales_generation
@@ -49,6 +53,301 @@ def test_retain_is_content_addressed_durable_and_idempotent(
         expected_digest=digest,
         expected_bytes=12,
     ) == retained
+
+
+def test_resolver_follows_an_atomic_move_to_the_canonical_retained_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("SALES_IMPORT_SPOOL_DIR", str(tmp_path))
+    source, digest = _artifact(tmp_path)
+    retained = jobs.retain_sales_import_spool_file(
+        source,
+        import_month="2099-08",
+        snapshot_id=7,
+        expected_digest=digest,
+        expected_bytes=12,
+    )
+
+    assert jobs.resolve_sales_import_artifact(source, digest, 12) == retained
+
+
+def test_resolver_prefers_valid_retained_bytes_over_a_corrupt_queued_artifact(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("SALES_IMPORT_SPOOL_DIR", str(tmp_path))
+    source, digest = _artifact(tmp_path)
+    retained_dir = tmp_path / "retained"
+    retained_dir.mkdir()
+    (retained_dir / f"{digest}.source").write_bytes(b"sales source")
+    source.write_bytes(b"corrupt")
+
+    assert jobs.resolve_sales_import_artifact(source, digest, 12) == (
+        retained_dir / f"{digest}.source"
+    )
+
+
+def test_resolver_fails_when_neither_artifact_matches_the_expected_digest(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("SALES_IMPORT_SPOOL_DIR", str(tmp_path))
+    source, digest = _artifact(tmp_path)
+    retained_dir = tmp_path / "retained"
+    retained_dir.mkdir()
+    source.write_bytes(b"corrupt queued")
+    (retained_dir / f"{digest}.source").write_bytes(b"corrupt retained")
+
+    with pytest.raises(jobs.SalesImportArtifactError, match="integrity"):
+        jobs.resolve_sales_import_artifact(source, digest, 12)
+
+
+@pytest.mark.asyncio
+async def test_worker_retry_repairs_post_move_db_failure_without_restart(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("SALES_IMPORT_SPOOL_DIR", str(tmp_path))
+    source, digest = _artifact(tmp_path)
+    retained = jobs.retain_sales_import_spool_file(
+        source,
+        import_month="2099-08",
+        snapshot_id=17,
+        expected_digest=digest,
+        expected_bytes=12,
+    )
+    recovered = {
+        "id": 17,
+        "import_month": "2099-08",
+        "filename": "sales.xlsx",
+        "is_month_final": False,
+        "rows_in_file": 3,
+        "rows_imported": 3,
+        "coverage_report": {},
+        "generation_token": "58daa48f-ceb4-4963-88ab-441a46fedd64",
+        "owner_id": "a8bc1c44-752f-43c7-b0b0-f99b95134a74",
+        "manifest_sha256": "a" * 64,
+        "manifest": {
+            "generation_state": "validated",
+            "rows_filtered": 0,
+            "store_count": 1,
+            "agent_count": 1,
+        },
+        "source_artifact_state": "artifact_retaining",
+    }
+    find_recovery = AsyncMock(return_value=recovered)
+    mark_retained = AsyncMock()
+    parse_and_stage = AsyncMock(side_effect=AssertionError("validated rows must not be rebuilt"))
+    monkeypatch.setattr(
+        sales_generation_flow,
+        "find_recoverable_sales_generation_for_artifact_retain",
+        find_recovery,
+    )
+    monkeypatch.setattr(
+        sales_generation_flow,
+        "mark_sales_generation_artifact_retained",
+        mark_retained,
+    )
+    monkeypatch.setattr(importer, "import_sales_file", parse_and_stage)
+
+    result = await worker.import_sales_background(
+        {"db_conn": MagicMock()},
+        str(source),
+        digest,
+        12,
+        "sales.xlsx",
+        cutoff_date_iso="2099-08-12",
+    )
+
+    assert result["snapshot_id"] == 17
+    assert result["generation_state"] == "validated"
+    find_recovery.assert_awaited_once()
+    assert find_recovery.await_args is not None
+    assert find_recovery.await_args.kwargs["retained_path"] == str(retained)
+    mark_retained.assert_awaited_once()
+    parse_and_stage.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_worker_retry_preserves_exact_queued_bytes_after_stage_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("SALES_IMPORT_SPOOL_DIR", str(tmp_path))
+    source, digest = _artifact(tmp_path)
+    staged = importer.ImportResult(
+        import_month="2099-08",
+        rows_in_file=3,
+        rows_imported=3,
+        rows_filtered=0,
+        store_count=1,
+        agent_count=1,
+        snapshot_id=18,
+        filename="sales.xlsx",
+        is_month_final=False,
+        coverage_report={},
+        generation_state="validated",
+        generation_token="58daa48f-ceb4-4963-88ab-441a46fedd64",
+        owner_id="a8bc1c44-752f-43c7-b0b0-f99b95134a74",
+        manifest_sha256="a" * 64,
+        manifest={"generation_state": "validated"},
+    )
+    parse_and_stage = AsyncMock(
+        side_effect=[RuntimeError("transient PostgreSQL failure"), staged]
+    )
+    mark_retained = AsyncMock()
+    monkeypatch.setattr(
+        sales_generation_flow,
+        "find_recoverable_sales_generation_for_artifact_retain",
+        AsyncMock(return_value=None),
+    )
+    monkeypatch.setattr(importer, "import_sales_file", parse_and_stage)
+    monkeypatch.setattr(
+        sales_generation_flow,
+        "mark_sales_generation_artifact_retained",
+        mark_retained,
+    )
+
+    with pytest.raises(RuntimeError, match="PostgreSQL"):
+        await worker.import_sales_background(
+            {"db_conn": MagicMock()},
+            str(source),
+            digest,
+            12,
+            "sales.xlsx",
+        )
+
+    assert source.read_bytes() == b"sales source"
+    retried = await worker.import_sales_background(
+        {"db_conn": MagicMock()},
+        str(source),
+        digest,
+        12,
+        "sales.xlsx",
+    )
+
+    retained = tmp_path / "retained" / f"{digest}.source"
+    assert retried["snapshot_id"] == 18
+    assert not source.exists()
+    assert retained.read_bytes() == b"sales source"
+    assert [call.args[1] for call in parse_and_stage.await_args_list] == [
+        b"sales source",
+        b"sales source",
+    ]
+    mark_retained.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_worker_retry_recovers_validated_generation_before_artifact_move(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("SALES_IMPORT_SPOOL_DIR", str(tmp_path))
+    source, digest = _artifact(tmp_path)
+    recovered = {
+        "id": 19,
+        "import_month": "2099-08",
+        "filename": "sales.xlsx",
+        "is_month_final": False,
+        "rows_in_file": 3,
+        "rows_imported": 3,
+        "coverage_report": {},
+        "generation_token": "58daa48f-ceb4-4963-88ab-441a46fedd64",
+        "owner_id": "a8bc1c44-752f-43c7-b0b0-f99b95134a74",
+        "manifest_sha256": "a" * 64,
+        "manifest": {
+            "generation_state": "validated",
+            "rows_filtered": 0,
+            "store_count": 1,
+            "agent_count": 1,
+        },
+        "source_artifact_state": "artifact_retaining",
+    }
+    staged = importer.ImportResult(
+        import_month="2099-08",
+        rows_in_file=3,
+        rows_imported=3,
+        rows_filtered=0,
+        store_count=1,
+        agent_count=1,
+        snapshot_id=19,
+        filename="sales.xlsx",
+        is_month_final=False,
+        coverage_report={},
+        generation_state="validated",
+        generation_token=str(recovered["generation_token"]),
+        owner_id=str(recovered["owner_id"]),
+        manifest_sha256=str(recovered["manifest_sha256"]),
+        manifest={
+            "generation_state": "validated",
+            "rows_filtered": 0,
+            "store_count": 1,
+            "agent_count": 1,
+        },
+    )
+    find_recovery = AsyncMock(side_effect=[None, recovered])
+    parse_and_stage = AsyncMock(return_value=staged)
+    mark_retained = AsyncMock()
+    real_retain = sales_artifacts.retain_sales_import_spool_file
+    retain_attempts = 0
+
+    def fail_before_move_once(*args: object, **kwargs: object) -> Path:
+        nonlocal retain_attempts
+        retain_attempts += 1
+        if retain_attempts == 1:
+            raise OSError("simulated fsync failure before move")
+        return real_retain(*args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(
+        sales_generation_flow,
+        "find_recoverable_sales_generation_for_artifact_retain",
+        find_recovery,
+    )
+    monkeypatch.setattr(importer, "import_sales_file", parse_and_stage)
+    monkeypatch.setattr(
+        sales_generation_flow,
+        "mark_sales_generation_artifact_retained",
+        mark_retained,
+    )
+    monkeypatch.setattr(
+        sales_import_worker,
+        "retain_sales_import_spool_file",
+        fail_before_move_once,
+    )
+
+    with pytest.raises(OSError, match="before move"):
+        await worker.import_sales_background(
+            {"db_conn": MagicMock()}, str(source), digest, 12, "sales.xlsx"
+        )
+    assert source.read_bytes() == b"sales source"
+
+    retried = await worker.import_sales_background(
+        {"db_conn": MagicMock()}, str(source), digest, 12, "sales.xlsx"
+    )
+
+    retained = tmp_path / "retained" / f"{digest}.source"
+    assert retried["snapshot_id"] == 19
+    assert retained.read_bytes() == b"sales source"
+    parse_and_stage.assert_awaited_once()
+    mark_retained.assert_awaited_once()
+    assert retain_attempts == 2
+
+
+@pytest.mark.asyncio
+async def test_post_move_recovery_matches_the_exact_cutoff_including_null() -> None:
+    conn = AsyncMock()
+    conn.fetch.return_value = []
+
+    recovered = (
+        await sales_generation_flow.find_recoverable_sales_generation_for_artifact_retain(
+            conn,
+            queued_path="/spool/source.upload",
+            retained_path="/spool/retained/source.source",
+            source_sha256="a" * 64,
+            source_byte_size=12,
+            cutoff_date=None,
+        )
+    )
+
+    assert recovered is None
+    query = conn.fetch.await_args.args[0]
+    assert "cutoff_date IS NOT DISTINCT FROM $5::date" in query
+    assert conn.fetch.await_args.args[-1] is None
 
 
 def test_retained_cleanup_is_explicit_rooted_and_idempotent(
@@ -130,9 +429,17 @@ def test_retain_faults_never_report_success(
             lambda _self, _target: (_ for _ in ()).throw(OSError(errno.ENOSPC, "disk full")),
         )
     elif fault == "fsync":
-        monkeypatch.setattr(jobs, "_fsync_file", lambda _path: (_ for _ in ()).throw(OSError("fsync fault")))
+        monkeypatch.setattr(
+            sales_artifacts,
+            "_fsync_file",
+            lambda _path: (_ for _ in ()).throw(OSError("fsync fault")),
+        )
     else:
-        monkeypatch.setattr(jobs, "_file_digest_and_size", lambda _path: ("0" * 64, 1))
+        monkeypatch.setattr(
+            sales_artifacts,
+            "_file_digest_and_size",
+            lambda _path: ("0" * 64, 1),
+        )
     with pytest.raises(OSError if fault != "readback" else jobs.SalesImportArtifactError):
         jobs.retain_sales_import_spool_file(
             source,

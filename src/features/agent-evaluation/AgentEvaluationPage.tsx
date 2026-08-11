@@ -56,7 +56,7 @@ export function AgentEvaluationSubtab({
       const params = {
         months: selectedMonths.length ? selectedMonths.join(',') : undefined,
         asm: asm || undefined,
-        site_code: selectedStores.length ? selectedStores.join(',') : undefined,
+        site_code: selectedStores.length ? selectedStores : undefined,
       };
       if (mode === 'new') {
         setV2Data(await fetchAgentEvaluationV2(params));

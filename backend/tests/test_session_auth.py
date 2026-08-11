@@ -21,6 +21,7 @@ KEY = "MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA="
 class FakeRedis:
     def __init__(self) -> None:
         self.values: dict[str, bytes] = {}
+        self.closed = False
 
     async def set(self, key: str, value: bytes, **_kwargs: object) -> bool:
         if _kwargs.get("nx") and key in self.values:
@@ -53,20 +54,21 @@ class FakeRedis:
         return True
 
     async def aclose(self) -> None:
-        return None
+        self.closed = True
 
 
 class FakeHttp:
     def __init__(self, payload: dict[str, object] | None = None) -> None:
         self.payload = payload or {}
         self.posts: list[tuple[str, dict[str, object]]] = []
+        self.closed = False
 
     async def post(self, url: str, data: dict[str, object]) -> httpx.Response:
         self.posts.append((url, data))
         return httpx.Response(200, json=self.payload)
 
     async def aclose(self) -> None:
-        return None
+        self.closed = True
 
 
 def _settings(production: bool = True) -> SessionSettings:
@@ -78,6 +80,8 @@ def _settings(production: bool = True) -> SessionSettings:
 
 
 def _install(redis: FakeRedis, http: FakeHttp | None = None) -> None:
+    session_auth._session_closing = False
+    session_auth._local_refresh_tasks.clear()
     session_auth._settings = _settings()
     session_auth._redis = redis  # type: ignore[assignment]
     session_auth._cipher = Fernet(KEY.encode("ascii"))
@@ -246,6 +250,55 @@ async def test_callback_consumes_state_sets_host_cookie_and_stores_only_encrypte
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize("changed_field", ["sub", "iss"])
+async def test_callback_rejects_identity_mismatch_between_access_and_id_token(
+    monkeypatch: pytest.MonkeyPatch,
+    changed_field: str,
+) -> None:
+    redis = FakeRedis()
+    _install(redis, FakeHttp({
+        "access_token": "access-token",
+        "id_token": "id-token",
+        "refresh_token": "refresh-token",
+    }))
+    cipher = session_auth._cipher
+    assert cipher is not None
+    state = "i" * 43
+    await redis.set(
+        session_auth.FLOW_PREFIX + state,
+        session_auth._pack(cipher, {"nonce": "nonce", "verifier": "verifier"}),
+    )
+    now = int(time.time())
+    access_claims = AuthClaims(
+        "subject-a", "", "", [], "issuer-a", "retail", now, now + 600, {},
+    )
+    id_claims = AuthClaims(
+        "subject-b" if changed_field == "sub" else "subject-a",
+        "",
+        "",
+        [],
+        "issuer-b" if changed_field == "iss" else "issuer-a",
+        "retail",
+        now,
+        now + 600,
+        {},
+    )
+    monkeypatch.setattr(
+        session_auth,
+        "verify_oidc_token",
+        AsyncMock(side_effect=[access_claims, id_claims]),
+    )
+
+    with pytest.raises(session_auth.HTTPException) as rejected:
+        await session_auth.session_callback(
+            _request("GET", "x" * 43, query=f"code=code&state={state}".encode())
+        )
+
+    assert rejected.value.status_code == 502
+    assert not any(key.startswith(session_auth.SESSION_PREFIX) for key in redis.values)
+
+
+@pytest.mark.anyio
 async def test_expired_concurrent_session_requests_singleflight_refresh(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -277,6 +330,69 @@ async def test_expired_concurrent_session_requests_singleflight_refresh(
     assert len(http.posts) == 1
     stored = session_auth._unpack(session_auth._cipher, redis.values[session_auth.SESSION_PREFIX + session_id])  # type: ignore[arg-type]
     assert stored and stored["refresh_token"] == "rotated-refresh"
+
+
+@pytest.mark.anyio
+async def test_refresh_rejects_subject_change_and_invalidates_expired_session(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    redis = FakeRedis()
+    _install(redis, FakeHttp({"access_token": "rotated-access"}))
+    now = int(time.time())
+    session_id = "j" * 43
+    record = {
+        "sub": "subject-a",
+        "email": "",
+        "preferred_username": "",
+        "groups": [],
+        "iss": "issuer",
+        "aud": "retail",
+        "iat": now - 600,
+        "exp": now - 1,
+        "refresh_token": "refresh-token",
+        "csrf": "csrf",
+    }
+    await session_auth._store_session(session_id, record)
+    monkeypatch.setattr(
+        session_auth,
+        "verify_oidc_token",
+        AsyncMock(
+            return_value=AuthClaims(
+                "subject-b", "", "", [], "issuer", "retail", now, now + 600, {},
+            )
+        ),
+    )
+
+    with pytest.raises(session_auth.HTTPException) as rejected:
+        await session_auth.authenticate_session(_request("GET", session_id))
+
+    assert rejected.value.status_code == 401
+    assert session_auth.SESSION_PREFIX + session_id not in redis.values
+
+
+@pytest.mark.anyio
+async def test_shutdown_drains_refresh_tasks_before_closing_clients() -> None:
+    redis = FakeRedis()
+    http = FakeHttp()
+    _install(redis, http)
+    release = asyncio.Event()
+
+    async def refresh_in_flight() -> None:
+        await release.wait()
+
+    task = asyncio.create_task(refresh_in_flight())
+    session_auth._local_refresh_tasks["shutdown-test"] = task  # type: ignore[assignment]
+    closing = asyncio.create_task(session_auth.close_session_runtime())
+    await asyncio.sleep(0)
+
+    assert not redis.closed
+    assert not http.closed
+    release.set()
+    await closing
+
+    assert redis.closed
+    assert http.closed
+    assert session_auth._local_refresh_tasks == {}
 
 
 @pytest.mark.anyio

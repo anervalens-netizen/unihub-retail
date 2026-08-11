@@ -25,7 +25,7 @@ from schemas.agents import (
 )
 from repositories.agents import AgentsRepository
 from services.agent_evaluation import build_agent_evaluation_v2_row
-from services.filters import base_filter_values, scoped_clauses, where_clauses
+from services.filters import FilterInput, base_filter_values, normalize_filter_values, scoped_clauses, where_clauses
 
 
 V1_TARGET_THRESHOLDS = (Decimal("100"), Decimal("90"), Decimal("80"))
@@ -39,6 +39,22 @@ V1_QUALIFIER_BANDS: tuple[tuple[int, AgentQualifier], ...] = (
     (10, "Bun"),
     (6, "Mediu"),
 )
+
+
+def _v1_pct_points(value: Decimal | None, thresholds: tuple[Decimal, Decimal, Decimal]) -> int:
+    if value is not None:
+        for points, threshold in zip((3, 2, 1), thresholds, strict=True):
+            if value >= threshold:
+                return points
+    return 0
+
+
+def _v1_qualifier(points: int) -> AgentQualifier:
+    for minimum_points, label in V1_QUALIFIER_BANDS:
+        if points >= minimum_points:
+            return label
+    return "Scazut"
+
 
 def month_index_expr(col: str) -> str:
     return f"(CAST(SUBSTRING({col}, 1, 4) AS INTEGER) * 12 + CAST(SUBSTRING({col}, 6, 2) AS INTEGER))"
@@ -56,7 +72,7 @@ class AgentsService:
         self.repo = repo
 
     async def get_agents_overview(
-        self, selected_month: str, firma: str | None, regional: str | None, asm: str | None, site_code: str | None, agent: str | None
+        self, selected_month: str, firma: str | None, regional: str | None, asm: str | None, site_code: FilterInput, agent: FilterInput
     ) -> AgentsOverviewResponse:
         prev_month = get_prev_month(selected_month)
         clauses, params = where_clauses(
@@ -174,25 +190,11 @@ class AgentsService:
         months: str | None,
         firma: str | None,
         asm: str | None,
-        site_code: str | None,
+        site_code: FilterInput,
     ) -> AgentEvaluationResponse:
         month_filter = months or month
-        def pct_points(value: Decimal | None, thresholds: tuple[Decimal, Decimal, Decimal]) -> int:
-            if value is None:
-                return 0
-            if value >= thresholds[0]:
-                return 3
-            if value >= thresholds[1]:
-                return 2
-            if value >= thresholds[2]:
-                return 1
-            return 0
-
-        def qualifier(points: int) -> AgentQualifier:
-            for minimum_points, label in V1_QUALIFIER_BANDS:
-                if points >= minimum_points:
-                    return label
-            return "Scazut"
+        site_codes = normalize_filter_values(site_code)
+        scoped_firma, scoped_asm = (None, None) if site_codes else (firma, asm)
 
         query = f"""
             WITH current_month AS (
@@ -253,7 +255,7 @@ class AgentsService:
                   AND ($1::TEXT IS NULL OR ram.import_month = ANY(string_to_array($1::TEXT, ',')))
                   AND ($2::TEXT IS NULL OR LOWER(ca.firma) = LOWER($2))
                   AND ($3::TEXT IS NULL OR ca.asm = $3 OR ca.regional = $3)
-                  AND ($4::TEXT IS NULL OR ca.site_code = ANY(string_to_array($4::TEXT, ',')))
+                  AND ($4::TEXT[] IS NULL OR ca.site_code = ANY($4::TEXT[]))
                   AND ram.agent IS NOT NULL
                   AND TRIM(ram.agent) != ''
                   AND ram.agent != '-'
@@ -353,7 +355,7 @@ class AgentsService:
                   AND ($1::TEXT IS NULL OR st.import_month = ANY(string_to_array($1::TEXT, ',')))
                   AND ($2::TEXT IS NULL OR LOWER(ca.firma) = LOWER($2))
                   AND ($3::TEXT IS NULL OR ca.asm = $3 OR ca.regional = $3)
-                  AND ($4::TEXT IS NULL OR ca.site_code = ANY(string_to_array($4::TEXT, ',')))
+                  AND ($4::TEXT[] IS NULL OR ca.site_code = ANY($4::TEXT[]))
                   AND LOWER(TRIM(COALESCE(st.category, ''))) = 'folii sticla'
                   AND st.quantity > 0
                   AND st.agent IS NOT NULL
@@ -426,9 +428,7 @@ class AgentsService:
         """
 
         rows = await self.repo.get_agent_evaluation(
-            query,
-            [month_filter, firma, asm, site_code],
-        )
+            query, [month_filter, scoped_firma, scoped_asm, site_codes])
         option_rows = await self.repo.get_agent_evaluation(
             option_query,
             [firma, asm],
@@ -456,12 +456,12 @@ class AgentsService:
 
         items: list[AgentEvaluationRow] = []
         for row in rows:
-            target_points = pct_points(row["target_pct"], V1_TARGET_THRESHOLDS)
+            target_points = _v1_pct_points(row["target_pct"], V1_TARGET_THRESHOLDS)
             daily_points = 3 if row["daily_average"] is not None and row["peer_daily_average"] is not None and row["daily_average"] > row["peer_daily_average"] else 0
-            value_reper_points = pct_points(row["value_reper"], V1_VALUE_THRESHOLDS)
-            bonuri_points = pct_points(row["bonuri_pct"], V1_RECEIPT_THRESHOLDS)
-            focus_points = pct_points(row["focus_pct"], V1_FOCUS_THRESHOLDS)
-            premium_points = pct_points(
+            value_reper_points = _v1_pct_points(row["value_reper"], V1_VALUE_THRESHOLDS)
+            bonuri_points = _v1_pct_points(row["bonuri_pct"], V1_RECEIPT_THRESHOLDS)
+            focus_points = _v1_pct_points(row["focus_pct"], V1_FOCUS_THRESHOLDS)
+            premium_points = _v1_pct_points(
                 row["premium_glass_pct"], V1_PREMIUM_GLASS_THRESHOLDS
             )
             segment_points = [
@@ -510,7 +510,7 @@ class AgentsService:
                     premium_glass_points=premium_points,
                     total_points=total_points,
                     has_red_segment=has_red_segment,
-                    qualifier=qualifier(total_points),
+                    qualifier=_v1_qualifier(total_points),
                 )
             )
 
@@ -522,14 +522,12 @@ class AgentsService:
         months: str | None,
         firma: str | None,
         asm: str | None,
-        site_code: str | None,
+        site_code: FilterInput,
     ) -> AgentEvaluationV2Response:
         month_filter = months or month
+        site_codes = normalize_filter_values(site_code)
         rows = await self.repo.get_agent_evaluation_v2(
-            month_filter,
-            firma,
-            asm,
-            site_code,
+            month_filter, None if site_codes else firma, None if site_codes else asm, site_codes
         )
         option_rows = await self.repo.get_agent_evaluation_options(firma, asm)
 
@@ -564,7 +562,7 @@ class AgentsService:
         )
 
     async def get_agents_movement(
-        self, selected_month: str, firma: str | None, regional: str | None, asm: str | None, site_code: str | None, agent: str | None
+        self, selected_month: str, firma: str | None, regional: str | None, asm: str | None, site_code: FilterInput, agent: FilterInput
     ) -> AgentMovementResponse:
         params, positions = base_filter_values(
             selected_month, firma, regional, asm, site_code, agent
@@ -670,7 +668,7 @@ class AgentsService:
         return AgentMovementResponse(history=history)
 
     async def get_agents_list(
-        self, selected_month: str, search: str | None, firma: str | None, regional: str | None, asm: str | None, site_code: str | None
+        self, selected_month: str, search: str | None, firma: str | None, regional: str | None, asm: str | None, site_code: FilterInput
     ) -> AgentListResponse:
         clauses, params = where_clauses(
             selected_month, firma, regional, asm, site_code, None, include_agent=False

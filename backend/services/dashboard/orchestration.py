@@ -7,6 +7,7 @@ from collections.abc import Awaitable
 from dataclasses import dataclass
 from typing import Any, cast
 
+from domain.filter_scope import FilterInput
 from schemas.campaigns import PromoIncentiveSummary
 from schemas.dashboard import (
     AgentStats,
@@ -67,8 +68,8 @@ class DashboardAllLoader:
     firma: str | None
     regional: str | None
     asm: str | None
-    site_code: str | None
-    agent: str | None
+    site_code: FilterInput
+    agent: FilterInput
     current_scope: bool
     include_closed_stores: bool
     history_projection: bool
@@ -292,8 +293,8 @@ async def load_dashboard_all(
     firma: str | None,
     regional: str | None,
     asm: str | None,
-    site_code: str | None,
-    agent: str | None,
+    site_code: FilterInput,
+    agent: FilterInput,
     current_scope: bool = False,
     include_closed_stores: bool = False,
     *,

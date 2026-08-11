@@ -32,7 +32,8 @@ import asyncpg
 
 from business_rules import PROMOTION_DISCOUNT_RATE
 from services.dashboard.utils import _expand_current_manager_scope
-from services.filters import build_scoped_params, normalize_filter, scoped_clauses
+from domain.filter_scope import FilterInput
+from services.filters import build_scoped_params, normalize_filter_values, scoped_clauses
 from services.product_lists import get_repo_root, resolve_path
 
 
@@ -288,18 +289,29 @@ def merge_promo_results(*results: PromoCoPurchaseResult | None) -> PromoCoPurcha
             excluded_discount_values[key] = (
                 excluded_discount_values.get(key, Decimal("0")) + value
             )
-    return _result_from_metrics(
-        excluded_units,
-        excluded_discount_values,
-    )
+    return _result_from_metrics(excluded_units, excluded_discount_values)
 
 
-def _agent_filter_values(agent: str | None) -> set[str] | None:
-    normalized = normalize_filter(agent)
-    if normalized is None:
+def _agent_filter_values(agent: FilterInput) -> set[str] | None:
+    normalized = normalize_filter_values(agent)
+    return set(normalized) if normalized else None
+
+
+def _filtered_promo_actuals(
+    definition: dict[str, Any],
+    item_codes: list[str],
+) -> tuple[dict[tuple[str, str], int], dict[tuple[str, str], Decimal]] | None:
+    all_units, all_values, error = _load_promo_actuals_material(definition)
+    if all_units is None:
+        if error and (definition.get("actuals_source_file") or definition.get("actuals_file")):
+            raise PromoActualsError(error)
         return None
-    values = {value.strip() for value in normalized.split(",") if value.strip()}
-    return values or None
+    if error is not None:
+        raise PromoActualsError(error)
+    allowed_codes = {str(code).strip() for code in item_codes if str(code).strip()}
+    actual_units = {key: units for key, units in all_units.items() if key[1] in allowed_codes and units > 0}
+    actual_values = {key: (all_values or {}).get(key, Decimal("0")) for key in actual_units}
+    return actual_units, actual_values
 
 
 def _allocate_units_to_agents(
@@ -411,11 +423,11 @@ async def compute_promo_actuals_from_report(
     month: str,
     definition: dict[str, Any],
     item_codes: list[str],
-    firma: str | None,
-    regional: str | None,
-    asm: str | None,
-    site_code: str | None,
-    agent: str | None,
+    firma: FilterInput,
+    regional: FilterInput,
+    asm: FilterInput,
+    site_code: FilterInput,
+    agent: FilterInput,
     current_scope: bool = False,
     include_closed_stores: bool = False,
     discount_rate: Decimal = PROMOTION_DISCOUNT_RATE,
@@ -426,25 +438,12 @@ async def compute_promo_actuals_from_report(
     An empty result means a configured source report explicitly has no promo
     units for this promotion and scope.
     """
-    all_units, all_values, error = _load_promo_actuals_material(definition)
-    if all_units is None:
-        if (definition.get("actuals_source_file") or definition.get("actuals_file")) and error:
-            raise PromoActualsError(error)
+    material = _filtered_promo_actuals(definition, item_codes)
+    if material is None:
         return None
-    if error is not None:
-        raise PromoActualsError(error)
-    allowed_codes = {str(code).strip() for code in item_codes if str(code).strip()}
-    actual_units = {
-        key: units
-        for key, units in all_units.items()
-        if key[1] in allowed_codes and units > 0
-    }
+    actual_units, actual_values = material
     if not actual_units:
         return PromoCoPurchaseResult()
-    actual_values = {
-        key: (all_values or {}).get(key, Decimal("0"))
-        for key in actual_units
-    }
 
     source_sites: list[str] = []
     source_codes: list[str] = []
@@ -546,10 +545,7 @@ async def compute_promo_actuals_from_report(
                 + allocated_values.get(agent_name, Decimal("0"))
             )
 
-    return _result_from_metrics(
-        excluded_units,
-        excluded_discount_values,
-    )
+    return _result_from_metrics(excluded_units, excluded_discount_values)
 
 
 async def compute_promo_copurchase(
@@ -559,11 +555,11 @@ async def compute_promo_copurchase(
     start_date: date,
     end_date: date,
     item_codes: list[str],
-    firma: str | None,
-    regional: str | None,
-    asm: str | None,
-    site_code: str | None,
-    agent: str | None,
+    firma: FilterInput,
+    regional: FilterInput,
+    asm: FilterInput,
+    site_code: FilterInput,
+    agent: FilterInput,
     current_scope: bool = False,
     include_closed_stores: bool = False,
     discount_rate: Decimal = PROMOTION_DISCOUNT_RATE,
@@ -664,11 +660,11 @@ async def compute_promo_trigger_discounted(
     end_date: date,
     trigger_codes: list[str],
     discounted_codes: list[str],
-    firma: str | None,
-    regional: str | None,
-    asm: str | None,
-    site_code: str | None,
-    agent: str | None,
+    firma: FilterInput,
+    regional: FilterInput,
+    asm: FilterInput,
+    site_code: FilterInput,
+    agent: FilterInput,
     current_scope: bool = False,
     include_closed_stores: bool = False,
     discount_rate: Decimal = PROMOTION_DISCOUNT_RATE,
@@ -773,11 +769,11 @@ async def compute_promo_same_model_pair(
     end_date: date,
     screen_code_models: dict[str, set[str]],
     camera_code_models: dict[str, set[str]],
-    firma: str | None,
-    regional: str | None,
-    asm: str | None,
-    site_code: str | None,
-    agent: str | None,
+    firma: FilterInput,
+    regional: FilterInput,
+    asm: FilterInput,
+    site_code: FilterInput,
+    agent: FilterInput,
     current_scope: bool = False,
     include_closed_stores: bool = False,
     discount_rate: Decimal = PROMOTION_DISCOUNT_RATE,

@@ -7,7 +7,12 @@ from typing import Protocol, Any
 from services.campaigns import compute_promotion_result, load_campaign_context
 from services.dashboard_specials import load_promotion_rule_products, load_special_cards_config, parse_promotion_definitions
 from services.promotion_evaluation import PromotionEvaluationStatus, scope_promotion_definition_to_interval
-from .validation import EXPORT_MAX_ROWS, ExportValidationError, normalize_filters
+from .validation import (
+    EXPORT_MAX_ROWS,
+    ExportValidationError,
+    normalize_filters,
+    scoped_filter_values,
+)
 
 
 class ExportRepository(Protocol):
@@ -46,9 +51,6 @@ class CampaignLoaders:
         if pool is None:
             return {}
         scoped_filters = normalize_filters(filters)
-        def csv_filter(key: str) -> str | None:
-            values = scoped_filters.get(key, [])
-            return ",".join(values) if values else None
         output: dict[str, dict[tuple[str, str, str], int]] = {}
         async with pool.acquire() as conn:
             for month in months:
@@ -77,7 +79,7 @@ class CampaignLoaders:
                             else: ranges.append((start, end)); start = end = candidate
                         ranges.append((start, end))
                         for start, end in ranges:
-                            evaluation = await compute_promotion_result(conn, month=month, definition=scope_promotion_definition_to_interval(definition, start, end), firma=csv_filter("firma"), regional=csv_filter("regional"), asm=csv_filter("asm"), site_code=csv_filter("site_code"), agent=csv_filter("agent"))
+                            evaluation = await compute_promotion_result(conn, month=month, definition=scope_promotion_definition_to_interval(definition, start, end), firma=scoped_filter_values(scoped_filters, "firma"), regional=scoped_filter_values(scoped_filters, "regional"), asm=scoped_filter_values(scoped_filters, "asm"), site_code=scoped_filter_values(scoped_filters, "site_code"), agent=scoped_filter_values(scoped_filters, "agent"))
                             if evaluation.status is not PromotionEvaluationStatus.COMPLETE or evaluation.result is None:
                                 raise ExportValidationError(f"Export indisponibil pentru {month}: excluderile Promo nu pot fi validate complet.")
                             for key, units in evaluation.result.excluded_units.items():
@@ -89,7 +91,7 @@ class CampaignLoaders:
                             raise ExportValidationError("Excluderile Promo depasesc limita de randuri a exportului.")
                         output[month] = units_by_key
                     continue
-                context = await load_campaign_context(conn, month, firma=csv_filter("firma"), regional=csv_filter("regional"), asm=csv_filter("asm"), site_code=csv_filter("site_code"), agent=csv_filter("agent"))
+                context = await load_campaign_context(conn, month, firma=scoped_filter_values(scoped_filters, "firma"), regional=scoped_filter_values(scoped_filters, "regional"), asm=scoped_filter_values(scoped_filters, "asm"), site_code=scoped_filter_values(scoped_filters, "site_code"), agent=scoped_filter_values(scoped_filters, "agent"))
                 if context.promotion_status is not PromotionEvaluationStatus.COMPLETE:
                     raise ExportValidationError(f"Export indisponibil pentru {month}: excluderile Promo nu pot fi validate complet.")
                 if context.promo_excluded_units:

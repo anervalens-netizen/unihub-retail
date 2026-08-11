@@ -276,3 +276,21 @@ remains retained and untouched in PostgreSQL.
 - Frontend tests: 177 passed; typecheck and a staged, non-deployed production
   build passed. Mypy passed for 199 source files.
 - `.env` and `.env.worker` were not modified; no schema migration, production write, deploy or service restart was performed.
+
+## 2026-08-11 monetary and export boundary
+
+Salary money is now retained as quantized `Decimal` through repository,
+service and Pydantic response models; JSON uses decimal strings and no backend
+salary total is converted to binary float. Sensitive XLSX exports are generated
+only by the dedicated `salary_exports` worker from a canonical, owner-bound
+request on `arq:retail:salary-exports`. Its database LOGIN inherits only
+`unihub_salary_export`: exact salary/reporting columns plus kind-scoped RLS over
+the durable operation rows. The generic operations/export worker cannot read
+salary sources or salary operations. Artifacts use the private `salary/`
+namespace, masked by systemd from non-salary workers.
+
+The workbook never contains `person_id`, CNP or private matching data.
+Migrations 065/066 record the authenticated subject, request hash, actual
+rendered row count, artifact SHA-256, size, generation/expiry timestamps and
+preserve that evidence across expiry or an attested integrity failure. A
+client-supplied `row_count` is rejected.

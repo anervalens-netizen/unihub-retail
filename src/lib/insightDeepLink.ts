@@ -52,18 +52,23 @@ export function parseInsightDeepLink(location: Pick<Location, 'pathname' | 'sear
   const period = periodValue && MONTH.test(periodValue) ? periodValue : undefined;
   const firma = filterValue(params, 'firma', 'firm');
   const rm = filterValue(params, 'rm', 'regional');
-  const explicitStore = filterValue(params, 'magazin', 'store');
+  const explicitStores = [
+    ...params.getAll('magazin'),
+    ...params.getAll('store'),
+  ].map((value) => value.trim()).filter(Boolean);
   const storeList = bounded(params.get('stores'), 2_000)
     ?.split(',')
     .map((value) => value.trim())
     .filter(Boolean);
-  const magazin = explicitStore ?? (storeList?.length === 1 ? storeList[0] : undefined);
-  const agent = filterValue(params, 'agent');
+  const magazin = Array.from(new Set(explicitStores.length > 0 ? explicitStores : storeList));
+  const agents = Array.from(new Set(
+    params.getAll('agent').map((value) => value.trim()).filter(Boolean),
+  ));
   const filters: Partial<AppFilters> = {
     ...(firma ? { firma } : {}),
     ...(rm ? { rm } : {}),
-    ...(magazin ? { magazin } : {}),
-    ...(agent ? { agent } : {}),
+    ...(magazin?.length ? { magazin } : {}),
+    ...(agents.length ? { agent: agents } : {}),
   };
   const section = bounded(params.get('section'), 40);
   const subtab = bounded(params.get('subtab'), 40);

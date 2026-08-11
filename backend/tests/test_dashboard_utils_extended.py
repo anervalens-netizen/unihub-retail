@@ -65,7 +65,7 @@ class TestBuildScopedParams:
         params, positions = build_scoped_params(
             ["2026-05"], firma="F1", regional="R1", asm="A1", site_code="SITE01", agent="Agent1"
         )
-        assert params == ["2026-05", "SITE01", "Agent1"]
+        assert params == ["2026-05", ["SITE01"], ["Agent1"]]
         assert "firma" not in positions
         assert "regional" not in positions
         assert "asm" not in positions
@@ -86,5 +86,5 @@ class TestBuildScopedParams:
         )
         assert params[0] == "2026-05"
         assert params[1] == 12
-        assert params[2] == "F1"
+        assert params[2] == ["F1"]
         assert positions["firma"] == 3

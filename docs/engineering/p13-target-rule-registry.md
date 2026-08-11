@@ -32,6 +32,21 @@ It rejects an infeasible budget before `save_draft_scenario`; it never exceeds a
 floor or cap merely to return a partial result. Both floor and cap are persisted
 with the scenario rows.
 
+Feasible allocation solves all bounds simultaneously:
+
+```text
+x_i(lambda) = min(cap_i, max(floor_i, lambda * weight_i))
+sum(x_i(lambda)) = total_target
+```
+
+The Decimal solver locates the monotone root, floors each result to cents and
+distributes the remaining cents by largest fractional remainder only among rows
+with capacity. All-zero weights become equal weights. Final floor/cap flags are
+reconstructed from the rounded result, never retained from an intermediate pass.
+Regression and deterministic property tests cover the simultaneous floor+cap
+case `50/54/6`, exact sum, bounds, permutation invariance, zero weights,
+cent-level determinism, truthful flags and infeasibility equivalence.
+
 `proposed_target` remains algorithmic. A manager decision is stored separately
 as `manager_override_target` and `manager_override_reason` when `final_target`
 differs from the proposal. The proposal is never overwritten by an override;
@@ -68,7 +83,7 @@ backend/venv/bin/mypy backend/ --ignore-missing-imports --explicit-package-bases
 ```
 
 Target-specific evidence covers deterministic multi-row residual-cent
-allocation, infeasible floor/cap rejection before persistence, registry
+allocation, simultaneous floor/cap constraints, infeasible rejection before persistence, registry
 hash/schema/fiscal validation, append-only successor-derived `[from,to)` ranges,
 exact master/cohort exception reconciliation,
 frozen source/profitability snapshots, separate override audit, stale revision

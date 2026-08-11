@@ -3,10 +3,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from domain.filter_scope import normalize_filter
+from domain.filter_scope import normalize_filter_values
 
 
-def canonical_dashboard_site_codes(value: Any) -> str | None:
+def canonical_dashboard_site_codes(value: Any) -> list[str] | None:
     """Return the API's immutable, case-preserving store scope.
 
     The client order is meaningful for compatibility, so only the first
@@ -15,12 +15,4 @@ def canonical_dashboard_site_codes(value: Any) -> str | None:
     """
     if value is None:
         return None
-    seen: set[str] = set()
-    site_codes: list[str] = []
-    for raw_site_code in str(value).split(","):
-        site_code = normalize_filter(raw_site_code)
-        if site_code is None or site_code in seen:
-            continue
-        seen.add(site_code)
-        site_codes.append(site_code)
-    return ",".join(site_codes) or None
+    return normalize_filter_values(value)

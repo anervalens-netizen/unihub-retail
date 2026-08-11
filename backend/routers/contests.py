@@ -4,11 +4,12 @@ from fastapi import APIRouter, Depends, Query
 
 from auth import AuthClaims, require_auth
 from composition import build_contests_service
+from domain.filter_scope import normalize_filter_values
 from schemas.common import MonthStr
 from schemas.contests import ContestResponse
 from services.contests import ContestsService
 
-# NB: `/active` accepta `site_codes` (comma) ca override intern de scope.
+# NB: `/active` accepta `site_codes` repetat ca override intern de scope.
 # FieldOps pastreaza in mod normal scope-ul configurat al concursului; nu folosi
 # override-ul pentru concursuri de zona/ASM.
 router = APIRouter(prefix="/api/contests", tags=["contests"])
@@ -17,19 +18,22 @@ router = APIRouter(prefix="/api/contests", tags=["contests"])
 get_contests_service = build_contests_service
 
 
-def _internal_site_codes_override(site_codes: str | None, claims: AuthClaims) -> list[str] | None:
+def _internal_site_codes_override(
+    site_codes: list[str] | None,
+    claims: AuthClaims,
+) -> list[str] | None:
     if site_codes and claims.iss == "hub-internal":
-        return [code.strip() for code in site_codes.split(",") if code.strip()] or None
+        return normalize_filter_values(site_codes)
     return None
 
 
 @router.get("/active/all", response_model=list[ContestResponse])
 async def get_active_contests(
     month: MonthStr = Query(...),
-    site_codes: str | None = Query(
+    site_codes: list[str] | None = Query(
         None,
         description=(
-            "Optional: lista comma-separated de site_code-uri care suprascrie "
+            "Optional: parametru repetat de site_code-uri care suprascrie "
             "scope-ul din config. Onorat DOAR pentru apeluri interne "
             "(principalul hub via X-Hub-Internal). Ignorat pentru useri normali."
         ),
@@ -47,10 +51,10 @@ async def get_active_contests(
 @router.get("/active", response_model=ContestResponse | None)
 async def get_active_contest(
     month: MonthStr = Query(...),
-    site_codes: str | None = Query(
+    site_codes: list[str] | None = Query(
         None,
         description=(
-            "Optional: lista comma-separated de site_code-uri care suprascrie "
+            "Optional: parametru repetat de site_code-uri care suprascrie "
             "scope-ul din config. Onorat DOAR pentru apeluri interne "
             "(principalul hub via X-Hub-Internal). Ignorat pentru useri normali."
         ),

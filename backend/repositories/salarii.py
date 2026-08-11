@@ -3,6 +3,8 @@ from __future__ import annotations
 from typing import Any
 import asyncpg
 
+from domain.filter_scope import FilterInput, normalize_filter_values
+
 MIN_SALARY_FOR_AVERAGE = 2000
 
 
@@ -10,7 +12,7 @@ def _salary_scope(
     *,
     salary_alias: str,
     company_name: str | None = None,
-    site_code: str | None = None,
+    site_code: FilterInput = None,
     regional: str | None = None,
     asm: str | None = None,
     year: int | None = None,
@@ -37,22 +39,19 @@ def _salary_scope(
 
     if q:
         add(f"{col('full_name')} ILIKE ${{position}}", f"%{q}%")
-    if company_name:
+    site_codes = normalize_filter_values(site_code)
+    if company_name and not site_codes:
         if lower_company:
             add(f"LOWER({col('company_name')}) = ${{position}}", company_name.lower())
         else:
             add(f"{col('company_name')} = ${{position}}", company_name)
-    if site_code:
-        site_codes = [value.strip() for value in site_code.split(",") if value.strip()]
-        if len(site_codes) > 1:
-            add(f"{col('site_code')} = ANY(${{position}}::TEXT[])", site_codes)
-        elif site_codes:
-            add(f"{col('site_code')} = ${{position}}", site_codes[0])
+    if site_codes:
+        add(f"{col('site_code')} = ANY(${{position}}::TEXT[])", site_codes)
     store_conditions: list[str] = []
-    if regional:
+    if regional and not site_codes:
         params.append(regional)
         store_conditions.append(f"st.regional = ${len(params)}")
-    if asm:
+    if asm and not site_codes:
         params.append(asm)
         store_conditions.append(f"st.asm = ${len(params)}")
     if store_conditions:
@@ -81,7 +80,7 @@ class SalariiRepository:
         self,
         *,
         company_name: str | None,
-        site_code: str | None,
+        site_code: FilterInput,
         regional: str | None,
         asm: str | None,
     ) -> dict:
@@ -161,13 +160,13 @@ class SalariiRepository:
                 *params,
             )
         return {
-            "total": float(stats["total"]),
+            "total": stats["total"],
             "by_company": [dict(r) for r in by_company],
             "record_count": stats["record_count"],
             "agent_count": stats["agent_count"],
             "agent_month_count": stats["agent_month_count"],
             "avg_agent_month_count": stats["avg_agent_month_count"],
-            "avg_salary": float(stats["avg_salary"]),
+            "avg_salary": stats["avg_salary"],
             "months_row": stats,
         }
 
@@ -175,7 +174,7 @@ class SalariiRepository:
         self,
         *,
         company_name: str | None,
-        site_code: str | None,
+        site_code: FilterInput,
         regional: str | None,
         asm: str | None,
     ) -> list[asyncpg.Record]:
@@ -221,7 +220,7 @@ class SalariiRepository:
         self,
         *,
         company_name: str,
-        site_code: str | None,
+        site_code: FilterInput,
         regional: str | None,
         asm: str | None,
     ) -> list[asyncpg.Record]:
@@ -266,7 +265,7 @@ class SalariiRepository:
         *,
         q: str | None,
         company_name: str | None,
-        site_code: str | None,
+        site_code: FilterInput,
         regional: str | None,
         asm: str | None,
         year: int | None,
@@ -440,7 +439,7 @@ class SalariiRepository:
         self,
         *,
         company_name: str | None,
-        site_code: str | None,
+        site_code: FilterInput,
         regional: str | None,
         asm: str | None,
     ) -> asyncpg.Record | None:
@@ -461,7 +460,7 @@ class SalariiRepository:
         self,
         *,
         company_name: str | None,
-        site_code: str | None,
+        site_code: FilterInput,
         regional: str | None,
         asm: str | None,
         year: int,
@@ -570,7 +569,7 @@ class SalariiRepository:
         self,
         *,
         company_name: str | None,
-        site_code: str | None,
+        site_code: FilterInput,
         regional: str | None,
         asm: str | None,
     ) -> list[asyncpg.Record]:
@@ -687,7 +686,7 @@ class SalariiRepository:
         company_name: str | None,
         year: int | None,
         month: int | None,
-        site_code: str | None,
+        site_code: FilterInput,
         limit: int,
         offset: int,
     ) -> list[asyncpg.Record]:

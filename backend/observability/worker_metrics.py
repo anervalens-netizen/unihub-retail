@@ -135,7 +135,14 @@ def _port_for_role(role: str) -> int | None:
 
 
 def start_worker_metrics(role: str) -> WorkerMetricsServer | None:
-    if role not in {"operations", "imports", "grile", "exports", "legacy"}:
+    if role not in {
+        "operations",
+        "imports",
+        "grile",
+        "exports",
+        "salary_exports",
+        "legacy",
+    }:
         raise RuntimeError("Unknown worker metrics role")
     port = _port_for_role(role)
     if port is None:

@@ -95,6 +95,18 @@ def test_actual_coverage_uses_official_cutoff_not_positive_sales() -> None:
     asyncio.run(scenario())
 
 
+def test_ai_forecast_repeated_store_scope_dominates_hierarchy() -> None:
+    clause, params = AiForecastRepository._filter_clause(
+        firma="Wrong company",
+        regional="Wrong manager",
+        asm="Wrong ASM",
+        site_code=["B, Nord", "B, Nord", "C"],
+    )
+
+    assert params == [["B, Nord", "C"]]
+    assert clause == "s.locatie NOT ILIKE 'TR %' AND s.site_code = ANY($1::TEXT[])"
+
+
 def test_cutoff_read_model_preserves_authority_and_web_least_privilege() -> None:
     root = Path(__file__).resolve().parents[2]
     migration = (

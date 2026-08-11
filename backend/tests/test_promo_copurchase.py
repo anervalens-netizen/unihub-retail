@@ -114,7 +114,7 @@ class TestComputePromoCoPurchase:
         assert result.discount_value == Decimal("150.00")
 
     @pytest.mark.asyncio
-    async def test_site_code_csv_scope_is_not_used_as_item_code_array(self):
+    async def test_repeated_site_scope_preserves_a_value_containing_a_comma(self):
         conn = AsyncMock()
         conn.fetch = AsyncMock(return_value=[])
 
@@ -127,15 +127,15 @@ class TestComputePromoCoPurchase:
             firma=None,
             regional=None,
             asm=None,
-            site_code="FOCCRARF,CRFFEER",
+            site_code=["FOCCRARF,CRFFEER", "SECOND"],
             agent=None,
         )
 
         sql = conn.fetch.await_args.args[0]
         assert "st.item_code = ANY($4::TEXT[])" in sql
         assert "st.item_code = ANY($5::TEXT[])" not in sql
-        assert "st.site_code = ANY(string_to_array($5::TEXT, ','))" in sql
-        assert conn.fetch.await_args.args[5] == "FOCCRARF,CRFFEER"
+        assert "st.site_code = ANY($5::TEXT[])" in sql
+        assert conn.fetch.await_args.args[5] == ["FOCCRARF,CRFFEER", "SECOND"]
 
     @pytest.mark.asyncio
     async def test_current_manager_scope_expands_regional_and_excludes_closed_stores(self):
@@ -158,7 +158,7 @@ class TestComputePromoCoPurchase:
         )
 
         sql = conn.fetch.await_args.args[0]
-        assert "(s.regional = ANY(string_to_array($5::TEXT, ',')) OR s.asm = ANY(string_to_array($5::TEXT, ',')))" in sql
+        assert "(s.regional = ANY($5::TEXT[]) OR s.asm = ANY($5::TEXT[]))" in sql
         assert "s.is_active = true" in sql
 
 
@@ -403,7 +403,7 @@ class TestComputePromoActualsFromReport:
         assert result.excluded_discount_values[("S1", "Agent2", "CL1")] == Decimal("40")
         assert result.discount_value == Decimal("200")
         sql = conn.fetch.await_args.args[0]
-        assert "(s.regional = ANY(string_to_array($7::TEXT, ',')) OR s.asm = ANY(string_to_array($7::TEXT, ',')))" in sql
+        assert "(s.regional = ANY($7::TEXT[]) OR s.asm = ANY($7::TEXT[]))" in sql
         assert "s.is_active = true" in sql
 
     @pytest.mark.asyncio

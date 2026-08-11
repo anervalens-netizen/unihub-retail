@@ -7,6 +7,7 @@ from typing import Any
 
 import asyncpg
 
+from domain.filter_scope import FilterInput
 from schemas.campaigns import PromoTopAgent, PromoTopStore
 from services.campaigns.aggregation import promo_receipt_totals
 from services.campaigns.contracts import CampaignResponseSnapshot, PromotionProjection
@@ -24,11 +25,11 @@ async def compute_promotion_result(
     *,
     month: str,
     definition: dict[str, Any],
-    firma: str | None,
-    regional: str | None,
-    asm: str | None,
-    site_code: str | None,
-    agent: str | None,
+    firma: FilterInput,
+    regional: FilterInput,
+    asm: FilterInput,
+    site_code: FilterInput,
+    agent: FilterInput,
     current_scope: bool = False,
     include_closed_stores: bool = False,
 ) -> PromotionEvaluation:

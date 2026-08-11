@@ -4,6 +4,7 @@ import json
 from decimal import Decimal
 from typing import Any, Literal
 
+from domain.filter_scope import FilterInput
 from schemas.ai_forecast import (
     AiForecastDailyPoint,
     AiForecastManagerRow,
@@ -77,7 +78,7 @@ class AiForecastService:
         firma: str | None,
         regional: str | None,
         asm: str | None,
-        site_code: str | None,
+        site_code: FilterInput,
     ) -> AiForecastResponse | None:
         run = await self.repo.fetch_latest_run(month, metric=metric)
         if run is None:
@@ -120,7 +121,7 @@ class AiForecastService:
         firma: str | None,
         regional: str | None,
         asm: str | None,
-        site_code: str | None,
+        site_code: FilterInput,
     ) -> AiForecastRollingResponse | None:
         start_month = add_month(month, 1)
         end_month = add_month(month, 12)

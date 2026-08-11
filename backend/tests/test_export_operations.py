@@ -13,8 +13,10 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 import repositories.export_operations as repository_module
+import services.export_artifact_cleanup as cleanup_module
 import services.export_operations as operations_module
 import services.exports as exports_package
+import services.jobs as jobs_module
 import worker
 from repositories.export_operations import (
     ExportOperationCapacityError,
@@ -161,6 +163,39 @@ def test_artifact_persistence_hash_open_and_remove(
         filename=stored.filename,
     )
     assert b"".join(opened.iter_chunks(17)) == content
+    opened.close()
+    remove_export_artifact(stored.key)
+    assert not path.exists()
+
+
+def test_salary_artifact_uses_isolated_namespace(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    root = configure_artifacts(monkeypatch, tmp_path)
+    content = b"PK-salary"
+    source = XlsxArtifact(
+        BytesIO(content),
+        "salary.xlsx",
+        len(content),
+        hashlib.sha256(content).hexdigest(),
+        1024,
+        0.1,
+        10,
+    )
+
+    stored = persist_export_artifact(source, namespace="salary")
+
+    assert stored.key.startswith("salary/")
+    path = root / stored.key
+    assert path.read_bytes() == content
+    opened = open_verified_export_artifact(
+        key=stored.key,
+        expected_sha256=stored.sha256,
+        expected_size=stored.size,
+        filename=stored.filename,
+    )
+    assert b"".join(opened.iter_chunks()) == content
     opened.close()
     remove_export_artifact(stored.key)
     assert not path.exists()
@@ -348,8 +383,17 @@ async def test_repository_reserve_is_owner_and_capacity_bounded() -> None:
 
     assert result and result["id"] == 7
     insert = next(call for call in conn.calls if call[0] == "fetchrow")
-    assert "export-complex:" in insert[1]
+    assert "$5 || ':' || id::TEXT" in insert[1]
+    assert insert[2][-1] == "export-complex"
     assert "owner-1" in insert[2]
+
+    with pytest.raises(ValueError, match="queue identity"):
+        await repo.reserve(
+            kind="salary_agents",
+            request_payload={"export_kind": "agents", "site_code": []},
+            request_sha256="a" * 64,
+            requested_by_sub="owner-2",
+        )
 
     owner_conn = Connection()
     owner_conn.fetchval_results = [True, 0]
@@ -388,7 +432,12 @@ async def test_repository_all_lifecycle_transitions_and_owner_reads() -> None:
     assert await repo.get(7) is not None
     assert await repo.get_owned(7, requested_by_sub="owner-1") is not None
     assert await repo.get_resumable_owned(requested_by_sub="owner-1") is not None
-    assert await repo.claim(7, execution_owner="worker", lease_seconds=300) is not None
+    assert await repo.claim(
+        7,
+        execution_owner="worker",
+        lease_seconds=300,
+        allowed_kinds=("daily_metrics", "daily_comparison"),
+    ) is not None
     assert await repo.claim_download_owned(7, requested_by_sub="owner-1") is None
     assert await repo.heartbeat(7, execution_owner="worker", execution_epoch=1, lease_seconds=300)
     assert await repo.complete(
@@ -475,6 +524,47 @@ async def test_service_reserve_status_cancel_and_publish_uncertain(
 
 
 @pytest.mark.asyncio
+async def test_salary_reservation_uses_only_the_salary_queue(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    queued = operation(
+        kind="salary_agents",
+        job_id="salary-export:7",
+        request_payload={
+            "export_kind": "agents",
+            "company_name": None,
+            "site_code": ["B, Nord"],
+            "regional": None,
+            "asm": None,
+            "year": None,
+            "month": None,
+            "q": None,
+        },
+    )
+    fake = FakeOperationRepo(queued)
+    fake.reserve.return_value = queued
+    service = ExportOperationsService(MagicMock())
+    service.repo = fake  # type: ignore[assignment]
+    salary_enqueue = AsyncMock(
+        return_value=SimpleNamespace(job_id="salary-export:7")
+    )
+    generic_enqueue = AsyncMock()
+    monkeypatch.setattr(operations_module, "enqueue_salary_export", salary_enqueue)
+    monkeypatch.setattr(operations_module, "enqueue_complex_export", generic_enqueue)
+
+    created = await service.reserve_salary(
+        queued["request_payload"],
+        requested_by_sub="owner-1",
+    )
+
+    assert created.kind == "salary_agents"
+    salary_enqueue.assert_awaited_once_with(7)
+    generic_enqueue.assert_not_awaited()
+    assert fake.reserve.await_args is not None
+    assert fake.reserve.await_args.kwargs["job_prefix"] == "salary-export"
+
+
+@pytest.mark.asyncio
 async def test_service_owner_not_found_and_terminal_conflicts(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -545,6 +635,12 @@ async def test_service_download_reverifies_hash_and_marks_corrupt(
     service = ExportOperationsService(MagicMock())
     service.repo = fake  # type: ignore[assignment]
     monkeypatch.setattr(operations_module, "cleanup_export_operations", AsyncMock())
+    enqueue_cleanup = AsyncMock(return_value=SimpleNamespace(job_id="cleanup"))
+    monkeypatch.setattr(
+        operations_module,
+        "enqueue_export_artifact_cleanup",
+        enqueue_cleanup,
+    )
 
     artifact = await service.download(7, requested_by_sub="owner-1")
     assert b"".join(artifact.iter_chunks()) == content
@@ -556,7 +652,143 @@ async def test_service_download_reverifies_hash_and_marks_corrupt(
     with pytest.raises(ExportArtifactIntegrityError):
         await service.download(7, requested_by_sub="owner-1")
     fake.mark_corrupt.assert_awaited_once_with(7, artifact_key=key)
+    enqueue_cleanup.assert_awaited_once_with(key)
+    # The web authority remains read-only; only the owning worker deletes it.
+    assert (root / key).exists()
+    removed = await worker.remove_export_artifact_background(
+        {"worker_role": "exports"}, key
+    )
+    assert removed == {"artifact_removed": True, "namespace": "generic"}
     assert not (root / key).exists()
+
+
+@pytest.mark.asyncio
+async def test_corrupt_download_cleanup_failure_keeps_bounded_integrity_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    key = f"{'7' * 32}.xlsx"
+    completed = operation(
+        status="completed",
+        artifact_key=key,
+        artifact_sha256="a" * 64,
+        artifact_size=10,
+        download_filename="download.xlsx",
+        finished_at=NOW,
+        expires_at=NOW + timedelta(hours=1),
+    )
+    fake = FakeOperationRepo(completed)
+    service = ExportOperationsService(MagicMock())
+    service.repo = fake  # type: ignore[assignment]
+    monkeypatch.setattr(
+        operations_module,
+        "open_verified_export_artifact",
+        MagicMock(side_effect=ExportArtifactIntegrityError("tampered")),
+    )
+    monkeypatch.setattr(
+        operations_module,
+        "enqueue_export_artifact_cleanup",
+        AsyncMock(side_effect=OSError("queue unavailable")),
+    )
+
+    with pytest.raises(ExportArtifactIntegrityError, match="tampered"):
+        await service.download(7, requested_by_sub="owner-1")
+
+    fake.mark_corrupt.assert_awaited_once_with(7, artifact_key=key)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("key", "queue_name"),
+    [
+        (f"{'1' * 32}.xlsx", jobs_module.EXPORT_QUEUE_NAME),
+        (f"salary/{'2' * 32}.xlsx", jobs_module.SALARY_EXPORT_QUEUE_NAME),
+    ],
+)
+async def test_artifact_cleanup_is_routed_to_its_authority_queue(
+    monkeypatch: pytest.MonkeyPatch,
+    key: str,
+    queue_name: str,
+) -> None:
+    pool = MagicMock()
+    published = AsyncMock(return_value=SimpleNamespace(job_id="cleanup"))
+    monkeypatch.setattr(
+        cleanup_module.jobs, "_require_arq_pool", AsyncMock(return_value=pool)
+    )
+    monkeypatch.setattr(cleanup_module.jobs, "_publish_arq_job", published)
+
+    await cleanup_module.enqueue_export_artifact_cleanup(key)
+
+    assert published.await_args is not None
+    assert published.await_args.args[:3] == (
+        pool,
+        "remove_export_artifact_background",
+        key,
+    )
+    assert published.await_args.kwargs["_queue_name"] == queue_name
+    assert published.await_args.kwargs["_job_id"].startswith(
+        "export-artifact-cleanup:"
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("status", "accepted"),
+    [
+        (cleanup_module.ArqJobStatus.queued, True),
+        (cleanup_module.ArqJobStatus.not_found, False),
+    ],
+)
+async def test_artifact_cleanup_recovers_a_deterministic_publish_collision(
+    monkeypatch: pytest.MonkeyPatch,
+    status: cleanup_module.ArqJobStatus,
+    accepted: bool,
+) -> None:
+    pool = MagicMock()
+    existing = SimpleNamespace(status=AsyncMock(return_value=status))
+    monkeypatch.setattr(
+        cleanup_module.jobs, "_require_arq_pool", AsyncMock(return_value=pool)
+    )
+    monkeypatch.setattr(
+        cleanup_module.jobs, "_publish_arq_job", AsyncMock(return_value=None)
+    )
+    monkeypatch.setattr(cleanup_module, "Job", MagicMock(return_value=existing))
+    key = f"{'3' * 32}.xlsx"
+
+    if accepted:
+        assert await cleanup_module.enqueue_export_artifact_cleanup(key) is existing
+    else:
+        with pytest.raises(RuntimeError, match="Failed to enqueue"):
+            await cleanup_module.enqueue_export_artifact_cleanup(key)
+
+
+@pytest.mark.asyncio
+async def test_artifact_cleanup_validates_identity_and_bounds_unknown_publish(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with pytest.raises(ValueError, match="Invalid export artifact"):
+        await cleanup_module.enqueue_export_artifact_cleanup("../escape.xlsx")
+
+    pool = MagicMock()
+    existing = SimpleNamespace(status=AsyncMock(side_effect=OSError("transport")))
+    monkeypatch.setattr(
+        cleanup_module.jobs, "_require_arq_pool", AsyncMock(return_value=pool)
+    )
+    monkeypatch.setattr(
+        cleanup_module.jobs, "_publish_arq_job", AsyncMock(return_value=None)
+    )
+    monkeypatch.setattr(cleanup_module, "Job", MagicMock(return_value=existing))
+
+    with pytest.raises(JobPublishUncertainError):
+        await cleanup_module.enqueue_export_artifact_cleanup(f"{'4' * 32}.xlsx")
+
+
+@pytest.mark.asyncio
+async def test_artifact_cleanup_worker_rejects_cross_namespace_authority() -> None:
+    with pytest.raises(RuntimeError, match="wrong worker authority"):
+        await worker.remove_export_artifact_background(
+            {"worker_role": "exports"},
+            f"salary/{'2' * 32}.xlsx",
+        )
 
 
 @pytest.mark.asyncio

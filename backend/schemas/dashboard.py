@@ -299,14 +299,14 @@ class DashboardAllQuery(StrictApiModel):
     firma: str | None = None
     regional: str | None = None
     asm: str | None = None
-    site_code: str | None = None
-    agent: str | None = None
+    site_code: list[str] | None = None
+    agent: list[str] | None = None
     current_scope: bool = False
     include_closed_stores: bool = False
 
     @field_validator("site_code", mode="before")
     @classmethod
-    def canonicalize_site_code(cls, value: object) -> str | None:
+    def canonicalize_site_code(cls, value: object) -> list[str] | None:
         return canonical_dashboard_site_codes(value)
 
 

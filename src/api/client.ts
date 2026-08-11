@@ -1,6 +1,7 @@
 import * as Sentry from '@sentry/react';
 
-type QueryParamValue = string | number | boolean | null | undefined;
+type QueryParamPrimitive = string | number | boolean;
+type QueryParamValue = QueryParamPrimitive | readonly QueryParamPrimitive[] | null | undefined;
 type QueryParams = object;
 type ResponseType = 'blob' | 'json';
 
@@ -29,14 +30,19 @@ export function requestSignal(
 export class ApiError extends Error {
   readonly status: number;
   readonly detail: string;
-  readonly body: unknown;
+  declare readonly body: unknown;
 
   constructor(status: number, detail: string, body: unknown) {
     super(detail ? `API error: ${status} - ${detail}` : `API error: ${status}`);
     this.name = 'ApiError';
     this.status = status;
     this.detail = detail;
-    this.body = body;
+    Object.defineProperty(this, 'body', {
+      configurable: false,
+      enumerable: false,
+      value: body,
+      writable: false,
+    });
   }
 }
 
@@ -79,15 +85,15 @@ export const setUnauthorizedHandler = (fn: (() => void) | null) => {
   onUnauthorizedFn = fn;
 };
 
-function buildUrl(url: string, params?: QueryParams): string {
+export function buildUrl(url: string, params?: QueryParams): string {
   let fullUrl = API_BASE_URL === '/' ? url : `${API_BASE_URL}${url}`;
   if (!params) return fullUrl;
 
   const searchParams = new URLSearchParams();
   Object.entries(params).forEach(([key, value]: [string, unknown]) => {
-    if (value !== undefined && value !== null) {
-      searchParams.append(key, String(value as QueryParamValue));
-    }
+    if (value === undefined || value === null) return;
+    const values = Array.isArray(value) ? value : [value];
+    values.forEach((item) => searchParams.append(key, String(item as QueryParamValue)));
   });
   const qs = searchParams.toString();
   if (qs) {

@@ -8,6 +8,7 @@ from enum import StrEnum
 from typing import Any
 
 from business_rules import PROMOTION_DISCOUNT_RATE
+from domain.filter_scope import FilterInput
 from services.dashboard_specials import load_promotion_rule_products
 from services.promo_copurchase import (
     PromoActualsError,
@@ -80,11 +81,11 @@ async def evaluate_promotion(
     *,
     month: str,
     definition: dict[str, Any],
-    firma: str | None,
-    regional: str | None,
-    asm: str | None,
-    site_code: str | None,
-    agent: str | None,
+    firma: FilterInput,
+    regional: FilterInput,
+    asm: FilterInput,
+    site_code: FilterInput,
+    agent: FilterInput,
     current_scope: bool = False,
     include_closed_stores: bool = False,
 ) -> PromotionEvaluation:

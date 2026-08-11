@@ -827,11 +827,10 @@ async def test_campaign_exclusions_by_month_reads_pool_context(monkeypatch: pyte
     result = await service._campaign_exclusions_by_month(
         ["2026-05", "2026-06"],
         {
-            "firma": ["Mobiup", ""],
-            "regional": ["RM 1"],
-            "asm": ["ASM 1"],
-            "site_code": ["S001"],
-            "agent": ["Agent 1"],
+            "firma": ["Mobiup", "Retail Partner"],
+            "regional": ["RM 1", "RM 2"],
+            "asm": ["ASM 1", "ASM 2"],
+            "agent": ["Agent 1", "Agent 2"],
         },
     )
 
@@ -840,20 +839,20 @@ async def test_campaign_exclusions_by_month_reads_pool_context(monkeypatch: pyte
         {
             "conn": "conn",
             "month": "2026-05",
-            "firma": None,
-            "regional": None,
-            "asm": None,
-            "site_code": "S001",
-            "agent": "Agent 1",
+            "firma": ["Mobiup", "Retail Partner"],
+            "regional": ["RM 1", "RM 2"],
+            "asm": ["ASM 1", "ASM 2"],
+            "site_code": None,
+            "agent": ["Agent 1", "Agent 2"],
         },
         {
             "conn": "conn",
             "month": "2026-06",
-            "firma": None,
-            "regional": None,
-            "asm": None,
-            "site_code": "S001",
-            "agent": "Agent 1",
+            "firma": ["Mobiup", "Retail Partner"],
+            "regional": ["RM 1", "RM 2"],
+            "asm": ["ASM 1", "ASM 2"],
+            "site_code": None,
+            "agent": ["Agent 1", "Agent 2"],
         },
     ]
 

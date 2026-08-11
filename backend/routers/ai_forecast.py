@@ -20,7 +20,7 @@ async def get_current_ai_forecast(
     firma: str | None = None,
     regional: str | None = None,
     asm: str | None = None,
-    site_code: str | None = None,
+    site_code: list[str] | None = Query(None),
     svc: AiForecastService = Depends(get_ai_forecast_service),
 ) -> AiForecastResponse:
     response = await svc.get_current(
@@ -43,7 +43,7 @@ async def get_rolling_12_ai_forecast(
     firma: str | None = None,
     regional: str | None = None,
     asm: str | None = None,
-    site_code: str | None = None,
+    site_code: list[str] | None = Query(None),
     svc: AiForecastService = Depends(get_ai_forecast_service),
 ) -> AiForecastRollingResponse:
     response = await svc.get_rolling_12(

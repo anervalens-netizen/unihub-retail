@@ -25,6 +25,7 @@
       "services.product_lists",
       "services.reporting_refresh",
       "services.sales_generation",
+      "services.sales_generation_artifacts",
       "services.sales_generation_flow",
       "services.store_pnl_import",
       "services.store_pnl_shadow",
@@ -41,6 +42,7 @@
       "services.hr",
       "services.imports",
       "services.request_deadline",
+      "services.sales_import_worker",
       "services.stores",
       "services.target_calculator.proposal"
     ]

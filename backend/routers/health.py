@@ -33,7 +33,7 @@ async def liveness() -> JSONResponse:
 @router.get("/health", include_in_schema=False)
 @router.get("/readyz", include_in_schema=False)
 async def readiness() -> JSONResponse:
-    """Bounded probe for PostgreSQL and the server-side session backend."""
+    """Bounded probe for PostgreSQL, session storage and OIDC JWKS."""
     started_at = time.perf_counter()
     outcome = "ready"
     try:

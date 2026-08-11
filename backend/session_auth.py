@@ -25,6 +25,11 @@ from redis.asyncio import Redis
 
 from auth import AuthClaims, verify_oidc_token
 from rate_limits import AUTH_PROXY_LIMIT, anonymous_rate_limit
+from session_runtime_helpers import (
+    auth_claims_from_record,
+    drain_tasks,
+    oidc_identity_is_continuous,
+)
 from valkey_url import apply_valkey_endpoint_overrides
 
 
@@ -42,6 +47,7 @@ REFRESH_LOCK_TTL_SECONDS = 15
 REFRESH_WAIT_SECONDS = 1.0
 REFRESH_POLL_SECONDS = 0.05
 REFRESH_RETRY_AFTER_SECONDS = 2
+REFRESH_SHUTDOWN_TIMEOUT_SECONDS = REFRESH_OWNER_TIMEOUT_SECONDS + 1.0
 SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
 OPAQUE_RE = re.compile(r"^[A-Za-z0-9_-]{43}$")
 logger = logging.getLogger(__name__)
@@ -62,6 +68,11 @@ SESSION_REFRESH_TIMEOUTS_TOTAL = Counter(
 SESSION_REFRESH_WAITERS = Gauge(
     "unihub_retail_session_refresh_waiters",
     "Current in-process session refresh waiters.",
+)
+SESSION_IDENTITY_MISMATCH_TOTAL = Counter(
+    "unihub_retail_session_identity_mismatch_total",
+    "OIDC token or refresh identity continuity failures.",
+    ("stage",),
 )
 
 
@@ -120,6 +131,7 @@ _redis: Redis | None = None
 _cipher: Fernet | None = None
 _http: httpx.AsyncClient | None = None
 _local_refresh_tasks: dict[str, asyncio.Task[dict[str, Any] | None]] = {}
+_session_closing = False
 
 
 def _bounded_text(value: str | None, maximum: int) -> str:
@@ -207,11 +219,12 @@ def _cookie_name(settings: SessionSettings) -> str:
 
 
 async def init_session_runtime() -> None:
-    global _settings, _redis, _cipher, _http
+    global _settings, _redis, _cipher, _http, _session_closing
     if _redis is not None:
         return
     settings = load_session_settings()
     if settings is None:
+        _session_closing = False
         return
     client = Redis.from_url(settings.valkey_url, decode_responses=False, socket_timeout=2.0)
     http = httpx.AsyncClient(
@@ -225,10 +238,19 @@ async def init_session_runtime() -> None:
         await http.aclose()
         raise RuntimeError("Session backend unavailable")
     _settings, _redis, _cipher, _http = settings, client, Fernet(settings.encryption_key.encode("ascii")), http
+    _session_closing = False
 
 
 async def close_session_runtime() -> None:
-    global _settings, _redis, _cipher, _http
+    global _settings, _redis, _cipher, _http, _session_closing
+    _session_closing = True
+    cancelled = await drain_tasks(
+        _local_refresh_tasks.values(),
+        timeout=REFRESH_SHUTDOWN_TIMEOUT_SECONDS,
+    )
+    if cancelled:
+        SESSION_REFRESH_TIMEOUTS_TOTAL.labels(role="shutdown").inc(cancelled)
+    _local_refresh_tasks.clear()
     client, http = _redis, _http
     _settings = _redis = _cipher = _http = None
     if client is not None:
@@ -265,16 +287,6 @@ def _unpack(cipher: Fernet, payload: bytes | None) -> dict[str, Any] | None:
     except (InvalidToken, UnicodeError, json.JSONDecodeError):
         return None
     return result if isinstance(result, dict) else None
-
-
-def _claims(payload: dict[str, Any]) -> AuthClaims:
-    return AuthClaims(
-        sub=str(payload["sub"]), email=str(payload.get("email", "")),
-        preferred_username=str(payload.get("preferred_username", "")),
-        groups=[str(group) for group in payload.get("groups", [])],
-        iss=str(payload["iss"]), aud=str(payload["aud"]),
-        iat=int(payload["iat"]), exp=int(payload["exp"]), raw={},
-    )
 
 
 async def _store_session(session_id: str, payload: dict[str, Any]) -> None:
@@ -364,6 +376,10 @@ async def _refresh_distributed(session_id: str, record: dict[str, Any]) -> dict[
             if not isinstance(access_token, str):
                 return None
             claims = await verify_oidc_token(access_token)
+            if not oidc_identity_is_continuous(record, claims):
+                SESSION_IDENTITY_MISMATCH_TOTAL.labels(stage="refresh").inc()
+                logger.warning("OIDC refresh identity continuity check failed")
+                return None
             record.update(asdict(claims))
             if isinstance(tokens.get("refresh_token"), str):
                 record["refresh_token"] = tokens["refresh_token"]
@@ -389,6 +405,8 @@ async def _refresh_distributed(session_id: str, record: dict[str, Any]) -> dict[
 
 async def _refresh(session_id: str, record: dict[str, Any]) -> dict[str, Any] | None:
     """Share one refresh task inside the process; Valkey fences other processes."""
+    if _session_closing:
+        raise ConcurrentSessionRefreshUnavailable
     task = _local_refresh_tasks.get(session_id)
     owner = task is None
     if task is None:
@@ -466,7 +484,7 @@ async def authenticate_session(request: Request) -> AuthClaims:
         expected = record.get("csrf", "")
         if not isinstance(expected, str) or not hmac.compare_digest(supplied, expected):
             raise HTTPException(status.HTTP_403_FORBIDDEN, "CSRF validation failed")
-    return _claims(record)
+    return auth_claims_from_record(record)
 
 
 _auth_rate_limit = Depends(anonymous_rate_limit(AUTH_PROXY_LIMIT))
@@ -523,11 +541,17 @@ async def session_callback(request: Request) -> RedirectResponse:
     ):
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, "Authentication provider returned an invalid response")
     claims = await verify_oidc_token(access_token)
-    await verify_oidc_token(
+    id_claims = await verify_oidc_token(
         id_token,
         nonce=str(flow["nonce"]),
         audience=settings.client_id,
     )
+    if not oidc_identity_is_continuous(claims, id_claims):
+        SESSION_IDENTITY_MISMATCH_TOTAL.labels(stage="callback").inc()
+        raise HTTPException(
+            status.HTTP_502_BAD_GATEWAY,
+            "Authentication provider returned an invalid response",
+        )
     session_id, csrf = secrets.token_urlsafe(32), secrets.token_urlsafe(32)
     await _store_session(session_id, {**asdict(claims), "refresh_token": refresh_token, "csrf": csrf})
     result = RedirectResponse(settings.public_origin + "/", status_code=303)

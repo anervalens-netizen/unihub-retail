@@ -3,6 +3,7 @@ import {createRoot} from 'react-dom/client';
 import App from './App.tsx';
 import './index.css';
 import { installPreloadRecovery } from './lib/preloadRecovery.ts';
+import { scrubTelemetryEvent } from './lib/telemetryPrivacy.ts';
 import { observeCoreWebVitals, webVitalDistributionName } from './lib/webVitals.ts';
 
 import * as Sentry from '@sentry/react';
@@ -21,6 +22,9 @@ if (sentryDsn && supportsSentry) {
     integrations: [Sentry.browserTracingIntegration()],
     tracesSampleRate: 0.1,
     tracePropagationTargets: [/^\//, window.location.origin],
+    sendDefaultPii: false,
+    beforeSend: (event) => scrubTelemetryEvent(event),
+    beforeSendTransaction: (event) => scrubTelemetryEvent(event),
   });
   Sentry.setTag('network.effective_type', connection?.effectiveType ?? 'unknown');
   Sentry.setTag('network.save_data', String(connection?.saveData ?? false));

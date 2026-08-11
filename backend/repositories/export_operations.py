@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import Any, Literal
 
 import asyncpg
 
@@ -17,7 +17,7 @@ EXPORT_OPERATION_COLUMNS = """
     id, kind, status, job_id, request_payload, request_sha256,
     requested_by_sub, execution_owner, execution_epoch,
     execution_lease_until, artifact_key, artifact_sha256, artifact_size,
-    peak_rss_bytes, build_seconds, cell_count, download_filename,
+    peak_rss_bytes, build_seconds, cell_count, row_count, download_filename,
     error_code, created_at, updated_at, started_at,
     finished_at, expires_at, download_claimed_at
 """
@@ -44,9 +44,13 @@ class ExportOperationsRepository:
         request_payload: dict[str, Any],
         request_sha256: str,
         requested_by_sub: str,
+        job_prefix: Literal["export-complex", "salary-export"] = "export-complex",
     ) -> dict[str, Any]:
         if not requested_by_sub.strip():
             raise ValueError("requested_by_sub is required")
+        expected_prefix = "salary-export" if kind.startswith("salary_") else "export-complex"
+        if job_prefix != expected_prefix:
+            raise ValueError("Export operation kind and queue identity do not match")
         encoded = json.dumps(request_payload, sort_keys=True, separators=(",", ":"))
         async with self.pool.acquire() as conn:
             async with conn.transaction():
@@ -82,7 +86,7 @@ class ExportOperationsRepository:
                         id, kind, status, job_id, request_payload,
                         request_sha256, requested_by_sub
                     )
-                    SELECT id, $1, 'queued', 'export-complex:' || id::TEXT,
+                    SELECT id, $1, 'queued', $5 || ':' || id::TEXT,
                            $2::JSONB, $3, $4
                     FROM identity
                     RETURNING {EXPORT_OPERATION_COLUMNS}
@@ -91,6 +95,7 @@ class ExportOperationsRepository:
                     encoded,
                     request_sha256,
                     requested_by_sub,
+                    job_prefix,
                 )
         operation = export_operation_to_dict(row)
         if operation is None:
@@ -130,6 +135,7 @@ class ExportOperationsRepository:
                 SELECT {EXPORT_OPERATION_COLUMNS}
                 FROM export_operations
                 WHERE requested_by_sub = $1
+                  AND kind IN ('daily_metrics', 'daily_comparison')
                   AND (
                       status IN ('queued', 'running')
                       OR (status = 'completed'
@@ -173,7 +179,10 @@ class ExportOperationsRepository:
         *,
         execution_owner: str,
         lease_seconds: int,
+        allowed_kinds: tuple[str, ...],
     ) -> dict[str, Any] | None:
+        if not allowed_kinds:
+            raise ValueError("Export worker must declare its allowed operation kinds")
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow(
                 f"""
@@ -184,12 +193,15 @@ class ExportOperationsRepository:
                     execution_lease_until = now() + ($3 * interval '1 second'),
                     started_at = now(),
                     updated_at = now()
-                WHERE id = $1 AND status = 'queued'
+                WHERE id = $1
+                  AND status = 'queued'
+                  AND kind = ANY($4::TEXT[])
                 RETURNING {EXPORT_OPERATION_COLUMNS}
                 """,
                 operation_id,
                 execution_owner,
                 lease_seconds,
+                list(allowed_kinds),
             )
         return export_operation_to_dict(row)
 
@@ -234,6 +246,7 @@ class ExportOperationsRepository:
         cell_count: int,
         download_filename: str,
         ttl_seconds: int,
+        row_count: int | None = None,
     ) -> bool:
         async with self.pool.acquire() as conn:
             updated = await conn.fetchval(
@@ -246,11 +259,12 @@ class ExportOperationsRepository:
                     peak_rss_bytes = $7,
                     build_seconds = $8,
                     cell_count = $9,
-                    download_filename = $10,
+                    row_count = $10,
+                    download_filename = $11,
                     error_code = NULL,
                     execution_lease_until = NULL,
                     finished_at = now(),
-                    expires_at = now() + ($11 * interval '1 second'),
+                    expires_at = now() + ($12 * interval '1 second'),
                     updated_at = now()
                 WHERE id = $1
                   AND status = 'running'
@@ -268,6 +282,7 @@ class ExportOperationsRepository:
                 peak_rss_bytes,
                 build_seconds,
                 cell_count,
+                row_count,
                 download_filename,
                 ttl_seconds,
             )

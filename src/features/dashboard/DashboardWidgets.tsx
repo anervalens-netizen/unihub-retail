@@ -1,6 +1,6 @@
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from 'recharts';
 import type { AgentStat, AsmStat, PeriodComparisonPoint, RegionalStat, StoreStat } from '../../api/generated/runtime-types';
-import { ALL_FIRMS, ALL_SCOPE, ALL_STORES } from '../../lib/filterValues';
+import { ALL_FIRMS, ALL_SCOPE } from '../../lib/filterValues';
 import { formatAmount, formatCurrency, formatInt, formatPercent } from '../../lib/formatters';
 import type { AppFilters } from '../../lib/appFilters';
 type AsmSortKey =
@@ -437,13 +437,11 @@ export function formatCompactAxisValue(value: number): string {
 }
 
 export function describeFilterScope(filters: AppFilters): string {
-  if (filters.agent !== ALL_SCOPE) {
-    const agents = filters.agent.split(',').filter(Boolean);
-    return agents.length > 1 ? `${agents.length} agenti selectati` : `Agent ${filters.agent}`;
+  if (filters.agent.length > 0) {
+    return filters.agent.length > 1 ? `${filters.agent.length} agenti selectati` : `Agent ${filters.agent[0]}`;
   }
-  if (filters.magazin !== ALL_STORES) {
-    const stores = filters.magazin.split(',').filter(Boolean);
-    return stores.length > 1 ? `${stores.length} magazine selectate` : `Magazin ${filters.magazin}`;
+  if (filters.magazin.length > 0) {
+    return filters.magazin.length > 1 ? `${filters.magazin.length} magazine selectate` : `Magazin ${filters.magazin[0]}`;
   }
   if (filters.rm !== ALL_SCOPE) {
     return `Regional ${filters.rm}`;

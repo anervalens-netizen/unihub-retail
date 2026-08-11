@@ -334,7 +334,7 @@ class TestFetchPeriodComparison:
         assert "agg.regional = ANY" not in previous_sql
         assert "agg.firma = ANY" not in previous_sql
         assert "agg.agent = ANY" in previous_sql
-        assert previous_call.args[4:] == ("AG01", ["MOVED01"])
+        assert previous_call.args[4:] == (["AG01"], ["MOVED01"])
 
 
 class TestFetchDailyLastYearForCurrentCohort:
@@ -371,7 +371,7 @@ class TestFetchDailyLastYearForCurrentCohort:
         assert "agg.site_code = ANY($3::TEXT[])" in daily_sql
         assert "agg.regional = ANY" not in daily_sql
         assert "agg.firma = ANY" not in daily_sql
-        assert daily_call.args[1:] == ("2025-07", "AG01", ["OPEN01", "OPEN02"])
+        assert daily_call.args[1:] == ("2025-07", ["AG01"], ["OPEN01", "OPEN02"])
 
     @pytest.mark.asyncio
     async def test_no_current_cohort_returns_empty_without_daily_query(self, mock_conn):

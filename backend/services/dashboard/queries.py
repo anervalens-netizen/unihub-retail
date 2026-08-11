@@ -5,6 +5,10 @@ from datetime import date
 from decimal import Decimal
 from typing import Any, Literal
 
+from repositories.dashboard_cutoffs import (
+    fetch_period_comparison_cutoff_day as _fetch_period_comparison_cutoff_day,
+    resolve_period_comparison_cutoff_day,
+)
 from schemas.dashboard import (
     BrandMixItem,
     CategoryMixItem,
@@ -19,7 +23,7 @@ from services.dashboard.utils import (
     _shift_month,
 )
 from services.dashboard_specials import load_special_cards_config, parse_promotion_definition
-from services.filters import build_scoped_params, scoped_clauses
+from services.filters import FilterInput, build_scoped_params, scoped_clauses
 from services.forecast import business_forecast_factor_ctes
 from services.incentive_db import get_incentive_campaign
 from services.receipt_identity import canonical_receipt_identity_sql
@@ -102,8 +106,8 @@ async def _fetch_store_stats_rows(
     firma: str | None,
     regional: str | None,
     asm: str | None,
-    site_code: str | None,
-    agent: str | None,
+    site_code: FilterInput,
+    agent: FilterInput,
     current_scope: bool = False,
     include_closed_stores: bool = False,
 ) -> list[Any]:
@@ -247,8 +251,8 @@ async def _enrich_store_stats_with_campaign(
     firma: str | None,
     regional: str | None,
     asm: str | None,
-    site_code: str | None,
-    agent: str | None,
+    site_code: FilterInput,
+    agent: FilterInput,
     current_scope: bool = False,
     include_closed_stores: bool = False,
 ) -> list[dict[str, Any]]:
@@ -337,8 +341,8 @@ async def _fetch_agent_stats_rows(
     firma: str | None,
     regional: str | None,
     asm: str | None,
-    site_code: str | None,
-    agent: str | None,
+    site_code: FilterInput,
+    agent: FilterInput,
     current_scope: bool = False,
     include_closed_stores: bool = False,
 ) -> list[dict[str, Any]]:
@@ -570,8 +574,8 @@ async def _fetch_regional_stats(
     firma: str | None,
     regional: str | None,
     asm: str | None,
-    site_code: str | None,
-    agent: str | None,
+    site_code: FilterInput,
+    agent: FilterInput,
     current_scope: bool = False,
     include_closed_stores: bool = False,
 ) -> list[dict[str, Any]]:
@@ -785,8 +789,8 @@ async def _fetch_asm_stats(
     firma: str | None,
     regional: str | None,
     asm: str | None,
-    site_code: str | None,
-    agent: str | None,
+    site_code: FilterInput,
+    agent: FilterInput,
     current_scope: bool = False,
     include_closed_stores: bool = False,
 ) -> list[dict[str, Any]]:
@@ -975,15 +979,14 @@ async def _fetch_period_comparison(
     firma: str | None,
     regional: str | None,
     asm: str | None,
-    site_code: str | None,
-    agent: str | None,
+    site_code: FilterInput,
+    agent: FilterInput,
     cutoff_day: int | None = None,
     target_metric: str = "sales",
     current_scope: bool = False,
     include_closed_stores: bool = False,
 ) -> PeriodComparisonPayload:
-    if cutoff_day is None:
-        cutoff_day = await _fetch_period_comparison_cutoff_day(conn, month)
+    cutoff_day = await resolve_period_comparison_cutoff_day(conn, month, cutoff_day)
 
     baseline_params, baseline_positions = build_scoped_params(
         [month],
@@ -1131,8 +1134,8 @@ async def _fetch_daily_last_year_for_current_cohort(
     firma: str | None,
     regional: str | None,
     asm: str | None,
-    site_code: str | None,
-    agent: str | None,
+    site_code: FilterInput,
+    agent: FilterInput,
     current_scope: bool = False,
     include_closed_stores: bool = False,
 ) -> list[Any]:
@@ -1206,53 +1209,14 @@ async def _fetch_daily_last_year_for_current_cohort(
     )
 
 
-async def _fetch_period_comparison_cutoff_day(conn: Any, month: str) -> int:
-    row = await conn.fetchrow(
-        """
-        WITH month_meta AS (
-            SELECT BOOL_OR(is_month_final) AS is_final
-            FROM import_snapshots
-            WHERE import_month = $1
-              AND status = 'completed'
-        ),
-        last_sale AS (
-            SELECT EXTRACT(DAY FROM MAX(sale_date))::INT AS last_sale_day
-            FROM reporting_agent_day
-            WHERE import_month = $1
-        )
-        SELECT
-            COALESCE(mm.is_final, true) AS is_final,
-            ls.last_sale_day,
-            EXTRACT(DAY FROM (
-                date_trunc('month', to_date($1 || '-01', 'YYYY-MM-DD'))
-                + INTERVAL '1 month - 1 day'
-            ))::INT AS days_in_month
-        FROM last_sale ls
-        LEFT JOIN month_meta mm ON true
-        """,
-        month,
-    )
-    if not row:
-        return 31
-
-    days_in_month = int(row["days_in_month"] or 31)
-    if row["is_final"]:
-        return days_in_month
-
-    last_sale_day = row["last_sale_day"]
-    if last_sale_day:
-        return max(1, min(int(last_sale_day), days_in_month))
-    return days_in_month
-
-
 async def _fetch_receipt_bucket_mix(
     conn: Any,
     month: str,
     firma: str | None,
     regional: str | None,
     asm: str | None,
-    site_code: str | None,
-    agent: str | None,
+    site_code: FilterInput,
+    agent: FilterInput,
     current_scope: bool = False,
     include_closed_stores: bool = False,
 ) -> list[ReceiptBucketItem]:
@@ -1312,8 +1276,8 @@ async def _fetch_focus_subcategory_mix(
     firma: str | None,
     regional: str | None,
     asm: str | None,
-    site_code: str | None,
-    agent: str | None,
+    site_code: FilterInput,
+    agent: FilterInput,
     current_scope: bool = False,
     include_closed_stores: bool = False,
 ) -> list[CategoryMixItem]:
@@ -1380,8 +1344,8 @@ async def _fetch_brand_mix(
     firma: str | None,
     regional: str | None,
     asm: str | None,
-    site_code: str | None,
-    agent: str | None,
+    site_code: FilterInput,
+    agent: FilterInput,
     current_scope: bool = False,
     include_closed_stores: bool = False,
 ) -> list[BrandMixItem]:
@@ -1433,8 +1397,8 @@ async def _fetch_category_mix(
     firma: str | None,
     regional: str | None,
     asm: str | None,
-    site_code: str | None,
-    agent: str | None,
+    site_code: FilterInput,
+    agent: FilterInput,
     current_scope: bool = False,
     include_closed_stores: bool = False,
 ) -> list[CategoryMixItem]:

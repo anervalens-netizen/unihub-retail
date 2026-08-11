@@ -1,4 +1,4 @@
-import { generatedGet, generatedPost } from './generated/client';
+import { generatedGet, generatedPost, isGeneratedApiError } from './generated/client';
 import type { RetailOperationPaths, RetailOperationQueries } from './generated/contracts';
 import type {
   AgentSalaryLink,
@@ -14,6 +14,7 @@ import type {
   SalaryTrendMonth,
 } from './generated/runtime-types';
 import type { GeneratedRequest } from './generated/runtime-types';
+import type { ExportOperation } from './exports';
 
 export type SalariiOverviewQuery = RetailOperationQueries['salarii_overview_salarii_overview_get'];
 export type SalaryEvolutionQuery = RetailOperationQueries['salarii_evolution_salarii_evolution_get'];
@@ -21,6 +22,8 @@ export type SalaryAgentsQuery = RetailOperationQueries['agents_summary_salarii_a
 export type SalaryHistoryByRetailCodeQuery = RetailOperationQueries['agent_history_by_retail_code_salarii_agents_history_by_retail_code_get'];
 export type SalarySummaryQuery = RetailOperationQueries['salarii_summary_salarii_summary_get'];
 export type SalaryTrendQuery = RetailOperationQueries['salarii_trend_salarii_trend_get'];
+export type SalaryExportRequest = GeneratedRequest<'create_salary_export_operation_salarii_exports_operations_post'>;
+export type SalaryExportKind = SalaryExportRequest['export_kind'];
 
 export async function fetchSalariiOverview(params?: SalariiOverviewQuery): Promise<SalariiOverview> {
   return generatedGet('salarii_overview_salarii_overview_get', { params });
@@ -54,10 +57,23 @@ export async function fetchSalaryTrend(params?: SalaryTrendQuery): Promise<Salar
   return generatedGet('salarii_trend_salarii_trend_get', { params });
 }
 
-export async function auditSalaryExport(
-  request: GeneratedRequest<'audit_salary_export_salarii_audit_export_post'>,
-): Promise<void> {
-  await generatedPost('audit_salary_export_salarii_audit_export_post', request);
+export async function createSalaryExportOperation(
+  request: SalaryExportRequest,
+): Promise<ExportOperation> {
+  return generatedPost('create_salary_export_operation_salarii_exports_operations_post', request);
+}
+
+export function uncertainSalaryExportOperationId(error: unknown): number | null {
+  const operationId = 'create_salary_export_operation_salarii_exports_operations_post';
+  if (!isGeneratedApiError(error, operationId) || error.status !== 503) return null;
+  const body = error.typedBody;
+  if (!body || typeof body !== 'object' || !('detail' in body)) return null;
+  const detail = body.detail;
+  if (!detail || typeof detail !== 'object' || !('operation_id' in detail)) return null;
+  const candidate = detail.operation_id;
+  return typeof candidate === 'number' && Number.isInteger(candidate) && candidate > 0
+    ? candidate
+    : null;
 }
 
 export type {

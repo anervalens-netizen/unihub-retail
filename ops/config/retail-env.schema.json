@@ -9,6 +9,7 @@
   "x-process-profiles": {
     "web": ["DATABASE_URL", "UNIHUB_DB_PROCESS_AUTHORITY", "UNIHUB_ENV"],
     "operations-worker": ["DATABASE_URL", "UNIHUB_DB_PROCESS_AUTHORITY", "RETAIL_WORKER_ROLE", "VALKEY_URL"],
+    "salary-export-worker": ["DATABASE_URL", "UNIHUB_DB_PROCESS_AUTHORITY", "RETAIL_WORKER_ROLE", "VALKEY_URL"],
     "import-worker": ["DATABASE_URL", "UNIHUB_DB_PROCESS_AUTHORITY", "RETAIL_WORKER_ROLE", "VALKEY_URL"],
     "migration": ["MIGRATION_DATABASE_URL", "UNIHUB_DB_PROCESS_AUTHORITY"],
     "frontend-build": ["VITE_API_BASE_URL", "VITE_FRONTEND_GLITCHTIP_DSN"]
@@ -116,7 +117,7 @@
     "VITE_PROXY_TARGET": {"type": "string", "x-ephemeral": true},
     "WORKER_METRICS_HOST": {"type": "string", "x-process-only": true},
     "WORKER_METRICS_PORT": {"type": "string", "pattern": "^[1-9][0-9]*$", "x-process-only": true},
-    "UNIHUB_DB_PROCESS_AUTHORITY": {"type": "string", "enum": ["web", "operations", "sales_import", "finance_import", "migrate"]},
-    "RETAIL_WORKER_ROLE": {"type": "string", "enum": ["operations", "imports", "grile", "exports"]}
+    "UNIHUB_DB_PROCESS_AUTHORITY": {"type": "string", "enum": ["web", "operations", "salary_export", "sales_import", "finance_import", "migrate"]},
+    "RETAIL_WORKER_ROLE": {"type": "string", "enum": ["operations", "imports", "grile", "exports", "salary_exports"]}
   }
 }

@@ -11,6 +11,7 @@ from typing import Any
 
 import asyncpg
 
+from domain.filter_scope import FilterInput
 from repositories.campaigns import CampaignsRepository
 from schemas.campaigns import (
     CampaignSnapshot,
@@ -87,6 +88,19 @@ async def _campaign_snapshot_transaction(conn: Any, *, owned: bool):
         yield conn
 
 
+def _parse_campaign_dates(
+    start_date: date | str,
+    end_date: date | str,
+) -> tuple[date, date]:
+    try:
+        start = date.fromisoformat(start_date) if isinstance(start_date, str) else start_date
+        end = date.fromisoformat(end_date) if isinstance(end_date, str) else end_date
+    except ValueError as exc:
+        record_campaign_request_rejected("invalid_iso_date")
+        raise CampaignDateRangeError("invalid_iso_date") from exc
+    return start, end
+
+
 class CampaignsService:
     def __init__(self, repo: CampaignsRepository, pool: asyncpg.Pool | None):
         self.repo = repo
@@ -98,8 +112,8 @@ class CampaignsService:
         firma: str | None,
         regional: str | None,
         asm: str | None,
-        site_code: str | None,
-        agent: str | None,
+        site_code: FilterInput,
+        agent: FilterInput,
     ) -> CampaignSnapshot:
         data = await self.repo.fetch_overview(
             month,
@@ -118,8 +132,8 @@ class CampaignsService:
         firma: str | None,
         regional: str | None,
         asm: str | None,
-        site_code: str | None,
-        agent: str | None,
+        site_code: FilterInput,
+        agent: FilterInput,
     ) -> FocusHistoryResponse:
         rows = await self.repo.fetch_history(
             month,
@@ -139,8 +153,8 @@ class CampaignsService:
         firma: str | None,
         regional: str | None,
         asm: str | None,
-        site_code: str | None,
-        agent: str | None,
+        site_code: FilterInput,
+        agent: FilterInput,
         promotion_key: str | None = None,
         view: str = "all",
         current_scope: bool = False,
@@ -180,28 +194,15 @@ class CampaignsService:
         firma: str | None,
         regional: str | None,
         asm: str | None,
-        site_code: str | None,
-        agent: str | None,
+        site_code: FilterInput,
+        agent: FilterInput,
         promotion_key: str | None,
         view: str,
         current_scope: bool,
         include_closed_stores: bool,
         connection: asyncpg.Connection | None = None,
     ) -> dict[str, Any]:
-        try:
-            start = (
-                date.fromisoformat(start_date)
-                if isinstance(start_date, str)
-                else start_date
-            )
-            end = (
-                date.fromisoformat(end_date)
-                if isinstance(end_date, str)
-                else end_date
-            )
-        except ValueError as exc:
-            record_campaign_request_rejected("invalid_iso_date")
-            raise CampaignDateRangeError("invalid_iso_date") from exc
+        start, end = _parse_campaign_dates(start_date, end_date)
         month = validate_campaign_date_range(start, end)
 
         (
@@ -456,8 +457,8 @@ async def build_promotions_incentives_on_snapshot(
     firma: str | None,
     regional: str | None,
     asm: str | None,
-    site_code: str | None,
-    agent: str | None,
+    site_code: FilterInput,
+    agent: FilterInput,
     promotion_key: str | None = None,
     view: str = "all",
     current_scope: bool = False,

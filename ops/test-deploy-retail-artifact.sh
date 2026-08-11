@@ -41,10 +41,11 @@ OLD_SHA="$(git -C "$BUILDER" rev-parse HEAD)"
 git -C "$BUILDER" push --quiet -u origin main
 git --git-dir="$REMOTE" symbolic-ref HEAD refs/heads/main
 
-# The candidate has isolated Grile/export workers plus a disabled legacy
+# The candidate has isolated Grile/export/salary-export workers plus a disabled legacy
 # tombstone; the old release intentionally has none of them.
 cp "$SCRIPT_DIR/systemd/unihub-grile-worker.service" "$BUILDER/ops/systemd/"
 cp "$SCRIPT_DIR/systemd/unihub-export-worker.service" "$BUILDER/ops/systemd/"
+cp "$SCRIPT_DIR/systemd/unihub-salary-export-worker.service" "$BUILDER/ops/systemd/"
 cp "$SCRIPT_DIR/systemd/unihub-legacy-worker.service" "$BUILDER/ops/systemd/"
 
 git clone --quiet "$REMOTE" "$LIVE"
@@ -179,19 +180,23 @@ mv -- "$CLAIMED_APPROVAL" "$ACTIVE_APPROVAL"
 run_deploy "$ARTIFACT" "$NEW_SHA" "$CI_RUN_ID" "$ARTIFACT_SHA256"
 [[ "$(git -C "$LIVE" rev-parse HEAD)" == "$NEW_SHA" ]]
 [[ "$(<"$LIVE/dist/index.html")" == "new frontend" ]]
+[[ -d "$LIVE/data/export_artifacts/salary" ]]
+[[ "$(stat -c '%a' "$LIVE/data/export_artifacts/salary")" == "700" ]]
 for unit in \
   unihub-backend.service \
   unihub-worker.service \
   unihub-import-worker.service \
   unihub-grile-worker.service \
   unihub-export-worker.service \
+  unihub-salary-export-worker.service \
   unihub-legacy-worker.service \
   unihub-retail-migrate.service; do
   [[ -L "$ROOT/etc/systemd/system/$unit" ]]
   [[ "$(readlink -f "$ROOT/etc/systemd/system/$unit")" == "$ROOT/runtime-releases/$NEW_SHA/systemd/$unit" ]]
 done
 for unit in unihub-backend.service unihub-worker.service unihub-import-worker.service \
-  unihub-grile-worker.service unihub-export-worker.service; do
+  unihub-grile-worker.service unihub-export-worker.service \
+  unihub-salary-export-worker.service; do
   [[ -e "$ROOT/enabled/$unit" ]]
 done
 [[ ! -e "$ROOT/enabled/unihub-legacy-worker.service" ]]
@@ -199,7 +204,7 @@ done
 grep -Fxq 'PROMETHEUS_DOCKER_GATEWAY=172.23.0.1' "$OPS/prometheus/unihub-retail-network.env"
 grep -Fxq 'PROMETHEUS_DOCKER_SUBNET=172.23.0.0/16' "$OPS/prometheus/unihub-retail-network.env"
 grep -Fxq 'WORKER_METRICS_HOST=172.23.0.1' "$OPS/prometheus/unihub-retail-network.env"
-[[ "$(grep -Fc '172.23.0.1:' "$OPS/prometheus/scrape.d/unihub-retail.yml")" -eq 5 ]]
+[[ "$(grep -Fc '172.23.0.1:' "$OPS/prometheus/scrape.d/unihub-retail.yml")" -eq 6 ]]
 ! grep -Eq '__PROMETHEUS_DOCKER_GATEWAY__|0\.0\.0\.0|127\.0\.0\.1' \
   "$OPS/prometheus/scrape.d/unihub-retail.yml"
 cmp "$SCRIPT_DIR/observability/retail-slo-rules.yml" \
@@ -279,7 +284,8 @@ run_deploy rollback "$HANDLE"
 [[ "$(git -C "$LIVE" rev-parse HEAD)" == "$OLD_SHA" ]]
 [[ ! -L "$ROOT/etc/systemd/system/unihub-backend.service" ]]
 grep -Fxq 'legacy unit unihub-backend.service' "$ROOT/etc/systemd/system/unihub-backend.service"
-for unit in unihub-grile-worker.service unihub-export-worker.service unihub-legacy-worker.service; do
+for unit in unihub-grile-worker.service unihub-export-worker.service \
+  unihub-salary-export-worker.service unihub-legacy-worker.service; do
   [[ ! -e "$ROOT/etc/systemd/system/$unit" ]]
   [[ ! -e "$ROOT/enabled/$unit" ]]
 done

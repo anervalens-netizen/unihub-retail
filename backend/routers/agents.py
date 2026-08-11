@@ -27,8 +27,8 @@ async def get_agents_overview(
     firma: str | None = Query(None),
     regional: str | None = Query(None),
     asm: str | None = Query(None),
-    site_code: str | None = Query(None),
-    agent: str | None = Query(None),
+    site_code: list[str] | None = Query(None),
+    agent: list[str] | None = Query(None),
     svc: AgentsService = Depends(get_agents_service),
 ):
     return await svc.get_agents_overview(selected_month, firma, regional, asm, site_code, agent)
@@ -40,8 +40,8 @@ async def get_agents_movement(
     firma: str | None = Query(None),
     regional: str | None = Query(None),
     asm: str | None = Query(None),
-    site_code: str | None = Query(None),
-    agent: str | None = Query(None),
+    site_code: list[str] | None = Query(None),
+    agent: list[str] | None = Query(None),
     svc: AgentsService = Depends(get_agents_service),
 ):
     return await svc.get_agents_movement(selected_month, firma, regional, asm, site_code, agent)
@@ -54,7 +54,7 @@ async def get_agents_list(
     firma: str | None = Query(None),
     regional: str | None = Query(None),
     asm: str | None = Query(None),
-    site_code: str | None = Query(None),
+    site_code: list[str] | None = Query(None),
     svc: AgentsService = Depends(get_agents_service),
 ):
     return await svc.get_agents_list(selected_month, search, firma, regional, asm, site_code)
@@ -66,7 +66,7 @@ async def get_agent_evaluation(
     months: str | None = Query(None),
     firma: str | None = Query(None),
     asm: str | None = Query(None),
-    site_code: str | None = Query(None),
+    site_code: list[str] | None = Query(None),
     svc: AgentsService = Depends(get_agents_service),
 ):
     return await svc.get_agent_evaluation(month, months, firma, asm, site_code)
@@ -78,7 +78,7 @@ async def get_agent_evaluation_v2(
     months: str | None = Query(None),
     firma: str | None = Query(None),
     asm: str | None = Query(None),
-    site_code: str | None = Query(None),
+    site_code: list[str] | None = Query(None),
     svc: AgentsService = Depends(get_agents_service),
 ):
     return await svc.get_agent_evaluation_v2(month, months, firma, asm, site_code)

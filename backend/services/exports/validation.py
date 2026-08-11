@@ -48,6 +48,14 @@ def normalize_filters(filters: dict[str, Any]) -> dict[str, list[str]]:
     return {key: value for key, value in normalized.items() if value}
 
 
+def scoped_filter_values(
+    filters: dict[str, list[str]],
+    key: str,
+) -> list[str] | None:
+    """Preserve one normalized multi-select scope for canonical SQL builders."""
+    return filters.get(key) or None
+
+
 def valid_keys(value: Any, allowed: set[str], default: list[str], label: str) -> list[str]:
     if not value:
         return default

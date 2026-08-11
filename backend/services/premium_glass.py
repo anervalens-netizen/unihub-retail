@@ -4,6 +4,7 @@ from collections import defaultdict
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any, Literal
 
+from domain.filter_scope import FilterInput
 from schemas.dashboard import (
     DashboardSpecialCard,
     DashboardSpecialCardMetric,
@@ -37,8 +38,8 @@ def _premium_scope(
     firma: str | None,
     regional: str | None,
     asm: str | None,
-    site_code: str | None,
-    agent: str | None,
+    site_code: FilterInput,
+    agent: FilterInput,
     surface: Literal["all", "screen", "camera"],
     *,
     current_scope: bool,
@@ -160,14 +161,33 @@ def _surface_for_item(item_name: str) -> tuple[str, str]:
     return "screen", "Ecran"
 
 
+def _deduplicate_eligible_rows(rows: list[Any]) -> list[Any]:
+    return list({
+        (
+            row["id"],
+            row["item_code"],
+            row["item_name"],
+            row["site_code"],
+            row["locatie"],
+            row["firma"],
+            row["manager"],
+            row["agent"],
+            row["is_premium"],
+            row["qty"],
+            row["sales"],
+        ): row
+        for row in rows
+    }.values())
+
+
 async def get_premium_glass_analysis(
     conn: Any,
     month: str,
     firma: str | None,
     regional: str | None,
     asm: str | None,
-    site_code: str | None,
-    agent: str | None,
+    site_code: FilterInput,
+    agent: FilterInput,
     surface: Literal["all", "screen", "camera"] = "all",
     *,
     current_scope: bool = True,
@@ -214,22 +234,7 @@ async def get_premium_glass_analysis(
         or 0
     )
 
-    eligible_rows = {
-        (
-            row["id"],
-            row["item_code"],
-            row["item_name"],
-            row["site_code"],
-            row["locatie"],
-            row["firma"],
-            row["manager"],
-            row["agent"],
-            row["is_premium"],
-            row["qty"],
-            row["sales"],
-        ): row
-        for row in matched_rows
-    }.values()
+    eligible_rows = _deduplicate_eligible_rows(matched_rows)
 
     summary_bucket = _zero_split_bucket()
     active_stores: set[str] = set()

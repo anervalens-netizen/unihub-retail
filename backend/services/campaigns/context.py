@@ -8,6 +8,7 @@ from typing import Any
 
 import asyncpg
 
+from domain.filter_scope import FilterInput
 from services.campaigns.aggregation import merge_excluded_units
 from services.campaigns.loader import load_campaign_configuration, load_incentive_campaign
 from services.dashboard_specials import (
@@ -33,11 +34,11 @@ async def build_campaign_context(
     promotion_error: str | None,
     incentive_campaign: dict[str, Any] | None,
     month: str,
-    firma: str | None,
-    regional: str | None,
-    asm: str | None,
-    site_code: str | None,
-    agent: str | None,
+    firma: FilterInput,
+    regional: FilterInput,
+    asm: FilterInput,
+    site_code: FilterInput,
+    agent: FilterInput,
     include_incentive: bool,
     current_scope: bool,
     include_closed_stores: bool,
@@ -119,11 +120,11 @@ async def materialize_period_evaluations(
     periods: list[dict[str, Any]],
     promotion_definitions: list[dict[str, Any]],
     month: str,
-    firma: str | None,
-    regional: str | None,
-    asm: str | None,
-    site_code: str | None,
-    agent: str | None,
+    firma: FilterInput,
+    regional: FilterInput,
+    asm: FilterInput,
+    site_code: FilterInput,
+    agent: FilterInput,
     current_scope: bool,
     include_closed_stores: bool,
     evaluator: Any,
@@ -165,11 +166,11 @@ async def materialize_period_evaluations(
 async def load_campaign_context(
     conn: asyncpg.Connection,
     month: str,
-    firma: str | None,
-    regional: str | None,
-    asm: str | None,
-    site_code: str | None,
-    agent: str | None,
+    firma: FilterInput,
+    regional: FilterInput,
+    asm: FilterInput,
+    site_code: FilterInput,
+    agent: FilterInput,
     current_scope: bool = False,
     include_closed_stores: bool = False,
     cutoff_date: date | None = None,

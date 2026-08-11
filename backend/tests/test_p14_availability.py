@@ -268,9 +268,11 @@ async def test_readyz_stays_available_without_initializing_arq(
 
     get_pool = AsyncMock(return_value=Pool())
     session_ready = AsyncMock()
+    oidc_ready = AsyncMock()
     arq_lookup = AsyncMock(side_effect=AssertionError("readyz must not initialize ARQ"))
     monkeypatch.setattr(health_service, "get_pool", get_pool)
     monkeypatch.setattr(health_service, "verify_session_runtime_ready", session_ready)
+    monkeypatch.setattr(health_service, "verify_oidc_runtime_ready", oidc_ready)
     monkeypatch.setattr(jobs, "get_arq_pool", arq_lookup)
 
     response = await health_router.readiness()
@@ -279,6 +281,7 @@ async def test_readyz_stays_available_without_initializing_arq(
     assert response.body == b'{"status":"ok"}'
     get_pool.assert_awaited_once_with()
     session_ready.assert_awaited_once_with()
+    oidc_ready.assert_awaited_once_with()
     arq_lookup.assert_not_awaited()
 
 

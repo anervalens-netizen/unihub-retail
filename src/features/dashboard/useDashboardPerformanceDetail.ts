@@ -33,7 +33,7 @@ export function useDashboardPerformanceDetail({
       level: selection.level,
       key: selection.key,
       firma,
-      site_code: selection.site_code,
+      site_code: selection.site_code ? [selection.site_code] : undefined,
       current_scope: true,
       include_closed_stores: false,
     })

@@ -37,6 +37,30 @@ async def main() -> None:
     validate_test_database_url(database_url)
     await wait_for_database(database_url)
 
+    # Migration 066 intentionally requires this process authority to be
+    # provisioned out-of-band in production. Isolated clusters create the
+    # NOLOGIN role explicitly before replaying the immutable migrations.
+    connection = await asyncpg.connect(database_url)
+    try:
+        await connection.execute(
+            """
+            DO $$
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1 FROM pg_roles
+                    WHERE rolname = 'unihub_salary_export'
+                ) THEN
+                    CREATE ROLE unihub_salary_export
+                        NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE
+                        NOINHERIT NOBYPASSRLS NOREPLICATION;
+                END IF;
+            END
+            $$
+            """
+        )
+    finally:
+        await connection.close()
+
     migrations = await run_migrations(database_url)
 
     print(

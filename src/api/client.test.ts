@@ -106,6 +106,20 @@ describe('client.get', () => {
     expect(url).not.toContain('rm');
   });
 
+  it('encodes arrays as repeated query params without comma coercion', async () => {
+    mockFetch.mockResolvedValueOnce(okResponse({}));
+    await client.get('/api/data', {
+      params: { agent: ['Nume, Prenume', 'Alt Agent'] },
+    });
+
+    const [url] = fetchCall();
+    const parsed = new URL(url, 'https://retail.example.invalid');
+    expect(parsed.searchParams.getAll('agent')).toEqual([
+      'Nume, Prenume',
+      'Alt Agent',
+    ]);
+  });
+
   it('uses same-origin credentials without an Authorization header', async () => {
     mockFetch.mockResolvedValueOnce(okResponse({}));
     await client.get('/api/data');

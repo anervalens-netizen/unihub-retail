@@ -5,6 +5,7 @@ from __future__ import annotations
 from decimal import Decimal
 from typing import Any
 
+from domain.filter_scope import FilterInput
 from schemas.dashboard import (
     DashboardHistoryResponse,
     MonthlyHistoryPoint,
@@ -13,7 +14,7 @@ from schemas.dashboard import (
 )
 from services.dashboard.ports import DashboardServicePort
 from services.dashboard.utils import _expand_current_manager_scope
-from services.filters import build_scoped_params, normalize_filter, scoped_clauses
+from services.filters import build_scoped_params, normalize_filter_values, scoped_clauses
 from services.request_deadline import RequestDeadline
 
 
@@ -21,6 +22,52 @@ _RO_MONTHS = {
     1: "Ian", 2: "Feb", 3: "Mar", 4: "Apr", 5: "Mai", 6: "Iun",
     7: "Iul", 8: "Aug", 9: "Sep", 10: "Oct", 11: "Nov", 12: "Dec",
 }
+
+
+def _normalize_year_scope(
+    firma: FilterInput,
+    regional: FilterInput,
+    asm: FilterInput,
+    site_code: FilterInput,
+    agent: FilterInput,
+) -> tuple[list[str] | None, ...]:
+    normalized = (
+        normalize_filter_values(firma),
+        normalize_filter_values(regional),
+        normalize_filter_values(asm),
+        normalize_filter_values(site_code),
+        normalize_filter_values(agent),
+    )
+    if normalized[3]:
+        return None, None, None, normalized[3], normalized[4]
+    return normalized
+
+
+def _append_array_scope(
+    clauses: list[str],
+    params: list[Any],
+    values: list[tuple[list[str] | None, str]],
+    *,
+    start: int,
+) -> None:
+    position = start
+    for value, column in values:
+        if value is not None:
+            clauses.append(f"{column} = ANY(${position}::TEXT[])")
+            params.append(value)
+            position += 1
+
+
+def _scope_positions(
+    values: list[tuple[str, list[str] | None]],
+    *,
+    start: int,
+) -> dict[str, int]:
+    positions: dict[str, int] = {}
+    for key, value in values:
+        if value is not None:
+            positions[key] = start + len(positions)
+    return positions
 
 
 def project_year_history(
@@ -74,8 +121,8 @@ async def load_monthly_history(
     firma: str | None,
     regional: str | None,
     asm: str | None,
-    site_code: str | None,
-    agent: str | None,
+    site_code: FilterInput,
+    agent: FilterInput,
     current_scope: bool = False,
     include_closed_stores: bool = False,
     *,
@@ -116,51 +163,38 @@ async def load_history_by_year(
     firma: str | None,
     regional: str | None,
     asm: str | None,
-    site_code: str | None,
-    agent: str | None,
+    site_code: FilterInput,
+    agent: FilterInput,
     current_scope: bool = False,
     include_closed_stores: bool = False,
     *,
     deadline: RequestDeadline | None = None,
 ) -> YearHistoryResponse:
-    _firma = normalize_filter(firma)
-    _regional = normalize_filter(regional)
-    _asm = normalize_filter(asm)
-    _site_code = site_code
-    _agent = normalize_filter(agent)
+    _firma, _regional, _asm, _site_code, _agent = _normalize_year_scope(
+        firma, regional, asm, site_code, agent
+    )
 
     start_month = f"{year}-01"
     end_month = f"{year}-12"
 
     rep_params: list[Any] = [start_month, end_month]
     rep_clauses: list[str] = []
-    p = 3
-    has_site_scope = _site_code is not None
-    for val, col in [
-        (None if has_site_scope else _firma, "s.firma" if current_scope else "agg.firma"),
-        (None if has_site_scope else _regional, "s.regional" if current_scope else "agg.regional"),
-        (None if has_site_scope else _asm, "s.asm" if current_scope else "agg.asm"),
+    _append_array_scope(rep_clauses, rep_params, [
+        (_firma, "s.firma" if current_scope else "agg.firma"),
+        (_regional, "s.regional" if current_scope else "agg.regional"),
+        (_asm, "s.asm" if current_scope else "agg.asm"),
         (_site_code, "agg.site_code"),
         (_agent, "agg.agent"),
-    ]:
-        if val is not None:
-            rep_clauses.append(f"{col} = ANY(string_to_array(${p}::TEXT, ','))")
-            rep_params.append(val)
-            p += 1
+    ], start=3)
 
     if current_scope:
-        rep_positions: dict[str, int] = {}
-        offset = 3
-        for key, val in [
-            ("firma", None if has_site_scope else _firma),
-            ("regional", None if has_site_scope else _regional),
-            ("asm", None if has_site_scope else _asm),
+        rep_positions = _scope_positions([
+            ("firma", _firma),
+            ("regional", _regional),
+            ("asm", _asm),
             ("site_code", _site_code),
             ("agent", _agent),
-        ]:
-            if val is not None:
-                rep_positions[key] = offset
-                offset += 1
+        ], start=3)
         rep_clauses = _expand_current_manager_scope(rep_clauses, rep_positions)
 
     if current_scope and not include_closed_stores:
@@ -177,31 +211,20 @@ async def load_history_by_year(
         hist_clauses: list[str] = []
         if year == 2023:
             hist_clauses.append("has.is_partial_year = TRUE")
-        p = 2
-        has_site_scope = _site_code is not None
-        for val, col in [
-            (None if has_site_scope else _firma, "s.firma" if current_scope else "has.firma"),
-            (None if has_site_scope else _regional, "s.regional"),
-            (None if has_site_scope else _asm, "s.asm"),
+        _append_array_scope(hist_clauses, hist_params, [
+            (_firma, "s.firma" if current_scope else "has.firma"),
+            (_regional, "s.regional"),
+            (_asm, "s.asm"),
             (_site_code, "has.site_code"),
-        ]:
-            if val is not None:
-                hist_clauses.append(f"{col} = ANY(string_to_array(${p}::TEXT, ','))")
-                hist_params.append(val)
-                p += 1
+        ], start=2)
 
         if current_scope:
-            hist_positions: dict[str, int] = {}
-            offset = 2
-            for key, val in [
-                ("firma", None if has_site_scope else _firma),
-                ("regional", None if has_site_scope else _regional),
-                ("asm", None if has_site_scope else _asm),
+            hist_positions = _scope_positions([
+                ("firma", _firma),
+                ("regional", _regional),
+                ("asm", _asm),
                 ("site_code", _site_code),
-            ]:
-                if val is not None:
-                    hist_positions[key] = offset
-                    offset += 1
+            ], start=2)
             hist_clauses = _expand_current_manager_scope(hist_clauses, hist_positions)
 
         if current_scope and not include_closed_stores:

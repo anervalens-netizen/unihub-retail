@@ -30,7 +30,7 @@ HEAD; istoricul lor rămâne disponibil în Git.
 | Backend | FastAPI + asyncpg |
 | Bază de date | PostgreSQL `unihub` |
 | Auth | Authentik OIDC BFF, sesiune criptată în Valkey |
-| Workeri | cozi și procese separate: `unihub-worker.service` (Grile), `unihub-import-worker.service` și `unihub-export-worker.service` |
+| Workeri | procese/cozi separate: operations, imports, Grile, exports și salary-exports (`unihub-*-worker.service`) |
 | Backend service | `unihub-backend.service` |
 | Migrații | `unihub-retail-migrate.service`, one-shot |
 | URL public | `https://retail.unihub.ro` |

@@ -406,7 +406,8 @@ async def test_export_cleanup_loop_isolates_db_cleanup_and_still_sweeps_orphans(
     stop = asyncio.Event()
     cleanup = AsyncMock(side_effect=RuntimeError("db cleanup failed"))
 
-    async def sweep(_repo: object) -> None:
+    async def sweep(_repo: object, *, namespace: str) -> None:
+        assert namespace == "salary"
         stop.set()
 
     orphan_sweep = AsyncMock(side_effect=sweep)
@@ -415,7 +416,11 @@ async def test_export_cleanup_loop_isolates_db_cleanup_and_still_sweeps_orphans(
     monkeypatch.setattr(worker, "EXPORT_CLEANUP_SECONDS", 0.001)
 
     await worker._export_cleanup_loop(
-        {"export_cleanup_stop": stop, "db_pool": MagicMock()}
+        {
+            "export_cleanup_stop": stop,
+            "db_pool": MagicMock(),
+            "export_artifact_namespace": "salary",
+        }
     )
 
     cleanup.assert_awaited_once()
@@ -464,6 +469,11 @@ def test_worker_operations_consumes_runtime_config(
     [
         ("grile", services.jobs.GRILE_QUEUE_NAME, worker.grile_monthly_background),
         ("exports", services.jobs.EXPORT_QUEUE_NAME, worker.build_complex_export_background),
+        (
+            "salary_exports",
+            services.jobs.SALARY_EXPORT_QUEUE_NAME,
+            worker.build_salary_export_background,
+        ),
     ],
 )
 def test_specialized_workers_use_dedicated_queues(
@@ -485,6 +495,12 @@ def test_specialized_workers_use_dedicated_queues(
         entry is coroutine or getattr(entry, "coroutine", None) is coroutine
         for entry in settings["functions"]
     )
+    if role in {"exports", "salary_exports"}:
+        assert any(
+            getattr(entry, "coroutine", None)
+            is worker.remove_export_artifact_background
+            for entry in settings["functions"]
+        )
     worker_instance.run.assert_called_once_with()
 
 
@@ -493,7 +509,10 @@ def test_retired_legacy_worker_role_is_rejected(
 ) -> None:
     monkeypatch.setenv("RETAIL_WORKER_ROLE", "legacy")
 
-    with pytest.raises(config.ConfigError, match="operations, imports, grile sau exports"):
+    with pytest.raises(
+        config.ConfigError,
+        match="operations, imports, grile, exports sau salary_exports",
+    ):
         worker.main()
 
 

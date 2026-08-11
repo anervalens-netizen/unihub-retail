@@ -12,15 +12,18 @@ from config import load_runtime_config
 from logging_config import setup_logging
 from request_context import bind_request_id, reset_request_id
 import services.grile_reconciliation_supervisor as grile_supervisor
+from services.export_worker import export_heartbeat_loop as _export_heartbeat_loop, remove_export_artifact_background
 from services.jobs import (
     EXPORT_QUEUE_NAME,
     GRILE_QUEUE_NAME,
     OPERATIONS_QUEUE_NAME,
     SALES_IMPORT_QUEUE_NAME,
+    SALARY_EXPORT_QUEUE_NAME,
     cleanup_stale_sales_import_spool_files,
     get_valkey_settings,
     read_sales_import_spool_file,
     remove_sales_import_spool_file,
+    resolve_sales_import_artifact,
     retain_sales_import_spool_file,
     verify_sales_import_artifact,
 )
@@ -99,6 +102,7 @@ async def _export_cleanup_loop(ctx: dict) -> None:
     from repositories.export_operations import ExportOperationsRepository
     from services.export_operations import cleanup_export_operations, sweep_orphan_export_artifacts
     stop = ctx["export_cleanup_stop"]
+    namespace = ctx.get("export_artifact_namespace", "generic")
     repo = ExportOperationsRepository(ctx["db_pool"])
     try:
         while not stop.is_set():
@@ -112,7 +116,7 @@ async def _export_cleanup_loop(ctx: dict) -> None:
                 except Exception:
                     logger.exception("Durable export DB cleanup failed")
                 try:
-                    await sweep_orphan_export_artifacts(repo)
+                    await sweep_orphan_export_artifacts(repo, namespace=namespace)
                 except Exception:
                     logger.exception("Durable export orphan sweep failed")
     except asyncio.CancelledError:
@@ -145,109 +149,18 @@ async def import_sales_background(
     cutoff_date_iso: str | None = None,
     requested_by_sub: str | None = None,
 ) -> dict:
-    from dataclasses import asdict
-    from services.importer import import_sales_file
-    from services.sales_generation_flow import mark_sales_generation_artifact_retained
-    staged = False
-    if not isinstance(spool_path, str) or not spool_path:
-        raise ValueError("Sales import worker requires a durable spool path")
-    if not isinstance(source_digest, str) or not source_digest:
-        raise ValueError("Sales import worker requires a source digest")
-    if isinstance(source_byte_size, bool) or not isinstance(source_byte_size, int) or source_byte_size < 0:
-        raise ValueError("Sales import worker requires a valid source size")
-    if not filename:
-        raise ValueError("Sales import filename is missing")
-    token = bind_request_id(request_id) if request_id else None
-    cutoff = date.fromisoformat(cutoff_date_iso) if cutoff_date_iso else None
-    actor = requested_by_sub or "unknown"
-    try:
-        verified_size = await asyncio.to_thread(
-            verify_sales_import_artifact,
-            spool_path,
-            source_digest,
-            source_byte_size,
-        )
-        file_content = await asyncio.to_thread(
-            read_sales_import_spool_file,
-            spool_path,
-            source_digest,
-        )
-        conn = ctx.get("db_conn")
-        if conn is None:
-            from db.connection import get_pool
-            pool = await get_pool()
-            async with pool.acquire() as conn:
-                result = await import_sales_file(
-                    conn,
-                    file_content,
-                    filename=filename,
-                    cutoff_date=cutoff,
-                    stage_only=True,
-                    requested_by_sub=actor,
-                    source_artifact_required=True,
-                    source_artifact_path=spool_path,
-                    source_artifact_bytes=verified_size,
-                )
-                staged = True
-                assert spool_path is not None
-                assert result.generation_token is not None
-                assert result.owner_id is not None
-                retained_path = await asyncio.to_thread(
-                    retain_sales_import_spool_file,
-                    spool_path,
-                    import_month=result.import_month,
-                    snapshot_id=result.snapshot_id,
-                    expected_digest=source_digest,
-                    expected_bytes=verified_size,
-                )
-                await mark_sales_generation_artifact_retained(
-                    conn,
-                    snapshot_id=result.snapshot_id,
-                    generation_token=result.generation_token,
-                    owner_id=result.owner_id,
-                    retained_path=str(retained_path),
-                    source_sha256=source_digest,
-                    source_byte_size=verified_size,
-                )
-        else:
-            result = await import_sales_file(
-                conn,
-                file_content,
-                filename=filename,
-                cutoff_date=cutoff,
-                stage_only=True,
-                requested_by_sub=actor,
-                source_artifact_required=True,
-                source_artifact_path=spool_path,
-                source_artifact_bytes=verified_size,
-            )
-            staged = True
-            assert spool_path is not None
-            assert result.generation_token is not None
-            assert result.owner_id is not None
-            retained_path = await asyncio.to_thread(
-                retain_sales_import_spool_file,
-                spool_path,
-                import_month=result.import_month,
-                snapshot_id=result.snapshot_id,
-                expected_digest=source_digest,
-                expected_bytes=verified_size,
-            )
-            await mark_sales_generation_artifact_retained(
-                conn,
-                snapshot_id=result.snapshot_id,
-                generation_token=result.generation_token,
-                owner_id=result.owner_id,
-                retained_path=str(retained_path),
-                source_sha256=source_digest,
-                source_byte_size=verified_size,
-            )
-        return asdict(result)
-    finally:
-        if spool_path is not None and not staged:
-            await asyncio.to_thread(remove_sales_import_spool_file, spool_path)
-        if token is not None:
-            reset_request_id(token)
+    from services.sales_import_worker import run_sales_import_job
+
+    return await run_sales_import_job(
+        ctx,
+        spool_path,
+        source_digest,
+        source_byte_size,
+        filename,
+        request_id=request_id,
+        cutoff_date_iso=cutoff_date_iso,
+        requested_by_sub=requested_by_sub,
+    )
 async def import_promo_actuals_background(
     ctx: dict,
     spool_path: str,
@@ -499,12 +412,20 @@ async def _startup_runtime(ctx: dict, *, worker_role: str) -> None:
     ctx.setdefault("grile_monthly_sessions", {})
     if worker_role == "imports":
         return
-    if worker_role == "exports":
+    if worker_role in {"exports", "salary_exports"}:
         from repositories.export_operations import ExportOperationsRepository
-        from services.export_operations import cleanup_export_operations, sweep_orphan_export_artifacts
+        from services.export_operations import (
+            ExportArtifactNamespace,
+            cleanup_export_operations,
+            sweep_orphan_export_artifacts,
+        )
         export_repo = ExportOperationsRepository(pool)
+        namespace: ExportArtifactNamespace = (
+            "salary" if worker_role == "salary_exports" else "generic"
+        )
+        ctx["export_artifact_namespace"] = namespace
         await cleanup_export_operations(export_repo)
-        await sweep_orphan_export_artifacts(export_repo)
+        await sweep_orphan_export_artifacts(export_repo, namespace=namespace)
         ctx["export_cleanup_stop"] = asyncio.Event()
         ctx["export_cleanup_task"] = asyncio.create_task(
             _export_cleanup_loop(ctx), name="durable-export-cleanup"
@@ -556,163 +477,31 @@ async def _startup_runtime(ctx: dict, *, worker_role: str) -> None:
         stop=ctx["grile_run_reconcile_stop"],
         name="grile-run-reconciler",
     )
-async def _export_heartbeat_loop(
-    repo: Any,
-    *,
+async def build_complex_export_background(
+    ctx: dict,
     operation_id: int,
-    execution_owner: str,
-    execution_epoch: int,
-    worker_task: asyncio.Task[Any],
-) -> None:
-    from services.export_operations import EXPORT_EXECUTION_LEASE_SECONDS
-    try:
-        while True:
-            await asyncio.sleep(20)
-            retained = await repo.heartbeat(
-                operation_id,
-                execution_owner=execution_owner,
-                execution_epoch=execution_epoch,
-                lease_seconds=EXPORT_EXECUTION_LEASE_SECONDS,
-            )
-            if not retained:
-                # User cancellation or stale reconciliation won the DB state.
-                # The renderer boundary receives cancellation and destroys its
-                # per-operation child before this worker can publish an artifact.
-                worker_task.cancel()
-                return
-    except asyncio.CancelledError:
-        return
-async def build_complex_export_background(ctx: dict, operation_id: int) -> dict[str, Any]:
-    """Build one DB-reserved complex export and publish only through its fence."""
-    if isinstance(operation_id, bool) or not isinstance(operation_id, int) or operation_id <= 0:
-        raise ValueError("Invalid durable export operation id")
-    from repositories.export_operations import ExportOperationsRepository
-    from repositories.exports import ExportsRepository
-    from services.export_operations import (
-        EXPORT_EXECUTION_LEASE_SECONDS,
-        StoredExportArtifact,
-        export_artifact_ttl_seconds,
-        persist_export_artifact,
-        remove_export_artifact,
-        sweep_orphan_export_artifacts,
-    )
-    from services.exports import ExportValidationError, ExportsService, XlsxArtifact
-    pool = ctx.get("db_pool")
-    if pool is None:
-        from db.connection import get_pool
-        pool = await get_pool()
-    repo = ExportOperationsRepository(pool)
-    execution_owner = uuid4().hex
-    operation = await repo.claim(
+) -> dict[str, Any]:
+    from services.export_worker import run_durable_export_job
+
+    return await run_durable_export_job(
+        ctx,
         operation_id,
-        execution_owner=execution_owner,
-        lease_seconds=EXPORT_EXECUTION_LEASE_SECONDS,
+        salary_export=False,
+        heartbeat=_export_heartbeat_loop,
     )
-    if operation is None:
-        current = await repo.get(operation_id)
-        return {
-            "operation_id": operation_id,
-            "status": str(current.get("status")) if current else "not_found",
-        }
-    execution_epoch = int(operation["execution_epoch"])
-    request_payload = operation.get("request_payload")
-    if not isinstance(request_payload, dict):
-        await repo.fail_running(
-            operation_id,
-            execution_owner=execution_owner,
-            execution_epoch=execution_epoch,
-            error_code="invalid_persisted_request",
-        )
-        raise RuntimeError("Complex export has an invalid persisted request")
-    worker_task = asyncio.current_task()
-    if worker_task is None:
-        raise RuntimeError("Complex export worker task is unavailable")
-    heartbeat_task = asyncio.create_task(
-        _export_heartbeat_loop(
-            repo,
-            operation_id=operation_id,
-            execution_owner=execution_owner,
-            execution_epoch=execution_epoch,
-            worker_task=worker_task,
-        ),
-        name=f"export-heartbeat:{operation_id}",
+
+async def build_salary_export_background(
+    ctx: dict,
+    operation_id: int,
+) -> dict[str, Any]:
+    from services.export_worker import run_durable_export_job
+
+    return await run_durable_export_job(
+        ctx,
+        operation_id,
+        salary_export=True,
+        heartbeat=_export_heartbeat_loop,
     )
-    xlsx: XlsxArtifact | None = None
-    stored: StoredExportArtifact | None = None
-    try:
-        service = ExportsService(ExportsRepository(pool))
-        persisted_kind = str(operation["kind"])
-        if service.validate_complex_request(request_payload) != persisted_kind:
-            raise ExportValidationError("Tipul exportului nu corespunde cererii persistate.")
-        xlsx = await service.build_xlsx_artifact(request_payload)
-        persisted = await asyncio.to_thread(persist_export_artifact, xlsx)
-        stored = persisted
-        xlsx.close()
-        xlsx = None
-        completed = await repo.complete(
-            operation_id,
-            execution_owner=execution_owner,
-            execution_epoch=execution_epoch,
-            artifact_key=persisted.key,
-            artifact_sha256=persisted.sha256,
-            artifact_size=persisted.size,
-            peak_rss_bytes=persisted.peak_rss_bytes,
-            build_seconds=persisted.build_seconds,
-            cell_count=persisted.cell_count,
-            download_filename=persisted.filename,
-            ttl_seconds=export_artifact_ttl_seconds(),
-        )
-        if not completed:
-            await asyncio.to_thread(remove_export_artifact, persisted.key)
-            current = await repo.get(operation_id)
-            return {
-                "operation_id": operation_id,
-                "status": str(current.get("status")) if current else "not_found",
-            }
-        return {
-            "operation_id": operation_id,
-            "status": "completed",
-            "artifact_sha256": persisted.sha256,
-            "artifact_size": persisted.size,
-        }
-    except asyncio.CancelledError:
-        current_task = asyncio.current_task()
-        if current_task is not None:
-            while current_task.cancelling():
-                current_task.uncancel()
-        if stored is not None:
-            await asyncio.to_thread(remove_export_artifact, stored.key)
-        await asyncio.shield(
-            asyncio.create_task(
-                repo.fail_running(
-                    operation_id,
-                    execution_owner=execution_owner,
-                    execution_epoch=execution_epoch,
-                    error_code="worker_cancelled",
-                    cancelled=True,
-                )
-            )
-        )
-        raise
-    except Exception:
-        if stored is not None:
-            await asyncio.to_thread(remove_export_artifact, stored.key)
-        await repo.fail_running(
-            operation_id,
-            execution_owner=execution_owner,
-            execution_epoch=execution_epoch,
-            error_code="export_worker_failed",
-        )
-        raise RuntimeError("Complex export worker failed") from None
-    finally:
-        heartbeat_task.cancel()
-        await asyncio.gather(heartbeat_task, return_exceptions=True)
-        if xlsx is not None:
-            xlsx.close()
-        try:
-            await sweep_orphan_export_artifacts(repo)
-        except Exception:
-            logger.exception("Export orphan sweep failed operation_id=%s", operation_id)
 async def grile_check_background(
     ctx: dict,
     month: str,
@@ -1096,7 +885,8 @@ def main() -> None:
             func(grile_monthly_background, timeout=runtime.arq_job_timeout_seconds, max_tries=1),
             grile_agent_targets_background,
         ],
-        "exports": [func(build_complex_export_background, max_tries=1)],
+        "exports": [func(build_complex_export_background, max_tries=1), func(remove_export_artifact_background, max_tries=3)],
+        "salary_exports": [func(build_salary_export_background, max_tries=1), func(remove_export_artifact_background, max_tries=3)],
         "operations": [func(refresh_visits_snapshot_background, max_tries=1)],
     }
     functions = functions_by_role[worker_role]
@@ -1104,6 +894,7 @@ def main() -> None:
         "imports": SALES_IMPORT_QUEUE_NAME,
         "grile": GRILE_QUEUE_NAME,
         "exports": EXPORT_QUEUE_NAME,
+        "salary_exports": SALARY_EXPORT_QUEUE_NAME,
         "operations": OPERATIONS_QUEUE_NAME,
     }[worker_role]
     from observability.worker_metrics import observe_job_end, observe_job_start

@@ -60,6 +60,7 @@ from .validation import (
     max_days_for_months,
     normalize_filters,
     preview_limit,
+    scoped_filter_values,
     selected_days as parse_selected_days,
     valid_keys,
     validate_budget,
@@ -384,10 +385,6 @@ class ExportsService(ExportPlanner, CampaignLoaders, XlsxRenderers):
         if pool is None:
             raise ExportValidationError("Exportul incentive nu are conexiune la baza de date.")
 
-        def csv_filter(key: str) -> str | None:
-            values = [value for value in filters.get(key, []) if value]
-            return ",".join(values) if values else None
-
         rows_by_key: dict[tuple[Any, ...], dict[str, Any]] = {}
         total_rows = 0
         for month in months:
@@ -434,10 +431,10 @@ class ExportsService(ExportPlanner, CampaignLoaders, XlsxRenderers):
                 multipliers, achievements = await get_store_incentive_multipliers(
                     conn,
                     month,
-                    firma=csv_filter("firma"),
-                    regional=csv_filter("regional"),
-                    asm=csv_filter("asm"),
-                    site_code=csv_filter("site_code"),
+                    firma=scoped_filter_values(filters, "firma"),
+                    regional=scoped_filter_values(filters, "regional"),
+                    asm=scoped_filter_values(filters, "asm"),
+                    site_code=scoped_filter_values(filters, "site_code"),
                     current_scope=True,
                     include_closed_stores=include_closed_stores,
                 )

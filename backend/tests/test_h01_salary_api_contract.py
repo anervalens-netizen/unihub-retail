@@ -153,7 +153,7 @@ async def test_asgi_unknown_retail_link_hides_identity_and_skips_history() -> No
     assert response.status_code == 200
     assert response.json()["link"]["person_id"] is None
     assert response.json()["records"] == []
-    assert response.json()["total"] == response.json()["avg"] == 0.0
+    assert response.json()["total"] == response.json()["avg"] == "0.00"
     repo.fetch_agent_history_by_salary_link.assert_not_awaited()
 
 
@@ -178,7 +178,70 @@ async def test_asgi_identity_endpoint_returns_generic_503_without_key(monkeypatc
     assert response.status_code == 503
     assert response.json() == {"detail": "salary identity is unavailable"}
     assert overview.status_code == 200
-    assert overview.json() == {"total": 1.0}
+    assert overview.json() == {"total": "1"}
+
+
+@pytest.mark.anyio
+async def test_salary_money_is_serialized_exactly_without_binary_float_drift() -> None:
+    repo = _FakeSalaryRepo()
+    repo.fetch_agent_history_by_person_id.return_value = [
+        {
+            "year": 2026,
+            "month": 1,
+            "company_name": "Synthetic",
+            "total_salary": Decimal("0.10"),
+            "site_code": None,
+            "locatie": None,
+        },
+        {
+            "year": 2026,
+            "month": 1,
+            "company_name": "Synthetic",
+            "total_salary": Decimal("0.20"),
+            "site_code": None,
+            "locatie": None,
+        },
+    ]
+    with _salary_app_overrides(
+        SalariiService(cast(SalariiRepository, repo), PERSON_ID_KEY)
+    ) as app:
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(
+            transport=transport, base_url="http://testserver"
+        ) as client:
+            response = await client.get(f"/salarii/agents/{PERSON_ID}/history")
+
+    assert response.status_code == 200
+    assert response.json()["total"] == "0.30"
+    assert [row["total_salary"] for row in response.json()["records"]] == [
+        "0.10",
+        "0.20",
+    ]
+
+
+@pytest.mark.anyio
+async def test_repeated_site_query_params_preserve_values_containing_commas() -> None:
+    class _CapturingService:
+        def __init__(self) -> None:
+            self.site_code: list[str] | None = None
+
+        async def get_overview(self, company_name, site_code, regional, asm):
+            self.site_code = site_code
+            return {"total": Decimal("0.00")}
+
+    service = _CapturingService()
+    with _salary_app_overrides(None, service) as app:
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(
+            transport=transport, base_url="http://testserver"
+        ) as client:
+            response = await client.get(
+                "/salarii/overview",
+                params=[("site_code", "STORE, ONE"), ("site_code", "STORE TWO")],
+            )
+
+    assert response.status_code == 200
+    assert service.site_code == ["STORE, ONE", "STORE TWO"]
 
 
 @pytest.mark.anyio

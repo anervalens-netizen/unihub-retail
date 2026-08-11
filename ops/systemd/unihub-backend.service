@@ -18,6 +18,7 @@ Environment="SESSION_VALKEY_DATABASE=0"
 Environment="RATE_LIMIT_VALKEY_PORT=6380"
 Environment="RATE_LIMIT_VALKEY_DATABASE=1"
 Environment="PROMETHEUS_MULTIPROC_DIR=/run/unihub-retail-prometheus"
+Environment="PYTHONDONTWRITEBYTECODE=1"
 RuntimeDirectory=unihub-retail-prometheus
 RuntimeDirectoryMode=0700
 ExecStartPre=/usr/bin/timeout 90 /usr/bin/bash -c 'until (: >/dev/tcp/127.0.0.1/6380) 2>/dev/null; do sleep 1; done'
@@ -32,7 +33,7 @@ StandardError=journal
 SyslogIdentifier=unihub-backend
 
 ProtectSystem=strict
-ReadWritePaths=/opt/Mobiup
+ReadWritePaths=/opt/Mobiup/unihub-retail/data/import_spool
 ProtectHome=read-only
 NoNewPrivileges=true
 PrivateTmp=true

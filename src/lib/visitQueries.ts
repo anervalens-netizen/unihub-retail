@@ -1,6 +1,6 @@
 import type { RetailOperationQueries } from "../api/generated/contracts";
 import type { AppFilters } from "./appFilters";
-import { ALL_FIRMS, ALL_SCOPE, ALL_STORES } from "./filterValues";
+import { ALL_FIRMS, ALL_SCOPE } from "./filterValues";
 
 export function buildVisitsReportQuery(
   month: string,
@@ -10,7 +10,7 @@ export function buildVisitsReportQuery(
     month,
     ...(filters.firma !== ALL_FIRMS && { firma: filters.firma }),
     ...(filters.rm !== ALL_SCOPE && { rm: filters.rm }),
-    ...(filters.magazin !== ALL_STORES && { magazin: filters.magazin }),
+    ...(filters.magazin.length > 0 && { magazin: filters.magazin }),
   };
 }
 

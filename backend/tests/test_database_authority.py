@@ -67,6 +67,19 @@ async def test_web_authority_requires_exact_login_and_only_its_groups() -> None:
 
 
 @pytest.mark.asyncio
+async def test_salary_export_authority_requires_its_dedicated_login() -> None:
+    await connection_module.verify_database_connection_authority(
+        _AuthorityConnection(
+            current_user="unihub_salary_export_worker",
+            session_user="unihub_salary_export_worker",
+            direct_memberships=(("unihub_salary_export", True, False),),
+            effective_memberships=frozenset({"unihub_salary_export"}),
+        ),
+        "salary_export",  # type: ignore[arg-type]
+    )
+
+
+@pytest.mark.asyncio
 async def test_authority_rejects_cross_authority_membership() -> None:
     connection = _AuthorityConnection(
         direct_memberships=(
@@ -214,6 +227,18 @@ def test_explicit_process_authority_must_match_runtime_role(
         load_runtime_config("web")
 
 
+def test_salary_export_worker_requires_salary_database_authority(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("RETAIL_WORKER_ROLE", "salary_exports")
+    monkeypatch.setenv(DB_PROCESS_AUTHORITY_ENV, "salary_export")
+
+    runtime = load_runtime_config("worker")
+
+    assert runtime.worker_role == "salary_exports"
+    assert runtime.database_authority == "salary_export"
+
+
 def test_production_runtime_requires_explicit_database_authority(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -245,6 +270,7 @@ def test_versioned_units_declare_exclusive_process_authorities() -> None:
         root / "ops/systemd/unihub-import-worker.service": "sales_import",
         root / "ops/systemd/unihub-grile-worker.service": "operations",
         root / "ops/systemd/unihub-export-worker.service": "operations",
+        root / "ops/systemd/unihub-salary-export-worker.service": "salary_export",
         root / "ops/systemd/unihub-retail-migrate.service": "migrate",
     }
     for path, authority in expected.items():

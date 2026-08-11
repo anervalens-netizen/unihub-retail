@@ -30,3 +30,9 @@ scrape_configs:
       - targets: ["__PROMETHEUS_DOCKER_GATEWAY__:9904"]
         labels:
           service_role: exports
+
+  - job_name: unihub-retail-salary-exports
+    static_configs:
+      - targets: ["__PROMETHEUS_DOCKER_GATEWAY__:9905"]
+        labels:
+          service_role: salary_exports

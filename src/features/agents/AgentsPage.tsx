@@ -107,8 +107,8 @@ export function Agents({
     const p: AgentsQuery = { selected_month: currentMonth };
     if (filters.firma !== ALL_FIRMS) p.firma = filters.firma;
     if (filters.rm !== ALL_SCOPE) p.regional = filters.rm;
-    if (filters.magazin !== ALL_STORES) p.site_code = filters.magazin;
-    if (filters.agent !== ALL_SCOPE) p.agent = filters.agent;
+    if (filters.magazin.length > 0) p.site_code = filters.magazin;
+    if (filters.agent.length > 0) p.agent = filters.agent;
     return p;
   }, [currentMonth, filters]);
 
@@ -231,8 +231,8 @@ export function Agents({
   }, [coverage]);
 
   const filterLabel = useMemo(() => {
-    if (filters.agent !== ALL_SCOPE) return `Agent: ${filters.agent}`;
-    if (filters.magazin !== ALL_STORES) return `Magazin: ${filters.magazin}`;
+    if (filters.agent.length > 0) return filters.agent.length > 1 ? `${filters.agent.length} agenți selectați` : `Agent: ${filters.agent[0]}`;
+    if (filters.magazin.length > 0) return filters.magazin.length > 1 ? `${filters.magazin.length} magazine selectate` : `Magazin: ${filters.magazin[0]}`;
     if (filters.rm !== ALL_SCOPE) return `Regional: ${filters.rm}`;
     if (filters.firma !== ALL_FIRMS) return `Firma: ${filters.firma}`;
     return 'Toata selectia activa';

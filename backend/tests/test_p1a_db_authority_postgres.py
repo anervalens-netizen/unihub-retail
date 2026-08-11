@@ -31,25 +31,37 @@ FIELDOPS_AUTHORITY_MIGRATION = (
 FIELDOPS_OPERATIONS_MIGRATION = (
     ROOT / "db/migrations/056_fieldops_visits_operations_authority.sql"
 )
+SALARY_EXPORT_AUTHORITY_MIGRATION = (
+    ROOT / "db/migrations/066_salary_export_authority.sql"
+)
 AUTHORITIES = (
     "unihub_web_read",
     "unihub_business_write",
     "unihub_sales_import",
     "unihub_finance_import",
     "unihub_operations",
+    "unihub_salary_export",
     "unihub_migrate",
 )
 
 
-def test_p1a_migration_declares_exact_authorities_and_definer_cas() -> None:
-    sql = MIGRATION.read_text(encoding="utf-8")
+def _assert_base_authority_contract(sql: str) -> None:
+    salary_sql = SALARY_EXPORT_AUTHORITY_MIGRATION.read_text(encoding="utf-8")
     for authority in AUTHORITIES:
+        if authority == "unihub_salary_export":
+            assert authority in salary_sql
+            continue
         assert authority in sql
     assert "NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT" in sql
     assert "ON ALL TABLES IN SCHEMA" not in sql
     assert "ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE ALL" in sql
     assert "REVOKE CREATE ON SCHEMA public FROM PUBLIC" in sql
-    for function in (
+    assert "NOBYPASSRLS NOREPLICATION" in sql
+    assert "ON salary_records TO unihub_operations" not in sql
+
+
+def _assert_definer_contract(sql: str) -> None:
+    for function_name in (
         "advance_sales_generation_head",
         "reserve_sales_import_grile_run",
         "advance_store_pnl_generation_head",
@@ -60,20 +72,20 @@ def test_p1a_migration_declares_exact_authorities_and_definer_cas() -> None:
         "promote_store_pnl_shadow_generation",
         "rollback_store_pnl_shadow_pointer",
     ):
-        assert f"FUNCTION public.{function}" in sql
+        assert f"FUNCTION public.{function_name}" in sql
     assert sql.count("SECURITY DEFINER") >= 7
     assert "sales staging rows are append-only; retention is a later controlled lifecycle" in sql
     assert "sales promotion ledger is append-only" in sql
     assert "store_pnl shadow evidence is append-only" in sql
     assert "category_name, amount" in sql
-    assert "NOBYPASSRLS NOREPLICATION" in sql
-    assert "ON salary_records TO unihub_operations" not in sql
     assert (
         "REVOKE ALL ON SEQUENCE store_pnl_generation_ledger_id_seq\n"
         "FROM PUBLIC, unihub_web_read, unihub_business_write, unihub_sales_import,"
     ) in sql
 
-    owner_sql = OWNER_MIGRATION.read_text(encoding="utf-8")
+
+
+def _assert_owner_contract(owner_sql: str) -> None:
     assert "CREATE ROLE unihub_schema_owner" in owner_sql
     assert "REASSIGN OWNED" not in owner_sql
     assert "namespace.nspname IN ('public', 'salary_private')" in owner_sql
@@ -83,7 +95,9 @@ def test_p1a_migration_declares_exact_authorities_and_definer_cas() -> None:
     assert "public.reserve_sales_import_grile_run(text,integer)" in owner_sql
     assert "acl.grantee NOT IN (proowner, item.grantee)" in owner_sql
 
-    fieldops_sql = FIELDOPS_AUTHORITY_MIGRATION.read_text(encoding="utf-8")
+
+
+def _assert_fieldops_web_contract(fieldops_sql: str) -> None:
     assert "to_regclass('public.fieldops_visits') IS NULL" in fieldops_sql
     assert "SELECT WITH GRANT OPTION" in fieldops_sql
     assert "FieldOps owner must grant SELECT" in fieldops_sql
@@ -98,7 +112,8 @@ def test_p1a_migration_declares_exact_authorities_and_definer_cas() -> None:
     assert "GRANT SELECT ON TABLE fieldops_visits TO unihub_web_read" in fieldops_sql
     assert "CREATE TABLE" not in fieldops_sql
 
-    operations_sql = FIELDOPS_OPERATIONS_MIGRATION.read_text(encoding="utf-8")
+
+def _assert_fieldops_operations_contract(operations_sql: str) -> None:
     assert "GRANT SELECT ON TABLE fieldops_visits TO unihub_operations" in operations_sql
     assert "GRANT INSERT, DELETE ON TABLE visits_snapshot TO unihub_operations" in operations_sql
     assert "SELECT WITH GRANT OPTION" in operations_sql
@@ -109,9 +124,96 @@ def test_p1a_migration_declares_exact_authorities_and_definer_cas() -> None:
     assert "GRANT TRUNCATE" not in operations_sql
 
 
+def test_p1a_migration_declares_exact_authorities_and_definer_cas() -> None:
+    sql = MIGRATION.read_text(encoding="utf-8")
+    _assert_base_authority_contract(sql)
+    _assert_definer_contract(sql)
+    _assert_owner_contract(OWNER_MIGRATION.read_text(encoding="utf-8"))
+    _assert_fieldops_web_contract(
+        FIELDOPS_AUTHORITY_MIGRATION.read_text(encoding="utf-8")
+    )
+    _assert_fieldops_operations_contract(
+        FIELDOPS_OPERATIONS_MIGRATION.read_text(encoding="utf-8")
+    )
+
+
 async def _expect_denied(connection: asyncpg.Connection, sql: str, *args: object) -> None:
     with pytest.raises(asyncpg.InsufficientPrivilegeError):
         await connection.execute(sql, *args)
+
+
+async def _assert_principal_sessions(
+    owner: asyncpg.Connection,
+    principals: dict[str, tuple[str, str]],
+    connections: dict[str, asyncpg.Connection],
+) -> None:
+    for authority, principal_connection in connections.items():
+        principal, _ = principals[authority]
+        assert await principal_connection.fetchval("SELECT session_user") == principal
+        assert await principal_connection.fetchval("SELECT current_user") == principal
+        assert await principal_connection.fetchval(
+            "SELECT pg_has_role(session_user, $1, 'member')", authority
+        )
+        assert not await database_principal_has_direct_authority(owner, principal)
+    for authority, principal_connection in connections.items():
+        has_temporary = bool(
+            await principal_connection.fetchval(
+                "SELECT has_database_privilege(current_user, current_database(), 'TEMPORARY')"
+            )
+        )
+        assert has_temporary is (authority == "unihub_sales_import")
+
+
+async def _assert_salary_export_boundaries(
+    owner: asyncpg.Connection,
+    operations: asyncpg.Connection,
+    salary_export: asyncpg.Connection,
+) -> None:
+    assert await salary_export.fetchval("SELECT COUNT(id) FROM salary_records") == 0
+    assert await salary_export.fetchval("SELECT COUNT(site_code) FROM stores") == 1
+    assert await salary_export.fetchval(
+        "SELECT COUNT(import_month) FROM reporting_agent_month"
+    ) == 0
+    await _expect_denied(salary_export, "SELECT created_at FROM salary_records")
+    await _expect_denied(salary_export, "SELECT * FROM salary_records")
+    await _expect_denied(salary_export, "SELECT * FROM agent_salary_links")
+    await _expect_denied(salary_export, "SELECT agent FROM reporting_agent_month")
+    daily_export_id = await owner.fetchval(
+        """
+        INSERT INTO export_operations (
+            kind, job_id, request_payload, request_sha256, requested_by_sub
+        ) VALUES (
+            'daily_metrics', 'export-complex:910001', '{}'::jsonb,
+            repeat('d', 64), 'p1a-daily-export'
+        ) RETURNING id
+        """
+    )
+    salary_export_id = await owner.fetchval(
+        """
+        INSERT INTO export_operations (
+            kind, job_id, request_payload, request_sha256, requested_by_sub
+        ) VALUES (
+            'salary_agents', 'salary-export:910002',
+            '{"export_kind":"agents","site_code":[]}'::jsonb,
+            repeat('e', 64), 'p1a-salary-export'
+        ) RETURNING id
+        """
+    )
+    operation_ids = [daily_export_id, salary_export_id]
+    assert await operations.fetchval(
+        "SELECT COUNT(*) FROM export_operations WHERE id = ANY($1::BIGINT[])",
+        operation_ids,
+    ) == 1
+    assert await salary_export.fetchval(
+        "SELECT COUNT(*) FROM export_operations WHERE id = ANY($1::BIGINT[])",
+        operation_ids,
+    ) == 1
+    assert await operations.fetchval(
+        "SELECT COUNT(*) FROM export_operations WHERE id = $1", salary_export_id
+    ) == 0
+    assert await salary_export.fetchval(
+        "SELECT COUNT(*) FROM export_operations WHERE id = $1", daily_export_id
+    ) == 0
 
 
 @pytest.mark.asyncio
@@ -960,31 +1062,16 @@ async def test_p1a_authority_matrix_and_controlled_cas_are_authenticated(
                     )
                 )
                 principal_connections[authority] = await asyncpg.connect(principal_url)
-            for authority, principal_connection in principal_connections.items():
-                principal, _ = test_principals[authority]
-                assert await principal_connection.fetchval("SELECT session_user") == principal
-                assert await principal_connection.fetchval("SELECT current_user") == principal
-                assert await principal_connection.fetchval(
-                    "SELECT pg_has_role(session_user, $1, 'member')", authority
-                )
-                assert not await database_principal_has_direct_authority(
-                    connection,
-                    principal,
-                )
-
-            for authority, principal_connection in principal_connections.items():
-                has_temporary = bool(
-                    await principal_connection.fetchval(
-                        "SELECT has_database_privilege(current_user, current_database(), 'TEMPORARY')"
-                    )
-                )
-                assert has_temporary is (authority == "unihub_sales_import")
+            await _assert_principal_sessions(
+                connection, test_principals, principal_connections
+            )
 
             web = principal_connections["unihub_web_read"]
             business = principal_connections["unihub_business_write"]
             sales = principal_connections["unihub_sales_import"]
             finance = principal_connections["unihub_finance_import"]
             operations = principal_connections["unihub_operations"]
+            salary_export = principal_connections["unihub_salary_export"]
             migrate = principal_connections["unihub_migrate"]
 
             # The future Finance credential is not created in production, but
@@ -997,6 +1084,18 @@ async def test_p1a_authority_matrix_and_controlled_cas_are_authenticated(
                 replace(finance_contract, principal=finance_principal),
             )
             await verify_database_connection_authority(finance, "finance_import")
+
+            salary_principal, _ = test_principals["unihub_salary_export"]
+            salary_contract = DATABASE_AUTHORITY_CONTRACTS["salary_export"]
+            monkeypatch.setitem(
+                DATABASE_AUTHORITY_CONTRACTS,
+                "salary_export",
+                replace(salary_contract, principal=salary_principal),
+            )
+            await verify_database_connection_authority(
+                salary_export,
+                "salary_export",
+            )
 
             # Every row is an independent authenticated session, not SET ROLE.
             assert await web.fetchval("SELECT COUNT(*) FROM stores") == 0
@@ -1072,6 +1171,11 @@ async def test_p1a_authority_matrix_and_controlled_cas_are_authenticated(
             await _expect_denied(operations, "SELECT * FROM salary_records")
             await _expect_denied(operations, "SELECT * FROM historical_monthly_sales")
             await _expect_denied(operations, "SELECT * FROM store_pnl_site_links")
+
+            # PostgreSQL fences the salary renderer from generic exports/data.
+            await _assert_salary_export_boundaries(
+                connection, operations, salary_export
+            )
 
             # Ledger numbering is owned by the definer function, not Finance.
             await _expect_denied(

@@ -3487,7 +3487,10 @@ export const RETAIL_COMPONENT_SCHEMAS = {
       "agent": {
         "anyOf": [
           {
-            "type": "string"
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
           },
           {
             "type": "null"
@@ -3546,7 +3549,10 @@ export const RETAIL_COMPONENT_SCHEMAS = {
       "site_code": {
         "anyOf": [
           {
-            "type": "string"
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
           },
           {
             "type": "null"
@@ -4668,7 +4674,10 @@ export const RETAIL_COMPONENT_SCHEMAS = {
       "kind": {
         "enum": [
           "daily_metrics",
-          "daily_comparison"
+          "daily_comparison",
+          "salary_store_summary",
+          "salary_monthly_trend",
+          "salary_agents"
         ],
         "title": "Kind",
         "type": "string"
@@ -4684,6 +4693,18 @@ export const RETAIL_COMPONENT_SCHEMAS = {
           }
         ],
         "title": "Peak Rss Bytes"
+      },
+      "row_count": {
+        "anyOf": [
+          {
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Row Count"
       },
       "started_at": {
         "anyOf": [
@@ -10483,8 +10504,9 @@ export const RETAIL_COMPONENT_SCHEMAS = {
         "type": "integer"
       },
       "avg_salary": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
         "title": "Avg Salary",
-        "type": "number"
+        "type": "string"
       },
       "company_name": {
         "title": "Company Name",
@@ -10515,8 +10537,9 @@ export const RETAIL_COMPONENT_SCHEMAS = {
         "type": "string"
       },
       "total_salary": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
         "title": "Total Salary",
-        "type": "number"
+        "type": "string"
       }
     },
     "required": [
@@ -10580,8 +10603,9 @@ export const RETAIL_COMPONENT_SCHEMAS = {
         "title": "Name"
       },
       "total": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
         "title": "Total",
-        "type": "number"
+        "type": "string"
       }
     },
     "required": [
@@ -10602,8 +10626,9 @@ export const RETAIL_COMPONENT_SCHEMAS = {
         "type": "integer"
       },
       "avg_salary": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
         "title": "Avg Salary",
-        "type": "number"
+        "type": "string"
       },
       "company_name": {
         "title": "Company Name",
@@ -10621,8 +10646,9 @@ export const RETAIL_COMPONENT_SCHEMAS = {
         "title": "Locatie"
       },
       "ratio": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
         "title": "Ratio",
-        "type": "number"
+        "type": "string"
       },
       "site_code": {
         "anyOf": [
@@ -10636,12 +10662,14 @@ export const RETAIL_COMPONENT_SCHEMAS = {
         "title": "Site Code"
       },
       "total_salary": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
         "title": "Total Salary",
-        "type": "number"
+        "type": "string"
       },
       "total_sales": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
         "title": "Total Sales",
-        "type": "number"
+        "type": "string"
       }
     },
     "required": [
@@ -10661,20 +10689,23 @@ export const RETAIL_COMPONENT_SCHEMAS = {
     "additionalProperties": false,
     "properties": {
       "mobicell": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
         "title": "Mobicell",
-        "type": "number"
+        "type": "string"
       },
       "mobiup": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
         "title": "Mobiup",
-        "type": "number"
+        "type": "string"
       },
       "month": {
         "title": "Month",
         "type": "string"
       },
       "total": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
         "title": "Total",
-        "type": "number"
+        "type": "string"
       }
     },
     "required": [
@@ -10686,30 +10717,106 @@ export const RETAIL_COMPONENT_SCHEMAS = {
     "title": "SalaryEvolutionPoint",
     "type": "object"
   },
-  "SalaryExportAudit": {
+  "SalaryExportRequest": {
     "additionalProperties": false,
+    "description": "Canonical, server-owned request for a sensitive salary artifact.",
     "properties": {
+      "asm": {
+        "anyOf": [
+          {
+            "maxLength": 120,
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Asm"
+      },
+      "company_name": {
+        "anyOf": [
+          {
+            "maxLength": 120,
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Company Name"
+      },
       "export_kind": {
         "enum": [
           "store_summary",
           "monthly_trend",
-          "agents_page"
+          "agents"
         ],
         "title": "Export Kind",
         "type": "string"
       },
-      "row_count": {
-        "maximum": 5000.0,
-        "minimum": 0.0,
-        "title": "Row Count",
-        "type": "integer"
+      "month": {
+        "anyOf": [
+          {
+            "maximum": 12.0,
+            "minimum": 1.0,
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Month"
+      },
+      "q": {
+        "anyOf": [
+          {
+            "maxLength": 160,
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Q"
+      },
+      "regional": {
+        "anyOf": [
+          {
+            "maxLength": 120,
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Regional"
+      },
+      "site_code": {
+        "items": {
+          "type": "string"
+        },
+        "maxItems": 200,
+        "title": "Site Code",
+        "type": "array"
+      },
+      "year": {
+        "anyOf": [
+          {
+            "maximum": 2100.0,
+            "minimum": 2000.0,
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Year"
       }
     },
     "required": [
-      "export_kind",
-      "row_count"
+      "export_kind"
     ],
-    "title": "SalaryExportAudit",
+    "title": "SalaryExportRequest",
     "type": "object"
   },
   "SalaryHistoryRecordPublic": {
@@ -10746,8 +10853,9 @@ export const RETAIL_COMPONENT_SCHEMAS = {
         "title": "Site Code"
       },
       "total_salary": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
         "title": "Total Salary",
-        "type": "number"
+        "type": "string"
       },
       "year": {
         "title": "Year",
@@ -10769,8 +10877,9 @@ export const RETAIL_COMPONENT_SCHEMAS = {
     "additionalProperties": false,
     "properties": {
       "avg": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
         "title": "Avg",
-        "type": "number"
+        "type": "string"
       },
       "avg_month_count": {
         "title": "Avg Month Count",
@@ -10798,8 +10907,9 @@ export const RETAIL_COMPONENT_SCHEMAS = {
         "type": "array"
       },
       "total": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
         "title": "Total",
-        "type": "number"
+        "type": "string"
       }
     },
     "required": [
@@ -10851,7 +10961,8 @@ export const RETAIL_COMPONENT_SCHEMAS = {
       "avg_salary": {
         "anyOf": [
           {
-            "type": "number"
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
           },
           {
             "type": "null"
@@ -10907,7 +11018,8 @@ export const RETAIL_COMPONENT_SCHEMAS = {
       "total": {
         "anyOf": [
           {
-            "type": "number"
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
           },
           {
             "type": "null"
@@ -10966,8 +11078,9 @@ export const RETAIL_COMPONENT_SCHEMAS = {
         "title": "Site Code"
       },
       "total_salary": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
         "title": "Total Salary",
-        "type": "number"
+        "type": "string"
       },
       "year": {
         "title": "Year",
@@ -11050,8 +11163,9 @@ export const RETAIL_COMPONENT_SCHEMAS = {
         "type": "integer"
       },
       "avg_salary": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
         "title": "Avg Salary",
-        "type": "number"
+        "type": "string"
       },
       "by_company": {
         "additionalProperties": true,
@@ -11063,12 +11177,14 @@ export const RETAIL_COMPONENT_SCHEMAS = {
         "type": "string"
       },
       "total_salary": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
         "title": "Total Salary",
-        "type": "number"
+        "type": "string"
       },
       "total_sales": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
         "title": "Total Sales",
-        "type": "number"
+        "type": "string"
       }
     },
     "required": [
@@ -15700,7 +15816,6 @@ export const RETAIL_RESPONSE_SCHEMAS = {
   "annual_api_store_pnl_annual_get": {
     "$ref": "#/components/schemas/PnlAnnualResponse"
   },
-  "audit_salary_export_salarii_audit_export_post": null,
   "calculate_scenario_api_target_calculator_scenarios_calculate_post": {
     "$ref": "#/components/schemas/TargetScenarioResponse"
   },
@@ -15711,6 +15826,9 @@ export const RETAIL_RESPONSE_SCHEMAS = {
     "$ref": "#/components/schemas/StoreActivityChangeResponse"
   },
   "create_export_operation_api_exports_operations_post": {
+    "$ref": "#/components/schemas/ExportOperationResponse"
+  },
+  "create_salary_export_operation_salarii_exports_operations_post": {
     "$ref": "#/components/schemas/ExportOperationResponse"
   },
   "download_export_api_exports_download_post": {},
@@ -16102,8 +16220,8 @@ export const RETAIL_RUNTIME_VALIDATED_OPERATIONS = new Set([
   'agent_history_by_retail_code_salarii_agents_history_by_retail_code_get',
   'agents_summary_salarii_agents_summary_get',
   'agent_history_salarii_agents__person_id__history_get',
-  'audit_salary_export_salarii_audit_export_post',
   'salarii_evolution_salarii_evolution_get',
+  'create_salary_export_operation_salarii_exports_operations_post',
   'salarii_overview_salarii_overview_get',
   'list_records_salarii_records_get',
   'salarii_stores_salarii_stores_get',

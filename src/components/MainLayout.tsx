@@ -43,15 +43,6 @@ const emptyOptions: FilterOptions = {
   agenti: [],
 };
 
-function selectedValues(value: string, allValue: string): string[] {
-  if (!value || value === allValue) return [];
-  return value.split(',').map((item) => item.trim()).filter(Boolean);
-}
-
-function joinedSelection(values: string[], allValue: string): string {
-  return values.length > 0 ? values.join(',') : allValue;
-}
-
 export function MainLayout({
   children,
   activeTab,
@@ -93,7 +84,7 @@ export function MainLayout({
   }, [filterOptions, filters.firma]);
 
   const selectedStores = useMemo(
-    () => selectedValues(filters.magazin, ALL_STORES),
+    () => filters.magazin,
     [filters.magazin]
   );
 
@@ -123,9 +114,10 @@ export function MainLayout({
     setFilters(defaultAppFilters());
   };
 
-  const activeFilterCount = [filters.firma, filters.rm, filters.magazin, filters.agent].filter(
-    (value) => value !== ALL_FIRMS && value !== ALL_SCOPE && value !== ALL_STORES
-  ).length;
+  const activeFilterCount = Number(filters.firma !== ALL_FIRMS)
+    + Number(filters.rm !== ALL_SCOPE)
+    + Number(filters.magazin.length > 0)
+    + Number(filters.agent.length > 0);
   const hasMobileFilters = showFilterButton && (
     (['hub', 'focus', 'agents'] as const).includes(activeTab as 'hub' | 'focus' | 'agents')
     || (activeTab === 'management' && mgmtSubTab === 'salarii')
@@ -208,8 +200,8 @@ export function MainLayout({
                       ...filters,
                       firma: value,
                       rm: ALL_SCOPE,
-                      magazin: ALL_STORES,
-                      agent: ALL_SCOPE,
+                      magazin: [],
+                      agent: [],
                     })
                   }
                 />
@@ -224,8 +216,8 @@ export function MainLayout({
                     setFilters({
                       ...filters,
                       rm: value,
-                      magazin: ALL_STORES,
-                      agent: ALL_SCOPE,
+                      magazin: [],
+                      agent: [],
                     })
                   }
                 />
@@ -234,7 +226,6 @@ export function MainLayout({
                   selectedSummaryLabel="magazine selectate"
                   value={filters.magazin}
                   allLabel={ALL_STORES}
-                  allValue={ALL_STORES}
                   values={[
                     ...filteredStores.map((item) => ({
                       label: `${item.locatie} (${item.site_code})`,
@@ -245,7 +236,7 @@ export function MainLayout({
                     setFilters({
                       ...filters,
                       magazin: value,
-                      agent: ALL_SCOPE,
+                      agent: [],
                     })
                   }
                 />
@@ -254,7 +245,6 @@ export function MainLayout({
                   selectedSummaryLabel="agenti selectati"
                   value={filters.agent}
                   allLabel={ALL_SCOPE}
-                  allValue={ALL_SCOPE}
                   values={[
                     ...filteredAgents.map((item) => ({ label: item, value: item })),
                   ]}
@@ -371,20 +361,18 @@ function FilterMultiSelect({
   value,
   values,
   allLabel,
-  allValue,
   onChange,
 }: {
   label: string;
   selectedSummaryLabel: string;
-  value: string;
+  value: string[];
   values: FilterValueOption[];
   allLabel: string;
-  allValue: string;
-  onChange: (value: string) => void;
+  onChange: (value: string[]) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
-  const selected = selectedValues(value, allValue);
+  const selected = value;
   const filteredValues = values.filter((item) =>
     item.label.toLowerCase().includes(search.trim().toLowerCase())
   );
@@ -397,7 +385,7 @@ function FilterMultiSelect({
         : `${selected.length} ${selectedSummaryLabel}`;
 
   const updateSelection = (next: string[]) => {
-    onChange(joinedSelection(next, allValue));
+    onChange(next);
   };
 
   const toggleValue = (itemValue: string) => {

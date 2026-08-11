@@ -102,17 +102,20 @@ async def test_readiness_service_checks_postgres_and_session(
 ) -> None:
     get_pool = AsyncMock(return_value=_Pool())
     check_session = AsyncMock()
+    check_oidc = AsyncMock()
     monkeypatch.setattr(health_service, "get_pool", get_pool)
     monkeypatch.setattr(
         health_service,
         "verify_session_runtime_ready",
         check_session,
     )
+    monkeypatch.setattr(health_service, "verify_oidc_runtime_ready", check_oidc)
 
     await health_service.verify_readiness(timeout_seconds=1.0)
 
     get_pool.assert_awaited_once_with()
     check_session.assert_awaited_once_with()
+    check_oidc.assert_awaited_once_with()
 
 
 @pytest.mark.anyio

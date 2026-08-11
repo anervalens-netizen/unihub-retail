@@ -3,7 +3,9 @@ from __future__ import annotations
 import asyncio
 import os
 from decimal import Decimal
+from itertools import product
 from types import SimpleNamespace
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -152,8 +154,10 @@ def bounded_row(
     weight: str,
     floor: str,
     cap: str,
-) -> dict[str, object]:
-    return {
+    *,
+    site_code: str | None = None,
+) -> dict[str, Any]:
+    row: dict[str, Any] = {
         "calculated_weight": Decimal(weight),
         "floor_target": Decimal(floor),
         "cap_target": Decimal(cap),
@@ -162,6 +166,9 @@ def bounded_row(
         "allocation_reason": "proportional",
         "flags": [],
     }
+    if site_code is not None:
+        row["site_code"] = site_code
+    return row
 
 
 def test_bounded_allocation_handles_empty_input() -> None:
@@ -201,6 +208,132 @@ def test_bounded_allocation_handles_zero_weights_and_iterative_bounds() -> None:
     assert cap_allocated[0]["is_cap_limited"] is True
     assert "CAP_APPLIED" in cap_allocated[0]["flags"]
     assert sum(row["proposed_target"] for row in cap_allocated) == Decimal("100.00")
+
+
+def test_bounded_allocation_recomputes_after_simultaneous_floor_and_cap_pressure() -> None:
+    rows = [
+        bounded_row("1", "50", "100", site_code="A"),
+        bounded_row("9", "0", "80", site_code="B"),
+        bounded_row("1", "0", "100", site_code="C"),
+    ]
+
+    allocated, warnings = allocate_with_bounds(rows, Decimal("110"))
+
+    assert warnings == []
+    assert [row["proposed_target"] for row in allocated] == [
+        Decimal("50.00"),
+        Decimal("54.00"),
+        Decimal("6.00"),
+    ]
+    assert allocated[0]["flags"] == ["FLOOR_APPLIED"]
+    assert allocated[1]["flags"] == []
+    assert allocated[2]["flags"] == []
+
+
+def test_bounded_allocation_redistributes_to_zero_weight_after_cap() -> None:
+    rows = [
+        bounded_row("1", "0", "50", site_code="A"),
+        bounded_row("0", "0", "100", site_code="B"),
+    ]
+
+    allocated, _ = allocate_with_bounds(rows, Decimal("100"))
+
+    assert [row["proposed_target"] for row in allocated] == [Decimal("50.00"), Decimal("50.00")]
+    assert allocated[0]["flags"] == ["CAP_APPLIED"]
+    assert allocated[1]["flags"] == []
+
+
+def test_bounded_allocation_rebuilds_allocator_flags_from_final_values() -> None:
+    rows = [
+        bounded_row("1", "0", "100", site_code="A"),
+        bounded_row("1", "0", "100", site_code="B"),
+    ]
+    rows[0]["flags"] = ["FLOOR_APPLIED", "SOURCE_WARNING"]
+    rows[0]["is_floor_limited"] = True
+    rows[0]["allocation_reason"] = "floor"
+    rows[1]["flags"] = ["CAP_APPLIED"]
+    rows[1]["is_cap_limited"] = True
+    rows[1]["allocation_reason"] = "cap"
+
+    allocated, _ = allocate_with_bounds(rows, Decimal("100"))
+
+    assert allocated[0]["flags"] == ["SOURCE_WARNING"]
+    assert allocated[1]["flags"] == []
+    assert all(row["allocation_reason"] == "proportional" for row in allocated)
+
+
+def test_bounded_allocation_uses_largest_remainder_before_site_tiebreak() -> None:
+    rows = [
+        bounded_row("1", "0", "100", site_code="A"),
+        bounded_row("2", "0", "100", site_code="Z"),
+    ]
+
+    allocated, _ = allocate_with_bounds(rows, Decimal("1"))
+
+    assert [row["proposed_target"] for row in allocated] == [Decimal("0.33"), Decimal("0.67")]
+
+
+def test_bounded_allocation_generated_invariants_and_permutation_independence() -> None:
+    bound_profiles = [
+        (("0", "0", "0"), ("100", "100", "100")),
+        (("20", "0", "5"), ("100", "60", "100")),
+        (("50", "0", "0"), ("100", "80", "100")),
+        (("0", "25", "0"), ("40", "80", "100")),
+        (("10", "10", "10"), ("10", "75", "120")),
+    ]
+    checked = 0
+    for weights in product(("0", "1", "3"), repeat=3):
+        for floors, caps in bound_profiles:
+            floor_total = sum((Decimal(value) for value in floors), Decimal("0"))
+            cap_total = sum((Decimal(value) for value in caps), Decimal("0"))
+            budgets = {
+                floor_total,
+                cap_total,
+                ((floor_total + cap_total) / 2).quantize(Decimal("0.01")),
+            }
+            original = [
+                bounded_row(weight, floor, cap, site_code=site_code)
+                for site_code, weight, floor, cap in zip(("A", "B", "C"), weights, floors, caps)
+            ]
+            reversed_rows = [
+                bounded_row(weight, floor, cap, site_code=site_code)
+                for site_code, weight, floor, cap in reversed(
+                    list(zip(("A", "B", "C"), weights, floors, caps))
+                )
+            ]
+            for budget in budgets:
+                allocated, _ = allocate_with_bounds(
+                    [dict(row, flags=list(row["flags"])) for row in original],
+                    budget,
+                )
+                permuted, _ = allocate_with_bounds(
+                    [dict(row, flags=list(row["flags"])) for row in reversed_rows],
+                    budget,
+                )
+                by_site = {row["site_code"]: row["proposed_target"] for row in allocated}
+                permuted_by_site = {row["site_code"]: row["proposed_target"] for row in permuted}
+                assert by_site == permuted_by_site
+                assert sum(row["proposed_target"] for row in allocated) == budget
+                for row in allocated:
+                    assert row["floor_target"] <= row["proposed_target"] <= row["cap_target"]
+                    assert ("FLOOR_APPLIED" in row["flags"]) is (
+                        row["proposed_target"] == row["floor_target"]
+                    )
+                    assert ("CAP_APPLIED" in row["flags"]) is (
+                        row["proposed_target"] == row["cap_target"]
+                    )
+                checked += 1
+    assert checked >= 400
+
+
+def test_bounded_allocation_rejects_negative_weight() -> None:
+    rows = [
+        bounded_row("-1", "0", "100", site_code="A"),
+        bounded_row("2", "0", "100", site_code="B"),
+    ]
+
+    with pytest.raises(ValueError, match="negative"):
+        allocate_with_bounds(rows, Decimal("50"))
 
 
 def test_bounded_allocation_distributes_residual_across_multiple_capacities() -> None:

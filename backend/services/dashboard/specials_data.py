@@ -5,6 +5,7 @@ from collections.abc import Awaitable
 from typing import Any
 
 from db.connection import get_pool
+from domain.filter_scope import FilterInput
 from schemas.dashboard import DashboardSpecialCard
 from schemas.campaigns import PromoIncentiveSummary
 from services.campaigns import (
@@ -22,13 +23,26 @@ from services.dashboard_specials import (
 )
 from services.filters import build_scoped_params
 
+
+def _effective_promotion_error(context: CampaignContext) -> str | None:
+    if context.promotion_error is not None:
+        return context.promotion_error
+    if context.promotion_status.value == "complete":
+        return None
+    return (
+        context.promotion_warnings[0]
+        if context.promotion_warnings
+        else "Calculul promo este incomplet."
+    )
+
+
 async def _get_special_cards_data(
     month: str,
     firma: str | None,
     regional: str | None,
     asm: str | None,
-    site_code: str | None,
-    agent: str | None,
+    site_code: FilterInput,
+    agent: FilterInput,
     *,
     current_scope: bool = False,
     include_closed_stores: bool = False,
@@ -53,16 +67,7 @@ async def _get_special_cards_data(
             )
     config_error = campaign_context.config_error
     promotion_definition = campaign_context.promotion_definition
-    promotion_error = campaign_context.promotion_error
-    if (
-        promotion_error is None
-        and campaign_context.promotion_status.value != "complete"
-    ):
-        promotion_error = (
-            campaign_context.promotion_warnings[0]
-            if campaign_context.promotion_warnings
-            else "Calculul promo este incomplet."
-        )
+    promotion_error = _effective_promotion_error(campaign_context)
     incentive_campaign = campaign_context.incentive_campaign
     promotion_stats: dict[str, Any] | None = None
     incentive_stats: dict[str, Any] | None = None

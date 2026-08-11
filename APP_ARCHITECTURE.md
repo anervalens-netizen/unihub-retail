@@ -14,14 +14,18 @@ target, salarii, P&L si raportare de vizite.
 | Backend | FastAPI, asyncpg, Python |
 | Auth | Authentik OIDC BFF, encrypted Valkey session, HttpOnly cookie, JWT RS256/JWKS |
 | DB | PostgreSQL `unihub` pe `unihub_postgres:5432` |
-| Queue/cache | Valkey + worker `unihub-worker.service` pentru importuri async |
+| Queue/cache | Valkey + workeri ARQ separați pentru operations, imports, Grile, exports și salary-exports |
 | Observabilitate | Prometheus `/metrics`, GlitchTip, structured logs |
 | Public URL | `https://retail.unihub.ro/` |
 | Service | `unihub-backend.service` |
 
 Runtime probes are separated by contract: `/livez` is process-only, while
-`/readyz` checks PostgreSQL and the Valkey-backed BFF session within a bounded
-two-second deadline. `/health` remains a compatibility alias for `/readyz`.
+`/readyz` checks PostgreSQL, the Valkey-backed BFF session and JWKS bootstrap/
+bounded-stale usability within a bounded two-second deadline. Startup prewarms
+JWKS; `jwks_readiness_state{state="disabled|absent|fresh|stale|failed"}` exposes
+the finite state. A transient IdP failure stays ready only while a validated key
+cache remains inside `JWKS_MAX_STALE_SECONDS`. `/health` remains a compatibility
+alias for `/readyz`.
 Prometheus excludes these probes from the user-request SLI and uses a dedicated
 public `/readyz` blackbox probe.
 The systemd unit waits up to 90 seconds for the local Valkey listener before
@@ -39,6 +43,12 @@ milisecunde, ca measurements și distribuții `web_vitals.lcp|inp`; atributele
 sunt finite (`rating`, `navigation_type`), fără URL, identitate sau alte chei
 cu cardinalitate necontrolată. Observarea pornește numai când DSN-ul este
 configurat, iar importul dinamic nu intră în bundle-ul inițial fără RUM.
+`sendDefaultPii=false`, `beforeSend` si `beforeSendTransaction` trec toate
+evenimentele prin scrubberul frontend explicit: calea completa (inclusiv
+transaction/span path), query/fragment, cookies, authorization, tokenuri si
+campuri sensibile sunt eliminate recursiv, iar body-ul capturat de `ApiError`
+este non-enumerable. Originea HTTP(S) poate ramane, dar niciun segment de ruta
+care poate contine un identificator stabil nu este trimis.
 
 API-ul normalizeaza sau genereaza `X-Request-ID`, il returneaza clientului,
 il include in loguri si GlitchTip si il propaga spre fluxurile interne si
@@ -92,11 +102,13 @@ seed-urile de date desemnate care nu pot exista in baseline-ul DDL.
 
 Autoritatea DB este separată de identitatea de login. Migrarea 040 definește
 grupurile NOLOGIN `unihub_web_read`, `unihub_business_write`,
-`unihub_sales_import`, `unihub_finance_import`, `unihub_operations` și
-`unihub_migrate`, cu grants explicite pe obiecte existente și fără
+`unihub_sales_import`, `unihub_finance_import`, `unihub_operations`,
+`unihub_salary_export` și `unihub_migrate`, cu grants explicite pe obiecte
+existente și fără
 `GRANT ... ON ALL` sau default grants viitoare. Loginurile de proces sunt
-`unihub_web`, `unihub_operations_worker`, `unihub_import_worker` și
-`unihub_migration_runner`; fiecare conexiune verifică principalul autentificat,
+`unihub_web`, `unihub_operations_worker`, `unihub_import_worker`,
+`unihub_salary_export_worker` și `unihub_migration_runner`; fiecare conexiune
+verifică principalul autentificat,
 toate membershipurile directe/tranzitive și opțiunile lor, absența oricărui
 grant direct/default ACL/obiect deținut de LOGIN, plus flagurile nonprivilegiate
 inclusiv replication/bypass RLS. Scanarea `pg_shdepend` acoperă generic toate
@@ -196,8 +208,9 @@ din evaluarea agentilor: acesta accepta si etichetele agregate
 - Salarii are RBAC backend: acces pentru `unihub-manager`, `unihub-admin`,
   `authentik Admins` si grupul rezervat `unihub-hr`; agentii si Team Leaderii
   primesc 403. Frontend-ul ascunde tabul, dar backend-ul ramane autoritativ.
-  Accesul permis/refuzat si exporturile din tab sunt logate fara CNP sau
-  valori salariale.
+  Accesul permis/refuzat este logat fara CNP sau valori salariale. Exporturile
+  din tab sunt operatii server-side persistente, legate de subjectul OIDC si de
+  filtrele canonice, cu evidence de artifact; browserul nu declara auditul.
 - Hub -> `Luna in curs` -> `Overview` foloseste `agent_salary_links` ca sa
   lege codul de agent din reporting de numele din `salary_records` si sa
   afiseze sumarul salarial in drawerul de performanta al agentului. Endpointul
@@ -332,11 +345,27 @@ din evaluarea agentilor: acesta accepta si etichetele agregate
   adopta atomic artefactul privat `0600`. Lease-ul si epoch-ul fencesc workerii
   intarziati; starea DB terminala castiga fata de ARQ. UI persista operation ID
   separat pe identitatea autentificata, poate relua pollingul dupa reload,
-  afiseaza progres/cancel/retry si sterge cheia numai dupa descarcarea completa.
+  afiseaza progres/cancel/retry si claim-uieste descarcarea fara sa acorde web-ului
+  drept de scriere in namespace-ul de artefacte.
   Artefactele completate pot fi descarcate repetat pana la TTL (implicit o ora,
-  configurabil intre 5 minute si 24 ore); operations workerul expira DB-ul si
-  curata artefactele orfane. Web-ul nu executa sweep global.
-  Exporturile rapide din carduri scriu valorile, procentele si lunile ca
+  configurabil intre 5 minute si 24 ore); workerul de export corespunzator
+  expira DB-ul si curata artefactele orfane. La un hash/size invalid, web-ul marcheaza operatia
+  `failed` si publica stergerea idempotenta pe coada workerului care detine
+  namespace-ul; indisponibilitatea cozii nu mascheaza raspunsul de integritate,
+  iar sweep-ul periodic este fallback. Web-ul nu scrie si nu executa sweep global.
+  Exporturile din modulul Salarii folosesc aceeasi operatie durabila, nu writerul
+  din browser. Cererea canonica si subjectul OIDC sunt salvate inainte de enqueue;
+  coada `arq:retail:salary-exports` este consumata numai de
+  `unihub-salary-export-worker.service`, autentificat prin autoritatea column-level
+  `unihub_salary_export`. RLS separa randurile salariale din `export_operations`
+  de workerul generic, iar artefactele `salary/<uuid>.xlsx` sunt mascate prin
+  namespace-ul systemd pentru toate procesele neautorizate. Workerul exclude
+  `person_id` si orice date private din workbook, neutralizeaza formulele, apoi
+  persista `row_count`, SHA-256, dimensiunea, timestampurile si expirarea.
+  Browserul nu poate declara numarul de randuri si pastreaza operation ID pentru
+  reluare fara retry orb. Migrarile 065/066 fac identitatea, evidence-ul final,
+  privilegiile si rutarea immutable/fail-closed.
+  Celelalte exporturi rapide din carduri scriu valorile, procentele si lunile ca
   tipuri Excel native, nu ca text formatat pentru UI; identificatorii precum
   codurile de magazin si produs raman text pentru a nu pierde zerourile initiale.
 
@@ -346,6 +375,11 @@ cu aceleasi valori initiale, dar fiecare isi pastreaza ultima selectie dupa
 refresh. `normalizeAppFilters` pastreaza doar Firma, Manager (`rm`), Magazin si
 Agent, astfel incat o selectie ASM salvata de o versiune veche nu poate ramane
 activa invizibil dupa upgrade.
+Selectiile multiple sunt serializate ca parametri query repetati
+(`site_code=A&site_code=B`), nu ca CSV. Backendul trateaza virgula drept parte
+din valoare, elimina exact duplicatele si aplica dominanta `site_code` o singura
+data la boundary. Persistenta veche din browser accepta CSV numai ca migrare
+one-shot; toate requesturile noi folosesc array-uri.
 
 Frontend-ul foloseste lazy-loading pe ecranele principale (`Hub`, `Focus`,
 `Agenti`, `Management`, `Setari`). Recharts este izolat in chunk-ul `charts`,
@@ -402,7 +436,7 @@ nou într-un service neclasificat și respinge intrările stale din contract.
 | HR/CRM/Tasks/Calculator Target | straturi separate per domeniu |
 | Grile lunar | `services/grile_monthly.py` -> `repositories/grile_monthly_operations.py` + state machine pur |
 | Import | `services/importer.py`, `services/imports.py`, job-uri Valkey |
-| Exporturi | `routers/exports.py` -> `services/exports/` + `services/export_operations.py` -> `repositories/exports.py` + `repositories/export_operations.py` |
+| Exporturi | `routers/exports.py` / `routers/salarii.py` -> `services/exports/` + `services/salary_exports.py` + `services/export_operations.py` -> repository-urile de export/salarii; queue și DB authority distincte pentru salarii |
 
 Repository-ul Grile detine rezervarea tranzactionala, expirarea lease-urilor si
 checkpointurile per magazin. Claim-ul `pending -> running` si finalizarea din
@@ -520,6 +554,14 @@ content-addressed de generație și cere retain `0600`, hash, fsync/readback
 filesystem și DB, iar retention păstrează headul, predecessorul și generațiile
 din ledger. Rollbackul clonează și reverifică generația
 anterioară, apoi o promovează auditabil; nu mută headul direct înapoi.
+Orice attempt esuat pastreaza bytes exacti din spool pentru retry-ul ARQ;
+cleanup-ul bounded de startup elimina numai esecurile abandonate. Orice retry
+rezolva canonic artefactul dupa SHA: verifica mai intai calea
+persistata/originala, apoi `retained/<sha>.source`. Daca mutarea in retained a
+reusit dar update-ul PostgreSQL a esuat, acelasi worker continua imediat din
+calea content-addressed. Daca validarea DB a reusit dar retain-ul a esuat inainte
+de move, retry-ul adopta generatia validata, reia retain-ul exact si nu restage-uieste
+randurile. Niciun caz nu depinde de restart sau de vechiul nume `.upload`.
 
 Migrarea 040 face stagingul și promotion ledgerul append-only și revocă mutarea
 directă a headului. Promote/rollback publică exclusiv prin funcții SQL
@@ -900,6 +942,10 @@ contribuie la total chiar daca are aceeasi valoare ca alta componenta legitima.
 Agregarea persoana-luna insumeaza componentele, dar numara persoana o singura
 data. Valorile persoana-luna sub 2.000 RON sunt excluse numai din medii;
 totalurile, record count si istoricul raman complete.
+Contractele API pastreaza sumele ca `Decimal` cuantizat la 0,01 si procentele la
+0,0001; encoderul JSON livreaza decimal strings, iar frontendul le decodeaza
+prin schema generata numai la boundary-ul de prezentare. Nicio suma salariala
+nu este calculata prin `float` in backend.
 
 Endpointul `/salarii/summary`, folosit de cardul **Salarii vs Vanzari**,
 consolideaza afisarea pe `locatie + company_name`. Aceasta evita duplicatele
@@ -1058,8 +1104,15 @@ derivate din versiuni inserate in ordine, iar UPDATE/DELETE sunt refuzate.
 Scenariile v2 persista rule-set ID/hash/snapshot, input/source hashes si
 profitabilitatea rezolvata per rand; read/export folosesc exclusiv snapshotul si
 refuza hash tamper. Legacy ramane nullable/unversioned si nu este backfill-uit.
-Allocatorul valideaza la cent `sum(floor) <= buget <= sum(cap)` inainte de save,
-iar override-ul managerial ramane separat si auditabil.
+Allocatorul valideaza la cent `sum(floor) <= buget <= sum(cap)` inainte de save.
+Pentru fiecare rand rezolva simultan box constraints prin
+`x_i(lambda)=min(cap_i,max(floor_i,lambda*weight_i))`; floorurile si capurile nu
+sunt fixate dintr-un pass cu alocari stale. Dupa solutia Decimal, rotunjeste in
+jos la ban si distribuie restul prin largest fractional remainder numai catre
+randuri cu capacitate. Flags `FLOOR_APPLIED`/`CAP_APPLIED` sunt reconstruite
+exclusiv din rezultatul final. Ponderile toate zero devin ponderi egale, iar
+solverul este determinist si invariant la permutare. Override-ul managerial
+ramane separat si auditabil.
 
 Forecastul v2 foloseste cutoff explicit per magazin din reporting-ul realizat.
 Coverage este `uniform` numai cand intreaga cohorta are forecast, realizat si

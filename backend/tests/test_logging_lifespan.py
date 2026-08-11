@@ -27,7 +27,7 @@ async def test_oidc_init_is_atomic_and_close_is_idempotent(monkeypatch: pytest.M
 
 
 @pytest.mark.asyncio
-async def test_oidc_runtime_success_is_network_lazy_singleton_and_closes_once(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_oidc_runtime_prewarms_singleton_and_closes_once(monkeypatch: pytest.MonkeyPatch) -> None:
     import oidc_verifier
 
     class Client:
@@ -40,13 +40,18 @@ async def test_oidc_runtime_success_is_network_lazy_singleton_and_closes_once(mo
     created: list[Client] = []
 
     settings = object()
+    prewarm = AsyncMock()
+    verifier = type("Verifier", (), {"ensure_ready": prewarm})()
     monkeypatch.setattr(oidc_verifier, "_client", None)
     monkeypatch.setattr(oidc_verifier, "_verifier", None)
     monkeypatch.setattr(oidc_verifier, "load_oidc_verifier_settings", lambda: settings)
     monkeypatch.setattr(oidc_verifier.httpx, "AsyncClient", Client)
+    monkeypatch.setattr(oidc_verifier, "OIDCVerifier", lambda *_args: verifier)
     await oidc_verifier.init_oidc_runtime()
     await oidc_verifier.init_oidc_runtime()
-    assert len(created) == 1 and oidc_verifier._client is created[0] and oidc_verifier.get_oidc_verifier()
+    assert len(created) == 1 and oidc_verifier._client is created[0]
+    assert oidc_verifier.get_oidc_verifier() is verifier
+    prewarm.assert_awaited_once_with()
     await oidc_verifier.close_oidc_runtime()
     await oidc_verifier.close_oidc_runtime()
     assert created[0].closed == 1

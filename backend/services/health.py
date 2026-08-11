@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 
 from db.connection import get_pool
+from oidc_verifier import verify_oidc_runtime_ready
 from session_auth import verify_session_runtime_ready
 
 
@@ -19,3 +20,4 @@ async def verify_readiness(
         async with pool.acquire() as conn:
             await conn.fetchval("SELECT 1")
         await verify_session_runtime_ready()
+        await verify_oidc_runtime_ready()

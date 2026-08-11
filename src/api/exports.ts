@@ -72,6 +72,13 @@ export async function downloadExportOperation(
   );
 }
 
+export function isExportOperationNotFound(error: unknown): boolean {
+  return isGeneratedApiError(
+    error,
+    'get_export_operation_api_exports_operations__operation_id__get',
+  ) && error.status === 404;
+}
+
 export function uncertainExportOperationId(error: unknown): number | null {
   const operationId = 'create_export_operation_api_exports_operations_post';
   if (!isGeneratedApiError(error, operationId) || error.status !== 503) {

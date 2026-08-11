@@ -17,6 +17,7 @@ TEMPLATES = (
     ROOT / ".env.example",
     ROOT / "ops/config/.env.web.example",
     ROOT / "ops/config/.env.operations-worker.example",
+    ROOT / "ops/config/.env.salary-export-worker.example",
     ROOT / "ops/config/.env.import-worker.example",
     ROOT / "ops/config/.env.migrations.example",
     ROOT / "ops/config/.env.frontend.example",

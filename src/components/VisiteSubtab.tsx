@@ -23,7 +23,7 @@ import {
 import { getFilterOptions } from '../api/filters';
 import { FirmaBadge } from './FirmaBadge';
 import type { AppFilters } from '../lib/appFilters';
-import { ALL_FIRMS, ALL_SCOPE, ALL_STORES } from '../lib/filterValues';
+import { ALL_FIRMS, ALL_SCOPE } from '../lib/filterValues';
 import { buildVisitsReportQuery, buildVisitsTreeQuery } from '../lib/visitQueries';
 import { formatIsoDate, formatIsoMonth } from '../lib/dates';
 import { cn } from '../lib/utils';
@@ -66,8 +66,8 @@ interface VisiteSubtabProps {
 const ALL_FILTERS: AppFilters = {
   firma: ALL_FIRMS,
   rm: ALL_SCOPE,
-  magazin: ALL_STORES,
-  agent: ALL_SCOPE,
+  magazin: [],
+  agent: [],
 };
 
 // ── small helpers ─────────────────────────────────────────────────────────────

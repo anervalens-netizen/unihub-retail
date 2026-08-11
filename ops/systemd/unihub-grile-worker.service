@@ -15,6 +15,7 @@ EnvironmentFile=/opt/Mobiup/ops/prometheus/unihub-retail-network.env
 Environment="RETAIL_WORKER_ROLE=grile"
 Environment="WORKER_METRICS_PORT=9903"
 Environment=UNIHUB_DB_PROCESS_AUTHORITY=operations
+Environment="PYTHONDONTWRITEBYTECODE=1"
 ExecStart=/opt/Mobiup/unihub-retail/backend/venv/bin/python worker.py
 Restart=always
 RestartSec=5
@@ -25,7 +26,8 @@ StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=unihub-grile-worker
 ProtectSystem=strict
-ReadWritePaths=/opt/Mobiup
+ReadWritePaths=/opt/Mobiup/unihub-retail/backend/outputs/grile
+InaccessiblePaths=-/opt/Mobiup/unihub-retail/data/export_artifacts/salary
 ProtectHome=read-only
 NoNewPrivileges=true
 PrivateTmp=true

@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { RefreshCw, Search } from 'lucide-react';
 import {
-  auditSalaryExport,
   fetchSalariiOverview,
   fetchSalaryAgents,
   fetchSalaryEvolution,
@@ -19,13 +18,17 @@ import type {
 import type { AppFilters } from '../lib/appFilters';
 import { SalaryAreaChart } from './SalaryAreaChart';
 import { SalaryDrawer } from './SalaryDrawer';
-import { ExportTableButton } from './ExportTableButton';
 import { SortableTableHeader as SortableHeader } from './common/TableHeader';
 import { formatMonthSpanLabel } from '../lib/dates';
-import { ALL_FIRMS, ALL_SCOPE, ALL_STORES } from '../lib/filterValues';
+import { ALL_FIRMS, ALL_SCOPE } from '../lib/filterValues';
 import { cn } from '../lib/utils';
 import { SegmentedTabs } from './common/SegmentedTabs';
 import { TableHeaderCell } from './common/TableHeader';
+import {
+  SalaryExportButton,
+  SalaryExportStatus,
+  useSalaryExport,
+} from '../features/salary/SalaryExportControls';
 
 type SortDir = 'asc' | 'desc';
 interface SortState<K extends string> { key: K; dir: SortDir }
@@ -135,6 +138,13 @@ export function SalariiSubtab({ globalFilters }: SalariiSubtabProps) {
   const [summaryMonth, setSummaryMonth] = useState<string | null>(null);
   const [selectedSummaryMonth, setSelectedSummaryMonth] = useState<string>('');
   const [loadingCards, setLoadingCards] = useState(false);
+  const {
+    busy: salaryExportBusy,
+    message: salaryExportMessage,
+    operationId: salaryExportOperationId,
+    resume: resumeSalaryExport,
+    start: startSalaryExport,
+  } = useSalaryExport();
 
   const [summarySort, setSummarySort] = useState<SortState<SummarySort>>({ key: 'total_salary', dir: 'desc' });
   const [trendSort, setTrendSort] = useState<SortState<TrendSort>>({ key: 'month', dir: 'desc' });
@@ -143,7 +153,7 @@ export function SalariiSubtab({ globalFilters }: SalariiSubtabProps) {
 
   const filterCompany = globalFilters?.firma !== ALL_FIRMS ? globalFilters?.firma : undefined;
   const filterRegional = globalFilters?.rm !== ALL_SCOPE ? globalFilters?.rm : undefined;
-  const filterSiteCode = globalFilters?.magazin !== ALL_STORES ? globalFilters?.magazin : undefined;
+  const filterSiteCode = globalFilters?.magazin.length ? globalFilters.magazin : undefined;
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(search), 300);
@@ -285,6 +295,12 @@ export function SalariiSubtab({ globalFilters }: SalariiSubtabProps) {
       <p className="rounded-2xl border border-indigo-100 bg-indigo-50 px-3 py-2 text-xs text-indigo-700 dark:border-indigo-900/50 dark:bg-indigo-950/30 dark:text-indigo-300">
         Media lunară include doar valorile de cel puțin 2.000 RON. Totalurile, istoricul și numărul de agenți rămân complete.
       </p>
+      <SalaryExportStatus
+        busy={salaryExportBusy}
+        message={salaryExportMessage}
+        operationId={salaryExportOperationId}
+        onResume={(operationId) => void resumeSalaryExport(operationId)}
+      />
       {/* ===== Card 1: Statistici Salarii ===== */}
       <div className={cn('glass rounded-3xl p-3 sm:p-4', salaryView !== 'overview' && 'hidden')}>
         <div className="mb-3 flex items-center justify-between">
@@ -347,22 +363,20 @@ export function SalariiSubtab({ globalFilters }: SalariiSubtabProps) {
             Salarii vs Vânzări
           </h3>
           <div className="flex items-center gap-2">
-            <ExportTableButton
-              filename={`salarii-magazine-${summaryMonth ?? 'curent'}`}
-              sheetName="Salarii magazine"
-              rows={sortedSummary}
-              beforeExport={() =>
-                auditSalaryExport({ export_kind: 'store_summary', row_count: sortedSummary.length })
-              }
-              columns={[
-                { header: 'Locatie', value: (row) => row.locatie ?? row.site_code ?? 'UNAVAILABLE' },
-                { header: 'Firma', value: (row) => row.company_name },
-                { header: 'Agenti', value: (row) => row.agent_count, format: 'integer' },
-                { header: 'Salarii', value: (row) => row.total_salary, format: 'currency' },
-                { header: 'Medie agent', value: (row) => row.avg_salary, format: 'currency' },
-                { header: 'Vanzari', value: (row) => row.total_sales, format: 'currency' },
-                { header: 'Procent', value: (row) => row.ratio, format: 'percentPoints' },
-              ]}
+            <SalaryExportButton
+              busy={salaryExportBusy === 'store_summary'}
+              disabled={sortedSummary.length === 0 || salaryExportBusy !== null || salaryExportOperationId !== null}
+              onExport={() => {
+                const period = summaryMonth?.match(/^(\d{4})-(\d{2})$/);
+                void startSalaryExport({
+                  export_kind: 'store_summary',
+                  company_name: filterCompany,
+                  site_code: filterSiteCode ?? [],
+                  regional: filterRegional,
+                  year: period ? Number(period[1]) : undefined,
+                  month: period ? Number(period[2]) : undefined,
+                });
+              }}
             />
             <select
               value={selectedSummaryMonth}
@@ -479,26 +493,15 @@ export function SalariiSubtab({ globalFilters }: SalariiSubtabProps) {
         <div className="mb-3 flex items-center justify-between">
           <h3 className="text-sm font-bold text-slate-600 dark:text-slate-300">Evolutie Salarii vs Vanzari</h3>
           <div className="flex items-center gap-2">
-            <ExportTableButton
-              filename="salarii-evolutie-lunara"
-              sheetName="Evolutie salarii"
-              rows={sortedTrend}
-              beforeExport={() =>
-                auditSalaryExport({ export_kind: 'monthly_trend', row_count: sortedTrend.length })
-              }
-              columns={[
-                { header: 'Luna', value: (row) => row.month, format: 'month' },
-                { header: 'Agenti', value: (row) => row.agent_count, format: 'integer' },
-                { header: 'Salarii', value: (row) => row.total_salary, format: 'currency' },
-                { header: 'Medie agent', value: (row) => row.avg_salary, format: 'currency' },
-                { header: 'Vanzari', value: (row) => row.total_sales, format: 'currency' },
-                {
-                  header: 'Procent',
-                  value: (row) =>
-                    getSalarySalesRatio(row.total_salary, row.total_sales),
-                  format: 'percentPoints',
-                },
-              ]}
+            <SalaryExportButton
+              busy={salaryExportBusy === 'monthly_trend'}
+              disabled={sortedTrend.length === 0 || salaryExportBusy !== null || salaryExportOperationId !== null}
+              onExport={() => void startSalaryExport({
+                export_kind: 'monthly_trend',
+                company_name: filterCompany,
+                site_code: filterSiteCode ?? [],
+                regional: filterRegional,
+              })}
             />
             {loadingCards && <RefreshCw size={14} className="animate-spin text-slate-400" />}
           </div>
@@ -579,21 +582,16 @@ export function SalariiSubtab({ globalFilters }: SalariiSubtabProps) {
               </span>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <ExportTableButton
-                filename={`salarii-agenti-pagina-${page + 1}`}
-                sheetName="Salarii agenti"
-                rows={agents}
-                beforeExport={() =>
-                  auditSalaryExport({ export_kind: 'agents_page', row_count: agents.length })
-                }
-                columns={[
-                  { header: 'Agent', value: (row) => row.full_name },
-                  { header: 'Firma', value: (row) => row.company_name },
-                  { header: 'Locatie', value: (row) => row.locatie ?? '' },
-                  { header: 'Luni', value: (row) => row.month_count, format: 'integer' },
-                  { header: 'Medie lunara', value: (row) => row.avg_salary, format: 'currency' },
-                  { header: 'Total', value: (row) => row.total_salary, format: 'currency' },
-                ]}
+              <SalaryExportButton
+                busy={salaryExportBusy === 'agents'}
+                disabled={totalAgents === 0 || salaryExportBusy !== null || salaryExportOperationId !== null}
+                onExport={() => void startSalaryExport({
+                  export_kind: 'agents',
+                  company_name: filterCompany,
+                  site_code: filterSiteCode ?? [],
+                  regional: filterRegional,
+                  q: debouncedSearch || undefined,
+                })}
               />
               {/* Search */}
               <div className="relative">

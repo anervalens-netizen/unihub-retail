@@ -175,8 +175,16 @@ groups:
           summary: "Retail exports worker target is missing"
           description: "Prometheus has no exports worker target for 5 minutes."
 
+      - alert: UniHubRetailSalaryExportsTargetMissing
+        expr: absent(up{job="unihub-retail-salary-exports"})
+        for: 5m
+        labels: {severity: critical}
+        annotations:
+          summary: "Retail salary exports worker target is missing"
+          description: "Prometheus has no salary exports worker target for 5 minutes."
+
       - alert: UniHubRetailWorkerTargetDown
-        expr: min by (job) (up{job=~"unihub-retail-(operations|imports|grile|exports)"}) == 0
+        expr: min by (job) (up{job=~"unihub-retail-(operations|imports|grile|exports|salary-exports)"}) == 0
         for: 2m
         labels: {severity: critical}
         annotations:
@@ -184,7 +192,7 @@ groups:
           description: "{{ $labels.job }} has not been scraped successfully for 2 minutes."
 
       - alert: UniHubRetailWorkerReportedDown
-        expr: unihub_worker_up{service_role=~"operations|imports|grile|exports"} == 0
+        expr: unihub_worker_up{service_role=~"operations|imports|grile|exports|salary_exports"} == 0
         for: 2m
         labels: {severity: critical}
         annotations:
@@ -192,7 +200,7 @@ groups:
           description: "{{ $labels.job }} ({{ $labels.service_role }}) has reported down for 2 minutes."
 
       - alert: UniHubRetailWorkerQueueBacklog
-        expr: unihub_worker_queue_backlog{service_role=~"operations|imports|grile|exports"} > 25
+        expr: unihub_worker_queue_backlog{service_role=~"operations|imports|grile|exports|salary_exports"} > 25
         for: 10m
         labels: {severity: warning}
         annotations:
@@ -200,7 +208,7 @@ groups:
           description: "{{ $labels.service_role }} has {{ $value | humanize }} queued jobs."
 
       - alert: UniHubRetailWorkerQueueOldestAge
-        expr: unihub_worker_queue_oldest_age_seconds{service_role=~"operations|imports|grile|exports"} > 900
+        expr: unihub_worker_queue_oldest_age_seconds{service_role=~"operations|imports|grile|exports|salary_exports"} > 900
         for: 10m
         labels: {severity: critical}
         annotations:

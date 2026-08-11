@@ -1,14 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { buildCurrentDashboardQuery, buildScopedMonthQuery } from './filterQueries';
-import { ALL_FIRMS, ALL_SCOPE, ALL_STORES } from './filterValues';
+import { ALL_FIRMS, ALL_SCOPE } from './filterValues';
 import type { AppFilters } from './appFilters';
 
 function makeFilters(overrides: Partial<AppFilters> = {}): AppFilters {
   return {
     firma: ALL_FIRMS,
     rm: ALL_SCOPE,
-    magazin: ALL_STORES,
-    agent: ALL_SCOPE,
+    magazin: [],
+    agent: [],
     ...overrides,
   };
 }
@@ -37,27 +37,27 @@ describe('buildScopedMonthQuery', () => {
   });
 
   it('includes site_code when magazin is set', () => {
-    const q = buildScopedMonthQuery('2026-05', makeFilters({ magazin: 'CRELECTROP' }));
-    expect(q.site_code).toBe('CRELECTROP');
+    const q = buildScopedMonthQuery('2026-05', makeFilters({ magazin: ['CRELECTROP'] }));
+    expect(q.site_code).toEqual(['CRELECTROP']);
   });
 
   it('includes agent when set', () => {
-    const q = buildScopedMonthQuery('2026-05', makeFilters({ agent: 'Ion Ionescu' }));
-    expect(q.agent).toBe('Ion Ionescu');
+    const q = buildScopedMonthQuery('2026-05', makeFilters({ agent: ['Ion Ionescu'] }));
+    expect(q.agent).toEqual(['Ion Ionescu']);
   });
 
   it('includes multiple filters simultaneously', () => {
     const q = buildScopedMonthQuery('2026-05', makeFilters({
       firma: 'Mobiup',
       rm: 'Maria',
-      magazin: 'STORE01',
-      agent: 'Agent1',
+      magazin: ['STORE01'],
+      agent: ['Agent1'],
     }));
     expect(q.firma).toBe('Mobiup');
     expect(q.regional).toBe('Maria');
     expect(q.asm).toBeUndefined();
-    expect(q.site_code).toBe('STORE01');
-    expect(q.agent).toBe('Agent1');
+    expect(q.site_code).toEqual(['STORE01']);
+    expect(q.agent).toEqual(['Agent1']);
     expect(q.month).toBe('2026-05');
   });
 });

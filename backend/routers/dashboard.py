@@ -6,6 +6,7 @@ from typing import Any, Literal
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 
 from composition import build_dashboard_service
+from domain.filter_scope import normalize_filter
 from schemas.dashboard import (
     DailySalesPoint,
     DashboardAllBatchRequest,
@@ -61,8 +62,8 @@ async def get_summary(
     firma: str | None = None,
     regional: str | None = None,
     asm: str | None = None,
-    site_code: str | None = None,
-    agent: str | None = None,
+    site_code: list[str] | None = Query(None),
+    agent: list[str] | None = Query(None),
     deadline: RequestDeadline = Depends(get_dashboard_deadline),
     svc: DashboardService = Depends(get_dashboard_service),
 ) -> DashboardSummary:
@@ -81,8 +82,8 @@ async def get_dashboard_all(
     firma: str | None = None,
     regional: str | None = None,
     asm: str | None = None,
-    site_code: str | None = None,
-    agent: str | None = None,
+    site_code: list[str] | None = Query(None),
+    agent: list[str] | None = Query(None),
     current_scope: bool = Query(False),
     include_closed_stores: bool = Query(False),
     deadline: RequestDeadline = Depends(get_dashboard_deadline),
@@ -138,8 +139,8 @@ async def get_daily_sales(
     firma: str | None = None,
     regional: str | None = None,
     asm: str | None = None,
-    site_code: str | None = None,
-    agent: str | None = None,
+    site_code: list[str] | None = Query(None),
+    agent: list[str] | None = Query(None),
     deadline: RequestDeadline = Depends(get_dashboard_deadline),
     svc: DashboardService = Depends(get_dashboard_service),
 ) -> list[DailySalesPoint]:
@@ -158,8 +159,8 @@ async def get_special_cards(
     firma: str | None = None,
     regional: str | None = None,
     asm: str | None = None,
-    site_code: str | None = None,
-    agent: str | None = None,
+    site_code: list[str] | None = Query(None),
+    agent: list[str] | None = Query(None),
     deadline: RequestDeadline = Depends(get_dashboard_deadline),
     svc: DashboardService = Depends(get_dashboard_service),
 ) -> DashboardSpecialCardsResponse:
@@ -178,8 +179,8 @@ async def get_premium_glass(
     firma: str | None = None,
     regional: str | None = None,
     asm: str | None = None,
-    site_code: str | None = None,
-    agent: str | None = None,
+    site_code: list[str] | None = Query(None),
+    agent: list[str] | None = Query(None),
     surface: Literal["all", "screen", "camera"] = Query("all"),
     current_scope: bool = Query(True),
     include_closed_stores: bool = Query(False),
@@ -211,8 +212,8 @@ async def get_monthly_history(
     firma: str | None = None,
     regional: str | None = None,
     asm: str | None = None,
-    site_code: str | None = None,
-    agent: str | None = None,
+    site_code: list[str] | None = Query(None),
+    agent: list[str] | None = Query(None),
     current_scope: bool = Query(True),
     include_closed_stores: bool = Query(False),
     deadline: RequestDeadline = Depends(get_dashboard_deadline),
@@ -242,8 +243,8 @@ async def get_history_by_year(
     firma: str | None = None,
     regional: str | None = None,
     asm: str | None = None,
-    site_code: str | None = None,
-    agent: str | None = None,
+    site_code: list[str] | None = Query(None),
+    agent: list[str] | None = Query(None),
     current_scope: bool = Query(True),
     include_closed_stores: bool = Query(False),
     deadline: RequestDeadline = Depends(get_dashboard_deadline),
@@ -274,8 +275,8 @@ async def get_performance_detail(
     firma: str | None = None,
     regional: str | None = None,
     asm: str | None = None,
-    site_code: str | None = None,
-    agent: str | None = None,
+    site_code: list[str] | None = Query(None),
+    agent: list[str] | None = Query(None),
     current_scope: bool = Query(True),
     include_closed_stores: bool = Query(False),
     deadline: RequestDeadline = Depends(get_dashboard_deadline),
@@ -284,7 +285,7 @@ async def get_performance_detail(
     site_code = canonical_dashboard_site_codes(site_code)
     performance_key: str | None = key
     if level == "store":
-        performance_key = canonical_dashboard_site_codes(key)
+        performance_key = normalize_filter(key)
     return await _run_dashboard(
         deadline,
         lambda _deadline: svc.get_performance_detail(

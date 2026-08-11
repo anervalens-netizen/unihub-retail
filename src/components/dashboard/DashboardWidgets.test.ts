@@ -14,7 +14,7 @@ import {
 } from '../../features/dashboard/DashboardWidgets';
 import type { AgentStat, RegionalStat, AsmStat, StoreStat } from '../../api/generated/runtime-types';
 import type { AppFilters } from '../../lib/appFilters';
-import { ALL_FIRMS, ALL_SCOPE, ALL_STORES } from '../../lib/filterValues';
+import { ALL_FIRMS, ALL_SCOPE } from '../../lib/filterValues';
 
 function makeAgent(overrides: Partial<AgentStat> = {}): AgentStat {
   const agent: AgentStat = {
@@ -121,8 +121,8 @@ function makeFilters(overrides: Partial<AppFilters> = {}): AppFilters {
   return {
     firma: ALL_FIRMS,
     rm: ALL_SCOPE,
-    magazin: ALL_STORES,
-    agent: ALL_SCOPE,
+    magazin: [],
+    agent: [],
     ...overrides,
   };
 }
@@ -263,22 +263,22 @@ describe('describeFilterScope', () => {
   });
 
   it('describes single agent', () => {
-    const desc = describeFilterScope(makeFilters({ agent: 'Ion Ionescu' }));
+    const desc = describeFilterScope(makeFilters({ agent: ['Ion Ionescu'] }));
     expect(desc).toBe('Agent Ion Ionescu');
   });
 
   it('describes multiple agents comma-separated', () => {
-    const desc = describeFilterScope(makeFilters({ agent: 'Agent1,Agent2,Agent3' }));
+    const desc = describeFilterScope(makeFilters({ agent: ['Agent1', 'Agent2', 'Agent3'] }));
     expect(desc).toBe('3 agenti selectati');
   });
 
   it('describes single store', () => {
-    const desc = describeFilterScope(makeFilters({ magazin: 'CRELECTROP' }));
+    const desc = describeFilterScope(makeFilters({ magazin: ['CRELECTROP'] }));
     expect(desc).toBe('Magazin CRELECTROP');
   });
 
   it('describes multiple stores', () => {
-    const desc = describeFilterScope(makeFilters({ magazin: 'STORE1,STORE2' }));
+    const desc = describeFilterScope(makeFilters({ magazin: ['STORE1', 'STORE2'] }));
     expect(desc).toBe('2 magazine selectate');
   });
 
@@ -296,8 +296,8 @@ describe('describeFilterScope', () => {
     const desc = describeFilterScope(makeFilters({
       firma: 'MobiCell',
       rm: 'Elena',
-      magazin: 'STORE1',
-      agent: 'Agent1',
+      magazin: ['STORE1'],
+      agent: ['Agent1'],
     }));
     expect(desc).toBe('Agent Agent1');
   });

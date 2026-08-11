@@ -280,6 +280,54 @@ def test_uncovered_allocator_guards_and_bound_marking() -> None:
     assert floor_row["is_floor_limited"] is True
 
 
+def test_box_solver_internal_failure_guards_are_explicit() -> None:
+    cap_row = bounded_row(floor="0", cap="10")
+    target_calculations._mark_bound(cap_row, cap=True)
+    assert cap_row["is_cap_limited"] is True
+    assert cap_row["flags"] == ["CAP_APPLIED"]
+
+    rows = [bounded_row(floor="0", cap="1")]
+    assert target_calculations._reconcile_box_residual(
+        rows,
+        {0: Decimal("0")},
+        [0],
+        Decimal("2"),
+    ) is None
+    assert target_calculations._solve_box_interval(
+        [bounded_row(floor="0", cap="0")],
+        [0],
+        {0: Decimal("1")},
+        Decimal("0"),
+        Decimal("0"),
+        Decimal("1"),
+    ) is None
+
+    with pytest.raises(TargetBudgetInfeasibleError):
+        target_calculations._solve_positive_box(
+            [bounded_row(floor="10", cap="20")],
+            [0],
+            Decimal("5"),
+            {0: Decimal("1")},
+        )
+
+    with pytest.raises(TargetBudgetInfeasibleError):
+        target_calculations._round_bounded_allocations(
+            [bounded_row(floor="0", cap="2")],
+            {0: Decimal("1.01")},
+            Decimal("1.00"),
+            Decimal("0"),
+            Decimal("2"),
+        )
+    with pytest.raises(TargetBudgetInfeasibleError):
+        target_calculations._round_bounded_allocations(
+            [bounded_row(floor="0", cap="1")],
+            {0: Decimal("0")},
+            Decimal("0.02"),
+            Decimal("0"),
+            Decimal("1"),
+        )
+
+
 def test_allocators_detect_unreconciled_rounding_totals(monkeypatch: pytest.MonkeyPatch) -> None:
     def skip_rounding(*_args: Any, **_kwargs: Any) -> None:
         return None
@@ -293,6 +341,19 @@ def test_allocators_detect_unreconciled_rounding_totals(monkeypatch: pytest.Monk
     with pytest.raises(TargetBudgetInfeasibleError):
         allocate_with_floors(floor_rows, Decimal("100"))
 
+    def skip_bounded_rounding(
+        rows: list[dict[str, Any]],
+        *_args: Any,
+        **_kwargs: Any,
+    ) -> None:
+        for row in rows:
+            row["proposed_target"] = row["floor_target"]
+
+    monkeypatch.setattr(
+        target_calculations,
+        "_round_bounded_allocations",
+        skip_bounded_rounding,
+    )
     bound_rows = [bounded_row(floor="0", cap="100") for _ in range(3)]
     with pytest.raises(TargetBudgetInfeasibleError):
         allocate_with_bounds(bound_rows, Decimal("100"))

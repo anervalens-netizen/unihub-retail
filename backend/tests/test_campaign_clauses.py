@@ -32,11 +32,11 @@ def test_campaign_clauses_all_filters():
         "2026-05", "FirmaA", "RegionalB", "AsmC", "SITE01", "Agent1", alias="t"
     )
     assert len(clauses) == 4
-    assert params == ["2026-05", "SITE01", "Agent1"]
+    assert params == ["2026-05", ["SITE01"], ["Agent1"]]
     assert not any("t.firma" in clause for clause in clauses)
     assert not any("t.regional" in clause for clause in clauses)
-    assert "t.site_code = ANY(string_to_array($2::TEXT, ','))" in clauses
-    assert "t.agent = ANY(string_to_array($3::TEXT, ','))" in clauses
+    assert "t.site_code = ANY($2::TEXT[])" in clauses
+    assert "t.agent = ANY($3::TEXT[])" in clauses
 
 
 def test_campaign_clauses_skips_toate():
@@ -52,18 +52,18 @@ def test_campaign_clauses_partial_filters():
         "2026-04", None, "Regional1", None, "SITE99", None, alias="agg"
     )
     assert len(clauses) == 3
-    assert params == ["2026-04", "SITE99"]
+    assert params == ["2026-04", ["SITE99"]]
     assert not any("agg.regional" in clause for clause in clauses)
-    assert "agg.site_code = ANY(string_to_array($2::TEXT, ','))" in clauses
+    assert "agg.site_code = ANY($2::TEXT[])" in clauses
 
 
-def test_campaign_history_clauses_site_code_scope_supports_comma_lists():
+def test_campaign_history_clauses_treats_commas_as_exact_data():
     focus_clauses, totals_clauses, params = build_campaign_history_clauses(
-        "2026-06", 12, None, None, None, "CCTCIT,CTAUCH,CTCITYPRK", None
+        "2026-06", 12, None, None, None, ["CCTCIT,CTAUCH", "CTCITYPRK"], None
     )
-    assert params == ["2026-06", 12, "CCTCIT,CTAUCH,CTCITYPRK"]
-    assert "agg.site_code = ANY(string_to_array($3::TEXT, ','))" in focus_clauses
-    assert "tot.site_code = ANY(string_to_array($3::TEXT, ','))" in totals_clauses
+    assert params == ["2026-06", 12, ["CCTCIT,CTAUCH", "CTCITYPRK"]]
+    assert "agg.site_code = ANY($3::TEXT[])" in focus_clauses
+    assert "tot.site_code = ANY($3::TEXT[])" in totals_clauses
 
 
 def test_current_promo_scope_uses_active_store_fields() -> None:
@@ -86,10 +86,10 @@ def test_current_promo_scope_uses_active_store_fields() -> None:
         date(2026, 7, 31),
         ["P1"],
         "2026-07",
-        "RM 1",
+        ["RM 1"],
     ]
     assert store_join == "JOIN stores s ON s.site_code = agg.site_code"
-    assert "s.regional = ANY(string_to_array($5::TEXT, ','))" in clauses
+    assert "s.regional = ANY($5::TEXT[])" in clauses
     assert "s.is_active = TRUE" in clauses
 
 

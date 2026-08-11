@@ -113,7 +113,7 @@ async def test_legacy_agent_evaluation_uses_legacy_query_contract(service, mock_
     assert mock_repo.get_agent_evaluation.await_count == 2
     rows_call, options_call = mock_repo.get_agent_evaluation.await_args_list
     assert "peer_daily_average" in rows_call.args[0]
-    assert rows_call.args[1] == ["2026-04,2026-05", "Firma", "Manager", "S1"]
+    assert rows_call.args[1] == ["2026-04,2026-05", None, None, ["S1"]]
     assert "SELECT 'month' AS type" in options_call.args[0]
     assert options_call.args[1] == ["Firma", "Manager"]
     mock_repo.get_agent_evaluation_v2.assert_not_awaited()
@@ -159,7 +159,7 @@ async def test_agent_evaluation_v2_uses_repository_contract(service, mock_repo):
     )
 
     mock_repo.get_agent_evaluation_v2.assert_awaited_once_with(
-        "2026-04,2026-05", "Firma", "Manager", "S1"
+        "2026-04,2026-05", None, None, ["S1"]
     )
     mock_repo.get_agent_evaluation_options.assert_awaited_once_with("Firma", "Manager")
     assert [option.value for option in result.months] == ["2026-05"]

@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import Decimal, ROUND_FLOOR, ROUND_HALF_UP, localcontext
 from typing import Any
 
 MONEY = Decimal("0.01")
+_BOUND_FLAGS = {"FLOOR_APPLIED", "CAP_APPLIED"}
 
 
 def money(value: Decimal | int | str | float) -> Decimal:
@@ -36,6 +37,34 @@ def _mark_bound(row: dict[str, Any], *, floor: bool = False, cap: bool = False) 
         row["allocation_reason"] = "cap"
         if "CAP_APPLIED" not in row["flags"]:
             row["flags"].append("CAP_APPLIED")
+
+
+def _reset_bound_state(row: dict[str, Any]) -> None:
+    """Remove only allocator-owned state before deriving it from final values."""
+    row["is_floor_limited"] = False
+    row["is_cap_limited"] = False
+    row["allocation_reason"] = "proportional"
+    row["flags"] = [flag for flag in row.get("flags", []) if flag not in _BOUND_FLAGS]
+
+
+def _mark_final_bounds(row: dict[str, Any]) -> None:
+    """Derive bound flags exclusively from the final cent allocation."""
+    at_floor = row["proposed_target"] == row["floor_target"]
+    at_cap = row["proposed_target"] == row["cap_target"]
+    row["is_floor_limited"] = at_floor
+    row["is_cap_limited"] = at_cap
+    if at_floor:
+        row["flags"].append("FLOOR_APPLIED")
+    if at_cap:
+        row["flags"].append("CAP_APPLIED")
+    if at_floor and at_cap:
+        row["allocation_reason"] = "floor_cap"
+    elif at_floor:
+        row["allocation_reason"] = "floor"
+    elif at_cap:
+        row["allocation_reason"] = "cap"
+    else:
+        row["allocation_reason"] = "proportional"
 
 
 def _normalize_bounds(rows: list[dict[str, Any]], include_caps: bool) -> tuple[Decimal, Decimal | None]:
@@ -104,6 +133,217 @@ def _apply_rounding_difference(
                 return
 
 
+def _stable_indices(rows: list[dict[str, Any]], indices: list[int]) -> list[int]:
+    return sorted(indices, key=lambda index: (str(rows[index].get("site_code", "")), index))
+
+
+def _clip_box_value(row: dict[str, Any], value: Decimal) -> Decimal:
+    if value < row["floor_target"]:
+        return row["floor_target"]
+    if value > row["cap_target"]:
+        return row["cap_target"]
+    return value
+
+
+def _box_allocations_at(
+    rows: list[dict[str, Any]],
+    ordered: list[int],
+    weights: dict[int, Decimal],
+    multiplier: Decimal,
+) -> dict[int, Decimal]:
+    return {
+        index: _clip_box_value(rows[index], multiplier * weights[index])
+        for index in ordered
+    }
+
+
+def _reconcile_box_residual(
+    rows: list[dict[str, Any]],
+    allocations: dict[int, Decimal],
+    active: list[int],
+    target: Decimal,
+) -> dict[int, Decimal] | None:
+    residual = target - sum(allocations.values(), Decimal("0"))
+    if not residual:
+        return allocations
+    for index in _stable_indices(rows, active):
+        adjusted = allocations[index] + residual
+        if rows[index]["floor_target"] <= adjusted <= rows[index]["cap_target"]:
+            allocations[index] = adjusted
+            return allocations
+    return None
+
+
+def _solve_box_interval(
+    rows: list[dict[str, Any]],
+    ordered: list[int],
+    weights: dict[int, Decimal],
+    target: Decimal,
+    previous_point: Decimal,
+    point: Decimal,
+) -> dict[int, Decimal] | None:
+    midpoint = (previous_point + point) / Decimal("2")
+    active = [
+        index
+        for index in ordered
+        if rows[index]["floor_target"]
+        < midpoint * weights[index]
+        < rows[index]["cap_target"]
+    ]
+    if not active:
+        return None
+    fixed_total = sum(
+        (
+            rows[index]["floor_target"]
+            if midpoint * weights[index] <= rows[index]["floor_target"]
+            else rows[index]["cap_target"]
+        )
+        for index in ordered
+        if index not in active
+    )
+    active_weight = sum((weights[index] for index in active), Decimal("0"))
+    allocations = _box_allocations_at(
+        rows,
+        ordered,
+        weights,
+        (target - fixed_total) / active_weight,
+    )
+    return _reconcile_box_residual(rows, allocations, active, target)
+
+
+def _solve_positive_box(
+    rows: list[dict[str, Any]],
+    indices: list[int],
+    target: Decimal,
+    weights: dict[int, Decimal],
+) -> dict[int, Decimal]:
+    """Solve sum(clip(multiplier * weight, floor, cap)) == target exactly."""
+    ordered = _stable_indices(rows, indices)
+    floor_total = sum((rows[index]["floor_target"] for index in ordered), Decimal("0"))
+    cap_total = sum((rows[index]["cap_target"] for index in ordered), Decimal("0"))
+    if target == floor_total:
+        return {index: rows[index]["floor_target"] for index in ordered}
+    if target == cap_total:
+        return {index: rows[index]["cap_target"] for index in ordered}
+    if target < floor_total or target > cap_total:
+        raise TargetBudgetInfeasibleError(target, floor_total, cap_total)
+
+    with localcontext() as context:
+        context.prec = 60
+        breakpoints = sorted(
+            {
+                bound / weights[index]
+                for index in ordered
+                for bound in (rows[index]["floor_target"], rows[index]["cap_target"])
+            }
+        )
+
+        previous_point = breakpoints[0]
+        previous_total = sum(
+            _box_allocations_at(rows, ordered, weights, previous_point).values(),
+            Decimal("0"),
+        )
+        if target <= previous_total:
+            return {index: rows[index]["floor_target"] for index in ordered}
+
+        for point in breakpoints[1:]:
+            point_allocations = _box_allocations_at(rows, ordered, weights, point)
+            point_total = sum(point_allocations.values(), Decimal("0"))
+            if target > point_total:
+                previous_point = point
+                previous_total = point_total
+                continue
+            if target == point_total:
+                return point_allocations
+            if point_total == previous_total:
+                raise TargetBudgetInfeasibleError(target, floor_total, cap_total)
+            allocations = _solve_box_interval(
+                rows, ordered, weights, target, previous_point, point
+            )
+            if allocations is None:
+                raise TargetBudgetInfeasibleError(target, floor_total, cap_total)
+            return allocations
+
+    raise TargetBudgetInfeasibleError(target, floor_total, cap_total)
+
+
+def _solve_box_allocations(
+    rows: list[dict[str, Any]],
+    requested_total: Decimal,
+) -> dict[int, Decimal]:
+    """Solve weighted bounds; zero weights become reserve capacity after positive caps."""
+    positive = [index for index, row in enumerate(rows) if row["calculated_weight"] > 0]
+    zero = [index for index, row in enumerate(rows) if row["calculated_weight"] == 0]
+    if len(positive) + len(zero) != len(rows):
+        raise ValueError("Ponderile de alocare nu pot fi negative.")
+    if not positive:
+        return _solve_positive_box(
+            rows,
+            zero,
+            requested_total,
+            {index: Decimal("1") for index in zero},
+        )
+
+    positive_cap_total = sum((rows[index]["cap_target"] for index in positive), Decimal("0"))
+    zero_floor_total = sum((rows[index]["floor_target"] for index in zero), Decimal("0"))
+    weighted_limit = positive_cap_total + zero_floor_total
+    if requested_total <= weighted_limit:
+        allocations = {index: rows[index]["floor_target"] for index in zero}
+        allocations.update(
+            _solve_positive_box(
+                rows,
+                positive,
+                requested_total - zero_floor_total,
+                {index: rows[index]["calculated_weight"] for index in positive},
+            )
+        )
+        return allocations
+
+    allocations = {index: rows[index]["cap_target"] for index in positive}
+    allocations.update(
+        _solve_positive_box(
+            rows,
+            zero,
+            requested_total - positive_cap_total,
+            {index: Decimal("1") for index in zero},
+        )
+    )
+    return allocations
+
+
+def _round_bounded_allocations(
+    rows: list[dict[str, Any]],
+    assigned: dict[int, Decimal],
+    requested_total: Decimal,
+    floor_total: Decimal,
+    cap_total: Decimal,
+) -> None:
+    """Round down, then distribute residual cents by largest remainder."""
+    bases = {
+        index: value.quantize(MONEY, rounding=ROUND_FLOOR)
+        for index, value in assigned.items()
+    }
+    rounded_total = sum(bases.values(), Decimal("0"))
+    residual = requested_total - rounded_total
+    if residual < 0 or residual % MONEY:
+        raise TargetBudgetInfeasibleError(requested_total, floor_total, cap_total)
+    residual_cents = int(residual / MONEY)
+    candidates = sorted(
+        (
+            (assigned[index] - bases[index], str(rows[index].get("site_code", "")), index)
+            for index in bases
+            if rows[index]["cap_target"] - bases[index] >= MONEY
+        ),
+        key=lambda candidate: (-candidate[0], candidate[1], candidate[2]),
+    )
+    if residual_cents > len(candidates):
+        raise TargetBudgetInfeasibleError(requested_total, floor_total, cap_total)
+    for _fraction, _site_code, index in candidates[:residual_cents]:
+        bases[index] += MONEY
+    for index, row in enumerate(rows):
+        row["proposed_target"] = bases[index]
+
+
 def allocate_with_floors(
     rows: list[dict[str, Any]],
     requested_total: Decimal,
@@ -160,46 +400,14 @@ def allocate_with_bounds(
     if requested_total < floor_total or requested_total > cap_total:
         raise TargetBudgetInfeasibleError(requested_total, floor_total, cap_total)
 
-    remaining = set(range(len(rows)))
-    assigned: dict[int, Decimal] = {}
-    remaining_budget = requested_total
-    while remaining:
-        weight_total = sum((rows[index]["calculated_weight"] for index in remaining), Decimal("0"))
-        allocations = {
-            index: (
-                remaining_budget * rows[index]["calculated_weight"] / weight_total
-                if weight_total > 0
-                else remaining_budget / Decimal(len(remaining))
-            )
-            for index in remaining
-        }
-        fixed = False
-        for index in sorted(remaining):
-            row = rows[index]
-            if allocations[index] < row["floor_target"]:
-                assigned[index] = row["floor_target"]
-                remaining_budget -= row["floor_target"]
-                remaining.remove(index)
-                _mark_bound(row, floor=True)
-                fixed = True
-            elif allocations[index] > row["cap_target"]:
-                assigned[index] = row["cap_target"]
-                remaining_budget -= row["cap_target"]
-                remaining.remove(index)
-                _mark_bound(row, cap=True)
-                fixed = True
-        if not fixed:
-            assigned.update(allocations)
-            break
-
-    for index, row in enumerate(rows):
-        row["proposed_target"] = money(assigned[index])
-    _apply_rounding_difference(rows, requested_total, include_caps=True)
     for row in rows:
-        if row["proposed_target"] == row["floor_target"]:
-            _mark_bound(row, floor=True)
-        if row["proposed_target"] == row["cap_target"]:
-            _mark_bound(row, cap=True)
+        _reset_bound_state(row)
+
+    assigned = _solve_box_allocations(rows, requested_total)
+
+    _round_bounded_allocations(rows, assigned, requested_total, floor_total, cap_total)
+    for row in rows:
+        _mark_final_bounds(row)
     final_total = sum((row["proposed_target"] for row in rows), Decimal("0"))
     if final_total != requested_total or any(
         row["proposed_target"] < row["floor_target"] or row["proposed_target"] > row["cap_target"]

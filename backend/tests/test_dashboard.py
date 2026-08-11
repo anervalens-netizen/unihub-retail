@@ -97,8 +97,8 @@ def test_dashboard_scoped_clauses_builds_agent_filter() -> None:
 
     assert "NOT st.is_cartela" in clauses
     assert "s.locatie NOT ILIKE 'TR %'" in clauses
-    assert "st.site_code = ANY(string_to_array($4::TEXT, ','))" in clauses
-    assert "st.agent = ANY(string_to_array($5::TEXT, ','))" in clauses
+    assert "st.site_code = ANY($4::TEXT[])" in clauses
+    assert "st.agent = ANY($5::TEXT[])" in clauses
 
 
 def test_normalize_filter_accepts_clean_all_scope_values() -> None:

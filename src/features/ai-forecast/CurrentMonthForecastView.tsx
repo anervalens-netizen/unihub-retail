@@ -43,7 +43,7 @@ export function CurrentMonthForecastView({ currentMonth, filters, metric }: Curr
     queryKey: queryKeys.aiForecast.current(currentMonth, { ...query, detail_type: detailSelection?.type ?? null, detail_id: detailSelection?.id ?? null }),
     queryFn: ({ signal }) => {
       if (!detailSelection) throw new Error('Nu exista selectie.');
-      return getAiForecastCurrent({ ...query, asm: detailSelection.type === 'manager' ? detailSelection.id : undefined, site_code: detailSelection.type === 'store' ? detailSelection.id : undefined }, signal);
+      return getAiForecastCurrent({ ...query, asm: detailSelection.type === 'manager' ? detailSelection.id : undefined, site_code: detailSelection.type === 'store' ? [detailSelection.id] : undefined }, signal);
     },
     enabled: detailSelection !== null,
     staleTime: 60_000,

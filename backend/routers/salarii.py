@@ -1,13 +1,19 @@
 from __future__ import annotations
 
-import logging
+from decimal import Decimal
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request, status
 from pydantic import Field
 from schemas.common import StrictApiModel
 
-from composition import build_salarii_service
+from composition import build_export_operations_service, build_salarii_service
+from domain.export_operations import ExportOperationCapacityError
+from models import ExportOperationResponse, ExportOperationUnavailableResponse
+from rate_limits import REPORT_EXPORT_LIMIT, rate_limit
+from schemas.salarii import SalaryExportRequest
+from services.export_operations import ExportOperationsService
+from services.exports import ExportValidationError
 from services.salarii import SalariiService
 from salary_identity import get_salary_person_id_key
 from schemas.salarii import SalaryAgentsSummaryResponse, SalaryHistoryResponse, SalaryRecordPublic
@@ -17,38 +23,30 @@ router = APIRouter(
     prefix="/salarii",
     tags=["salarii"],
 )
-logger = logging.getLogger(__name__)
-
-
-class SalaryExportAudit(StrictApiModel):
-    export_kind: Literal["store_summary", "monthly_trend", "agents_page"]
-    row_count: int = Field(ge=0, le=5000)
-
-
 class SalaryCompanyTotal(StrictApiModel):
 
     company: str | None = None
     name: str | None = None
-    total: float
+    total: Decimal
 
 
 class SalaryOverviewResponse(StrictApiModel):
 
-    total: float | None = None
+    total: Decimal | None = None
     by_company: list[SalaryCompanyTotal] = Field(default_factory=list)
     record_count: int | None = None
     agent_count: int | None = None
     agent_month_count: int | None = None
     avg_agent_month_count: int | None = None
-    avg_salary: float | None = None
+    avg_salary: Decimal | None = None
     months_span: tuple[int, int, int, int] | None = None
 
 
 class SalaryEvolutionPoint(StrictApiModel):
     month: str
-    total: float
-    mobicell: float
-    mobiup: float
+    total: Decimal
+    mobicell: Decimal
+    mobiup: Decimal
 
 
 class SalaryComparisonItem(StrictApiModel):
@@ -56,12 +54,12 @@ class SalaryComparisonItem(StrictApiModel):
     site_code: str | None
     locatie: str | None = None
     company_name: str
-    total_salary: float
+    total_salary: Decimal
     agent_count: int
     avg_agent_count: int
-    avg_salary: float
-    total_sales: float
-    ratio: float
+    avg_salary: Decimal
+    total_sales: Decimal
+    ratio: Decimal
 
 
 class SalarySummaryResponse(StrictApiModel):
@@ -72,11 +70,11 @@ class SalarySummaryResponse(StrictApiModel):
 class SalaryTrendPoint(StrictApiModel):
 
     month: str
-    total_salary: float
-    total_sales: float
+    total_salary: Decimal
+    total_sales: Decimal
     agent_count: int
     avg_agent_count: int
-    avg_salary: float
+    avg_salary: Decimal
     by_company: dict[str, object] = Field(default_factory=dict)
 
 
@@ -107,7 +105,7 @@ async def get_identity_salarii_service() -> SalariiService:
 )
 async def salarii_overview(
     company_name: str | None = Query(None),
-    site_code: str | None = Query(None),
+    site_code: list[str] | None = Query(None),
     regional: str | None = Query(None),
     asm: str | None = Query(None),
     svc: SalariiService = Depends(get_salarii_service),
@@ -118,7 +116,7 @@ async def salarii_overview(
 @router.get("/evolution", response_model=list[SalaryEvolutionPoint])
 async def salarii_evolution(
     company_name: str | None = Query(None),
-    site_code: str | None = Query(None),
+    site_code: list[str] | None = Query(None),
     regional: str | None = Query(None),
     asm: str | None = Query(None),
     svc: SalariiService = Depends(get_salarii_service),
@@ -130,7 +128,7 @@ async def salarii_evolution(
 async def agents_summary(
     q: str | None = Query(None),
     company_name: str | None = Query(None),
-    site_code: str | None = Query(None),
+    site_code: list[str] | None = Query(None),
     regional: str | None = Query(None),
     asm: str | None = Query(None),
     year: int | None = Query(None),
@@ -170,7 +168,7 @@ async def agent_history_by_retail_code(
 @router.get("/summary", response_model=SalarySummaryResponse)
 async def salarii_summary(
     company_name: str | None = Query(None),
-    site_code: str | None = Query(None),
+    site_code: list[str] | None = Query(None),
     regional: str | None = Query(None),
     asm: str | None = Query(None),
     year: int | None = Query(None),
@@ -183,7 +181,7 @@ async def salarii_summary(
 @router.get("/trend", response_model=list[SalaryTrendPoint])
 async def salarii_trend(
     company_name: str | None = Query(None),
-    site_code: str | None = Query(None),
+    site_code: list[str] | None = Query(None),
     regional: str | None = Query(None),
     asm: str | None = Query(None),
     svc: SalariiService = Depends(get_salarii_service),
@@ -204,7 +202,7 @@ async def list_records(
     company_name: str | None = Query(None),
     year: int | None = Query(None),
     month: int | None = Query(None),
-    site_code: str | None = Query(None),
+    site_code: list[str] | None = Query(None),
     limit: int = Query(100, le=2000),
     offset: int = Query(0),
     svc: SalariiService = Depends(get_identity_salarii_service),
@@ -213,18 +211,33 @@ async def list_records(
 
 
 @router.post(
-    "/audit/export",
-    status_code=status.HTTP_204_NO_CONTENT,
+    "/exports/operations",
+    response_model=ExportOperationResponse,
+    responses={
+        400: {"description": "Cerere salariala invalida"},
+        409: {"description": "Capacitate activa epuizata"},
+        503: {
+            "model": ExportOperationUnavailableResponse,
+            "description": "Publicare ARQ indisponibila sau neconfirmata",
+        },
+    },
 )
-async def audit_salary_export(
-    body: SalaryExportAudit,
+async def create_salary_export_operation(
+    body: SalaryExportRequest,
     request: Request,
-) -> Response:
+    _rate_limit: None = Depends(rate_limit(REPORT_EXPORT_LIMIT)),
+    svc: ExportOperationsService = Depends(build_export_operations_service),
+) -> ExportOperationResponse:
     claims = request.state.salary_claims
-    logger.info(
-        "sensitive_export resource=salarii subject=%s kind=%s rows=%d",
-        claims.sub,
-        body.export_kind,
-        body.row_count,
-    )
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
+    try:
+        return await svc.reserve_salary(
+            body.model_dump(mode="json"),
+            requested_by_sub=claims.sub,
+        )
+    except ExportValidationError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except ExportOperationCapacityError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Exista deja prea multe exporturi active.",
+        ) from exc

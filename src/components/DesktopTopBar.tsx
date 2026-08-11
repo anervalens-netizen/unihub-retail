@@ -1,7 +1,7 @@
 import { Filter, LogOut } from 'lucide-react';
 import type { AppFilters } from '../lib/appFilters';
 import { TAB_LABELS, MGMT_SUBTAB_LABELS, type ManagementTab, type TabId } from '../lib/tabs';
-import { ALL_FIRMS, ALL_SCOPE, ALL_STORES } from '../lib/filterValues';
+import { ALL_FIRMS, ALL_SCOPE } from '../lib/filterValues';
 import { cn } from '../lib/utils';
 
 interface Props {
@@ -22,9 +22,10 @@ export function DesktopTopBar({ activeTab, mgmtSubTab, showFilterButton, onOpenF
       ? `Management › ${MGMT_SUBTAB_LABELS[mgmtSubTab] ?? ''}`
       : (TAB_LABELS[activeTab] ?? activeTab);
 
-  const activeFilterCount = [filters.firma, filters.rm, filters.magazin, filters.agent].filter(
-    (v) => v !== ALL_FIRMS && v !== ALL_SCOPE && v !== ALL_STORES
-  ).length;
+  const activeFilterCount = Number(filters.firma !== ALL_FIRMS)
+    + Number(filters.rm !== ALL_SCOPE)
+    + Number(filters.magazin.length > 0)
+    + Number(filters.agent.length > 0);
 
   const showFilter = showFilterButton && (
     FILTER_TABS.has(activeTab)

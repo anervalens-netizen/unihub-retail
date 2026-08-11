@@ -1,7 +1,8 @@
 """Pure normalization and SQL-clause policies for Retail filter scopes."""
 from __future__ import annotations
 
-from typing import Any
+from collections.abc import Sequence
+from typing import Any, TypeAlias
 
 from retail_filters import cartela_exclusion_clause, distribution_location_clause
 
@@ -18,6 +19,8 @@ _FILTER_SENTINELS = frozenset(
     )
 )
 
+FilterInput: TypeAlias = str | Sequence[str] | None
+
 
 def normalize_filter(value: Any) -> str | None:
     if value is None:
@@ -28,13 +31,31 @@ def normalize_filter(value: Any) -> str | None:
     return cleaned
 
 
+def normalize_filter_values(value: FilterInput) -> list[str] | None:
+    """Canonicalize an exact scalar or repeated query values.
+
+    Commas are ordinary data. Multi-select values must arrive as a sequence,
+    which maps to repeated query parameters at the HTTP boundary.
+    """
+    raw_values: Sequence[str] = [value] if isinstance(value, str) else (value or [])
+    seen: set[str] = set()
+    normalized: list[str] = []
+    for raw_value in raw_values:
+        item = normalize_filter(raw_value)
+        if item is None or item in seen:
+            continue
+        seen.add(item)
+        normalized.append(item)
+    return normalized or None
+
+
 def base_filter_values(
     month: str,
-    firma: str | None,
-    regional: str | None,
-    asm: str | None,
-    site_code: str | None,
-    agent: str | None,
+    firma: FilterInput,
+    regional: FilterInput,
+    asm: FilterInput,
+    site_code: FilterInput,
+    agent: FilterInput,
 ) -> tuple[list[Any], dict[str, int]]:
     return build_scoped_params(
         [month],
@@ -49,21 +70,21 @@ def base_filter_values(
 def build_scoped_params(
     initial_params: list[Any],
     *,
-    firma: str | None,
-    regional: str | None,
-    asm: str | None,
-    site_code: str | None,
-    agent: str | None,
+    firma: FilterInput,
+    regional: FilterInput,
+    asm: FilterInput,
+    site_code: FilterInput,
+    agent: FilterInput,
 ) -> tuple[list[Any], dict[str, int]]:
     params = list(initial_params)
     positions: dict[str, int] = {}
-    normalized_site_code = normalize_filter(site_code)
+    normalized_site_code = normalize_filter_values(site_code)
     for key, value in [
-        ("firma", None if normalized_site_code else normalize_filter(firma)),
-        ("regional", None if normalized_site_code else normalize_filter(regional)),
-        ("asm", None if normalized_site_code else normalize_filter(asm)),
+        ("firma", None if normalized_site_code else normalize_filter_values(firma)),
+        ("regional", None if normalized_site_code else normalize_filter_values(regional)),
+        ("asm", None if normalized_site_code else normalize_filter_values(asm)),
         ("site_code", normalized_site_code),
-        ("agent", normalize_filter(agent)),
+        ("agent", normalize_filter_values(agent)),
     ]:
         if value is not None:
             params.append(value)
@@ -93,26 +114,26 @@ def scoped_clauses(
     has_site_scope = "site_code" in positions
 
     if "firma" in positions and not has_site_scope:
-        clauses.append(f"{col(store_alias, 'firma')} = ANY(string_to_array(${positions['firma']}::TEXT, ','))")
+        clauses.append(f"{col(store_alias, 'firma')} = ANY(${positions['firma']}::TEXT[])")
     if "regional" in positions and not has_site_scope:
-        clauses.append(f"{col(store_alias, 'regional')} = ANY(string_to_array(${positions['regional']}::TEXT, ','))")
+        clauses.append(f"{col(store_alias, 'regional')} = ANY(${positions['regional']}::TEXT[])")
     if "asm" in positions and not has_site_scope:
-        clauses.append(f"{col(store_alias, 'asm')} = ANY(string_to_array(${positions['asm']}::TEXT, ','))")
+        clauses.append(f"{col(store_alias, 'asm')} = ANY(${positions['asm']}::TEXT[])")
     if "site_code" in positions:
-        clauses.append(f"{col(site_alias, 'site_code')} = ANY(string_to_array(${positions['site_code']}::TEXT, ','))")
+        clauses.append(f"{col(site_alias, 'site_code')} = ANY(${positions['site_code']}::TEXT[])")
     if "agent" in positions and agent_alias is not None:
-        clauses.append(f"{col(agent_alias, 'agent')} = ANY(string_to_array(${positions['agent']}::TEXT, ','))")
+        clauses.append(f"{col(agent_alias, 'agent')} = ANY(${positions['agent']}::TEXT[])")
 
     return clauses
 
 
 def where_clauses(
     month: str,
-    firma: str | None,
-    regional: str | None,
-    asm: str | None,
-    site_code: str | None,
-    agent: str | None = None,
+    firma: FilterInput,
+    regional: FilterInput,
+    asm: FilterInput,
+    site_code: FilterInput,
+    agent: FilterInput = None,
     include_agent: bool = False,
 ) -> tuple[list[str], list[Any]]:
     params, positions = base_filter_values(
@@ -131,11 +152,11 @@ def where_clauses(
 
 def transaction_filter_parts(
     month: str,
-    firma: str | None,
-    regional: str | None,
-    asm: str | None,
-    site_code: str | None,
-    agent: str | None,
+    firma: FilterInput,
+    regional: FilterInput,
+    asm: FilterInput,
+    site_code: FilterInput,
+    agent: FilterInput,
 ) -> tuple[list[str], list[Any]]:
     params, positions = base_filter_values(
         month, firma, regional, asm, site_code, agent

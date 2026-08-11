@@ -69,6 +69,8 @@
     "061_insight_finance_v2_period_pushdown.sql": "7dff26f8268923cf644dcd00a1d5292f53f34b3338952d0b4be645f8bcd4b4eb",
     "062_grile_v2_read_contract.sql": "146ac39fc6c2ec7d3f0ddc599d60e43bdbe76ad0344fe837e4439841ebb05ccc",
     "063_leave_request_date_contract.sql": "dba80346ea5fe02213a0e39ebf9c3f408168b9b048efba75e78fff6544487df4",
-    "064_ai_forecast_cutoff_read_model.sql": "3fe8d8f32d51ec8a25450d3fc45bc7d64f8bdfb663949054862ea41a1805b6f4"
+    "064_ai_forecast_cutoff_read_model.sql": "3fe8d8f32d51ec8a25450d3fc45bc7d64f8bdfb663949054862ea41a1805b6f4",
+    "065_salary_export_evidence.sql": "c6bf02313f4dfeeebe3796cdf6607a1e5e797ca6aa0d76b4ee654a5773cd42bf",
+    "066_salary_export_authority.sql": "ab13ccc87b3da126f9935f1bb4ee66773afcc01417e08e3193242ddc2ed88fa5"
   }
 }

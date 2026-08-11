@@ -119,15 +119,16 @@ async def test_incentive_export_handles_missing_campaign_multiple_periods_and_un
 
     monkeypatch.setattr(service, "_campaign_exclusions_by_month", exclusions)
     monkeypatch.setattr(exports_module, "get_incentive_campaign", campaign)
+    multiplier_loader = AsyncMock(
+        return_value=(
+            {"S3": 0.0, "S4": 0.0},
+            {"S3": None, "S4": None},
+        )
+    )
     monkeypatch.setattr(
         exports_module,
-            "get_store_incentive_multipliers",
-        AsyncMock(
-            return_value=(
-                {"S3": 0.0, "S4": 0.0},
-                {"S3": None, "S4": None},
-            )
-        ),
+        "get_store_incentive_multipliers",
+        multiplier_loader,
     )
 
     result = await service.build_report(
@@ -146,6 +147,16 @@ async def test_incentive_export_handles_missing_campaign_multiple_periods_and_un
     )
 
     assert exclusion_calls == [[1], [20]]
+    multiplier_loader.assert_awaited_once_with(
+        "conn",
+        "2026-06",
+        firma=None,
+        regional=None,
+        asm=None,
+        site_code=["S3", "S4"],
+        current_scope=True,
+        include_closed_stores=True,
+    )
     assert repo.calls == [
         {
             "month": "2026-06",
@@ -264,8 +275,8 @@ async def test_selected_day_campaign_exclusions_split_ranges_and_control_actuals
             "firma": ["Mobiup", ""],
             "regional": ["RM 1"],
             "asm": ["ASM 1"],
-            "site_code": ["S1"],
-            "agent": ["Agent 1"],
+            "site_code": ["S1", "S2"],
+            "agent": ["Agent 1", "Agent 2"],
         },
         selected_days=[2, 4, 31],
     )
@@ -285,8 +296,8 @@ async def test_selected_day_campaign_exclusions_split_ranges_and_control_actuals
     assert first["firma"] is None
     assert first["regional"] is None
     assert first["asm"] is None
-    assert first["site_code"] == "S1"
-    assert first["agent"] == "Agent 1"
+    assert first["site_code"] == ["S1", "S2"]
+    assert first["agent"] == ["Agent 1", "Agent 2"]
 
 
 @pytest.mark.asyncio

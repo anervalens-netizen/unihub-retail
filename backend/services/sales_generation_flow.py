@@ -19,6 +19,10 @@ from services.sales_generation import (
     copy_staged_generation_to_live,
     manifest_requires_override,
 )
+from services.sales_generation_artifacts import (
+    find_recoverable_sales_generation_for_artifact_retain,
+    mark_sales_generation_artifact_retained,
+)
 
 
 async def load_current_sales_manifest(
@@ -126,44 +130,6 @@ async def attach_sales_generation_source(
     )
     if updated is None:
         raise SalesGenerationConflictError("Sales source cannot be attached by a stale worker")
-
-
-async def mark_sales_generation_artifact_retained(
-    conn: asyncpg.Connection,
-    *,
-    snapshot_id: int,
-    generation_token: str,
-    owner_id: str,
-    retained_path: str,
-    source_sha256: str,
-    source_byte_size: int,
-) -> None:
-    updated = await conn.fetchval(
-        """
-        UPDATE import_snapshots
-        SET source_spool_path = $4,
-            source_artifact_retained_path = $4,
-            source_artifact_state = 'artifact_retained',
-            source_artifact_sha256 = $5,
-            source_artifact_bytes = $6,
-            source_artifact_retained_at = now(),
-            heartbeat_at = now()
-        WHERE id = $1
-          AND generation_token = $2::uuid
-          AND owner_id = $3::uuid
-          AND status = 'processing'
-          AND source_artifact_state = 'artifact_retaining'
-        RETURNING id
-        """,
-        snapshot_id,
-        generation_token,
-        owner_id,
-        retained_path,
-        source_sha256,
-        source_byte_size,
-    )
-    if updated is None:
-        raise SalesGenerationConflictError("Sales artifact retain fence was lost")
 
 
 async def claim_validated_sales_generation(

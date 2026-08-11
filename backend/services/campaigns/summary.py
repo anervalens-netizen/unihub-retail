@@ -6,6 +6,7 @@ from decimal import Decimal
 from typing import Any, Literal
 
 from business_rules import PROMOTION_DISCOUNT_RATE
+from domain.filter_scope import FilterInput
 from schemas.campaigns import PromoIncentiveSummary
 from services.campaigns.contracts import CampaignContext
 from services.campaigns.context import load_campaign_context
@@ -23,10 +24,10 @@ from services.promotion_evaluation import (
 async def get_store_incentive_multipliers(
     conn: Any,
     month: str,
-    firma: str | None,
-    regional: str | None,
-    asm: str | None,
-    site_code: str | None,
+    firma: FilterInput,
+    regional: FilterInput,
+    asm: FilterInput,
+    site_code: FilterInput,
     current_scope: bool = False,
     include_closed_stores: bool = False,
     cutoff_date: date | None = None,
@@ -333,8 +334,8 @@ async def fetch_promo_incentive_summary(
     firma: str | None,
     regional: str | None,
     asm: str | None,
-    site_code: str | None,
-    agent: str | None,
+    site_code: FilterInput,
+    agent: FilterInput,
     current_scope: bool = False,
     include_closed_stores: bool = False,
     campaign_context: CampaignContext | None = None,
