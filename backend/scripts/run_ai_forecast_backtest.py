@@ -23,11 +23,12 @@ from scripts.run_ai_forecast_xreg import (
     DEFAULT_EXCLUDED_SITE_CODES,
     DEFAULT_OUTPUT_DIR,
     MIN_CONTEXT,
+    HistoricalCohort,
     MetricName,
     StoreInfo,
     add_month,
     build_payload,
-    fetch_active_stores,
+    fetch_asof_stores,
     fetch_monthly_sales,
     metric_value,
     month_range,
@@ -487,6 +488,38 @@ def simple_api_from_xreg_url(xreg_api_url: str) -> str:
     return xreg_api_url
 
 
+async def load_historical_backtest_inputs(
+    conn: asyncpg.Connection,
+    *,
+    args: argparse.Namespace,
+    target_months: list[str],
+) -> tuple[dict[str, HistoricalCohort], dict[tuple[str, str], Decimal]]:
+    cohorts: dict[str, HistoricalCohort] = {}
+    for target_month in target_months:
+        cohorts[target_month] = await fetch_asof_stores(
+            conn,
+            source_month=add_month(target_month, -1),
+            excluded_site_codes=args.exclude_site_code,
+        )
+    site_codes = sorted(
+        {
+            store.site_code
+            for cohort in cohorts.values()
+            for store in cohort.stores
+        }
+    )
+    if not site_codes:
+        raise RuntimeError("Nu exista magazine confirmate in cohortele istorice.")
+    sales = await fetch_monthly_sales(
+        conn,
+        site_codes=site_codes,
+        start_month=args.history_start_month,
+        end_month=args.end_month,
+        metric=args.metric,
+    )
+    return cohorts, sales
+
+
 async def run(args: argparse.Namespace) -> int:
     load_dotenv(args.env_file)
     database_url = os.environ.get("DATABASE_URL")
@@ -505,16 +538,12 @@ async def run(args: argparse.Namespace) -> int:
 
     conn = await asyncpg.connect(database_url)
     all_rows: list[dict[str, Any]] = []
+    cohorts: dict[str, HistoricalCohort] = {}
     try:
-        stores = await fetch_active_stores(conn, excluded_site_codes=args.exclude_site_code)
-        if not stores:
-            raise RuntimeError("Nu exista magazine active pentru backtest.")
-        sales = await fetch_monthly_sales(
+        cohorts, sales = await load_historical_backtest_inputs(
             conn,
-            site_codes=[store.site_code for store in stores],
-            start_month=args.history_start_month,
-            end_month=args.end_month,
-            metric=args.metric,
+            args=args,
+            target_months=target_months,
         )
     finally:
         await conn.close()
@@ -522,6 +551,7 @@ async def run(args: argparse.Namespace) -> int:
     for model in models:
         print(f"Model {model}: start")
         for target_month in target_months:
+            stores = list(cohorts[target_month].stores)
             source_month = add_month(target_month, -1)
             if model in BASELINE_MODELS:
                 month_rows = build_baseline_rows(
@@ -618,6 +648,7 @@ async def run(args: argparse.Namespace) -> int:
     summary_path = output_dir / f"backtest_comparison_summary_{suffix}.csv"
     metrics_path = output_dir / f"backtest_comparison_model_metrics_{suffix}.csv"
     overall_path = output_dir / f"backtest_comparison_overall_{suffix}.json"
+    cohort_path = output_dir / f"backtest_comparison_cohorts_{suffix}.json"
 
     store_fields = [
         "model",
@@ -686,11 +717,29 @@ async def run(args: argparse.Namespace) -> int:
         if row["group_level"] == "network"
     ]
     overall_path.write_text(json.dumps(overall, indent=2, default=str), encoding="utf-8")
+    cohort_path.write_text(
+        json.dumps(
+            {
+                target_month: {
+                    "source_month": cohort.source_month,
+                    "source_generation": cohort.source_generation,
+                    "source_generation_sha256": cohort.source_generation_sha256,
+                    "cohort_sha256": cohort.cohort_sha256,
+                    "store_count": len(cohort.stores),
+                }
+                for target_month, cohort in sorted(cohorts.items())
+            },
+            indent=2,
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
 
     print(f"Output store: {store_path.resolve()}")
     print(f"Output summary: {summary_path.resolve()}")
     print(f"Output metrics: {metrics_path.resolve()}")
     print(f"Output overall: {overall_path.resolve()}")
+    print(f"Output cohorts: {cohort_path.resolve()}")
     return 0
 
 

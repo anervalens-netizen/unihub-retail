@@ -11,9 +11,13 @@ from services.ai_forecast_cohort import (
     OfficialTarget,
     OrgAssignment,
     ReportingObservation,
+    authority_generation,
+    resolution_sha256,
     resolve_asof_cohort,
     sanitized_resolution_manifest,
+    source_month_cutoff,
 )
+from scripts.run_ai_forecast_xreg import fetch_asof_stores
 
 
 CUTOFF = datetime(2026, 7, 31, 20, 59, 59, tzinfo=timezone.utc)
@@ -145,3 +149,77 @@ def test_naive_cutoff_and_events_are_rejected() -> None:
         )
     with pytest.raises(CohortAuthorityError, match="aware"):
         resolution(events=[ActivityEvent("NAIVE", datetime(2026, 7, 1), True)])
+
+
+def test_authority_generation_and_cohort_hash_are_order_independent() -> None:
+    reports = [report("SECOND"), report("FIRST")]
+    assignments = [org("SECOND"), org("FIRST")]
+    first = authority_generation(
+        source_month="2026-07",
+        reporting=reports,
+        targets=[],
+        activity_events=[],
+        org_assignments=assignments,
+    )
+    second = authority_generation(
+        source_month="2026-07",
+        reporting=list(reversed(reports)),
+        targets=[],
+        activity_events=[],
+        org_assignments=list(reversed(assignments)),
+    )
+    assert first == second
+    assert resolution_sha256(
+        resolution(reporting=reports, assignments=assignments)
+    ) == resolution_sha256(
+        resolution(
+            reporting=list(reversed(reports)),
+            assignments=list(reversed(assignments)),
+        )
+    )
+    assert source_month_cutoff("2026-07").astimezone(timezone.utc) == datetime(
+        2026, 7, 31, 20, 59, 59, 999999, tzinfo=timezone.utc
+    )
+
+
+@pytest.mark.asyncio
+async def test_backtest_store_loader_never_reads_current_store_master() -> None:
+    class HistoricalConnection:
+        def __init__(self) -> None:
+            self.queries: list[str] = []
+
+        async def fetch(self, query: str, *_args: object) -> list[dict[str, object]]:
+            self.queries.append(query)
+            if "reporting_agent_month" in query:
+                return [
+                    {
+                        "site_code": "HIST",
+                        "month": "2026-07",
+                        "firma": "Mobiup",
+                        "locatie": "Historical Store",
+                        "total_sales": "100",
+                    }
+                ]
+            if "store_org_assignments" in query:
+                return [
+                    {
+                        "site_code": "HIST",
+                        "regional": "RM OLD",
+                        "asm": "ASM OLD",
+                        "valid_from_month": "2026-01",
+                        "valid_to_month": "2026-07",
+                    }
+                ]
+            return []
+
+    connection = HistoricalConnection()
+    cohort = await fetch_asof_stores(  # type: ignore[arg-type]
+        connection,
+        source_month="2026-07",
+        excluded_site_codes=[],
+    )
+    assert [(row.site_code, row.locatie, row.regional) for row in cohort.stores] == [
+        ("HIST", "Historical Store", "RM OLD")
+    ]
+    assert len(cohort.cohort_sha256) == 64
+    assert all("FROM stores\n" not in query for query in connection.queries)

@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 import hashlib
 import json
 from typing import Literal, Sequence
@@ -26,6 +26,7 @@ class ReportingObservation:
     month: str
     firma: str
     total_sales: str
+    locatie: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -100,6 +101,57 @@ def _canonical_hash(value: object) -> str:
         sort_keys=True,
     ).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
+
+
+def source_month_cutoff(source_month: str) -> datetime:
+    """Return the last representable instant of a Bucharest business month."""
+    source_month = _month(source_month)
+    year, month = (int(part) for part in source_month.split("-"))
+    if month == 12:
+        next_month = datetime(year + 1, 1, 1, tzinfo=BUCHAREST)
+    else:
+        next_month = datetime(year, month + 1, 1, tzinfo=BUCHAREST)
+    return next_month - timedelta(microseconds=1)
+
+
+def authority_generation(
+    *,
+    source_month: str,
+    reporting: Sequence[ReportingObservation],
+    targets: Sequence[OfficialTarget],
+    activity_events: Sequence[ActivityEvent],
+    org_assignments: Sequence[OrgAssignment],
+) -> tuple[str, str]:
+    """Fingerprint only historical authority inputs, independent of row order."""
+    source_month = _month(source_month)
+    payload = {
+        "source_month": source_month,
+        "reporting": sorted(
+            (row.site_code, row.month, row.firma, row.total_sales, row.locatie)
+            for row in reporting
+        ),
+        "targets": sorted((row.site_code, row.month) for row in targets),
+        "activity_events": sorted(
+            (
+                row.site_code,
+                _aware(row.occurred_at).isoformat(),
+                row.is_active,
+            )
+            for row in activity_events
+        ),
+        "org_assignments": sorted(
+            (
+                row.site_code,
+                row.regional,
+                row.asm,
+                row.valid_from_month,
+                row.valid_to_month or "",
+            )
+            for row in org_assignments
+        ),
+    }
+    digest = _canonical_hash(payload)
+    return f"asof-{source_month}-{digest[:32]}", digest
 
 
 def _covers(assignment: OrgAssignment, month: str) -> bool:
@@ -266,11 +318,11 @@ async def fetch_asof_evidence(
     """Read only historical authorities. The current `stores` table is absent by design."""
     reporting_rows = await connection.fetch(
         """
-        SELECT site_code, import_month AS month, firma,
+        SELECT site_code, import_month AS month, firma, locatie,
                SUM(total_sales)::TEXT AS total_sales
         FROM reporting_agent_month
         WHERE import_month <= $1
-        GROUP BY site_code, import_month, firma
+        GROUP BY site_code, import_month, firma, locatie
         """,
         source_month,
     )
@@ -407,3 +459,8 @@ def sanitized_resolution_manifest(resolution: CohortResolution) -> dict[str, obj
             for row in resolution.rows
         ],
     }
+
+
+def resolution_sha256(resolution: CohortResolution) -> str:
+    """Stable cohort digest derived from sanitized row evidence."""
+    return _canonical_hash(sanitized_resolution_manifest(resolution))

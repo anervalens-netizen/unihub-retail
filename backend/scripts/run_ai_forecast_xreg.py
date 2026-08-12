@@ -27,6 +27,15 @@ from services.ai_forecast_contract import (
     validate_forecast_request,
     validate_forecast_response,
 )
+from services.ai_forecast_cohort import (
+    CohortAuthorityError,
+    CohortResolution,
+    authority_generation,
+    fetch_asof_evidence,
+    resolution_sha256,
+    resolve_asof_cohort,
+    source_month_cutoff,
+)
 from services.spreadsheet_safety import csv_cell_value
 
 
@@ -45,6 +54,16 @@ class StoreInfo:
     firma: str
     regional: str
     asm: str
+
+
+@dataclass(frozen=True)
+class HistoricalCohort:
+    source_month: str
+    stores: tuple[StoreInfo, ...]
+    resolution: CohortResolution
+    source_generation: str
+    source_generation_sha256: str
+    cohort_sha256: str
 
 
 def add_month(month: str, offset: int) -> str:
@@ -212,28 +231,73 @@ def pct(numerator: Decimal, denominator: Decimal) -> Decimal | None:
     return (numerator / denominator * Decimal("100")).quantize(Decimal("0.01"))
 
 
-async def fetch_active_stores(conn: asyncpg.Connection, *, excluded_site_codes: list[str]) -> list[StoreInfo]:
-    rows = await conn.fetch(
-        """
-        SELECT site_code, locatie, firma, regional, asm
-        FROM stores
-        WHERE is_active = true
-          AND locatie NOT ILIKE 'TR %'
-          AND NOT (site_code = ANY($1::TEXT[]))
-        ORDER BY regional, locatie, site_code
-        """,
-        excluded_site_codes,
+async def fetch_asof_stores(
+    conn: asyncpg.Connection,
+    *,
+    source_month: str,
+    excluded_site_codes: list[str],
+) -> HistoricalCohort:
+    """Resolve forecast stores only from historical, cutoff-bounded authority."""
+    cutoff_at = source_month_cutoff(source_month)
+    reporting, targets, events, assignments = await fetch_asof_evidence(
+        conn,
+        source_month=source_month,
+        cutoff_at=cutoff_at,
     )
-    return [
+    manually_excluded = set(excluded_site_codes)
+    transfer_sites = {
+        row.site_code
+        for row in reporting
+        if row.month == source_month and row.locatie.upper().startswith("TR ")
+    }
+    excluded = manually_excluded | transfer_sites
+    reporting = [row for row in reporting if row.site_code not in excluded]
+    targets = [row for row in targets if row.site_code not in excluded]
+    events = [row for row in events if row.site_code not in excluded]
+    assignments = [row for row in assignments if row.site_code not in excluded]
+    source_generation, source_generation_sha256 = authority_generation(
+        source_month=source_month,
+        reporting=reporting,
+        targets=targets,
+        activity_events=events,
+        org_assignments=assignments,
+    )
+    resolution = resolve_asof_cohort(
+        source_month=source_month,
+        cutoff_at=cutoff_at,
+        source_generation=source_generation,
+        reporting=reporting,
+        targets=targets,
+        activity_events=events,
+        org_assignments=assignments,
+    )
+    if resolution.decision != "READY":
+        blocked = ",".join(resolution.blocked_site_codes)
+        raise CohortAuthorityError(f"historical cohort BLOCKED for {source_month}: {blocked}")
+    locations = {
+        row.site_code: row.locatie
+        for row in reporting
+        if row.month == source_month and row.locatie.strip()
+    }
+    stores = tuple(
         StoreInfo(
-            site_code=row["site_code"],
-            locatie=row["locatie"],
-            firma=row["firma"],
-            regional=row["regional"],
-            asm=row["asm"],
+            site_code=row.site_code,
+            locatie=locations.get(row.site_code, row.site_code),
+            firma=row.firma or "",
+            regional=row.regional or "",
+            asm=row.asm or "",
         )
-        for row in rows
-    ]
+        for row in resolution.rows
+        if row.is_operating is True
+    )
+    return HistoricalCohort(
+        source_month=source_month,
+        stores=stores,
+        resolution=resolution,
+        source_generation=source_generation,
+        source_generation_sha256=source_generation_sha256,
+        cohort_sha256=resolution_sha256(resolution),
+    )
 
 
 async def fetch_monthly_sales(
@@ -552,6 +616,43 @@ def write_csv(path: Path, rows: list[dict[str, Any]], fieldnames: list[str]) -> 
             writer.writerow({key: csv_cell_value(row.get(key)) for key in fieldnames})
 
 
+async def load_historical_forecast_inputs(
+    conn: asyncpg.Connection,
+    *,
+    args: argparse.Namespace,
+    target_months: list[str],
+) -> tuple[dict[str, HistoricalCohort], dict[tuple[str, str], Decimal]]:
+    cohorts: dict[str, HistoricalCohort] = {}
+    if args.operational:
+        source_month = args.source_month or add_month(args.start_month, -1)
+        cohort = await fetch_asof_stores(
+            conn,
+            source_month=source_month,
+            excluded_site_codes=args.exclude_site_code,
+        )
+        cohorts = {target_month: cohort for target_month in target_months}
+    else:
+        for target_month in target_months:
+            cohorts[target_month] = await fetch_asof_stores(
+                conn,
+                source_month=add_month(target_month, -1),
+                excluded_site_codes=args.exclude_site_code,
+            )
+    site_codes = sorted(
+        {store.site_code for cohort in cohorts.values() for store in cohort.stores}
+    )
+    if not site_codes:
+        raise RuntimeError("Nu exista magazine confirmate in cohorta istorica.")
+    sales = await fetch_monthly_sales(
+        conn,
+        site_codes=site_codes,
+        start_month=args.history_start_month,
+        end_month=args.end_month,
+        metric=args.metric,
+    )
+    return cohorts, sales
+
+
 async def run(args: argparse.Namespace) -> int:
     load_dotenv(args.env_file)
     database_url = os.environ.get("DATABASE_URL")
@@ -569,21 +670,18 @@ async def run(args: argparse.Namespace) -> int:
     all_rows: list[dict[str, Any]] = []
     summary_rows: list[dict[str, Any]] = []
     skipped_rows: list[dict[str, Any]] = []
+    cohorts: dict[str, HistoricalCohort] = {}
     try:
-        stores = await fetch_active_stores(conn, excluded_site_codes=args.exclude_site_code)
-        if not stores:
-            raise RuntimeError("Nu exista magazine active pentru forecast.")
-        site_codes = [store.site_code for store in stores]
-        sales = await fetch_monthly_sales(
+        cohorts, sales = await load_historical_forecast_inputs(
             conn,
-            site_codes=site_codes,
-            start_month=args.history_start_month,
-            end_month=args.end_month,
-            metric=args.metric,
+            args=args,
+            target_months=target_months,
         )
 
         if args.operational:
-            source_month = args.source_month or add_month(args.start_month, -1)
+            cohort = cohorts[target_months[0]]
+            stores = list(cohort.stores)
+            source_month = cohort.source_month
             payload, meta_rows, skipped = build_payload(
                 stores=stores,
                 sales=sales,
@@ -653,6 +751,8 @@ async def run(args: argparse.Namespace) -> int:
                 )
         else:
             for target_month in target_months:
+                cohort = cohorts[target_month]
+                stores = list(cohort.stores)
                 payload, meta_rows, skipped = build_payload(
                     stores=stores,
                     sales=sales,
@@ -781,6 +881,16 @@ async def run(args: argparse.Namespace) -> int:
         "forecast_sales": str(overall_forecast),
         "bias_pct": str(pct(overall_forecast - overall_actual, overall_actual)),
         "wape_pct": str(pct(overall_abs_error, overall_actual)),
+        "cohorts": {
+            target_month: {
+                "source_month": cohort.source_month,
+                "source_generation": cohort.source_generation,
+                "source_generation_sha256": cohort.source_generation_sha256,
+                "cohort_sha256": cohort.cohort_sha256,
+                "store_count": len(cohort.stores),
+            }
+            for target_month, cohort in sorted(cohorts.items())
+        },
     }
     (output_dir / f"xreg_backtest_overall_{suffix}.json").write_text(
         json.dumps(overall, indent=2),
