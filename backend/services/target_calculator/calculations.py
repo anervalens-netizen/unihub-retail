@@ -157,6 +157,11 @@ def _box_allocations_at(
     }
 
 
+def _decimal_breakpoint_equal(left: Decimal, right: Decimal) -> bool:
+    """Ignore only division dust far below one cent, never a rounded cent gap."""
+    return abs(left - right) <= Decimal("1e-30")
+
+
 def _reconcile_box_residual(
     rows: list[dict[str, Any]],
     allocations: dict[int, Decimal],
@@ -186,9 +191,7 @@ def _solve_box_interval(
     active = [
         index
         for index in ordered
-        if rows[index]["floor_target"]
-        < midpoint * weights[index]
-        < rows[index]["cap_target"]
+        if rows[index]["floor_target"] < midpoint * weights[index] < rows[index]["cap_target"]
     ]
     if not active:
         return None
@@ -238,30 +241,45 @@ def _solve_positive_box(
             }
         )
 
-        previous_point = breakpoints[0]
-        previous_total = sum(
-            _box_allocations_at(rows, ordered, weights, previous_point).values(),
-            Decimal("0"),
-        )
-        if target <= previous_total:
+        lower_index = 0
+        upper_index = len(breakpoints) - 1
+        previous_point = breakpoints[lower_index]
+        previous_allocations = _box_allocations_at(rows, ordered, weights, previous_point)
+        previous_total = sum(previous_allocations.values(), Decimal("0"))
+        if _decimal_breakpoint_equal(target, previous_total):
+            return previous_allocations
+        if target < previous_total:
             return {index: rows[index]["floor_target"] for index in ordered}
 
-        for point in breakpoints[1:]:
-            point_allocations = _box_allocations_at(rows, ordered, weights, point)
-            point_total = sum(point_allocations.values(), Decimal("0"))
-            if target > point_total:
-                previous_point = point
-                previous_total = point_total
-                continue
-            if target == point_total:
-                return point_allocations
-            if point_total == previous_total:
-                raise TargetBudgetInfeasibleError(target, floor_total, cap_total)
-            allocations = _solve_box_interval(
-                rows, ordered, weights, target, previous_point, point
+        while upper_index - lower_index > 1:
+            middle_index = (lower_index + upper_index) // 2
+            middle_allocations = _box_allocations_at(
+                rows, ordered, weights, breakpoints[middle_index]
             )
-            if allocations is None:
-                raise TargetBudgetInfeasibleError(target, floor_total, cap_total)
+            middle_total = sum(middle_allocations.values(), Decimal("0"))
+            if _decimal_breakpoint_equal(target, middle_total):
+                return middle_allocations
+            if target > middle_total:
+                lower_index = middle_index
+            else:
+                upper_index = middle_index
+
+        previous_point = breakpoints[lower_index]
+        point = breakpoints[upper_index]
+        previous_allocations = _box_allocations_at(rows, ordered, weights, previous_point)
+        point_allocations = _box_allocations_at(rows, ordered, weights, point)
+        previous_total = sum(previous_allocations.values(), Decimal("0"))
+        point_total = sum(point_allocations.values(), Decimal("0"))
+        if _decimal_breakpoint_equal(target, previous_total):
+            return previous_allocations
+        if _decimal_breakpoint_equal(target, point_total):
+            return point_allocations
+        if _decimal_breakpoint_equal(point_total, previous_total):
+            raise TargetBudgetInfeasibleError(target, floor_total, cap_total)
+        allocations = _solve_box_interval(
+            rows, ordered, weights, target, previous_point, point
+        )
+        if allocations is not None:
             return allocations
 
     raise TargetBudgetInfeasibleError(target, floor_total, cap_total)
