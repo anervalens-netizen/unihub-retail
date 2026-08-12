@@ -1,14 +1,15 @@
 {
   "version": 1,
   "objective": "UR-CLOSE-20260812",
-  "revision": 3,
+  "revision": 4,
   "baseline_source_sha": "0be82b430e55b7414babf470abe3fc5404b6cdc9",
-  "contract_content_commit": "5c981b3434fd950396790ed33e18bd7810079983",
-  "created_at": "2026-08-12T23:35:00+03:00",
+  "contract_content_commit": "87e9c9f993a5e30db6691625ba8bb875808b2aaa",
+  "supersedes_lock_commit": "aa3435c1c33261806d7676c881a6a5eb6fe30bf9",
+  "created_at": "2026-08-13T00:05:00+03:00",
   "plan": {
     "path": "docs/exec-plans/active/UR-CLOSE-20260812.md",
-    "git_blob": "4da6c5477c6a687973ecb00a5ca75c991051c011",
-    "sha256": "ca796eb59e26477034714e192ae11d78eeb86cc2e276e88292c559550a428d8e"
+    "git_blob": "f800ce5adf344aac2aa679552e9fcad7bedc321a",
+    "sha256": "4da4fc2be801712b9d3ef57011c845673a78a5502f7c0345fc636773aca8503c"
   },
   "assets": [
     {
@@ -17,9 +18,9 @@
       "sha256": "da22edf80ee1d43ad379ccc31e120f79efa787c42530cbf56dc3b6bea5a38ffb"
     },
     {
-      "path": "docs/contracts/business-golden-v1.json",
-      "git_blob": "1723b95bcb3ec58e0f3b9adda14b5f4d150d570d",
-      "sha256": "ac267e2d80ec3c74ee71a2f7cd790b80dc3930966b197b44d5865df1897bc6b2"
+      "path": "docs/contracts/business-golden-v2.json",
+      "git_blob": "927c2446a48d89655a274568e63af5307a02f119",
+      "sha256": "9ec45c2b5e45d6e8282e0df3a486b915c20c2eaca78d4c76a41ad44bee61ac71"
     },
     {
       "path": "scripts/frontend-critical-coverage.json",
@@ -40,6 +41,11 @@
       "path": "scripts/ts-function-complexity-ratchet.json",
       "git_blob": "e7ea8cb5af8f772e5cdb465c82307260c77806c1",
       "sha256": "24b62ab038902bad133433c681f6c0408f1d00c9dfe3dff202f7290b3dad7363"
+    },
+    {
+      "path": "scripts/python-complexity-contract-v1.json",
+      "git_blob": "01ea06ffe8ae550cc0e6a4bea3d5fc0dd481a897",
+      "sha256": "6711767bb97c6f969f02af37566e1475eca32402928ce5bdb8a3af56399e274c"
     }
   ],
   "allowed_plan_mutations_without_relock": [
