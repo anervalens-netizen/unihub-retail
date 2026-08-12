@@ -1,0 +1,78 @@
+{
+  "version": 2,
+  "source": "backend/services/target_calculator/calculations.py",
+  "baseline_source_sha": "0be82b430e55b7414babf470abe3fc5404b6cdc9",
+  "rule": "Each selector must match exactly once in the candidate source; every mutation runs only its named test in an isolated temporary copy and must fail.",
+  "mutations": [
+    {
+      "id": "money_half_up",
+      "function": "money",
+      "selector": "rounding=ROUND_HALF_UP",
+      "replacement": "rounding=ROUND_FLOOR",
+      "killing_test": "test_money_half_up_boundary"
+    },
+    {
+      "id": "floor_strict",
+      "function": "_clip_box_value",
+      "selector": "value < row[\"floor_target\"]",
+      "replacement": "value > row[\"floor_target\"]",
+      "killing_test": "test_floor_clipping_strict_direction"
+    },
+    {
+      "id": "cap_strict",
+      "function": "_clip_box_value",
+      "selector": "value > row[\"cap_target\"]",
+      "replacement": "value < row[\"cap_target\"]",
+      "killing_test": "test_cap_clipping_strict_direction"
+    },
+    {
+      "id": "budget_floor_inclusive",
+      "function": "allocate_with_bounds",
+      "selector": "requested_total < floor_total",
+      "replacement": "requested_total <= floor_total",
+      "killing_test": "test_budget_equal_floor_is_feasible"
+    },
+    {
+      "id": "budget_cap_inclusive",
+      "function": "allocate_with_bounds",
+      "selector": "requested_total > cap_total",
+      "replacement": "requested_total >= cap_total",
+      "killing_test": "test_budget_equal_cap_is_feasible"
+    },
+    {
+      "id": "active_floor_strict",
+      "function": "_solve_box_interval",
+      "selector": "rows[index][\"floor_target\"] < midpoint * weights[index]",
+      "replacement": "rows[index][\"floor_target\"] <= midpoint * weights[index]",
+      "killing_test": "test_active_floor_breakpoint_boundary"
+    },
+    {
+      "id": "active_cap_strict",
+      "function": "_solve_box_interval",
+      "selector": "midpoint * weights[index] < rows[index][\"cap_target\"]",
+      "replacement": "midpoint * weights[index] <= rows[index][\"cap_target\"]",
+      "killing_test": "test_active_cap_breakpoint_boundary"
+    },
+    {
+      "id": "zero_reserve_boundary",
+      "function": "_solve_box_allocations",
+      "selector": "requested_total <= weighted_limit",
+      "replacement": "requested_total < weighted_limit",
+      "killing_test": "test_zero_weight_reserve_at_weighted_limit"
+    },
+    {
+      "id": "fractional_remainder_descending",
+      "function": "_round_bounded_allocations",
+      "ast_selector": "sorted.key.lambda.tuple[0].UnaryOp(USub,candidate[0])",
+      "replacement_expression": "candidate[0]",
+      "killing_test": "test_largest_fractional_remainder_gets_cent"
+    },
+    {
+      "id": "site_code_tiebreak",
+      "function": "_round_bounded_allocations",
+      "ast_selector": "sorted.key.lambda.tuple[1].candidate[1]",
+      "replacement_expression": "candidate[2]",
+      "killing_test": "test_equal_remainder_uses_site_code_not_input_order"
+    }
+  ]
+}

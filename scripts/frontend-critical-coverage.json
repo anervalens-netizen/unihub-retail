@@ -1,0 +1,507 @@
+{
+  "version": 1,
+  "baseline_source_sha": "0be82b430e55b7414babf470abe3fc5404b6cdc9",
+  "coverage_thresholds": {
+    "global": {
+      "statements": 65,
+      "branches": 55,
+      "functions": 55,
+      "lines": 67
+    },
+    "each_critical_file": {
+      "lines": 70,
+      "branches": 60
+    },
+    "changed_critical_lines": 80
+  },
+  "lifecycle_case_definitions": {
+    "allowed": {
+      "required": true,
+      "meaning": "allowed"
+    },
+    "denied": {
+      "required": true,
+      "meaning": "denied"
+    },
+    "loading": {
+      "required": true,
+      "meaning": "loading"
+    },
+    "success": {
+      "required": true,
+      "meaning": "success"
+    },
+    "empty": {
+      "required": true,
+      "meaning": "empty"
+    },
+    "401_redirect_once": {
+      "required": true,
+      "meaning": "401 redirect once"
+    },
+    "403_safe": {
+      "required": true,
+      "meaning": "403 safe"
+    },
+    "409_retry": {
+      "required": true,
+      "meaning": "409 retry"
+    },
+    "422_useful": {
+      "required": true,
+      "meaning": "422 useful"
+    },
+    "500_generic": {
+      "required": true,
+      "meaning": "500 generic"
+    },
+    "abort_unmount": {
+      "required": true,
+      "meaning": "abort unmount"
+    },
+    "timeout_retry": {
+      "required": true,
+      "meaning": "timeout retry"
+    },
+    "subject_switch_logout": {
+      "required": true,
+      "meaning": "subject switch logout"
+    },
+    "keyboard": {
+      "required": true,
+      "meaning": "keyboard"
+    },
+    "mobile": {
+      "required": true,
+      "meaning": "mobile"
+    }
+  },
+  "groups": [
+    {
+      "id": "salary",
+      "files": [
+        "src/components/SalariiSubtab.tsx",
+        "src/components/SalaryDrawer.tsx",
+        "src/components/AsmSalaryGrila.tsx"
+      ],
+      "cases": {
+        "allowed": "fe.salary.allowed",
+        "denied": "fe.salary.denied",
+        "loading": "fe.salary.loading",
+        "success": "fe.salary.success",
+        "empty": "fe.salary.empty",
+        "401_redirect_once": "fe.salary.401_redirect_once",
+        "403_safe": "fe.salary.403_safe",
+        "409_retry": "fe.salary.409_retry",
+        "422_useful": "fe.salary.422_useful",
+        "500_generic": "fe.salary.500_generic",
+        "abort_unmount": "fe.salary.abort_unmount",
+        "timeout_retry": "fe.salary.timeout_retry",
+        "subject_switch_logout": "fe.salary.subject_switch_logout",
+        "keyboard": "fe.salary.keyboard",
+        "mobile": "fe.salary.mobile"
+      }
+    },
+    {
+      "id": "imports",
+      "files": [
+        "src/features/settings/ImportsView.tsx",
+        "src/features/settings/hooks/useSettingsImports.ts",
+        "src/features/settings/imports/ErpReconciliationResult.tsx"
+      ],
+      "cases": {
+        "allowed": "fe.imports.allowed",
+        "denied": "fe.imports.denied",
+        "loading": "fe.imports.loading",
+        "success": "fe.imports.success",
+        "empty": "fe.imports.empty",
+        "401_redirect_once": "fe.imports.401_redirect_once",
+        "403_safe": "fe.imports.403_safe",
+        "409_retry": "fe.imports.409_retry",
+        "422_useful": "fe.imports.422_useful",
+        "500_generic": "fe.imports.500_generic",
+        "abort_unmount": "fe.imports.abort_unmount",
+        "timeout_retry": "fe.imports.timeout_retry",
+        "subject_switch_logout": "fe.imports.subject_switch_logout",
+        "keyboard": "fe.imports.keyboard",
+        "mobile": "fe.imports.mobile"
+      }
+    },
+    {
+      "id": "exports",
+      "files": [
+        "src/features/settings/ExportsView.tsx",
+        "src/features/settings/hooks/useSettingsExports.ts",
+        "src/features/settings/exports/controls.tsx"
+      ],
+      "cases": {
+        "allowed": "fe.exports.allowed",
+        "denied": "fe.exports.denied",
+        "loading": "fe.exports.loading",
+        "success": "fe.exports.success",
+        "empty": "fe.exports.empty",
+        "401_redirect_once": "fe.exports.401_redirect_once",
+        "403_safe": "fe.exports.403_safe",
+        "409_retry": "fe.exports.409_retry",
+        "422_useful": "fe.exports.422_useful",
+        "500_generic": "fe.exports.500_generic",
+        "abort_unmount": "fe.exports.abort_unmount",
+        "timeout_retry": "fe.exports.timeout_retry",
+        "subject_switch_logout": "fe.exports.subject_switch_logout",
+        "keyboard": "fe.exports.keyboard",
+        "mobile": "fe.exports.mobile"
+      }
+    },
+    {
+      "id": "pnl",
+      "files": [
+        "src/components/PnlSubtab.tsx"
+      ],
+      "cases": {
+        "allowed": "fe.pnl.allowed",
+        "denied": "fe.pnl.denied",
+        "loading": "fe.pnl.loading",
+        "success": "fe.pnl.success",
+        "empty": "fe.pnl.empty",
+        "401_redirect_once": "fe.pnl.401_redirect_once",
+        "403_safe": "fe.pnl.403_safe",
+        "409_retry": "fe.pnl.409_retry",
+        "422_useful": "fe.pnl.422_useful",
+        "500_generic": "fe.pnl.500_generic",
+        "abort_unmount": "fe.pnl.abort_unmount",
+        "timeout_retry": "fe.pnl.timeout_retry",
+        "subject_switch_logout": "fe.pnl.subject_switch_logout",
+        "keyboard": "fe.pnl.keyboard",
+        "mobile": "fe.pnl.mobile"
+      }
+    },
+    {
+      "id": "ai_forecast",
+      "files": [
+        "src/features/ai-forecast/AiForecastPage.tsx",
+        "src/features/ai-forecast/CurrentMonthForecastView.tsx",
+        "src/features/ai-forecast/RollingForecastView.tsx",
+        "src/features/ai-forecast/ForecastCharts.tsx",
+        "src/features/ai-forecast/ForecastCurrentTables.tsx",
+        "src/features/ai-forecast/ForecastRollingTables.tsx",
+        "src/features/ai-forecast/ForecastPrimitives.tsx",
+        "src/features/ai-forecast/model.ts"
+      ],
+      "cases": {
+        "allowed": "fe.ai_forecast.allowed",
+        "denied": "fe.ai_forecast.denied",
+        "loading": "fe.ai_forecast.loading",
+        "success": "fe.ai_forecast.success",
+        "empty": "fe.ai_forecast.empty",
+        "401_redirect_once": "fe.ai_forecast.401_redirect_once",
+        "403_safe": "fe.ai_forecast.403_safe",
+        "409_retry": "fe.ai_forecast.409_retry",
+        "422_useful": "fe.ai_forecast.422_useful",
+        "500_generic": "fe.ai_forecast.500_generic",
+        "abort_unmount": "fe.ai_forecast.abort_unmount",
+        "timeout_retry": "fe.ai_forecast.timeout_retry",
+        "subject_switch_logout": "fe.ai_forecast.subject_switch_logout",
+        "keyboard": "fe.ai_forecast.keyboard",
+        "mobile": "fe.ai_forecast.mobile"
+      }
+    },
+    {
+      "id": "visits",
+      "files": [
+        "src/components/VisiteSubtab.tsx"
+      ],
+      "cases": {
+        "allowed": "fe.visits.allowed",
+        "denied": "fe.visits.denied",
+        "loading": "fe.visits.loading",
+        "success": "fe.visits.success",
+        "empty": "fe.visits.empty",
+        "401_redirect_once": "fe.visits.401_redirect_once",
+        "403_safe": "fe.visits.403_safe",
+        "409_retry": "fe.visits.409_retry",
+        "422_useful": "fe.visits.422_useful",
+        "500_generic": "fe.visits.500_generic",
+        "abort_unmount": "fe.visits.abort_unmount",
+        "timeout_retry": "fe.visits.timeout_retry",
+        "subject_switch_logout": "fe.visits.subject_switch_logout",
+        "keyboard": "fe.visits.keyboard",
+        "mobile": "fe.visits.mobile"
+      }
+    },
+    {
+      "id": "agents",
+      "files": [
+        "src/features/agents/AgentsPage.tsx",
+        "src/features/agents/AgentDetails.tsx",
+        "src/features/agents/AgentsCoverageView.tsx",
+        "src/features/agents/AgentsListView.tsx",
+        "src/features/agents/AgentsOverviewView.tsx",
+        "src/features/agents/AgentsTeamMovementView.tsx",
+        "src/features/agent-evaluation/AgentEvaluationPage.tsx",
+        "src/features/agent-evaluation/AgentEvaluationControls.tsx",
+        "src/features/agent-evaluation/AgentEvaluationTables.tsx",
+        "src/features/agent-evaluation/AgentEvaluationV2Table.tsx"
+      ],
+      "cases": {
+        "allowed": "fe.agents.allowed",
+        "denied": "fe.agents.denied",
+        "loading": "fe.agents.loading",
+        "success": "fe.agents.success",
+        "empty": "fe.agents.empty",
+        "401_redirect_once": "fe.agents.401_redirect_once",
+        "403_safe": "fe.agents.403_safe",
+        "409_retry": "fe.agents.409_retry",
+        "422_useful": "fe.agents.422_useful",
+        "500_generic": "fe.agents.500_generic",
+        "abort_unmount": "fe.agents.abort_unmount",
+        "timeout_retry": "fe.agents.timeout_retry",
+        "subject_switch_logout": "fe.agents.subject_switch_logout",
+        "keyboard": "fe.agents.keyboard",
+        "mobile": "fe.agents.mobile"
+      }
+    },
+    {
+      "id": "dashboard",
+      "files": [
+        "src/features/dashboard/DashboardPage.tsx",
+        "src/features/dashboard/DashboardSurface.tsx",
+        "src/features/dashboard/CurrentDashboard.tsx",
+        "src/features/dashboard/HistoryDashboard.tsx",
+        "src/features/dashboard/PerformanceDetailDrawer.tsx",
+        "src/features/dashboard/BreakdownTable.tsx",
+        "src/features/dashboard/DashboardWidgets.tsx",
+        "src/features/dashboard/presenters.ts",
+        "src/features/dashboard/useDashboardData.ts",
+        "src/features/dashboard/useDashboardHistorySelection.ts",
+        "src/features/dashboard/useDashboardPerformanceDetail.ts"
+      ],
+      "cases": {
+        "allowed": "fe.dashboard.allowed",
+        "denied": "fe.dashboard.denied",
+        "loading": "fe.dashboard.loading",
+        "success": "fe.dashboard.success",
+        "empty": "fe.dashboard.empty",
+        "401_redirect_once": "fe.dashboard.401_redirect_once",
+        "403_safe": "fe.dashboard.403_safe",
+        "409_retry": "fe.dashboard.409_retry",
+        "422_useful": "fe.dashboard.422_useful",
+        "500_generic": "fe.dashboard.500_generic",
+        "abort_unmount": "fe.dashboard.abort_unmount",
+        "timeout_retry": "fe.dashboard.timeout_retry",
+        "subject_switch_logout": "fe.dashboard.subject_switch_logout",
+        "keyboard": "fe.dashboard.keyboard",
+        "mobile": "fe.dashboard.mobile"
+      }
+    },
+    {
+      "id": "layout",
+      "files": [
+        "src/App.tsx",
+        "src/components/MainLayout.tsx",
+        "src/components/DesktopSidebar.tsx",
+        "src/components/DesktopTopBar.tsx"
+      ],
+      "cases": {
+        "allowed": "fe.layout.allowed",
+        "denied": "fe.layout.denied",
+        "loading": "fe.layout.loading",
+        "success": "fe.layout.success",
+        "empty": "fe.layout.empty",
+        "401_redirect_once": "fe.layout.401_redirect_once",
+        "403_safe": "fe.layout.403_safe",
+        "409_retry": "fe.layout.409_retry",
+        "422_useful": "fe.layout.422_useful",
+        "500_generic": "fe.layout.500_generic",
+        "abort_unmount": "fe.layout.abort_unmount",
+        "timeout_retry": "fe.layout.timeout_retry",
+        "subject_switch_logout": "fe.layout.subject_switch_logout",
+        "keyboard": "fe.layout.keyboard",
+        "mobile": "fe.layout.mobile"
+      }
+    },
+    {
+      "id": "grile",
+      "files": [
+        "src/components/GrileSubtab.tsx",
+        "src/components/GrileMonthlyPanel.tsx",
+        "src/components/grile/PilotV2Panel.tsx",
+        "src/components/grile/RefreshStatusError.tsx",
+        "src/components/grile/grileOverviewFilters.ts"
+      ],
+      "cases": {
+        "allowed": "fe.grile.allowed",
+        "denied": "fe.grile.denied",
+        "loading": "fe.grile.loading",
+        "success": "fe.grile.success",
+        "empty": "fe.grile.empty",
+        "401_redirect_once": "fe.grile.401_redirect_once",
+        "403_safe": "fe.grile.403_safe",
+        "409_retry": "fe.grile.409_retry",
+        "422_useful": "fe.grile.422_useful",
+        "500_generic": "fe.grile.500_generic",
+        "abort_unmount": "fe.grile.abort_unmount",
+        "timeout_retry": "fe.grile.timeout_retry",
+        "subject_switch_logout": "fe.grile.subject_switch_logout",
+        "keyboard": "fe.grile.keyboard",
+        "mobile": "fe.grile.mobile"
+      }
+    },
+    {
+      "id": "target",
+      "files": [
+        "src/features/target-calculator/TargetCalculatorPage.tsx",
+        "src/features/target-calculator/TargetWorkflow.tsx",
+        "src/features/target-calculator/TargetScenarioView.tsx",
+        "src/features/target-calculator/TargetConfiguration.tsx",
+        "src/features/target-calculator/TargetStoreAllocation.tsx",
+        "src/features/target-calculator/TargetAllocationTable.tsx",
+        "src/features/target-calculator/TargetRegionalOverview.tsx",
+        "src/features/target-calculator/TargetAgentDetails.tsx",
+        "src/features/target-calculator/hooks/useTargetScenario.ts",
+        "src/features/target-calculator/hooks/useTargetScenarioActions.ts",
+        "src/features/target-calculator/hooks/useTargetScenarioProjections.ts"
+      ],
+      "cases": {
+        "allowed": "fe.target.allowed",
+        "denied": "fe.target.denied",
+        "loading": "fe.target.loading",
+        "success": "fe.target.success",
+        "empty": "fe.target.empty",
+        "401_redirect_once": "fe.target.401_redirect_once",
+        "403_safe": "fe.target.403_safe",
+        "409_retry": "fe.target.409_retry",
+        "422_useful": "fe.target.422_useful",
+        "500_generic": "fe.target.500_generic",
+        "abort_unmount": "fe.target.abort_unmount",
+        "timeout_retry": "fe.target.timeout_retry",
+        "subject_switch_logout": "fe.target.subject_switch_logout",
+        "keyboard": "fe.target.keyboard",
+        "mobile": "fe.target.mobile"
+      }
+    },
+    {
+      "id": "campaigns",
+      "files": [
+        "src/features/campaigns/CampaignsPage.tsx",
+        "src/features/campaigns/ContestSection.tsx",
+        "src/features/campaigns/FocusSection.tsx",
+        "src/features/campaigns/IncentiveTables.tsx",
+        "src/features/campaigns/useCampaignsData.ts",
+        "src/components/IncentiveDesktopDashboard.tsx",
+        "src/components/IncentiveQualificationSummary.tsx"
+      ],
+      "cases": {
+        "allowed": "fe.campaigns.allowed",
+        "denied": "fe.campaigns.denied",
+        "loading": "fe.campaigns.loading",
+        "success": "fe.campaigns.success",
+        "empty": "fe.campaigns.empty",
+        "401_redirect_once": "fe.campaigns.401_redirect_once",
+        "403_safe": "fe.campaigns.403_safe",
+        "409_retry": "fe.campaigns.409_retry",
+        "422_useful": "fe.campaigns.422_useful",
+        "500_generic": "fe.campaigns.500_generic",
+        "abort_unmount": "fe.campaigns.abort_unmount",
+        "timeout_retry": "fe.campaigns.timeout_retry",
+        "subject_switch_logout": "fe.campaigns.subject_switch_logout",
+        "keyboard": "fe.campaigns.keyboard",
+        "mobile": "fe.campaigns.mobile"
+      }
+    }
+  ],
+  "n_a_cases": [],
+  "browser_matrix": {
+    "groups": [
+      "salary",
+      "imports",
+      "exports",
+      "pnl",
+      "ai_forecast",
+      "visits",
+      "agents",
+      "dashboard",
+      "layout",
+      "grile",
+      "target",
+      "campaigns"
+    ],
+    "component_runner": {
+      "runner": "vitest/jsdom",
+      "required_cases": [
+        "allowed",
+        "denied",
+        "loading",
+        "success",
+        "empty",
+        "401_redirect_once",
+        "403_safe",
+        "409_retry",
+        "422_useful",
+        "500_generic",
+        "abort_unmount",
+        "timeout_retry",
+        "subject_switch_logout",
+        "keyboard",
+        "mobile"
+      ]
+    },
+    "playwright": {
+      "chromium": [
+        "allowed",
+        "denied",
+        "401_redirect_once",
+        "403_safe",
+        "409_retry",
+        "keyboard",
+        "mobile"
+      ],
+      "firefox": [
+        "success",
+        "401_redirect_once",
+        "keyboard"
+      ],
+      "webkit": [
+        "success",
+        "401_redirect_once",
+        "keyboard"
+      ]
+    },
+    "rule": "every listed group/case/runner tuple must pass; lifecycle branches not listed for Playwright remain mandatory in Vitest; retries do not replace a failed first-attempt record"
+  },
+  "pwa_lifecycle": {
+    "old_release": "release-A exact artifact",
+    "new_release": "release-B exact artifact",
+    "sequence": [
+      "install_A",
+      "open_and_control",
+      "install_B",
+      "reload_and_control",
+      "rollback_A",
+      "reload_and_control"
+    ],
+    "assertions": [
+      "no blank shell",
+      "one auth redirect maximum",
+      "old chunks evicted only after activation",
+      "current API contract decodes",
+      "offline fallback is bounded",
+      "rollback A is usable"
+    ]
+  },
+  "ownership_boundaries": {
+    "presenter": "pure mapping only; no fetch, storage or global mutation",
+    "controller_hook": "fetch, cancellation, retry and subject lifecycle; maximum 250 lines",
+    "page_component": "composition and accessible interaction; maximum 120 lines unless listed priority maximum 450",
+    "priority_pages": [
+      "SalariiSubtab.tsx",
+      "PnlSubtab.tsx",
+      "VisiteSubtab.tsx",
+      "ImportsView.tsx",
+      "ExportsView.tsx",
+      "AgentsPage.tsx",
+      "PerformanceDetailDrawer.tsx",
+      "GrileSubtab.tsx",
+      "GrileMonthlyPanel.tsx"
+    ]
+  }
+}
