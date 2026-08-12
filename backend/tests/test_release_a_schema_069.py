@@ -116,7 +116,7 @@ async def _emit(
 
 async def _insert_lineaged_run(
     connection: asyncpg.Connection,
-    snapshot_id: str,
+    snapshot_id: str | None,
     *,
     status: str = "completed",
     expected: int = 1,
@@ -230,6 +230,9 @@ async def test_069_seals_cohort_and_requires_exact_completed_run_lineage() -> No
     await transaction.start()
     try:
         await connection.execute("SET LOCAL ROLE unihub_operations")
+        with pytest.raises(asyncpg.CheckViolationError):
+            async with connection.transaction():
+                await _insert_lineaged_run(connection, None)
         snapshot_id = str(
             await connection.fetchval(
                 """
@@ -395,6 +398,9 @@ async def test_069_outbox_is_canonical_private_ordered_and_replayable() -> None:
             "1234567890123",
             "a1234567-89ab-4def-8abc-1234567890ab",
             "sp1_" + "a" * 64,
+            "sales_1234567890123",
+            "sales_a1234567-89ab-4def-8abc-1234567890ab",
+            "sales_sp1_" + "a" * 64,
         ):
             with pytest.raises(asyncpg.CheckViolationError):
                 async with connection.transaction():

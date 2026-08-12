@@ -266,7 +266,8 @@ ALTER TABLE ai_forecast_runs
             AND response_profile IS NULL
         )
         OR (
-            request_sha256 IS NOT NULL
+            cohort_snapshot_id IS NOT NULL
+            AND request_sha256 IS NOT NULL
             AND expected_pair_count IS NOT NULL
             AND coverage_mode IS NOT NULL
             AND response_profile IS NOT NULL
@@ -372,9 +373,9 @@ CREATE TABLE retail_outbox_events (
     aggregate_id TEXT NOT NULL
         CHECK (
             aggregate_id ~ '^[A-Za-z][A-Za-z0-9._-]{0,127}$'
-            AND aggregate_id !~ '^[0-9]{13}$'
-            AND aggregate_id !~* '^sp1_[0-9a-f]{64}$'
-            AND aggregate_id !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+            AND aggregate_id !~ '(^|[^0-9])[0-9]{13}([^0-9]|$)'
+            AND aggregate_id !~* 'sp1_[0-9a-f]{64}'
+            AND aggregate_id !~* '(^|[^0-9a-f])[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}([^0-9a-f]|$)'
         ),
     generation_hash TEXT NOT NULL CHECK (generation_hash ~ '^[0-9a-f]{64}$'),
     revision BIGINT NOT NULL CHECK (revision >= 1),
