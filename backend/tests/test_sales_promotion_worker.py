@@ -6,6 +6,7 @@ import pytest
 
 import routers.filters
 import services.imports
+import services.grile_pilot_v2_runtime
 import services.retail_metrics
 import services.sales_generation_flow
 import worker
@@ -59,9 +60,21 @@ async def test_promotion_worker_claims_with_import_authority(
     clear_filters = MagicMock()
     update_metrics = AsyncMock()
     trigger_grile = AsyncMock()
+    trigger_campaigns = AsyncMock()
+    trigger_pilot_v2 = AsyncMock()
     monkeypatch.setattr(routers.filters, "clear_filter_options_cache", clear_filters)
     monkeypatch.setattr(services.retail_metrics, "update_business_metrics", update_metrics)
     monkeypatch.setattr(services.imports, "trigger_grile_check_after_import", trigger_grile)
+    monkeypatch.setattr(
+        services.imports,
+        "trigger_campaign_reporting_publication",
+        trigger_campaigns,
+    )
+    monkeypatch.setattr(
+        services.grile_pilot_v2_runtime,
+        "trigger_grile_pilot_v2_sync",
+        trigger_pilot_v2,
+    )
 
     result = await worker.promote_sales_background(
         {"db_pool": pool},
@@ -93,6 +106,15 @@ async def test_promotion_worker_claims_with_import_authority(
     assert result["snapshot_id"] == 214
     update_metrics.assert_awaited_once_with(pool)
     trigger_grile.assert_awaited_once_with("2026-08", 214)
+    trigger_campaigns.assert_awaited_once_with(
+        "2026-08",
+        requested_by_sub="system:sales-promotion",
+        reason="sales_generation:214",
+    )
+    trigger_pilot_v2.assert_awaited_once_with(
+        "2026-08",
+        trigger="sales_generation:214",
+    )
 
 
 @pytest.mark.asyncio

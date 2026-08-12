@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from typing import Any
@@ -9,31 +10,23 @@ from typing import Any
 from repositories.grile import GrileRepository
 from services.grile import DEFAULT_TOLERANCE
 from services.grile_sheets import build_services, close_services
+from services.grile_pilot_v2_registry import (
+    PILOT_V2_MONTH,
+    PILOT_V2_SHEETS,
+    PilotV2Sheet,
+)
 
 
-PILOT_V2_MONTH = "2026-08"
-PILOT_V2_READ_TIMEOUT_SECONDS = 35.0
+PILOT_V2_READ_TIMEOUT_SECONDS = 45.0
+PILOT_V2_READ_WORKERS = 4
 PILOT_V2_RANGES = (
-    "'Rezumat & Program'!H2",
+    "'Rezumat & Program'!E2",
+    "'Liste'!O14",
+    "'Liste'!O15",
     "'Rezumat & Program'!A10",
     "'Rezumat & Program'!J10",
     "'Rezumat & Program'!F10",
     "'Rezumat & Program'!O10",
-)
-
-
-@dataclass(frozen=True)
-class PilotV2Sheet:
-    site_code: str
-    sheet_id: str
-
-
-PILOT_V2_SHEETS = (
-    PilotV2Sheet("PROMEN", "1jcVCLHaujv0O2qlTPXG7b1IqGGVq8572p7pJFvEAgdg"),  # pragma: allowlist secret
-    PilotV2Sheet("MCRFBAL", "1MusUrpTjkFyW2JefvJVdFOdx5ypUbKr1Hs-2SViihEo"),  # pragma: allowlist secret
-    PilotV2Sheet("CRFFEER", "1bEWiDcg9tqWPeqQdw6hna_lsIIc16ozKMCutkVIAHu0"),  # pragma: allowlist secret
-    PilotV2Sheet("ORAUCHAN", "1ZxugdHXXhvPSFyxyOh9bipq11J2N872n7isAxRXMxuM"),  # pragma: allowlist secret
-    PilotV2Sheet("ORAUCH", "12ejRCcDRNdQqiz38S7BjTKNb-pSrJWW2UNclhFJUiCI"),  # pragma: allowlist secret
 )
 
 
@@ -75,16 +68,16 @@ def _fetch_sheet(sheet: PilotV2Sheet) -> tuple[str, PilotV2Reading]:
         value_ranges = response.get("valueRanges", [])
         if len(value_ranges) != len(PILOT_V2_RANGES):
             return sheet.site_code, PilotV2Reading(None, None, None, "Structură V2 incompletă")
-        target, sales_one, sales_two, forecast_one, forecast_two = map(
+        target, store_sales, store_forecast, sales_one, sales_two, forecast_one, forecast_two = map(
             _range_number,
             value_ranges,
         )
-        realized = sales_one + sales_two if sales_one is not None and sales_two is not None else None
-        forecast = (
-            forecast_one + forecast_two
-            if forecast_one is not None and forecast_two is not None
-            else None
-        )
+        realized = store_sales
+        if realized is None and sales_one is not None and sales_two is not None:
+            realized = sales_one + sales_two
+        forecast = store_forecast
+        if forecast is None and forecast_one is not None and forecast_two is not None:
+            forecast = forecast_one + forecast_two
         if target is None or realized is None or forecast is None:
             return sheet.site_code, PilotV2Reading(target, realized, forecast, "Valori V2 incomplete")
         return sheet.site_code, PilotV2Reading(target, realized, forecast)
@@ -95,7 +88,12 @@ def _fetch_sheet(sheet: PilotV2Sheet) -> tuple[str, PilotV2Reading]:
 
 
 async def read_pilot_v2_sheets() -> dict[str, PilotV2Reading]:
-    tasks = [asyncio.to_thread(_fetch_sheet, sheet) for sheet in PILOT_V2_SHEETS]
+    loop = asyncio.get_running_loop()
+    executor = ThreadPoolExecutor(
+        max_workers=PILOT_V2_READ_WORKERS,
+        thread_name_prefix="grile-pilot-v2-read",
+    )
+    tasks = [loop.run_in_executor(executor, _fetch_sheet, sheet) for sheet in PILOT_V2_SHEETS]
     try:
         readings = await asyncio.wait_for(
             asyncio.gather(*tasks),
@@ -106,6 +104,8 @@ async def read_pilot_v2_sheets() -> dict[str, PilotV2Reading]:
             sheet.site_code: PilotV2Reading(None, None, None, "Citirea Google a expirat")
             for sheet in PILOT_V2_SHEETS
         }
+    finally:
+        executor.shutdown(wait=False, cancel_futures=True)
     return dict(readings)
 
 

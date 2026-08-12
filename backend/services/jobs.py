@@ -33,7 +33,6 @@ from services.sales_artifacts import (
 )
 logger = logging.getLogger(__name__)
 
-
 class JobQueueUnavailableError(HTTPException):
     """Queue-ul nu este disponibil; endpointurile de enqueue răspund 503."""
     def __init__(self) -> None:
@@ -65,7 +64,6 @@ ARQ_TRANSPORT_ERRORS: tuple[type[BaseException], ...] = (
     TimeoutError,
     OSError,
 )
-
 
 class JobStatus(str, Enum):
     QUEUED = "queued"
@@ -490,6 +488,8 @@ async def enqueue_campaign_reporting_publication(
         if replacement is not None:
             return replacement
     raise RuntimeError("Failed to enqueue campaign reporting publication")
+
+
 async def _enqueue_durable_export(
     operation_id: int,
     *,
@@ -831,7 +831,7 @@ async def get_job_status(job_id: str) -> JobResult:
             else SALARY_EXPORT_QUEUE_NAME
             if job_id.startswith("salary-export:")
             else GRILE_QUEUE_NAME
-            if job_id.startswith(("grile-check:", "grile-store-refresh:", "grile-monthly:", "grile-agent-targets:"))
+            if job_id.startswith(("grile-check:", "grile-store-refresh:", "grile-monthly:", "grile-agent-targets:", "grile-pilot-v2:"))
             else None
         )
         job, arq_status = await resolve_status_job(job_id, pool, queue_name)

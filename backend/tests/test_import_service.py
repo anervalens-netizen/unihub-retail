@@ -16,6 +16,7 @@ from fastapi import HTTPException, UploadFile
 import services.imports as imports_service
 import services.job_queue_routing as job_queue_routing
 import services.jobs as jobs_service
+import services.grile_pilot_v2_runtime as pilot_v2_runtime
 from services.imports import ImportsService
 from services.jobs import JobResult, JobStatus
 
@@ -171,6 +172,7 @@ async def test_corrupt_terminal_job_result_is_reported_without_api_500(
         ("grile-store-refresh:9", jobs_service.GRILE_QUEUE_NAME),
         ("grile-monthly:10", jobs_service.GRILE_QUEUE_NAME),
         ("grile-agent-targets:11", jobs_service.GRILE_QUEUE_NAME),
+        ("grile-pilot-v2:2026-08", jobs_service.GRILE_QUEUE_NAME),
     ],
 )
 async def test_isolated_job_status_uses_owning_queue(
@@ -275,6 +277,128 @@ async def test_grile_check_after_import_is_best_effort(
 
     enqueue.side_effect = RuntimeError("Valkey unavailable")
     await imports_service.trigger_grile_check_after_import("2099-07", 12)
+
+
+@pytest.mark.asyncio
+async def test_grile_v2_hook_is_scoped_and_best_effort(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    enqueue = AsyncMock(return_value=SimpleNamespace(job_id="grile-pilot-v2:2026-08"))
+    monkeypatch.setattr(pilot_v2_runtime, "enqueue_grile_pilot_v2_sync", enqueue)
+
+    await pilot_v2_runtime.trigger_grile_pilot_v2_sync(
+        "2026-07",
+        trigger="wrong-month",
+    )
+    enqueue.assert_not_awaited()
+
+    await pilot_v2_runtime.trigger_grile_pilot_v2_sync(
+        "2026-08",
+        trigger="sales_generation:12",
+    )
+    enqueue.assert_awaited_once_with(
+        month="2026-08",
+        trigger="sales_generation:12",
+    )
+
+    enqueue.side_effect = RuntimeError("Valkey unavailable")
+    await pilot_v2_runtime.trigger_grile_pilot_v2_sync(
+        "2026-08",
+        trigger="periodic-retry",
+    )
+
+
+@pytest.mark.asyncio
+async def test_grile_v2_enqueue_publishes_on_grile_queue(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pool = MagicMock()
+    queued = SimpleNamespace(job_id="grile-pilot-v2:2026-08")
+    publish = AsyncMock(return_value=queued)
+    monkeypatch.setattr(jobs_service, "_require_arq_pool", AsyncMock(return_value=pool))
+    monkeypatch.setattr(jobs_service, "_publish_arq_job", publish)
+    monkeypatch.setattr(pilot_v2_runtime, "get_request_id", lambda: "request-id")
+
+    result = await pilot_v2_runtime.enqueue_grile_pilot_v2_sync(
+        month="2026-08",
+        trigger=" campaign_reporting:11 ",
+    )
+
+    assert result is queued
+    publish.assert_awaited_once_with(
+        pool,
+        "grile_pilot_v2_sync_background",
+        "2026-08",
+        "campaign_reporting:11",
+        "request-id",
+        _job_id="grile-pilot-v2:2026-08",
+        _queue_name=jobs_service.GRILE_QUEUE_NAME,
+    )
+
+
+@pytest.mark.asyncio
+async def test_grile_v2_enqueue_replaces_completed_job(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pool = MagicMock()
+    pool.delete = AsyncMock()
+    replacement = SimpleNamespace(job_id="grile-pilot-v2:2026-08")
+    publish = AsyncMock(side_effect=[None, replacement])
+    existing = MagicMock()
+    existing.status = AsyncMock(return_value=ArqJobStatus.complete)
+    monkeypatch.setattr(jobs_service, "_require_arq_pool", AsyncMock(return_value=pool))
+    monkeypatch.setattr(jobs_service, "_publish_arq_job", publish)
+    monkeypatch.setattr(pilot_v2_runtime, "Job", MagicMock(return_value=existing))
+
+    result = await pilot_v2_runtime.enqueue_grile_pilot_v2_sync(
+        month="2026-08",
+        trigger="periodic",
+    )
+
+    assert result is replacement
+    pool.delete.assert_awaited_once_with(
+        jobs_service.result_key_prefix + "grile-pilot-v2:2026-08"
+    )
+    assert publish.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_grile_v2_enqueue_reuses_active_job(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pool = MagicMock()
+    existing = MagicMock()
+    existing.status = AsyncMock(return_value=ArqJobStatus.in_progress)
+    monkeypatch.setattr(jobs_service, "_require_arq_pool", AsyncMock(return_value=pool))
+    monkeypatch.setattr(jobs_service, "_publish_arq_job", AsyncMock(return_value=None))
+    monkeypatch.setattr(pilot_v2_runtime, "Job", MagicMock(return_value=existing))
+
+    result = await pilot_v2_runtime.enqueue_grile_pilot_v2_sync(
+        month="2026-08",
+        trigger="periodic",
+    )
+
+    assert result is existing
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("month", "trigger", "message"),
+    [
+        ("2026-13", "periodic", "month"),
+        ("2026-08", "   ", "trigger"),
+    ],
+)
+async def test_grile_v2_enqueue_validates_identity(
+    month: str,
+    trigger: str,
+    message: str,
+) -> None:
+    with pytest.raises(ValueError, match=message):
+        await pilot_v2_runtime.enqueue_grile_pilot_v2_sync(
+            month=month,
+            trigger=trigger,
+        )
 
 
 @pytest.mark.asyncio

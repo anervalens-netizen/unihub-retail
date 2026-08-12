@@ -20,10 +20,25 @@ rescrierea baseline-ului sau a migrărilor aplicate.
 ## Contractul verificării
 
 Pilotul V2 din `Agenti -> Grile` rămâne separat de cohorta oficială
-`grile_sheets`. Endpointul read-only `/api/grile/pilot-v2` citește numai cele
-cinci foi pilot, le grupează după managerul curent din Retail și compară targetul
-și realizatul cu raportarea Retail și cu ultima proiecție V1. Nu rezervă runuri,
-nu persistă observații și nu participă la finalizare, arhivare sau reset.
+`grile_sheets`. Cohorta August 2026 are 21 de foi active în registrul canonic
+`backend/services/grile_pilot_v2_registry.py`; foile Delia și copiile cu program
+neconfirmat nu fac parte din registrul activ. Endpointul read-only
+`/api/grile/pilot-v2` citește cohorta, o grupează după managerul curent din
+Retail și compară targetul și realizatul cu raportarea Retail și cu ultima
+proiecție V1. Nu rezervă runuri, nu persistă observații și nu participă la
+finalizare, arhivare sau reset.
+
+Writerul izolat `grile_pilot_v2_sync` proiectează în foi numai date
+autoritative Retail: vânzări zilnice pe cod agent, target, forecast, SIM și
+incentive. Citirea PostgreSQL este repeatable-read, iar o eroare de sursă sau
+Google păstrează ultima proiecție bună. Writerul actualizează exclusiv `Liste`,
+headerul din `Rezumat & Program` și tabul `Vânzări & Incentive`; programul,
+concediile și selecțiile manuale de zile suplimentare nu sunt rescrise.
+Reviziile sales/Campaigns și revizia schemei writerului fac actualizarea
+idempotentă; o versiune nouă de writer forțează o primă reproiectare completă.
+Workerul Grile încearcă sincronizarea imediat la startup, apoi orar, iar
+publicarea Campaigns solicită și o sincronizare promptă. Toate apelurile Google
+de scriere sunt serializate prin adapterul thread-affine; V1 rămâne neatins.
 
 `POST /api/grile/run` rezervă și pune în coadă exclusiv o verificare read-only.
 Jobul citește valorile și metadatele Google necesare, compară cu starea Retail și
@@ -40,10 +55,14 @@ periodică și citirile overview/status expiră un `running` fără heartbeat du
 valide rămân auditabile; nu se face `DELETE`. UI blochează retry numai când
 backendul returnează `run.active=true` după reconciliere.
 
-Scope-urile clientului de verificare sunt strict read-only:
+Scope-urile clientului de verificare V1 și ale readerului V2 sunt strict
+read-only:
 
 - `spreadsheets.readonly` pentru valorile grilei;
 - `drive.metadata.readonly` pentru metadatele necesare monitorizării.
+
+Writerul V2 folosește separat clientul operațional cu drept de scriere
+`spreadsheets`/`drive`; acest client nu este folosit de endpointurile read-only.
 
 Transportul Google are timeout HTTP implicit 30s, configurabil prin
 `GRILE_GOOGLE_HTTP_TIMEOUT_SECONDS` între 1 și 120s. La failure/cancellation,

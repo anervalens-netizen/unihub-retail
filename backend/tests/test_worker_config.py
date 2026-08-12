@@ -14,8 +14,12 @@ import services.importer
 import services.jobs
 import services.export_operations
 import services.erp_reconciliation
+import services.campaign_reporting
+import services.contest_reporting
 import services.grile_reconciliation_supervisor as grile_supervisor
 import services.imports
+import services.grile_pilot_v2_sync
+import services.grile_pilot_v2_runtime
 import repositories.grile
 import worker
 
@@ -315,6 +319,12 @@ async def test_grile_worker_reconciles_only_expired_leases(
         "services.grile_monthly.reconcile_monthly_operations",
         monthly_reconcile,
     )
+    pilot_sync = AsyncMock(return_value={"synced": [], "skipped": []})
+    monkeypatch.setattr(
+        services.grile_pilot_v2_runtime,
+        "sync_grile_pilot_v2_once",
+        pilot_sync,
+    )
     ctx: dict = {}
 
     await worker._startup_runtime(ctx, worker_role=worker_role)
@@ -326,6 +336,7 @@ async def test_grile_worker_reconciles_only_expired_leases(
     tasks = [
         ctx["grile_monthly_reconcile_task"],
         ctx["grile_run_reconcile_task"],
+        ctx["grile_pilot_v2_sync_task"],
     ]
     for task in tasks:
         task.cancel()
@@ -373,6 +384,149 @@ async def test_grile_monthly_reconciler_recovers_after_one_failure(
     assert attempts == 2
     failure.assert_called_once()
     success.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_grile_v2_sync_once_uses_shared_lock(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sync = AsyncMock(return_value={"synced": ["SITE"], "skipped": []})
+    monkeypatch.setattr(
+        services.grile_pilot_v2_sync,
+        "sync_pilot_v2_sheets",
+        sync,
+    )
+    pool = object()
+    adapter = object()
+    ctx = {"db_pool": pool, "grile_monthly_google": adapter}
+
+    result = await services.grile_pilot_v2_runtime.sync_grile_pilot_v2_once(
+        ctx,
+        trigger="test",
+    )
+
+    assert result == {"synced": ["SITE"], "skipped": []}
+    assert isinstance(ctx["grile_pilot_v2_sync_lock"], asyncio.Lock)
+    sync.assert_awaited_once_with(pool, adapter)
+
+
+@pytest.mark.asyncio
+async def test_grile_v2_periodic_loop_retains_last_good_on_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    stop = asyncio.Event()
+
+    async def fail_once(_ctx: dict, *, trigger: str) -> None:
+        assert trigger == "periodic"
+        stop.set()
+        raise RuntimeError("Google unavailable")
+
+    monkeypatch.setattr(
+        services.grile_pilot_v2_runtime,
+        "sync_grile_pilot_v2_once",
+        fail_once,
+    )
+
+    await services.grile_pilot_v2_runtime.run_grile_pilot_v2_sync_loop(
+        {"grile_pilot_v2_sync_stop": stop}
+    )
+
+    assert stop.is_set()
+
+
+@pytest.mark.asyncio
+async def test_grile_v2_background_validates_month_and_request_context(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sync = AsyncMock(return_value={"synced": ["SITE"]})
+    bind = MagicMock(return_value="token")
+    reset = MagicMock()
+    monkeypatch.setattr(
+        services.grile_pilot_v2_runtime,
+        "sync_grile_pilot_v2_once",
+        sync,
+    )
+    monkeypatch.setattr(services.grile_pilot_v2_runtime, "bind_request_id", bind)
+    monkeypatch.setattr(services.grile_pilot_v2_runtime, "reset_request_id", reset)
+
+    result = await worker.grile_pilot_v2_sync_background(
+        {},
+        "2026-08",
+        "manual",
+        "request-id",
+    )
+
+    assert result == {"synced": ["SITE"]}
+    sync.assert_awaited_once_with({}, trigger="manual")
+    bind.assert_called_once_with("request-id")
+    reset.assert_called_once_with("token")
+    with pytest.raises(ValueError, match="August 2026"):
+        await worker.grile_pilot_v2_sync_background({}, "2026-09", "manual")
+
+
+@pytest.mark.asyncio
+async def test_campaign_publication_triggers_grile_v2_projection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    promotion = services.campaign_reporting.CampaignReportingPublication(
+        period="2026-08",
+        generation_id=7,
+        revision=11,
+        row_count=2,
+        status="official",
+        input_sha256="a" * 64,
+    )
+    contest = services.contest_reporting.ContestReportingPublication(
+        period="2026-08",
+        generation_id=8,
+        revision=5,
+        row_count=1,
+        status="official",
+        input_sha256="b" * 64,
+    )
+    publish_promotion = AsyncMock(return_value=promotion)
+    publish_contest = AsyncMock(return_value=contest)
+    monkeypatch.setattr(
+        services.campaign_reporting,
+        "CampaignReportingPublisher",
+        lambda _pool: SimpleNamespace(publish_month=publish_promotion),
+    )
+    monkeypatch.setattr(
+        services.contest_reporting,
+        "ContestReportingPublisher",
+        lambda _pool: SimpleNamespace(publish_month=publish_contest),
+    )
+    trigger = AsyncMock()
+    monkeypatch.setattr(
+        services.grile_pilot_v2_runtime,
+        "trigger_grile_pilot_v2_sync",
+        trigger,
+    )
+    pool = object()
+
+    result = await worker.publish_campaign_reporting_background(
+        {"db_pool": pool},
+        "2026-08",
+        "system:test",
+        "sales_generation:7",
+    )
+
+    assert result["promotion"]["revision"] == 11
+    assert result["contest"]["revision"] == 5
+    publish_promotion.assert_awaited_once_with(
+        "2026-08",
+        requested_by_sub="system:test",
+        reason="sales_generation:7",
+    )
+    publish_contest.assert_awaited_once_with(
+        "2026-08",
+        requested_by_sub="system:test",
+        reason="sales_generation:7",
+    )
+    trigger.assert_awaited_once_with(
+        "2026-08",
+        trigger="campaign_reporting:11",
+    )
 
 
 @pytest.mark.asyncio
@@ -435,9 +589,18 @@ async def test_worker_shutdown_closes_all_pools(
     close_arq_pool = AsyncMock()
     monkeypatch.setattr(db.connection, "close_db_pool", close_db_pool)
     monkeypatch.setattr(services.jobs, "close_arq_pool", close_arq_pool)
+    stop = asyncio.Event()
+    pending = asyncio.create_task(asyncio.Event().wait())
 
-    await worker.shutdown({})
+    await worker.shutdown(
+        {
+            "grile_pilot_v2_sync_stop": stop,
+            "grile_pilot_v2_sync_task": pending,
+        }
+    )
 
+    assert stop.is_set()
+    assert pending.cancelled()
     close_arq_pool.assert_awaited_once_with()
     close_db_pool.assert_awaited_once_with()
 

@@ -13,6 +13,7 @@ from observability import worker_metrics
 
 logger = logging.getLogger(__name__)
 RECONCILE_SECONDS = 60
+STALE_RUN_RECONCILE_SECONDS = 60
 MAX_BACKOFF_SECONDS = 15 * 60
 
 
@@ -61,6 +62,32 @@ async def run_monthly_reconciliation_loop(ctx: dict[str, Any]) -> None:
                 )
             else:
                 failures = 0
+    except asyncio.CancelledError:
+        return
+
+
+async def run_stale_run_reconciliation_loop(ctx: dict[str, Any]) -> None:
+    from repositories.grile import GrileRepository
+
+    stop = ctx["grile_run_reconcile_stop"]
+    repo = GrileRepository(ctx["db_pool"])
+    try:
+        while not stop.is_set():
+            try:
+                await asyncio.wait_for(stop.wait(), timeout=STALE_RUN_RECONCILE_SECONDS)
+            except TimeoutError:
+                pass
+            if stop.is_set():
+                break
+            try:
+                reconciled = await repo.reconcile_stale_runs()
+                refreshes = await repo.reconcile_store_refreshes()
+                if reconciled:
+                    logger.warning("Closed stale Grile runs: %s", reconciled)
+                if refreshes:
+                    logger.warning("Closed stale Grile store refreshes: %s", refreshes)
+            except Exception:
+                logger.exception("Periodic Grile run reconciliation failed")
     except asyncio.CancelledError:
         return
 

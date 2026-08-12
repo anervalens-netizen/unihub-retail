@@ -39,6 +39,7 @@
       "services.erp_reconciliation",
       "services.exports.service",
       "services.grile_monthly",
+      "services.grile_pilot_v2_sync",
       "services.hr",
       "services.imports",
       "services.request_deadline",

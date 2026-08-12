@@ -12,6 +12,8 @@ from config import load_runtime_config
 from logging_config import setup_logging
 from request_context import bind_request_id, reset_request_id
 import services.grile_reconciliation_supervisor as grile_supervisor
+import services.grile_pilot_v2_runtime as grile_pilot_v2_runtime
+from services.grile_pilot_v2_runtime import grile_pilot_v2_sync_background
 from services.export_worker import export_heartbeat_loop as _export_heartbeat_loop, remove_export_artifact_background
 from services.jobs import (
     EXPORT_QUEUE_NAME,
@@ -31,7 +33,6 @@ setup_logging()
 logger = logging.getLogger(__name__)
 VISITS_SNAPSHOT_REFRESH_SECONDS = 15 * 60
 EXPORT_CLEANUP_SECONDS = 5 * 60
-GRILE_RUN_RECONCILE_SECONDS = 60
 QUEUE_METRICS_SECONDS = 15
 _ResultT = TypeVar("_ResultT")
 async def _await_pickle_safe(awaitable: Awaitable[_ResultT]) -> _ResultT:
@@ -73,29 +74,6 @@ async def _visits_snapshot_refresh_loop(ctx: dict) -> None:
                 await _refresh_visits_snapshot_once(pool)
             except Exception:
                 logger.exception("Periodic visits snapshot refresh failed; last good projection retained")
-    except asyncio.CancelledError:
-        return
-async def _grile_run_reconciliation_loop(ctx: dict) -> None:
-    from repositories.grile import GrileRepository
-    stop = ctx["grile_run_reconcile_stop"]
-    repo = GrileRepository(ctx["db_pool"])
-    try:
-        while not stop.is_set():
-            try:
-                await asyncio.wait_for(stop.wait(), timeout=GRILE_RUN_RECONCILE_SECONDS)
-            except TimeoutError:
-                pass
-            if stop.is_set():
-                break
-            try:
-                reconciled = await repo.reconcile_stale_runs()
-                refreshes = await repo.reconcile_store_refreshes()
-                if reconciled:
-                    logger.warning("Closed stale Grile runs: %s", reconciled)
-                if refreshes:
-                    logger.warning("Closed stale Grile store refreshes: %s", refreshes)
-            except Exception:
-                logger.exception("Periodic Grile run reconciliation failed")
     except asyncio.CancelledError:
         return
 async def _export_cleanup_loop(ctx: dict) -> None:
@@ -313,6 +291,10 @@ async def promote_sales_background(
             requested_by_sub="system:sales-promotion",
             reason=f"sales_generation:{snapshot_id}",
         )
+        await grile_pilot_v2_runtime.trigger_grile_pilot_v2_sync(
+            import_month,
+            trigger=f"sales_generation:{snapshot_id}",
+        )
         manifest_value = row["manifest"]
         if isinstance(manifest_value, str):
             manifest_value = json.loads(manifest_value)
@@ -365,6 +347,10 @@ async def publish_campaign_reporting_background(
             period,
             requested_by_sub=requested_by_sub,
             reason=reason,
+        )
+        await grile_pilot_v2_runtime.trigger_grile_pilot_v2_sync(
+            period,
+            trigger=f"campaign_reporting:{promotion_publication.revision}",
         )
         return {
             "promotion": asdict(promotion_publication),
@@ -469,7 +455,7 @@ async def _startup_runtime(ctx: dict, *, worker_role: str) -> None:
     )
     ctx["grile_run_reconcile_stop"] = asyncio.Event()
     ctx["grile_run_reconcile_task"] = asyncio.create_task(
-        _grile_run_reconciliation_loop(ctx),
+        grile_supervisor.run_stale_run_reconciliation_loop(ctx),
         name="grile-run-reconciler",
     )
     grile_supervisor.attach_invariant_restart(
@@ -477,6 +463,9 @@ async def _startup_runtime(ctx: dict, *, worker_role: str) -> None:
         stop=ctx["grile_run_reconcile_stop"],
         name="grile-run-reconciler",
     )
+    grile_pilot_v2_runtime.start_grile_pilot_v2_sync(ctx)
+
+
 async def build_complex_export_background(
     ctx: dict,
     operation_id: int,
@@ -620,6 +609,8 @@ async def grile_store_refresh_background(
     finally:
         if token is not None:
             reset_request_id(token)
+
+
 async def grile_monthly_background(ctx: dict, operation_id: int) -> dict:
     """Inchidere luna grile: ruleaza operatiile native din Retail.
     Ruleaza in worker fiindca operatia poate dura minute (peste timeout-ul de
@@ -844,6 +835,7 @@ async def shutdown(ctx: dict) -> None:
     if run_reconcile_task is not None:
         run_reconcile_task.cancel()
         await asyncio.gather(run_reconcile_task, return_exceptions=True)
+    await grile_pilot_v2_runtime.stop_grile_pilot_v2_sync(ctx)
     visits_task = ctx.get("visits_snapshot_refresh_task")
     visits_stop = ctx.get("visits_snapshot_refresh_stop")
     if visits_stop is not None:
@@ -884,6 +876,7 @@ def main() -> None:
             func(grile_store_refresh_background, max_tries=1),
             func(grile_monthly_background, timeout=runtime.arq_job_timeout_seconds, max_tries=1),
             grile_agent_targets_background,
+            grile_pilot_v2_sync_background,
         ],
         "exports": [func(build_complex_export_background, max_tries=1), func(remove_export_artifact_background, max_tries=3)],
         "salary_exports": [func(build_salary_export_background, max_tries=1), func(remove_export_artifact_background, max_tries=3)],

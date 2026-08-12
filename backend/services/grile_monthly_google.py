@@ -124,6 +124,16 @@ class GoogleSyncAdapter:
                     "data": list(request.get("data", [])),
                 },
             ).execute()
+        if operation == "batch_update":
+            return sheets.spreadsheets().batchUpdate(
+                spreadsheetId=spreadsheet_id,
+                body={
+                    "requests": list(request.get("requests", [])),
+                    "includeSpreadsheetInResponse": bool(
+                        request.get("include_spreadsheet_in_response", False)
+                    ),
+                },
+            ).execute()
         if operation == "export_xlsx":
             request_obj = drive.files().export_media(
                 fileId=spreadsheet_id,

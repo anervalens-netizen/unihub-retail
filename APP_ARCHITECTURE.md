@@ -1023,6 +1023,20 @@ grilele salariale. Retail pastreaza Sheet ID-urile in `grile_sheets`, ruleaza
 verificari async in `grile_runs` si salveaza rezultatul per magazin in
 `grile_store_status`.
 
+Pilotul paralel V2 pentru August 2026 este izolat de cohorta permanenta V1.
+Registrul sau canonic contine 21 de foi active si exclude explicit sursele Delia
+sau programele neconfirmate. Readerul `/api/grile/pilot-v2` ramane read-only.
+Writerul `services/grile_pilot_v2_sync.py` citeste intr-un snapshot
+repeatable-read targetele, `reporting_agent_day`, `reporting_cartela_day` si
+proiectia Campaigns, apoi actualizeaza idempotent numai datele calculate din
+`Liste`, header si `Vânzări & Incentive`. Programul, concediile, celulele manuale
+si V1 nu sunt rescrise. Reviziile sales/Campaigns plus revizia schemei
+writerului sunt markerii de idempotenta; o versiune noua forteaza o prima
+reproiectare completa. Workerul Grile ruleaza self-heal imediat la startup si
+apoi orar, iar publisherul Campaigns solicita o sincronizare dupa o generatie
+noua. O eroare nu transforma lipsa sursei in zero si nu inlocuieste ultima
+proiectie buna.
+
 Migrarea 035 separa observatia imuabila de proiectia curenta. Fiecare full run
 sau refresh per magazin rezerva si claim-uieste prin CAS generatia
 `(luna, magazin)` inainte de orice I/O Google. Workerul ruleaza o singura

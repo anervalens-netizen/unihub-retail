@@ -464,7 +464,7 @@ async def trigger_campaign_reporting_publication(
         logger.exception(
             "enqueue campaign reporting publication esuat pentru %s",
             import_month,
-    )
+        )
 
 
 async def get_public_import_job_status(job_id: str) -> ImportJobStatus:

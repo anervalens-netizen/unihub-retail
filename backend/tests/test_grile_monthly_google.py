@@ -43,6 +43,10 @@ class _Sheets:
     def values(self):
         return self._values
 
+    def batchUpdate(self, **kwargs):
+        self._values.calls.append(("batch_update", threading.get_ident(), kwargs))
+        return _Request({"replies": []})
+
 
 class _Drive:
     pass
@@ -66,11 +70,17 @@ async def test_google_adapter_constructs_and_uses_clients_on_one_dedicated_threa
             {"spreadsheet_id": "sheet", "ranges": ["Grila!A1"]},
             destructive=True,
         )
+        await adapter.request(
+            "batch_update",
+            {"spreadsheet_id": "sheet", "requests": [{"updateCells": {}}]},
+            destructive=True,
+        )
     finally:
         assert await adapter.close()
 
     assert len(set(factory_threads + [item[1] for item in calls])) == 1
     assert factory_threads[0] != threading.get_ident()
+    assert calls[-1][0] == "batch_update"
 
 
 @pytest.mark.asyncio
