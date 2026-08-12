@@ -27,6 +27,9 @@ while [[ $# -gt 0 ]]; do
 done
 
 [[ -n "$EVIDENCE_PATH" ]] || { usage; exit 2; }
+if [[ "$EVIDENCE_PATH" != /* ]]; then
+  EVIDENCE_PATH="$ROOT_DIR/$EVIDENCE_PATH"
+fi
 [[ -x "$PYTHON" && -x "$PYTEST" ]] || {
   printf 'Release-A gate requires backend/venv.\n' >&2
   exit 1
