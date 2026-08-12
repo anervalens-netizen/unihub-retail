@@ -32,8 +32,11 @@ After a backend restart, `/livez` proves that the process responds and
 `/readyz` proves that PostgreSQL and the BFF session backend are usable.
 `/health` remains a compatibility alias for `/readyz`.
 
-Every active unit uses `ProtectSystem=strict` and disables Python bytecode
-writes. Never grant an ancestor such as `/opt/Mobiup` or the Retail release root
+Every active unit uses `ProtectSystem=strict`, disables Python bytecode writes
+and sets `PYTHON_DOTENV_DISABLED=1`. Configuration is loaded once by systemd
+from the authority-specific `EnvironmentFile`; application bootstrap must not
+re-open repository `.env` files under the isolated service identities. Never
+grant an ancestor such as `/opt/Mobiup` or the Retail release root
 through `ReadWritePaths`. The only versioned exceptions are the exact runtime
 data directories required by that authority: web/import spool, import promo
 generations, Grile output, generic export artifacts and the nested salary-export
@@ -75,6 +78,14 @@ Scripturile nu afișează credentiale. Al doilea păstrează configurația worke
 înlocuiește numai `DATABASE_URL`, instalează `.env.salary-export-worker` ca
 `root:unihub-salary-export 0640` și verifică autentificarea principalului.
 
+Deployul normalizează checkout-ul strict după indexul Git: fișierele `100644`
+devin `0644`, fișierele `100755` devin `0755`, iar părinții lor sunt `0755`.
+Modurile speciale, symlinkurile și diferențele de conținut opresc release-ul.
+Frontendul testat este instalat separat `root:unihub-web`, cu directoare `0750`
+și fișiere `0640`; contractul este reverificat și la rollback. Dacă un
+forward-recovery eșuează după începerea tranziției, handlerul oprește toate
+serviciile și le lasă fail-closed; nu repornește un runtime parțial comutat.
+
 ## Prometheus bridge boundary
 
 Prometheus remains on its Docker bridge. Before stopping Retail, the deploy
@@ -111,8 +122,10 @@ production fără autoritate
 explicită refuză startupul. Nu copia același DSN între procese și nu
 introduce `DATABASE_URL` ca fallback în fișierul de migrare.
 Fișierele sunt `root:<service-group>` mode `0640`: root este singurul writer,
-iar userul serviciilor are read deoarece bootstrapul Python recitește `.env`
-după încărcarea systemd. Mode `0600 root:root` blochează startupul.
+iar systemd le citește înainte de schimbarea identității procesului și injectează
+mediul complet. `PYTHON_DOTENV_DISABLED=1` previne o a doua citire din checkout;
+mode `0600 root:root` rămâne incompatibil cu verificarea operațională a
+authority-specific `EnvironmentFile`.
 
 Ordinea de cutover este: oprește backendul și toți workerii; backup și business hashes;
 aplică 040/041 cu identitatea administrativă existentă și flagul one-shot

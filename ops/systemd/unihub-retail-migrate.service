@@ -12,6 +12,7 @@ WorkingDirectory=/opt/Mobiup/unihub-retail/backend
 EnvironmentFile=/opt/Mobiup/unihub-retail/.env.migrations
 Environment="UNIHUB_DB_PROCESS_AUTHORITY=migrate"
 Environment="PYTHONDONTWRITEBYTECODE=1"
+Environment="PYTHON_DOTENV_DISABLED=1"
 ExecStart=/opt/Mobiup/unihub-retail/backend/venv/bin/python scripts/run_migrations.py
 TimeoutStartSec=300
 StandardOutput=journal

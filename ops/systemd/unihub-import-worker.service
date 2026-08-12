@@ -18,6 +18,7 @@ Environment="RETAIL_WORKER_ROLE=imports"
 Environment="WORKER_METRICS_PORT=9902"
 Environment="UNIHUB_DB_PROCESS_AUTHORITY=sales_import"
 Environment="PYTHONDONTWRITEBYTECODE=1"
+Environment="PYTHON_DOTENV_DISABLED=1"
 ExecStart=/opt/Mobiup/unihub-retail/backend/venv/bin/python worker.py
 Restart=always
 RestartSec=5

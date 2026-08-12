@@ -24,7 +24,7 @@ is stored in Git or evidence.
 | --- | --- | --- |
 | UH-01 High | Box-constrained Decimal allocator solves floors and caps simultaneously; cent remainder is deterministic; bound flags are rebuilt from the final result. | Exact `50/54/6` regression, property matrix, zero-weight/permutation/flags cases and 8/8 targeted mutations. |
 | UH-02 Medium | Every failed import attempt keeps the exact queued bytes for deterministic ARQ retry. Retry adopts an exact validated generation whether retain failed before or after the filesystem move, then idempotently completes content-addressed retain and DB acknowledgement without restaging or worker restart. | Stage-failure retry over identical bytes, pre-move fsync/ENOSPC window, fault injection after `Path.replace` and before DB retain acknowledgement, artifact lifecycle/import suites. |
-| UH-03 Medium | All active units use distinct locked nologin OS users, `ProtectSystem=strict`, `PYTHONDONTWRITEBYTECODE=1` and exact authority-specific write directories; `/opt/Mobiup` and release/code/config ancestors are absent. Four setgid groups carry only the required spool/promo/Grile/export artifacts at `2770/0660`. Import-spool directories stay import-owned, while files accept only the legitimate web/import producer owners preserved across retain. Web remains read-only to exports; the salary namespace is hidden from every non-salary authority. | Exact User/Group/SupplementaryGroups/UMask regression, provisioning verifier, `systemd-analyze verify`, checked-in allowlist/mount-mask regression, arbitrary-owner rejection, web-upload same-SHA reverification, cross-namespace cleanup rejection and deploy/rollback sandbox. |
+| UH-03 Medium | All active units use distinct locked nologin OS users, `ProtectSystem=strict`, `PYTHONDONTWRITEBYTECODE=1`, `PYTHON_DOTENV_DISABLED=1` and exact authority-specific write directories; `/opt/Mobiup` and release/code/config ancestors are absent. Four setgid groups carry only the required spool/promo/Grile/export artifacts at `2770/0660`. Import-spool directories stay import-owned, while files accept only the legitimate web/import producer owners preserved across retain. Web remains read-only to exports; the salary namespace is hidden from every non-salary authority. Deploy normalizes source modes from the Git index and installs frontend files read-only as `root:unihub-web`. | Exact User/Group/SupplementaryGroups/UMask/environment regression, provisioning verifier, `systemd-analyze verify`, checked-in allowlist/mount-mask regression, arbitrary-owner rejection, web-upload same-SHA reverification, restrictive-umask source/frontend regression, cross-namespace cleanup rejection and deploy/rollback sandbox. |
 | UH-04 Medium | Callback requires equal `(iss, sub)` for independently verified access/ID tokens; refresh requires continuity with the encrypted session record and fails closed. | Callback and refresh issuer/subject mismatch tests; finite mismatch metric. |
 | UH-05 Medium | Startup prewarms JWKS; readiness accepts fresh or bounded-stale validated keys and rejects absent/expired failed bootstrap; finite one-hot state metric. | Startup/readiness and cache-state tests. |
 | UH-06 Low | The pre-parser 413 path now applies request ID, security/no-store headers, bounded CORS and request metrics just like normal responses. | Content-Length and streamed/chunked oversize contract tests. |
@@ -128,6 +128,32 @@ Target, salary, Finance or import business data is rolled back by direct SQL.
 
 These counts are diagnostic only. Final authority is the unchanged candidate's
 PR CI, exact-main CI, artifact attestation, deployment run and live probes.
+
+## 2026-08-12 deployment incident and corrective control
+
+PR `#144` merged as `741efe8090a636571c1c02280ec7c3294df189a6`, but
+the exact-main release was cancelled after Codex review identified a legitimate
+web-owned retained-spool case rejected by the deploy verifier. PR `#145` fixed
+that boundary and merged as `d645827538e40ca54425794de531f47a7be49bb8`.
+Exact-main CI `31579134546` passed and produced release digest
+`ad77cd1cba1fc644990a018bbd0faec6d02ce980a4548904cdb682f968dcfa49`.
+
+The first formal deployment exposed two release-tooling assumptions hidden by
+the former shared OS identity: Python bootstrap re-opened repository `.env`
+files after systemd had already loaded the authority-specific environment, and
+artifact extraction under deploy `umask 077` left source/frontend paths
+unreadable to the new identities. No salary, Target, Finance or import business
+data was changed. Migrations 065/066 applied successfully during controlled
+roll-forward; all six services and the public route were restored, while the
+release record remained `recovery_required` pending a versioned correction.
+
+The corrective candidate disables Python dotenv loading in every active unit,
+normalizes tracked source modes exactly from the Git index, installs frontend
+content as `root:unihub-web` `0750/0640`, and verifies the same contracts during
+deploy, same-SHA reverify and rollback. The isolated deploy/rollback/recovery
+sandbox reproduces restrictive `0700/0600` inputs and passes. Exact hotfix SHA,
+CI, artifact, deploy handle and live probes are recorded below only after the
+formal gates complete.
 
 ## Exact release evidence
 

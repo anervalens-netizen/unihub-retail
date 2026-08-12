@@ -53,6 +53,9 @@ cp "$SCRIPT_DIR/systemd/unihub-legacy-worker.service" "$BUILDER/ops/systemd/"
 git clone --quiet "$REMOTE" "$LIVE"
 mkdir -p "$LIVE/dist"
 printf 'old frontend\n' >"$LIVE/dist/index.html"
+chmod 0700 "$LIVE" "$LIVE/backend" "$LIVE/dist"
+chmod 0600 "$LIVE/backend/main.py" "$LIVE/dist/index.html"
+[[ "$(stat -c '%a' "$LIVE/backend/main.py")" == "600" ]]
 
 mkdir -p \
   "$ROOT/etc/systemd/system" \
@@ -89,6 +92,8 @@ git -C "$BUILDER" push --quiet origin main
 mkdir -p "$BUILDER/dist/assets"
 printf 'new frontend\n' >"$BUILDER/dist/index.html"
 printf 'asset\n' >"$BUILDER/dist/assets/app.js"
+chmod 0700 "$BUILDER/dist" "$BUILDER/dist/assets"
+chmod 0600 "$BUILDER/dist/index.html" "$BUILDER/dist/assets/app.js"
 build_release() {
   local source_sha="$1"
   local output_dir="$2"
@@ -182,6 +187,13 @@ mv -- "$CLAIMED_APPROVAL" "$ACTIVE_APPROVAL"
 run_deploy "$ARTIFACT" "$NEW_SHA" "$CI_RUN_ID" "$ARTIFACT_SHA256"
 [[ "$(git -C "$LIVE" rev-parse HEAD)" == "$NEW_SHA" ]]
 [[ "$(<"$LIVE/dist/index.html")" == "new frontend" ]]
+[[ "$(stat -c '%a' "$LIVE")" == "755" ]]
+[[ "$(stat -c '%a' "$LIVE/backend")" == "755" ]]
+[[ "$(stat -c '%a' "$LIVE/backend/main.py")" == "644" ]]
+[[ "$(stat -c '%U:%G:%a' "$LIVE/dist")" == "$(id -un):$(id -gn):750" ]]
+[[ "$(stat -c '%U:%G:%a' "$LIVE/dist/assets")" == "$(id -un):$(id -gn):750" ]]
+[[ "$(stat -c '%U:%G:%a' "$LIVE/dist/index.html")" == "$(id -un):$(id -gn):640" ]]
+[[ "$(stat -c '%U:%G:%a' "$LIVE/dist/assets/app.js")" == "$(id -un):$(id -gn):640" ]]
 [[ -d "$LIVE/data/export_artifacts/salary" ]]
 [[ "$(stat -c '%a' "$LIVE/data/export_artifacts/salary")" == "770" ]]
 for shared_root in \
@@ -298,12 +310,16 @@ SECOND_HANDLE="$(
 
 run_deploy rollback "$SECOND_HANDLE"
 [[ "$(git -C "$LIVE" rev-parse HEAD)" == "$NEW_SHA" ]]
+[[ "$(stat -c '%a' "$LIVE/backend/main.py")" == "644" ]]
+[[ "$(stat -c '%a' "$LIVE/dist/index.html")" == "640" ]]
 [[ "$(readlink -f "$ROOT/etc/systemd/system/unihub-backend.service")" == "$ROOT/runtime-releases/$NEW_SHA/systemd/unihub-backend.service" ]]
 [[ "$(<"$LIVE/docs/AUDIT_TEHNIC_RETAIL_UNIHUB_REAUDIT_2026-07-15.md")" == "published audit" ]]
 [[ "$(<"$LIVE/docs/PLAN_DEZVOLTARE_RETAIL_UNIHUB_URMATOAREA_VERSIUNE_2026-07-15.md")" == "published plan" ]]
 
 run_deploy rollback "$HANDLE"
 [[ "$(git -C "$LIVE" rev-parse HEAD)" == "$OLD_SHA" ]]
+[[ "$(stat -c '%a' "$LIVE/backend/main.py")" == "644" ]]
+[[ "$(stat -c '%a' "$LIVE/dist/index.html")" == "640" ]]
 [[ ! -L "$ROOT/etc/systemd/system/unihub-backend.service" ]]
 grep -Fxq 'legacy unit unihub-backend.service' "$ROOT/etc/systemd/system/unihub-backend.service"
 for unit in unihub-grile-worker.service unihub-export-worker.service \
@@ -538,11 +554,10 @@ git -C "$BUILDER" push --quiet origin main
 [[ "$ADVANCED_SHA" != "$MIGRATED_SHA" ]]
 
 approve_release "$MIGRATED_RUN_ID" "$MIGRATED_SHA" "$MIGRATED_ARTIFACT_SHA256" >/dev/null
-rm -f "$ROOT/.health-failure-consumed"
 set +e
 RETAIL_DEPLOY_TEST_MODE=1 \
 RETAIL_DEPLOY_TEST_ROOT="$ROOT" \
-RETAIL_DEPLOY_TEST_FAIL_PHASE=health \
+RETAIL_DEPLOY_TEST_FAIL_PHASE=source_permissions \
   bash "$DEPLOY_SCRIPT" "$MIGRATED_ARTIFACT" "$MIGRATED_SHA" "$MIGRATED_RUN_ID" "$MIGRATED_ARTIFACT_SHA256" \
   >"$ROOT/migrated-recovery-failure.log" 2>&1
 MIGRATED_RECOVERY_RC=$?
@@ -552,6 +567,10 @@ set -e
 grep -q '^STATE=recovery_required$' "$MIGRATED_HANDLE/release.env"
 [[ "$(find "$MIGRATED_HANDLE" -maxdepth 1 -type f -name 'approval.failed.*.env' | wc -l)" -eq 1 ]]
 [[ "$(find "$ROOT/approval-store" -maxdepth 1 -type f -name "${MIGRATED_RUN_ID}-${MIGRATED_SHA}-${MIGRATED_ARTIFACT_SHA256}-*.failed" | wc -l)" -eq 2 ]]
+grep -q 'TEST tracked source permission failure' "$ROOT/migrated-recovery-failure.log"
+grep -q 'forward recovery runtime remains stopped after an incomplete transition' "$ROOT/migrated-recovery-failure.log"
+[[ "$(grep -c 'TEST systemctl stop ' "$ROOT/migrated-recovery-failure.log")" -eq 2 ]]
+! grep -q 'TEST systemctl restart ' "$ROOT/migrated-recovery-failure.log"
 grep -q 'release remains recovery_required and requires a fresh one-time approval' "$ROOT/migrated-recovery-failure.log"
 
 approve_release "$MIGRATED_RUN_ID" "$MIGRATED_SHA" "$MIGRATED_ARTIFACT_SHA256" >/dev/null

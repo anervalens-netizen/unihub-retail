@@ -8,6 +8,8 @@ TEST_MODE="${RETAIL_DEPLOY_TEST_MODE:-0}"
 TEST_FAIL_PHASE="${RETAIL_DEPLOY_TEST_FAIL_PHASE:-}"
 TEST_NOW="${RETAIL_DEPLOY_TEST_NOW:-}"
 SHARED_DIRECTORY_MODE=2770
+FRONTEND_DIRECTORY_MODE=0750
+FRONTEND_FILE_MODE=0640
 READ_ONLY_MODE=0
 [[ "${1:-}" == "validate" ]] && READ_ONLY_MODE=1
 
@@ -57,6 +59,8 @@ if [[ "$TEST_MODE" == "1" ]]; then
   IMPORT_FILE_USER="$SERVICE_USER"
   IMPORT_SPOOL_FILE_USER="${RETAIL_DEPLOY_TEST_IMPORT_FILE_USER:-$IMPORT_FILE_USER}"
   WEB_FILE_USER="${RETAIL_DEPLOY_TEST_WEB_FILE_USER:-$SERVICE_USER}"
+  FRONTEND_FILE_USER="$SERVICE_USER"
+  FRONTEND_FILE_GROUP="$SERVICE_GROUP"
   IMPORT_SPOOL_GROUP="$SERVICE_GROUP"
   PROMO_ARTIFACT_GROUP="$SERVICE_GROUP"
   GRILE_FILE_USER="$SERVICE_USER"
@@ -73,6 +77,8 @@ else
   IMPORT_FILE_USER="unihub-import"
   IMPORT_SPOOL_FILE_USER="$IMPORT_FILE_USER"
   WEB_FILE_USER="unihub-web"
+  FRONTEND_FILE_USER="root"
+  FRONTEND_FILE_GROUP="unihub-web"
   IMPORT_SPOOL_GROUP="unihub-import-spool"
   PROMO_ARTIFACT_GROUP="unihub-promo-artifacts"
   GRILE_FILE_USER="unihub-grile"
@@ -276,18 +282,40 @@ enable_runtime_services() {
   done < <(runtime_service_names)
 }
 
-set_service_ownership() {
-  if [[ "$TEST_MODE" != "1" ]]; then
-    chown -R "$SERVICE_USER:$SERVICE_GROUP" "$@"
-  fi
-}
-
 assert_regular_tree() {
   local root="$1"
   local unsafe
   [[ -d "$root" && ! -L "$root" ]] || die "runtime artifact tree is unavailable or unsafe: $root"
   unsafe="$(find "$root" -xdev ! -type d ! -type f -print -quit)"
   [[ -z "$unsafe" ]] || die "runtime artifact tree contains a symlink or special file: $unsafe"
+}
+
+set_frontend_permissions() {
+  local root="$1"
+  assert_regular_tree "$root"
+  if [[ "$TEST_MODE" != "1" ]]; then
+    find "$root" -xdev -type d -exec chown "$FRONTEND_FILE_USER:$FRONTEND_FILE_GROUP" {} +
+    find "$root" -xdev -type f -exec chown "$FRONTEND_FILE_USER:$FRONTEND_FILE_GROUP" {} +
+  fi
+  find "$root" -xdev -type d -exec chmod "$FRONTEND_DIRECTORY_MODE" {} +
+  find "$root" -xdev -type f -exec chmod "$FRONTEND_FILE_MODE" {} +
+  verify_frontend_permissions "$root"
+}
+
+verify_frontend_permissions() {
+  local root="$1"
+  local path actual expected
+  assert_regular_tree "$root"
+  while IFS= read -r -d '' path; do
+    if [[ -d "$path" ]]; then
+      expected="$FRONTEND_FILE_USER:$FRONTEND_FILE_GROUP:750"
+    else
+      expected="$FRONTEND_FILE_USER:$FRONTEND_FILE_GROUP:640"
+    fi
+    actual="$(stat -c '%U:%G:%a' "$path")"
+    [[ "$actual" == "$expected" ]] \
+      || die "frontend permission contract is invalid: $path ($actual)"
+  done < <(find "$root" -xdev \( -type d -o -type f \) -print0)
 }
 
 apply_shared_tree_contract() {
@@ -497,6 +525,89 @@ PY
 
 git_service() {
   run_as_service_user git -C "$LIVE_ROOT" "$@"
+}
+
+validate_tracked_path() {
+  local path="$1"
+  [[ -n "$path" && "$path" != /* ]] || die "invalid tracked source path"
+  case "/$path/" in
+    */../*|*/./*) die "unsafe tracked source path: $path" ;;
+  esac
+}
+
+normalize_tracked_parent_directories() {
+  local path="$1"
+  local parent
+  parent="$(dirname -- "$path")"
+  while [[ "$parent" != "." ]]; do
+    [[ -d "$LIVE_ROOT/$parent" && ! -L "$LIVE_ROOT/$parent" ]] \
+      || die "tracked source parent is unavailable or unsafe: $parent"
+    chmod 0755 "$LIVE_ROOT/$parent"
+    parent="$(dirname -- "$parent")"
+  done
+}
+
+normalize_tracked_source_permissions() {
+  local entry metadata mode object stage path expected
+  [[ -d "$LIVE_ROOT" && ! -L "$LIVE_ROOT" ]] || die "Retail live root is unsafe"
+  chmod 0755 "$LIVE_ROOT"
+  if [[ "$TEST_MODE" == "1" && "$TEST_FAIL_PHASE" == "source_permissions" ]]; then
+    log "TEST tracked source permission failure"
+    return 1
+  fi
+  while IFS= read -r -d '' entry; do
+    metadata="${entry%%$'\t'*}"
+    path="${entry#*$'\t'}"
+    read -r mode object stage <<<"$metadata"
+    [[ "$object" =~ ^[0-9a-f]{40,64}$ && "$stage" == "0" ]] \
+      || die "tracked source index entry is invalid: $path"
+    validate_tracked_path "$path"
+    case "$mode" in
+      100644) expected=0644 ;;
+      100755) expected=0755 ;;
+      *) die "unsupported tracked source mode $mode: $path" ;;
+    esac
+    [[ -f "$LIVE_ROOT/$path" && ! -L "$LIVE_ROOT/$path" ]] \
+      || die "tracked source file is unavailable or unsafe: $path"
+    normalize_tracked_parent_directories "$path"
+    chmod "$expected" "$LIVE_ROOT/$path"
+  done < <(git_service ls-files --stage -z)
+  verify_tracked_source_permissions
+  git_service diff --quiet --ignore-submodules -- \
+    || die "tracked source content changed while normalizing permissions"
+  git_service diff --cached --quiet --ignore-submodules -- \
+    || die "tracked source index changed while normalizing permissions"
+}
+
+verify_tracked_source_permissions() {
+  local entry metadata mode object stage path expected parent actual
+  [[ "$(stat -c '%a' "$LIVE_ROOT")" == "755" ]] \
+    || die "Retail live root must be mode 0755"
+  while IFS= read -r -d '' entry; do
+    metadata="${entry%%$'\t'*}"
+    path="${entry#*$'\t'}"
+    read -r mode object stage <<<"$metadata"
+    [[ "$object" =~ ^[0-9a-f]{40,64}$ && "$stage" == "0" ]] \
+      || die "tracked source index entry is invalid: $path"
+    validate_tracked_path "$path"
+    case "$mode" in
+      100644) expected=644 ;;
+      100755) expected=755 ;;
+      *) die "unsupported tracked source mode $mode: $path" ;;
+    esac
+    [[ -f "$LIVE_ROOT/$path" && ! -L "$LIVE_ROOT/$path" ]] \
+      || die "tracked source file is unavailable or unsafe: $path"
+    actual="$(stat -c '%a' "$LIVE_ROOT/$path")"
+    [[ "$actual" == "$expected" ]] \
+      || die "tracked source mode is invalid: $path ($actual)"
+    parent="$(dirname -- "$path")"
+    while [[ "$parent" != "." ]]; do
+      [[ -d "$LIVE_ROOT/$parent" && ! -L "$LIVE_ROOT/$parent" \
+        && "$(stat -c '%a' "$LIVE_ROOT/$parent")" == "755" ]] \
+        || die "tracked source parent mode is invalid: $parent"
+      parent="$(dirname -- "$parent")"
+    done
+  done < <(git_service ls-files --stage -z)
 }
 
 assert_live_checkout() {
@@ -1558,12 +1669,16 @@ recover_forward_release() {
   [[ "$state" == "recovery_required" ]] || die "deploy record is not recovery-required"
 
   local approval_claimed=0
+  local runtime_transition_started=0
   work_dir="$(mktemp -d "${TMPDIR:-/tmp}/retail-forward-recovery.XXXXXX")"
   on_recovery_error() {
     local rc=$?
     trap - EXIT ERR
+    if [[ "$runtime_transition_started" == "1" ]]; then
+      stop_runtime || true
+      log "forward recovery runtime remains stopped after an incomplete transition"
+    fi
     clear_planned_deployment || true
-    start_runtime || true
     log "forward recovery failed; release remains recovery_required and requires a fresh one-time approval"
     if [[ "$approval_claimed" == "1" && -n "$APPROVAL_CLAIM" ]]; then
       finalize_approval failed "$backup_dir" || true
@@ -1585,7 +1700,7 @@ recover_forward_release() {
   rm -rf -- "$next_dist"
   mkdir -p "$next_dist"
   cp -a "$artifact_tree/dist/." "$next_dist/"
-  set_service_ownership "$next_dist"
+  set_frontend_permissions "$next_dist"
   [[ -f "$next_dist/index.html" && ! -L "$next_dist/index.html" && -s "$next_dist/index.html" ]] \
     || die "recovery frontend is invalid"
 
@@ -1598,6 +1713,7 @@ recover_forward_release() {
   mark_planned_deployment
   wait_for_planned_deployment_inhibition \
     || die "planned deployment inhibition did not become active"
+  runtime_transition_started=1
   stop_runtime
   apply_runtime_identity_filesystem
   verify_runtime_identity_filesystem
@@ -1606,10 +1722,11 @@ recover_forward_release() {
     failed_dist="$backup_dir/dist.recovery.failed.$(date -u +%Y%m%dT%H%M%SZ)"
     mv -- "$LIVE_ROOT/dist" "$failed_dist"
     mv -- "$next_dist" "$LIVE_ROOT/dist"
-    set_service_ownership "$LIVE_ROOT/dist"
   else
     rm -rf -- "$next_dist"
   fi
+  set_frontend_permissions "$LIVE_ROOT/dist"
+  normalize_tracked_source_permissions
   run_migrations
   start_runtime
   verify_local_health
@@ -1684,7 +1801,7 @@ prepare_tested_dist() {
   rm -rf -- "$next_dist"
   mkdir -p "$next_dist"
   cp -a "$artifact_tree/dist/." "$next_dist/"
-  set_service_ownership "$next_dist"
+  set_frontend_permissions "$next_dist"
   [[ -f "$next_dist/index.html" && ! -L "$next_dist/index.html" && -s "$next_dist/index.html" ]] \
     || die "staged frontend is invalid"
   printf '%s\n' "$next_dist"
@@ -1717,7 +1834,7 @@ restore_dist() {
     mv -- "$LIVE_ROOT/dist" "$failed_dist"
   fi
   mv -- "$backup_dir/dist" "$LIVE_ROOT/dist"
-  set_service_ownership "$LIVE_ROOT/dist"
+  set_frontend_permissions "$LIVE_ROOT/dist"
 }
 
 stop_runtime() {
@@ -1828,6 +1945,7 @@ rollback_from_backup() {
   log "rolling back code from $expected_current_sha to $old_sha"
   stop_runtime || true
   git_service reset --hard "$old_sha"
+  normalize_tracked_source_permissions
   restore_dist "$backup_dir"
   restore_runtime_assets "$backup_dir"
   start_runtime
@@ -1878,6 +1996,8 @@ deploy_release() {
     assert_prometheus_shared_include
     verify_active_runtime_assets "$expected_sha"
     verify_runtime_identity_filesystem
+    verify_tracked_source_permissions
+    verify_frontend_permissions "$LIVE_ROOT/dist"
     verify_local_health
     verify_public_release
     log "existing deployment reverified without mutation: $expected_sha"
@@ -1955,6 +2075,7 @@ deploy_release() {
   install_runtime_assets "$stage_root" "$expected_sha"
   switch_dist "$next_dist" "$backup_dir"
   git_service merge --ff-only "$expected_sha"
+  normalize_tracked_source_permissions
   write_release_manifest "$backup_dir" "$old_sha" "$expected_sha" "switched"
   migrations_may_have_applied=1
   run_migrations

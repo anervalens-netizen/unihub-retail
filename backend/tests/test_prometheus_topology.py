@@ -157,6 +157,7 @@ def _assert_systemd_write_boundaries(units: dict[str, str]) -> None:
     assert all("ProtectSystem=strict" in unit for unit in all_units)
     assert all("RestrictSUIDSGID=true" in unit for unit in all_units)
     assert all("PYTHONDONTWRITEBYTECODE=1" in unit for unit in all_units)
+    assert all("PYTHON_DOTENV_DISABLED=1" in unit for unit in all_units)
     _assert_exact_write_paths(units)
     _assert_no_broad_write_paths(units)
 

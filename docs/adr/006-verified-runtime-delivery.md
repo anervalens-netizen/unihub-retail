@@ -67,6 +67,8 @@ Break-glass nu este o alternativă de comoditate.
 
 - `main` nu este tratat ca mediu de dezvoltare;
 - serverul nu reconstruiește sursa după CI;
+- deployul normalizează permisiunile sursei după modurile din indexul Git și
+  instalează frontendul cu un contract read-only pentru identitatea web;
 - agentul operațional poate executa autonom întregul flux autorizat, dar nu
   poate sări peste dovada exact-SHA;
 - ADR-005 rămâne istoric pentru principiul autorizării prin conversație, însă
