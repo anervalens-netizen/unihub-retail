@@ -16,7 +16,6 @@ import time
 import zipfile
 from dataclasses import dataclass
 from datetime import datetime
-from decimal import Decimal
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Coroutine, Literal
 from uuid import uuid4
@@ -24,9 +23,7 @@ from uuid import uuid4
 import asyncpg
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload
-from openpyxl import Workbook, load_workbook
-from openpyxl.styles import Alignment, Font, PatternFill
-from openpyxl.utils import get_column_letter
+from openpyxl import load_workbook
 from repositories.grile_monthly_operations import (
     MonthlyExecutionLease,
     ResetItemInput,
@@ -67,12 +64,43 @@ from services.grile_monthly_google import (
     GoogleSyncAdapter,
     call_with_backoff,
 )
-from services.spreadsheet_safety import TrustedFormula, append_openpyxl_row
+from services import grile_monthly_artifacts as monthly_artifacts
+from services.grile_monthly_artifacts import (
+    ARCHIVE_DIR_NAME,
+    FINAL_EXPORT_NAME_PREFIX,
+    build_archive_dir,
+    build_archive_manifest_path,
+    build_archive_zip_path,
+    build_final_export_path,
+    build_manager_zip_path,
+    build_reset_backup_dir,
+    build_reset_dry_run_report_path,
+    build_reset_report_path,
+    build_store_export_path,
+    make_output_row,
+    month_slug,
+    resolve_output_path,
+    safe_filename,
+    style_sheet,
+    validate_archive_manifest,
+)
 from services.grile_monthly_state import (
     GrileMonthlyRetryBlockedError,
     MonthlyOperationReservation,
     MonthlyOperationStartResult,
     safe_persisted_result,
+)
+from services.grile_monthly_parsing import (
+    control_totals as _control_totals,
+    error_row as _error_row,
+    finalization_coverage as _validate_finalization_coverage,
+    parse_store_rows,
+    scalar,
+    source_registry as _source_registry,
+    sum_scalars,
+    to_number,
+    value_ranges_for_entry,
+    with_source_registry as _with_source_registry,
 )
 from services.grile_constants import (
     GOOGLE_API_RETRY_ATTEMPTS,
@@ -96,14 +124,26 @@ from services.grile_monthly_integrity import (
     validate_verified_manifest,
     verify_artifacts,
 )
+from services.grile_monthly_types import (
+    AUDIT_HEADERS,
+    GRILA_CELLS,
+    GRILA_CELLS_V3,
+    HEADERS,
+    RESET_RANGES,
+    RESET_RANGES_V3,
+    RO_MONTHS,
+    ExtractedAgentRow,
+    MonthlyExecution,
+    MonthlyManifestError,
+    StoreEntry,
+    cells_for_entry,
+    next_ym,
+    reset_ranges_for_entry,
+    ro_month_label,
+)
 
 GOOGLE_OPERATION_DEADLINE_SECONDS = 120.0
 MONTHLY_OPERATION_HEARTBEAT_SECONDS = 60.0
-
-RO_MONTHS = [
-    "", "Ianuarie", "Februarie", "Martie", "Aprilie", "Mai", "Iunie",
-    "Iulie", "August", "Septembrie", "Octombrie", "Noiembrie", "Decembrie",
-]
 
 VALID_OPS = {"finalize", "archive", "reset"}
 MANIFEST_ATTEMPT_STATUSES = (
@@ -124,169 +164,7 @@ SCOPES = [
 
 BASE_DIR = Path(__file__).resolve().parents[1]
 OUTPUTS_DIR = Path(os.getenv("GRILE_OUTPUTS_DIR", BASE_DIR / "outputs" / "grile"))
-FINAL_EXPORT_NAME_PREFIX = "Tabel Salarii -"
-ARCHIVE_DIR_NAME = "archive"
-RESET_RANGES = [
-    "Grila!D8",
-    "Grila!D22",
-    "Grila!P5:P36",
-    "Grila!Q5:S36",
-    "Grila!U5:U36",
-    "Grila!V5:X36",
-    "Grila!B32:F46",
-    "Grila!F12:F14",
-    "Grila!F26:F28",
-    "Pontaj!C8:AG31",
-]
-RESET_RANGES_V3 = [
-    "Grila!D8",
-    "Grila!D22",
-    "Grila!D36",
-    "Grila!P5:P50",
-    "Grila!Q5:S50",
-    "Grila!U5:U50",
-    "Grila!V5:X50",
-    "Grila!Z5:Z50",
-    "Grila!AA5:AC50",
-    "Grila!B46:F60",
-    "Grila!F12:F14",
-    "Grila!F26:F28",
-    "Grila!F40:F42",
-    "Pontaj!C8:AG31",
-]
-GRILA_CELLS = {
-    1: {
-        "agent": "D2",
-        "base_salary": "D3",
-        "sales_commission_cells": ["G8", "G9", "G12", "G13", "G14"],
-        "bonuri": "D4",
-        "extra_hours_pay": "G10",
-        "extra_location_commission": "G11",
-        "worked_hours": "Pontaj!AH8",
-    },
-    2: {
-        "agent": "D16",
-        "base_salary": "D17",
-        "sales_commission_cells": ["G22", "G23", "G26", "G27", "G28"],
-        "bonuri": "D18",
-        "extra_hours_pay": "G24",
-        "extra_location_commission": "G25",
-        "worked_hours": "Pontaj!AH11",
-    },
-}
-GRILA_CELLS_V3 = {
-    **GRILA_CELLS,
-    3: {
-        "agent": "D30",
-        "base_salary": "D31",
-        "sales_commission_cells": ["G36", "G37", "G40", "G41", "G42"],
-        "bonuri": "D32",
-        "extra_hours_pay": "G38",
-        "extra_location_commission": "G39",
-        "worked_hours": "Pontaj!AH14",
-    },
-}
-HEADERS = [
-    "Nr",
-    "Manager",
-    "Magazin",
-    "Agent",
-    "Salariu baza",
-    "Comision vanzare",
-    "Flip",
-    "Comision vanzare zile suplimentare",
-    "Incentive lunar",
-    "Plata ore suplimentare",
-    "Total salariu",
-    "Salariu Cash",
-    "Bonuri",
-    "Data angajarii",
-    "Data plecarii",
-    "Nr. Ore lucrate",
-    "Zile CO luna in curs",
-]
-AUDIT_HEADERS = [
-    "Company",
-    "Store",
-    "Slot",
-    "Agent",
-    "Sheet ID",
-    "Comision vanzare",
-    "Comision supl",
-    "Plata ore supl",
-    "Bonuri",
-    "Ore lucrate",
-    "Source",
-    "Status",
-    "Error",
-]
 _TRANSIENT = {429, 500, 502, 503, 504}
-
-
-@dataclass(frozen=True)
-class StoreEntry:
-    company: str
-    store: str
-    sheet_id: str
-    site_code: str
-    manager: str
-    is_closed: bool = False
-    template_version: str = "v2"
-
-
-def cells_for_entry(entry: StoreEntry) -> dict[int, dict[str, Any]]:
-    return GRILA_CELLS_V3 if entry.template_version == "v3" else GRILA_CELLS
-
-
-def reset_ranges_for_entry(entry: StoreEntry) -> list[str]:
-    return list(RESET_RANGES_V3 if entry.template_version == "v3" else RESET_RANGES)
-
-
-@dataclass
-class ExtractedAgentRow:
-    company: str
-    store: str
-    slot: int
-    agent: Any
-    base_salary: Any
-    sales_commission: Any
-    extra_location_commission: Any
-    extra_hours_pay: Any
-    bonuri: Any
-    worked_hours: Any
-    status: str
-    error: str
-    sheet_id: str
-    site_code: str = ""
-    error_code: str = ""
-
-
-@dataclass(frozen=True)
-class MonthlyExecution:
-    path: Path
-    manifest: dict[str, Any]
-    rollback: Callable[[], Awaitable[dict[str, Any]]] | None = None
-
-
-class MonthlyManifestError(MonthlyIntegrityError):
-    def __init__(self, code: str, message: str, manifest: dict[str, Any]):
-        super().__init__(code, message)
-        self.manifest = manifest
-
-
-def ro_month_label(ym: str) -> str:
-    """`2026-05` -> `Mai 2026`."""
-    year, month = ym.split("-")
-    return f"{RO_MONTHS[int(month)]} {year}"
-
-
-def next_ym(ym: str) -> str:
-    year, month = (int(x) for x in ym.split("-"))
-    month += 1
-    if month > 12:
-        month = 1
-        year += 1
-    return f"{year:04d}-{month:02d}"
 
 
 def _sa_file() -> Path:
@@ -314,67 +192,6 @@ def build_google_services() -> tuple[Any, Any]:
     sheets = build("sheets", "v4", credentials=creds, cache_discovery=False)
     drive = build("drive", "v3", credentials=creds, cache_discovery=False)
     return sheets, drive
-
-
-def safe_filename(value: str) -> str:
-    import re
-
-    cleaned = value.replace("/", " - ").replace("\\", " - ")
-    cleaned = re.sub(r'[<>:"|?*]', "_", cleaned)
-    cleaned = re.sub(r"\s+", " ", cleaned).strip()
-    return cleaned.rstrip(". ") or "untitled"
-
-
-def month_slug(month: str) -> str:
-    import re
-
-    slug = re.sub(r"[^0-9A-Za-zĂÂÎȘȚăâîșț]+", "-", month.strip())
-    return slug.strip("-")
-
-
-def build_final_export_path(outputs_dir: Path, month: str) -> Path:
-    return outputs_dir / f"{FINAL_EXPORT_NAME_PREFIX} {month}.xlsx"
-
-
-def build_archive_dir(outputs_dir: Path, month: str) -> Path:
-    return outputs_dir / ARCHIVE_DIR_NAME / month
-
-
-def build_archive_manifest_path(outputs_dir: Path, month: str) -> Path:
-    return build_archive_dir(outputs_dir, month) / f"archive-manifest-{month_slug(month)}.json"
-
-
-def build_archive_zip_path(outputs_dir: Path, month: str) -> Path:
-    return build_archive_dir(outputs_dir, month) / f"Grile - {month}.zip"
-
-
-def build_reset_report_path(outputs_dir: Path, next_month: str) -> Path:
-    return outputs_dir / f"reset-report-{month_slug(next_month)}.json"
-
-
-def build_reset_dry_run_report_path(outputs_dir: Path, next_month: str) -> Path:
-    return outputs_dir / f"reset-dry-run-{month_slug(next_month)}.json"
-
-
-def build_reset_backup_dir(outputs_dir: Path, closing_month: str, operation_id: int) -> Path:
-    return outputs_dir / "reset-backups" / month_slug(closing_month) / str(operation_id)
-
-
-def build_store_export_path(outputs_dir: Path, month: str, entry: StoreEntry) -> Path:
-    return build_archive_dir(outputs_dir, month) / safe_filename(entry.company) / f"{safe_filename(entry.store)}.xlsx"
-
-
-def build_manager_zip_path(outputs_dir: Path, month: str, manager: str) -> Path:
-    return build_archive_dir(outputs_dir, month) / "ASM" / f"Grile - {month} - {safe_filename(manager)}.zip"
-
-
-def resolve_output_path(month: str, only: str | None, output_dir: Path) -> Path:
-    output_path = build_final_export_path(output_dir, month)
-    if only:
-        output_path = output_path.with_name(
-            f"{output_path.stem} - TEST {safe_filename(only)}{output_path.suffix}"
-        )
-    return output_path
 
 
 def _is_transient(exc: Exception) -> bool:
@@ -846,262 +663,55 @@ async def record_reset_item_rollback(
     )
 
 
-def validate_archive_manifest(manifest: dict[str, Any], expected_count: int) -> tuple[bool, list[str]]:
-    errors: list[str] = []
-    if manifest.get("registry_count") != expected_count:
-        errors.append(f"registry_count mismatch: {manifest.get('registry_count')} != {expected_count}")
-    if manifest.get("exported_count") != expected_count:
-        errors.append(f"exported_count mismatch: {manifest.get('exported_count')} != {expected_count}")
-    if manifest.get("error_count") != 0:
-        errors.append(f"archive has {manifest.get('error_count')} export errors")
-
-    stores = manifest.get("stores")
-    if not isinstance(stores, list) or len(stores) != expected_count:
-        count = len(stores) if isinstance(stores, list) else "invalid"
-        errors.append(f"stores count mismatch: {count} != {expected_count}")
-    else:
-        for store in stores:
-            company = store.get("company", "?")
-            name = store.get("store", "?")
-            if store.get("status") != "OK":
-                errors.append(f"{company}/{name} status is {store.get('status')}")
-            xlsx_path = Path(str(store.get("xlsx_path", "")))
-            if not xlsx_path.exists() or xlsx_path.stat().st_size == 0:
-                errors.append(f"missing or empty export: {xlsx_path}")
-
-    zip_path = Path(str(manifest.get("zip_path", "")))
-    if not zip_path.exists() or zip_path.stat().st_size == 0:
-        errors.append(f"missing or empty archive zip: {zip_path}")
-    return not errors, errors
-
-
-def scalar(values: list[list[Any]]) -> Any:
-    if not values or not values[0]:
-        return ""
-    return values[0][0]
-
-
-def to_number(value: Any, *, field: str = "value") -> float:
-    return float(parse_required_decimal(value, field=field))
-
-
-def sum_scalars(value_ranges: list[dict[str, Any]], *, field: str = "value") -> float:
-    return float(
-        sum(
-            (
-                Decimal("0")
-                if scalar(vr.get("values", [])) in (None, "")
-                else parse_required_decimal(scalar(vr.get("values", [])), field=field)
-                for vr in value_ranges
-            ),
-            start=Decimal("0"),
-        )
-    )
-
-
-def _closed_empty_slot(entry: StoreEntry, agent: Any, slot_values: list[Any]) -> bool:
-    """Accept template defaults only for an explicitly closed store with no work."""
-    if not entry.is_closed or agent not in (None, ""):
-        return False
-    # Base salary and meal vouchers are template defaults even without an agent.
-    # Any worked hours, commission or extra payment still requires an agent name.
-    work_values = [*slot_values[2:9], slot_values[10]]
-    return all(value in (None, "", 0, 0.0, False) for value in work_values)
-
-
-def _error_row(
-    entry: StoreEntry,
-    *,
-    slot: int,
-    code: str,
-) -> ExtractedAgentRow:
-    return ExtractedAgentRow(
-        site_code=entry.site_code,
-        company=entry.company,
-        store=entry.store,
-        slot=slot,
-        agent="",
-        base_salary="",
-        sales_commission="",
-        extra_location_commission="",
-        extra_hours_pay="",
-        bonuri="",
-        worked_hours="",
-        status="ERROR",
-        error_code=code,
-        error=code,
-        sheet_id=entry.sheet_id,
-    )
-
-
 def extract_store_rows(
     sheets_svc: Any,
     entry: StoreEntry,
     *,
     value_ranges: list[dict[str, Any]] | None = None,
 ) -> list[ExtractedAgentRow]:
-    supplied_value_ranges = value_ranges
-
-    def read_values() -> list[dict[str, Any]]:
-        if supplied_value_ranges is not None:
-            return supplied_value_ranges
-        ranges = []
-        for cells in cells_for_entry(entry).values():
-            ranges += [
-                f"Grila!{cells['agent']}",
-                f"Grila!{cells['base_salary']}",
-                *[f"Grila!{cell}" for cell in cells["sales_commission_cells"]],
-                f"Grila!{cells['extra_location_commission']}",
-                f"Grila!{cells['extra_hours_pay']}",
-                f"Grila!{cells['bonuri']}",
-                cells["worked_hours"],
-            ]
-        response = sheets_svc.spreadsheets().values().batchGet(
-            spreadsheetId=entry.sheet_id,
-            ranges=ranges,
-            valueRenderOption="UNFORMATTED_VALUE",
-        ).execute()
-        value_ranges = response.get("valueRanges") if isinstance(response, dict) else None
-        if not isinstance(value_ranges, list) or len(value_ranges) != len(ranges):
+    try:
+        ranges = value_ranges_for_entry(entry)
+        parsed_ranges = (
+            value_ranges
+            if value_ranges is not None
+            else _read_store_value_ranges(sheets_svc, entry, ranges)
+        )
+        if len(parsed_ranges) != len(ranges):
             raise MonthlyIntegrityError(
                 "google_response_incomplete",
                 "Google sheet response is incomplete",
             )
-        return value_ranges
-
-    try:
-        value_ranges = retry_api(
-            read_values,
-            label="Google sheet read",
-            attempts=GOOGLE_API_RETRY_ATTEMPTS,
-            base_delay=GOOGLE_API_RETRY_BASE_DELAY_SECONDS,
-        )
-        rows: list[ExtractedAgentRow] = []
-        idx = 0
-        for slot in cells_for_entry(entry):
-            slot_ranges = value_ranges[idx : idx + 11]
-            idx += 11
-            slot_values = [scalar(item.get("values", [])) for item in slot_ranges]
-            agent = slot_values[0]
-            # Template formulas can leave numeric zeroes in every salary cell
-            # of an unused slot. Treat that slot as empty only when its agent
-            # cell is blank and every remaining value is blank/zero. A blank
-            # agent with meaningful data remains a fail-closed error.
-            if agent in (None, "") and all(
-                value in (None, "", 0, 0.0, False)
-                for value in slot_values[1:]
-            ):
-                continue
-            if _closed_empty_slot(entry, agent, slot_values):
-                continue
-            if (
-                not isinstance(agent, str)
-                or not agent.strip()
-                or any(ord(char) < 32 or ord(char) == 127 for char in agent)
-            ):
-                rows.append(_error_row(entry, slot=slot, code="missing_or_invalid_agent"))
-                continue
-            try:
-                base_salary = to_number(slot_values[1], field="base_salary")
-                sales_commission = sum_scalars(slot_ranges[2:7], field="sales_commission")
-                commission = to_number(slot_values[7], field="extra_location_commission")
-                extra_hours = to_number(slot_values[8], field="extra_hours_pay")
-                bonuri = to_number(slot_values[9], field="meal_vouchers")
-                worked_hours = to_number(slot_values[10], field="worked_hours")
-            except MonthlyIntegrityError as exc:
-                rows.append(_error_row(entry, slot=slot, code=exc.code))
-                continue
-            rows.append(
-                ExtractedAgentRow(
-                    site_code=entry.site_code,
-                    company=entry.company,
-                    store=entry.store,
-                    slot=slot,
-                    agent=agent.strip(),
-                    base_salary=base_salary,
-                    sales_commission=sales_commission,
-                    extra_location_commission=commission,
-                    extra_hours_pay=extra_hours,
-                    bonuri=bonuri,
-                    worked_hours=worked_hours,
-                    status="OK",
-                    error_code="",
-                    error="",
-                    sheet_id=entry.sheet_id,
-                )
-            )
-        if not rows and entry.is_closed:
-            return []
-        if not rows:
-            return [_error_row(entry, slot=0, code="store_has_no_agent")]
-        seen_agents: set[str] = set()
-        deduplicated: list[ExtractedAgentRow] = []
-        for row in rows:
-            normalized = str(row.agent).strip().casefold()
-            if row.status == "OK" and normalized in seen_agents:
-                deduplicated.append(_error_row(entry, slot=row.slot, code="duplicate_agent"))
-                continue
-            if row.status == "OK":
-                seen_agents.add(normalized)
-            deduplicated.append(row)
-        return deduplicated
+        return parse_store_rows(entry, parsed_ranges)
     except Exception as exc:  # noqa: BLE001
         code = exc.code if isinstance(exc, MonthlyIntegrityError) else _google_error_code(exc)
         return [_error_row(entry, slot=0, code=code)]
 
 
-def make_output_row(row: ExtractedAgentRow, nr: int, metadata: dict[str, Any]) -> list[Any]:
-    excel_row = nr + 1
-    return [
-        nr,
-        metadata.get("Manager", ""),
-        row.store,
-        row.agent,
-        row.base_salary,
-        row.sales_commission,
-        metadata.get("Flip", ""),
-        row.extra_location_commission,
-        metadata.get("Incentive lunar", ""),
-        row.extra_hours_pay,
-        TrustedFormula(f"=SUM(E{excel_row}:J{excel_row},M{excel_row})"),
-        TrustedFormula(f"=K{excel_row}-M{excel_row}"),
-        row.bonuri,
-        metadata.get("Data angajarii", ""),
-        metadata.get("Data plecarii", ""),
-        row.worked_hours,
-        metadata.get("Zile CO luna in curs", ""),
-    ]
+def _read_store_value_ranges(
+    sheets_service: Any,
+    entry: StoreEntry,
+    ranges: list[str],
+) -> list[dict[str, Any]]:
+    def read_values() -> Any:
+        return sheets_service.spreadsheets().values().batchGet(
+            spreadsheetId=entry.sheet_id,
+            ranges=ranges,
+            valueRenderOption="UNFORMATTED_VALUE",
+        ).execute()
 
-
-def style_sheet(ws) -> None:
-    header_fill = PatternFill("solid", fgColor="D9EAF7")
-    for cell in ws[1]:
-        cell.font = Font(bold=True)
-        cell.fill = header_fill
-        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
-    ws.freeze_panes = "A2"
-    ws.auto_filter.ref = ws.dimensions
-    widths = {
-        "A": 8,
-        "B": 22,
-        "C": 30,
-        "D": 30,
-        "E": 14,
-        "F": 14,
-        "G": 14,
-        "H": 26,
-        "I": 16,
-        "J": 18,
-        "K": 14,
-        "L": 14,
-        "M": 14,
-        "N": 16,
-        "O": 16,
-        "P": 16,
-        "Q": 16,
-    }
-    for col, width in widths.items():
-        ws.column_dimensions[col].width = width
+    response = retry_api(
+        read_values,
+        label="Google sheet read",
+        attempts=GOOGLE_API_RETRY_ATTEMPTS,
+        base_delay=GOOGLE_API_RETRY_BASE_DELAY_SECONDS,
+    )
+    parsed = response.get("valueRanges") if isinstance(response, dict) else None
+    if not isinstance(parsed, list):
+        raise MonthlyIntegrityError(
+            "google_response_incomplete",
+            "Google sheet response is incomplete",
+        )
+    return parsed
 
 
 def build_workbook(
@@ -1109,226 +719,24 @@ def build_workbook(
     output_path: Path,
     metadata_by_company_store: dict[tuple[str, str], dict[str, Any]],
 ) -> None:
-    wb = Workbook()
-    wb.active.title = "Mobiup"
-    wb.create_sheet("Mobicell")
-    ws_audit = wb.create_sheet("Audit")
-
-    for ws in (wb["Mobiup"], wb["Mobicell"]):
-        append_openpyxl_row(ws, HEADERS)
-
-    counters = {"Mobiup": 1, "Mobicell": 1}
-    for row in rows:
-        if row.status != "OK":
-            continue
-        ws = wb[row.company]
-        metadata = metadata_by_company_store.get((row.company, row.store), {})
-        append_openpyxl_row(ws, make_output_row(row, counters[row.company], metadata))
-        counters[row.company] += 1
-
-    append_openpyxl_row(ws_audit, AUDIT_HEADERS)
-    for row in rows:
-        append_openpyxl_row(
-            ws_audit,
-            [
-                row.company,
-                row.store,
-                row.slot,
-                row.agent,
-                row.sheet_id,
-                row.sales_commission,
-                row.extra_location_commission,
-                row.extra_hours_pay,
-                row.bonuri,
-                row.worked_hours,
-                f"https://docs.google.com/spreadsheets/d/{row.sheet_id}",
-                row.status,
-                row.error,
-            ]
-        )
-
-    for ws in wb.worksheets:
-        style_sheet(ws)
-        for row_cells in ws.iter_rows():
-            for cell in row_cells:
-                cell.alignment = Alignment(vertical="top", wrap_text=True)
-        for col_idx in range(1, ws.max_column + 1):
-            col = get_column_letter(col_idx)
-            if ws.column_dimensions[col].width is None:
-                ws.column_dimensions[col].width = 14
-
-    secure_directory(output_path.parent)
-    wb.save(output_path)
-
-
-def _validate_finalization_coverage(
-    entries: list[StoreEntry],
-    rows: list[ExtractedAgentRow],
-) -> tuple[int, int, int, int, list[str]]:
-    errors: list[str] = []
-    entries_by_site: dict[str, StoreEntry] = {}
-    sheet_ids: set[str] = set()
-    for entry in entries:
-        if entry.site_code in entries_by_site or entry.sheet_id in sheet_ids:
-            errors.append("duplicate_registry_entry")
-        entries_by_site[entry.site_code] = entry
-        sheet_ids.add(entry.sheet_id)
-
-    rows_by_site: dict[str, list[ExtractedAgentRow]] = {}
-    for row in rows:
-        expected = entries_by_site.get(row.site_code)
-        if expected is None:
-            errors.append("unexpected_store")
-            continue
-        if (
-            row.sheet_id != expected.sheet_id
-            or row.company != expected.company
-            or row.store != expected.store
-        ):
-            errors.append("contradictory_store_metadata")
-        rows_by_site.setdefault(row.site_code, []).append(row)
-
-    expected_agents = 0
-    processed_agents = 0
-    processed_stores = 0
-    for site_code in entries_by_site:
-        store_rows = rows_by_site.get(site_code, [])
-        if not store_rows and entries_by_site[site_code].is_closed:
-            processed_stores += 1
-            continue
-        valid_slots = set(cells_for_entry(entries_by_site[site_code]))
-        slot_rows = [row for row in store_rows if row.slot in valid_slots]
-        expected_agents += len(slot_rows)
-        valid_rows = [row for row in slot_rows if row.status == "OK"]
-        processed_agents += len(valid_rows)
-        store_errors = [row.error_code or "store_read_failed" for row in store_rows if row.status != "OK"]
-        if not store_rows:
-            store_errors.append("store_not_processed")
-        if not slot_rows:
-            store_errors.append("store_has_no_agent")
-        if len({str(row.agent).strip().casefold() for row in valid_rows}) != len(valid_rows):
-            store_errors.append("duplicate_agent")
-        if store_errors:
-            errors.extend(store_errors)
-        else:
-            processed_stores += 1
-
-    return (
-        len(entries_by_site),
-        processed_stores,
-        expected_agents,
-        processed_agents,
-        sorted(set(errors)),
+    monthly_artifacts.build_workbook(
+        rows,
+        output_path,
+        metadata_by_company_store,
+        style=style_sheet,
     )
-
-
-def _control_totals(rows: list[ExtractedAgentRow]) -> dict[str, str]:
-    fields = (
-        "base_salary",
-        "sales_commission",
-        "extra_location_commission",
-        "extra_hours_pay",
-        "bonuri",
-        "worked_hours",
-    )
-    totals: dict[str, str] = {}
-    valid_rows = [row for row in rows if row.status == "OK"]
-    for field in fields:
-        total = sum(
-            (Decimal(str(getattr(row, field))) for row in valid_rows),
-            start=Decimal("0"),
-        )
-        totals[field] = decimal_text(total)
-    totals["salary_components"] = decimal_text(
-        sum(
-            (
-                Decimal(str(row.base_salary))
-                + Decimal(str(row.sales_commission))
-                + Decimal(str(row.extra_location_commission))
-                + Decimal(str(row.extra_hours_pay))
-                + Decimal(str(row.bonuri))
-                for row in valid_rows
-            ),
-            start=Decimal("0"),
-        )
-    )
-    return totals
-
-
-def _source_registry(entries: list[StoreEntry]) -> list[dict[str, str]]:
-    return sorted(
-        (
-            {
-                "site_code": entry.site_code,
-                "sheet_id": entry.sheet_id,
-                "template_version": entry.template_version,
-            }
-            for entry in entries
-        ),
-        key=lambda item: (item["site_code"], item["sheet_id"]),
-    )
-
-
-def _with_source_registry(
-    manifest: dict[str, Any],
-    entries: list[StoreEntry],
-) -> dict[str, Any]:
-    enriched = dict(manifest)
-    enriched["source_registry"] = _source_registry(entries)
-    return finalize_manifest(enriched)
 
 
 def _validate_final_workbook(path: Path, *, expected_agents: int) -> None:
-    try:
-        workbook = load_workbook(path, read_only=True, data_only=False)
-        try:
-            if set(workbook.sheetnames) != {"Mobiup", "Mobicell", "Audit"}:
-                raise MonthlyIntegrityError("workbook_structure_invalid", "Workbook structure is invalid")
-            agent_rows = sum(
-                max(workbook[company].max_row - 1, 0)
-                for company in ("Mobiup", "Mobicell")
-            )
-            if agent_rows != expected_agents:
-                raise MonthlyIntegrityError("workbook_coverage_incomplete", "Workbook coverage is incomplete")
-            audit = workbook["Audit"]
-            statuses = [row[11].value for row in audit.iter_rows(min_row=2) if len(row) >= 12]
-            if len(statuses) != expected_agents or any(status != "OK" for status in statuses):
-                raise MonthlyIntegrityError("workbook_audit_invalid", "Workbook audit is invalid")
-        finally:
-            workbook.close()
-    except MonthlyIntegrityError:
-        raise
-    except Exception as exc:
-        raise MonthlyIntegrityError("workbook_invalid", "Workbook cannot be verified") from exc
+    monthly_artifacts.validate_final_workbook(path, expected_agents=expected_agents)
 
 
 def _staging_dir(operation: str, operation_id: int | None) -> Path:
-    suffix = str(operation_id) if operation_id is not None else "direct"
-    path = OUTPUTS_DIR / ".staging" / f"{operation}-{suffix}"
-    if path.exists():
-        shutil.rmtree(path)
-    secure_directory(path)
-    return path
+    return monthly_artifacts.staging_dir(OUTPUTS_DIR, operation, operation_id)
 
 
 def _promote_file(staged: Path, destination: Path) -> None:
-    secure_directory(destination.parent)
-    revision: Path | None = None
-    if destination.exists():
-        revision_dir = OUTPUTS_DIR / ".revisions"
-        secure_directory(revision_dir)
-        revision = revision_dir / f"{destination.name}.{file_sha256(destination)[:16]}"
-        if revision.exists():
-            destination.unlink()
-        else:
-            os.replace(destination, revision)
-    try:
-        os.replace(staged, destination)
-        secure_file(destination)
-    except Exception:
-        if revision is not None and revision.exists() and not destination.exists():
-            os.replace(revision, destination)
-        raise
+    monthly_artifacts.promote_file(OUTPUTS_DIR, staged, destination)
 
 
 async def _finalize_month_execution(
