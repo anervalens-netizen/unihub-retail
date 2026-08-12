@@ -1,0 +1,54 @@
+{
+  "version": 1,
+  "objective": "UR-CLOSE-20260812",
+  "revision": 3,
+  "baseline_source_sha": "0be82b430e55b7414babf470abe3fc5404b6cdc9",
+  "contract_content_commit": "5c981b3434fd950396790ed33e18bd7810079983",
+  "created_at": "2026-08-12T23:35:00+03:00",
+  "plan": {
+    "path": "docs/exec-plans/active/UR-CLOSE-20260812.md",
+    "git_blob": "4da6c5477c6a687973ecb00a5ca75c991051c011",
+    "sha256": "ca796eb59e26477034714e192ae11d78eeb86cc2e276e88292c559550a428d8e"
+  },
+  "assets": [
+    {
+      "path": "docs/contracts/query-parameter-policy-v1.json",
+      "git_blob": "1641d5f6848c0402808747eaee8c9a841f331f28",
+      "sha256": "da22edf80ee1d43ad379ccc31e120f79efa787c42530cbf56dc3b6bea5a38ffb"
+    },
+    {
+      "path": "docs/contracts/business-golden-v1.json",
+      "git_blob": "1723b95bcb3ec58e0f3b9adda14b5f4d150d570d",
+      "sha256": "ac267e2d80ec3c74ee71a2f7cd790b80dc3930966b197b44d5865df1897bc6b2"
+    },
+    {
+      "path": "scripts/frontend-critical-coverage.json",
+      "git_blob": "f4cc6be329f845f2fd27f1e689458a65436ce5a5",
+      "sha256": "49aa2cb4cbb306ab21cf12e9d7d4b1e8ca78371102dc009aab0bd7cd178d35ca"
+    },
+    {
+      "path": "scripts/target-mutation-contract-v2.json",
+      "git_blob": "867a4cf4ae0094d230d429445e0d1a71f99fd55a",
+      "sha256": "1dc3ed121267a83b8dc9074cebcfb8f4fc254fea055ead974ddf91121936a52f"
+    },
+    {
+      "path": "scripts/complexity-ratchet.json",
+      "git_blob": "63d4e96ebb5d813af7f45b05f4b3a006f961f4e4",
+      "sha256": "86a8d624b1d525b0e9db20fa9220b6ad0bc3cd0af5454c163768b1745ebc090c"
+    },
+    {
+      "path": "scripts/ts-function-complexity-ratchet.json",
+      "git_blob": "e7ea8cb5af8f772e5cdb465c82307260c77806c1",
+      "sha256": "24b62ab038902bad133433c681f6c0408f1d00c9dfe3dff202f7290b3dad7363"
+    }
+  ],
+  "allowed_plan_mutations_without_relock": [
+    "task state",
+    "criterion status after independent verdict",
+    "evidence link or hash",
+    "decision log",
+    "surprise or replan that does not change acceptance semantics",
+    "final move from active to completed after PASS"
+  ],
+  "semantic_change_rule": "Any scope, criterion, threshold, fixture, expected value, waiver or verification change requires a new revision, content commit, lock and independent contract critique before implementation."
+}
