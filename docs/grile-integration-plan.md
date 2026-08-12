@@ -63,6 +63,9 @@ read-only:
 
 Writerul V2 folosește separat clientul operațional cu drept de scriere
 `spreadsheets`/`drive`; acest client nu este folosit de endpointurile read-only.
+Credentialul operațional rămâne `0640`, cu grupul
+`unihub-grile-artifacts`: identitățile `unihub-grile` și `unihub-web` îl pot
+citi, iar workerii de export rămân în afara grupului.
 
 Transportul Google are timeout HTTP implicit 30s, configurabil prin
 `GRILE_GOOGLE_HTTP_TIMEOUT_SECONDS` între 1 și 120s. La failure/cancellation,
@@ -188,6 +191,18 @@ artefact CI și approval one-time rămâne disponibilă pentru operații cu risc
 mare; cererea explicită din conversație autorizează agentul să o ducă până la
 capăt. Înaintea unei migrări sau operații destructive se verifică backupul și
 rollbackul. Nu se folosesc date live pentru testare.
+
+## Evidență rollout writer V2 2026-08-12
+
+- candidatul exact `59dc1523965c7d51aa49b7ccd895f6a30064a8e2` a trecut
+  runul exact-main `31621037976`; artefactul și manifestul au fost verificate
+  prin SHA-256 înainte de approval;
+- deployul unic `31623615626` a promovat același SHA, cu health/readiness și
+  toate cele șase servicii Retail active;
+- un singur sync post-fix, sub identitatea `unihub-grile`, a actualizat 21/21
+  foi active; toate raportează `Sincronizat · raport oficial`, revizia writer
+  `1`, aceeași revizie sales și aceeași revizie Campaigns;
+- foile Delia și copiile neconfirmate au rămas în afara cohortei active.
 
 ## Evidență rollout UX 2026-07-17
 
