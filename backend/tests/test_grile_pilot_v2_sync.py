@@ -14,12 +14,20 @@ from services.grile_pilot_v2_sync import (
     PilotV2Source,
     _batch_requests,
     _read_sheet_state,
+    _sales_source_revision,
     _serial_day,
     _serial_instant,
     _store_source,
     load_pilot_v2_source,
     sync_pilot_v2_sheets,
 )
+
+
+class _AsyncpgRecordLike(dict[str, Any]):
+    """Mirror asyncpg.Record iteration, which yields values rather than keys."""
+
+    def __iter__(self):
+        return iter(self.values())
 
 
 class _AsyncContext:
@@ -126,6 +134,19 @@ def test_sync_timestamp_uses_bucharest_wall_clock() -> None:
     serial = _serial_instant(datetime(2026, 8, 12, 12, tzinfo=timezone.utc))
 
     assert serial == _serial_day(date(2026, 8, 12)) + 15 / 24
+
+
+def test_sales_revision_uses_record_keys_not_record_iteration() -> None:
+    row = {
+        "sale_date": date(2026, 8, 1),
+        "site_code": "SITE",
+        "agent": "A1",
+        "total_sales": Decimal("100"),
+    }
+
+    assert _sales_source_revision(
+        date(2026, 8, 11), Decimal("2"), (_AsyncpgRecordLike(row),)
+    ) == _sales_source_revision(date(2026, 8, 11), Decimal("2"), (row,))
 
 
 @pytest.mark.asyncio

@@ -70,7 +70,10 @@ def _sales_source_revision(
         digest.update(encoded)
     for rows in row_groups:
         for row in rows:
-            for key in sorted(row):
+            # asyncpg.Record iterates over values, unlike a normal Mapping.
+            # Use its explicit key view so dates and strings are never sorted
+            # against one another while producing the deterministic digest.
+            for key in sorted(row.keys()):
                 for cell_value in (key, row[key]):
                     encoded = str(
                         cell_value if cell_value is not None else ""
