@@ -14,6 +14,9 @@ from openpyxl import load_workbook
 
 import services.export_complex_worker as child_renderer
 import services.exports.service as service_module
+from repositories.export_daily_comparison_query import (
+    build_daily_comparison_rows_query,
+)
 from services.export_xlsx_formatting import days_filename_suffix
 from services.exports import ExportValidationError, ExportsService
 
@@ -52,6 +55,41 @@ def daily_metrics_request() -> dict[str, Any]:
         "daily_metrics": ["total_sales", "proc_bon2acc"],
         "selected_days": [1],
     }
+
+
+def test_daily_comparison_query_boundary_preserves_scope_and_campaign_order() -> None:
+    query, params = build_daily_comparison_rows_query(
+        level="stores",
+        months=["2026-05", "2026-06"],
+        filters={
+            "firma": ["Mobiup"],
+            "regional": ["RM 1"],
+            "agent": ["Agent 1"],
+        },
+        include_closed_stores=False,
+        campaign_codes_by_month={"2026-06": ["P1", "P2"]},
+        selected_days=[1, 9],
+        include_campaign_metrics=True,
+        limit=25,
+    )
+
+    assert params == [
+        ["2026-05", "2026-06"],
+        ["Mobiup"],
+        ["RM 1"],
+        ["Agent 1"],
+        [1, 9],
+        ["2026-06", "2026-06"],
+        ["P1", "P2"],
+        True,
+        25,
+    ]
+    assert "agg.site_code AS site_code" in query
+    assert "campaign.site_code IS NOT DISTINCT FROM base.site_code" in query
+    assert "s.is_active = TRUE" in query
+    assert "UNNEST($6::TEXT[], $7::TEXT[])" in query
+    assert "AND $8::BOOLEAN" in query
+    assert query.rstrip().endswith("LIMIT $9")
 
 
 def test_complex_request_boundary_accepts_only_supported_durable_shapes() -> None:

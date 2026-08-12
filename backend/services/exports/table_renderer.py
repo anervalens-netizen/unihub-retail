@@ -312,6 +312,129 @@ class XlsxRenderers:
             first_data_col=first_data_col,
         )
 
+    def _daily_evolution_values(
+        self,
+        records: list[Any],
+    ) -> tuple[dict[tuple[int, str], dict[str, Any]], int]:
+        values: dict[tuple[int, str], dict[str, Any]] = {}
+        max_day = 31
+        for record in records:
+            day = int(record["day_of_month"] or 0)
+            if day <= 0:
+                continue
+            max_day = max(max_day, day)
+            values[(day, str(record["import_month"]))] = self._compute_metrics(record)
+        return values, max_day
+
+    @staticmethod
+    def _daily_evolution_headers(
+        months: list[str],
+        metrics: list[str],
+    ) -> list[str]:
+        headers = ["Zi"]
+        for metric in metrics:
+            definition = DAILY_EVOLUTION_METRICS[metric]
+            headers.extend(f"{month} {definition.label}" for month in months)
+            if len(months) != 2:
+                continue
+            if definition.type == "percent":
+                headers.append(f"Delta pp {definition.label}")
+            else:
+                headers.extend(
+                    [f"Delta {definition.label}", f"Delta % {definition.label}"]
+                )
+        return headers
+
+    def _append_daily_evolution_delta(
+        self,
+        row: list[Any],
+        *,
+        metric: str,
+        months: list[str],
+        month_values: list[Any],
+    ) -> None:
+        if len(months) != 2:
+            return
+        left, right = month_values
+        is_percent = DAILY_EVOLUTION_METRICS[metric].type == "percent"
+        if left is None or right is None:
+            row.append(None)
+            if not is_percent:
+                row.append(None)
+            return
+        decimal_left = Decimal(str(left))
+        delta = Decimal(str(right)) - decimal_left
+        row.append(self._json_value(delta))
+        if not is_percent:
+            relative_delta = pct(delta, decimal_left) if decimal_left != 0 else None
+            row.append(self._json_value(relative_delta))
+
+    def _daily_evolution_row(
+        self,
+        day: int,
+        *,
+        months: list[str],
+        metrics: list[str],
+        values: dict[tuple[int, str], dict[str, Any]],
+    ) -> list[Any]:
+        row: list[Any] = [day]
+        for metric in metrics:
+            month_values: list[Any] = []
+            for month in months:
+                value = values.get((day, month), {}).get(metric)
+                month_values.append(value)
+                row.append(self._json_value(value))
+            self._append_daily_evolution_delta(
+                row,
+                metric=metric,
+                months=months,
+                month_values=month_values,
+            )
+        return row
+
+    @staticmethod
+    def _style_daily_evolution_sheet(ws: Any, headers: list[str]) -> None:
+        ws.freeze_panes = "B2"
+        ws.auto_filter.ref = ws.dimensions
+        ws.column_dimensions["A"].width = 8
+        for idx, header in enumerate(headers[1:], start=2):
+            letter = get_column_letter(idx)
+            ws.column_dimensions[letter].width = max(
+                14,
+                min(26, len(header) + 2),
+            )
+
+    def _add_daily_evolution_chart(
+        self,
+        ws: Any,
+        *,
+        months: list[str],
+        metrics: list[str],
+        headers: list[str],
+        max_day: int,
+    ) -> None:
+        if not months:
+            return
+        chart = LineChart()
+        chart.title = (
+            f"Evolutie zilnica - {DAILY_EVOLUTION_METRICS[metrics[0]].label}"
+        )
+        chart.y_axis.title = DAILY_EVOLUTION_METRICS[metrics[0]].label
+        self._configure_day_axis(chart)
+        data = Reference(
+            ws,
+            min_col=2,
+            max_col=1 + len(months),
+            min_row=1,
+            max_row=max_day + 1,
+        )
+        categories = Reference(ws, min_col=1, min_row=2, max_row=max_day + 1)
+        chart.add_data(data, titles_from_data=True)
+        chart.set_categories(categories)
+        chart.height = 8
+        chart.width = 18
+        ws.add_chart(chart, f"{get_column_letter(len(headers) + 2)}2")
+
     def _add_daily_evolution_sheet(
         self,
         wb: Workbook,
@@ -323,71 +446,30 @@ class XlsxRenderers:
         if not metrics:
             return
         ws = wb.create_sheet("Evolutie zilnica")
-        values: dict[tuple[int, str], dict[str, Any]] = {}
-        max_day = 31
-        for record in records:
-            day = int(record["day_of_month"] or 0)
-            if day <= 0:
-                continue
-            max_day = max(max_day, day)
-            values[(day, str(record["import_month"]))] = self._compute_metrics(record)
-
-        headers = ["Zi"]
-        for metric in metrics:
-            definition = DAILY_EVOLUTION_METRICS[metric]
-            for month in months:
-                headers.append(f"{month} {definition.label}")
-            if len(months) == 2:
-                if definition.type == "percent":
-                    headers.append(f"Delta pp {definition.label}")
-                else:
-                    headers.append(f"Delta {definition.label}")
-                    headers.append(f"Delta % {definition.label}")
+        values, max_day = self._daily_evolution_values(records)
+        headers = self._daily_evolution_headers(months, metrics)
         append_openpyxl_row(ws, headers)
         for cell in ws[1]:
             cell.font = Font(bold=True, color="1f2937")
             cell.fill = PatternFill("solid", fgColor="DCFCE7")
-
         for day in range(1, max_day + 1):
-            row: list[Any] = [day]
-            for metric in metrics:
-                month_values: list[Any] = []
-                for month in months:
-                    value = values.get((day, month), {}).get(metric)
-                    month_values.append(value)
-                    row.append(self._json_value(value))
-                if len(months) == 2:
-                    left = month_values[0]
-                    right = month_values[1]
-                    if left is not None and right is not None:
-                        delta = Decimal(str(right)) - Decimal(str(left))
-                        row.append(self._json_value(delta))
-                        if DAILY_EVOLUTION_METRICS[metric].type != "percent":
-                            row.append(self._json_value(pct(delta, Decimal(str(left))) if Decimal(str(left)) != 0 else None))
-                    else:
-                        row.append(None)
-                        if DAILY_EVOLUTION_METRICS[metric].type != "percent":
-                            row.append(None)
-            append_openpyxl_row(ws, row)
-
-        ws.freeze_panes = "B2"
-        ws.auto_filter.ref = ws.dimensions
-        ws.column_dimensions["A"].width = 8
-        for idx, header in enumerate(headers[1:], start=2):
-            letter = get_column_letter(idx)
-            ws.column_dimensions[letter].width = max(14, min(26, len(header) + 2))
-        if months:
-            chart = LineChart()
-            chart.title = f"Evolutie zilnica - {DAILY_EVOLUTION_METRICS[metrics[0]].label}"
-            chart.y_axis.title = DAILY_EVOLUTION_METRICS[metrics[0]].label
-            self._configure_day_axis(chart)
-            data = Reference(ws, min_col=2, max_col=1 + len(months), min_row=1, max_row=max_day + 1)
-            categories = Reference(ws, min_col=1, min_row=2, max_row=max_day + 1)
-            chart.add_data(data, titles_from_data=True)
-            chart.set_categories(categories)
-            chart.height = 8
-            chart.width = 18
-            ws.add_chart(chart, f"{get_column_letter(len(headers) + 2)}2")
+            append_openpyxl_row(
+                ws,
+                self._daily_evolution_row(
+                    day,
+                    months=months,
+                    metrics=metrics,
+                    values=values,
+                ),
+            )
+        self._style_daily_evolution_sheet(ws, headers)
+        self._add_daily_evolution_chart(
+            ws,
+            months=months,
+            metrics=metrics,
+            headers=headers,
+            max_day=max_day,
+        )
 
     def _configure_day_axis(self, chart: LineChart) -> None:
         configure_day_axis(chart)
