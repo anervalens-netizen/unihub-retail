@@ -176,14 +176,7 @@ def canonical_sales_stage_rows_sha256(df: pd.DataFrame, *, import_month: str) ->
     return sha256("\x1e".join(canonical_rows).encode("utf-8")).hexdigest()
 
 
-def build_sales_generation_manifest(
-    df: pd.DataFrame,
-    *,
-    source_sha256: str,
-    cutoff_date: date,
-    rows_in_file: int,
-    rows_filtered: int,
-) -> dict[str, Any]:
+def _validate_generation_source(df: pd.DataFrame, source_sha256: str) -> None:
     if not SOURCE_SHA256_RE.fullmatch(source_sha256):
         raise SalesPolicyValidationError(
             make_sales_anomaly(
@@ -201,6 +194,16 @@ def build_sales_generation_manifest(
             )
         )
 
+
+def build_sales_generation_manifest(
+    df: pd.DataFrame,
+    *,
+    source_sha256: str,
+    cutoff_date: date,
+    rows_in_file: int,
+    rows_filtered: int,
+) -> dict[str, Any]:
+    _validate_generation_source(df, source_sha256)
     months = {value.strftime("%Y-%m") for value in df["Data"]}
     if len(months) != 1:
         raise SalesPolicyValidationError(

@@ -1,22 +1,34 @@
 from __future__ import annotations
 import asyncio
 import logging
-import re
 import time
 from hashlib import sha256
 from contextlib import suppress
-from dataclasses import dataclass, replace
-from enum import Enum
-from typing import Any, Literal, Optional
+from dataclasses import replace
+from typing import Any, Optional
 from arq import create_pool
 from arq.connections import ArqRedis, RedisSettings
 from arq.constants import result_key_prefix
 from arq.jobs import DeserializationError, Job, JobStatus as ArqJobStatus
-from fastapi import HTTPException
-from redis.exceptions import ConnectionError as RedisConnectionError
-from redis.exceptions import TimeoutError as RedisTimeoutError
 from config import ConfigError, load_runtime_config
 from request_context import get_request_id
+from services.job_contracts import (
+    ARQ_TRANSPORT_ERRORS,
+    EXPORT_QUEUE_NAME,
+    GRILE_QUEUE_NAME,
+    MONTHLY_QUEUE_PUBLISH_FAILED,
+    OPERATIONS_QUEUE_NAME,
+    SALES_IMPORT_QUEUE_NAME,
+    SALARY_EXPORT_QUEUE_NAME,
+    GrileEnqueueResult,
+    GrileMonthlyEnqueueResult,
+    GrileStoreRefreshEnqueueResult,
+    GrileTargetSyncEnqueueResult,
+    JobPublishUncertainError,
+    JobQueueUnavailableError,
+    JobResult,
+    JobStatus,
+)
 from services.job_queue_routing import resolve_status_job
 from services.sales_artifacts import (
     SalesImportArtifactConflictError,
@@ -33,83 +45,7 @@ from services.sales_artifacts import (
 )
 logger = logging.getLogger(__name__)
 
-class JobQueueUnavailableError(HTTPException):
-    """Queue-ul nu este disponibil; endpointurile de enqueue răspund 503."""
-    def __init__(self) -> None:
-        super().__init__(status_code=503, detail="Job backend unavailable")
-class JobPublishUncertainError(HTTPException):
-    """Publish-ul poate fi acceptat, dar confirmarea nu a fost posibilă."""
-    def __init__(
-        self,
-        *,
-        job_id: str | None = None,
-        operation_id: int | None = None,
-    ) -> None:
-        self.job_id = job_id
-        self.operation_id = operation_id
-        super().__init__(status_code=503, detail=self._detail())
-    def _detail(self) -> dict[str, object | None]:
-        return {
-            "status": "unknown",
-            "job_id": self.job_id,
-            "operation_id": self.operation_id,
-        }
-    def attach_operation_id(self, operation_id: int) -> None:
-        self.operation_id = operation_id
-        object.__setattr__(self, "detail", self._detail())
-ARQ_TRANSPORT_ERRORS: tuple[type[BaseException], ...] = (
-    RedisConnectionError,
-    RedisTimeoutError,
-    ConnectionError,
-    TimeoutError,
-    OSError,
-)
-
-class JobStatus(str, Enum):
-    QUEUED = "queued"
-    IN_PROGRESS = "in_progress"
-    COMPLETE = "complete"
-    NOT_FOUND = "not_found"
-    BACKEND_UNAVAILABLE = "backend_unavailable"
-    UNKNOWN = "unknown"
-@dataclass
-class JobResult:
-    job_id: str
-    status: JobStatus
-    result: Optional[dict] = None
-    error: Optional[str] = None
-@dataclass
-class GrileEnqueueResult:
-    status: str
-    run_id: int
-    job: Job | None = None
-    run: dict | None = None
-@dataclass
-class GrileStoreRefreshEnqueueResult:
-    status: str
-    operation_id: int
-    job: Job | None = None
-    operation: dict | None = None
-@dataclass
-class GrileMonthlyEnqueueResult:
-    status: str
-    operation_id: int
-    job: Job | None = None
-    job_id: str | None = None
-    operation: dict | None = None
-@dataclass
-class GrileTargetSyncEnqueueResult:
-    status: str
-    operation_id: int
-    job: Job | None = None
-    operation: dict | None = None
 _VALKEY_SETTINGS: Optional[RedisSettings] = None
-SALES_IMPORT_QUEUE_NAME = "arq:retail:imports"
-OPERATIONS_QUEUE_NAME = "arq:retail:operations"
-GRILE_QUEUE_NAME = "arq:retail:grile"
-EXPORT_QUEUE_NAME = "arq:retail:exports"
-SALARY_EXPORT_QUEUE_NAME = "arq:retail:salary-exports"
-MONTHLY_QUEUE_PUBLISH_FAILED = "monthly_queue_publish_failed"
 def get_valkey_settings() -> RedisSettings:
     global _VALKEY_SETTINGS
     if _VALKEY_SETTINGS is None:
@@ -448,372 +384,91 @@ async def enqueue_campaign_reporting_publication(
     requested_by_sub: str,
     reason: str,
 ) -> Job:
-    """Queue one idempotent Campaigns read-model publication per month.
-    A queued/running job intentionally absorbs newer source generations: the
-    worker reads the current immutable promo pointer and current sales head when
-    it starts.  A completed result is removed before a later source event gets
-    a fresh publication attempt.
-    """
-    if not re.fullmatch(r"\d{4}-(0[1-9]|1[0-2])", month):
-        raise ValueError("Campaign reporting month is invalid")
-    pool = await _require_arq_pool()
-    job_id = f"campaign-reporting:{month}"
-    enqueue_args = (
-        "publish_campaign_reporting_background",
-        month,
-        requested_by_sub,
-        reason,
-        get_request_id(),
+    from services.job_publication import (
+        enqueue_campaign_reporting_publication as enqueue,
     )
-    job = await _publish_arq_job(
-        pool,
-        *enqueue_args,
-        _job_id=job_id,
-        _queue_name=SALES_IMPORT_QUEUE_NAME,
+    return await enqueue(
+        month=month,
+        requested_by_sub=requested_by_sub,
+        reason=reason,
+        require_pool=_require_arq_pool,
+        publish=_publish_arq_job,
     )
-    if job is not None:
-        return job
-    existing = Job(job_id, pool, _queue_name=SALES_IMPORT_QUEUE_NAME)
-    existing_status = await existing.status()
-    if existing_status in {ArqJobStatus.queued, ArqJobStatus.in_progress}:
-        return existing
-    if existing_status == ArqJobStatus.complete:
-        await pool.delete(result_key_prefix + job_id)
-        replacement = await _publish_arq_job(
-            pool,
-            *enqueue_args,
-            _job_id=job_id,
-            _queue_name=SALES_IMPORT_QUEUE_NAME,
-        )
-        if replacement is not None:
-            return replacement
-    raise RuntimeError("Failed to enqueue campaign reporting publication")
-
-
-async def _enqueue_durable_export(
-    operation_id: int,
-    *,
-    job_prefix: str,
-    function_name: str,
-    queue_name: str,
-) -> Job:
-    if isinstance(operation_id, bool) or not isinstance(operation_id, int) or operation_id <= 0:
-        raise ValueError("Invalid export operation id")
-    pool = await _require_arq_pool()
-    job_id = f"{job_prefix}:{operation_id}"
-    job = await _publish_arq_job(
-        pool,
-        function_name,
-        operation_id,
-        _job_id=job_id,
-        _queue_name=queue_name,
-    )
-    if job is not None:
-        return job
-    existing = Job(job_id, pool, _queue_name=queue_name)
-    try:
-        existing_status = await existing.status()
-    except ARQ_TRANSPORT_ERRORS as exc:
-        raise JobPublishUncertainError(job_id=job_id, operation_id=operation_id) from exc
-    if existing_status in {
-        ArqJobStatus.queued,
-        ArqJobStatus.in_progress,
-        ArqJobStatus.complete,
-    }:
-        return existing
-    raise RuntimeError("Failed to enqueue complex export operation")
 
 
 async def enqueue_complex_export(operation_id: int) -> Job:
-    """Publish one non-salary export to its isolated worker."""
-    return await _enqueue_durable_export(
+    from services.job_publication import enqueue_complex_export as enqueue
+    return await enqueue(
         operation_id,
-        job_prefix="export-complex",
-        function_name="build_complex_export_background",
-        queue_name=EXPORT_QUEUE_NAME,
+        require_pool=_require_arq_pool,
+        publish=_publish_arq_job,
     )
 
 
 async def enqueue_salary_export(operation_id: int) -> Job:
-    """Publish one salary export only to the salary-authority worker."""
-    return await _enqueue_durable_export(
+    from services.job_publication import enqueue_salary_export as enqueue
+    return await enqueue(
         operation_id,
-        job_prefix="salary-export",
-        function_name="build_salary_export_background",
-        queue_name=SALARY_EXPORT_QUEUE_NAME,
+        require_pool=_require_arq_pool,
+        publish=_publish_arq_job,
     )
-async def enqueue_grile_check(
-    *,
-    month: str,
-    source: str = "manual",
-    source_snapshot_id: int | None = None,
-    triggered_by_sub: str | None = None,
-    sales_import_authority: bool = False,
-) -> GrileEnqueueResult:
-    from db.connection import get_pool
-    from repositories.grile import GrileRepository
-    db_pool = await get_pool()
-    repo = GrileRepository(db_pool)
-    if sales_import_authority:
-        if (
-            source != "auto"
-            or source_snapshot_id is None
-            or triggered_by_sub != "system:sales-import"
-        ):
-            raise RuntimeError("Invalid sales-import Grile reservation provenance")
-        run_id = await repo.reserve_sales_import_run(
-            run_month=month,
-            source_snapshot_id=source_snapshot_id,
-        )
-    else:
-        run_id = await repo.reserve_run(
-            run_month=month,
-            source=source,
-            source_snapshot_id=source_snapshot_id,
-            triggered_by_sub=triggered_by_sub,
-        )
-    if run_id is None:
-        active = await repo.get_running_run(month)
-        if active is None:
-            raise RuntimeError("Failed to reserve grile check run")
-        return GrileEnqueueResult(
-            status="already_running",
-            run_id=int(active["id"]),
-            run=dict(active),
-        )
-    try:
-        pool = await _require_arq_pool()
-        job = await _publish_arq_job(
-            pool,
-            "grile_check_background",
-            month,
-            source,
-            source_snapshot_id,
-            triggered_by_sub,
-            int(run_id),
-            get_request_id(),
-            _job_id=f"grile-check:{run_id}",
-            _queue_name=GRILE_QUEUE_NAME,
-        )
-        if job is None:
-            raise RuntimeError("Failed to enqueue grile check job")
-    except JobPublishUncertainError as exc:
-        exc.attach_operation_id(int(run_id))
-        raise
-    except Exception:
-        await repo.finalize_run(
-            int(run_id),
-            status="failed",
-            ok_count=0,
-            problem_count=0,
-            error_count=0,
-            duration_ms=0,
-            error_message="Jobul nu a putut fi adaugat in coada",
-        )
-        raise
-    return GrileEnqueueResult(
-        status="enqueued",
-        run_id=int(run_id),
-        job=job,
+
+async def enqueue_grile_check(**kwargs: Any) -> GrileEnqueueResult:
+    from services.grile_jobs import enqueue_grile_check as enqueue
+    return await enqueue(
+        **kwargs,
+        require_pool=_require_arq_pool,
+        publish=_publish_arq_job,
     )
+
+
 async def enqueue_grile_store_refresh(
-    *,
-    month: str,
-    site_code: str,
-    requested_by_sub: str,
+    **kwargs: Any,
 ) -> GrileStoreRefreshEnqueueResult:
-    from db.connection import get_pool
-    from repositories.grile import GrileRepository
-    db_pool = await get_pool()
-    repo = GrileRepository(db_pool)
-    if await repo.get_active_sheet(site_code, month) is None:
-        raise LookupError("Grila activa nu exista pentru magazin.")
-    operation_id = await repo.reserve_store_refresh(
-        run_month=month,
-        site_code=site_code,
-        requested_by_sub=requested_by_sub,
+    from services.grile_jobs import enqueue_grile_store_refresh as enqueue
+    return await enqueue(
+        **kwargs,
+        require_pool=_require_arq_pool,
+        publish=_publish_arq_job,
     )
-    if operation_id is None:
-        active = await repo.get_active_store_refresh(month, site_code)
-        if active is None:
-            raise RuntimeError("Failed to reserve grile store refresh")
-        return GrileStoreRefreshEnqueueResult(
-            status="already_running",
-            operation_id=int(active["id"]),
-            operation=dict(active),
-        )
-    try:
-        pool = await _require_arq_pool()
-        job = await _publish_arq_job(
-            pool,
-            "grile_store_refresh_background",
-            int(operation_id),
-            get_request_id(),
-            _job_id=f"grile-store-refresh:{operation_id}",
-            _queue_name=GRILE_QUEUE_NAME,
-        )
-        if job is None:
-            raise RuntimeError("Failed to enqueue grile store refresh job")
-    except JobPublishUncertainError as exc:
-        exc.attach_operation_id(int(operation_id))
-        raise
-    except Exception:
-        await repo.fail_queued_store_refresh(
-            int(operation_id),
-            "Jobul refresh nu a putut fi adaugat in coada",
-        )
-        raise
-    return GrileStoreRefreshEnqueueResult(
-        status="enqueued",
-        operation_id=int(operation_id),
-        job=job,
-    )
+
+
 async def enqueue_grile_monthly(
-    *,
-    op: str,
-    month: str,
-    only: str | None = None,
-    dry_run: bool = True,
-    requested_by_sub: str,
-    approved_manifest_id: int | None = None,
+    **kwargs: Any,
 ) -> GrileMonthlyEnqueueResult:
-    from db.connection import get_pool
-    from services.grile_monthly import (
-        attach_monthly_operation_job,
-        fail_queued_monthly_operation,
-        reserve_monthly_operation,
+    from services.grile_jobs import enqueue_grile_monthly as enqueue
+    return await enqueue(
+        **kwargs,
+        require_pool=_require_arq_pool,
+        publish=_publish_arq_job,
     )
-    db_pool = await get_pool()
-    reservation = await reserve_monthly_operation(
-        db_pool,
-        op=op,
-        month=month,
-        only=only,
-        dry_run=dry_run,
-        requested_by_sub=requested_by_sub,
-        approved_manifest_id=approved_manifest_id,
-    )
-    if reservation.status != "enqueued":
-        return GrileMonthlyEnqueueResult(
-            status=reservation.status,
-            operation_id=reservation.operation_id,
-            job_id=reservation.job_id,
-            operation=reservation.operation,
-        )
-    # The job identifier is deterministic, so persist it before publishing the
-    # job. Otherwise a fast worker can transition queued -> running before the
-    # post-enqueue attachment and leave the operation without a recoverable
-    # job_id for duplicate API requests and status polling.
-    job_id = f"grile-monthly:{reservation.operation_id}"
-    attached = await attach_monthly_operation_job(
-        db_pool,
-        operation_id=reservation.operation_id,
-        job_id=job_id,
-    )
-    if not attached:
-        raise RuntimeError(
-            "Grile monthly operation is no longer queued before job publication"
-        )
-    try:
-        pool = await _require_arq_pool()
-        job = await _publish_arq_job(
-            pool,
-            "grile_monthly_background",
-            reservation.operation_id,
-            _job_id=job_id,
-            _queue_name=GRILE_QUEUE_NAME,
-        )
-        if job is None:
-            raise RuntimeError("Failed to enqueue grile monthly job")
-    except JobPublishUncertainError as exc:
-        exc.attach_operation_id(reservation.operation_id)
-        raise
-    except Exception:
-        # If Valkey accepted the publish but the client lost the response, this
-        # compare-and-set moves the row to failed only while it is still queued.
-        # A worker that already acquired it remains running and is not clobbered.
-        await fail_queued_monthly_operation(
-            db_pool,
-            reservation.operation_id,
-            error_message=MONTHLY_QUEUE_PUBLISH_FAILED,
-        )
-        raise
-    return GrileMonthlyEnqueueResult(
-        status="enqueued",
-        operation_id=reservation.operation_id,
-        job=job,
-        job_id=job.job_id,
-    )
+
+
 async def enqueue_grile_target_sync(
-    *,
-    month: str,
-    mode: Literal["dry_run", "sync"],
-    requested_by_sub: str,
+    **kwargs: Any,
 ) -> GrileTargetSyncEnqueueResult:
-    from db.connection import get_pool
-    from repositories.grile_agent_target_sync import (
-        GrileAgentTargetSyncRepository,
+    from services.grile_jobs import enqueue_grile_target_sync as enqueue
+    return await enqueue(
+        **kwargs,
+        require_pool=_require_arq_pool,
+        publish=_publish_arq_job,
     )
-    if mode not in {"dry_run", "sync"}:
-        raise ValueError("invalid Grile target sync mode")
-    db_pool = await get_pool()
-    repo = GrileAgentTargetSyncRepository(db_pool)
-    reservation_status, operation = await repo.reserve(
-        month=month,
-        mode=mode,
-        requested_by_sub=requested_by_sub,
-    )
-    operation_id = int(operation["id"])
-    if reservation_status != "enqueued":
-        return GrileTargetSyncEnqueueResult(
-            status=reservation_status,
-            operation_id=operation_id,
-            operation=operation,
-        )
-    job_id = f"grile-agent-targets:{operation_id}"
-    if not await repo.attach_job(operation_id, job_id):
-        raise RuntimeError("Grile target sync operation is no longer queued")
-    try:
-        pool = await _require_arq_pool()
-        job = await _publish_arq_job(
-            pool,
-            "grile_agent_targets_background",
-            operation_id,
-            get_request_id(),
-            _job_id=job_id,
-            _queue_name=GRILE_QUEUE_NAME,
-        )
-        if job is None:
-            raise RuntimeError("Failed to enqueue Grile target sync job")
-    except JobPublishUncertainError as exc:
-        exc.attach_operation_id(operation_id)
-        raise
-    except Exception:
-        # A publish can be accepted by Valkey even when the client raises.  If
-        # the worker already claimed the operation, leave it running so its
-        # transactional finish/fail path remains authoritative.
-        await repo.fail_queued(operation_id, "Jobul nu a putut fi adaugat in coada")
-        raise
-    return GrileTargetSyncEnqueueResult(
-        status="enqueued",
-        operation_id=operation_id,
-        job=job,
-    )
-async def get_grile_monthly_operation_by_job_id(job_id: str) -> dict | None:
-    """Read the durable monthly operation before consulting ephemeral ARQ state."""
-    from db.connection import get_pool
-    from repositories.grile_monthly_operations import get_by_job_id
-    db_pool = await get_pool()
-    return await get_by_job_id(db_pool, job_id)
+
+
+async def get_grile_monthly_operation_by_job_id(
+    job_id: str,
+) -> dict | None:
+    from services.grile_jobs import get_grile_monthly_operation_by_job_id
+    return await get_grile_monthly_operation_by_job_id(job_id)
+
+
 async def get_grile_target_sync_operation(
     operation_id: int,
 ) -> dict | None:
-    from db.connection import get_pool
-    from repositories.grile_agent_target_sync import (
-        GrileAgentTargetSyncRepository,
-    )
-    db_pool = await get_pool()
-    return await GrileAgentTargetSyncRepository(db_pool).get(operation_id)
+    from services.grile_jobs import get_grile_target_sync_operation
+    return await get_grile_target_sync_operation(operation_id)
+
+
 async def get_job_status(job_id: str) -> JobResult:
     pool = await get_arq_pool()
     if pool is None:
