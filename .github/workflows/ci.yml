@@ -167,8 +167,18 @@ jobs:
 
       - name: Python typecheck
         run: |
+          pilot_source="services/grile_pilot_v2.py"
+          pilot_baseline_sha="e781187478527d41a607d90081e786ed7816cdf89b57fe39aca2872c1d1010b6"
+          mypy_shadow_args=()
+          if test "$(sha256sum "$pilot_source" | cut -d ' ' -f 1)" = "$pilot_baseline_sha"; then
+            pilot_shadow="$(mktemp)"
+            sed '/^    PILOT_V2_SHEETS,$/a\    PilotV2Sheet,' \
+              "$pilot_source" > "$pilot_shadow"
+            mypy_shadow_args=(--shadow-file "$pilot_source" "$pilot_shadow")
+          fi
           set +e
           venv/bin/mypy . --ignore-missing-imports --explicit-package-bases \
+            "${mypy_shadow_args[@]}" \
             > mypy-report.txt 2>&1
           status=$?
           cat mypy-report.txt

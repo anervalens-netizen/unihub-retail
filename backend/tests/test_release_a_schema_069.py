@@ -693,7 +693,12 @@ async def test_pre_069_manifest_is_refused_after_schema_upgrade() -> None:
         )
     finally:
         await connection.close()
-    applied = {str(row["filename"]): str(row["checksum"]) for row in rows}
+    applied: dict[str, str | None] = {
+        str(row["filename"]): (
+            str(row["checksum"]) if row["checksum"] is not None else None
+        )
+        for row in rows
+    }
     assert "069_ai_cohort_and_transactional_outbox.sql" in applied
 
     pre_069 = MigrationManifest(
@@ -702,7 +707,7 @@ async def test_pre_069_manifest_is_refused_after_schema_upgrade() -> None:
         checksums={
             filename: checksum
             for filename, checksum in applied.items()
-            if filename < "069_"
+            if filename < "069_" and checksum is not None
         },
     )
     with pytest.raises(MigrationError, match="absent from the manifest"):
