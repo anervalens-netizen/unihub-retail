@@ -1,6 +1,6 @@
 {
-  "version": 1,
-  "contract": "business-golden-v1",
+  "version": 2,
+  "contract": "business-golden-v2",
   "baseline_source_sha": "0be82b430e55b7414babf470abe3fc5404b6cdc9",
   "normalization": {
     "object_keys": "lexicographic",
@@ -557,6 +557,39 @@
       "case_sha256": "81095dddb2d267a0809634ce731f4c4b50e97eedefa7149aa58dcb08b57d59d3"
     },
     {
+      "id": "campaign_alias_ambiguity_rejected",
+      "domain": "campaign_contest",
+      "verifier": "contest_identity",
+      "input": {
+        "identity_mode": "person_id",
+        "aliases": [
+          {
+            "alias": "agent-alias",
+            "person_id": "P001"
+          },
+          {
+            "alias": "agent-alias",
+            "person_id": "P002"
+          }
+        ],
+        "row": {
+          "site": "S1",
+          "alias": "agent-alias",
+          "sales": "10.00"
+        }
+      },
+      "expected": {
+        "status": "blocked",
+        "reason": "ambiguous_alias",
+        "candidate_person_ids": [
+          "P001",
+          "P002"
+        ],
+        "merged": false
+      },
+      "case_sha256": "965cf68c1525b403edae3e8a23c47a1dea2394e71937afa9cdc8a4c4f2a9681a"
+    },
+    {
       "id": "campaign_promo_exclusion",
       "domain": "campaign_contest",
       "verifier": "promo_scope",
@@ -759,5 +792,5 @@
       "case_sha256": "3749810d6535067b4f542b18b0516d8f76c72b7786fdf09080994da1189b3f47"
     }
   ],
-  "contract_payload_sha256": "6e5067855d483f09f08a700b28b1ee0fc5b4d42f97af527d410f146272d0b903"
+  "contract_payload_sha256": "b87f0b271c6a00de6c85094a452c8a2227341835735461df97ae470515b81f0a"
 }
