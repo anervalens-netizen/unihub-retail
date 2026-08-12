@@ -155,15 +155,113 @@ def _assert_systemd_write_boundaries(units: dict[str, str]) -> None:
     all_units = tuple(units.values())
     assert all("ReadWritePaths=/opt/Mobiup\n" not in unit for unit in all_units)
     assert all("ProtectSystem=strict" in unit for unit in all_units)
+    assert all("RestrictSUIDSGID=true" in unit for unit in all_units)
     assert all("PYTHONDONTWRITEBYTECODE=1" in unit for unit in all_units)
     _assert_exact_write_paths(units)
     _assert_no_broad_write_paths(units)
+
+
+def _assert_runtime_os_identities(units: dict[str, str]) -> None:
+    expected = {
+        "web": (
+            "unihub-web",
+            "unihub-web",
+            "unihub-import-spool unihub-promo-artifacts unihub-grile-artifacts unihub-export-artifacts",
+            "0007",
+        ),
+        "operations": ("unihub-operations", "unihub-operations", None, "0077"),
+        "imports": (
+            "unihub-import",
+            "unihub-import",
+            "unihub-import-spool unihub-promo-artifacts",
+            "0007",
+        ),
+        "grile": (
+            "unihub-grile",
+            "unihub-grile",
+            "unihub-operations unihub-grile-artifacts",
+            "0007",
+        ),
+        "exports": (
+            "unihub-export",
+            "unihub-export",
+            "unihub-operations unihub-export-artifacts",
+            "0007",
+        ),
+        "salary_exports": (
+            "unihub-salary-export",
+            "unihub-salary-export",
+            "unihub-export-artifacts",
+            "0007",
+        ),
+        "migrations": ("unihub-migrate", "unihub-migrate", None, "0077"),
+    }
+    for name, (user, group, supplementary, umask) in expected.items():
+        lines = units[name].splitlines()
+        assert [line for line in lines if line.startswith("User=")] == [f"User={user}"]
+        assert [line for line in lines if line.startswith("Group=")] == [f"Group={group}"]
+        expected_supplementary = (
+            [] if supplementary is None else [f"SupplementaryGroups={supplementary}"]
+        )
+        assert [line for line in lines if line.startswith("SupplementaryGroups=")] == (
+            expected_supplementary
+        )
+        assert [line for line in lines if line.startswith("UMask=")] == [f"UMask={umask}"]
 
 
 def test_systemd_uses_multiprocess_web_metrics_and_detected_gateway_env() -> None:
     units = _read_retail_units(Path(__file__).resolve().parents[2])
     _assert_metrics_topology(units)
     _assert_systemd_write_boundaries(units)
+    _assert_runtime_os_identities(units)
+
+
+def test_runtime_identity_provisioners_are_fail_closed_and_secret_safe() -> None:
+    root = Path(__file__).resolve().parents[2]
+    os_provisioner = (root / "ops/provision-retail-service-identities.sh").read_text(
+        encoding="utf-8"
+    )
+    db_provisioner = (
+        root / "ops/provision-retail-salary-export-database.sh"
+    ).read_text(encoding="utf-8")
+
+    for user in (
+        "unihub-web",
+        "unihub-operations",
+        "unihub-import",
+        "unihub-grile",
+        "unihub-export",
+        "unihub-salary-export",
+        "unihub-migrate",
+    ):
+        assert user in os_provisioner
+    assert "useradd --system --no-create-home --home-dir /nonexistent" in os_provisioner
+    assert 'usermod --lock "$user"' in os_provisioner
+    assert "root:$group:640" in os_provisioner
+
+    assert "openssl rand -hex 32" in db_provisioner
+    assert "NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT" in db_provisioner
+    assert "LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE INHERIT" in db_provisioner
+    assert "WITH INHERIT TRUE, SET FALSE" in db_provisioner
+    assert "direct grant, default ACL, or owned object" in db_provisioner
+    assert "root:$SALARY_ENV_GROUP:640" in db_provisioner
+    assert "runtime_password" not in db_provisioner.split("printf 'retail_salary_export", 1)[1]
+
+
+def test_runtime_relies_on_deploy_setgid_and_never_sets_special_bits() -> None:
+    root = Path(__file__).resolve().parents[2]
+    runtime_modules = (
+        "backend/services/export_operations.py",
+        "backend/services/grile_monthly_integrity.py",
+        "backend/services/imports.py",
+        "backend/services/sales_artifacts.py",
+    )
+    for module in runtime_modules:
+        assert "0o2770" not in (root / module).read_text(encoding="utf-8")
+
+    deployer = (root / "ops/deploy-retail-artifact.sh").read_text(encoding="utf-8")
+    assert "SHARED_DIRECTORY_MODE=2770" in deployer
+    assert "SHARED_DIRECTORY_MODE=770" in deployer
 
 
 def test_runtime_verifier_sets_backend_pythonpath_itself() -> None:

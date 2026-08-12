@@ -16,6 +16,25 @@ to `/opt/Mobiup/ops/scripts/`, makes the files and parent directory root-owned
 and non-writable by the runner, and verifies the installed SHA-256 values match
 the reviewed sources exactly.
 
+Același boundary instalează, din artefactul exact-main verificat,
+`provision-retail-service-identities.sh` și
+`provision-retail-salary-export-database.sh`. Prima execuție autorizată este:
+
+```bash
+sudo /opt/Mobiup/ops/scripts/provision-retail-service-identities.sh apply
+sudo /opt/Mobiup/ops/scripts/provision-retail-salary-export-database.sh apply
+sudo /opt/Mobiup/ops/scripts/provision-retail-service-identities.sh verify
+sudo /opt/Mobiup/ops/scripts/provision-retail-salary-export-database.sh verify
+```
+
+Provisioning-ul OS creează numai conturile nologin/grupurile exacte și securizează
+fișierele `.env*`; nu schimbă încă artefactele persistente. Provisioning-ul DB
+creează/normalizează autoritatea NOLOGIN `unihub_salary_export`, LOGIN-ul unic,
+membershipul fără `SET ROLE`, credentialul aleator și DSN-ul root-protected,
+fără output secret. Tranziția ownershipului pentru spool/promo/Grile/export se
+face de deploy abia după backup verificat și stop runtime. Astfel rollbackul
+vechilor unități `User=andrei` rămâne posibil prin grupurile partajate.
+
 The deploy also owns the versioned Retail runtime assets: six long-running
 systemd units plus the migration one-shot and legacy rollback tombstone,
 the detected Prometheus bridge environment, and the rendered Retail scrape

@@ -20,6 +20,8 @@ from typing import Any, Iterable, Mapping
 
 
 MANIFEST_SCHEMA_VERSION = 1
+SHARED_GRILE_DIRECTORY_CREATE_MODE = 0o770
+SHARED_GRILE_FILE_MODE = 0o660
 SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 ZERO = Decimal("0")
 
@@ -239,7 +241,7 @@ def base_manifest(
 
 
 def secure_write_json(path: Path, payload: Mapping[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    secure_directory(path.parent)
     fd, raw_temp = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
     temp_path = Path(raw_temp)
     try:
@@ -248,7 +250,7 @@ def secure_write_json(path: Path, payload: Mapping[str, Any]) -> None:
             handle.write("\n")
             handle.flush()
             os.fsync(handle.fileno())
-        os.chmod(temp_path, 0o600)
+        os.chmod(temp_path, SHARED_GRILE_FILE_MODE)
         os.replace(temp_path, path)
     finally:
         if temp_path.exists():
@@ -257,7 +259,15 @@ def secure_write_json(path: Path, payload: Mapping[str, Any]) -> None:
 
 def secure_file(path: Path) -> None:
     if path.exists():
-        os.chmod(path, 0o600)
+        os.chmod(path, SHARED_GRILE_FILE_MODE)
+
+
+def secure_directory(path: Path) -> None:
+    path.mkdir(
+        parents=True,
+        exist_ok=True,
+        mode=SHARED_GRILE_DIRECTORY_CREATE_MODE,
+    )
 
 
 def canonical_snapshot(value_ranges: Any) -> dict[str, Any]:

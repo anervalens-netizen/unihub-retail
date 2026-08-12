@@ -6,7 +6,8 @@ Requires=docker.service
 
 [Service]
 Type=oneshot
-User=andrei
+User=unihub-migrate
+Group=unihub-migrate
 WorkingDirectory=/opt/Mobiup/unihub-retail/backend
 EnvironmentFile=/opt/Mobiup/unihub-retail/.env.migrations
 Environment="UNIHUB_DB_PROCESS_AUTHORITY=migrate"

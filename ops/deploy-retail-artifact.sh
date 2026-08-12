@@ -7,6 +7,7 @@ PROGRAM="$(basename "$0")"
 TEST_MODE="${RETAIL_DEPLOY_TEST_MODE:-0}"
 TEST_FAIL_PHASE="${RETAIL_DEPLOY_TEST_FAIL_PHASE:-}"
 TEST_NOW="${RETAIL_DEPLOY_TEST_NOW:-}"
+SHARED_DIRECTORY_MODE=2770
 READ_ONLY_MODE=0
 [[ "${1:-}" == "validate" ]] && READ_ONLY_MODE=1
 
@@ -20,6 +21,9 @@ die() {
 }
 
 if [[ "$TEST_MODE" == "1" ]]; then
+  # The isolated CI runner deliberately forbids chmod with setgid bits.
+  # Production never enters this branch and retains the exact 2770 contract.
+  SHARED_DIRECTORY_MODE=770
   [[ "$EUID" -ne 0 ]] || die "test mode must never run as root"
   TEST_ROOT="${RETAIL_DEPLOY_TEST_ROOT:?RETAIL_DEPLOY_TEST_ROOT is required in test mode}"
   LIVE_ROOT="$TEST_ROOT/live"
@@ -46,6 +50,26 @@ else
   SERVICE_USER="andrei"
   SERVICE_GROUP="andrei"
   LOCK_FILE="/run/lock/unihub-retail-deploy/deploy.lock"
+fi
+
+if [[ "$TEST_MODE" == "1" ]]; then
+  IMPORT_FILE_USER="$SERVICE_USER"
+  IMPORT_SPOOL_GROUP="$SERVICE_GROUP"
+  PROMO_ARTIFACT_GROUP="$SERVICE_GROUP"
+  GRILE_FILE_USER="$SERVICE_USER"
+  GRILE_ARTIFACT_GROUP="$SERVICE_GROUP"
+  EXPORT_FILE_USER="$SERVICE_USER"
+  SALARY_EXPORT_FILE_USER="$SERVICE_USER"
+  EXPORT_ARTIFACT_GROUP="$SERVICE_GROUP"
+else
+  IMPORT_FILE_USER="unihub-import"
+  IMPORT_SPOOL_GROUP="unihub-import-spool"
+  PROMO_ARTIFACT_GROUP="unihub-promo-artifacts"
+  GRILE_FILE_USER="unihub-grile"
+  GRILE_ARTIFACT_GROUP="unihub-grile-artifacts"
+  EXPORT_FILE_USER="unihub-export"
+  SALARY_EXPORT_FILE_USER="unihub-salary-export"
+  EXPORT_ARTIFACT_GROUP="unihub-export-artifacts"
 fi
 
 BACKUP_ROOT="$OPS_ROOT/backups/retail-deploy"
@@ -248,6 +272,53 @@ set_service_ownership() {
   fi
 }
 
+assert_regular_tree() {
+  local root="$1"
+  local unsafe
+  [[ -d "$root" && ! -L "$root" ]] || die "runtime artifact tree is unavailable or unsafe: $root"
+  unsafe="$(find "$root" -xdev ! -type d ! -type f -print -quit)"
+  [[ -z "$unsafe" ]] || die "runtime artifact tree contains a symlink or special file: $unsafe"
+}
+
+apply_shared_tree_contract() {
+  local root="$1"
+  local owner="$2"
+  local group="$3"
+  local excluded="${4:-}"
+  local -a scope=(find "$root" -xdev)
+  if [[ -n "$excluded" ]]; then
+    scope+=( -path "$excluded" -prune -o )
+  fi
+  if [[ "$TEST_MODE" != "1" ]]; then
+    "${scope[@]}" -type d -exec chown "$owner:$group" {} +
+    "${scope[@]}" -type f -exec chown "$owner:$group" {} +
+  fi
+  "${scope[@]}" -type d -exec chmod "$SHARED_DIRECTORY_MODE" {} +
+  "${scope[@]}" -type f -exec chmod 0660 {} +
+}
+
+verify_shared_tree_contract() {
+  local root="$1"
+  local owner="$2"
+  local group="$3"
+  local excluded="${4:-}"
+  local path expected_mode actual
+  local -a scope=(find "$root" -xdev)
+  if [[ -n "$excluded" ]]; then
+    scope+=( -path "$excluded" -prune -o )
+  fi
+  while IFS= read -r -d '' path; do
+    if [[ -d "$path" ]]; then
+      expected_mode="$SHARED_DIRECTORY_MODE"
+    else
+      expected_mode=660
+    fi
+    actual="$(stat -c '%U:%G:%a' "$path")"
+    [[ "$actual" == "$owner:$group:$expected_mode" ]] \
+      || die "runtime artifact permission contract is invalid: $path ($actual)"
+  done < <("${scope[@]}" \( -type d -o -type f \) -print0)
+}
+
 ensure_export_artifact_namespaces() {
   local artifact_root="$LIVE_ROOT/data/export_artifacts"
   local salary_root="$artifact_root/salary"
@@ -255,11 +326,56 @@ ensure_export_artifact_namespaces() {
     || die "export artifact namespace must not contain symlinks"
   if [[ "$TEST_MODE" == "1" ]]; then
     mkdir -p "$salary_root"
-    chmod 0700 "$artifact_root" "$salary_root"
+    chmod "$SHARED_DIRECTORY_MODE" "$artifact_root" "$salary_root"
   else
-    install -d -m 0700 -o "$SERVICE_USER" -g "$SERVICE_GROUP" \
-      "$artifact_root" "$salary_root"
+    install -d -m "$SHARED_DIRECTORY_MODE" -o "$EXPORT_FILE_USER" -g "$EXPORT_ARTIFACT_GROUP" \
+      "$artifact_root"
+    install -d -m "$SHARED_DIRECTORY_MODE" -o "$SALARY_EXPORT_FILE_USER" -g "$EXPORT_ARTIFACT_GROUP" \
+      "$salary_root"
   fi
+}
+
+apply_runtime_identity_filesystem() {
+  local import_root="$LIVE_ROOT/data/import_spool"
+  local promo_root="$LIVE_ROOT/data/promo_generations"
+  local grile_root="$LIVE_ROOT/backend/outputs/grile"
+  local export_root="$LIVE_ROOT/data/export_artifacts"
+  local salary_root="$export_root/salary"
+
+  ensure_export_artifact_namespaces
+  if [[ "$TEST_MODE" == "1" ]]; then
+    mkdir -p "$import_root" "$promo_root" "$grile_root"
+  else
+    install -d -m "$SHARED_DIRECTORY_MODE" -o "$IMPORT_FILE_USER" -g "$IMPORT_SPOOL_GROUP" "$import_root"
+    install -d -m "$SHARED_DIRECTORY_MODE" -o "$IMPORT_FILE_USER" -g "$PROMO_ARTIFACT_GROUP" "$promo_root"
+    install -d -m "$SHARED_DIRECTORY_MODE" -o "$GRILE_FILE_USER" -g "$GRILE_ARTIFACT_GROUP" "$grile_root"
+  fi
+  assert_regular_tree "$import_root"
+  assert_regular_tree "$promo_root"
+  assert_regular_tree "$grile_root"
+  assert_regular_tree "$export_root"
+  apply_shared_tree_contract "$import_root" "$IMPORT_FILE_USER" "$IMPORT_SPOOL_GROUP"
+  apply_shared_tree_contract "$promo_root" "$IMPORT_FILE_USER" "$PROMO_ARTIFACT_GROUP"
+  apply_shared_tree_contract "$grile_root" "$GRILE_FILE_USER" "$GRILE_ARTIFACT_GROUP"
+  apply_shared_tree_contract "$export_root" "$EXPORT_FILE_USER" "$EXPORT_ARTIFACT_GROUP" "$salary_root"
+  apply_shared_tree_contract "$salary_root" "$SALARY_EXPORT_FILE_USER" "$EXPORT_ARTIFACT_GROUP"
+}
+
+verify_runtime_identity_filesystem() {
+  local import_root="$LIVE_ROOT/data/import_spool"
+  local promo_root="$LIVE_ROOT/data/promo_generations"
+  local grile_root="$LIVE_ROOT/backend/outputs/grile"
+  local export_root="$LIVE_ROOT/data/export_artifacts"
+  local salary_root="$export_root/salary"
+  local root
+  for root in "$import_root" "$promo_root" "$grile_root" "$export_root" "$salary_root"; do
+    assert_regular_tree "$root"
+  done
+  verify_shared_tree_contract "$import_root" "$IMPORT_FILE_USER" "$IMPORT_SPOOL_GROUP"
+  verify_shared_tree_contract "$promo_root" "$IMPORT_FILE_USER" "$PROMO_ARTIFACT_GROUP"
+  verify_shared_tree_contract "$grile_root" "$GRILE_FILE_USER" "$GRILE_ARTIFACT_GROUP"
+  verify_shared_tree_contract "$export_root" "$EXPORT_FILE_USER" "$EXPORT_ARTIFACT_GROUP" "$salary_root"
+  verify_shared_tree_contract "$salary_root" "$SALARY_EXPORT_FILE_USER" "$EXPORT_ARTIFACT_GROUP"
 }
 
 ensure_backup_root() {
@@ -339,6 +455,8 @@ required = {
     "ops/systemd/unihub-salary-export-worker.service",
     "ops/systemd/unihub-legacy-worker.service",
     "ops/systemd/unihub-retail-migrate.service",
+    "ops/provision-retail-service-identities.sh",
+    "ops/provision-retail-salary-export-database.sh",
     "ops/observability/retail-process-scrape.yml",
     "ops/observability/retail-slo-rules.yml",
 }
@@ -365,6 +483,66 @@ assert_worktree_safe() {
     [[ -z "$line" ]] && continue
     die "production worktree is not clean: $line"
   done < <(git_service status --porcelain=v1 --untracked-files=all)
+}
+
+verify_service_account_contract() {
+  local user="$1"
+  local primary_group="$2"
+  local supplementary_csv="$3"
+  local entry name _password uid _gid _gecos home shell
+  entry="$(getent passwd "$user")" || die "required runtime service user is absent: $user"
+  IFS=: read -r name _password uid _gid _gecos home shell <<<"$entry"
+  [[ "$name" == "$user" && "$uid" =~ ^[1-9][0-9]*$ \
+    && "$home" == "/nonexistent" && "$shell" == "/usr/sbin/nologin" ]] \
+    || die "runtime service user contract is invalid: $user"
+  [[ "$(id -gn "$user")" == "$primary_group" ]] \
+    || die "runtime service user primary group is invalid: $user"
+  diff -u \
+    <({ printf '%s\n' "$primary_group"; tr ',' '\n' <<<"$supplementary_csv"; } | sed '/^$/d' | sort -u) \
+    <(id -nG "$user" | tr ' ' '\n' | sort -u) >/dev/null \
+    || die "runtime service user memberships are invalid: $user"
+  [[ "$(passwd -S "$user" | awk '{print $2}')" == "L" ]] \
+    || die "runtime service user password is not locked: $user"
+}
+
+verify_runtime_identity_prerequisites() {
+  [[ "$TEST_MODE" == "1" ]] && return
+  verify_service_account_contract \
+    unihub-web unihub-web \
+    unihub-import-spool,unihub-promo-artifacts,unihub-grile-artifacts,unihub-export-artifacts
+  verify_service_account_contract unihub-operations unihub-operations ""
+  verify_service_account_contract \
+    unihub-import unihub-import unihub-import-spool,unihub-promo-artifacts
+  verify_service_account_contract \
+    unihub-grile unihub-grile unihub-operations,unihub-grile-artifacts
+  verify_service_account_contract \
+    unihub-export unihub-export unihub-operations,unihub-export-artifacts
+  verify_service_account_contract \
+    unihub-salary-export unihub-salary-export unihub-export-artifacts
+  verify_service_account_contract unihub-migrate unihub-migrate ""
+
+  local group
+  for group in \
+    unihub-web unihub-operations unihub-import unihub-grile unihub-export \
+    unihub-salary-export unihub-migrate unihub-import-spool \
+    unihub-promo-artifacts unihub-grile-artifacts unihub-export-artifacts; do
+    id -nG andrei | tr ' ' '\n' | grep -Fxq "$group" \
+      || die "operator lacks rollback-compatible runtime group: $group"
+  done
+
+  local file expected
+  while IFS='|' read -r file expected; do
+    [[ -f "$LIVE_ROOT/$file" && ! -L "$LIVE_ROOT/$file" ]] \
+      || die "runtime environment file is absent or unsafe: $file"
+    [[ "$(stat -c '%U:%G:%a' "$LIVE_ROOT/$file")" == "$expected" ]] \
+      || die "runtime environment ownership contract is invalid: $file"
+  done <<'EOF'
+.env|root:unihub-web:640
+.env.worker|root:unihub-operations:640
+.env.import-worker|root:unihub-import:640
+.env.salary-export-worker|root:unihub-salary-export:640
+.env.migrations|root:unihub-migrate:640
+EOF
 }
 
 fetch_and_verify_commit() {
@@ -717,6 +895,42 @@ prepare_runtime_release() {
       || die "runtime artifact unit is missing: $unit_source"
     install -m 0644 -- "$artifact_tree/$unit_source" "$stage_root/systemd/$(basename "$unit_source")"
   done
+  assert_unit_identity() {
+    local unit="$1"
+    local user="$2"
+    local group="$3"
+    local supplementary="$4"
+    local umask="$5"
+    [[ "$(grep -Ec '^User=' "$unit")" -eq 1 && "$(grep -Fxc "User=$user" "$unit")" -eq 1 ]] \
+      || die "runtime unit has an invalid service user: $(basename "$unit")"
+    [[ "$(grep -Ec '^Group=' "$unit")" -eq 1 && "$(grep -Fxc "Group=$group" "$unit")" -eq 1 ]] \
+      || die "runtime unit has an invalid primary group: $(basename "$unit")"
+    if [[ -n "$supplementary" ]]; then
+      [[ "$(grep -Ec '^SupplementaryGroups=' "$unit")" -eq 1 \
+        && "$(grep -Fxc "SupplementaryGroups=$supplementary" "$unit")" -eq 1 ]] \
+        || die "runtime unit has invalid supplementary groups: $(basename "$unit")"
+    else
+      ! grep -Eq '^SupplementaryGroups=' "$unit" \
+        || die "runtime unit has unexpected supplementary groups: $(basename "$unit")"
+    fi
+    [[ "$(grep -Ec '^UMask=' "$unit")" -eq 1 && "$(grep -Fxc "UMask=$umask" "$unit")" -eq 1 ]] \
+      || die "runtime unit has an invalid umask: $(basename "$unit")"
+  }
+  assert_unit_identity "$stage_root/systemd/unihub-backend.service" \
+    unihub-web unihub-web \
+    "unihub-import-spool unihub-promo-artifacts unihub-grile-artifacts unihub-export-artifacts" 0007
+  assert_unit_identity "$stage_root/systemd/unihub-worker.service" \
+    unihub-operations unihub-operations "" 0077
+  assert_unit_identity "$stage_root/systemd/unihub-import-worker.service" \
+    unihub-import unihub-import "unihub-import-spool unihub-promo-artifacts" 0007
+  assert_unit_identity "$stage_root/systemd/unihub-grile-worker.service" \
+    unihub-grile unihub-grile "unihub-operations unihub-grile-artifacts" 0007
+  assert_unit_identity "$stage_root/systemd/unihub-export-worker.service" \
+    unihub-export unihub-export "unihub-operations unihub-export-artifacts" 0007
+  assert_unit_identity "$stage_root/systemd/unihub-salary-export-worker.service" \
+    unihub-salary-export unihub-salary-export "unihub-export-artifacts" 0007
+  assert_unit_identity "$stage_root/systemd/unihub-retail-migrate.service" \
+    unihub-migrate unihub-migrate "" 0077
   local worker_unit
   for worker_unit in unihub-worker.service unihub-import-worker.service unihub-grile-worker.service \
     unihub-export-worker.service unihub-salary-export-worker.service; do
@@ -1356,7 +1570,8 @@ recover_forward_release() {
   wait_for_planned_deployment_inhibition \
     || die "planned deployment inhibition did not become active"
   stop_runtime
-  ensure_export_artifact_namespaces
+  apply_runtime_identity_filesystem
+  verify_runtime_identity_filesystem
   install_runtime_assets "$stage_root" "$expected_sha"
   if ! diff -qr -- "$LIVE_ROOT/dist" "$next_dist" >/dev/null; then
     failed_dist="$backup_dir/dist.recovery.failed.$(date -u +%Y%m%dT%H%M%SZ)"
@@ -1603,6 +1818,7 @@ deploy_release() {
   validate_sha256 "$expected_artifact_sha256"
   assert_live_checkout
   assert_worktree_safe
+  verify_runtime_identity_prerequisites
 
   local old_sha stamp backup_dir work_dir artifact_tree backup_started next_dist backup_nonce stage_root
   old_sha="$(git_service rev-parse HEAD)"
@@ -1632,6 +1848,7 @@ deploy_release() {
     detect_prometheus_network
     assert_prometheus_shared_include
     verify_active_runtime_assets "$expected_sha"
+    verify_runtime_identity_filesystem
     verify_local_health
     verify_public_release
     log "existing deployment reverified without mutation: $expected_sha"
@@ -1704,7 +1921,8 @@ deploy_release() {
   wait_for_planned_deployment_inhibition \
     || die "planned deployment inhibition did not become active"
   stop_runtime
-  ensure_export_artifact_namespaces
+  apply_runtime_identity_filesystem
+  verify_runtime_identity_filesystem
   install_runtime_assets "$stage_root" "$expected_sha"
   switch_dist "$next_dist" "$backup_dir"
   git_service merge --ff-only "$expected_sha"

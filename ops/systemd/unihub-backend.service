@@ -8,7 +8,9 @@ StartLimitBurst=5
 
 [Service]
 Type=simple
-User=andrei
+User=unihub-web
+Group=unihub-web
+SupplementaryGroups=unihub-import-spool unihub-promo-artifacts unihub-grile-artifacts unihub-export-artifacts
 WorkingDirectory=/opt/Mobiup/unihub-retail/backend
 EnvironmentFile=/opt/Mobiup/unihub-retail/.env
 EnvironmentFile=/opt/Mobiup/ops/prometheus/unihub-retail-network.env
@@ -51,7 +53,7 @@ RestrictSUIDSGID=true
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 SystemCallArchitectures=native
 CapabilityBoundingSet=
-UMask=0077
+UMask=0007
 CPUWeight=800
 IOWeight=800
 MemoryLow=256M

@@ -91,6 +91,32 @@ def _legacy_generation(tmp_path: Path, *, tamper_source: bool = False) -> tuple[
     return data_dir, pointer_path
 
 
+def _assert_shared_generation_artifacts(
+    config_path: Path,
+    *,
+    pointer_before: bytes,
+    pointer: dict[str, object],
+) -> None:
+    recovery = config_path.parent / "previous-current-v1.json"
+    assert recovery.read_bytes() == pointer_before
+    assert hashlib.sha256(recovery.read_bytes()).hexdigest() == pointer["previous_pointer_sha256"]
+    assert os.stat(recovery).st_mode & 0o777 == 0o660
+    config = json.loads(config_path.read_text())
+    for promotion in config["promotions"]:
+        if not promotion.get("actuals_source_file"):
+            assert promotion["key"] == "rule-only"
+            continue
+        source = Path(promotion["actuals_source_file"])
+        material = Path(promotion["actuals_material_file"])
+        assert source.is_file() and material.is_file()
+        assert os.stat(source).st_mode & 0o777 == 0o660
+        assert os.stat(material).st_mode & 0o777 == 0o660
+        units, error = load_promo_actual_units(promotion, item_codes=promotion["item_codes"])
+        assert error is None
+        assert units
+    assert os.stat(config_path.parent).st_mode & 0o777 == 0o770
+
+
 def test_migrates_all_legacy_sources_once_and_is_idempotent(tmp_path: Path) -> None:
     data_dir, pointer_path = _legacy_generation(tmp_path)
     pointer_before = pointer_path.read_bytes()
@@ -113,24 +139,11 @@ def test_migrates_all_legacy_sources_once_and_is_idempotent(tmp_path: Path) -> N
     assert len(pointer["actuals_materials"]) == 3
     config_path = _generated_config_path(data_dir)
     assert config_path is not None
-    recovery = config_path.parent / "previous-current-v1.json"
-    assert recovery.read_bytes() == pointer_before
-    assert hashlib.sha256(recovery.read_bytes()).hexdigest() == pointer["previous_pointer_sha256"]
-    assert os.stat(recovery).st_mode & 0o777 == 0o600
-    config = json.loads(config_path.read_text())
-    for promotion in config["promotions"]:
-        if not promotion.get("actuals_source_file"):
-            assert promotion["key"] == "rule-only"
-            continue
-        source = Path(promotion["actuals_source_file"])
-        material = Path(promotion["actuals_material_file"])
-        assert source.is_file() and material.is_file()
-        assert os.stat(source).st_mode & 0o777 == 0o600
-        assert os.stat(material).st_mode & 0o777 == 0o600
-        units, error = load_promo_actual_units(promotion, item_codes=promotion["item_codes"])
-        assert error is None
-        assert units
-    assert os.stat(config_path.parent).st_mode & 0o777 == 0o700
+    _assert_shared_generation_artifacts(
+        config_path,
+        pointer_before=pointer_before,
+        pointer=pointer,
+    )
 
     retry = migrate_legacy_promo_generation(data_dir=data_dir, apply=True)
     assert retry.status == "already_v2"

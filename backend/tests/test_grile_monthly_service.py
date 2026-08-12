@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
+import stat
 import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
@@ -14,6 +16,19 @@ from openpyxl import Workbook
 
 import services.grile_monthly as grile
 from services.grile_monthly import ExtractedAgentRow, StoreEntry
+
+
+def test_secure_grile_json_uses_shared_artifact_modes(tmp_path: Path) -> None:
+    output = tmp_path / "month" / "manifest.json"
+
+    previous_umask = os.umask(0o007)
+    try:
+        grile.secure_write_json(output, {"status": "verified"})
+    finally:
+        os.umask(previous_umask)
+
+    assert stat.S_IMODE(output.parent.stat().st_mode) == 0o770
+    assert stat.S_IMODE(output.stat().st_mode) == 0o660
 
 
 class AsyncAcquire:

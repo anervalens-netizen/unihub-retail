@@ -7,7 +7,8 @@ StartLimitBurst=5
 
 [Service]
 Type=simple
-User=andrei
+User=unihub-operations
+Group=unihub-operations
 WorkingDirectory=/opt/Mobiup/unihub-retail/backend
 Environment="PATH=/opt/Mobiup/unihub-retail/backend/venv/bin:/usr/bin:/bin"
 EnvironmentFile=/opt/Mobiup/unihub-retail/.env.worker

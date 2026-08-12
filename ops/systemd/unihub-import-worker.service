@@ -7,7 +7,9 @@ StartLimitBurst=5
 
 [Service]
 Type=simple
-User=andrei
+User=unihub-import
+Group=unihub-import
+SupplementaryGroups=unihub-import-spool unihub-promo-artifacts
 WorkingDirectory=/opt/Mobiup/unihub-retail/backend
 Environment="PATH=/opt/Mobiup/unihub-retail/backend/venv/bin:/usr/bin:/bin"
 EnvironmentFile=/opt/Mobiup/unihub-retail/.env.import-worker
@@ -47,7 +49,7 @@ RestrictSUIDSGID=true
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 SystemCallArchitectures=native
 CapabilityBoundingSet=
-UMask=0077
+UMask=0007
 CPUWeight=350
 IOWeight=350
 MemoryLow=256M

@@ -407,11 +407,11 @@ def migrate_legacy_promo_generation(
     target_dir = root / planned.generation_id
     lock_path = root / ".promotion.lock"
     staging = root / f".staging-v1-v2-{uuid4()}"
-    root.mkdir(parents=True, exist_ok=True, mode=0o700)
-    root.chmod(0o700)
+    root.mkdir(parents=True, exist_ok=True, mode=0o770)
+    root.chmod(0o770)
     try:
         with lock_path.open("a+b") as lock_file:
-            os.fchmod(lock_file.fileno(), 0o600)
+            os.fchmod(lock_file.fileno(), 0o660)
             fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
             try:
                 current_pointer = planned.pointer_path.read_bytes()
@@ -423,7 +423,8 @@ def migrate_legacy_promo_generation(
             if target_exists:
                 _verify_existing_target(target_dir, planned)
             else:
-                staging.mkdir(mode=0o700)
+                staging.mkdir(mode=0o770)
+                staging.chmod(0o770)
             actuals_manifest: list[dict[str, str]] = []
             materials_manifest: list[dict[str, str]] = []
             for source in planned.sources:

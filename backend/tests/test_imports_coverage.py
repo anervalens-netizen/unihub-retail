@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import stat
 from datetime import date
 from io import BytesIO
@@ -237,14 +238,18 @@ def test_publish_promo_generation_reuses_exact_generation(
     tmp_path: Path,
 ) -> None:
     data_dir = tmp_path / "data"
-    first = imports_module._publish_promo_generation(
-        data_dir=data_dir,
-        config=_promotion_config(),
-        content=b"uploaded-actuals",
-        suffix=".xlsx",
-        material_sha256="d" * 64,
-        expected_pointer_sha256=None,
-    )
+    previous_umask = os.umask(0o007)
+    try:
+        first = imports_module._publish_promo_generation(
+            data_dir=data_dir,
+            config=_promotion_config(),
+            content=b"uploaded-actuals",
+            suffix=".xlsx",
+            material_sha256="d" * 64,
+            expected_pointer_sha256=None,
+        )
+    finally:
+        os.umask(previous_umask)
     generation_root = data_dir / "promo_generations"
     pointer_path = generation_root / "current.json"
     pointer_before = pointer_path.read_bytes()
@@ -262,15 +267,15 @@ def test_publish_promo_generation_reuses_exact_generation(
     pointer = json.loads(pointer_before)
     assert pointer["previous_generation_id"] != pointer["generation_id"]
     generation_dir = generation_root / first[0]
-    assert stat.S_IMODE(generation_root.stat().st_mode) == 0o700
-    assert stat.S_IMODE(generation_dir.stat().st_mode) == 0o700
+    assert stat.S_IMODE(generation_root.stat().st_mode) == 0o770
+    assert stat.S_IMODE(generation_dir.stat().st_mode) == 0o770
     for artifact in (
         pointer_path,
         generation_dir / "promo_actuals.xlsx",
         generation_dir / "promo_actuals.json",
         generation_dir / "hub_specials.json",
     ):
-        assert stat.S_IMODE(artifact.stat().st_mode) == 0o600
+        assert stat.S_IMODE(artifact.stat().st_mode) == 0o660
 
 
 def test_publish_promo_generation_rejects_inconsistent_exact_retry_pointer(

@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import os
+import stat
 from datetime import datetime, timedelta, timezone
 from io import BytesIO
 from pathlib import Path
@@ -150,11 +151,16 @@ def test_artifact_persistence_hash_open_and_remove(
         BytesIO(content), "safe.xlsx", len(content), hashlib.sha256(content).hexdigest(), 1024, 0.1, 10
     )
 
-    stored = persist_export_artifact(source)
+    previous_umask = os.umask(0o007)
+    try:
+        stored = persist_export_artifact(source)
+    finally:
+        os.umask(previous_umask)
 
     path = root / stored.key
     assert path.read_bytes() == content
-    assert stat_mode(path) == 0o600
+    assert stat_mode(path) == 0o660
+    assert stat.S_IMODE(path.parent.stat().st_mode) == 0o770
     assert stored.sha256 == hashlib.sha256(content).hexdigest()
     opened = open_verified_export_artifact(
         key=stored.key,
@@ -168,11 +174,66 @@ def test_artifact_persistence_hash_open_and_remove(
     assert not path.exists()
 
 
+def test_export_directory_creation_requests_no_special_mode_bits(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    root = configure_artifacts(monkeypatch, tmp_path)
+    original_mkdir = Path.mkdir
+    original_chmod = Path.chmod
+    requested_modes: list[int] = []
+    requested_chmod_modes: list[int] = []
+
+    def guarded_mkdir(path: Path, mode: int = 0o777, *args: Any, **kwargs: Any) -> None:
+        requested_modes.append(mode)
+        if mode & 0o7000:
+            raise PermissionError("test filesystem rejects special mkdir bits")
+        original_mkdir(path, mode, *args, **kwargs)
+
+    def guarded_chmod(path: Path, mode: int, *args: Any, **kwargs: Any) -> None:
+        requested_chmod_modes.append(mode)
+        if mode & 0o7000:
+            raise PermissionError("test runtime rejects special chmod bits")
+        original_chmod(path, mode, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "mkdir", guarded_mkdir)
+    monkeypatch.setattr(Path, "chmod", guarded_chmod)
+    content = b"PK-safe-create"
+    previous_umask = os.umask(0o007)
+    try:
+        stored = persist_export_artifact(
+            XlsxArtifact(
+                BytesIO(content),
+                "safe.xlsx",
+                len(content),
+                hashlib.sha256(content).hexdigest(),
+                1024,
+                0.1,
+                10,
+            )
+        )
+    finally:
+        os.umask(previous_umask)
+
+    assert requested_modes
+    assert all(mode & 0o7000 == 0 for mode in requested_modes)
+    assert requested_chmod_modes
+    assert all(mode & 0o7000 == 0 for mode in requested_chmod_modes)
+    assert stat.S_IMODE(root.stat().st_mode) == 0o770
+    remove_export_artifact(stored.key)
+
+
 def test_salary_artifact_uses_isolated_namespace(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
     root = configure_artifacts(monkeypatch, tmp_path)
+    previous_umask = os.umask(0o007)
+    try:
+        root.mkdir(mode=0o770)
+        (root / "salary").mkdir(mode=0o770)
+    finally:
+        os.umask(previous_umask)
     content = b"PK-salary"
     source = XlsxArtifact(
         BytesIO(content),
@@ -189,6 +250,9 @@ def test_salary_artifact_uses_isolated_namespace(
     assert stored.key.startswith("salary/")
     path = root / stored.key
     assert path.read_bytes() == content
+    assert stat_mode(path) == 0o660
+    assert stat.S_IMODE(path.parent.stat().st_mode) == 0o770
+    assert stat.S_IMODE(root.stat().st_mode) == 0o770
     opened = open_verified_export_artifact(
         key=stored.key,
         expected_sha256=stored.sha256,
@@ -199,6 +263,31 @@ def test_salary_artifact_uses_isolated_namespace(
     opened.close()
     remove_export_artifact(stored.key)
     assert not path.exists()
+
+
+def test_salary_artifact_requires_preprovisioned_parent_namespace(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    configure_artifacts(monkeypatch, tmp_path)
+    content = b"PK-salary"
+
+    with pytest.raises(
+        ExportArtifactIntegrityError,
+        match="parent namespace must be provisioned",
+    ):
+        persist_export_artifact(
+            XlsxArtifact(
+                BytesIO(content),
+                "salary.xlsx",
+                len(content),
+                hashlib.sha256(content).hexdigest(),
+                1024,
+                0.1,
+                10,
+            ),
+            namespace="salary",
+        )
 
 
 def stat_mode(path: Path) -> int:

@@ -33,6 +33,8 @@ cp "$SCRIPT_DIR/systemd/unihub-backend.service" "$BUILDER/ops/systemd/"
 cp "$SCRIPT_DIR/../unihub-worker.service" "$BUILDER/"
 cp "$SCRIPT_DIR/systemd/unihub-import-worker.service" "$BUILDER/ops/systemd/"
 cp "$SCRIPT_DIR/systemd/unihub-retail-migrate.service" "$BUILDER/ops/systemd/"
+cp "$SCRIPT_DIR/provision-retail-service-identities.sh" "$BUILDER/ops/"
+cp "$SCRIPT_DIR/provision-retail-salary-export-database.sh" "$BUILDER/ops/"
 cp "$SCRIPT_DIR/observability/retail-process-scrape.yml" "$BUILDER/ops/observability/"
 cp "$SCRIPT_DIR/observability/retail-slo-rules.yml" "$BUILDER/ops/observability/"
 git -C "$BUILDER" add .
@@ -181,7 +183,15 @@ run_deploy "$ARTIFACT" "$NEW_SHA" "$CI_RUN_ID" "$ARTIFACT_SHA256"
 [[ "$(git -C "$LIVE" rev-parse HEAD)" == "$NEW_SHA" ]]
 [[ "$(<"$LIVE/dist/index.html")" == "new frontend" ]]
 [[ -d "$LIVE/data/export_artifacts/salary" ]]
-[[ "$(stat -c '%a' "$LIVE/data/export_artifacts/salary")" == "700" ]]
+[[ "$(stat -c '%a' "$LIVE/data/export_artifacts/salary")" == "770" ]]
+for shared_root in \
+  "$LIVE/data/import_spool" \
+  "$LIVE/data/promo_generations" \
+  "$LIVE/backend/outputs/grile" \
+  "$LIVE/data/export_artifacts" \
+  "$LIVE/data/export_artifacts/salary"; do
+  [[ "$(stat -c '%U:%G:%a' "$shared_root")" == "$(id -un):$(id -gn):770" ]]
+done
 for unit in \
   unihub-backend.service \
   unihub-worker.service \

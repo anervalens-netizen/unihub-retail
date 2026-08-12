@@ -13,6 +13,8 @@ from uuid import uuid4
 DEFAULT_SALES_IMPORT_SPOOL_MAX_AGE_SECONDS = 24 * 60 * 60
 _SALES_ARTIFACT_DIGEST = re.compile(r"^[0-9a-f]{64}$")
 _IMPORT_SPOOL_NAMESPACE = re.compile(r"^[0-9a-f]{64}$")
+_SHARED_SPOOL_DIRECTORY_CREATE_MODE = 0o770
+_SHARED_SPOOL_FILE_MODE = 0o660
 
 
 class SalesImportArtifactError(RuntimeError):
@@ -122,8 +124,11 @@ def stage_sales_import_spool_file(
     if namespace is not None and not _IMPORT_SPOOL_NAMESPACE.fullmatch(namespace):
         raise ValueError("Invalid import spool namespace")
     spool_dir = get_sales_import_spool_dir()
-    spool_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
-    spool_dir.chmod(0o700)
+    spool_dir.mkdir(
+        parents=True,
+        exist_ok=True,
+        mode=_SHARED_SPOOL_DIRECTORY_CREATE_MODE,
+    )
     artifact_stem = f"{digest}.{namespace}" if namespace is not None else digest
     destination = spool_dir / f"{artifact_stem}.upload"
     temporary = spool_dir / f".{artifact_stem}.{uuid4().hex}.tmp"
@@ -131,19 +136,19 @@ def stage_sales_import_spool_file(
         actual_digest, actual_size = _file_digest_and_size(destination)
         if actual_digest != digest or actual_size != len(content):
             raise SalesImportArtifactConflictError("Conflicting content-addressed sales source")
-        destination.chmod(0o600)
+        destination.chmod(_SHARED_SPOOL_FILE_MODE)
         _fsync_file(destination)
         _fsync_directory(spool_dir)
         return destination
     try:
         temporary.write_bytes(content)
-        temporary.chmod(0o600)
+        temporary.chmod(_SHARED_SPOOL_FILE_MODE)
         _fsync_file(temporary)
         actual_digest, actual_size = _file_digest_and_size(temporary)
         if actual_digest != digest or actual_size != len(content):
             raise SalesImportArtifactError("Staged sales source integrity check failed")
         temporary.replace(destination)
-        destination.chmod(0o600)
+        destination.chmod(_SHARED_SPOOL_FILE_MODE)
         _fsync_file(destination)
         _fsync_directory(spool_dir)
     finally:
@@ -170,14 +175,17 @@ def retain_sales_import_spool_file(
     if not _SALES_ARTIFACT_DIGEST.fullmatch(digest):
         raise ValueError("Invalid sales import artifact digest")
     retained_dir = spool_dir / "retained"
-    retained_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
-    retained_dir.chmod(0o700)
+    retained_dir.mkdir(
+        parents=True,
+        exist_ok=True,
+        mode=_SHARED_SPOOL_DIRECTORY_CREATE_MODE,
+    )
     destination = _sales_spool_path(retained_dir / f"{digest}.source")
     if destination.exists():
         actual_digest, actual_size = _file_digest_and_size(destination)
         if actual_digest != digest or (expected_bytes is not None and actual_size != expected_bytes):
             raise SalesImportArtifactConflictError("Conflicting retained sales artifact")
-        destination.chmod(0o600)
+        destination.chmod(_SHARED_SPOOL_FILE_MODE)
         _fsync_file(destination)
         if candidate != destination and candidate.exists():
             candidate.unlink()
@@ -190,7 +198,7 @@ def retain_sales_import_spool_file(
     if actual_digest != digest or (expected_bytes is not None and actual_size != expected_bytes):
         raise SalesImportArtifactError("Sales source integrity check failed before retain")
     candidate.replace(destination)
-    destination.chmod(0o600)
+    destination.chmod(_SHARED_SPOOL_FILE_MODE)
     _fsync_file(destination)
     _fsync_directory(retained_dir)
     actual_digest, actual_size = _file_digest_and_size(destination)

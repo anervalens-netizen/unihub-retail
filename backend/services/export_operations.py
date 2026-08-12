@@ -52,6 +52,8 @@ EXPORT_EXECUTION_LEASE_SECONDS = 5 * 60
 # 1,800s job timeout, but stale recovery must also remain correct at the cap.
 EXPORT_QUEUE_STALE_SECONDS = 3 * 7_200 + 10 * 60
 EXPORT_ORPHAN_GRACE_SECONDS = 60 * 60
+_SHARED_EXPORT_DIRECTORY_CREATE_MODE = 0o770
+_SHARED_EXPORT_FILE_MODE = 0o660
 
 
 class ExportOperationNotFoundError(LookupError):
@@ -119,8 +121,21 @@ def get_export_artifact_dir(
     if root_path.is_symlink():
         raise ExportArtifactIntegrityError("Export artifact namespace symlink is not allowed")
     if create:
-        root_path.mkdir(parents=True, exist_ok=True, mode=0o700)
-        root_path.chmod(0o700)
+        if namespace == "generic":
+            root_path.mkdir(
+                parents=True,
+                exist_ok=True,
+                mode=_SHARED_EXPORT_DIRECTORY_CREATE_MODE,
+            )
+        else:
+            if not base.is_dir() or base.is_symlink():
+                raise ExportArtifactIntegrityError(
+                    "Salary artifact parent namespace must be provisioned"
+                )
+            root_path.mkdir(
+                exist_ok=True,
+                mode=_SHARED_EXPORT_DIRECTORY_CREATE_MODE,
+            )
     root = root_path.resolve()
     if namespace == "salary" and root.parent != base:
         raise ExportArtifactIntegrityError("Export artifact namespace escapes its root")
@@ -160,7 +175,7 @@ def persist_export_artifact(
     size = 0
     try:
         with temporary.open("xb") as output:
-            temporary.chmod(0o600)
+            temporary.chmod(_SHARED_EXPORT_FILE_MODE)
             for chunk in artifact.iter_chunks():
                 size += len(chunk)
                 if size > EXPORT_MAX_OUTPUT_BYTES:
@@ -185,7 +200,7 @@ def persist_export_artifact(
         ):
             raise ExportArtifactIntegrityError("Export artifact metrics are missing")
         temporary.replace(destination)
-        destination.chmod(0o600)
+        destination.chmod(_SHARED_EXPORT_FILE_MODE)
         descriptor = os.open(root, os.O_RDONLY)
         try:
             os.fsync(descriptor)

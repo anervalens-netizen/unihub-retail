@@ -211,13 +211,13 @@ def _fsync_directory(path: Path) -> None:
 
 
 def _write_durable_private_file(path: Path, content: bytes) -> None:
-    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o660)
     try:
         view = memoryview(content)
         while view:
             written = os.write(descriptor, view)
             view = view[written:]
-        os.fchmod(descriptor, 0o600)
+        os.fchmod(descriptor, 0o660)
         os.fsync(descriptor)
     finally:
         os.close(descriptor)
@@ -230,6 +230,19 @@ def _promo_pointer_sha256(data_dir: Path) -> str | None:
         if pointer_path.exists()
         else None
     )
+
+
+def _canonical_promo_actuals_material(
+    actuals_material: bytes | None, source_sha256: str
+) -> bytes:
+    if actuals_material is not None:
+        return actuals_material
+    payload = {
+        "version": 1, "source_sha256": source_sha256,
+        "import_month": "", "cutoff_date": "",
+        "report_rows": 0, "promo_units": 0, "rows": [],
+    }
+    return _canonical_json_bytes(payload)
 
 
 def _publish_promo_generation(
@@ -245,20 +258,7 @@ def _publish_promo_generation(
 ) -> tuple[str, str, str]:
     generation_root = data_dir / "promo_generations"
     source_sha256 = hashlib.sha256(content).hexdigest()
-    if actuals_material is None:
-        # Compatibility for offline/private generation callers.  The public
-        # import worker always supplies the fully parsed canonical payload.
-        actuals_material = _canonical_json_bytes(
-            {
-                "version": 1,
-                "source_sha256": source_sha256,
-                "import_month": "",
-                "cutoff_date": "",
-                "report_rows": 0,
-                "promo_units": 0,
-                "rows": [],
-            }
-        )
+    actuals_material = _canonical_promo_actuals_material(actuals_material, source_sha256)
     parser_resources = dict(parser_resources or {})
     actuals_material_sha256 = hashlib.sha256(actuals_material).hexdigest()
     seed = hashlib.sha256(
@@ -316,19 +316,17 @@ def _publish_promo_generation(
         actuals_material_manifest.append(
             {"file": material_file, "sha256": candidate_sha256}
         )
-
-    generation_root.mkdir(parents=True, exist_ok=True, mode=0o700)
-    generation_root.chmod(0o700)
+    generation_root.mkdir(parents=True, exist_ok=True, mode=0o770)
     staging = generation_root / f".staging-{uuid4()}"
     lock_path = generation_root / ".promotion.lock"
     try:
         with lock_path.open("a+b") as lock_file:
-            os.fchmod(lock_file.fileno(), 0o600)
+            os.fchmod(lock_file.fileno(), 0o660)
             fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
             pointer_path = generation_root / "current.json"
             pointer_bytes = pointer_path.read_bytes() if pointer_path.exists() else None
             if pointer_bytes is not None:
-                pointer_path.chmod(0o600)
+                pointer_path.chmod(0o660)
             current_pointer_sha256 = (
                 hashlib.sha256(pointer_bytes).hexdigest()
                 if pointer_bytes is not None
@@ -358,12 +356,11 @@ def _publish_promo_generation(
                     != config_sha256
                 ):
                     raise RuntimeError("Coliziune de generație promo")
-                generation_dir.chmod(0o700)
-                final_actual_path.chmod(0o600)
-                final_material_path.chmod(0o600)
-                config_path.chmod(0o600)
+                final_actual_path.chmod(0o660)
+                final_material_path.chmod(0o660)
+                config_path.chmod(0o660)
             else:
-                staging.mkdir(mode=0o700)
+                staging.mkdir(mode=0o770)
                 _write_durable_private_file(staging / actual_name, content)
                 _write_durable_private_file(
                     staging / actuals_material_name,

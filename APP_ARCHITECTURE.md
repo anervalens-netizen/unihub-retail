@@ -120,6 +120,15 @@ un lot aprobat separat. Provisionarea autentifică LOGIN-ul înainte de schimbar
 și aplică/verifică toate membershipurile într-o singură tranzacție. Numai
 sales-import primește `TEMPORARY`.
 
+Identitatea OS este separată la același nivel: web, operations, import, Grile,
+export, salary-export și migration rulează sub șapte conturi system nologin
+distincte. Transferul de artefacte folosește numai patru grupuri partajate și
+directoare setgid `2770`/fișiere `0660`; systemd păstrează în paralel
+`ProtectSystem=strict`, `ReadWritePaths` exact și mascarea namespace-ului
+salarial. Fișierele de mediu sunt `root:<service-group> 0640`. Deployul mută
+ownershipul persistent numai după backup și stop, verifică integral arborele
+fără symlinkuri/special files și pornește procesele doar după contractul exact.
+
 Migrarea 041 mută ownershipul obiectelor aplicației la NOLOGIN
 `unihub_schema_owner`. Runnerul de migrare este `NOINHERIT`, poate face numai
 `SET LOCAL ROLE unihub_schema_owner` în tranzacția migrației și nu primește

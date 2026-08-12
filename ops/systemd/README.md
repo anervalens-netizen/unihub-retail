@@ -43,6 +43,35 @@ salary worker may write it. Operations and migration have no repository write ex
 `backend/tests/test_prometheus_topology.py`
 enforces the allowlist and proves code/config/release paths stay outside it.
 
+## Identități OS și artefacte partajate
+
+Fiecare proces activ are user primar nologin distinct: `unihub-web`,
+`unihub-operations`, `unihub-import`, `unihub-grile`, `unihub-export`,
+`unihub-salary-export` și `unihub-migrate`. Parolele sunt blocate, home-ul este
+`/nonexistent`, iar membershipurile suplimentare sunt exacte. Grupurile
+`unihub-import-spool`, `unihub-promo-artifacts`, `unihub-grile-artifacts` și
+`unihub-export-artifacts` permit numai transferul necesar între producător și
+web. `andrei` rămâne membru pentru rollback operațional compatibil.
+
+Directoarele partajate sunt setgid `2770`, iar fișierele sunt `0660`.
+Unitățile producătoare creează directoare cu `0770`, folosesc `UMask=0007` și
+moștenesc setgid din părintele pregătit de deploy, fără `chmod` cu biți speciali
+incompatibil cu `RestrictSUIDSGID=true`. Operations și migration rămân `0077`.
+Deployul aplică ownershipul numai după backup verificat și oprirea tuturor
+proceselor, apoi îl reverifică înainte de startup. Rulează provisioning-ul
+idempotent înainte de primul deploy:
+
+```bash
+sudo ops/provision-retail-service-identities.sh apply
+sudo ops/provision-retail-salary-export-database.sh apply
+sudo ops/provision-retail-service-identities.sh verify
+sudo ops/provision-retail-salary-export-database.sh verify
+```
+
+Scripturile nu afișează credentiale. Al doilea păstrează configurația workerului,
+înlocuiește numai `DATABASE_URL`, instalează `.env.salary-export-worker` ca
+`root:unihub-salary-export 0640` și verifică autentificarea principalului.
+
 ## Prometheus bridge boundary
 
 Prometheus remains on its Docker bridge. Before stopping Retail, the deploy

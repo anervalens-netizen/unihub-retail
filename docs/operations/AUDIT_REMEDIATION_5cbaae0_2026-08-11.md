@@ -13,13 +13,18 @@ means **implemented and locally verified**, not production-closed. The release
 evidence section is deliberately incomplete until the formal gates produce
 immutable identifiers.
 
+On `2026-08-12`, the owner explicitly authorized the OS/DB identity migration
+and creation of the dedicated salary-export credential. This authorization
+does not permit salary/Finance business-data promotion and no credential value
+is stored in Git or evidence.
+
 ## Finding reconciliation
 
 | ID | Control | Verification |
 | --- | --- | --- |
 | UH-01 High | Box-constrained Decimal allocator solves floors and caps simultaneously; cent remainder is deterministic; bound flags are rebuilt from the final result. | Exact `50/54/6` regression, property matrix, zero-weight/permutation/flags cases and 8/8 targeted mutations. |
 | UH-02 Medium | Every failed import attempt keeps the exact queued bytes for deterministic ARQ retry. Retry adopts an exact validated generation whether retain failed before or after the filesystem move, then idempotently completes content-addressed retain and DB acknowledgement without restaging or worker restart. | Stage-failure retry over identical bytes, pre-move fsync/ENOSPC window, fault injection after `Path.replace` and before DB retain acknowledgement, artifact lifecycle/import suites. |
-| UH-03 Medium | All active units use `ProtectSystem=strict`, `PYTHONDONTWRITEBYTECODE=1` and exact authority-specific write directories; `/opt/Mobiup` and release/code/config ancestors are absent. The web process remains read-only to export artifacts: integrity failures are marked in DB and cleanup is routed to the owning generic/salary worker, with its periodic orphan sweep as fallback. The salary namespace is hidden from every non-salary authority. | `systemd-analyze verify`, checked-in allowlist/mount-mask regression, cross-namespace cleanup rejection and deploy/rollback sandbox. Dedicated OS service users remain a separately owner-authorized identity migration. |
+| UH-03 Medium | All active units use distinct locked nologin OS users, `ProtectSystem=strict`, `PYTHONDONTWRITEBYTECODE=1` and exact authority-specific write directories; `/opt/Mobiup` and release/code/config ancestors are absent. Four setgid groups carry only the required spool/promo/Grile/export artifacts at `2770/0660`. Web remains read-only to exports; the salary namespace is hidden from every non-salary authority. | Exact User/Group/SupplementaryGroups/UMask regression, provisioning verifier, `systemd-analyze verify`, checked-in allowlist/mount-mask regression, cross-namespace cleanup rejection and deploy/rollback sandbox. |
 | UH-04 Medium | Callback requires equal `(iss, sub)` for independently verified access/ID tokens; refresh requires continuity with the encrypted session record and fails closed. | Callback and refresh issuer/subject mismatch tests; finite mismatch metric. |
 | UH-05 Medium | Startup prewarms JWKS; readiness accepts fresh or bounded-stale validated keys and rejects absent/expired failed bootstrap; finite one-hot state metric. | Startup/readiness and cache-state tests. |
 | UH-06 Low | The pre-parser 413 path now applies request ID, security/no-store headers, bounded CORS and request metrics just like normal responses. | Content-Length and streamed/chunked oversize contract tests. |
@@ -73,9 +78,9 @@ Formal release order:
 2. merge only after PR exact-SHA CI passes all required gates;
 3. run exact-main CI and use only its signed immutable release artifact;
 4. verify backup/restore evidence, artifact digest and migration manifest;
-5. provision/verify the dedicated salary-export authority, LOGIN and secret;
+5. provision/verify the seven OS identities, shared groups, dedicated salary-export authority, LOGIN and secret;
 6. apply migrations 065/066 through `unihub-retail-migrate.service`;
-7. deploy the matching frontend, backend and all changed worker/systemd units;
+7. deploy the matching frontend, backend and all changed worker/systemd units; after backup and stop, atomically enforce persistent artifact ownership before startup;
 8. verify local/public liveness/readiness, JWKS state, six Prometheus targets,
    queues, logs and protected routes;
 9. exercise a controlled authenticated salary export and verify DB row count,

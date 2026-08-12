@@ -10,9 +10,25 @@
       "rationale": "One-shot administrative backfill interpolates only fixed internal schema identifiers; values remain parameterized."
     },
     {
+      "filename": "backend/services/imports.py",
+      "test_id": "B103",
+      "lines": [220, 324],
+      "owner": "retail-security",
+      "expires": "2026-12-31",
+      "rationale": "Promo artifacts and the promotion lock are group-writable only for the exact setgid artifact group; systemd UMask and namespace isolation exclude all other users."
+    },
+    {
+      "filename": "backend/services/promo_generation_migration.py",
+      "test_id": "B103",
+      "lines": [414],
+      "owner": "retail-security",
+      "expires": "2026-12-31",
+      "rationale": "The one-shot Promo migration shares its lock only with the exact setgid promo artifact group so web and import authorities preserve atomic pointer access."
+    },
+    {
       "filename": "backend/services/reporting_refresh.py",
       "test_id": "B608",
-      "lines": [210, 242, 308, 354, 409, 508, 583, 652],
+      "lines": [246, 278, 344, 390, 445, 544, 619, 688],
       "owner": "retail-platform",
       "expires": "2026-12-31",
       "rationale": "Reporting refresh composes only fixed application-owned SQL fragments and parameterizes all business values."

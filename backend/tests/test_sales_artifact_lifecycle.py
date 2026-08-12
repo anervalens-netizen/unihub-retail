@@ -34,17 +34,22 @@ def test_retain_is_content_addressed_durable_and_idempotent(
     monkeypatch.setenv("SALES_IMPORT_SPOOL_DIR", str(tmp_path))
     source, digest = _artifact(tmp_path)
 
-    retained = jobs.retain_sales_import_spool_file(
-        source,
-        import_month="2099-08",
-        snapshot_id=7,
-        expected_digest=digest,
-        expected_bytes=12,
-    )
+    previous_umask = os.umask(0o007)
+    try:
+        retained = jobs.retain_sales_import_spool_file(
+            source,
+            import_month="2099-08",
+            snapshot_id=7,
+            expected_digest=digest,
+            expected_bytes=12,
+        )
+    finally:
+        os.umask(previous_umask)
 
     assert retained == tmp_path / "retained" / f"{digest}.source"
     assert not source.exists()
-    assert retained.stat().st_mode & 0o777 == 0o600
+    assert retained.stat().st_mode & 0o777 == 0o660
+    assert retained.parent.stat().st_mode & 0o7777 == 0o770
     assert jobs.verify_sales_import_artifact(retained, digest, 12) == 12
     assert jobs.retain_sales_import_spool_file(
         source,

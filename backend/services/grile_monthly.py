@@ -89,7 +89,7 @@ from services.grile_monthly_integrity import (
     parse_required_decimal,
     relative_artifact,
     resolve_artifact_path,
-    secure_file,
+    secure_directory, secure_file,
     secure_write_json,
     snapshot_sha256,
     utc_now,
@@ -1157,7 +1157,7 @@ def build_workbook(
             if ws.column_dimensions[col].width is None:
                 ws.column_dimensions[col].width = 14
 
-    output_path.parent.mkdir(parents=True, exist_ok=True)
+    secure_directory(output_path.parent)
     wb.save(output_path)
 
 
@@ -1307,16 +1307,16 @@ def _staging_dir(operation: str, operation_id: int | None) -> Path:
     path = OUTPUTS_DIR / ".staging" / f"{operation}-{suffix}"
     if path.exists():
         shutil.rmtree(path)
-    path.mkdir(parents=True, mode=0o700)
+    secure_directory(path)
     return path
 
 
 def _promote_file(staged: Path, destination: Path) -> None:
-    destination.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    secure_directory(destination.parent)
     revision: Path | None = None
     if destination.exists():
         revision_dir = OUTPUTS_DIR / ".revisions"
-        revision_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+        secure_directory(revision_dir)
         revision = revision_dir / f"{destination.name}.{file_sha256(destination)[:16]}"
         if revision.exists():
             destination.unlink()
@@ -1488,7 +1488,7 @@ def export_sheet_xlsx(drive_service: Any, entry: StoreEntry, output_path: Path) 
         "bytes": 0,
         "error": "",
     }
-    output_path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    secure_directory(output_path.parent)
     request = drive_service.files().export_media(fileId=entry.sheet_id, mimeType=XLSX_MIME)
     try:
         with output_path.open("wb") as fh:
@@ -1509,7 +1509,7 @@ def export_sheet_xlsx(drive_service: Any, entry: StoreEntry, output_path: Path) 
 def write_exported_xlsx(entry: StoreEntry, output_path: Path, content: bytes) -> dict[str, Any]:
     if not isinstance(content, bytes) or not content:
         raise MonthlyIntegrityError("empty_source_backup", "Exported source backup is empty")
-    output_path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    secure_directory(output_path.parent)
     try:
         output_path.write_bytes(content)
         secure_file(output_path)
@@ -1533,7 +1533,7 @@ def write_exported_xlsx(entry: StoreEntry, output_path: Path, content: bytes) ->
 
 
 def create_archive_zip(zip_path: Path, exported_files: list[Path], archive_dir: Path) -> None:
-    zip_path.parent.mkdir(parents=True, exist_ok=True)
+    secure_directory(zip_path.parent)
     with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
         for path in exported_files:
             zf.write(path, path.relative_to(archive_dir).as_posix())
@@ -1632,12 +1632,12 @@ def _promote_directory(
     *,
     verify: Callable[[], None] | None = None,
 ) -> None:
-    destination.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    secure_directory(destination.parent)
     revision: Path | None = None
     promoted = False
     if destination.exists():
         revision_dir = OUTPUTS_DIR / ".revisions"
-        revision_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+        secure_directory(revision_dir)
         revision = revision_dir / f"archive-{safe_filename(destination.name)}-{time.time_ns()}"
         os.replace(destination, revision)
     try:
