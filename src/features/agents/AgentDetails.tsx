@@ -14,6 +14,43 @@ interface AgentDetailsProps {
 
 type ChartTooltipProps = TooltipContentProps;
 
+function AgentHistoryTooltip({ active, payload, label }: ChartTooltipProps) {
+  if (!active || !payload?.length) return null;
+  const point = payload[0]?.payload as AgentHistoryPoint | undefined;
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white/95 p-3 shadow-xl backdrop-blur-md dark:border-slate-700 dark:bg-slate-900/95">
+      <p className="mb-2 text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">{label}</p>
+      <div className="space-y-1">
+        <div className="text-sm font-medium text-slate-600 dark:text-slate-300">Vanzari: <span className="font-bold text-slate-900 dark:text-white">{nf.format(point?.total_sales ?? 0)}</span></div>
+        <div className="text-sm font-medium text-slate-600 dark:text-slate-300">Cantitate: <span className="font-bold text-slate-900 dark:text-white">{nfNum.format(point?.total_quantity ?? 0)}</span></div>
+        <div className="text-sm font-medium text-slate-600 dark:text-slate-300">Bonuri: <span className="font-bold text-slate-900 dark:text-white">{point?.receipt_count ?? 0}</span></div>
+        <div className="text-sm font-medium text-slate-600 dark:text-slate-300">Magazine: <span className="font-bold text-slate-900 dark:text-white">{point?.active_store_count ?? 0}</span></div>
+      </div>
+    </div>
+  );
+}
+
+function AgentSalesHistory({ history }: { history: Awaited<ReturnType<typeof fetchAgentHistory>> | undefined }) {
+  return (
+    <div className="glass rounded-3xl p-4">
+      <h3 className="mb-4 text-sm font-bold">Istoric Vanzari</h3>
+      <div className="h-64 w-full">
+        {history && history.history.length > 0 ? (
+          <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
+            <ComposedChart data={history.history} margin={{ top: 10, right: 0, left: -20, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" opacity={0.5} />
+              <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#64748b' }} dy={10} tickFormatter={(value) => value.split('-').reverse().join('.')} />
+              <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#64748b' }} tickFormatter={(value) => `${value / 1000}k`} />
+              <Tooltip content={AgentHistoryTooltip} />
+              <Bar dataKey="total_sales" fill="#6366f1" radius={[4, 4, 0, 0]} maxBarSize={40} />
+            </ComposedChart>
+          </ResponsiveContainer>
+        ) : <div className="flex h-full items-center justify-center text-xs text-slate-400">Nu exista istoric.</div>}
+      </div>
+    </div>
+  );
+}
+
 export function AgentDetails({ agent, currentMonth }: AgentDetailsProps) {
   const { data: profile, isLoading: profileLoading } = useQuery({
     queryKey: queryKeys.agents.profile(agent, currentMonth),
@@ -110,64 +147,7 @@ export function AgentDetails({ agent, currentMonth }: AgentDetailsProps) {
         </div>
       </div>
 
-      <div className="glass rounded-3xl p-4">
-        <h3 className="mb-4 text-sm font-bold">Istoric Vanzari</h3>
-        <div className="h-64 w-full">
-          {history && history.history.length > 0 ? (
-            <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
-              <ComposedChart data={history.history} margin={{ top: 10, right: 0, left: -20, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" opacity={0.5} />
-                <XAxis
-                  dataKey="month"
-                  axisLine={false}
-                  tickLine={false}
-                  tick={{ fontSize: 10, fill: '#64748b' }}
-                  dy={10}
-                  tickFormatter={(val) => val.split('-').reverse().join('.')}
-                />
-                <YAxis
-                  axisLine={false}
-                  tickLine={false}
-                  tick={{ fontSize: 10, fill: '#64748b' }}
-                  tickFormatter={(val) => `${val / 1000}k`}
-                />
-                <Tooltip
-                  content={({ active, payload, label }: ChartTooltipProps) => {
-                    if (active && payload && payload.length) {
-                      const point = payload[0]?.payload as AgentHistoryPoint | undefined;
-                      return (
-                        <div className="rounded-2xl border border-slate-200 bg-white/95 p-3 shadow-xl backdrop-blur-md dark:border-slate-700 dark:bg-slate-900/95">
-                          <p className="mb-2 text-[10px] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">
-                            {label}
-                          </p>
-                          <div className="space-y-1">
-                            <div className="text-sm font-medium text-slate-600 dark:text-slate-300">
-                              Vanzari: <span className="font-bold text-slate-900 dark:text-white">{nf.format(point?.total_sales ?? 0)}</span>
-                            </div>
-                            <div className="text-sm font-medium text-slate-600 dark:text-slate-300">
-                              Cantitate: <span className="font-bold text-slate-900 dark:text-white">{nfNum.format(point?.total_quantity ?? 0)}</span>
-                            </div>
-                            <div className="text-sm font-medium text-slate-600 dark:text-slate-300">
-                              Bonuri: <span className="font-bold text-slate-900 dark:text-white">{point?.receipt_count ?? 0}</span>
-                            </div>
-                            <div className="text-sm font-medium text-slate-600 dark:text-slate-300">
-                              Magazine: <span className="font-bold text-slate-900 dark:text-white">{point?.active_store_count ?? 0}</span>
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    }
-                    return null;
-                  }}
-                />
-                <Bar dataKey="total_sales" fill="#6366f1" radius={[4, 4, 0, 0]} maxBarSize={40} />
-              </ComposedChart>
-            </ResponsiveContainer>
-          ) : (
-            <div className="flex h-full items-center justify-center text-xs text-slate-400">Nu exista istoric.</div>
-          )}
-        </div>
-      </div>
+      <AgentSalesHistory history={history} />
     </div>
   );
 }

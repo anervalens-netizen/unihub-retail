@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type Dispatch, type RefObject, type SetStateAction } from 'react';
+import { useCallback, useEffect, useRef, useState, type Dispatch, type MutableRefObject, type RefObject, type SetStateAction } from 'react';
 
 import {
   fetchTargetCalculatorContext,
@@ -106,6 +106,105 @@ function useMediaQuery(query: string): boolean {
   return matches;
 }
 
+function useLocationFilterEffects(
+  locationOptions: TargetScenarioRow[],
+  setSelectedLocationCodes: Dispatch<SetStateAction<string[]>>,
+  locationDropdownOpen: boolean,
+  locationFilterRef: RefObject<HTMLDivElement | null>,
+  setLocationDropdownOpen: Dispatch<SetStateAction<boolean>>,
+) {
+  useEffect(() => {
+    const available = new Set(locationOptions.map((row) => row.site_code));
+    setSelectedLocationCodes((current) => current.filter((siteCode) => available.has(siteCode)));
+  }, [locationOptions, setSelectedLocationCodes]);
+  useEffect(() => {
+    if (!locationDropdownOpen) return;
+    const handleClickOutside = (event: MouseEvent) => {
+      if (!locationFilterRef.current?.contains(event.target as Node)) setLocationDropdownOpen(false);
+    };
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setLocationDropdownOpen(false);
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleEscape);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [locationDropdownOpen, locationFilterRef, setLocationDropdownOpen]);
+}
+
+const asTargetScenarioViewModel = (
+  model: TargetScenarioViewModel & { loading: boolean },
+) => model;
+
+type InitialLoadDeps = {
+  scenarioRef: MutableRefObject<TargetScenario | null>;
+  dirtyRowsRef: MutableRefObject<Set<string>>;
+  seasonalityManualModeRef: MutableRefObject<Exclude<SeasonalityMode, null> | null>;
+  replaceScenario: (next: TargetScenario | null) => void;
+  clearLocalEdits: () => void;
+  setContext: Dispatch<SetStateAction<TargetCalculatorContext | null>>;
+  setTargetMonth: Dispatch<SetStateAction<string>>;
+  setTotalTarget: Dispatch<SetStateAction<string>>;
+  setMinFloor: Dispatch<SetStateAction<string>>;
+  setSeasonalityMode: Dispatch<SetStateAction<SeasonalityMode>>;
+  setLoading: Dispatch<SetStateAction<boolean>>;
+  setError: Dispatch<SetStateAction<string | null>>;
+};
+
+function useTargetInitialLoad(deps: InitialLoadDeps) {
+  const {
+    scenarioRef, dirtyRowsRef, seasonalityManualModeRef, replaceScenario,
+    clearLocalEdits, setContext, setTargetMonth, setTotalTarget, setMinFloor,
+    setSeasonalityMode, setLoading, setError,
+  } = deps;
+  const applyScenarioSeasonality = useCallback((loaded: TargetScenario, defaultYears: number) => {
+    setSeasonalityMode(resolveSeasonalityMode({
+      manualMode: seasonalityManualModeRef.current,
+      scenarioYears: Number(loaded.calculation_params?.seasonality_years ?? 1),
+      backendDefaultYears: defaultYears,
+    }));
+  }, [seasonalityManualModeRef, setSeasonalityMode]);
+  const loadInitial = useCallback(async () => {
+    setLoading(true); setError(null);
+    try {
+      const [context, recent] = await Promise.all([
+        fetchTargetCalculatorContext(), fetchTargetScenarios(),
+      ]);
+      setContext(context);
+      setTargetMonth((current) => current || context.suggested_target_month);
+      setTotalTarget((current) => current || String(context.suggested_total_target));
+      setMinFloor((current) => current || String(context.default_min_floor));
+      setSeasonalityMode(resolveSeasonalityMode({
+        manualMode: seasonalityManualModeRef.current,
+        backendDefaultYears: context.default_seasonality_years,
+      }));
+      const activeId = scenarioRef.current?.id;
+      if (activeId && dirtyRowsRef.current.size === 0) {
+        const loaded = await fetchTargetScenario(activeId);
+        replaceScenario(loaded);
+        applyScenarioSeasonality(loaded, context.default_seasonality_years);
+      } else if (!scenarioRef.current) {
+        const draft = recent.find((item) => item.target_month === context.suggested_target_month);
+        const loaded = draft ? await fetchTargetScenario(draft.id) : null;
+        replaceScenario(loaded);
+        if (loaded) applyScenarioSeasonality(loaded, context.default_seasonality_years);
+        clearLocalEdits();
+      }
+    } catch (error) {
+      console.error(error);
+      setError(getApiErrorMessage(error, 'Nu am putut incarca calculatorul de target.'));
+    } finally { setLoading(false); }
+  }, [
+    applyScenarioSeasonality, clearLocalEdits, dirtyRowsRef, replaceScenario,
+    scenarioRef, seasonalityManualModeRef, setContext, setError, setLoading,
+    setMinFloor, setSeasonalityMode, setTargetMonth, setTotalTarget,
+  ]);
+  useEffect(() => { void loadInitial(); }, [loadInitial]);
+  return loadInitial;
+}
+
 export function useTargetScenario(): TargetScenarioViewModel & { loading: boolean } {
   const [context, setContext] = useState<TargetCalculatorContext | null>(null);
   const [scenario, setScenario] = useState<TargetScenario | null>(null);
@@ -148,53 +247,11 @@ export function useTargetScenario(): TargetScenarioViewModel & { loading: boolea
     setSeasonalityMode(mode);
   }, []);
 
-  const applyScenarioSeasonality = useCallback((loaded: TargetScenario, backendDefaultYears: number) => {
-    setSeasonalityMode(resolveSeasonalityMode({
-      manualMode: seasonalityManualModeRef.current,
-      scenarioYears: Number(loaded.calculation_params?.seasonality_years ?? 1),
-      backendDefaultYears,
-    }));
-  }, []);
-
-  const loadInitial = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const [nextContext, recentScenarios] = await Promise.all([
-        fetchTargetCalculatorContext(),
-        fetchTargetScenarios(),
-      ]);
-      setContext(nextContext);
-      setTargetMonth((current) => current || nextContext.suggested_target_month);
-      setTotalTarget((current) => current || String(nextContext.suggested_total_target));
-      setMinFloor((current) => current || String(nextContext.default_min_floor));
-      setSeasonalityMode(resolveSeasonalityMode({
-        manualMode: seasonalityManualModeRef.current,
-        backendDefaultYears: nextContext.default_seasonality_years,
-      }));
-      const activeScenarioId = scenarioRef.current?.id;
-      if (activeScenarioId && dirtyRowsRef.current.size === 0) {
-        const loaded = await fetchTargetScenario(activeScenarioId);
-        replaceScenario(loaded);
-        applyScenarioSeasonality(loaded, nextContext.default_seasonality_years);
-      } else if (!scenarioRef.current) {
-        const currentDraft = recentScenarios.find((item) => item.target_month === nextContext.suggested_target_month);
-        const loaded = currentDraft ? await fetchTargetScenario(currentDraft.id) : null;
-        replaceScenario(loaded);
-        if (loaded) applyScenarioSeasonality(loaded, nextContext.default_seasonality_years);
-        clearLocalEdits();
-      }
-    } catch (err) {
-      console.error(err);
-      setError(getApiErrorMessage(err, 'Nu am putut incarca calculatorul de target.'));
-    } finally {
-      setLoading(false);
-    }
-  }, [applyScenarioSeasonality, clearLocalEdits, replaceScenario]);
-
-  useEffect(() => {
-    void loadInitial();
-  }, [loadInitial]);
+  const loadInitial = useTargetInitialLoad({
+    scenarioRef, dirtyRowsRef, seasonalityManualModeRef, replaceScenario,
+    clearLocalEdits, setContext, setTargetMonth, setTotalTarget, setMinFloor,
+    setSeasonalityMode, setLoading, setError,
+  });
 
   useEffect(() => {
     scenarioRef.current = scenario;
@@ -204,32 +261,10 @@ export function useTargetScenario(): TargetScenarioViewModel & { loading: boolea
     regionals, locationOptions, selectedLocationSet, filteredRows, displaySourceMonths, tableTotals,
     sourceChart, regionalChart, regionalAllocation, activeSeasonalityLabel, displayWarnings,
   } = useTargetScenarioProjections({ scenario, context, regionalFilter, selectedLocationCodes });
-  useEffect(() => {
-    const available = new Set(locationOptions.map((row) => row.site_code));
-    setSelectedLocationCodes((current) => current.filter((siteCode) => available.has(siteCode)));
-  }, [locationOptions]);
-
-  useEffect(() => {
-    if (!locationDropdownOpen) return;
-
-    const handleClickOutside = (event: MouseEvent) => {
-      if (!locationFilterRef.current?.contains(event.target as Node)) {
-        setLocationDropdownOpen(false);
-      }
-    };
-    const handleEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        setLocationDropdownOpen(false);
-      }
-    };
-
-    document.addEventListener('mousedown', handleClickOutside);
-    document.addEventListener('keydown', handleEscape);
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-      document.removeEventListener('keydown', handleEscape);
-    };
-  }, [locationDropdownOpen]);
+  useLocationFilterEffects(
+    locationOptions, setSelectedLocationCodes, locationDropdownOpen,
+    locationFilterRef, setLocationDropdownOpen,
+  );
 
   const {
     toggleLocationFilter, removeLocationFilter, handleCalculate, updateRow, resetToProposal,
@@ -248,56 +283,18 @@ export function useTargetScenario(): TargetScenarioViewModel & { loading: boolea
         ? 2
         : 3;
 
-  return {
-    loading,
-    workflowStep,
-    context,
-    busy,
-    loadInitial,
-    targetMonth,
-    setTargetMonth,
-    totalTarget,
-    setTotalTarget,
-    minFloor,
-    setMinFloor,
-    seasonalityMode,
-    selectSeasonalityMode,
-    handleCalculate,
-    logicOpen,
-    setLogicOpen,
-    error,
-    conflictRetryAvailable,
-    scenario,
-    savingRows,
-    dirty,
-    displayWarnings,
-    activeSeasonalityLabel,
-    regionalChart,
-    sourceChart,
-    isDesktop,
-    regionalFilter,
-    setRegionalFilter,
-    regionals,
-    regionalAllocation,
-    filteredRows,
-    resetToProposal,
-    handleSave,
-    handleFinalize,
-    handleExport,
+  return asTargetScenarioViewModel({
+    loading, workflowStep, context, busy, loadInitial, targetMonth, setTargetMonth,
+    totalTarget, setTotalTarget, minFloor, setMinFloor, seasonalityMode,
+    selectSeasonalityMode, handleCalculate, logicOpen, setLogicOpen, error,
+    conflictRetryAvailable, scenario, savingRows, dirty, displayWarnings,
+    activeSeasonalityLabel, regionalChart, sourceChart, isDesktop, regionalFilter,
+    setRegionalFilter, regionals, regionalAllocation, filteredRows, resetToProposal,
+    handleSave, handleFinalize, handleExport,
     profitabilitySummary: scenario?.profitability_summary ?? null,
-    locationFilterRef,
-    locationDropdownOpen,
-    setLocationDropdownOpen,
-    selectedLocationCodes,
-    selectedLocationSet,
-    setSelectedLocationCodes,
-    locationOptions,
-    toggleLocationFilter,
-    removeLocationFilter,
-    displaySourceMonths,
-    tableTotals,
-    updateRow,
-    detailSiteCode,
-    setDetailSiteCode,
-  };
+    locationFilterRef, locationDropdownOpen, setLocationDropdownOpen,
+    selectedLocationCodes, selectedLocationSet, setSelectedLocationCodes,
+    locationOptions, toggleLocationFilter, removeLocationFilter, displaySourceMonths,
+    tableTotals, updateRow, detailSiteCode, setDetailSiteCode,
+  });
 }
