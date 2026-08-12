@@ -268,6 +268,21 @@ def test_grile_worker_receives_only_required_reporting_reads() -> None:
     assert "campaign_reporting_rows" not in migration
 
 
+def test_grile_worker_can_execute_only_required_forecast_digest() -> None:
+    migration = Path(
+        "db/migrations/068_grile_v2_forecast_digest_authority.sql"
+    ).read_text()
+
+    assert (
+        "GRANT EXECUTE ON FUNCTION public.planning_forecast_run_sha256(BIGINT)"
+        in migration
+    )
+    assert "TO unihub_operations" in migration
+    assert "GRANT SELECT" not in migration
+    assert "planning_forecast_runs" not in migration
+    assert "planning_forecast_store_day" not in migration
+
+
 @pytest.mark.asyncio
 async def test_load_source_rejects_non_pilot_month() -> None:
     with pytest.raises(ValueError, match="August 2026"):

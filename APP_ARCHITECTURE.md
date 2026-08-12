@@ -1032,8 +1032,10 @@ proiectia Campaigns, apoi actualizeaza idempotent numai datele calculate din
 `Liste`, header si `Vânzări & Incentive`. Programul, concediile, celulele manuale
 si V1 nu sunt rescrise. Amprenta determinista a intrarilor sales, revizia
 Campaigns si revizia schemei writerului sunt markerii de idempotenta; o
-versiune noua forteaza o prima reproiectare completa. Workerul Grile ruleaza
-self-heal imediat la startup si
+versiune noua forteaza o prima reproiectare completa. Autoritatea DB a
+workerului este limitata la aceste read-model-uri si la executia digestului
+`planning_forecast_run_sha256`; tabelele Planning raman inaccesibile. Workerul
+Grile ruleaza self-heal imediat la startup si
 apoi orar, iar publisherul Campaigns solicita o sincronizare dupa o generatie
 noua. O eroare nu transforma lipsa sursei in zero si nu inlocuieste ultima
 proiectie buna.
