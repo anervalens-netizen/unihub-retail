@@ -84,7 +84,7 @@ function useExportRecovery(
               queryKey: queryKeys.settings.exportOperation(identityKey, storedId),
               queryFn: () => getExportOperation(storedId, controller.signal), staleTime: 0,
             });
-            if (["failed", "cancelled", "expired"].includes(resumable.status)) {
+            if (resumable && ["failed", "cancelled", "expired"].includes(resumable.status)) {
               clearStoredExportOperationId(identityKey); setExportOperation(resumable); return;
             }
           } catch (error) {
@@ -209,4 +209,3 @@ export function useExportOperation(
     ...termination,
   };
 }
-
