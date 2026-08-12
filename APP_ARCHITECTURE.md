@@ -1025,7 +1025,9 @@ verificari async in `grile_runs` si salveaza rezultatul per magazin in
 
 Pilotul paralel V2 pentru August 2026 este izolat de cohorta permanenta V1.
 Registrul sau canonic contine 21 de foi active si exclude explicit sursele Delia
-sau programele neconfirmate. Readerul `/api/grile/pilot-v2` ramane read-only.
+sau programele neconfirmate. Readerul `/api/grile/pilot-v2` ramane read-only si
+serveste numai snapshotul JSON atomic produs de worker dupa un sync complet;
+requestul web nu deschide conexiuni Google.
 Writerul `services/grile_pilot_v2_sync.py` citeste intr-un snapshot
 repeatable-read targetele, `reporting_agent_day`, `reporting_cartela_day` si
 proiectia Campaigns, apoi actualizeaza idempotent numai datele calculate din
@@ -1034,11 +1036,13 @@ si V1 nu sunt rescrise. Amprenta determinista a intrarilor sales, revizia
 Campaigns si revizia schemei writerului sunt markerii de idempotenta; o
 versiune noua forteaza o prima reproiectare completa. Autoritatea DB a
 workerului este limitata la aceste read-model-uri si la executia digestului
-`planning_forecast_run_sha256`; tabelele Planning raman inaccesibile. Workerul
-Grile ruleaza self-heal imediat la startup si
-apoi orar, iar publisherul Campaigns solicita o sincronizare dupa o generatie
-noua. O eroare nu transforma lipsa sursei in zero si nu inlocuieste ultima
-proiectie buna.
+`planning_forecast_run_sha256`; tabelele Planning raman inaccesibile. Dupa
+succesul tuturor foilor, workerul publica atomic snapshotul pentru reader.
+Workerul Grile ruleaza un self-heal la startup. In fluxul normal, promovarea
+raportului de vanzari solicita publicarea Campaigns, iar publisherul Campaigns
+solicita exact o sincronizare dupa generatia noua; nu exista polling orar sau
+trigger V2 duplicat. O eroare nu transforma lipsa sursei in zero si nu
+inlocuieste ultima proiectie buna.
 
 Migrarea 035 separa observatia imuabila de proiectia curenta. Fiecare full run
 sau refresh per magazin rezerva si claim-uieste prin CAS generatia

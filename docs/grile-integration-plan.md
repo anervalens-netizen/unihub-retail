@@ -23,10 +23,11 @@ Pilotul V2 din `Agenti -> Grile` rămâne separat de cohorta oficială
 `grile_sheets`. Cohorta August 2026 are 21 de foi active în registrul canonic
 `backend/services/grile_pilot_v2_registry.py`; foile Delia și copiile cu program
 neconfirmat nu fac parte din registrul activ. Endpointul read-only
-`/api/grile/pilot-v2` citește cohorta, o grupează după managerul curent din
-Retail și compară targetul și realizatul cu raportarea Retail și cu ultima
-proiecție V1. Nu rezervă runuri, nu persistă observații și nu participă la
-finalizare, arhivare sau reset.
+`/api/grile/pilot-v2` citește snapshotul JSON atomic produs de worker după o
+sincronizare completă, îl grupează după managerul curent din Retail și compară
+targetul și realizatul cu raportarea Retail și cu ultima proiecție V1. Nu
+apelează Google Sheets, nu rezervă runuri, nu persistă observații și nu
+participă la finalizare, arhivare sau reset.
 
 Writerul izolat `grile_pilot_v2_sync` proiectează în foi numai date
 autoritative Retail: vânzări zilnice pe cod agent, target, forecast, SIM și
@@ -36,9 +37,13 @@ headerul din `Rezumat & Program` și tabul `Vânzări & Incentive`; programul,
 concediile și selecțiile manuale de zile suplimentare nu sunt rescrise.
 Reviziile sales/Campaigns și revizia schemei writerului fac actualizarea
 idempotentă; o versiune nouă de writer forțează o primă reproiectare completă.
-Workerul Grile încearcă sincronizarea imediat la startup, apoi orar, iar
-publicarea Campaigns solicită și o sincronizare promptă. Toate apelurile Google
-de scriere sunt serializate prin adapterul thread-affine; V1 rămâne neatins.
+După succesul tuturor celor 21 de foi, workerul persistă atomic snapshotul
+`backend/outputs/grile/pilot-v2-overview-2026-08.json`; un eșec păstrează ultima
+versiune bună. Workerul încearcă o recuperare la startup. În fluxul normal,
+promovarea raportului de vânzări solicită publicarea Campaigns, iar publicarea
+reușită solicită exact o sincronizare V2; nu există polling orar sau trigger V2
+duplicat direct după import. Toate apelurile Google de scriere sunt serializate
+prin adapterul thread-affine; V1 rămâne neatins.
 
 `POST /api/grile/run` rezervă și pune în coadă exclusiv o verificare read-only.
 Jobul citește valorile și metadatele Google necesare, compară cu starea Retail și
@@ -55,14 +60,14 @@ periodică și citirile overview/status expiră un `running` fără heartbeat du
 valide rămân auditabile; nu se face `DELETE`. UI blochează retry numai când
 backendul returnează `run.active=true` după reconciliere.
 
-Scope-urile clientului de verificare V1 și ale readerului V2 sunt strict
-read-only:
+Scope-urile clientului de verificare V1 sunt strict read-only:
 
 - `spreadsheets.readonly` pentru valorile grilei;
 - `drive.metadata.readonly` pentru metadatele necesare monitorizării.
 
-Writerul V2 folosește separat clientul operațional cu drept de scriere
-`spreadsheets`/`drive`; acest client nu este folosit de endpointurile read-only.
+Endpointul V2 nu construiește niciun client Google. Writerul V2 folosește
+separat clientul operațional cu drept de scriere `spreadsheets`/`drive`; acest
+client nu este folosit de endpointurile read-only.
 Credentialul operațional rămâne `0640`, cu grupul
 `unihub-grile-artifacts`: identitățile `unihub-grile` și `unihub-web` îl pot
 citi, iar workerii de export rămân în afara grupului.
@@ -203,6 +208,13 @@ rollbackul. Nu se folosesc date live pentru testare.
   foi active; toate raportează `Sincronizat · raport oficial`, revizia writer
   `1`, aceeași revizie sales și aceeași revizie Campaigns;
 - foile Delia și copiile neconfirmate au rămas în afara cohortei active.
+- hotfixul live-first a mutat citirea UI pe snapshotul workerului și a eliminat
+  pollingul Google orar, triggerul duplicat și rate-limitul de job de pe GET;
+  autentificarea a rămas obligatorie;
+- verificarea live a măsurat aproximativ `50.58 ms` în backend, `40–72 ms` până
+  la headers și aproximativ `414 ms` pentru ecranul complet; redeschiderea
+  tabului a refolosit starea fără alt request V2, iar refreshul manual a răspuns
+  `200` fără alertă. Acceptanța finală a fost confirmată de utilizator.
 
 ## Evidență rollout UX 2026-07-17
 

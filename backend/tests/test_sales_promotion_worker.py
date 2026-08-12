@@ -111,10 +111,9 @@ async def test_promotion_worker_claims_with_import_authority(
         requested_by_sub="system:sales-promotion",
         reason="sales_generation:214",
     )
-    trigger_pilot_v2.assert_awaited_once_with(
-        "2026-08",
-        trigger="sales_generation:214",
-    )
+    # Campaign publication owns the single ordered V2 trigger, after both
+    # sales and Campaigns projections are authoritative.
+    trigger_pilot_v2.assert_not_awaited()
 
 
 @pytest.mark.asyncio

@@ -1,5 +1,5 @@
 from decimal import Decimal
-from unittest.mock import MagicMock
+import json
 
 import pytest
 
@@ -34,55 +34,52 @@ class FakeRepo:
         ]
 
 
-def test_fetch_sheet_uses_agent_fallback_when_store_totals_are_blank(
+def test_snapshot_read_is_bounded_and_covers_the_registry(
     monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
 ) -> None:
-    sheets = MagicMock()
-    drive = MagicMock()
-    sheets.spreadsheets.return_value.values.return_value.batchGet.return_value.execute.return_value = {
-        "valueRanges": [
-            {"values": [[74000]]},
-            {},
-            {},
-            {"values": [[10]]},
-            {"values": [[20]]},
-            {"values": [[30]]},
-            {"values": [[40]]},
-        ]
+    snapshot = tmp_path / "pilot.json"
+    stores = {
+        sheet.site_code: {
+            "target": "100",
+            "realized": "30",
+            "forecast": "70",
+        }
+        for sheet in grile_pilot_v2.PILOT_V2_SHEETS
     }
-    close = MagicMock()
-    monkeypatch.setattr(grile_pilot_v2, "build_services", lambda: (sheets, drive))
-    monkeypatch.setattr(grile_pilot_v2, "close_services", close)
-
-    site_code, reading = grile_pilot_v2._fetch_sheet(
-        grile_pilot_v2.PILOT_V2_SHEETS[0]
-    )
-
-    assert site_code == "PROMEN"
-    assert reading == grile_pilot_v2.PilotV2Reading(
-        Decimal("74000"), Decimal("30"), Decimal("70")
-    )
-    close.assert_called_once_with(sheets, drive)
-
-
-@pytest.mark.asyncio
-async def test_read_pilot_v2_sheets_uses_bounded_executor(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    pilot = grile_pilot_v2.PILOT_V2_SHEETS[:2]
-    monkeypatch.setattr(grile_pilot_v2, "PILOT_V2_SHEETS", pilot)
-    monkeypatch.setattr(
-        grile_pilot_v2,
-        "_fetch_sheet",
-        lambda sheet: (
-            sheet.site_code,
-            grile_pilot_v2.PilotV2Reading(Decimal("1"), Decimal("1"), Decimal("1")),
+    snapshot.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "month": "2026-08",
+                "stores": stores,
+            }
         ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(grile_pilot_v2, "PILOT_V2_SNAPSHOT_PATH", snapshot)
+
+    readings = grile_pilot_v2._load_pilot_v2_snapshot()
+
+    assert set(readings) == set(stores)
+    assert readings[grile_pilot_v2.PILOT_V2_SHEETS[0].site_code] == (
+        grile_pilot_v2.PilotV2Reading(Decimal("100"), Decimal("30"), Decimal("70"))
     )
 
-    result = await grile_pilot_v2.read_pilot_v2_sheets()
 
-    assert set(result) == {pilot[0].site_code, pilot[1].site_code}
+def test_snapshot_read_rejects_partial_coverage(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    snapshot = tmp_path / "pilot.json"
+    snapshot.write_text(
+        json.dumps({"schema_version": 1, "month": "2026-08", "stores": {}}),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(grile_pilot_v2, "PILOT_V2_SNAPSHOT_PATH", snapshot)
+
+    with pytest.raises(RuntimeError, match="coverage"):
+        grile_pilot_v2._load_pilot_v2_snapshot()
 
 
 @pytest.mark.asyncio
@@ -103,7 +100,7 @@ async def test_pilot_v2_groups_by_manager_and_reconciles_reports_and_v1(monkeypa
         })
         return readings
 
-    monkeypatch.setattr(grile_pilot_v2, "read_pilot_v2_sheets", fake_readings)
+    monkeypatch.setattr(grile_pilot_v2, "read_pilot_v2_snapshot", fake_readings)
 
     result = await grile_pilot_v2.get_pilot_v2_overview(FakeRepo(), "2026-08")
 

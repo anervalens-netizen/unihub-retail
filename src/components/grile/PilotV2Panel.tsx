@@ -168,7 +168,9 @@ export function PilotV2Panel({ enabled = true }: { enabled?: boolean }) {
             <span className="rounded-xl bg-violet-100 p-2 text-violet-700 dark:bg-violet-950/60 dark:text-violet-300"><FlaskConical className="h-5 w-5" /></span>
             <div>
               <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-100">Grile V2 · pilot</h3>
-              <p className="mt-0.5 text-xs text-slate-500">Date live din cele 5 grile, grupate pe manager. Toleranță verificare: 1 leu.</p>
+              <p className="mt-0.5 text-xs text-slate-500">
+                Snapshot sincronizat din {query.data?.store_count ?? 21} grile, grupat pe manager. Toleranță verificare: 1 leu.
+              </p>
             </div>
           </div>
           <button
@@ -189,7 +191,7 @@ export function PilotV2Panel({ enabled = true }: { enabled?: boolean }) {
 
       <div className="flex gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/25 dark:text-amber-200">
         <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0" />
-        <p>Închiderea lunii rămâne pe <strong>Grila actuală</strong>. Verificarea V2 este read-only și nu modifică fluxul oficial.</p>
+        <p>Închiderea lunii rămâne pe <strong>Grila actuală</strong>. Ecranul V2 citește snapshotul sincronizat de worker și nu recitește Google la schimbarea tabului.</p>
       </div>
     </div>
   );

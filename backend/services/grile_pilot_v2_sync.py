@@ -12,6 +12,11 @@ from zoneinfo import ZoneInfo
 
 from services.forecast import get_forecast_factor
 from services.grile_monthly_google import GoogleSyncAdapter, call_with_backoff
+from services.grile_monthly_integrity import secure_write_json
+from services.grile_pilot_v2 import (
+    PILOT_V2_SNAPSHOT_PATH,
+    PILOT_V2_SNAPSHOT_SCHEMA_VERSION,
+)
 from services.grile_pilot_v2_registry import PILOT_V2_MONTH, PILOT_V2_SHEETS, PilotV2Sheet
 
 
@@ -361,6 +366,33 @@ def _store_lookup_rows(source: PilotV2Source) -> list[tuple[Any, ...]]:
     return store_rows
 
 
+def _snapshot_payload(source: PilotV2Source) -> dict[str, Any]:
+    stores: dict[str, dict[str, str]] = {}
+    for sheet in PILOT_V2_SHEETS:
+        payload = _store_source(source, sheet)
+        target = payload["target"]
+        if target is None:
+            raise RuntimeError(f"Target missing for pilot site {sheet.site_code}")
+        stores[sheet.site_code] = {
+            "target": str(target),
+            "realized": str(payload["store_sales"]),
+            "forecast": str(payload["store_forecast"]),
+        }
+    return {
+        "schema_version": PILOT_V2_SNAPSHOT_SCHEMA_VERSION,
+        "month": source.month,
+        "cutoff": source.cutoff.isoformat(),
+        "sales_revision": source.sales_revision,
+        "campaign_revision": source.campaign_revision,
+        "stores": stores,
+    }
+
+
+async def write_pilot_v2_snapshot(source: PilotV2Source) -> None:
+    payload = _snapshot_payload(source)
+    await asyncio.to_thread(secure_write_json, PILOT_V2_SNAPSHOT_PATH, payload)
+
+
 def _range_update(
     *,
     sheet_id: int,
@@ -569,4 +601,5 @@ async def sync_pilot_v2_sheets(
     }
     if failed:
         raise RuntimeError(f"Grile V2 sync incomplete: {','.join(failed)}")
+    await write_pilot_v2_snapshot(source)
     return result

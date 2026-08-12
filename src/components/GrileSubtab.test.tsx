@@ -277,7 +277,7 @@ describe('Grile run authority', () => {
       'href',
       'https://docs.google.com/spreadsheets/d/12ejRCcDRNdQqiz38S7BjTKNb-pSrJWW2UNclhFJUiCI',
     );
-    expect(screen.getByText(/nu modifică fluxul oficial/i)).toBeInTheDocument();
+    expect(screen.getByText(/nu recitește Google la schimbarea tabului/i)).toBeInTheDocument();
 
     await user.click(screen.getByRole('tab', { name: 'Grila actuală' }));
     expect(await screen.findByRole('button', { name: 'Rulează verificare' })).toBeInTheDocument();

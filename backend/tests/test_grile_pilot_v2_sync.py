@@ -17,6 +17,7 @@ from services.grile_pilot_v2_sync import (
     _sales_source_revision,
     _serial_day,
     _serial_instant,
+    _snapshot_payload,
     _store_source,
     load_pilot_v2_source,
     sync_pilot_v2_sheets,
@@ -147,6 +148,20 @@ def test_sales_revision_uses_record_keys_not_record_iteration() -> None:
     assert _sales_source_revision(
         date(2026, 8, 11), Decimal("2"), (_AsyncpgRecordLike(row),)
     ) == _sales_source_revision(date(2026, 8, 11), Decimal("2"), (row,))
+
+
+def test_snapshot_payload_uses_the_same_authoritative_source_as_google(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(sync_module, "PILOT_V2_SHEETS", (_sheet(),))
+    payload = _snapshot_payload(_source())
+
+    assert payload["schema_version"] == 1
+    assert payload["month"] == "2026-08"
+    assert payload["cutoff"] == "2026-08-11"
+    assert payload["stores"] == {
+        "SITE": {"target": "3100", "realized": "150", "forecast": "300"}
+    }
 
 
 @pytest.mark.asyncio
@@ -324,7 +339,9 @@ async def test_sync_skips_current_sheet_and_updates_stale_sheet(
         AsyncMock(side_effect=[(9, 11, True), (8, 11, True)]),
     )
     write = AsyncMock(return_value={})
+    snapshot = AsyncMock()
     monkeypatch.setattr(sync_module, "call_with_backoff", write)
+    monkeypatch.setattr(sync_module, "write_pilot_v2_snapshot", snapshot)
 
     result = await sync_pilot_v2_sheets(MagicMock(), MagicMock())
 
@@ -332,6 +349,7 @@ async def test_sync_skips_current_sheet_and_updates_stale_sheet(
     assert result["skipped"] == ["SITE"]
     assert result["failed"] == []
     assert result["cutoff"] == "2026-08-11"
+    snapshot.assert_awaited_once()
     assert write.await_count == 1
     write_call = write.await_args
     assert write_call is not None

@@ -291,10 +291,6 @@ async def promote_sales_background(
             requested_by_sub="system:sales-promotion",
             reason=f"sales_generation:{snapshot_id}",
         )
-        await grile_pilot_v2_runtime.trigger_grile_pilot_v2_sync(
-            import_month,
-            trigger=f"sales_generation:{snapshot_id}",
-        )
         manifest_value = row["manifest"]
         if isinstance(manifest_value, str):
             manifest_value = json.loads(manifest_value)

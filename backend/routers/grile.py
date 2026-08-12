@@ -81,7 +81,6 @@ async def grile_overview(
 async def grile_pilot_v2(
     month: MonthStr = Query(default="2026-08"),
     _claims: AuthClaims = Depends(require_auth),
-    _rate_limit: None = Depends(rate_limit(GRILE_JOB_LIMIT)),
     svc: GrileQueryService = Depends(get_grile_query_service),
 ) -> dict[str, Any]:
     try:

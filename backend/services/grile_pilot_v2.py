@@ -1,32 +1,31 @@
-"""Read-only overview and reconciliation for the isolated Grile V2 pilot."""
+"""Fast read-only overview over the worker-produced Grile V2 snapshot."""
 from __future__ import annotations
 
 import asyncio
-from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
+import json
+import os
+from pathlib import Path
 from typing import Any
 
 from repositories.grile import GrileRepository
 from services.grile import DEFAULT_TOLERANCE
-from services.grile_sheets import build_services, close_services
 from services.grile_pilot_v2_registry import (
     PILOT_V2_MONTH,
     PILOT_V2_SHEETS,
-    PilotV2Sheet,
 )
 
 
-PILOT_V2_READ_TIMEOUT_SECONDS = 45.0
-PILOT_V2_READ_WORKERS = 4
-PILOT_V2_RANGES = (
-    "'Rezumat & Program'!E2",
-    "'Liste'!O14",
-    "'Liste'!O15",
-    "'Rezumat & Program'!A10",
-    "'Rezumat & Program'!J10",
-    "'Rezumat & Program'!F10",
-    "'Rezumat & Program'!O10",
+PILOT_V2_SNAPSHOT_SCHEMA_VERSION = 1
+PILOT_V2_SNAPSHOT_PATH = Path(
+    os.getenv(
+        "GRILE_PILOT_V2_SNAPSHOT_PATH",
+        Path(__file__).resolve().parents[1]
+        / "outputs"
+        / "grile"
+        / "pilot-v2-overview-2026-08.json",
+    )
 )
 
 
@@ -38,75 +37,39 @@ class PilotV2Reading:
     error: str | None = None
 
 
-def _range_number(value_range: dict[str, Any]) -> Decimal | None:
-    values = value_range.get("values")
-    if not isinstance(values, list) or not values or not isinstance(values[0], list) or not values[0]:
-        return None
-    value = values[0][0]
-    if isinstance(value, bool) or value in (None, ""):
-        return None
-    try:
-        return Decimal(str(value))
-    except (InvalidOperation, TypeError, ValueError):
-        return None
+def _load_pilot_v2_snapshot() -> dict[str, PilotV2Reading]:
+    """Load the bounded last-good projection without any Google request."""
 
-
-def _fetch_sheet(sheet: PilotV2Sheet) -> tuple[str, PilotV2Reading]:
-    sheets_service = drive_service = None
-    try:
-        sheets_service, drive_service = build_services()
-        response = (
-            sheets_service.spreadsheets()
-            .values()
-            .batchGet(
-                spreadsheetId=sheet.sheet_id,
-                ranges=list(PILOT_V2_RANGES),
-                valueRenderOption="UNFORMATTED_VALUE",
+    with PILOT_V2_SNAPSHOT_PATH.open("r", encoding="utf-8") as handle:
+        payload = json.load(handle)
+    if (
+        not isinstance(payload, dict)
+        or payload.get("schema_version") != PILOT_V2_SNAPSHOT_SCHEMA_VERSION
+        or payload.get("month") != PILOT_V2_MONTH
+        or not isinstance(payload.get("stores"), dict)
+    ):
+        raise RuntimeError("Grile V2 snapshot is invalid")
+    stores = payload["stores"]
+    expected_sites = {sheet.site_code for sheet in PILOT_V2_SHEETS}
+    if set(stores) != expected_sites:
+        raise RuntimeError("Grile V2 snapshot coverage is invalid")
+    readings: dict[str, PilotV2Reading] = {}
+    for site_code, values in stores.items():
+        if not isinstance(values, dict):
+            raise RuntimeError("Grile V2 snapshot store is invalid")
+        try:
+            readings[site_code] = PilotV2Reading(
+                Decimal(str(values["target"])),
+                Decimal(str(values["realized"])),
+                Decimal(str(values["forecast"])),
             )
-            .execute()
-        )
-        value_ranges = response.get("valueRanges", [])
-        if len(value_ranges) != len(PILOT_V2_RANGES):
-            return sheet.site_code, PilotV2Reading(None, None, None, "Structură V2 incompletă")
-        target, store_sales, store_forecast, sales_one, sales_two, forecast_one, forecast_two = map(
-            _range_number,
-            value_ranges,
-        )
-        realized = store_sales
-        if realized is None and sales_one is not None and sales_two is not None:
-            realized = sales_one + sales_two
-        forecast = store_forecast
-        if forecast is None and forecast_one is not None and forecast_two is not None:
-            forecast = forecast_one + forecast_two
-        if target is None or realized is None or forecast is None:
-            return sheet.site_code, PilotV2Reading(target, realized, forecast, "Valori V2 incomplete")
-        return sheet.site_code, PilotV2Reading(target, realized, forecast)
-    except Exception:
-        return sheet.site_code, PilotV2Reading(None, None, None, "Grila Google nu poate fi citită")
-    finally:
-        close_services(sheets_service, drive_service)
+        except (KeyError, TypeError, ValueError) as exc:
+            raise RuntimeError("Grile V2 snapshot values are invalid") from exc
+    return readings
 
 
-async def read_pilot_v2_sheets() -> dict[str, PilotV2Reading]:
-    loop = asyncio.get_running_loop()
-    executor = ThreadPoolExecutor(
-        max_workers=PILOT_V2_READ_WORKERS,
-        thread_name_prefix="grile-pilot-v2-read",
-    )
-    tasks = [loop.run_in_executor(executor, _fetch_sheet, sheet) for sheet in PILOT_V2_SHEETS]
-    try:
-        readings = await asyncio.wait_for(
-            asyncio.gather(*tasks),
-            timeout=PILOT_V2_READ_TIMEOUT_SECONDS,
-        )
-    except TimeoutError:
-        return {
-            sheet.site_code: PilotV2Reading(None, None, None, "Citirea Google a expirat")
-            for sheet in PILOT_V2_SHEETS
-        }
-    finally:
-        executor.shutdown(wait=False, cancel_futures=True)
-    return dict(readings)
+async def read_pilot_v2_snapshot() -> dict[str, PilotV2Reading]:
+    return await asyncio.to_thread(_load_pilot_v2_snapshot)
 
 
 def _delta_message(label: str, delta: Decimal) -> str:
@@ -202,7 +165,7 @@ async def get_pilot_v2_overview(repo: GrileRepository, month: str) -> dict[str, 
         repo.get_expected_by_site(month),
         repo.get_hierarchy(),
         repo.get_current_statuses(month),
-        read_pilot_v2_sheets(),
+        read_pilot_v2_snapshot(),
     )
     v1_by_site: dict[str, dict[str, Any]] = {}
     for row in current_statuses:

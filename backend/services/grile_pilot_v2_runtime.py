@@ -15,9 +15,6 @@ from services.grile_pilot_v2_registry import PILOT_V2_MONTH
 
 
 logger = logging.getLogger(__name__)
-PILOT_V2_SYNC_SECONDS = 60 * 60
-
-
 async def enqueue_grile_pilot_v2_sync(*, month: str, trigger: str) -> Job:
     """Queue one idempotent sync for the isolated Grile V2 pilot."""
     if not re.fullmatch(r"\d{4}-(0[1-9]|1[0-2])", month):
@@ -84,15 +81,11 @@ async def sync_grile_pilot_v2_once(ctx: dict, *, trigger: str) -> dict[str, Any]
 async def run_grile_pilot_v2_sync_loop(ctx: dict) -> None:
     stop = ctx["grile_pilot_v2_sync_stop"]
     try:
-        while not stop.is_set():
-            try:
-                await sync_grile_pilot_v2_once(ctx, trigger="periodic")
-            except Exception:
-                logger.exception("Periodic Grile V2 sync failed; last good sheets retained")
-            try:
-                await asyncio.wait_for(stop.wait(), timeout=PILOT_V2_SYNC_SECONDS)
-            except TimeoutError:
-                pass
+        try:
+            await sync_grile_pilot_v2_once(ctx, trigger="startup-recovery")
+        except Exception:
+            logger.exception("Startup Grile V2 recovery failed; last good snapshot retained")
+        await stop.wait()
     except asyncio.CancelledError:
         return
 

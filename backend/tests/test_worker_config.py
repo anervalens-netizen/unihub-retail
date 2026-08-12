@@ -411,13 +411,13 @@ async def test_grile_v2_sync_once_uses_shared_lock(
 
 
 @pytest.mark.asyncio
-async def test_grile_v2_periodic_loop_retains_last_good_on_failure(
+async def test_grile_v2_startup_recovery_retains_last_good_on_failure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     stop = asyncio.Event()
 
     async def fail_once(_ctx: dict, *, trigger: str) -> None:
-        assert trigger == "periodic"
+        assert trigger == "startup-recovery"
         stop.set()
         raise RuntimeError("Google unavailable")
 
