@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from dataclasses import dataclass
 from datetime import timedelta
 from typing import Any
 
@@ -33,6 +34,30 @@ from services.promo_copurchase import (
 
 # Prag sentinel cand nu exista regula de pret (nicio unitate nu il depaseste).
 _NO_PRICE_THRESHOLD = 10**12
+
+
+@dataclass(frozen=True, slots=True)
+class _ContestPoints:
+    focus: int
+    promo: int
+    price: int
+    threshold: Any
+
+
+def _contest_points(contest: ContestDefinition) -> _ContestPoints:
+    by_type = {rule.type: rule for rule in contest.rules}
+    price_rule = by_type.get("price_above")
+    threshold = (
+        price_rule.threshold
+        if price_rule is not None and price_rule.threshold is not None
+        else _NO_PRICE_THRESHOLD
+    )
+    return _ContestPoints(
+        focus=by_type["focus"].points if "focus" in by_type else 0,
+        promo=by_type["promo"].points if "promo" in by_type else 0,
+        price=price_rule.points if price_rule is not None else 0,
+        threshold=threshold,
+    )
 
 
 def _scope_clause_for_stores(scope: dict[str, Any]) -> tuple[str, list[Any]]:
@@ -138,146 +163,201 @@ class ContestsService:
             responses.append(await self._build(contest, month))
         return responses
 
-    async def _build(self, contest: ContestDefinition, month: str) -> ContestResponse:
-        focus_rule = next((r for r in contest.rules if r.type == "focus"), None)
-        promo_rule = next((r for r in contest.rules if r.type == "promo"), None)
-        price_rule = next((r for r in contest.rules if r.type == "price_above"), None)
+    @staticmethod
+    def _promo_codes(
+        definition: dict[str, Any],
+        products: dict[str, Any],
+    ) -> tuple[str, list[str]]:
+        rule_type = definition.get("rule_type") or "selected_item_copurchase"
+        key = (
+            "discounted_codes"
+            if rule_type in {"same_model_screen_camera", "trigger_discounted"}
+            else "item_codes"
+        )
+        return str(rule_type), list(products[key])
 
-        focus_pts = focus_rule.points if focus_rule else 0
-        promo_pts = promo_rule.points if promo_rule else 0
-        price_pts = price_rule.points if price_rule else 0
-        threshold = (
-            price_rule.threshold
-            if (price_rule and price_rule.threshold is not None)
-            else _NO_PRICE_THRESHOLD
+    async def _rule_promo_result(
+        self,
+        conn: asyncpg.Connection,
+        *,
+        month: str,
+        definition: dict[str, Any],
+        products: dict[str, Any],
+        rule_type: str,
+        item_codes: list[str],
+        scope_kwargs: dict[str, Any],
+    ) -> PromoCoPurchaseResult:
+        common = {
+            "month": month,
+            "start_date": definition["start_date"],
+            "end_date": definition["end_date"],
+            **scope_kwargs,
+        }
+        if rule_type == "same_model_screen_camera":
+            return await compute_promo_same_model_pair(
+                conn,
+                screen_code_models=products["trigger_code_models"],
+                camera_code_models=products["discounted_code_models"],
+                **common,
+            )
+        if rule_type == "trigger_discounted":
+            return await compute_promo_trigger_discounted(
+                conn,
+                trigger_codes=products["trigger_codes"],
+                discounted_codes=products["discounted_codes"],
+                **common,
+            )
+        return await compute_promo_copurchase(
+            conn,
+            item_codes=item_codes,
+            **common,
         )
 
-        # --- focus + price (per unitate) din sales_transactions ---
-        scope_store_sql, scope_store_params = _scope_clause_for_stores(contest.scope)
-        clauses, params = _agent_score_scope(contest, month, threshold)
-        agent_rows = await self.repo.fetch_agent_scores(" AND ".join(clauses), params)
+    async def _actuals_promo_result(
+        self,
+        conn: asyncpg.Connection,
+        *,
+        month: str,
+        definition: dict[str, Any],
+        item_codes: list[str],
+        scope_kwargs: dict[str, Any],
+    ) -> PromoCoPurchaseResult | None:
+        try:
+            return await compute_promo_actuals_from_report(
+                conn,
+                month=month,
+                definition=definition,
+                item_codes=item_codes,
+                **scope_kwargs,
+            )
+        except PromoActualsError:
+            return PromoCoPurchaseResult()
 
-        # --- promo: bonuri calificate per agent (co-purchase) ---
-        promo_bonuri: dict[tuple[str, str], int] = {}
-        if promo_rule is not None:
-            promo_config, promo_cfg_err = load_special_cards_config()
-            promo_def, promo_def_err = parse_promotion_definition(promo_config, month)
-            if promo_def is not None and not promo_def_err and not promo_cfg_err:
-                products, products_error = load_promotion_rule_products(promo_def)
-                if products is not None and products_error is None:
-                    rule_type = promo_def.get("rule_type") or "selected_item_copurchase"
-                    if rule_type == "same_model_screen_camera":
-                        promo_item_codes = list(products["discounted_codes"])
-                    elif rule_type == "trigger_discounted":
-                        promo_item_codes = list(products["discounted_codes"])
-                    else:
-                        promo_item_codes = list(products["item_codes"])
+    async def _promo_with_tail(
+        self,
+        conn: asyncpg.Connection,
+        *,
+        month: str,
+        definition: dict[str, Any],
+        products: dict[str, Any],
+        rule_type: str,
+        item_codes: list[str],
+        scope_kwargs: dict[str, Any],
+    ) -> PromoCoPurchaseResult:
+        result = await self._actuals_promo_result(
+            conn,
+            month=month,
+            definition=definition,
+            item_codes=item_codes,
+            scope_kwargs=scope_kwargs,
+        )
+        cutoff = promo_actuals_cutoff_date(definition)
+        if result is None or cutoff is None:
+            return result or await self._rule_promo_result(
+                conn,
+                month=month,
+                definition=definition,
+                products=products,
+                rule_type=rule_type,
+                item_codes=item_codes,
+                scope_kwargs=scope_kwargs,
+            )
+        tail_start = max(definition["start_date"], cutoff + timedelta(days=1))
+        if tail_start > definition["end_date"]:
+            return result
+        tail_definition = {
+            **definition,
+            "start_date": tail_start,
+            "actuals_source_file": None,
+            "actuals_file": None,
+        }
+        tail = await self._rule_promo_result(
+            conn,
+            month=month,
+            definition=tail_definition,
+            products=products,
+            rule_type=rule_type,
+            item_codes=item_codes,
+            scope_kwargs=scope_kwargs,
+        )
+        return merge_promo_results(result, tail)
 
-                    async with self.pool.acquire() as conn:
-                        scope_kwargs = _promo_scope_kwargs(contest.scope)
-                        try:
-                            cp = await compute_promo_actuals_from_report(
-                                conn,
-                                month=month,
-                                definition=promo_def,
-                                item_codes=promo_item_codes,
-                                **scope_kwargs,
-                            )
-                        except PromoActualsError:
-                            cp = PromoCoPurchaseResult()
-                        if cp is not None:
-                            cutoff_date = promo_actuals_cutoff_date(promo_def)
-                            if cutoff_date is not None:
-                                tail_start = max(
-                                    promo_def["start_date"],
-                                    cutoff_date + timedelta(days=1),
-                                )
-                                if tail_start <= promo_def["end_date"]:
-                                    tail_def = {
-                                        **promo_def,
-                                        "start_date": tail_start,
-                                        "actuals_source_file": None,
-                                        "actuals_file": None,
-                                    }
-                                    if rule_type == "same_model_screen_camera":
-                                        tail_cp = await compute_promo_same_model_pair(
-                                            conn,
-                                            month=month,
-                                            start_date=tail_def["start_date"],
-                                            end_date=tail_def["end_date"],
-                                            screen_code_models=products["trigger_code_models"],
-                                            camera_code_models=products["discounted_code_models"],
-                                            **scope_kwargs,
-                                        )
-                                    elif rule_type == "trigger_discounted":
-                                        tail_cp = await compute_promo_trigger_discounted(
-                                            conn,
-                                            month=month,
-                                            start_date=tail_def["start_date"],
-                                            end_date=tail_def["end_date"],
-                                            trigger_codes=products["trigger_codes"],
-                                            discounted_codes=products["discounted_codes"],
-                                            **scope_kwargs,
-                                        )
-                                    else:
-                                        tail_cp = await compute_promo_copurchase(
-                                            conn,
-                                            month=month,
-                                            start_date=tail_def["start_date"],
-                                            end_date=tail_def["end_date"],
-                                            item_codes=promo_item_codes,
-                                            **scope_kwargs,
-                                        )
-                                    cp = merge_promo_results(cp, tail_cp)
-                        if cp is None and rule_type == "same_model_screen_camera":
-                            cp = await compute_promo_same_model_pair(
-                                conn,
-                                month=month,
-                                start_date=promo_def["start_date"],
-                                end_date=promo_def["end_date"],
-                                screen_code_models=products["trigger_code_models"],
-                                camera_code_models=products["discounted_code_models"],
-                                **scope_kwargs,
-                            )
-                        elif cp is None and rule_type == "trigger_discounted":
-                            cp = await compute_promo_trigger_discounted(
-                                conn,
-                                month=month,
-                                start_date=promo_def["start_date"],
-                                end_date=promo_def["end_date"],
-                                trigger_codes=products["trigger_codes"],
-                                discounted_codes=products["discounted_codes"],
-                                **scope_kwargs,
-                            )
-                        elif cp is None:
-                            cp = await compute_promo_copurchase(
-                                conn,
-                                month=month,
-                                start_date=promo_def["start_date"],
-                                end_date=promo_def["end_date"],
-                                item_codes=promo_item_codes,
-                                **scope_kwargs,
-                            )
-                    for (_site, agent, _item), units in cp.excluded_units.items():
-                        if agent and agent != "-":
-                            pair = (_site, agent)
-                            promo_bonuri[pair] = promo_bonuri.get(pair, 0) + units
+    async def _contest_promo_units(
+        self,
+        contest: ContestDefinition,
+        month: str,
+        *,
+        enabled: bool,
+    ) -> dict[tuple[str, str], int]:
+        if not enabled:
+            return {}
+        config, config_error = load_special_cards_config()
+        definition, definition_error = parse_promotion_definition(config, month)
+        if definition is None or definition_error or config_error:
+            return {}
+        products, products_error = load_promotion_rule_products(definition)
+        if products is None or products_error is not None:
+            return {}
+        rule_type, item_codes = self._promo_codes(definition, products)
+        async with self.pool.acquire() as conn:
+            result = await self._promo_with_tail(
+                conn,
+                month=month,
+                definition=definition,
+                products=products,
+                rule_type=rule_type,
+                item_codes=item_codes,
+                scope_kwargs=_promo_scope_kwargs(contest.scope),
+            )
+        promo_units: dict[tuple[str, str], int] = {}
+        for (site_code, agent, _item), units in result.excluded_units.items():
+            if agent and agent != "-":
+                pair = (site_code, agent)
+                promo_units[pair] = promo_units.get(pair, 0) + units
+        return promo_units
 
-        # --- combinare pe politica explicită de identitate ---
+    async def _contest_person_ids(
+        self,
+        contest: ContestDefinition,
+        month: str,
+        agent_rows: list[Any],
+        promo_units: dict[tuple[str, str], int],
+    ) -> dict[tuple[str, str], str]:
         person_by_pair = {
             (str(row["site_code"]), str(row["agent"])): str(row["person_id"])
             for row in agent_rows
             if row.get("person_id")
         }
-        if contest.identity_policy == "person_id":
-            missing_promo_pairs = sorted(set(promo_bonuri).difference(person_by_pair))
-            person_by_pair.update(
-                await self.repo.fetch_person_ids(
-                    month=month,
-                    identities=missing_promo_pairs,
-                )
-            )
+        if contest.identity_policy != "person_id":
+            return person_by_pair
+        missing = sorted(set(promo_units).difference(person_by_pair))
+        person_by_pair.update(
+            await self.repo.fetch_person_ids(month=month, identities=missing)
+        )
+        return person_by_pair
 
+    @staticmethod
+    def _identity_key(
+        contest: ContestDefinition,
+        person_by_pair: dict[tuple[str, str], str],
+        pair: tuple[str, str],
+    ) -> object:
+        if contest.identity_policy == "site_agent":
+            return pair
+        person_id = person_by_pair.get(pair)
+        if not person_id:
+            raise RuntimeError(
+                "Concursul person_id are o identitate de agent neconfirmată."
+            )
+        return person_id
+
+    def _contest_stats(
+        self,
+        contest: ContestDefinition,
+        agent_rows: list[Any],
+        promo_units: dict[tuple[str, str], int],
+        person_by_pair: dict[tuple[str, str], str],
+    ) -> dict[object, dict[str, Any]]:
         stats: dict[object, dict[str, Any]] = defaultdict(
             lambda: {
                 "focus_units": 0,
@@ -286,44 +366,14 @@ class ContestsService:
                 "representative": None,
             }
         )
-
-        def identity_key(pair: tuple[str, str]) -> object:
-            if contest.identity_policy == "site_agent":
-                return pair
-            person_id = person_by_pair.get(pair)
-            if not person_id:
-                raise RuntimeError(
-                    "Concursul person_id are o identitate de agent neconfirmată."
-                )
-            return person_id
-
         for row in agent_rows:
             pair = (str(row["site_code"]), str(row["agent"]))
-            identity = identity_key(pair)
-            target = stats[identity]
+            target = stats[self._identity_key(contest, person_by_pair, pair)]
             target["focus_units"] += int(row["focus_units"])
             target["price_units"] += int(row["price_units"])
-            representative = {
-                "agent": pair[1],
-                "site_code": pair[0],
-                "store_name": row["store_name"],
-                "firma": row["firma"],
-            }
-            current = target["representative"]
-            if current is None or (
-                pair[0],
-                pair[1].casefold(),
-                pair[1],
-            ) < (
-                current["site_code"],
-                current["agent"].casefold(),
-                current["agent"],
-            ):
-                target["representative"] = representative
-
-        for pair, units in promo_bonuri.items():
-            identity = identity_key(pair)
-            target = stats[identity]
+            self._select_contest_representative(target, pair, row)
+        for pair, units in promo_units.items():
+            target = stats[self._identity_key(contest, person_by_pair, pair)]
             target["promo_bonuri"] += units
             if target["representative"] is None:
                 target["representative"] = {
@@ -332,19 +382,50 @@ class ContestsService:
                     "store_name": None,
                     "firma": None,
                 }
+        return stats
 
+    @staticmethod
+    def _select_contest_representative(
+        target: dict[str, Any],
+        pair: tuple[str, str],
+        row: Any,
+    ) -> None:
+        representative = {
+            "agent": pair[1],
+            "site_code": pair[0],
+            "store_name": row["store_name"],
+            "firma": row["firma"],
+        }
+        current = target["representative"]
+        order = (pair[0], pair[1].casefold(), pair[1])
+        current_order = (
+            (current["site_code"], current["agent"].casefold(), current["agent"])
+            if current is not None
+            else None
+        )
+        if current_order is None or order < current_order:
+            target["representative"] = representative
+
+    @staticmethod
+    def _contest_leaderboard(
+        contest: ContestDefinition,
+        points: _ContestPoints,
+        stats: dict[object, dict[str, Any]],
+    ) -> list[ContestLeaderboardRow]:
         scored: list[ContestLeaderboardRow] = []
         for values in stats.values():
-            representative = values["representative"]
-            f_units = int(values["focus_units"])
-            p_units = int(values["price_units"])
+            focus_units = int(values["focus_units"])
             promo_units = int(values["promo_bonuri"])
-            f_pts = f_units * focus_pts
-            pr_pts = promo_units * promo_pts
-            pc_pts = p_units * price_pts
-            total = f_pts + pr_pts + pc_pts
+            price_units = int(values["price_units"])
+            point_values = (
+                focus_units * points.focus,
+                promo_units * points.promo,
+                price_units * points.price,
+            )
+            total = sum(point_values)
             if total <= 0:
                 continue
+            representative = values["representative"]
             scored.append(
                 ContestLeaderboardRow(
                     rank=0,
@@ -352,16 +433,15 @@ class ContestsService:
                     site_code=representative.get("site_code"),
                     store_name=representative.get("store_name"),
                     firma=representative.get("firma"),
-                    focus_units=f_units,
+                    focus_units=focus_units,
                     promo_bonuri=promo_units,
-                    price_units=p_units,
-                    focus_points=f_pts,
-                    promo_points=pr_pts,
-                    price_points=pc_pts,
+                    price_units=price_units,
+                    focus_points=point_values[0],
+                    promo_points=point_values[1],
+                    price_points=point_values[2],
                     total_points=total,
                 )
             )
-
         scored.sort(
             key=lambda row: (
                 -row.total_points,
@@ -372,9 +452,15 @@ class ContestsService:
         for index, row in enumerate(scored):
             row.rank = index + 1
             row.prize = contest.prize_for_rank(row.rank)
+        return scored
 
-        store_count = await self.repo.fetch_scope_store_count(scope_store_sql, scope_store_params)
-
+    @staticmethod
+    def _contest_response(
+        contest: ContestDefinition,
+        month: str,
+        store_count: int,
+        leaderboard: list[ContestLeaderboardRow],
+    ) -> ContestResponse:
         return ContestResponse(
             identity_policy=contest.identity_policy,
             key=contest.key,
@@ -386,12 +472,62 @@ class ContestsService:
             end_date=contest.end_date.isoformat(),
             store_count=store_count,
             rules=[
-                ContestRuleInfo(type=r.type, points=r.points, label=r.label, threshold=r.threshold)
-                for r in contest.rules
+                ContestRuleInfo(
+                    type=rule.type,
+                    points=rule.points,
+                    label=rule.label,
+                    threshold=rule.threshold,
+                )
+                for rule in contest.rules
             ],
             prizes=[
-                ContestPrizeInfo(rank_from=p.rank_from, rank_to=p.rank_to, label=p.label)
-                for p in contest.prizes
+                ContestPrizeInfo(
+                    rank_from=prize.rank_from,
+                    rank_to=prize.rank_to,
+                    label=prize.label,
+                )
+                for prize in contest.prizes
             ],
-            leaderboard=scored,
+            leaderboard=leaderboard,
+        )
+
+    async def _build(
+        self,
+        contest: ContestDefinition,
+        month: str,
+    ) -> ContestResponse:
+        points = _contest_points(contest)
+        scope_sql, scope_params = _scope_clause_for_stores(contest.scope)
+        clauses, params = _agent_score_scope(contest, month, points.threshold)
+        agent_rows = await self.repo.fetch_agent_scores(
+            " AND ".join(clauses),
+            params,
+        )
+        promo_units = await self._contest_promo_units(
+            contest,
+            month,
+            enabled=points.promo > 0,
+        )
+        person_ids = await self._contest_person_ids(
+            contest,
+            month,
+            agent_rows,
+            promo_units,
+        )
+        stats = self._contest_stats(
+            contest,
+            agent_rows,
+            promo_units,
+            person_ids,
+        )
+        leaderboard = self._contest_leaderboard(contest, points, stats)
+        store_count = await self.repo.fetch_scope_store_count(
+            scope_sql,
+            scope_params,
+        )
+        return self._contest_response(
+            contest,
+            month,
+            store_count,
+            leaderboard,
         )

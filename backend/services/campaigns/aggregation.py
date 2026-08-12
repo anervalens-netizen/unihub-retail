@@ -110,17 +110,17 @@ def period_exclusions(
     return result, warnings, complete
 
 
-def build_incentive_agent_rows(
+def _agent_quantity_inputs(
     *,
     snapshot: Any,
     campaign: dict[str, Any],
     campaign_periods: list[dict[str, Any]],
     period_excluded_agent: dict[tuple[str, str, str, str, str], int],
-    store_eligible_by_item: dict[tuple[str, str, str, str], int],
-    store_reward_by_item: dict[tuple[str, str, str, str], Decimal],
-    store_incentives: dict[str, list[Any]],
-) -> list[IncentiveTopAgent]:
-    """Allocate store incentive quantities and exact currency totals to agents."""
+) -> tuple[
+    dict[tuple[str, str, str, str], dict[str | None, int]],
+    dict[tuple[str, str, str, str], Decimal],
+    dict[str, tuple[str, str]],
+]:
     agent_item_quantities: dict[
         tuple[str, str, str, str], dict[str | None, int]
     ] = {}
@@ -150,6 +150,30 @@ def build_incentive_agent_rows(
             str(row["locatie"] or ""),
             str(row["firma"] or ""),
         )
+    return agent_item_quantities, agent_item_rewards, agent_store_meta
+
+
+def build_incentive_agent_rows(
+    *,
+    snapshot: Any,
+    campaign: dict[str, Any],
+    campaign_periods: list[dict[str, Any]],
+    period_excluded_agent: dict[tuple[str, str, str, str, str], int],
+    store_eligible_by_item: dict[tuple[str, str, str, str], int],
+    store_reward_by_item: dict[tuple[str, str, str, str], Decimal],
+    store_incentives: dict[str, list[Any]],
+) -> list[IncentiveTopAgent]:
+    """Allocate store incentive quantities and exact currency totals to agents."""
+    (
+        agent_item_quantities,
+        agent_item_rewards,
+        agent_store_meta,
+    ) = _agent_quantity_inputs(
+        snapshot=snapshot,
+        campaign=campaign,
+        campaign_periods=campaign_periods,
+        period_excluded_agent=period_excluded_agent,
+    )
 
     agent_values: dict[tuple[str, str], Decimal] = {}
     agent_potentials: dict[tuple[str, str], Decimal] = {}

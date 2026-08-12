@@ -1,5 +1,4 @@
 """One-shot, fail-closed migration of legacy Promo generation pointers.
-
 The v1 pointer format predates the canonical POS JSON materialization.  It
 references approved spreadsheets directly, so the v2 runtime correctly marks
 it unusable rather than reparsing an unbounded workbook on every dashboard
@@ -31,6 +30,9 @@ from services.imports import (
     _write_durable_private_file,
 )
 from services.product_lists import get_repo_root, resolve_path
+from services.promo_generation_migration_hash import (
+    target_generation_id as _target_generation_id,
+)
 from services.spreadsheet_safety import (
     PROMO_ACTUALS_SPREADSHEET_LIMITS,
     SpreadsheetUploadError,
@@ -183,6 +185,240 @@ def _parse_source(content: bytes, suffix: str, sheet_name: str) -> PromoActualsP
     return parsed
 
 
+def _already_v2_result(
+    data_dir: Path,
+    root: Path,
+    pointer: dict[str, Any],
+    *,
+    generation_id: str,
+    pointer_hash: str,
+) -> PromoGenerationMigrationResult:
+    from services.dashboard_specials import _generated_config_path
+
+    try:
+        _generated_config_path(data_dir)
+    except ValueError as exc:
+        raise PromoGenerationMigrationError(
+            "Generația Promo v2 activă este invalidă."
+        ) from exc
+    _verify_recovery_pointer(root, pointer)
+    actuals = pointer.get("actuals", [])
+    return PromoGenerationMigrationResult(
+        status="already_v2",
+        previous_generation_id=generation_id,
+        generation_id=generation_id,
+        source_count=len(actuals) if isinstance(actuals, list) else 0,
+        promotion_count=0,
+        pointer_sha256=pointer_hash,
+    )
+
+
+def _validated_v1_config(
+    root: Path,
+    pointer: dict[str, Any],
+) -> tuple[dict[str, Any], list[dict[str, Any]], dict[str, str]]:
+    config_path = _within_generation_root(root, pointer.get("config_file"))
+    config, config_bytes = _read_json(config_path, "Configul generației Promo")
+    expected_hash = pointer.get("config_sha256")
+    if not isinstance(expected_hash, str) or _sha256(config_bytes) != expected_hash:
+        raise PromoGenerationMigrationError(
+            "Configul Promo nu corespunde hashului aprobat."
+        )
+    promotions = config.get("promotions")
+    if not isinstance(promotions, list) or not promotions:
+        raise PromoGenerationMigrationError(
+            "Configul Promo nu conține promoții valide."
+        )
+    manifest = _source_manifest(pointer)
+    try:
+        _definitions, material_hash = validate_special_cards_config(config)
+    except ValueError as exc:
+        raise PromoGenerationMigrationError(
+            "Configul Promo v1 nu poate fi materializat."
+        ) from exc
+    if pointer.get("material_sha256") != material_hash:
+        raise PromoGenerationMigrationError(
+            "Hashul materializării Promo v1 nu corespunde configului aprobat."
+        )
+    return config, promotions, manifest
+
+
+def _promotion_source_metadata(
+    promotion: dict[str, Any],
+) -> tuple[str, date, str] | None:
+    raw_source = promotion.get("actuals_source_file")
+    if raw_source is None or raw_source == "":
+        return None
+    if not isinstance(raw_source, str):
+        raise PromoGenerationMigrationError(
+            "Configul Promo nu corespunde manifestului surselor."
+        )
+    cutoff = _parse_cutoff(promotion.get("actuals_cutoff_date"))
+    sheet_name = str(
+        promotion.get("actuals_sheet") or "AccesoriPromoLunar"
+    ).strip()
+    if not sheet_name:
+        raise PromoGenerationMigrationError(
+            "Foaia unei surse Promo este invalidă."
+        )
+    return raw_source, cutoff, sheet_name
+
+
+def _verified_source_content(
+    raw_source: str,
+    cutoff: date,
+    manifest: dict[str, str],
+) -> tuple[Path, bytes, str, date]:
+    if raw_source not in manifest:
+        raise PromoGenerationMigrationError(
+            "Configul Promo nu corespunde manifestului surselor."
+        )
+    source_path = resolve_path(raw_source, get_repo_root())
+    try:
+        content = source_path.read_bytes()
+    except OSError as exc:
+        raise PromoGenerationMigrationError(
+            "O sursă Promo aprobată lipsește."
+        ) from exc
+    source_hash = _sha256(content)
+    if source_hash != manifest[raw_source]:
+        raise PromoGenerationMigrationError(
+            "O sursă Promo nu corespunde hashului aprobat."
+        )
+    if source_path.suffix.casefold() not in {".xls", ".xlsx"}:
+        raise PromoGenerationMigrationError(
+            "Formatul unei surse Promo nu este suportat."
+        )
+    return source_path, content, source_hash, cutoff
+
+
+def _collect_promo_sources(
+    promotions: list[dict[str, Any]],
+    manifest: dict[str, str],
+) -> tuple[
+    dict[tuple[str, str, str], list[dict[str, Any]]],
+    dict[tuple[str, str, str], tuple[Path, bytes, str, date]],
+]:
+    grouped: dict[tuple[str, str, str], list[dict[str, Any]]] = {}
+    content_by_key: dict[tuple[str, str, str], tuple[Path, bytes, str, date]] = {}
+    metadata_by_source: dict[str, tuple[date, str]] = {}
+    for promotion in promotions:
+        if not isinstance(promotion, dict):
+            raise PromoGenerationMigrationError(
+                "Configul Promo conține o promoție invalidă."
+            )
+        metadata = _promotion_source_metadata(promotion)
+        if metadata is None:
+            continue
+        raw_source, cutoff, sheet_name = metadata
+        if raw_source not in manifest:
+            raise PromoGenerationMigrationError(
+                "Configul Promo nu corespunde manifestului surselor."
+            )
+        source_metadata = (cutoff, sheet_name)
+        previous = metadata_by_source.setdefault(raw_source, source_metadata)
+        if previous != source_metadata:
+            raise PromoGenerationMigrationError(
+                "Metadatele unei surse Promo sunt incompatibile."
+            )
+        key = _source_key(raw_source, cutoff, sheet_name)
+        grouped.setdefault(key, []).append(promotion)
+        if key not in content_by_key:
+            content_by_key[key] = _verified_source_content(
+                raw_source,
+                cutoff,
+                manifest,
+            )
+    declared = {raw_source for raw_source, _cutoff, _sheet in grouped}
+    if declared != set(manifest):
+        raise PromoGenerationMigrationError(
+            "Manifestul Promo declară surse nefolosite."
+        )
+    return grouped, content_by_key
+
+
+def _build_source_plans(
+    source_content: dict[
+        tuple[str, str, str], tuple[Path, bytes, str, date]
+    ],
+) -> list[_SourcePlan]:
+    plans: list[_SourcePlan] = []
+    for index, (key, source_data) in enumerate(sorted(source_content.items()), 1):
+        raw_source, cutoff_raw, sheet_name = key
+        source_path, content, source_hash, cutoff = source_data
+        if cutoff_raw != cutoff.isoformat():
+            raise PromoGenerationMigrationError(
+                "Metadatele unei surse Promo sunt incompatibile."
+            )
+        parsed = _parse_source(content, source_path.suffix, sheet_name)
+        material = _promo_actuals_material_bytes(
+            parsed,
+            source_sha256=source_hash,
+            import_month=cutoff.strftime("%Y-%m"),
+            cutoff_date=cutoff,
+        )
+        token = hashlib.sha256(
+            f"{raw_source}\0{cutoff.isoformat()}\0{source_hash}".encode("utf-8")
+        ).hexdigest()[:16]
+        plans.append(
+            _SourcePlan(
+                legacy_path=source_path,
+                source_sha256=source_hash,
+                cutoff_date=cutoff,
+                import_month=cutoff.strftime("%Y-%m"),
+                sheet_name=sheet_name,
+                content=content,
+                material=material,
+                source_name=(
+                    f"promo_actuals-{index}-{token}{source_path.suffix.casefold()}"
+                ),
+                material_name=f"promo_actuals-{index}-{token}.json",
+            )
+        )
+    return plans
+
+
+def _materialized_target_config(
+    config: dict[str, Any],
+    *,
+    target_dir: Path,
+    source_plans: list[_SourcePlan],
+    grouped: dict[tuple[str, str, str], list[dict[str, Any]]],
+    manifest: dict[str, str],
+) -> tuple[dict[str, Any], str]:
+    config_copy = json.loads(json.dumps(config))
+    plan_by_key = {
+        _source_key(str(raw_source), source.cutoff_date, source.sheet_name): source
+        for source in source_plans
+        for raw_source, cutoff, sheet_name in grouped
+        if cutoff == source.cutoff_date.isoformat()
+        and sheet_name == source.sheet_name
+        and source.source_sha256 == manifest[raw_source]
+        and resolve_path(raw_source, get_repo_root()) == source.legacy_path
+    }
+    if len(plan_by_key) != len(grouped):
+        raise PromoGenerationMigrationError(
+            "Metadatele surselor Promo sunt ambigue."
+        )
+    for promotion in config_copy["promotions"]:
+        metadata = _promotion_source_metadata(promotion)
+        if metadata is None:
+            continue
+        raw_source, cutoff, sheet_name = metadata
+        source = plan_by_key[_source_key(raw_source, cutoff, sheet_name)]
+        promotion["actuals_source_file"] = str(target_dir / source.source_name)
+        promotion["actuals_source_sha256"] = source.source_sha256
+        promotion["actuals_material_file"] = str(target_dir / source.material_name)
+        promotion["actuals_material_sha256"] = _sha256(source.material)
+    try:
+        _definitions, material_hash = validate_special_cards_config(config_copy)
+    except ValueError as exc:
+        raise PromoGenerationMigrationError(
+            "Configul Promo materializat este invalid."
+        ) from exc
+    return config_copy, material_hash
+
+
 def _build_plan(data_dir: Path) -> _MigrationPlan | PromoGenerationMigrationResult:
     data_dir = data_dir.resolve()
     root = data_dir / "promo_generations"
@@ -191,167 +427,42 @@ def _build_plan(data_dir: Path) -> _MigrationPlan | PromoGenerationMigrationResu
         raise PromoGenerationMigrationError("Pointerul Promo activ lipsește.")
     pointer, pointer_bytes = _read_json(pointer_path, "Pointerul Promo activ")
     pointer_hash = _sha256(pointer_bytes)
-    version = pointer.get("version")
     generation_id = _valid_generation_id(pointer.get("generation_id"))
+    version = pointer.get("version")
     if version == 2:
-        # A retry is a no-op only when the active v2 generation still satisfies
-        # the same runtime integrity boundary that will be used after restart.
-        from services.dashboard_specials import _generated_config_path
-
-        try:
-            _generated_config_path(data_dir)
-        except ValueError as exc:
-            raise PromoGenerationMigrationError("Generația Promo v2 activă este invalidă.") from exc
-        _verify_recovery_pointer(root, pointer)
-        return PromoGenerationMigrationResult(
-            status="already_v2",
-            previous_generation_id=generation_id,
+        return _already_v2_result(
+            data_dir,
+            root,
+            pointer,
             generation_id=generation_id,
-            source_count=len(pointer.get("actuals", [])) if isinstance(pointer.get("actuals"), list) else 0,
-            promotion_count=0,
-            pointer_sha256=pointer_hash,
+            pointer_hash=pointer_hash,
         )
     if version != 1:
-        raise PromoGenerationMigrationError("Versiunea pointerului Promo nu este suportată.")
-
-    config_path = _within_generation_root(root, pointer.get("config_file"))
-    config, config_bytes = _read_json(config_path, "Configul generației Promo")
-    expected_config_sha256 = pointer.get("config_sha256")
-    if not isinstance(expected_config_sha256, str) or _sha256(config_bytes) != expected_config_sha256:
-        raise PromoGenerationMigrationError("Configul Promo nu corespunde hashului aprobat.")
-    promotions = config.get("promotions")
-    if not isinstance(promotions, list) or not promotions:
-        raise PromoGenerationMigrationError("Configul Promo nu conține promoții valide.")
-    manifest = _source_manifest(pointer)
-    try:
-        _definitions, legacy_material_sha256 = validate_special_cards_config(config)
-    except ValueError as exc:
-        raise PromoGenerationMigrationError("Configul Promo v1 nu poate fi materializat.") from exc
-    if pointer.get("material_sha256") != legacy_material_sha256:
-        raise PromoGenerationMigrationError("Hashul materializării Promo v1 nu corespunde configului aprobat.")
-
-    grouped_promotions: dict[tuple[str, str, str], list[dict[str, Any]]] = {}
-    source_content: dict[tuple[str, str, str], tuple[Path, bytes, str, date]] = {}
-    source_metadata: dict[str, tuple[date, str]] = {}
-    for promotion in promotions:
-        if not isinstance(promotion, dict):
-            raise PromoGenerationMigrationError("Configul Promo conține o promoție invalidă.")
-        raw_source = promotion.get("actuals_source_file")
-        if raw_source is None or raw_source == "":
-            continue
-        if not isinstance(raw_source, str) or raw_source not in manifest:
-            raise PromoGenerationMigrationError("Configul Promo nu corespunde manifestului surselor.")
-        cutoff = _parse_cutoff(promotion.get("actuals_cutoff_date"))
-        sheet_name = str(promotion.get("actuals_sheet") or "AccesoriPromoLunar").strip()
-        if not sheet_name:
-            raise PromoGenerationMigrationError("Foaia unei surse Promo este invalidă.")
-        metadata = (cutoff, sheet_name)
-        previous_metadata = source_metadata.setdefault(raw_source, metadata)
-        if previous_metadata != metadata:
-            raise PromoGenerationMigrationError("Metadatele unei surse Promo sunt incompatibile.")
-        key = _source_key(raw_source, cutoff, sheet_name)
-        grouped_promotions.setdefault(key, []).append(promotion)
-        if key in source_content:
-            continue
-        source_path = resolve_path(raw_source, get_repo_root())
-        try:
-            content = source_path.read_bytes()
-        except OSError as exc:
-            raise PromoGenerationMigrationError("O sursă Promo aprobată lipsește.") from exc
-        source_sha256 = _sha256(content)
-        if source_sha256 != manifest[raw_source]:
-            raise PromoGenerationMigrationError("O sursă Promo nu corespunde hashului aprobat.")
-        suffix = source_path.suffix.casefold()
-        if suffix not in {".xls", ".xlsx"}:
-            raise PromoGenerationMigrationError("Formatul unei surse Promo nu este suportat.")
-        source_content[key] = (source_path, content, source_sha256, cutoff)
-
-    if set(raw_source for raw_source, _cutoff, _sheet in grouped_promotions) != set(manifest):
-        raise PromoGenerationMigrationError("Manifestul Promo declară surse nefolosite.")
-
-    source_plans: list[_SourcePlan] = []
-    for index, ((raw_source, cutoff_raw, sheet_name), (source_path, content, source_sha256, cutoff)) in enumerate(
-        sorted(source_content.items()), start=1
-    ):
-        if cutoff_raw != cutoff.isoformat():  # defensive, kept explicit for auditability
-            raise PromoGenerationMigrationError("Metadatele unei surse Promo sunt incompatibile.")
-        parsed = _parse_source(content, source_path.suffix, sheet_name)
-        material = _promo_actuals_material_bytes(
-            parsed,
-            source_sha256=source_sha256,
-            import_month=cutoff.strftime("%Y-%m"),
-            cutoff_date=cutoff,
+        raise PromoGenerationMigrationError(
+            "Versiunea pointerului Promo nu este suportată."
         )
-        token = hashlib.sha256(
-            f"{raw_source}\0{cutoff.isoformat()}\0{source_sha256}".encode("utf-8")
-        ).hexdigest()[:16]
-        source_plans.append(
-            _SourcePlan(
-                legacy_path=source_path,
-                source_sha256=source_sha256,
-                cutoff_date=cutoff,
-                import_month=cutoff.strftime("%Y-%m"),
-                sheet_name=sheet_name,
-                content=content,
-                material=material,
-                source_name=f"promo_actuals-{index}-{token}{source_path.suffix.casefold()}",
-                material_name=f"promo_actuals-{index}-{token}.json",
-            )
-        )
-
-    seed = _sha256(
-        pointer_bytes
-        + b"\0promo-v1-to-v2\0"
-        + b"".join(
-            source.source_sha256.encode("ascii") + _sha256(source.material).encode("ascii")
-            for source in source_plans
-        )
-    )
-    target_generation_id = seed[:32]
+    config, promotions, manifest = _validated_v1_config(root, pointer)
+    grouped, source_content = _collect_promo_sources(promotions, manifest)
+    source_plans = _build_source_plans(source_content)
+    target_generation_id = _target_generation_id(pointer_bytes, source_plans)
     target_dir = root / target_generation_id
-    config_copy = json.loads(json.dumps(config))
-    plan_by_key = {
-        _source_key(str(raw_source), source.cutoff_date, source.sheet_name): source
-        for source in source_plans
-        for raw_source, cutoff, sheet_name in grouped_promotions
-        if cutoff == source.cutoff_date.isoformat()
-        and sheet_name == source.sheet_name
-        and source.source_sha256 == manifest[raw_source]
-        and resolve_path(raw_source, get_repo_root()) == source.legacy_path
-    }
-    if len(plan_by_key) != len(grouped_promotions):
-        raise PromoGenerationMigrationError("Metadatele surselor Promo sunt ambigue.")
-    for promotion in config_copy["promotions"]:
-        if not promotion.get("actuals_source_file"):
-            continue
-        key = _source_key(
-            str(promotion["actuals_source_file"]),
-            _parse_cutoff(promotion["actuals_cutoff_date"]),
-            str(promotion.get("actuals_sheet") or "AccesoriPromoLunar").strip(),
-        )
-        source = plan_by_key[key]
-        source_path = target_dir / source.source_name
-        material_path = target_dir / source.material_name
-        promotion["actuals_source_file"] = str(source_path)
-        promotion["actuals_source_sha256"] = source.source_sha256
-        promotion["actuals_material_file"] = str(material_path)
-        promotion["actuals_material_sha256"] = _sha256(source.material)
-
-    try:
-        _definitions, material_sha256 = validate_special_cards_config(config_copy)
-    except ValueError as exc:
-        raise PromoGenerationMigrationError("Configul Promo materializat este invalid.") from exc
+    target_config, material_hash = _materialized_target_config(
+        config,
+        target_dir=target_dir,
+        source_plans=source_plans,
+        grouped=grouped,
+        manifest=manifest,
+    )
     return _MigrationPlan(
         data_dir=data_dir,
         pointer_path=pointer_path,
         expected_pointer=pointer_bytes,
         previous_generation_id=generation_id,
         generation_id=target_generation_id,
-        config=config_copy,
+        config=target_config,
         sources=tuple(source_plans),
-        material_sha256=material_sha256,
+        material_sha256=material_hash,
     )
-
 
 def _verify_existing_target(target_dir: Path, planned: _MigrationPlan) -> None:
     """Allow a safe retry after an interruption before the pointer switch."""
