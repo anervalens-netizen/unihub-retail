@@ -12,8 +12,6 @@ import json
 import os
 import shutil
 import threading
-import time
-import zipfile
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -23,7 +21,6 @@ from uuid import uuid4
 import asyncpg
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload
-from openpyxl import load_workbook
 from repositories.grile_monthly_operations import (
     MonthlyExecutionLease,
     ResetItemInput,
@@ -64,7 +61,18 @@ from services.grile_monthly_google import (
     GoogleSyncAdapter,
     call_with_backoff,
 )
+from services.grile_monthly_finalization import (
+    FinalizationPorts,
+    FinalizationRequest,
+    execute_finalization,
+)
 from services import grile_monthly_artifacts as monthly_artifacts
+from services import grile_monthly_archive_artifacts as monthly_archive_artifacts
+from services.grile_monthly_archive import (
+    ArchivePorts,
+    ArchiveRequest,
+    execute_archive,
+)
 from services.grile_monthly_artifacts import (
     ARCHIVE_DIR_NAME,
     FINAL_EXPORT_NAME_PREFIX,
@@ -110,11 +118,9 @@ from services.grile_monthly_integrity import (
     MonthlyIntegrityError,
     base_manifest,
     canonical_snapshot,
-    decimal_text,
     file_sha256,
     finalize_manifest,
     manifest_sha256,
-    parse_required_decimal,
     relative_artifact,
     resolve_artifact_path,
     secure_directory, secure_file,
@@ -750,113 +756,34 @@ async def _finalize_month_execution(
     delay: float = 1.1,
     google_adapter: GoogleSyncAdapter | None = None,
 ) -> MonthlyExecution:
-    entries = await load_entries(pool, only=only, month=month_key)
-    metadata = {(e.company, e.store): {"Manager": e.manager} for e in entries}
-    sheets_svc = None
-    if google_adapter is None:
-        sheets_svc, _ = build_google_services()
-    all_rows: list[ExtractedAgentRow] = []
-    for idx, entry in enumerate(entries, start=1):
-        if google_adapter is None:
-            assert sheets_svc is not None
-            all_rows.extend(extract_store_rows(sheets_svc, entry))
-        else:
-            ranges: list[str] = []
-            for cells in cells_for_entry(entry).values():
-                ranges += [
-                    f"Grila!{cells['agent']}",
-                    f"Grila!{cells['base_salary']}",
-                    *[f"Grila!{cell}" for cell in cells["sales_commission_cells"]],
-                    f"Grila!{cells['extra_location_commission']}",
-                    f"Grila!{cells['extra_hours_pay']}",
-                    f"Grila!{cells['bonuri']}",
-                    cells["worked_hours"],
-                ]
-            response = await _google_request(
-                google_adapter,
-                "read_values",
-                {
-                    "spreadsheet_id": entry.sheet_id,
-                    "ranges": ranges,
-                    "value_render_option": "UNFORMATTED_VALUE",
-                },
-                label="Google sheet read",
-            )
-            value_ranges = response.get("valueRanges") if isinstance(response, dict) else None
-            if not isinstance(value_ranges, list) or len(value_ranges) != len(ranges):
-                raise MonthlyIntegrityError(
-                    "google_response_incomplete",
-                    "Google sheet response is incomplete",
-                )
-            all_rows.extend(extract_store_rows(None, entry, value_ranges=value_ranges))
-        if delay > 0 and idx < len(entries):
-            await asyncio.sleep(delay)
-
-    expected_stores, processed_stores, expected_agents, processed_agents, errors = (
-        _validate_finalization_coverage(entries, all_rows)
-    )
-    totals = _control_totals(all_rows)
-    if errors or processed_stores != expected_stores or processed_agents != expected_agents:
-        failed = base_manifest(
-            month=month_key,
-            operation="finalize",
+    return await execute_finalization(
+        pool,
+        FinalizationRequest(
+            month=month,
+            month_key=month_key,
             requested_by_sub=requested_by_sub,
-            expected_stores=expected_stores,
-            expected_agents=expected_agents,
-            processed_stores=processed_stores,
-            processed_agents=processed_agents,
-            control_totals=totals,
-            artifacts=[],
-            errors=errors or ["coverage_incomplete"],
-            status="failed",
-        )
-        raise MonthlyManifestError("finalization_incomplete", "Finalization coverage is incomplete", failed)
-
-    stage_dir = _staging_dir("finalize", operation_id)
-    staged_path = stage_dir / "candidate.xlsx"
-    output_path = resolve_output_path(month, only, OUTPUTS_DIR)
-    try:
-        build_workbook(all_rows, staged_path, metadata)
-        secure_file(staged_path)
-        _validate_final_workbook(staged_path, expected_agents=expected_agents)
-        _promote_file(staged_path, output_path)
-    except Exception as exc:
-        code = exc.code if isinstance(exc, MonthlyIntegrityError) else "workbook_promotion_failed"
-        failed = base_manifest(
-            month=month_key,
-            operation="finalize",
-            requested_by_sub=requested_by_sub,
-            expected_stores=expected_stores,
-            expected_agents=expected_agents,
-            processed_stores=processed_stores,
-            processed_agents=processed_agents,
-            control_totals=totals,
-            artifacts=[],
-            errors=[code],
-            status="failed",
-        )
-        raise MonthlyManifestError(code, "Final workbook could not be verified", failed) from exc
-    finally:
-        shutil.rmtree(stage_dir, ignore_errors=True)
-
-    artifact = relative_artifact(output_path, root=OUTPUTS_DIR, kind="final_workbook")
-    manifest = _with_source_registry(
-        base_manifest(
-            month=month_key,
-            operation="finalize",
-            requested_by_sub=requested_by_sub,
-            expected_stores=expected_stores,
-            expected_agents=expected_agents,
-            processed_stores=processed_stores,
-            processed_agents=processed_agents,
-            control_totals=totals,
-            artifacts=[artifact],
+            operation_id=operation_id,
+            only=only,
+            delay=delay,
+            google_adapter=google_adapter,
         ),
-        entries,
+        FinalizationPorts(
+            outputs_dir=OUTPUTS_DIR,
+            load_entries=load_entries,
+            build_google_services=build_google_services,
+            extract_store_rows=extract_store_rows,
+            google_request=_google_request,
+            validate_coverage=_validate_finalization_coverage,
+            control_totals=_control_totals,
+            staging_dir=_staging_dir,
+            build_workbook=build_workbook,
+            secure_file=secure_file,
+            validate_workbook=_validate_final_workbook,
+            promote_file=_promote_file,
+            with_source_registry=_with_source_registry,
+            sleep=asyncio.sleep,
+        ),
     )
-    validate_verified_manifest(manifest, operation="finalize")
-    verify_artifacts(manifest, root=OUTPUTS_DIR)
-    return MonthlyExecution(path=output_path, manifest=manifest)
 
 
 async def finalize_month(
@@ -884,83 +811,44 @@ async def finalize_month(
 
 
 def export_sheet_xlsx(drive_service: Any, entry: StoreEntry, output_path: Path) -> dict[str, Any]:
-    result = {
-        "company": entry.company,
-        "store": entry.store,
-        "site_code": entry.site_code,
-        "manager": entry.manager,
-        "sheet_id": entry.sheet_id,
-        "template_version": entry.template_version,
-        "status": "OK",
-        "xlsx_path": str(output_path),
-        "bytes": 0,
-        "error": "",
-    }
-    secure_directory(output_path.parent)
-    request = drive_service.files().export_media(fileId=entry.sheet_id, mimeType=XLSX_MIME)
-    try:
-        with output_path.open("wb") as fh:
-            downloader = MediaIoBaseDownload(fh, request)
-            done = False
-            while not done:
-                _, done = downloader.next_chunk()
-        secure_file(output_path)
-        result["bytes"] = output_path.stat().st_size
-        if result["bytes"] == 0:
-            raise MonthlyIntegrityError("empty_source_backup", "Exported source backup is empty")
-        return result
-    except Exception:
-        output_path.unlink(missing_ok=True)
-        raise
+    return monthly_archive_artifacts.export_sheet_xlsx(
+        drive_service,
+        entry,
+        output_path,
+        downloader_type=MediaIoBaseDownload,
+        secure_directory=secure_directory,
+        secure_file=secure_file,
+    )
 
 
 def write_exported_xlsx(entry: StoreEntry, output_path: Path, content: bytes) -> dict[str, Any]:
-    if not isinstance(content, bytes) or not content:
-        raise MonthlyIntegrityError("empty_source_backup", "Exported source backup is empty")
-    secure_directory(output_path.parent)
-    try:
-        output_path.write_bytes(content)
-        secure_file(output_path)
-        if output_path.stat().st_size == 0:
-            raise MonthlyIntegrityError("empty_source_backup", "Exported source backup is empty")
-    except Exception:
-        output_path.unlink(missing_ok=True)
-        raise
-    return {
-        "company": entry.company,
-        "store": entry.store,
-        "site_code": entry.site_code,
-        "manager": entry.manager,
-        "sheet_id": entry.sheet_id,
-        "template_version": entry.template_version,
-        "status": "OK",
-        "xlsx_path": str(output_path),
-        "bytes": output_path.stat().st_size,
-        "error": "",
-    }
+    return monthly_archive_artifacts.write_exported_xlsx(
+        entry,
+        output_path,
+        content,
+        secure_directory=secure_directory,
+        secure_file=secure_file,
+    )
 
 
 def create_archive_zip(zip_path: Path, exported_files: list[Path], archive_dir: Path) -> None:
-    secure_directory(zip_path.parent)
-    with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
-        for path in exported_files:
-            zf.write(path, path.relative_to(archive_dir).as_posix())
+    monthly_archive_artifacts.create_archive_zip(
+        zip_path,
+        exported_files,
+        archive_dir,
+        secure_directory=secure_directory,
+    )
 
 
 def create_manager_zips(output_dir: Path, month: str, results: list[dict[str, Any]]) -> dict[str, Path]:
-    archive_dir = build_archive_dir(output_dir, month)
-    files_by_manager: dict[str, list[Path]] = {}
-    for item in results:
-        if item.get("status") != "OK":
-            continue
-        files_by_manager.setdefault(item.get("manager") or "Neatribuit", []).append(Path(item["xlsx_path"]))
-
-    zip_paths: dict[str, Path] = {}
-    for manager, files in sorted(files_by_manager.items()):
-        zip_path = build_manager_zip_path(output_dir, month, manager)
-        create_archive_zip(zip_path, files, archive_dir)
-        zip_paths[manager] = zip_path
-    return zip_paths
+    return monthly_archive_artifacts.create_manager_zips(
+        output_dir,
+        month,
+        results,
+        build_archive_dir=build_archive_dir,
+        build_manager_zip_path=build_manager_zip_path,
+        create_zip=create_archive_zip,
+    )
 
 
 def summarize_archive_results(
@@ -970,47 +858,25 @@ def summarize_archive_results(
     zip_path: Path,
     manager_zip_paths: dict[str, Path] | None = None,
 ) -> dict[str, Any]:
-    return {
-        "month": month,
-        "created_at": utc_now(),
-        "registry_count": registry_count,
-        "exported_count": sum(1 for item in results if item.get("status") == "OK"),
-        "error_count": sum(1 for item in results if item.get("status") != "OK"),
-        "zip_path": str(zip_path),
-        "manager_zip_paths": {manager: str(path) for manager, path in sorted((manager_zip_paths or {}).items())},
-        "stores": results,
-    }
+    return monthly_archive_artifacts.summarize_archive_results(
+        month,
+        registry_count,
+        results,
+        zip_path,
+        manager_zip_paths,
+        now=utc_now,
+    )
 
 
 def _validate_archive_zip(zip_path: Path, *, expected_files: int) -> None:
-    try:
-        with zipfile.ZipFile(zip_path) as archive:
-            members = [item for item in archive.infolist() if not item.is_dir()]
-            if len(members) != expected_files or len({item.filename for item in members}) != expected_files:
-                raise MonthlyIntegrityError("archive_coverage_incomplete", "Archive coverage is incomplete")
-            if archive.testzip() is not None:
-                raise MonthlyIntegrityError("archive_corrupt", "Archive is corrupt")
-    except MonthlyIntegrityError:
-        raise
-    except Exception as exc:
-        raise MonthlyIntegrityError("archive_invalid", "Archive cannot be verified") from exc
+    monthly_archive_artifacts.validate_archive_zip(
+        zip_path,
+        expected_files=expected_files,
+    )
 
 
 def _validate_source_workbook(path: Path) -> None:
-    try:
-        workbook = load_workbook(path, read_only=True, data_only=False)
-        try:
-            if not {"Grila", "Pontaj"}.issubset(workbook.sheetnames):
-                raise MonthlyIntegrityError(
-                    "source_workbook_partial",
-                    "Source workbook is missing required sheets",
-                )
-        finally:
-            workbook.close()
-    except MonthlyIntegrityError:
-        raise
-    except Exception as exc:
-        raise MonthlyIntegrityError("source_workbook_invalid", "Source workbook is invalid") from exc
+    monthly_archive_artifacts.validate_source_workbook(path)
 
 
 def _future_artifact(
@@ -1021,17 +887,14 @@ def _future_artifact(
     kind: str,
     extra: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    relative_inside = staged_path.resolve().relative_to(staged_archive_dir.resolve())
-    future_path = official_archive_dir / relative_inside
-    artifact = {
-        "kind": kind,
-        "path": future_path.resolve().relative_to(OUTPUTS_DIR.resolve()).as_posix(),
-        "bytes": staged_path.stat().st_size,
-        "sha256": file_sha256(staged_path),
-    }
-    if extra:
-        artifact.update(extra)
-    return artifact
+    return monthly_archive_artifacts.future_artifact(
+        staged_path,
+        outputs_dir=OUTPUTS_DIR,
+        staged_archive_dir=staged_archive_dir,
+        official_archive_dir=official_archive_dir,
+        kind=kind,
+        extra=extra,
+    )
 
 
 def _promote_directory(
@@ -1040,40 +903,14 @@ def _promote_directory(
     *,
     verify: Callable[[], None] | None = None,
 ) -> None:
-    secure_directory(destination.parent)
-    revision: Path | None = None
-    promoted = False
-    if destination.exists():
-        revision_dir = OUTPUTS_DIR / ".revisions"
-        secure_directory(revision_dir)
-        revision = revision_dir / f"archive-{safe_filename(destination.name)}-{time.time_ns()}"
-        os.replace(destination, revision)
-    try:
-        os.replace(staged, destination)
-        promoted = True
-        if verify is not None:
-            verify()
-    except Exception as exc:
-        rollback_error: Exception | None = None
-        if promoted and destination.exists():
-            try:
-                os.replace(destination, staged)
-            except Exception:  # noqa: BLE001 - remove unverified output
-                try:
-                    shutil.rmtree(destination)
-                except Exception as remove_error:  # noqa: BLE001 - surfaced below
-                    rollback_error = remove_error
-        if revision is not None and revision.exists() and not destination.exists():
-            try:
-                os.replace(revision, destination)
-            except Exception as restore_error:  # noqa: BLE001 - surfaced below
-                rollback_error = restore_error
-        if rollback_error is not None:
-            raise MonthlyIntegrityError(
-                "archive_promotion_rollback_failed",
-                "Archive promotion rollback failed",
-            ) from exc
-        raise
+    monthly_archive_artifacts.promote_directory(
+        staged,
+        destination,
+        outputs_dir=OUTPUTS_DIR,
+        safe_filename=safe_filename,
+        secure_directory=secure_directory,
+        verify=verify,
+    )
 
 
 async def _archive_month_execution(
@@ -1087,215 +924,48 @@ async def _archive_month_execution(
     delay: float = 0.5,
     google_adapter: GoogleSyncAdapter | None = None,
 ) -> MonthlyExecution:
-    if only:
-        failed = base_manifest(
-            month=month_key,
-            operation="archive",
-            requested_by_sub=requested_by_sub,
-            expected_stores=0,
-            expected_agents=0,
-            processed_stores=0,
-            processed_agents=0,
-            control_totals={},
-            artifacts=[],
-            errors=["partial_archive_forbidden"],
-            status="failed",
-        )
-        raise MonthlyManifestError("partial_archive_forbidden", "Partial archive is not allowed", failed)
-
-    final_record = await fetch_latest_monthly_manifest(
+    return await execute_archive(
         pool,
-        closing_month=month_key,
-        operation="finalize",
-        statuses=MANIFEST_ATTEMPT_STATUSES,
+        ArchiveRequest(
+            month=month,
+            month_key=month_key,
+            requested_by_sub=requested_by_sub,
+            operation_id=operation_id,
+            only=only,
+            delay=delay,
+            google_adapter=google_adapter,
+        ),
+        ArchivePorts(
+            outputs_dir=OUTPUTS_DIR,
+            manifest_statuses=MANIFEST_ATTEMPT_STATUSES,
+            fetch_latest_manifest=fetch_latest_monthly_manifest,
+            load_entries=load_entries,
+            source_registry=_source_registry,
+            validate_manifest=validate_verified_manifest,
+            verify_artifacts=verify_artifacts,
+            build_google_services=build_google_services,
+            staging_dir=_staging_dir,
+            build_archive_dir=build_archive_dir,
+            build_store_export_path=build_store_export_path,
+            build_archive_zip_path=build_archive_zip_path,
+            build_archive_manifest_path=build_archive_manifest_path,
+            retry_api=retry_api,
+            retry_attempts=GOOGLE_API_RETRY_ATTEMPTS,
+            retry_base_delay=GOOGLE_API_RETRY_BASE_DELAY_SECONDS,
+            export_sheet_xlsx=export_sheet_xlsx,
+            google_request=_google_request,
+            write_exported_xlsx=write_exported_xlsx,
+            validate_source_workbook=_validate_source_workbook,
+            create_archive_zip=create_archive_zip,
+            create_manager_zips=create_manager_zips,
+            secure_file=secure_file,
+            validate_archive_zip=_validate_archive_zip,
+            future_artifact=_future_artifact,
+            secure_write_json=secure_write_json,
+            promote_directory=_promote_directory,
+            sleep=asyncio.sleep,
+        ),
     )
-    final_manifest = final_record.get("manifest") if final_record else None
-    if (
-        final_record is None
-        or final_record.get("status") != "verified"
-        or not isinstance(final_manifest, dict)
-    ):
-        failed = base_manifest(
-            month=month_key,
-            operation="archive",
-            requested_by_sub=requested_by_sub,
-            expected_stores=0,
-            expected_agents=0,
-            processed_stores=0,
-            processed_agents=0,
-            control_totals={},
-            artifacts=[],
-            errors=["verified_finalization_missing"],
-            status="failed",
-        )
-        raise MonthlyManifestError("verified_finalization_missing", "Verified finalization is required", failed)
-    validate_verified_manifest(final_manifest, operation="finalize")
-    verify_artifacts(final_manifest, root=OUTPUTS_DIR)
-
-    entries = await load_entries(pool, month=month_key)
-    expected = final_manifest["expected"]
-    finalized_registry = final_manifest.get("source_registry")
-    current_registry = _source_registry(entries)
-    if (
-        len(entries) != expected["stores"]
-        or len({entry.site_code for entry in entries}) != len(entries)
-        or len({entry.sheet_id for entry in entries}) != len(entries)
-        or finalized_registry != current_registry
-    ):
-        failed = base_manifest(
-            month=month_key,
-            operation="archive",
-            requested_by_sub=requested_by_sub,
-            expected_stores=int(expected["stores"]),
-            expected_agents=int(expected["agents"]),
-            processed_stores=0,
-            processed_agents=0,
-            control_totals=final_manifest.get("control_totals", {}),
-            artifacts=[],
-            errors=["registry_changed_or_duplicate_after_finalization"],
-            status="failed",
-        )
-        raise MonthlyManifestError(
-            "registry_changed_or_duplicate_after_finalization",
-            "Registry changed after finalization",
-            failed,
-        )
-
-    drive_service = None
-    if google_adapter is None:
-        _, drive_service = build_google_services()
-    stage_root = _staging_dir("archive", operation_id)
-    staged_archive_dir = build_archive_dir(stage_root, month)
-    official_archive_dir = build_archive_dir(OUTPUTS_DIR, month)
-    results: list[dict[str, Any]] = []
-    exported_files: list[Path] = []
-    errors: list[str] = []
-    try:
-        for idx, entry in enumerate(entries, start=1):
-            output_path = build_store_export_path(stage_root, month, entry)
-            try:
-                if google_adapter is None:
-                    assert drive_service is not None
-                    result = retry_api(
-                        lambda entry=entry, output_path=output_path: export_sheet_xlsx(
-                            drive_service,
-                            entry,
-                            output_path,
-                        ),
-                        label="Google source export",
-                        attempts=GOOGLE_API_RETRY_ATTEMPTS,
-                        base_delay=GOOGLE_API_RETRY_BASE_DELAY_SECONDS,
-                    )
-                else:
-                    content = await _google_request(
-                        google_adapter,
-                        "export_xlsx",
-                        {"spreadsheet_id": entry.sheet_id, "mime_type": XLSX_MIME},
-                        label="Google source export",
-                    )
-                    result = write_exported_xlsx(entry, output_path, content)
-                _validate_source_workbook(Path(result["xlsx_path"]))
-            except MonthlyIntegrityError as exc:
-                result = {
-                    "company": entry.company,
-                    "store": entry.store,
-                    "site_code": entry.site_code,
-                    "manager": entry.manager,
-                    "sheet_id": entry.sheet_id,
-                    "template_version": entry.template_version,
-                    "status": "ERROR",
-                    "xlsx_path": "",
-                    "bytes": 0,
-                    "error": exc.code,
-                }
-                errors.append(exc.code)
-            results.append(result)
-            if result["status"] == "OK":
-                exported_files.append(Path(result["xlsx_path"]))
-            if delay > 0 and idx < len(entries):
-                await asyncio.sleep(delay)
-
-        if errors or len(exported_files) != len(entries):
-            failed = base_manifest(
-                month=month_key,
-                operation="archive",
-                requested_by_sub=requested_by_sub,
-                expected_stores=len(entries),
-                expected_agents=int(expected["agents"]),
-                processed_stores=len(exported_files),
-                processed_agents=int(expected["agents"]) if not errors else 0,
-                control_totals=final_manifest.get("control_totals", {}),
-                artifacts=[],
-                errors=errors or ["archive_coverage_incomplete"],
-                status="failed",
-            )
-            raise MonthlyManifestError("archive_incomplete", "Archive is incomplete", failed)
-
-        zip_path = build_archive_zip_path(stage_root, month)
-        create_archive_zip(zip_path, exported_files, staged_archive_dir)
-        secure_file(zip_path)
-        _validate_archive_zip(zip_path, expected_files=len(entries))
-        manager_zip_paths = create_manager_zips(stage_root, month, results)
-        for path in manager_zip_paths.values():
-            secure_file(path)
-
-        source_backups = [
-            _future_artifact(
-                Path(result["xlsx_path"]),
-                staged_archive_dir=staged_archive_dir,
-                official_archive_dir=official_archive_dir,
-                kind="source_workbook",
-                extra={
-                    "site_code": result["site_code"],
-                    "sheet_id": result["sheet_id"],
-                    "template_version": result.get("template_version", "v2"),
-                },
-            )
-            for result in results
-        ]
-        archive_artifacts = [
-            _future_artifact(
-                zip_path,
-                staged_archive_dir=staged_archive_dir,
-                official_archive_dir=official_archive_dir,
-                kind="archive_zip",
-            ),
-            *source_backups,
-            *[
-                _future_artifact(
-                    path,
-                    staged_archive_dir=staged_archive_dir,
-                    official_archive_dir=official_archive_dir,
-                    kind="manager_archive_zip",
-                )
-                for path in manager_zip_paths.values()
-            ],
-            *[dict(item) for item in final_manifest["artifacts"]],
-        ]
-        manifest = base_manifest(
-            month=month_key,
-            operation="archive",
-            requested_by_sub=requested_by_sub,
-            expected_stores=len(entries),
-            expected_agents=int(expected["agents"]),
-            processed_stores=len(entries),
-            processed_agents=int(expected["agents"]),
-            control_totals=final_manifest.get("control_totals", {}),
-            artifacts=archive_artifacts,
-            source_backups=source_backups,
-        )
-        validate_verified_manifest(manifest, operation="archive")
-        manifest_path = build_archive_manifest_path(stage_root, month)
-        secure_write_json(manifest_path, manifest)
-        official_manifest_path = build_archive_manifest_path(OUTPUTS_DIR, month)
-        _promote_directory(
-            staged_archive_dir,
-            official_archive_dir,
-            verify=lambda: verify_artifacts(manifest, root=OUTPUTS_DIR),
-        )
-        return MonthlyExecution(path=official_manifest_path, manifest=manifest)
-    finally:
-        shutil.rmtree(stage_root, ignore_errors=True)
 
 
 async def archive_month(
