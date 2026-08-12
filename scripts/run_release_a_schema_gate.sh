@@ -150,11 +150,11 @@ docker exec "$POSTGRES_CONTAINER" \
 PRE069_DUMP_SHA256="$(
   docker exec "$POSTGRES_CONTAINER" sha256sum /tmp/pre069.dump | awk '{print $1}'
 )"
-docker exec "$POSTGRES_CONTAINER" createdb -U unihub_test unihub_test_restore
+docker exec "$POSTGRES_CONTAINER" createdb -U unihub_test unihub_restore_test
 docker exec "$POSTGRES_CONTAINER" \
-  pg_restore -U unihub_test -d unihub_test_restore /tmp/pre069.dump
+  pg_restore -U unihub_test -d unihub_restore_test /tmp/pre069.dump
 
-export DATABASE_URL="postgresql://unihub_test:${PASSWORD}@127.0.0.1:${POSTGRES_PORT}/unihub_test_restore"
+export DATABASE_URL="postgresql://unihub_test:${PASSWORD}@127.0.0.1:${POSTGRES_PORT}/unihub_restore_test"
 "$PYTHON" "$ROOT_DIR/backend/scripts/bootstrap_test_db.py" >/dev/null
 
 cd "$ROOT_DIR/backend"
