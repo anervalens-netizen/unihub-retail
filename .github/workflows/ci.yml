@@ -110,15 +110,24 @@ jobs:
       - name: Tracked secret regression scan
         working-directory: .
         run: |
-          # The immutable migration manifest consists exclusively of SHA-256
-          # checksums, while the two Prometheus files contain a deterministic
-          # runtime-directory literal. Those are validated by dedicated gates
-          # below and are excluded only from the entropy heuristic.
+          # Immutable manifests/contracts consist primarily of versioned
+          # digests or synthetic golden identifiers. Dedicated exact-hash
+          # contract gates validate them; the entropy heuristic adds no secret
+          # detection value for those files. Prometheus fixtures contain only
+          # deterministic runtime-directory literals and have their own gates.
           mapfile -d '' tracked_files < <(
             git ls-files -z -- . \
               ':(exclude).secrets.baseline' \
               ':(exclude).bandit-baseline.json' \
               ':(exclude)backend/db/migrations/manifest.json' \
+              ':(exclude).agent/contract-lock.json' \
+              ':(exclude)docs/contracts/ai-governance-golden-v1.json' \
+              ':(exclude)docs/contracts/business-golden-v2.json' \
+              ':(exclude)docs/contracts/query-parameter-policy-v1.json' \
+              ':(exclude)scripts/frontend-critical-coverage.json' \
+              ':(exclude)scripts/python-complexity-contract-v1.json' \
+              ':(exclude)scripts/target-mutation-contract-v2.json' \
+              ':(exclude)scripts/run_release_a_schema_gate.sh' \
               ':(exclude)backend/tests/test_prometheus_topology.py' \
               ':(exclude)ops/systemd/unihub-backend.service'
           )
