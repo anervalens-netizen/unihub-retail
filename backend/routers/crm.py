@@ -60,7 +60,7 @@ get_crm_service = build_crm_service
 
 @router.get("/scores", response_model=list[CrmScoreResponse])
 async def get_scores(
-    month: MonthStr = Query(...),
+    month: MonthStr,
     svc: CrmService = Depends(get_crm_service),
 ):
     return await svc.get_scores(month)
@@ -68,7 +68,7 @@ async def get_scores(
 
 @router.post("/scores/recalculate", response_model=CrmRecalculateResponse)
 async def recalculate_scores(
-    month: MonthStr = Query(...),
+    month: MonthStr,
     _claims=Depends(require_business_write_access),
     _rate_limit: None = Depends(rate_limit(BUSINESS_WRITE_LIMIT)),
     svc: CrmService = Depends(get_crm_service),
@@ -79,7 +79,7 @@ async def recalculate_scores(
 
 @router.get("/alerts", response_model=list[CrmAlertResponse])
 async def get_alerts(
-    month: MonthStr = Query(...),
+    month: MonthStr,
     svc: CrmService = Depends(get_crm_service),
 ):
     return await svc.get_alerts(month)

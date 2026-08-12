@@ -1,5 +1,5 @@
 /* GENERATED FILE. Run npm run contracts:generate; do not edit manually. */
-export const RETAIL_OPENAPI_SHA256 = '420756d13c95101303697ebcec05ab83fe1679c27203c4589031e6d537cb6844' as const; // pragma: allowlist secret
+export const RETAIL_OPENAPI_SHA256 = 'b6bf0abbc538f1f5d3a9a2ed3089aa4129e3a3947f25b2d7054574f6e7b9ceb4' as const; // pragma: allowlist secret
 
 export type RetailDecimal = string & { readonly __retailDecimal: unique symbol };
 

@@ -5,7 +5,17 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request, status
 from pydantic import Field
-from schemas.common import StrictApiModel
+from schemas.common import (
+    BoundedCode64,
+    BoundedListItem100,
+    BoundedText120,
+    Limit2000,
+    Limit500,
+    MonthNumber,
+    Offset100000,
+    StrictApiModel,
+    Year2018To2100,
+)
 
 from composition import build_export_operations_service, build_salarii_service
 from domain.export_operations import ExportOperationCapacityError
@@ -104,10 +114,10 @@ async def get_identity_salarii_service() -> SalariiService:
     response_model_exclude_unset=True,
 )
 async def salarii_overview(
-    company_name: str | None = Query(None),
-    site_code: list[str] | None = Query(None),
-    regional: str | None = Query(None),
-    asm: str | None = Query(None),
+    company_name: BoundedText120 | None = Query(None),
+    site_code: list[BoundedListItem100] | None = Query(None, max_length=100),
+    regional: BoundedText120 | None = Query(None),
+    asm: BoundedText120 | None = Query(None),
     svc: SalariiService = Depends(get_salarii_service),
 ):
     return await svc.get_overview(company_name, site_code, regional, asm)
@@ -115,10 +125,10 @@ async def salarii_overview(
 
 @router.get("/evolution", response_model=list[SalaryEvolutionPoint])
 async def salarii_evolution(
-    company_name: str | None = Query(None),
-    site_code: list[str] | None = Query(None),
-    regional: str | None = Query(None),
-    asm: str | None = Query(None),
+    company_name: BoundedText120 | None = Query(None),
+    site_code: list[BoundedListItem100] | None = Query(None, max_length=100),
+    regional: BoundedText120 | None = Query(None),
+    asm: BoundedText120 | None = Query(None),
     svc: SalariiService = Depends(get_salarii_service),
 ):
     return await svc.get_evolution(company_name, site_code, regional, asm)
@@ -126,15 +136,15 @@ async def salarii_evolution(
 
 @router.get("/agents/summary", response_model=SalaryAgentsSummaryResponse)
 async def agents_summary(
-    q: str | None = Query(None),
-    company_name: str | None = Query(None),
-    site_code: list[str] | None = Query(None),
-    regional: str | None = Query(None),
-    asm: str | None = Query(None),
-    year: int | None = Query(None),
-    month: int | None = Query(None),
-    limit: int = Query(50, le=500),
-    offset: int = Query(0),
+    q: BoundedText120 | None = Query(None),
+    company_name: BoundedText120 | None = Query(None),
+    site_code: list[BoundedListItem100] | None = Query(None, max_length=100),
+    regional: BoundedText120 | None = Query(None),
+    asm: BoundedText120 | None = Query(None),
+    year: Year2018To2100 | None = Query(None),
+    month: MonthNumber | None = Query(None),
+    limit: Limit500 = Query(50, ge=1, le=500),
+    offset: Offset100000 = Query(0, ge=0, le=100_000),
     svc: SalariiService = Depends(get_identity_salarii_service),
 ):
     return await svc.get_agents_summary(q, company_name, site_code, regional, asm, year, month, limit, offset)
@@ -155,8 +165,8 @@ async def agent_history(
 
 @router.get("/agents/history-by-retail-code", response_model=SalaryHistoryResponse)
 async def agent_history_by_retail_code(
-    agent_code: str = Query(...),
-    site_code: str = Query(...),
+    agent_code: BoundedCode64,
+    site_code: BoundedCode64,
     svc: SalariiService = Depends(get_identity_salarii_service),
 ):
     return await svc.get_agent_history_by_retail_code(
@@ -167,12 +177,12 @@ async def agent_history_by_retail_code(
 
 @router.get("/summary", response_model=SalarySummaryResponse)
 async def salarii_summary(
-    company_name: str | None = Query(None),
-    site_code: list[str] | None = Query(None),
-    regional: str | None = Query(None),
-    asm: str | None = Query(None),
-    year: int | None = Query(None),
-    month: int | None = Query(None),
+    company_name: BoundedText120 | None = Query(None),
+    site_code: list[BoundedListItem100] | None = Query(None, max_length=100),
+    regional: BoundedText120 | None = Query(None),
+    asm: BoundedText120 | None = Query(None),
+    year: Year2018To2100 | None = Query(None),
+    month: MonthNumber | None = Query(None),
     svc: SalariiService = Depends(get_salarii_service),
 ):
     return await svc.get_summary(company_name, site_code, regional, asm, year, month)
@@ -180,10 +190,10 @@ async def salarii_summary(
 
 @router.get("/trend", response_model=list[SalaryTrendPoint])
 async def salarii_trend(
-    company_name: str | None = Query(None),
-    site_code: list[str] | None = Query(None),
-    regional: str | None = Query(None),
-    asm: str | None = Query(None),
+    company_name: BoundedText120 | None = Query(None),
+    site_code: list[BoundedListItem100] | None = Query(None, max_length=100),
+    regional: BoundedText120 | None = Query(None),
+    asm: BoundedText120 | None = Query(None),
     svc: SalariiService = Depends(get_salarii_service),
 ):
     return await svc.get_trend(company_name, site_code, regional, asm)
@@ -191,7 +201,7 @@ async def salarii_trend(
 
 @router.get("/stores", response_model=list[SalaryStoreOption])
 async def salarii_stores(
-    company_name: str | None = Query(None),
+    company_name: BoundedText120 | None = Query(None),
     svc: SalariiService = Depends(get_salarii_service),
 ):
     return await svc.get_stores(company_name)
@@ -199,12 +209,12 @@ async def salarii_stores(
 
 @router.get("/records", response_model=list[SalaryRecordPublic])
 async def list_records(
-    company_name: str | None = Query(None),
-    year: int | None = Query(None),
-    month: int | None = Query(None),
-    site_code: list[str] | None = Query(None),
-    limit: int = Query(100, le=2000),
-    offset: int = Query(0),
+    company_name: BoundedText120 | None = Query(None),
+    year: Year2018To2100 | None = Query(None),
+    month: MonthNumber | None = Query(None),
+    site_code: list[BoundedListItem100] | None = Query(None, max_length=100),
+    limit: Limit2000 = Query(100, ge=1, le=2000),
+    offset: Offset100000 = Query(0, ge=0, le=100_000),
     svc: SalariiService = Depends(get_identity_salarii_service),
 ):
     return await svc.get_records(company_name, year, month, site_code, limit, offset)

@@ -63,6 +63,7 @@ from request_context import (
     bind_request_id,
     normalize_request_id,
     reset_request_id,
+    telemetry_service_role,
 )
 from request_body_limits import RequestBodyLimitMiddleware
 
@@ -162,9 +163,10 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
                         "slow request completed with exception",
                         extra={
                             "method": request.method,
-                            "path": handler,
+                            "route_template": handler,
                             "status": "5xx",
                             "duration_ms": round(duration * 1000, 1),
+                            "service_role": telemetry_service_role(),
                         },
                     )
             raise
@@ -183,9 +185,10 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
                     "slow request completed",
                     extra={
                         "method": request.method,
-                        "path": handler,
+                        "route_template": handler,
                         "status": status,
                         "duration_ms": round(duration * 1000, 1),
+                        "service_role": telemetry_service_role(),
                     },
                 )
         response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
@@ -252,7 +255,13 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
     try:
         logger.error(
             "unhandled request exception",
-            extra={"method": request.method, "path": request.url.path},
+            extra={
+                "method": request.method,
+                "route_template": canonical_handler(request.scope),
+                "status": 500,
+                "duration_ms": 0,
+                "service_role": telemetry_service_role(),
+            },
             exc_info=(type(exc), exc, exc.__traceback__),
         )
     finally:

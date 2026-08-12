@@ -6,7 +6,7 @@ from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 
 from composition import build_campaigns_service
-from schemas.common import MonthStr
+from schemas.common import BoundedListItem100, BoundedText120, MonthStr
 from schemas.campaigns import (
     CampaignSnapshot,
     CampaignsPromotionsResponse,
@@ -40,25 +40,25 @@ async def get_campaigns_service(
 
 @router.get("/overview", response_model=CampaignSnapshot)
 async def get_campaign_overview(
-    month: MonthStr = Query(...),
-    firma: str | None = None,
-    regional: str | None = None,
-    asm: str | None = None,
-    site_code: list[str] | None = Query(None),
-    agent: list[str] | None = Query(None),
+    month: MonthStr,
+    firma: BoundedText120 | None = None,
+    regional: BoundedText120 | None = None,
+    asm: BoundedText120 | None = None,
+    site_code: list[BoundedListItem100] | None = Query(None, max_length=100),
+    agent: list[BoundedListItem100] | None = Query(None, max_length=100),
     svc: CampaignsService = Depends(get_campaigns_service),
 ) -> CampaignSnapshot:
     return await svc.get_campaign_overview(month, firma, regional, asm, site_code, agent)
 
 @router.get("/history", response_model=FocusHistoryResponse)
 async def get_focus_history(
-    month: MonthStr = Query(...),
+    month: MonthStr,
     months_back: int = Query(12, ge=2, le=24),
-    firma: str | None = None,
-    regional: str | None = None,
-    asm: str | None = None,
-    site_code: list[str] | None = Query(None),
-    agent: list[str] | None = Query(None),
+    firma: BoundedText120 | None = None,
+    regional: BoundedText120 | None = None,
+    asm: BoundedText120 | None = None,
+    site_code: list[BoundedListItem100] | None = Query(None, max_length=100),
+    agent: list[BoundedListItem100] | None = Query(None, max_length=100),
     svc: CampaignsService = Depends(get_campaigns_service),
 ) -> FocusHistoryResponse:
     return await svc.get_focus_history(month, months_back, firma, regional, asm, site_code, agent)
@@ -67,12 +67,12 @@ async def get_focus_history(
 async def get_promotions_incentives(
     start_date: date = Query(...),
     end_date: date = Query(...),
-    firma: str | None = None,
-    regional: str | None = None,
-    asm: str | None = None,
-    site_code: list[str] | None = Query(None),
-    agent: list[str] | None = Query(None),
-    promotion_key: str | None = None,
+    firma: BoundedText120 | None = None,
+    regional: BoundedText120 | None = None,
+    asm: BoundedText120 | None = None,
+    site_code: list[BoundedListItem100] | None = Query(None, max_length=100),
+    agent: list[BoundedListItem100] | None = Query(None, max_length=100),
+    promotion_key: BoundedText120 | None = None,
     view: Literal["all", "promo", "incentive"] = "all",
     current_scope: bool = Query(False),
     include_closed_stores: bool = Query(False),

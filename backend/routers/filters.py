@@ -18,7 +18,7 @@ def clear_filter_options_cache() -> None:
 
 @router.get("/options", response_model=FilterOptions)
 async def get_filter_options(
-    month: MonthStr = Query(...),
+    month: MonthStr,
     svc: FilterOptionsService = Depends(get_filters_service),
 ) -> FilterOptions:
     return await svc.get_options(month)

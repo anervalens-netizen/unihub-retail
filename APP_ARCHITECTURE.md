@@ -6,6 +6,11 @@ UniHub Retail este aplicatia centrala pentru vanzarile retail MobiUp: dashboard
 operational, campanii Focus, agenti, performanta managerilor, planificare
 target, salarii, P&L si raportare de vizite.
 
+Release-ul semantic curent este `v2.1.0` și se rezolvă numai prin pointerul
+non-self-referențial [`docs/releases/current.json`](docs/releases/current.json).
+Documentul indicat de pointer definește dovada exactă `SOURCE_SHA`, artefact și
+digest; valorile concrete sunt emise de CI/deploy, nu anticipate în sursă.
+
 ## Stack si runtime
 
 | Zona | Tehnologie |

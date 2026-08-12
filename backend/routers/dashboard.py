@@ -19,7 +19,7 @@ from schemas.dashboard import (
     YearHistoryResponse,
 )
 from schemas.premium_glass import PremiumGlassAnalysis
-from schemas.common import MonthStr
+from schemas.common import BoundedListItem100, BoundedText120, MonthStr, Year2018To2100
 from services.dashboard_filters import canonical_dashboard_site_codes
 from services.dashboard_service import DashboardService
 from services.request_deadline import RequestDeadline, RequestDeadlineExceeded
@@ -58,12 +58,12 @@ async def _run_dashboard(
 
 @router.get("/summary", response_model=DashboardSummary)
 async def get_summary(
-    month: MonthStr = Query(...),
-    firma: str | None = None,
-    regional: str | None = None,
-    asm: str | None = None,
-    site_code: list[str] | None = Query(None),
-    agent: list[str] | None = Query(None),
+    month: MonthStr,
+    firma: BoundedText120 | None = None,
+    regional: BoundedText120 | None = None,
+    asm: BoundedText120 | None = None,
+    site_code: list[BoundedListItem100] | None = Query(None, max_length=100),
+    agent: list[BoundedListItem100] | None = Query(None, max_length=100),
     deadline: RequestDeadline = Depends(get_dashboard_deadline),
     svc: DashboardService = Depends(get_dashboard_service),
 ) -> DashboardSummary:
@@ -78,12 +78,12 @@ async def get_summary(
 
 @router.get("/all", response_model=DashboardAllResponse)
 async def get_dashboard_all(
-    month: MonthStr = Query(...),
-    firma: str | None = None,
-    regional: str | None = None,
-    asm: str | None = None,
-    site_code: list[str] | None = Query(None),
-    agent: list[str] | None = Query(None),
+    month: MonthStr,
+    firma: BoundedText120 | None = None,
+    regional: BoundedText120 | None = None,
+    asm: BoundedText120 | None = None,
+    site_code: list[BoundedListItem100] | None = Query(None, max_length=100),
+    agent: list[BoundedListItem100] | None = Query(None, max_length=100),
     current_scope: bool = Query(False),
     include_closed_stores: bool = Query(False),
     deadline: RequestDeadline = Depends(get_dashboard_deadline),
@@ -135,12 +135,12 @@ async def get_dashboard_history_details_batch(
 
 @router.get("/daily", response_model=list[DailySalesPoint])
 async def get_daily_sales(
-    month: MonthStr = Query(...),
-    firma: str | None = None,
-    regional: str | None = None,
-    asm: str | None = None,
-    site_code: list[str] | None = Query(None),
-    agent: list[str] | None = Query(None),
+    month: MonthStr,
+    firma: BoundedText120 | None = None,
+    regional: BoundedText120 | None = None,
+    asm: BoundedText120 | None = None,
+    site_code: list[BoundedListItem100] | None = Query(None, max_length=100),
+    agent: list[BoundedListItem100] | None = Query(None, max_length=100),
     deadline: RequestDeadline = Depends(get_dashboard_deadline),
     svc: DashboardService = Depends(get_dashboard_service),
 ) -> list[DailySalesPoint]:
@@ -155,12 +155,12 @@ async def get_daily_sales(
 
 @router.get("/special-cards", response_model=DashboardSpecialCardsResponse)
 async def get_special_cards(
-    month: MonthStr = Query(...),
-    firma: str | None = None,
-    regional: str | None = None,
-    asm: str | None = None,
-    site_code: list[str] | None = Query(None),
-    agent: list[str] | None = Query(None),
+    month: MonthStr,
+    firma: BoundedText120 | None = None,
+    regional: BoundedText120 | None = None,
+    asm: BoundedText120 | None = None,
+    site_code: list[BoundedListItem100] | None = Query(None, max_length=100),
+    agent: list[BoundedListItem100] | None = Query(None, max_length=100),
     deadline: RequestDeadline = Depends(get_dashboard_deadline),
     svc: DashboardService = Depends(get_dashboard_service),
 ) -> DashboardSpecialCardsResponse:
@@ -175,12 +175,12 @@ async def get_special_cards(
 
 @router.get("/premium-glass", response_model=PremiumGlassAnalysis)
 async def get_premium_glass(
-    month: MonthStr = Query(...),
-    firma: str | None = None,
-    regional: str | None = None,
-    asm: str | None = None,
-    site_code: list[str] | None = Query(None),
-    agent: list[str] | None = Query(None),
+    month: MonthStr,
+    firma: BoundedText120 | None = None,
+    regional: BoundedText120 | None = None,
+    asm: BoundedText120 | None = None,
+    site_code: list[BoundedListItem100] | None = Query(None, max_length=100),
+    agent: list[BoundedListItem100] | None = Query(None, max_length=100),
     surface: Literal["all", "screen", "camera"] = Query("all"),
     current_scope: bool = Query(True),
     include_closed_stores: bool = Query(False),
@@ -207,13 +207,13 @@ async def get_premium_glass(
 
 @router.get("/history", response_model=DashboardHistoryResponse)
 async def get_monthly_history(
-    month: MonthStr = Query(...),
+    month: MonthStr,
     months_back: int = Query(12, ge=2, le=24),
-    firma: str | None = None,
-    regional: str | None = None,
-    asm: str | None = None,
-    site_code: list[str] | None = Query(None),
-    agent: list[str] | None = Query(None),
+    firma: BoundedText120 | None = None,
+    regional: BoundedText120 | None = None,
+    asm: BoundedText120 | None = None,
+    site_code: list[BoundedListItem100] | None = Query(None, max_length=100),
+    agent: list[BoundedListItem100] | None = Query(None, max_length=100),
     current_scope: bool = Query(True),
     include_closed_stores: bool = Query(False),
     deadline: RequestDeadline = Depends(get_dashboard_deadline),
@@ -239,12 +239,12 @@ async def get_monthly_history(
 
 @router.get("/history-year", response_model=YearHistoryResponse)
 async def get_history_by_year(
-    year: int = Query(..., ge=2018, le=2030),
-    firma: str | None = None,
-    regional: str | None = None,
-    asm: str | None = None,
-    site_code: list[str] | None = Query(None),
-    agent: list[str] | None = Query(None),
+    year: Year2018To2100,
+    firma: BoundedText120 | None = None,
+    regional: BoundedText120 | None = None,
+    asm: BoundedText120 | None = None,
+    site_code: list[BoundedListItem100] | None = Query(None, max_length=100),
+    agent: list[BoundedListItem100] | None = Query(None, max_length=100),
     current_scope: bool = Query(True),
     include_closed_stores: bool = Query(False),
     deadline: RequestDeadline = Depends(get_dashboard_deadline),
@@ -269,14 +269,14 @@ async def get_history_by_year(
 
 @router.get("/performance-detail", response_model=PerformanceDetailResponse)
 async def get_performance_detail(
-    month: MonthStr = Query(...),
-    level: Literal["regional", "store", "agent"] = Query(...),
-    key: str = Query(...),
-    firma: str | None = None,
-    regional: str | None = None,
-    asm: str | None = None,
-    site_code: list[str] | None = Query(None),
-    agent: list[str] | None = Query(None),
+    month: MonthStr,
+    level: Literal["regional", "store", "agent"],
+    key: BoundedText120,
+    firma: BoundedText120 | None = None,
+    regional: BoundedText120 | None = None,
+    asm: BoundedText120 | None = None,
+    site_code: list[BoundedListItem100] | None = Query(None, max_length=100),
+    agent: list[BoundedListItem100] | None = Query(None, max_length=100),
     current_scope: bool = Query(True),
     include_closed_stores: bool = Query(False),
     deadline: RequestDeadline = Depends(get_dashboard_deadline),

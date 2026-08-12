@@ -22,6 +22,11 @@ _SENSITIVE_KEY_PARTS = (
     "access_token",
     "database_url",
     "dsn",
+    "operation_id",
+    "scenario_id",
+    "export_id",
+    "job_id",
+    "visit_id",
 )
 _BEARER_RE = re.compile(r"(?i)\bbearer\s+[a-z0-9._~+/=-]+")
 _KEY_VALUE_RE = re.compile(
@@ -35,10 +40,27 @@ _URL_CREDENTIAL_RE = re.compile(
     r"(?i)\b(?P<scheme>[a-z][a-z0-9+.-]*://)(?P<credentials>[^/\s@]+)@"
 )
 _URL_QUERY_FRAGMENT_RE = re.compile(
-    r"(?P<origin>\bhttps?://[^\s?#]+)(?:\?[^\s#]*)?(?:#[^\s]*)?",
+    r"(?P<origin>\bhttps?://[^/\s?#]+)(?:/[^\s?#]*)?(?:\?[^\s#]*)?(?:#[^\s]*)?",
     re.IGNORECASE,
 )
 _CNP_RE = re.compile(r"\b\d{13}\b")
+_SALARY_PERSON_RE = re.compile(r"\bsp1_[0-9a-f]{64}\b", re.IGNORECASE)
+_UUID_RE = re.compile(
+    r"\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b",
+    re.IGNORECASE,
+)
+_IDENTIFIER_VALUE_RE = re.compile(
+    r"(?i)\b(?P<key>operation_id|scenario_id|export_id|job_id|visit_id)"
+    r"(?P<sep>\s*[:=]\s*)(?P<value>[^\s,;]+)"
+)
+_PATH_RE = re.compile(r"(?<![:/\w])/(?:[^\s?#]+/)*[^\s?#]*")
+_DYNAMIC_ROUTE_SEGMENT_RE = re.compile(
+    r"(?:^|/)(?:sp1_[0-9a-f]{64}|\d+|[0-9a-f]{8}-[0-9a-f-]{27,}|[0-9a-f]{32,})(?:/|$)",
+    re.IGNORECASE,
+)
+_ROUTE_TEMPLATE_RE = re.compile(r"^/(?:[A-Za-z0-9._~-]+|\{[A-Za-z_][A-Za-z0-9_]*\})(?:/(?:[A-Za-z0-9._~-]+|\{[A-Za-z_][A-Za-z0-9_]*\}))*$")
+_SAFE_ROUTE_KEYS = frozenset({"route_template", "handler", "transaction"})
+_SAFE_SCALAR_KEYS = frozenset({"request_id", "method", "status", "duration_ms", "service_role"})
 _REDACTION_MAX_DEPTH = 8
 _REDACTION_MAX_ITEMS = 64
 _REDACTION_NODE_BUDGET = 512
@@ -53,7 +75,40 @@ def redact_text(value: str, limit: int) -> str:
     value = _KEY_VALUE_RE.sub(
         lambda match: f"{match.group('key')}{match.group('sep')}[REDACTED]", value
     )
-    return _CNP_RE.sub("[REDACTED]", value)[:limit]
+    value = _IDENTIFIER_VALUE_RE.sub(
+        lambda match: f"{match.group('key')}{match.group('sep')}[REDACTED]", value
+    )
+    value = _SALARY_PERSON_RE.sub("[REDACTED]", value)
+    value = _UUID_RE.sub("[REDACTED]", value)
+    value = _CNP_RE.sub("[REDACTED]", value)
+    return _PATH_RE.sub("/[REDACTED]", value)[:limit]
+
+
+def canonical_route_template(value: Any) -> str:
+    """Retain only bounded low-cardinality route templates."""
+    if not isinstance(value, str) or len(value) > 240:
+        return "__unmatched__"
+    if "?" in value or "#" in value or not _ROUTE_TEMPLATE_RE.fullmatch(value):
+        return "__unmatched__"
+    if _DYNAMIC_ROUTE_SEGMENT_RE.search(value):
+        return "__unmatched__"
+    return value
+
+
+def _safe_scalar(key: str, value: Any) -> Any:
+    if key == "duration_ms":
+        return value if isinstance(value, (int, float)) and math.isfinite(value) else 0
+    if key == "method":
+        candidate = str(value).upper()
+        return candidate if candidate in {"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"} else "OTHER"
+    if key == "status":
+        candidate = str(value)
+        return candidate if re.fullmatch(r"(?:[1-5]\d\d|[1-5]xx)", candidate) else "unknown"
+    if key == "service_role":
+        candidate = str(value)
+        return candidate if candidate in {"web", "operations", "imports", "grile", "exports", "salary_exports", "migration"} else "unknown"
+    candidate = str(value)
+    return candidate[:128] if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}", candidate) else "invalid"
 
 
 def safe_key_text(key: Any) -> str:
@@ -104,11 +159,24 @@ def redact_value(
             output: dict[str, Any] = {}
             for key, item in islice(value.items(), _REDACTION_MAX_ITEMS):
                 safe_key = safe_key_text(key)
-                output[safe_key] = (
-                    "[REDACTED]"
-                    if is_sensitive_key(key)
-                    else redact_value(item, depth=depth + 1, seen=seen, budget=budget)
-                )
+                normalized_key = safe_key.casefold()
+                if normalized_key in _SAFE_ROUTE_KEYS:
+                    output[safe_key] = canonical_route_template(item)
+                elif normalized_key in _SAFE_SCALAR_KEYS:
+                    output[safe_key] = _safe_scalar(normalized_key, item)
+                elif normalized_key == "url" and isinstance(item, str):
+                    match = _URL_QUERY_FRAGMENT_RE.search(item)
+                    output[safe_key] = match.group("origin") if match else "[REDACTED]"
+                elif normalized_key in {"pathname", "referer", "referrer", "query_string"}:
+                    output[safe_key] = "[REDACTED]"
+                elif normalized_key == "description" and isinstance(item, str) and item.startswith("/"):
+                    output[safe_key] = canonical_route_template(item)
+                else:
+                    output[safe_key] = (
+                        "[REDACTED]"
+                        if is_sensitive_key(key)
+                        else redact_value(item, depth=depth + 1, seen=seen, budget=budget)
+                    )
             return output
         if isinstance(value, (list, tuple)):
             return [

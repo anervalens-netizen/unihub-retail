@@ -5,7 +5,7 @@ from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import Field
-from schemas.common import StrictApiModel, MonthStr
+from schemas.common import BoundedCode64, BoundedText120, MonthStr, StrictApiModel
 
 from auth import AuthClaims, require_auth
 from composition import build_store_pnl_service
@@ -180,8 +180,8 @@ def validate_company(company: str | None) -> None:
 
 @router.get("/stores", response_model=PnlStoresResponse)
 async def stores(
-    company: str | None = Query(default=None),
-    regional: str | None = Query(default=None),
+    company: BoundedText120 | None = Query(default=None),
+    regional: BoundedText120 | None = Query(default=None),
     _claims: AuthClaims = Depends(require_store_pnl_owner),
     service: StorePnlService = Depends(get_service),
 ):
@@ -191,7 +191,7 @@ async def stores(
 
 @router.get("/regions", response_model=PnlRegionsResponse)
 async def regions(
-    company: str | None = Query(default=None),
+    company: BoundedText120 | None = Query(default=None),
     _claims: AuthClaims = Depends(require_store_pnl_owner),
     service: StorePnlService = Depends(get_service),
 ):
@@ -201,10 +201,10 @@ async def regions(
 
 @router.get("/annual", response_model=PnlAnnualResponse)
 async def annual(
-    company: str | None = Query(default=None),
-    site_code: str | None = Query(default=None, max_length=100),
-    site_company: str | None = Query(default=None),
-    regional: str | None = Query(default=None),
+    company: BoundedText120 | None = Query(default=None),
+    site_code: BoundedCode64 | None = Query(default=None),
+    site_company: BoundedText120 | None = Query(default=None),
+    regional: BoundedText120 | None = Query(default=None),
     _claims: AuthClaims = Depends(require_store_pnl_owner),
     service: StorePnlService = Depends(get_service),
 ):
@@ -215,12 +215,12 @@ async def annual(
 
 @router.get("/overview", response_model=PnlOverviewResponse)
 async def overview(
-    start_month: MonthStr = Query(...),
-    end_month: MonthStr = Query(...),
-    company: str | None = Query(default=None),
-    site_code: str | None = Query(default=None, max_length=100),
-    site_company: str | None = Query(default=None),
-    regional: str | None = Query(default=None),
+    start_month: MonthStr,
+    end_month: MonthStr,
+    company: BoundedText120 | None = Query(default=None),
+    site_code: BoundedCode64 | None = Query(default=None),
+    site_company: BoundedText120 | None = Query(default=None),
+    regional: BoundedText120 | None = Query(default=None),
     _claims: AuthClaims = Depends(require_store_pnl_owner),
     service: StorePnlService = Depends(get_service),
 ):

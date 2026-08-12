@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, Query
 from auth import AuthClaims, require_auth
 from composition import build_contests_service
 from domain.filter_scope import normalize_filter_values
-from schemas.common import MonthStr
+from schemas.common import BoundedListItem100, MonthStr
 from schemas.contests import ContestResponse
 from services.contests import ContestsService
 
@@ -29,9 +29,10 @@ def _internal_site_codes_override(
 
 @router.get("/active/all", response_model=list[ContestResponse])
 async def get_active_contests(
-    month: MonthStr = Query(...),
-    site_codes: list[str] | None = Query(
+    month: MonthStr,
+    site_codes: list[BoundedListItem100] | None = Query(
         None,
+        max_length=100,
         description=(
             "Optional: parametru repetat de site_code-uri care suprascrie "
             "scope-ul din config. Onorat DOAR pentru apeluri interne "
@@ -50,9 +51,10 @@ async def get_active_contests(
 
 @router.get("/active", response_model=ContestResponse | None)
 async def get_active_contest(
-    month: MonthStr = Query(...),
-    site_codes: list[str] | None = Query(
+    month: MonthStr,
+    site_codes: list[BoundedListItem100] | None = Query(
         None,
+        max_length=100,
         description=(
             "Optional: parametru repetat de site_code-uri care suprascrie "
             "scope-ul din config. Onorat DOAR pentru apeluri interne "

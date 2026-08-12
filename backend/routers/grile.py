@@ -79,7 +79,7 @@ async def grile_overview(
 
 @router.get("/pilot-v2", response_model=GrilePilotV2OverviewResponse)
 async def grile_pilot_v2(
-    month: MonthStr = Query(default="2026-08"),
+    month: MonthStr = "2026-08",
     _claims: AuthClaims = Depends(require_auth),
     svc: GrileQueryService = Depends(get_grile_query_service),
 ) -> dict[str, Any]:
