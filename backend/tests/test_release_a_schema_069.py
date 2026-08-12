@@ -70,8 +70,8 @@ async def _direct_event(
             revision, aggregate_sequence, event_key, payload,
             payload_sha256, occurred_at
         )
-        SELECT $1, 'sales_generation', $2, $3, $4, $5,
-               $1 || ':' || $2 || ':' || $3 || ':' || $4::text,
+        SELECT $1, 'sales_generation', $2, $3, $4::bigint, $5,
+               $1 || ':' || $2 || ':' || $3 || ':' || ($4::bigint)::text,
                prepared.payload,
                encode(digest(convert_to(prepared.payload::text, 'UTF8'), 'sha256'), 'hex'),
                $6

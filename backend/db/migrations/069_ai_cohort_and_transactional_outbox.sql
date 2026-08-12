@@ -162,6 +162,7 @@ FOR EACH ROW EXECUTE FUNCTION public.guard_ai_forecast_cohort_snapshot_mutation(
 CREATE OR REPLACE FUNCTION public.guard_ai_forecast_cohort_row_mutation()
 RETURNS TRIGGER
 LANGUAGE plpgsql
+SECURITY DEFINER
 SET search_path = pg_catalog, public
 AS $$
 DECLARE
