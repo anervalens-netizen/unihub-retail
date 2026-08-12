@@ -8,10 +8,12 @@ source was `2cb2785c2340b901e07af7fcf40241e5bfd3555e`. No finding requires a rew
 the changes preserve the existing BFF, DB-authority, worker fencing and
 immutable-artifact architecture.
 
-Until the exact candidate is merged, CI-built and deployed, every status below
-means **implemented and locally verified**, not production-closed. The release
-evidence section is deliberately incomplete until the formal gates produce
-immutable identifiers.
+The formal release completed on `2026-08-12`. Runtime source
+`2ea096daccf1c00289ac7cf7f1d9b505b9f6e0ca` is the exact signed artifact from
+successful main CI and all controls below are production-live. The only
+outstanding evidence item is one authenticated operator salary-export smoke;
+the implementation, dedicated authority, worker, queue and automated export
+lifecycle gates are closed.
 
 On `2026-08-12`, the owner explicitly authorized the OS/DB identity migration
 and creation of the dedicated salary-export credential. This authorization
@@ -43,6 +45,11 @@ or finalized month, no dry-run delta to approve and no business-data write to
 perform. This result must be rechecked immediately before deploy; if non-zero,
 stop promotion and generate a per-store old/new Decimal diff before any target
 mutation.
+
+The same canonical query was repeated after deployment on `2026-08-12` and
+again returned **0 scenarios**. The deployed pure calculation path also
+returned exactly `50.00 / 54.00 / 6.00`, with only `FLOOR_APPLIED` on the first
+row and no warnings.
 
 Canonical query (run through the existing protected PostgreSQL path, never with
 credentials in output):
@@ -152,22 +159,42 @@ normalizes tracked source modes exactly from the Git index, installs frontend
 content as `root:unihub-web` `0750/0640`, and verifies the same contracts during
 deploy, same-SHA reverify and rollback. The isolated deploy/rollback/recovery
 sandbox reproduces restrictive `0700/0600` inputs and passes. Exact hotfix SHA,
-CI, artifact, deploy handle and live probes are recorded below only after the
-formal gates complete.
+CI, artifact, deploy handle and live probes are recorded below.
+
+Hotfix PR `#146`, candidate
+`1ecdfedc9e2ebd5ed7b9dcf5391e23017d46744f`, passed exact-head CI
+`31583659410` and Codex review with no material findings. It merged as
+`2ea096daccf1c00289ac7cf7f1d9b505b9f6e0ca`; exact-main CI `31585029438`
+passed every backend, frontend, real E2E, browser, restore, mutation,
+supply-chain and release-artifact job. Formal deploy `31586605814` completed
+successfully. The temporary runtime dotenv drop-ins were moved to the
+root-protected recovery backup after versioned units were active.
+
+The new salary-export metrics listener required one host-network exception.
+Only `172.23.0.0/16 -> 172.23.0.1:9905/tcp` was allowed, with backup
+`/opt/Mobiup/ops/backups/firewall/20260812T092747Z-retail-salary-metrics`;
+the resulting `/etc/ufw/user.rules` SHA-256 is
+`28575ddfbb740673f0873583546a35a2e9a54334a22b85d5323941e90f8eaf58`.
+
+Post-deploy probes: local and public health/readiness `200`, public sensitive
+surfaces `404`, unauthenticated Target route `401`, JWKS state `fresh` on both
+web workers, all six Prometheus targets `UP`, all six services active with zero
+restarts and zero error-priority journal entries since deployment. The OS and
+salary DB provisioning verifiers pass, migrations 065/066 match their immutable
+checksums, salary queued/running count is zero, source checkout is clean at the
+runtime SHA, and frontend ownership/modes are `root:unihub-web` `0750/0640`.
 
 ## Exact release evidence
 
-Fill only from successful tooling output after the gates complete:
-
 | Evidence | Value |
 | --- | --- |
-| Candidate SHA | pending |
-| PR / PR CI run | pending |
-| Merge SHA / exact-main CI run | pending |
-| Release archive / SHA-256 | pending |
-| Migration manifest SHA-256 | `b29fa8db12ac459a58f25313bd5ab0b2e2199e26c1cb733ef4f37df2eb5b5c60` (candidate-local; reverify on merge SHA) |
-| Restore evidence SHA-256 | pending |
-| Deploy run / rollback handle | pending |
-| Production runtime SHA | pending |
-| Post-deploy Target mixed-bound count | pending |
-| Post-deploy salary export evidence | pending |
+| Candidate SHA | `1ecdfedc9e2ebd5ed7b9dcf5391e23017d46744f` |
+| PR / PR CI run | PR `#146` / `31583659410` (success) |
+| Merge SHA / exact-main CI run | `2ea096daccf1c00289ac7cf7f1d9b505b9f6e0ca` / `31585029438` (success) |
+| Release archive / SHA-256 | `retail-release-2ea096daccf1c00289ac7cf7f1d9b505b9f6e0ca.tar.gz` / `82844620558bf7fda73d1cdbafec1959b64133f0b0750f0b6473df4ef160ef05` |
+| Migration manifest SHA-256 | `b29fa8db12ac459a58f25313bd5ab0b2e2199e26c1cb733ef4f37df2eb5b5c60` |
+| Restore evidence SHA-256 | `40cc0a49156a60f1bb8cdf21c814a89ca7778c743099c7e0bfa62c442a665e5d` |
+| Deploy run / rollback handle | `31586605814` / `/opt/Mobiup/ops/backups/retail-deploy/20260812T101553Z-d645827538e4-to-2ea096daccf1-9bdd870fbda3b14f` |
+| Production runtime SHA | `2ea096daccf1c00289ac7cf7f1d9b505b9f6e0ca` |
+| Post-deploy Target mixed-bound count | `0`; deployed regression `50.00 / 54.00 / 6.00` |
+| Post-deploy salary export evidence | Authenticated operator smoke pending; dedicated OS/DB authority verified, worker and Prometheus target `UP`, queued/running `0`, automated lifecycle gates successful |
