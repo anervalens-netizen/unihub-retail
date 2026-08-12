@@ -5,6 +5,7 @@ import asyncio
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from decimal import Decimal
+import hashlib
 import logging
 from typing import Any, Iterable, Mapping
 from zoneinfo import ZoneInfo
@@ -55,6 +56,30 @@ def _decimal(value: Any) -> Decimal:
     return Decimal(str(value or 0))
 
 
+def _sales_source_revision(
+    cutoff: date,
+    forecast_factor: Decimal,
+    *row_groups: Iterable[Mapping[str, Any]],
+) -> int:
+    """Return a Sheets-safe fingerprint of every non-Campaigns input."""
+
+    digest = hashlib.sha256()
+    for header_value in (cutoff, forecast_factor):
+        encoded = str(header_value).encode("utf-8")
+        digest.update(len(encoded).to_bytes(4, "big"))
+        digest.update(encoded)
+    for rows in row_groups:
+        for row in rows:
+            for key in sorted(row):
+                for cell_value in (key, row[key]):
+                    encoded = str(
+                        cell_value if cell_value is not None else ""
+                    ).encode("utf-8")
+                    digest.update(len(encoded).to_bytes(4, "big"))
+                    digest.update(encoded)
+    return int.from_bytes(digest.digest()[:6], "big")
+
+
 def _google_value(value: Any) -> dict[str, Any]:
     if value is None:
         return {}
@@ -83,24 +108,39 @@ async def load_pilot_v2_source(pool: Any, month: str) -> PilotV2Source:
         raise ValueError("Grile V2 sync is limited to the August 2026 pilot")
     async with pool.acquire() as conn:
         async with conn.transaction(isolation="repeatable_read", readonly=True):
-            head = await conn.fetchrow(
+            cutoff_row = await conn.fetchrow(
                 """
-                SELECT head.revision, snapshot.cutoff_date
-                FROM sales_generation_heads AS head
-                JOIN import_snapshots AS snapshot ON snapshot.id = head.snapshot_id
-                WHERE head.import_month = $1
+                SELECT cutoff_date
+                FROM reporting_sales_cutoff_v1
+                WHERE import_month = $1
                 """,
                 month,
             )
             campaign_head = await conn.fetchrow(
-                "SELECT generation_id, revision FROM campaign_reporting_heads WHERE period = $1",
+                """
+                SELECT MIN(authority_head) AS authority_head,
+                       COUNT(DISTINCT authority_head)::INT AS authority_count
+                FROM reporting_campaign_month_v3
+                WHERE period = $1
+                HAVING COUNT(*) > 0
+                """,
                 month,
             )
-            if head is None or head["cutoff_date"] is None:
+            if cutoff_row is None or cutoff_row["cutoff_date"] is None:
                 raise RuntimeError("Authoritative sales cutoff is unavailable")
             if campaign_head is None:
                 raise RuntimeError("Authoritative Campaigns projection is unavailable")
-            cutoff = head["cutoff_date"]
+            authority_head = str(campaign_head["authority_head"] or "")
+            if (
+                int(campaign_head["authority_count"] or 0) != 1
+                or not authority_head.startswith("campaign:")
+            ):
+                raise RuntimeError("Authoritative Campaigns revision is inconsistent")
+            try:
+                campaign_revision = int(authority_head.removeprefix("campaign:"))
+            except ValueError as exc:
+                raise RuntimeError("Authoritative Campaigns revision is invalid") from exc
+            cutoff = cutoff_row["cutoff_date"]
             daily_rows = await conn.fetch(
                 """
                 SELECT sale_date, site_code, agent, total_sales
@@ -120,7 +160,12 @@ async def load_pilot_v2_source(pool: Any, month: str) -> PilotV2Source:
                 """
             )
             target_rows = await conn.fetch(
-                "SELECT site_code, target_value FROM store_targets WHERE import_month = $1",
+                """
+                SELECT site_code, target_value
+                FROM store_targets
+                WHERE import_month = $1
+                ORDER BY site_code
+                """,
                 month,
             )
             sim_rows = await conn.fetch(
@@ -129,6 +174,7 @@ async def load_pilot_v2_source(pool: Any, month: str) -> PilotV2Source:
                 FROM reporting_cartela_day
                 WHERE import_month = $1 AND sale_date <= $2
                 GROUP BY site_code, agent
+                ORDER BY site_code, agent
                 """,
                 month,
                 cutoff,
@@ -137,19 +183,30 @@ async def load_pilot_v2_source(pool: Any, month: str) -> PilotV2Source:
                 """
                 SELECT site_code, agent, incentive_eligible_quantity,
                        incentive_value, incentive_potential, status
-                FROM campaign_reporting_rows
-                WHERE generation_id = $1 AND mechanism = 'incentive'
+                FROM reporting_campaign_month_v3
+                WHERE period = $1
+                  AND mechanism = 'incentive'
+                  AND mechanism_variant = 'incentive'
+                ORDER BY site_code, agent
                 """,
-                int(campaign_head["generation_id"]),
+                month,
             )
             factor = Decimal(
                 str(await get_forecast_factor(conn, month, cutoff_date=cutoff))
             )
+            sales_revision = _sales_source_revision(
+                cutoff,
+                factor,
+                daily_rows,
+                store_rows,
+                target_rows,
+                sim_rows,
+            )
     return PilotV2Source(
         month=month,
         cutoff=cutoff,
-        sales_revision=int(head["revision"]),
-        campaign_revision=int(campaign_head["revision"]),
+        sales_revision=sales_revision,
+        campaign_revision=campaign_revision,
         forecast_factor=factor,
         daily_rows=tuple(dict(row) for row in daily_rows),
         store_rows=tuple(dict(row) for row in store_rows),

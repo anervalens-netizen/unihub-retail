@@ -74,6 +74,7 @@ release-ului `v2.1.0` include:
 | 064 | `064_ai_forecast_cutoff_read_model.sql` | `3fe8d8f32d51ec8a25450d3fc45bc7d64f8bdfb663949054862ea41a1805b6f4` | cutoff oficial al generației sales promovate pentru forecast, fără evidence expus webului |
 | 065 | `065_salary_export_evidence.sql` | `c6bf02313f4dfeeebe3796cdf6607a1e5e797ca6aa0d76b4ee654a5773cd42bf` | export salarial durabil owner-bound, cu request/actor immutable, artefact în namespace separat și row count real atestat de worker |
 | 066 | `066_salary_export_authority.sql` | `ab13ccc87b3da126f9935f1bb4ee66773afcc01417e08e3193242ddc2ed88fa5` | autoritate DB dedicată exporturilor salariale, granturi column-level și RLS care separă operațiile salariale de workerul generic |
+| 067 | `067_grile_v2_operations_read_authority.sql` | `06b3c857983669677a741d6f743b47de370ce5195df33ba69d7c1f5c6b13057a` | acces SELECT minim pentru workerul Grile V2 la actuals, cartele, forecast și proiecția Campaigns versionată |
 
 Aplicarea se face numai prin `unihub-retail-migrate.service`, cu `MIGRATION_DATABASE_URL`, backup/read-only reconciliation și verificarea checksumului. Nu edita 032–036 după aplicare; corecția este o migrare nouă.
 

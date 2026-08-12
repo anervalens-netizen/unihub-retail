@@ -71,6 +71,7 @@
     "063_leave_request_date_contract.sql": "dba80346ea5fe02213a0e39ebf9c3f408168b9b048efba75e78fff6544487df4",
     "064_ai_forecast_cutoff_read_model.sql": "3fe8d8f32d51ec8a25450d3fc45bc7d64f8bdfb663949054862ea41a1805b6f4",
     "065_salary_export_evidence.sql": "c6bf02313f4dfeeebe3796cdf6607a1e5e797ca6aa0d76b4ee654a5773cd42bf",
-    "066_salary_export_authority.sql": "ab13ccc87b3da126f9935f1bb4ee66773afcc01417e08e3193242ddc2ed88fa5"
+    "066_salary_export_authority.sql": "ab13ccc87b3da126f9935f1bb4ee66773afcc01417e08e3193242ddc2ed88fa5",
+    "067_grile_v2_operations_read_authority.sql": "06b3c857983669677a741d6f743b47de370ce5195df33ba69d7c1f5c6b13057a"
   }
 }

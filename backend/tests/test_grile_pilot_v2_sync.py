@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import date, datetime, timezone
 from decimal import Decimal
+from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
@@ -180,8 +181,8 @@ async def test_load_source_uses_one_repeatable_read_snapshot(
     connection.transaction.return_value = _AsyncContext(None)
     connection.fetchrow = AsyncMock(
         side_effect=[
-            {"revision": 9, "cutoff_date": date(2026, 8, 11)},
-            {"generation_id": 7, "revision": 11},
+            {"cutoff_date": date(2026, 8, 11)},
+            {"authority_head": "campaign:11", "authority_count": 1},
         ]
     )
     connection.fetch = AsyncMock(
@@ -225,7 +226,7 @@ async def test_load_source_uses_one_repeatable_read_snapshot(
     source = await load_pilot_v2_source(pool, "2026-08")
 
     assert source.cutoff == date(2026, 8, 11)
-    assert source.sales_revision == 9
+    assert 0 < source.sales_revision < 2**48
     assert source.campaign_revision == 11
     assert source.forecast_factor == Decimal("2")
     assert source.targets == {"SITE": Decimal("3100")}
@@ -240,6 +241,31 @@ async def test_load_source_uses_one_repeatable_read_snapshot(
         "2026-08",
         cutoff_date=date(2026, 8, 11),
     )
+    queries = [str(call.args[0]) for call in connection.fetchrow.await_args_list]
+    queries.extend(str(call.args[0]) for call in connection.fetch.await_args_list)
+    assert any("reporting_sales_cutoff_v1" in query for query in queries)
+    assert any("reporting_campaign_month_v3" in query for query in queries)
+    assert all("sales_generation_heads" not in query for query in queries)
+    assert all("campaign_reporting_rows" not in query for query in queries)
+
+
+def test_grile_worker_receives_only_required_reporting_reads() -> None:
+    migration = Path(
+        "db/migrations/067_grile_v2_operations_read_authority.sql"
+    ).read_text()
+
+    for relation in (
+        "reporting_agent_day",
+        "reporting_cartela_day",
+        "ai_forecast_runs",
+        "ai_forecast_store_day",
+        "reporting_sales_cutoff_v1",
+        "reporting_campaign_month_v3",
+    ):
+        assert relation in migration
+    assert "TO unihub_operations" in migration
+    assert "sales_generation_heads" not in migration
+    assert "campaign_reporting_rows" not in migration
 
 
 @pytest.mark.asyncio
