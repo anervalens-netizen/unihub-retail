@@ -28,7 +28,7 @@ cp "$SCRIPT_DIR/../package.json" "$BUILDER/package.json"
 cp "$SCRIPT_DIR/../package-lock.json" "$BUILDER/package-lock.json"
 cp "$SCRIPT_DIR/../backend/requirements.lock" "$BUILDER/backend/requirements.lock"
 printf 'print("old")\n' >"$BUILDER/backend/main.py"
-printf 'dist/\n' >"$BUILDER/.gitignore"
+printf 'dist/\ndata/\nbackend/outputs/\n' >"$BUILDER/.gitignore"
 cp "$SCRIPT_DIR/systemd/unihub-backend.service" "$BUILDER/ops/systemd/"
 cp "$SCRIPT_DIR/../unihub-worker.service" "$BUILDER/"
 cp "$SCRIPT_DIR/systemd/unihub-import-worker.service" "$BUILDER/ops/systemd/"
@@ -230,7 +230,19 @@ grep -q '^approved_by_os=test-approver$' "$HANDLE/approval.env"
 [[ "$(find "$ROOT/approval-store" -maxdepth 1 -type f -name '*.consumed' | wc -l)" -eq 1 ]]
 [[ "$(find "$ROOT/approval-store" -maxdepth 1 -type f -name '*.approved' | wc -l)" -eq 0 ]]
 BACKUP_COUNT="$(find "$OPS/backups/retail-deploy" -mindepth 1 -maxdepth 1 -type d | wc -l)"
-run_deploy "$ARTIFACT" "$NEW_SHA" "$CI_RUN_ID" "$ARTIFACT_SHA256"
+printf 'web upload\n' >"$LIVE/data/import_spool/web-owned.upload"
+chmod 0660 "$LIVE/data/import_spool/web-owned.upload"
+set +e
+RETAIL_DEPLOY_TEST_IMPORT_FILE_USER=not-the-file-owner \
+RETAIL_DEPLOY_TEST_WEB_FILE_USER=also-not-the-file-owner \
+  run_deploy "$ARTIFACT" "$NEW_SHA" "$CI_RUN_ID" "$ARTIFACT_SHA256" \
+  >/dev/null 2>&1
+UNTRUSTED_SPOOL_OWNER_RC=$?
+set -e
+[[ "$UNTRUSTED_SPOOL_OWNER_RC" -ne 0 ]]
+RETAIL_DEPLOY_TEST_IMPORT_FILE_USER=not-the-file-owner \
+RETAIL_DEPLOY_TEST_WEB_FILE_USER="$(id -un)" \
+  run_deploy "$ARTIFACT" "$NEW_SHA" "$CI_RUN_ID" "$ARTIFACT_SHA256"
 [[ "$(git -C "$LIVE" rev-parse HEAD)" == "$NEW_SHA" ]]
 [[ "$(find "$ROOT/approval-store" -maxdepth 1 -type f -name '*.consumed' | wc -l)" -eq 1 ]]
 [[ "$(find "$OPS/backups/retail-deploy" -mindepth 1 -maxdepth 1 -type d | wc -l)" -eq "$BACKUP_COUNT" ]]

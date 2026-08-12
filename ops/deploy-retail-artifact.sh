@@ -53,7 +53,10 @@ else
 fi
 
 if [[ "$TEST_MODE" == "1" ]]; then
+  IMPORT_DIRECTORY_USER="$SERVICE_USER"
   IMPORT_FILE_USER="$SERVICE_USER"
+  IMPORT_SPOOL_FILE_USER="${RETAIL_DEPLOY_TEST_IMPORT_FILE_USER:-$IMPORT_FILE_USER}"
+  WEB_FILE_USER="${RETAIL_DEPLOY_TEST_WEB_FILE_USER:-$SERVICE_USER}"
   IMPORT_SPOOL_GROUP="$SERVICE_GROUP"
   PROMO_ARTIFACT_GROUP="$SERVICE_GROUP"
   GRILE_FILE_USER="$SERVICE_USER"
@@ -62,7 +65,14 @@ if [[ "$TEST_MODE" == "1" ]]; then
   SALARY_EXPORT_FILE_USER="$SERVICE_USER"
   EXPORT_ARTIFACT_GROUP="$SERVICE_GROUP"
 else
+  [[ -z "${RETAIL_DEPLOY_TEST_IMPORT_FILE_USER:-}" ]] \
+    || die "test import file identity is forbidden outside test mode"
+  [[ -z "${RETAIL_DEPLOY_TEST_WEB_FILE_USER:-}" ]] \
+    || die "test web file identity is forbidden outside test mode"
+  IMPORT_DIRECTORY_USER="unihub-import"
   IMPORT_FILE_USER="unihub-import"
+  IMPORT_SPOOL_FILE_USER="$IMPORT_FILE_USER"
+  WEB_FILE_USER="unihub-web"
   IMPORT_SPOOL_GROUP="unihub-import-spool"
   PROMO_ARTIFACT_GROUP="unihub-promo-artifacts"
   GRILE_FILE_USER="unihub-grile"
@@ -302,7 +312,12 @@ verify_shared_tree_contract() {
   local owner="$2"
   local group="$3"
   local excluded="${4:-}"
-  local path expected_mode actual
+  local file_owners="${5:-$owner}"
+  local path expected_mode actual actual_owner actual_group actual_mode allowed_owner
+  local -a allowed_file_owners
+  IFS=, read -r -a allowed_file_owners <<<"$file_owners"
+  [[ "${#allowed_file_owners[@]}" -gt 0 ]] \
+    || die "runtime artifact file owner contract is empty: $root"
   local -a scope=(find "$root" -xdev)
   if [[ -n "$excluded" ]]; then
     scope+=( -path "$excluded" -prune -o )
@@ -314,8 +329,20 @@ verify_shared_tree_contract() {
       expected_mode=660
     fi
     actual="$(stat -c '%U:%G:%a' "$path")"
-    [[ "$actual" == "$owner:$group:$expected_mode" ]] \
+    IFS=: read -r actual_owner actual_group actual_mode <<<"$actual"
+    if [[ -d "$path" ]]; then
+      [[ "$actual" == "$owner:$group:$expected_mode" ]] \
+        || die "runtime artifact permission contract is invalid: $path ($actual)"
+      continue
+    fi
+    [[ "$actual_group:$actual_mode" == "$group:$expected_mode" ]] \
       || die "runtime artifact permission contract is invalid: $path ($actual)"
+    for allowed_owner in "${allowed_file_owners[@]}"; do
+      if [[ -n "$allowed_owner" && "$actual_owner" == "$allowed_owner" ]]; then
+        continue 2
+      fi
+    done
+    die "runtime artifact file owner is invalid: $path ($actual)"
   done < <("${scope[@]}" \( -type d -o -type f \) -print0)
 }
 
@@ -371,7 +398,9 @@ verify_runtime_identity_filesystem() {
   for root in "$import_root" "$promo_root" "$grile_root" "$export_root" "$salary_root"; do
     assert_regular_tree "$root"
   done
-  verify_shared_tree_contract "$import_root" "$IMPORT_FILE_USER" "$IMPORT_SPOOL_GROUP"
+  verify_shared_tree_contract \
+    "$import_root" "$IMPORT_DIRECTORY_USER" "$IMPORT_SPOOL_GROUP" "" \
+    "$IMPORT_SPOOL_FILE_USER,$WEB_FILE_USER"
   verify_shared_tree_contract "$promo_root" "$IMPORT_FILE_USER" "$PROMO_ARTIFACT_GROUP"
   verify_shared_tree_contract "$grile_root" "$GRILE_FILE_USER" "$GRILE_ARTIFACT_GROUP"
   verify_shared_tree_contract "$export_root" "$EXPORT_FILE_USER" "$EXPORT_ARTIFACT_GROUP" "$salary_root"

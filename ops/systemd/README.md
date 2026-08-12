@@ -57,6 +57,9 @@ Directoarele partajate sunt setgid `2770`, iar fișierele sunt `0660`.
 Unitățile producătoare creează directoare cu `0770`, folosesc `UMask=0007` și
 moștenesc setgid din părintele pregătit de deploy, fără `chmod` cu biți speciali
 incompatibil cu `RestrictSUIDSGID=true`. Operations și migration rămân `0077`.
+În `data/import_spool`, directoarele rămân deținute de `unihub-import`, iar
+fișierele pot fi deținute numai de producătorul web `unihub-web` sau de workerul
+`unihub-import`; `Path.replace()` păstrează legitim ownerul uploadului la retain.
 Deployul aplică ownershipul numai după backup verificat și oprirea tuturor
 proceselor, apoi îl reverifică înainte de startup. Rulează provisioning-ul
 idempotent înainte de primul deploy:
