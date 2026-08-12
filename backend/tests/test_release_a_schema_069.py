@@ -2,10 +2,12 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+import importlib
 import json
 import os
 
 import asyncpg
+import httpx
 import pytest
 
 
@@ -392,3 +394,73 @@ async def test_069_runtime_roles_are_least_privilege() -> None:
     finally:
         await transaction.rollback()
         await connection.close()
+
+
+@pytest.mark.asyncio
+async def test_release_a_runtime_starts_and_is_ready_on_069(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The baseline application code remains compatible with the new manifest/schema."""
+    monkeypatch.setenv("UNIHUB_ENV", "development")
+    monkeypatch.delenv("UNIHUB_DB_PROCESS_AUTHORITY", raising=False)
+    monkeypatch.delenv("PROMETHEUS_MULTIPROC_DIR", raising=False)
+    monkeypatch.setenv("VALKEY_URL", os.environ["RATE_LIMIT_TEST_VALKEY_URL"])
+    for name in (
+        "SESSION_ENCRYPTION_KEY",
+        "SESSION_PUBLIC_ORIGIN",
+        "SESSION_VALKEY_URL",
+        "OIDC_CLIENT_ID",
+        "OIDC_CLIENT_SECRET",
+        "OIDC_ISSUER",
+        "OIDC_JWKS_URL",
+        "OIDC_AUDIENCE",
+        "HUB_INTERNAL_SECRET",
+        "TRUSTED_PROXY_CIDRS",
+        "RATE_LIMIT_CLIENT_IP_HEADER",
+        "RATE_LIMIT_VALKEY_URL",
+        "RATE_LIMIT_KEY_HMAC_SECRET",
+        "RATE_LIMIT_FAILURE_MODE",
+        "SALARY_PERSON_ID_HMAC_KEY",
+    ):
+        monkeypatch.setenv(name, "")
+
+    main = importlib.import_module("main")
+    async with main.lifespan(main.app):
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=main.app),
+            base_url="http://release-a.test",
+        ) as client:
+            live = await client.get("/livez")
+            ready = await client.get("/readyz")
+        assert live.status_code == 200
+        assert live.json() == {"status": "alive"}
+        assert ready.status_code == 200
+        assert ready.json() == {"status": "ok"}
+
+
+@pytest.mark.asyncio
+async def test_pre_069_manifest_is_refused_after_schema_upgrade() -> None:
+    """Rollback must target Release A; a pre-069 artifact cannot claim DB currency."""
+    from db.migration_runner import MigrationError, MigrationManifest, _validate_applied
+
+    connection = await asyncpg.connect(os.environ["DATABASE_URL"])
+    try:
+        rows = await connection.fetch(
+            "SELECT filename, checksum FROM schema_migrations ORDER BY filename"
+        )
+    finally:
+        await connection.close()
+    applied = {str(row["filename"]): str(row["checksum"]) for row in rows}
+    assert "069_ai_cohort_and_transactional_outbox.sql" in applied
+
+    pre_069 = MigrationManifest(
+        baseline_hash="0" * 64,
+        incorporated_through="022_store_pnl_site_links.sql",
+        checksums={
+            filename: checksum
+            for filename, checksum in applied.items()
+            if filename < "069_"
+        },
+    )
+    with pytest.raises(MigrationError, match="absent from the manifest"):
+        _validate_applied(applied, pre_069, allow_missing_checksums=False)
