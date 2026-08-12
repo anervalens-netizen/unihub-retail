@@ -20,7 +20,13 @@ if str(BACKEND_DIR) not in sys.path:
 
 import asyncpg
 from dotenv import load_dotenv
-from services.forecast_http import post_forecast
+from services.forecast_http import ForecastTimeoutError, post_forecast
+from services.ai_forecast_contract import (
+    CoverageMode,
+    ResponseProfile,
+    validate_forecast_request,
+    validate_forecast_response,
+)
 from services.spreadsheet_safety import csv_cell_value
 
 
@@ -285,6 +291,7 @@ def build_payload(
     min_context: int,
     metric: MetricName,
     feature_profile: FeatureProfile = "v1",
+    response_profile: ResponseProfile = "point_quantiles_v1",
 ) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, str]]]:
     full_history = month_range(history_start_month, source_month)
     base_year = int(history_start_month[:4])
@@ -353,17 +360,31 @@ def build_payload(
         "static_categorical_covariates": static_categorical,
         "xreg_mode": "xreg + timesfm",
         "feature_profile": feature_profile,
+        "response_profile": response_profile,
     }
     return payload, rows_meta, skipped
 
 
-def parse_predictions(response: dict[str, Any], *, metric: MetricName) -> dict[str, list[Decimal]]:
-    predictions: dict[str, list[Decimal]] = {}
-    for row in response.get("series", []):
-        values = row.get("point_forecast") or []
-        if values:
-            predictions[str(row["series_id"])] = [metric_value(value, metric) for value in values]
-    return predictions
+def parse_predictions(
+    response: dict[str, Any],
+    *,
+    request_payload: dict[str, Any],
+    metric: MetricName,
+    response_profile: ResponseProfile,
+    coverage_mode: CoverageMode,
+) -> dict[str, list[Decimal]]:
+    request_contract = validate_forecast_request(request_payload)
+    response_contract = validate_forecast_response(
+        response,
+        request=request_contract,
+        metric=metric,
+        response_profile=response_profile,
+        coverage_mode=coverage_mode,
+    )
+    return {
+        series_id: [point.point for point in points]
+        for series_id, points in response_contract.predictions.items()
+    }
 
 
 def build_result_rows(
@@ -572,13 +593,25 @@ async def run(args: argparse.Namespace) -> int:
                 min_context=args.min_context,
                 metric=args.metric,
                 feature_profile=args.feature_profile,
+                response_profile=args.response_profile,
             )
             if not payload["inputs"]:
                 raise RuntimeError("Nicio serie eligibila pentru rularea operationala.")
             started = monotonic()
-            response = post_forecast(args.api_url, api_key, payload, args.timeout)
+            try:
+                response = post_forecast(args.api_url, api_key, payload, args.timeout)
+            except ForecastTimeoutError:
+                if args.coverage_mode != "seasonal_fallback":
+                    raise
+                response = {"series": []}
             latency = monotonic() - started
-            predictions = parse_predictions(response, metric=args.metric)
+            predictions = parse_predictions(
+                response,
+                request_payload=payload,
+                metric=args.metric,
+                response_profile=args.response_profile,
+                coverage_mode=args.coverage_mode,
+            )
             result_rows = build_result_rows(
                 target_months=target_months,
                 meta_rows=meta_rows,
@@ -587,7 +620,7 @@ async def run(args: argparse.Namespace) -> int:
                 metric=args.metric,
             )
             predicted_sites = {row["site_code"] for row in result_rows}
-            if args.include_fallback:
+            if args.coverage_mode == "seasonal_fallback":
                 known_values: dict[tuple[str, str], Decimal] = {}
                 for target_month in target_months:
                     fallback_rows = build_fallback_rows(
@@ -629,13 +662,25 @@ async def run(args: argparse.Namespace) -> int:
                     min_context=args.min_context,
                     metric=args.metric,
                     feature_profile=args.feature_profile,
+                    response_profile=args.response_profile,
                 )
                 if not payload["inputs"]:
                     raise RuntimeError(f"Nicio serie eligibila pentru {target_month}.")
                 started = monotonic()
-                response = post_forecast(args.api_url, api_key, payload, args.timeout)
+                try:
+                    response = post_forecast(args.api_url, api_key, payload, args.timeout)
+                except ForecastTimeoutError:
+                    if args.coverage_mode != "seasonal_fallback":
+                        raise
+                    response = {"series": []}
                 latency = monotonic() - started
-                predictions = parse_predictions(response, metric=args.metric)
+                predictions = parse_predictions(
+                    response,
+                    request_payload=payload,
+                    metric=args.metric,
+                    response_profile=args.response_profile,
+                    coverage_mode=args.coverage_mode,
+                )
                 result_rows = build_result_rows(
                     target_months=[target_month],
                     meta_rows=meta_rows,
@@ -644,7 +689,7 @@ async def run(args: argparse.Namespace) -> int:
                     metric=args.metric,
                 )
                 predicted_sites = {row["site_code"] for row in result_rows}
-                if args.include_fallback:
+                if args.coverage_mode == "seasonal_fallback":
                     result_rows.extend(
                         build_fallback_rows(
                             target_month=target_month,
@@ -763,6 +808,16 @@ def main() -> None:
     )
     parser.add_argument("--history-start-month", default="2018-01")
     parser.add_argument("--feature-profile", choices=["v1", "v2", "v3"], default="v1")
+    parser.add_argument(
+        "--response-profile",
+        choices=["point_only_v1", "point_quantiles_v1"],
+        default="point_quantiles_v1",
+    )
+    parser.add_argument(
+        "--coverage-mode",
+        choices=["fail_closed", "seasonal_fallback"],
+        default="fail_closed",
+    )
     parser.add_argument("--api-url", default=DEFAULT_API_URL)
     parser.add_argument("--api-key", default=None)
     parser.add_argument("--env-file", default="/opt/Mobiup/unihub-retail/.env")
@@ -775,8 +830,6 @@ def main() -> None:
         default=DEFAULT_EXCLUDED_SITE_CODES.copy(),
         help="Exclude un magazin din rularea forecast. Implicit exclude magazinele inchise in iunie 2026.",
     )
-    parser.add_argument("--no-fallback", action="store_false", dest="include_fallback")
-    parser.set_defaults(include_fallback=True)
     args = parser.parse_args()
     raise SystemExit(asyncio.run(run(args)))
 

@@ -36,6 +36,13 @@ from scripts.run_ai_forecast_xreg import (
     seasonal_last3_fallback,
     write_csv,
 )
+from services.ai_forecast_contract import (
+    CoverageMode,
+    ResponseProfile,
+    validate_forecast_request,
+    validate_forecast_response,
+)
+from services.forecast_http import ForecastTimeoutError
 
 
 ModelName = str
@@ -98,21 +105,39 @@ def parse_forecast_response(
     response: dict[str, Any],
     *,
     metric: MetricName,
+    request_payload: dict[str, Any] | None = None,
+    response_profile: ResponseProfile = "point_quantiles_v1",
+    coverage_mode: CoverageMode = "fail_closed",
 ) -> dict[str, list[dict[str, Decimal | None]]]:
+    if request_payload is None:
+        rows = response.get("series", [])
+        horizon = len(rows[0].get("point_forecast", [])) if rows else 0
+        request_payload = {
+            "horizon": horizon,
+            "series_ids": [row.get("series_id") for row in rows],
+            "inputs": [[0] for _row in rows],
+        }
+    request_contract = validate_forecast_request(request_payload)
+    contract = validate_forecast_response(
+        response,
+        request=request_contract,
+        metric=metric,
+        response_profile=response_profile,
+        coverage_mode=coverage_mode,
+    )
     predictions: dict[str, list[dict[str, Decimal | None]]] = {}
-    for row in response.get("series", []):
-        series_id = str(row["series_id"])
-        point_values = row.get("point_forecast") or []
-        quantile_rows = row.get("quantile_forecast") or []
-        parsed: list[dict[str, Decimal | None]] = []
-        for index, value in enumerate(point_values):
-            quantiles = parse_quantile_row(
-                quantile_rows[index] if index < len(quantile_rows) else None,
-                metric=metric,
-            )
-            parsed.append({"point": as_decimal(value, metric), **quantiles})
-        if parsed:
-            predictions[series_id] = parsed
+    for series_id, points in contract.predictions.items():
+        predictions[series_id] = [
+            {
+                "point": point.point,
+                **(
+                    dict(zip(("q10", "q20", "q50", "q80", "q90"), point.quantiles, strict=True))
+                    if point.quantiles is not None
+                    else {"q10": None, "q20": None, "q50": None, "q80": None, "q90": None}
+                ),
+            }
+            for point in points
+        ]
     return predictions
 
 
@@ -506,6 +531,7 @@ async def run(args: argparse.Namespace) -> int:
                     history_start_month=args.history_start_month,
                     min_context=args.min_context,
                     metric=args.metric,
+                    response_profile=args.response_profile,
                 )
                 if not payload["inputs"]:
                     month_rows = []
@@ -521,9 +547,20 @@ async def run(args: argparse.Namespace) -> int:
                         }
                         api_url = args.forecast_api_url
                     started = monotonic()
-                    response = post_forecast(api_url, api_key or "", payload, args.timeout)
+                    try:
+                        response = post_forecast(api_url, api_key or "", payload, args.timeout)
+                    except ForecastTimeoutError:
+                        if args.coverage_mode != "seasonal_fallback":
+                            raise
+                        response = {"series": []}
                     latency = monotonic() - started
-                    predictions = parse_forecast_response(response, metric=args.metric)
+                    predictions = parse_forecast_response(
+                        response,
+                        metric=args.metric,
+                        request_payload=payload,
+                        response_profile=args.response_profile,
+                        coverage_mode=args.coverage_mode,
+                    )
                     month_rows = model_result_rows(
                         model=model,
                         target_months=[target_month],
@@ -534,7 +571,7 @@ async def run(args: argparse.Namespace) -> int:
                     )
                     for row in month_rows:
                         row["latency_sec"] = round(latency, 3)
-                if args.include_fallback:
+                if args.coverage_mode == "seasonal_fallback":
                     month_rows.extend(
                         fallback_rows_for_missing_sites(
                             model=model,
@@ -547,7 +584,7 @@ async def run(args: argparse.Namespace) -> int:
                             source_month=source_month,
                         )
                     )
-                if skipped and not args.include_fallback:
+                if skipped and args.coverage_mode == "fail_closed":
                     print(f"  {target_month}: {len(skipped)} serii sarite fara fallback")
             all_rows.extend(month_rows)
             summary = aggregate_rows(
@@ -653,6 +690,16 @@ def main() -> None:
     parser.add_argument("--start-month", required=True, help="Prima luna tinta, YYYY-MM.")
     parser.add_argument("--end-month", required=True, help="Ultima luna tinta, YYYY-MM.")
     parser.add_argument("--metric", choices=["sales_value", "units"], default="sales_value")
+    parser.add_argument(
+        "--response-profile",
+        choices=["point_only_v1", "point_quantiles_v1"],
+        default="point_quantiles_v1",
+    )
+    parser.add_argument(
+        "--coverage-mode",
+        choices=["fail_closed", "seasonal_fallback"],
+        default="fail_closed",
+    )
     parser.add_argument("--models", default="all", help="Lista separata prin virgula sau `all`.")
     parser.add_argument("--seasonal-years", type=int, default=3)
     parser.add_argument("--history-start-month", default="2018-01")
@@ -669,8 +716,6 @@ def main() -> None:
         default=DEFAULT_EXCLUDED_SITE_CODES.copy(),
         help="Exclude un magazin din rularea forecast.",
     )
-    parser.add_argument("--no-fallback", action="store_false", dest="include_fallback")
-    parser.set_defaults(include_fallback=True)
     args = parser.parse_args()
     if args.forecast_api_url is None:
         args.forecast_api_url = simple_api_from_xreg_url(args.xreg_api_url)
