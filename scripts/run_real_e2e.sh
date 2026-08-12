@@ -246,14 +246,37 @@ PY
 sha256sum test-results/real-e2e-restore-drill.json >test-results/real-e2e-restore-drill.json.sha256
 
 export RETAIL_WORKER_ROLE=operations
+worker_health_key="arq:retail:operations:health-check"
+wait_for_worker_health() {
+  local worker_pid="$1"
+  local worker_log="$2"
+  for _ in $(seq 1 30); do
+    if docker exec "${VALKEY_CONTAINER}" valkey-cli get "${worker_health_key}" \
+      | rg -q 'j_complete='; then
+      return 0
+    fi
+    if ! kill -0 "${worker_pid}" >/dev/null 2>&1; then
+      printf 'Worker exited before publishing health.\n' >&2
+      sed -n '1,240p' "${worker_log}" >&2
+      return 1
+    fi
+    sleep 1
+  done
+  printf 'Worker did not publish health within 30 seconds.\n' >&2
+  sed -n '1,240p' "${worker_log}" >&2
+  return 1
+}
+
+docker exec "${VALKEY_CONTAINER}" valkey-cli del "${worker_health_key}" >/dev/null
 "${PYTHON}" backend/worker.py >test-results/real-e2e-runtime/worker-first.log 2>&1 &
 WORKER_PID=$!
-sleep 3
+wait_for_worker_health "${WORKER_PID}" test-results/real-e2e-runtime/worker-first.log
 kill "${WORKER_PID}"
 wait "${WORKER_PID}" || true
+docker exec "${VALKEY_CONTAINER}" valkey-cli del "${worker_health_key}" >/dev/null
 "${PYTHON}" backend/worker.py >test-results/real-e2e-runtime/worker-restarted.log 2>&1 &
 WORKER_PID=$!
-sleep 3
+wait_for_worker_health "${WORKER_PID}" test-results/real-e2e-runtime/worker-restarted.log
 kill "${WORKER_PID}"
 wait "${WORKER_PID}" || true
 WORKER_PID=""
