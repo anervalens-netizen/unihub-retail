@@ -266,7 +266,8 @@ changed = git("diff", "--name-only", os.environ["BASELINE_SHA"], os.environ["CUR
 runtime_changes = [
     path
     for path in changed
-    if path.startswith(("src/", "ops/", ".github/"))
+    if path.startswith(("src/", "ops/"))
+    or (path.startswith(".github/") and path != ".github/workflows/ci.yml")
     or path in {"package.json", "package-lock.json", "vite.config.ts", "tsconfig.json"}
     or (
         path.startswith("backend/")

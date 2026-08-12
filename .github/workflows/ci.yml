@@ -134,6 +134,21 @@ jobs:
           backend/venv/bin/detect-secrets-hook \
             --baseline .secrets.baseline \
             "${tracked_files[@]}"
+          # Keep all credential-shaped detectors active on the exact immutable
+          # files while disabling only the two noisy entropy heuristics.
+          backend/venv/bin/detect-secrets scan \
+            --disable-plugin HexHighEntropyString \
+            --disable-plugin Base64HighEntropyString \
+            .agent/contract-lock.json \
+            docs/contracts/ai-governance-golden-v1.json \
+            docs/contracts/business-golden-v2.json \
+            docs/contracts/query-parameter-policy-v1.json \
+            scripts/frontend-critical-coverage.json \
+            scripts/python-complexity-contract-v1.json \
+            scripts/target-mutation-contract-v2.json \
+            scripts/run_release_a_schema_gate.sh \
+            > /tmp/retail-immutable-contract-secret-scan.json
+          test "$(backend/venv/bin/python -c 'import json; print(sum(len(v) for v in json.load(open("/tmp/retail-immutable-contract-secret-scan.json"))["results"].values()))')" = 0
 
       - name: Bandit waiver governance
         working-directory: .
