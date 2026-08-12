@@ -42,6 +42,17 @@ from services.ai_forecast_contract import (
     validate_forecast_request,
     validate_forecast_response,
 )
+from services.ai_forecast_governance import (
+    evaluate_governance_fixture,
+    load_governance_fixture,
+    load_locked_json_contract,
+)
+from services.ai_forecast_governance_evidence import (
+    assert_evaluation_matches_fixture,
+    build_model_card,
+    build_monitoring_report,
+    write_governance_evidence,
+)
 from services.forecast_http import ForecastTimeoutError
 
 
@@ -687,8 +698,8 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description="Compara baseline-uri si modele TimesFM/XReg prin backtesting lunar walk-forward."
     )
-    parser.add_argument("--start-month", required=True, help="Prima luna tinta, YYYY-MM.")
-    parser.add_argument("--end-month", required=True, help="Ultima luna tinta, YYYY-MM.")
+    parser.add_argument("--start-month", default=None, help="Prima luna tinta, YYYY-MM.")
+    parser.add_argument("--end-month", default=None, help="Ultima luna tinta, YYYY-MM.")
     parser.add_argument("--metric", choices=["sales_value", "units"], default="sales_value")
     parser.add_argument(
         "--response-profile",
@@ -700,6 +711,11 @@ def main() -> None:
         choices=["fail_closed", "seasonal_fallback"],
         default="fail_closed",
     )
+    parser.add_argument("--contract-fixture", type=Path, default=None)
+    parser.add_argument("--governance-fixture", type=Path, default=None)
+    parser.add_argument("--candidate-only", action="store_true")
+    parser.add_argument("--seed", type=int, default=20260812)
+    parser.add_argument("--evidence", type=Path, default=None)
     parser.add_argument("--models", default="all", help="Lista separata prin virgula sau `all`.")
     parser.add_argument("--seasonal-years", type=int, default=3)
     parser.add_argument("--history-start-month", default="2018-01")
@@ -717,6 +733,44 @@ def main() -> None:
         help="Exclude un magazin din rularea forecast.",
     )
     args = parser.parse_args()
+    if args.governance_fixture is not None:
+        if not args.candidate_only or args.contract_fixture is None or args.evidence is None:
+            parser.error(
+                "governance mode requires --candidate-only, --contract-fixture and --evidence"
+            )
+        load_locked_json_contract(
+            args.contract_fixture,
+            contract="business-golden-v2",
+            version=2,
+        )
+        fixture = load_governance_fixture(args.governance_fixture)
+        evaluation = evaluate_governance_fixture(
+            fixture,
+            seed=args.seed,
+            response_profile=args.response_profile,
+        )
+        assert_evaluation_matches_fixture(evaluation, fixture)
+        evidence = {
+            **evaluation,
+            "result": "PASS",
+            "mode": "candidate_only",
+            "model_card": build_model_card(evaluation, fixture),
+            "monitoring": build_monitoring_report(evaluation),
+        }
+        write_governance_evidence(args.evidence, evidence)
+        print(
+            json.dumps(
+                {
+                    "result": "PASS",
+                    "decision": evaluation["decision"],
+                    "live_promotion_performed": False,
+                },
+                sort_keys=True,
+            )
+        )
+        return
+    if not args.start_month or not args.end_month:
+        parser.error("normal backtest mode requires --start-month and --end-month")
     if args.forecast_api_url is None:
         args.forecast_api_url = simple_api_from_xreg_url(args.xreg_api_url)
     raise SystemExit(asyncio.run(run(args)))
