@@ -21,10 +21,9 @@ PERSISTED_GRILE_TABLES = (
 
 
 def test_persisted_grile_reads_use_explicit_column_contracts() -> None:
-    source = "\n".join(
-        (REPOSITORY_ROOT / name).read_text(encoding="utf-8")
-        for name in ("grile.py", "grile_monthly_operations.py")
-    )
+    sources = [REPOSITORY_ROOT / "grile.py"]
+    sources.extend(sorted(REPOSITORY_ROOT.glob("grile_monthly_*.py")))
+    source = "\n".join(path.read_text(encoding="utf-8") for path in sources)
 
     for table in PERSISTED_GRILE_TABLES:
         assert re.search(rf"SELECT\s+\*\s+FROM\s+{table}\b", source, re.IGNORECASE) is None
@@ -33,7 +32,7 @@ def test_persisted_grile_reads_use_explicit_column_contracts() -> None:
 
 
 def test_reconciliation_update_qualifies_returning_columns() -> None:
-    source = (REPOSITORY_ROOT / "grile_monthly_operations.py").read_text(
+    source = (REPOSITORY_ROOT / "grile_monthly_reconciliation.py").read_text(
         encoding="utf-8"
     )
     start = source.index("async def claim_reconciliation_candidates")
@@ -43,6 +42,18 @@ def test_reconciliation_update_qualifies_returning_columns() -> None:
     assert "FROM candidates" in claim_source
     assert "RETURNING\n                    operation.id" in claim_source
     assert "RETURNING {_OPERATION_COLUMNS}" not in claim_source
+
+
+def test_monthly_transition_table_has_one_authority() -> None:
+    backend_root = REPOSITORY_ROOT.parent
+    authorities = [
+        path
+        for path in backend_root.rglob("*.py")
+        if "tests" not in path.parts
+        if "_ALLOWED_TRANSITIONS" in path.read_text(encoding="utf-8")
+    ]
+
+    assert authorities == [backend_root / "grile" / "domain" / "monthly_state.py"]
 
 
 def test_latest_grile_month_prefers_sales_and_uses_targets_only_as_fallback() -> None:

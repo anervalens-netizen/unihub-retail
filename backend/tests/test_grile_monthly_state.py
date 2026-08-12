@@ -3,10 +3,59 @@ from __future__ import annotations
 import pytest
 
 from services.grile_monthly_state import (
+    InvalidMonthlyOperationTransition,
+    MonthlyOperationEvent,
+    MonthlyOperationState,
     operation_start_result,
     safe_persisted_result,
     terminal_operation_status,
+    transition_monthly_operation,
 )
+
+
+@pytest.mark.parametrize(
+    ("previous", "event", "current"),
+    [
+        ("queued", "claim", "running"),
+        ("queued", "reject", "failed"),
+        ("running", "complete", "completed"),
+        ("running", "fail", "failed"),
+    ],
+)
+def test_transition_authority_accepts_only_declared_edges(
+    previous: str,
+    event: str,
+    current: str,
+) -> None:
+    transition = transition_monthly_operation(previous, event)
+
+    assert transition.previous is MonthlyOperationState(previous)
+    assert transition.event is MonthlyOperationEvent(event)
+    assert transition.current is MonthlyOperationState(current)
+
+
+@pytest.mark.parametrize(
+    ("previous", "event"),
+    [
+        (state.value, event.value)
+        for state in MonthlyOperationState
+        for event in MonthlyOperationEvent
+        if (state.value, event.value)
+        not in {
+            ("queued", "claim"),
+            ("queued", "reject"),
+            ("running", "complete"),
+            ("running", "fail"),
+        }
+    ]
+    + [("unknown", "claim"), ("queued", "unknown")],
+)
+def test_transition_authority_rejects_every_other_edge(
+    previous: str,
+    event: str,
+) -> None:
+    with pytest.raises(InvalidMonthlyOperationTransition):
+        transition_monthly_operation(previous, event)
 
 
 @pytest.mark.parametrize(
