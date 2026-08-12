@@ -1,15 +1,25 @@
 {
   "version": 1,
   "objective": "UR-CLOSE-20260812",
-  "revision": 4,
+  "revision": 5,
   "baseline_source_sha": "0be82b430e55b7414babf470abe3fc5404b6cdc9",
-  "contract_content_commit": "87e9c9f993a5e30db6691625ba8bb875808b2aaa",
-  "supersedes_lock_commit": "aa3435c1c33261806d7676c881a6a5eb6fe30bf9",
-  "created_at": "2026-08-13T00:05:00+03:00",
+  "contract_content_commit": "3b5684540bb06e15d86b52128c9a50d52499aa21",
+  "supersedes_lock_commit": "65ce25ea51eb80f3a9e9ffce845dad280aac1a7e",
+  "created_at": "2026-08-13T00:02:40+03:00",
+  "source_inputs": [
+    {
+      "path": "/opt/Mobiup/UNIHUB_RETAIL_AUDIT_2026-08-12.md",
+      "sha256": "acff6eefccc9402a29a43158d2e0afdcd844e9e1678116dc8b546b3565699054"
+    },
+    {
+      "path": "/opt/Mobiup/UNIHUB_RETAIL_IMPROVEMENT_PLAN_2026-08-12.md",
+      "sha256": "6942b3c7c96ede9832d7f52352079c6b765e5b36a191d41c83629ea3a7b8162a"
+    }
+  ],
   "plan": {
     "path": "docs/exec-plans/active/UR-CLOSE-20260812.md",
-    "git_blob": "f800ce5adf344aac2aa679552e9fcad7bedc321a",
-    "sha256": "4da4fc2be801712b9d3ef57011c845673a78a5502f7c0345fc636773aca8503c"
+    "git_blob": "ca87950fb08d541826982d3dc433e9fe5f46d371",
+    "sha256": "9cb49208c11bdc9f3a210eba518d33579ca85e7f21ad110105d92e4a569503e1"
   },
   "assets": [
     {
