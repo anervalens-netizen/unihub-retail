@@ -2,12 +2,24 @@ import { Building2, Sparkles } from "lucide-react";
 import { FirmaBadge } from "../../components/FirmaBadge";
 import type { IncentiveTopAgent, PromoTopStore } from "../../api/generated/runtime-types";
 import { formatCurrency, formatInt } from "../../lib/formatters";
+import type { ExportColumn } from "../../lib/tableExport";
 import {
   achievementColor,
   achievementLabel,
   displayStoreName,
 } from "./formatters";
 import { SortableTable } from "./SortableTable";
+
+const INCENTIVE_AGENT_EXPORT_COLUMNS: ExportColumn<IncentiveTopAgent>[] = [
+  { header: "#", value: (_row, index) => index + 1, format: "integer" },
+  { header: "Agent", value: (row) => row.agent_name },
+  { header: "Firma", value: (row) => row.firma },
+  { header: "Magazin", value: (row) => displayStoreName(row.store_name) },
+  { header: "%Prev.", value: (row) => row.achievement, format: "percent" },
+  { header: "Cant.", value: (row) => row.qty_sold, format: "integer" },
+  { header: "Val Inc.", value: (row) => row.val_incentive, format: "currency" },
+  { header: "Incentive potential", value: (row) => row.incentive_potential ?? 0, format: "currency" },
+];
 
 export function IncentiveAgentsTable({
   rows,
@@ -29,31 +41,7 @@ export function IncentiveAgentsTable({
         defaultSortKey="val_incentive"
         exportFilename={`focus-incentive-agenti-${month}`}
         exportSheetName="Agenti incentive"
-        exportColumns={[
-          { header: "#", value: (_row, index) => index + 1, format: "integer" },
-          { header: "Agent", value: (row) => row.agent_name },
-          { header: "Firma", value: (row) => row.firma },
-          {
-            header: "Magazin",
-            value: (row) => displayStoreName(row.store_name),
-          },
-          {
-            header: "%Prev.",
-            value: (row) => row.achievement,
-            format: "percent",
-          },
-          { header: "Cant.", value: (row) => row.qty_sold, format: "integer" },
-          {
-            header: "Val Inc.",
-            value: (row) => row.val_incentive,
-            format: "currency",
-          },
-          {
-            header: "Incentive potential",
-            value: (row) => row.incentive_potential ?? 0,
-            format: "currency",
-          },
-        ]}
+        exportColumns={INCENTIVE_AGENT_EXPORT_COLUMNS}
         columns={[
           {
             key: "rank",

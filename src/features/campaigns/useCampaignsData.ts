@@ -1,5 +1,6 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import type { Dispatch, SetStateAction } from "react";
 import {
   getCampaignSnapshot,
   getFocusHistory,
@@ -44,47 +45,96 @@ type CampaignCurrentCache = {
   premiumGlass?: PremiumGlassAnalysis | null;
 };
 
+interface CampaignsDataInput {
+  currentMonth: string;
+  months: string[];
+  filters: AppFilters;
+  activeSection: CampaignSection;
+  onFilterMonthChange?: (month: string) => void;
+}
+
+function useCampaignSelection({ currentMonth, months, onFilterMonthChange }: Pick<CampaignsDataInput, "currentMonth" | "months" | "onFilterMonthChange">) {
+  const latestMonth = useMemo(() => months[0] ?? currentMonth, [months, currentMonth]);
+  const [historyMonth, setHistoryMonth] = useState(latestMonth);
+  const [promoMonth, setPromoMonth] = useState(latestMonth);
+  const [selectedPromotionKey, setSelectedPromotionKey] = useState("");
+  const [selectedContestKey, setSelectedContestKey] = useState("");
+  const [premiumSurfaceMode, setPremiumSurfaceMode] = useState<PremiumGlassSurfaceMode>("all");
+  useEffect(() => {
+    const fallbackMonth = latestMonth || currentMonth;
+    setHistoryMonth((previous) => months.includes(previous) ? previous : fallbackMonth);
+    setPromoMonth((previous) => {
+      if (!fallbackMonth) return "";
+      if (!months.length || !previous || previous === currentMonth) return fallbackMonth;
+      return months.includes(previous) ? previous : fallbackMonth;
+    });
+  }, [months, currentMonth, latestMonth]);
+  useEffect(() => { if (promoMonth) onFilterMonthChange?.(promoMonth); }, [promoMonth, onFilterMonthChange]);
+  return { latestMonth, historyMonth, setHistoryMonth, promoMonth, setPromoMonth, selectedPromotionKey, setSelectedPromotionKey, selectedContestKey, setSelectedContestKey, premiumSurfaceMode, setPremiumSurfaceMode };
+}
+
+interface CampaignQueryInput {
+  activeSection: CampaignSection;
+  historyMonth: string;
+  historyQueryParams: ReturnType<typeof buildScopedMonthQuery> & { months_back: number };
+  premiumSurfaceMode: PremiumGlassSurfaceMode;
+  promoMonth: string;
+  promoQuery: ReturnType<typeof buildScopedMonthQuery>;
+  promoScopeQuery: ReturnType<typeof buildScopedMonthQuery> & { current_scope: boolean; include_closed_stores: boolean };
+  selectedPromotionKey: string;
+}
+
+function useCampaignQueries(input: CampaignQueryInput) {
+  const { activeSection, historyMonth, historyQueryParams, premiumSurfaceMode, promoMonth, promoQuery, promoScopeQuery, selectedPromotionKey } = input;
+  const shouldLoadPromoData = activeSection === "promo" || activeSection === "incentive";
+  const shouldLoadSnapshot = activeSection === "focus";
+  const shouldLoadPremiumGlass = activeSection === "premium";
+  const shouldLoadCurrent = shouldLoadPromoData || shouldLoadSnapshot || shouldLoadPremiumGlass;
+  const currentQuery = useQuery({
+    queryKey: queryKeys.campaigns.current(activeSection, promoMonth, selectedPromotionKey, shouldLoadPremiumGlass ? { ...promoScopeQuery, surface: premiumSurfaceMode } : promoScopeQuery),
+    enabled: Boolean(promoMonth) && shouldLoadCurrent,
+    staleTime: CAMPAIGNS_STALE_MS,
+    placeholderData: keepPreviousData,
+    queryFn: async ({ signal }) => {
+      const result: CampaignCurrentCache = {};
+      const requests: Promise<void>[] = [];
+      if (shouldLoadSnapshot) requests.push(getCampaignSnapshot(promoQuery, signal).then((data) => { result.snapshot = data; }));
+      if (shouldLoadPromoData) requests.push((async () => {
+        const { month: _month, ...scope } = promoScopeQuery;
+        const query: CampaignPromotionsQuery = { ...scope, start_date: `${promoMonth}-01`, end_date: getMonthEndDate(promoMonth), view: activeSection === "promo" ? "promo" : "incentive", ...(selectedPromotionKey && { promotion_key: selectedPromotionKey }) };
+        result.promoData = await getPromotionsIncentives(query, signal);
+      })());
+      if (shouldLoadPremiumGlass) requests.push(getPremiumGlassAnalysis({ ...promoQuery, surface: premiumSurfaceMode, current_scope: true, include_closed_stores: false }, signal).then((data) => { result.premiumGlass = data; }));
+      await Promise.all(requests);
+      return result;
+    },
+  });
+  const focusHistoryQuery = useQuery({ queryKey: queryKeys.campaigns.history(historyMonth, historyQueryParams), enabled: activeSection === "focus" && Boolean(historyMonth), staleTime: CAMPAIGNS_STALE_MS, placeholderData: keepPreviousData, queryFn: ({ signal }) => getFocusHistory(historyQueryParams, signal) });
+  const contestsQuery = useQuery({ queryKey: queryKeys.campaigns.contests(promoMonth), enabled: activeSection === "concurs" && Boolean(promoMonth), staleTime: CAMPAIGNS_STALE_MS, placeholderData: keepPreviousData, queryFn: ({ signal }) => getActiveContests(promoMonth, signal) });
+  return { currentQuery, focusHistoryQuery, contestsQuery, shouldLoadCurrent, shouldLoadPromoData, shouldLoadSnapshot, shouldLoadPremiumGlass };
+}
+
+function useCampaignEntitySelection(promoData: CampaignsPromotionsResponse | null, selectedPromotionKey: string, setSelectedPromotionKey: (key: string) => void, activeSection: CampaignSection, contests: ContestResponse[], setSelectedContestKey: Dispatch<SetStateAction<string>>) {
+  useEffect(() => {
+    if (!promoData) return;
+    const availableKeys = promoData.promotions.map((promotion) => promotion.key);
+    if (selectedPromotionKey && availableKeys.length > 0 && !availableKeys.includes(selectedPromotionKey)) setSelectedPromotionKey(availableKeys[0] ?? selectedPromotionKey);
+  }, [promoData, selectedPromotionKey, setSelectedPromotionKey]);
+  useEffect(() => {
+    if (activeSection !== "concurs") return;
+    setSelectedContestKey((previous) => contests.some((contest) => contest.key === previous) ? previous : (contests[0]?.key ?? ""));
+  }, [activeSection, contests, setSelectedContestKey]);
+}
+
 export function useCampaignsData({
   currentMonth,
   months,
   filters,
   activeSection,
   onFilterMonthChange,
-}: {
-  currentMonth: string;
-  months: string[];
-  filters: AppFilters;
-  activeSection: CampaignSection;
-  onFilterMonthChange?: (month: string) => void;
-}) {
-  const latestMonth = useMemo(
-    () => months[0] ?? currentMonth,
-    [months, currentMonth],
-  );
-  const [historyMonth, setHistoryMonth] = useState(latestMonth);
-  const [promoMonth, setPromoMonth] = useState(latestMonth);
-  const [selectedPromotionKey, setSelectedPromotionKey] = useState("");
-  const [selectedContestKey, setSelectedContestKey] = useState("");
-  const [premiumSurfaceMode, setPremiumSurfaceMode] =
-    useState<PremiumGlassSurfaceMode>("all");
-
-  useEffect(() => {
-    const fallbackMonth = latestMonth || currentMonth;
-    setHistoryMonth((previous) =>
-      months.includes(previous) ? previous : fallbackMonth,
-    );
-    setPromoMonth((previous) => {
-      if (!fallbackMonth) return "";
-      if (!months.length) return fallbackMonth;
-      if (!previous || previous === currentMonth) return fallbackMonth;
-      return months.includes(previous) ? previous : fallbackMonth;
-    });
-  }, [months, currentMonth, latestMonth]);
-
-  useEffect(() => {
-    if (promoMonth) onFilterMonthChange?.(promoMonth);
-  }, [promoMonth, onFilterMonthChange]);
-
+}: CampaignsDataInput) {
+  const selection = useCampaignSelection({ currentMonth, months, onFilterMonthChange });
+  const { latestMonth, historyMonth, setHistoryMonth, promoMonth, setPromoMonth, selectedPromotionKey, setSelectedPromotionKey, selectedContestKey, setSelectedContestKey, premiumSurfaceMode, setPremiumSurfaceMode } = selection;
   const buildQuery = useCallback(
     (month: string) => buildScopedMonthQuery(month, filters),
     [filters],
@@ -105,80 +155,8 @@ export function useCampaignsData({
     () => ({ ...buildQuery(historyMonth), months_back: 12 }),
     [buildQuery, historyMonth],
   );
-  const shouldLoadPromoData =
-    activeSection === "promo" || activeSection === "incentive";
-  const shouldLoadSnapshot = activeSection === "focus";
-  const shouldLoadPremiumGlass = activeSection === "premium";
-  const shouldLoadCurrent =
-    shouldLoadPromoData || shouldLoadSnapshot || shouldLoadPremiumGlass;
-
-  const currentQuery = useQuery({
-    queryKey: queryKeys.campaigns.current(
-      activeSection,
-      promoMonth,
-      selectedPromotionKey,
-      shouldLoadPremiumGlass
-        ? { ...promoScopeQuery, surface: premiumSurfaceMode }
-        : promoScopeQuery,
-    ),
-    enabled: Boolean(promoMonth) && shouldLoadCurrent,
-    staleTime: CAMPAIGNS_STALE_MS,
-    placeholderData: keepPreviousData,
-    queryFn: async ({ signal }) => {
-      const result: CampaignCurrentCache = {};
-      const requests: Promise<void>[] = [];
-      if (shouldLoadSnapshot)
-        requests.push(
-          getCampaignSnapshot(promoQuery, signal).then((data) => {
-            result.snapshot = data;
-          }),
-        );
-      if (shouldLoadPromoData)
-        requests.push((async () => {
-          const { month: _month, ...scope } = promoScopeQuery;
-          const query: CampaignPromotionsQuery = {
-            ...scope,
-            start_date: `${promoMonth}-01`,
-            end_date: getMonthEndDate(promoMonth),
-            view: activeSection === "promo" ? "promo" : "incentive",
-            ...(selectedPromotionKey && {
-              promotion_key: selectedPromotionKey,
-            }),
-          };
-          result.promoData = await getPromotionsIncentives(query, signal);
-        })());
-      if (shouldLoadPremiumGlass)
-        requests.push(
-          getPremiumGlassAnalysis(
-            {
-              ...promoQuery,
-              surface: premiumSurfaceMode,
-              current_scope: true,
-              include_closed_stores: false,
-            },
-            signal,
-          ).then((data) => {
-            result.premiumGlass = data;
-          }),
-        );
-      await Promise.all(requests);
-      return result;
-    },
-  });
-  const focusHistoryQuery = useQuery({
-    queryKey: queryKeys.campaigns.history(historyMonth, historyQueryParams),
-    enabled: activeSection === "focus" && Boolean(historyMonth),
-    staleTime: CAMPAIGNS_STALE_MS,
-    placeholderData: keepPreviousData,
-    queryFn: ({ signal }) => getFocusHistory(historyQueryParams, signal),
-  });
-  const contestsQuery = useQuery({
-    queryKey: queryKeys.campaigns.contests(promoMonth),
-    enabled: activeSection === "concurs" && Boolean(promoMonth),
-    staleTime: CAMPAIGNS_STALE_MS,
-    placeholderData: keepPreviousData,
-    queryFn: ({ signal }) => getActiveContests(promoMonth, signal),
-  });
+  const queryState = useCampaignQueries({ activeSection, historyMonth, historyQueryParams, premiumSurfaceMode, promoMonth, promoQuery, promoScopeQuery, selectedPromotionKey });
+  const { currentQuery, focusHistoryQuery, contestsQuery, shouldLoadCurrent, shouldLoadPromoData, shouldLoadSnapshot, shouldLoadPremiumGlass } = queryState;
 
   const currentData = currentQuery.data ?? {};
   const promoData = currentData.promoData ?? null;
@@ -191,27 +169,7 @@ export function useCampaignsData({
     promoData.selected_promotion_key !== selectedPromotionKey,
   );
 
-  useEffect(() => {
-    if (!promoData) return;
-    const availableKeys = promoData.promotions.map(
-      (promotion) => promotion.key,
-    );
-    if (
-      selectedPromotionKey &&
-      availableKeys.length > 0 &&
-      !availableKeys.includes(selectedPromotionKey)
-    ) {
-      setSelectedPromotionKey(availableKeys[0] ?? selectedPromotionKey);
-    }
-  }, [promoData, selectedPromotionKey]);
-  useEffect(() => {
-    if (activeSection !== "concurs") return;
-    setSelectedContestKey((previous) =>
-      contests.some((contest) => contest.key === previous)
-        ? previous
-        : (contests[0]?.key ?? ""),
-    );
-  }, [activeSection, contests]);
+  useCampaignEntitySelection(promoData, selectedPromotionKey, setSelectedPromotionKey, activeSection, contests, setSelectedContestKey);
 
   const hasCurrentData =
     !shouldLoadCurrent ||

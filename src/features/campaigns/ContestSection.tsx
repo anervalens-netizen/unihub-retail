@@ -3,11 +3,24 @@ import { ExportTableButton } from "../../components/ExportTableButton";
 import { TableHeaderCell } from "../../components/common/TableHeader";
 import type { ContestResponse } from "../../api/generated/runtime-types";
 import { formatInt } from "../../lib/formatters";
+import type { ExportColumn } from "../../lib/tableExport";
 import {
   CampaignMonthBar,
   ContestSelector,
   EmptyCard,
 } from "./CampaignControls";
+
+const CONTEST_EXPORT_COLUMNS: ExportColumn<ContestResponse["leaderboard"][number]>[] = [
+  { header: "#", value: (row) => row.rank, format: "integer" },
+  { header: "Agent", value: (row) => row.agent },
+  { header: "Magazin", value: (row) => row.store_name },
+  { header: "Firma", value: (row) => row.firma },
+  { header: "Focus", value: (row) => row.focus_points, format: "integer" },
+  { header: "Promo", value: (row) => row.promo_points, format: "integer" },
+  { header: ">150", value: (row) => row.price_points, format: "integer" },
+  { header: "Total", value: (row) => row.total_points, format: "integer" },
+  { header: "Premiu", value: (row) => row.prize },
+];
 
 export function ContestSection({
   contests,
@@ -136,33 +149,7 @@ function ContestLeaderboard({ contest }: { contest: ContestResponse }) {
           filename={`focus-concurs-${contest.month}-${contest.key}`}
           sheetName="Clasament agenti"
           rows={contest.leaderboard}
-          columns={[
-            { header: "#", value: (row) => row.rank, format: "integer" },
-            { header: "Agent", value: (row) => row.agent },
-            { header: "Magazin", value: (row) => row.store_name },
-            { header: "Firma", value: (row) => row.firma },
-            {
-              header: "Focus",
-              value: (row) => row.focus_points,
-              format: "integer",
-            },
-            {
-              header: "Promo",
-              value: (row) => row.promo_points,
-              format: "integer",
-            },
-            {
-              header: ">150",
-              value: (row) => row.price_points,
-              format: "integer",
-            },
-            {
-              header: "Total",
-              value: (row) => row.total_points,
-              format: "integer",
-            },
-            { header: "Premiu", value: (row) => row.prize },
-          ]}
+          columns={CONTEST_EXPORT_COLUMNS}
         />
       </div>
       {contest.leaderboard.length === 0 ? (

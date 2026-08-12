@@ -28,6 +28,92 @@ interface Props {
   defaultMonth: string;
 }
 
+interface GrilaHeaderProps {
+  data: AsmSalaryBreakdown | null;
+  isForecast: boolean;
+  loading: boolean;
+  month: string;
+  onMonthChange: (month: string) => void;
+  onReload: () => void;
+}
+
+function GrilaHeader({ data, isForecast, loading, month, onMonthChange, onReload }: GrilaHeaderProps) {
+  const statusClass = isForecast
+    ? 'bg-indigo-100 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-300'
+    : 'bg-green-100 dark:bg-green-900/40 text-green-600 dark:text-green-300';
+  return (
+    <div className="flex items-center justify-between gap-2 mb-3">
+      <div className="flex items-center gap-2">
+        <Wallet size={14} className="text-indigo-500" />
+        <h4 className="text-[11px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300">Grilă salarizare</h4>
+        {data && <span className={`text-[10px] px-1.5 py-0.5 rounded-md font-medium ${statusClass}`}>{isForecast ? 'previziune' : 'final'}</span>}
+      </div>
+      <div className="flex items-center gap-2">
+        <input type="month" className="rounded-xl border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300" value={month} onChange={(event) => onMonthChange(event.target.value)} />
+        <button onClick={onReload} className="p-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-500" title="Reîncarcă">
+          <RefreshCw size={12} className={loading ? 'animate-spin' : ''} />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function SalaryBreakdown({ data }: { data: AsmSalaryBreakdown }) {
+  const isForecast = data.is_forecast;
+  return (
+    <>
+      {isForecast && <p className="text-[10px] text-slate-400 leading-snug">Previziune la final de lună (factor {data.forecast_factor}×). Comisioanele sunt calculate pe procentul prognozat, nu pe realizatul la zi. La încheierea lunii se va folosi valoarea finală.</p>}
+      <div className="rounded-xl bg-gradient-to-br from-indigo-500 to-indigo-600 text-white px-3 py-2.5 flex items-center justify-between">
+        <div>
+          <div className="text-[10px] uppercase tracking-wide opacity-80">{isForecast ? 'Salariu estimat' : 'Salariu final'} · {formatMonthLabel(data.month, { year: 'short' })}</div>
+          <div className="text-xl font-bold tabular-nums">{ron(data.total_salary)}</div>
+        </div>
+        <div className="text-right text-[10px] opacity-80 leading-tight"><div>Fix {ron(data.fixed_salary)}</div><div>+ comisioane {ron(data.total_salary - data.fixed_salary)}</div></div>
+      </div>
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+        <ComponentCard label="Comision zonă" hint={pct(data.zone.pct_used)} hintClass={pctColor(data.zone.pct_used)} value={ron(data.zone.commission)} />
+        <ComponentCard label="Comision insule" hint={`${data.islands.length} insule`} value={ron(data.islands_commission)} />
+        <ComponentCard label="Comision omogenitate" hint={`${data.homogeneity.qualifying_count}/${data.homogeneity.islands_count} ≥99%`} hintClass={data.homogeneity.eligible ? 'text-green-600 dark:text-green-400' : 'text-slate-400'} value={ron(data.homogeneity.commission)} eligible={data.homogeneity.eligible} />
+        <ComponentCard label="Comision Acc Focus" hint={pct(data.acc_focus.pct)} hintClass={pctColor(data.acc_focus.pct)} value={ron(data.acc_focus.commission)} />
+        <ComponentCard label="Salariu fix" value={ron(data.fixed_salary)} />
+        <ComponentCard label="Total" value={ron(data.total_salary)} highlight />
+      </div>
+    </>
+  );
+}
+
+function IslandsTable({ data }: { data: AsmSalaryBreakdown }) {
+  const isForecast = data.is_forecast;
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-1.5">
+        <h5 className="text-[11px] font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1"><TrendingUp size={11} className="opacity-60" />Insule / locații</h5>
+        <span className="text-[10px] text-slate-400">prag omogenitate: ≥{data.homogeneity.min_pct}% la peste 50% din insule</span>
+      </div>
+      <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700">
+        <table className="w-full text-xs">
+          <thead className="bg-slate-50 dark:bg-slate-800/60 text-slate-500"><tr><TableHeaderCell>Locație</TableHeaderCell><TableHeaderCell>Firmă</TableHeaderCell><TableHeaderCell align="right">Target</TableHeaderCell><TableHeaderCell align="right">{isForecast ? 'Vânzări prog.' : 'Vânzări'}</TableHeaderCell><TableHeaderCell align="right">% Target</TableHeaderCell><TableHeaderCell align="right">Comision</TableHeaderCell></tr></thead>
+          <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+            {data.islands.map((island) => (
+              <tr key={island.site_code} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30">
+                <td className="px-2 py-1.5 text-slate-700 dark:text-slate-200"><div className="font-medium truncate max-w-[180px]">{island.locatie}</div><div className="text-[10px] text-slate-400">{island.site_code}</div></td>
+                <td className="px-2 py-1.5 text-slate-500">{island.firma}</td><td className="px-2 py-1.5 text-right tabular-nums text-slate-500">{ron(island.total_target)}</td>
+                <td className="px-2 py-1.5 text-right tabular-nums text-slate-600 dark:text-slate-300">{isForecast ? ron(island.forecast_sales) : ron(island.total_sales)}</td>
+                <td className={`px-2 py-1.5 text-right tabular-nums font-semibold ${pctColor(island.pct_used)}`}>
+                  {isForecast ? <span>{pct(island.pct_used)}<span className="block text-[9px] font-normal text-slate-400">realizat {pct(island.target_pct)}</span></span> : pct(island.pct_used)}
+                  {island.homogeneity_qualifies && <span className="ml-1 inline-block w-1.5 h-1.5 rounded-full bg-green-500 align-middle" title="Califică omogenitate" />}
+                </td>
+                <td className="px-2 py-1.5 text-right tabular-nums font-semibold text-slate-700 dark:text-slate-200">{ron(island.commission)}</td>
+              </tr>
+            ))}
+          </tbody>
+          <tfoot className="bg-slate-50 dark:bg-slate-800/60"><tr><td className="px-2 py-1.5 font-semibold text-slate-600 dark:text-slate-300" colSpan={5}>Total comisioane insule</td><td className="px-2 py-1.5 text-right tabular-nums font-bold text-slate-700 dark:text-slate-100">{ron(data.islands_commission)}</td></tr></tfoot>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 export function AsmSalaryGrila({ asm, defaultMonth }: Props) {
   const [month, setMonth] = useState(defaultMonth || TODAY_MONTH);
   const [data, setData] = useState<AsmSalaryBreakdown | null>(null);
@@ -52,172 +138,13 @@ export function AsmSalaryGrila({ asm, defaultMonth }: Props) {
 
   return (
     <div className="rounded-2xl border border-indigo-200/70 dark:border-indigo-900/50 bg-white/60 dark:bg-slate-900/40 p-3">
-      {/* Header */}
-      <div className="flex items-center justify-between gap-2 mb-3">
-        <div className="flex items-center gap-2">
-          <Wallet size={14} className="text-indigo-500" />
-          <h4 className="text-[11px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300">
-            Grilă salarizare
-          </h4>
-          {data && (
-            <span className={`text-[10px] px-1.5 py-0.5 rounded-md font-medium ${
-              isForecast
-                ? 'bg-indigo-100 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-300'
-                : 'bg-green-100 dark:bg-green-900/40 text-green-600 dark:text-green-300'
-            }`}>
-              {isForecast ? 'previziune' : 'final'}
-            </span>
-          )}
-        </div>
-        <div className="flex items-center gap-2">
-          <input
-            type="month"
-            className="rounded-xl border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
-            value={month}
-            onChange={(e) => setMonth(e.target.value)}
-          />
-          <button
-            onClick={load}
-            className="p-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-500"
-            title="Reîncarcă"
-          >
-            <RefreshCw size={12} className={loading ? 'animate-spin' : ''} />
-          </button>
-        </div>
-      </div>
-
-      {error && (
-        <div className="text-xs text-red-500 py-3 text-center">{error}</div>
-      )}
-
-      {loading && !data && (
-        <div className="text-xs text-slate-400 py-6 text-center">Se încarcă grila…</div>
-      )}
-
+      <GrilaHeader data={data} isForecast={isForecast} loading={loading} month={month} onMonthChange={setMonth} onReload={() => void load()} />
+      {error && <div className="text-xs text-red-500 py-3 text-center">{error}</div>}
+      {loading && !data && <div className="text-xs text-slate-400 py-6 text-center">Se încarcă grila…</div>}
       {data && (
         <div className="space-y-3">
-          {isForecast && (
-            <p className="text-[10px] text-slate-400 leading-snug">
-              Previziune la final de lună (factor {data.forecast_factor}×). Comisioanele sunt calculate
-              pe procentul prognozat, nu pe realizatul la zi. La încheierea lunii se va folosi valoarea finală.
-            </p>
-          )}
-
-          {/* Total hero */}
-          <div className="rounded-xl bg-gradient-to-br from-indigo-500 to-indigo-600 text-white px-3 py-2.5 flex items-center justify-between">
-            <div>
-              <div className="text-[10px] uppercase tracking-wide opacity-80">
-                {isForecast ? 'Salariu estimat' : 'Salariu final'} · {formatMonthLabel(data.month, { year: 'short' })}
-              </div>
-              <div className="text-xl font-bold tabular-nums">{ron(data.total_salary)}</div>
-            </div>
-            <div className="text-right text-[10px] opacity-80 leading-tight">
-              <div>Fix {ron(data.fixed_salary)}</div>
-              <div>+ comisioane {ron(data.total_salary - data.fixed_salary)}</div>
-            </div>
-          </div>
-
-          {/* Component breakdown */}
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-            <ComponentCard
-              label="Comision zonă"
-              hint={pct(data.zone.pct_used)}
-              hintClass={pctColor(data.zone.pct_used)}
-              value={ron(data.zone.commission)}
-            />
-            <ComponentCard
-              label="Comision insule"
-              hint={`${data.islands.length} insule`}
-              value={ron(data.islands_commission)}
-            />
-            <ComponentCard
-              label="Comision omogenitate"
-              hint={`${data.homogeneity.qualifying_count}/${data.homogeneity.islands_count} ≥99%`}
-              hintClass={data.homogeneity.eligible ? 'text-green-600 dark:text-green-400' : 'text-slate-400'}
-              value={ron(data.homogeneity.commission)}
-              eligible={data.homogeneity.eligible}
-            />
-            <ComponentCard
-              label="Comision Acc Focus"
-              hint={pct(data.acc_focus.pct)}
-              hintClass={pctColor(data.acc_focus.pct)}
-              value={ron(data.acc_focus.commission)}
-            />
-            <ComponentCard
-              label="Salariu fix"
-              value={ron(data.fixed_salary)}
-            />
-            <ComponentCard
-              label="Total"
-              value={ron(data.total_salary)}
-              highlight
-            />
-          </div>
-
-          {/* Islands table */}
-          <div>
-            <div className="flex items-center justify-between mb-1.5">
-              <h5 className="text-[11px] font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1">
-                <TrendingUp size={11} className="opacity-60" />
-                Insule / locații
-              </h5>
-              <span className="text-[10px] text-slate-400">
-                prag omogenitate: ≥{data.homogeneity.min_pct}% la peste 50% din insule
-              </span>
-            </div>
-            <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700">
-              <table className="w-full text-xs">
-                <thead className="bg-slate-50 dark:bg-slate-800/60 text-slate-500">
-                  <tr>
-                    <TableHeaderCell>Locație</TableHeaderCell>
-                    <TableHeaderCell>Firmă</TableHeaderCell>
-                    <TableHeaderCell align="right">Target</TableHeaderCell>
-                    <TableHeaderCell align="right">{isForecast ? 'Vânzări prog.' : 'Vânzări'}</TableHeaderCell>
-                    <TableHeaderCell align="right">% Target</TableHeaderCell>
-                    <TableHeaderCell align="right">Comision</TableHeaderCell>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                  {data.islands.map((i) => {
-                    const qualifies = i.homogeneity_qualifies;
-                    return (
-                      <tr key={i.site_code} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30">
-                        <td className="px-2 py-1.5 text-slate-700 dark:text-slate-200">
-                          <div className="font-medium truncate max-w-[180px]">{i.locatie}</div>
-                          <div className="text-[10px] text-slate-400">{i.site_code}</div>
-                        </td>
-                        <td className="px-2 py-1.5 text-slate-500">{i.firma}</td>
-                        <td className="px-2 py-1.5 text-right tabular-nums text-slate-500">{ron(i.total_target)}</td>
-                        <td className="px-2 py-1.5 text-right tabular-nums text-slate-600 dark:text-slate-300">
-                          {isForecast ? ron(i.forecast_sales) : ron(i.total_sales)}
-                        </td>
-                        <td className={`px-2 py-1.5 text-right tabular-nums font-semibold ${pctColor(i.pct_used)}`}>
-                          {isForecast ? (
-                            <span>
-                              {pct(i.pct_used)}
-                              <span className="block text-[9px] font-normal text-slate-400">realizat {pct(i.target_pct)}</span>
-                            </span>
-                          ) : pct(i.pct_used)}
-                          {qualifies && (
-                            <span className="ml-1 inline-block w-1.5 h-1.5 rounded-full bg-green-500 align-middle" title="Califică omogenitate" />
-                          )}
-                        </td>
-                        <td className="px-2 py-1.5 text-right tabular-nums font-semibold text-slate-700 dark:text-slate-200">
-                          {ron(i.commission)}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-                <tfoot className="bg-slate-50 dark:bg-slate-800/60">
-                  <tr>
-                    <td className="px-2 py-1.5 font-semibold text-slate-600 dark:text-slate-300" colSpan={5}>Total comisioane insule</td>
-                    <td className="px-2 py-1.5 text-right tabular-nums font-bold text-slate-700 dark:text-slate-100">{ron(data.islands_commission)}</td>
-                  </tr>
-                </tfoot>
-              </table>
-            </div>
-          </div>
+          <SalaryBreakdown data={data} />
+          <IslandsTable data={data} />
         </div>
       )}
     </div>
