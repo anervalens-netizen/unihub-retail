@@ -373,6 +373,10 @@ async def test_sync_reports_provider_failure_without_hiding_it(
         "call_with_backoff",
         AsyncMock(side_effect=RuntimeError("Google unavailable")),
     )
+    snapshot = AsyncMock()
+    monkeypatch.setattr(sync_module, "write_pilot_v2_snapshot", snapshot)
 
     with pytest.raises(RuntimeError, match="sync incomplete: SITE"):
         await sync_pilot_v2_sheets(MagicMock(), MagicMock())
+
+    snapshot.assert_not_awaited()

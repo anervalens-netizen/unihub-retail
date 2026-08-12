@@ -56,13 +56,13 @@ async def enqueue_grile_pilot_v2_sync(*, month: str, trigger: str) -> Job:
 
 
 async def trigger_grile_pilot_v2_sync(import_month: str, *, trigger: str) -> None:
-    """Best-effort hook; source promotion stays valid and hourly self-heal retries."""
+    """Best-effort hook; source promotion stays valid if enqueue fails."""
     if import_month != PILOT_V2_MONTH:
         return
     try:
         job = await enqueue_grile_pilot_v2_sync(month=import_month, trigger=trigger)
         logger.info("Grile V2 sync queued month=%s job=%s", import_month, job.job_id)
-    except Exception:  # noqa: BLE001 -- projection retries through worker self-heal
+    except Exception:  # noqa: BLE001 -- projection must not invalidate source promotion
         logger.exception("enqueue Grile V2 sync esuat pentru %s", import_month)
 
 
