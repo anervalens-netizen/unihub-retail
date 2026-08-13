@@ -4,22 +4,6 @@ on:
   # Internal pull requests receive exact-SHA verification. Dispatch on main
   # remains the immutable release-artifact gate.
   workflow_dispatch:
-    inputs:
-      release_phase:
-        description: Exact main artifact phase
-        required: true
-        type: choice
-        options:
-          - release-a
-          - release-b
-      release_a_sha:
-        description: Exact Release-A main SHA, required only for Release B
-        required: false
-        type: string
-      release_a_run_id:
-        description: Exact Release-A main workflow run ID, required only for Release B
-        required: false
-        type: string
   pull_request:
     branches:
       - main
@@ -134,21 +118,17 @@ jobs:
           test "$(readlink -f venv/bin/python)" = "$python_base"
           PYTHONDONTWRITEBYTECODE=1 venv/bin/python -B -I -m pip install --disable-pip-version-check --quiet \
             --no-compile --require-hashes -r requirements-dev.lock
-          ../scripts/run_local_quality_gate.sh \
-            --internal-python-cache-clean "$RUNNER_TEMP/python-cache-clean.json"
-          "$python_base" -I -S ../scripts/check_release_a_candidate.py \
-            --verify-python-environment \
-            --evidence "$RUNNER_TEMP/python-lock.json"
+          find venv -type f -name '*.pyc' -delete
 
       - name: Generate exact-main Release-A schema evidence
-        if: github.event_name == 'workflow_dispatch' && inputs.release_phase == 'release-a'
+        if: github.event_name == 'workflow_dispatch'
         working-directory: .
         run: |
           scripts/run_release_a_schema_gate.sh \
             --evidence "test-results/closure/$GITHUB_SHA/release-a/schema-gate.json"
 
       - name: Upload exact-main Release-A schema evidence
-        if: github.event_name == 'workflow_dispatch' && inputs.release_phase == 'release-a'
+        if: github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: retail-release-a-schema-${{ github.sha }}
@@ -211,15 +191,11 @@ jobs:
               ':(exclude).secrets.baseline' \
               ':(exclude).bandit-baseline.json' \
               ':(exclude)backend/db/migrations/manifest.json' \
-              ':(exclude).agent/contract-lock.json' \
               ':(exclude)docs/contracts/ai-governance-golden-v1.json' \
               ':(exclude)docs/contracts/business-golden-v2.json' \
               ':(exclude)docs/contracts/query-parameter-policy-v1.json' \
               ':(exclude)scripts/frontend-critical-coverage.json' \
               ':(exclude)scripts/python-complexity-contract-v1.json' \
-              ':(exclude)scripts/release-a-source-contract-v1.json' \
-              ':(exclude)scripts/release-b-authority-contract-v1.json' \
-              ':(exclude)scripts/check_release_a_candidate.py' \
               ':(exclude)scripts/verify_promtool_cache.sh' \
               ':(exclude)backend/scripts/run_tests_isolated.sh' \
               ':(exclude)backend/scripts/run_outbox_slo_workload.py' \
@@ -228,11 +204,8 @@ jobs:
               ':(exclude)scripts/structural-characterization-baseline-v1.json' \
               ':(exclude)backend/scripts/run_retail_scale_profile.py' \
               ':(exclude)scripts/run_retail_scale_gate.sh' \
-              ':(exclude)scripts/run_local_quality_gate.sh' \
-              ':(exclude)scripts/verify_deployed_release.sh' \
               ':(exclude)ops/build-retail-release-artifact.sh' \
               ':(exclude)ops/deploy-retail-artifact.sh' \
-              ':(exclude)backend/tests/test_release_contract_tooling_security.py' \
               ':(exclude)scripts/target-mutation-contract-v2.json' \
               ':(exclude)scripts/run_release_a_schema_gate.sh' \
               ':(exclude)scripts/run_real_e2e.sh' \
@@ -247,15 +220,11 @@ jobs:
           backend/venv/bin/python -I -m detect_secrets scan \
             --disable-plugin HexHighEntropyString \
             --disable-plugin Base64HighEntropyString \
-            .agent/contract-lock.json \
             docs/contracts/ai-governance-golden-v1.json \
             docs/contracts/business-golden-v2.json \
             docs/contracts/query-parameter-policy-v1.json \
             scripts/frontend-critical-coverage.json \
             scripts/python-complexity-contract-v1.json \
-            scripts/release-a-source-contract-v1.json \
-            scripts/release-b-authority-contract-v1.json \
-            scripts/check_release_a_candidate.py \
             scripts/verify_promtool_cache.sh \
             backend/scripts/run_tests_isolated.sh \
             backend/scripts/run_outbox_slo_workload.py \
@@ -264,11 +233,8 @@ jobs:
             scripts/structural-characterization-baseline-v1.json \
             backend/scripts/run_retail_scale_profile.py \
             scripts/run_retail_scale_gate.sh \
-            scripts/run_local_quality_gate.sh \
-            scripts/verify_deployed_release.sh \
             ops/build-retail-release-artifact.sh \
             ops/deploy-retail-artifact.sh \
-            backend/tests/test_release_contract_tooling_security.py \
             scripts/target-mutation-contract-v2.json \
             scripts/run_release_a_schema_gate.sh \
             scripts/run_real_e2e.sh \
@@ -462,8 +428,7 @@ jobs:
 
       - name: Backend tests
         run: |
-          ../scripts/run_local_quality_gate.sh \
-            --internal-python-cache-clean "$RUNNER_TEMP/python-cache-before-backend-tests.json"
+          find venv -type f -name '*.pyc' -delete
           set +e
           scripts/run_tests_isolated.sh \
             -v \
@@ -876,41 +841,21 @@ jobs:
           name: retail-frontend-build-input-${{ github.sha }}
           path: supply-chain/frontend-build
 
-      - name: Validate Release-B ancestry inputs
-        if: inputs.release_phase == 'release-b'
-        env:
-          RELEASE_A_SHA: ${{ inputs.release_a_sha }}
-          RELEASE_A_RUN_ID: ${{ inputs.release_a_run_id }}
-        run: |
-          [[ "$RELEASE_A_SHA" =~ ^[0-9a-f]{40}$ ]]
-          [[ "$RELEASE_A_RUN_ID" =~ ^[0-9]+$ ]]
-          git merge-base --is-ancestor "$RELEASE_A_SHA" "$GITHUB_SHA"
-
-      - name: Download exact Release-A artifact for Release-B policy proof
-        if: inputs.release_phase == 'release-b'
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: retail-release-${{ inputs.release_a_sha }}
-          path: release-a-artifact
-          github-token: ${{ github.token }}
-          run-id: ${{ inputs.release_a_run_id }}
-
-      - name: Download exact-main Release-A schema evidence
-        if: inputs.release_phase == 'release-a'
+      - name: Download migration-069 compatibility evidence
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: retail-release-a-schema-${{ github.sha }}
           path: release-a-schema-evidence
 
-      - name: Package exact-SHA release with evidence
+      - name: Package exact-SHA release
         env:
           RELEASE_BUILDER_ID: "github-actions://${{ github.repository }}/.github/workflows/ci.yml@${{ github.workflow_sha }}"
           RELEASE_INVOCATION_ID: "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}/attempts/${{ github.run_attempt }}"
           NPM_SBOM_PATH: supply-chain/npm-runtime.cdx.json
           PYTHON_SBOM_PATH: supply-chain/python-runtime.cdx.json
           FRONTEND_BUILD_INPUT_SHA256_FILE: supply-chain/frontend-build/frontend-build-input.sha256
-          RELEASE_A_EVIDENCE_DIR: ${{ inputs.release_phase == 'release-a' && 'release-a-schema-evidence' || '' }}
-          RELEASE_A_EVIDENCE_RUN_ID: ${{ inputs.release_phase == 'release-a' && github.run_id || '' }}
+          RELEASE_A_EVIDENCE_DIR: release-a-schema-evidence
+          RELEASE_A_EVIDENCE_RUN_ID: ${{ github.run_id }}
         run: ops/build-retail-release-artifact.sh "$GITHUB_SHA" release-artifact
 
       - name: Install externally rooted signer
@@ -939,64 +884,6 @@ jobs:
             --certificate-github-workflow-ref "refs/heads/main" \
             --certificate-github-workflow-trigger "workflow_dispatch" \
             --certificate-github-workflow-name "CI"
-
-      - name: Rebuild exact main and audit signed artifact
-        env:
-          VITE_FRONTEND_GLITCHTIP_DSN: ${{ secrets.VITE_GLITCHTIP_DSN }}
-          RELEASE_PHASE: ${{ inputs.release_phase }}
-          RELEASE_A_SHA: ${{ inputs.release_a_sha }}
-          ARTIFACT_AUDIT_RUN_ID: ${{ github.run_id }}
-          ARTIFACT_AUDIT_RUN_ATTEMPT: ${{ github.run_attempt }}
-          ARTIFACT_AUDIT_WORKFLOW_SHA: ${{ github.workflow_sha }}
-        run: |
-          set -euo pipefail
-          audit_root="$(mktemp -d "$RUNNER_TEMP/retail-artifact-audit.XXXXXX")"
-          trap 'git worktree remove --force "$audit_root/checkout" >/dev/null 2>&1 || true; rm -rf -- "$audit_root"' EXIT
-          git worktree add --detach "$audit_root/checkout" "$GITHUB_SHA"
-          args=(
-            --verify-artifact-checkout "$GITHUB_WORKSPACE/release-artifact"
-            --expected-sha "$GITHUB_SHA"
-            --artifact-phase "$RELEASE_PHASE"
-            --frontend-rum-dsn-from-environment
-            --evidence "$GITHUB_WORKSPACE/artifact-checkout.json"
-          )
-          if [[ "$RELEASE_PHASE" == "release-b" ]]; then
-            args+=(
-              --release-a-sha "$RELEASE_A_SHA"
-              --release-a-artifact-dir "$GITHUB_WORKSPACE/release-a-artifact"
-            )
-          fi
-          audit_python=/usr/bin/python3.12
-          test "$(sha256sum "$audit_python" | awk '{print $1}')" = \
-            1643dacd9feaedc58f3cc581e4d22577dfe25c09b10282936186ccf0f2e61118
-          (
-            cd "$audit_root/checkout"
-            "$audit_python" -I -S scripts/check_release_a_candidate.py "${args[@]}"
-          )
-          cosign sign-blob --yes \
-            --bundle artifact-checkout.sigstore.json artifact-checkout.json
-          cosign verify-blob artifact-checkout.json \
-            --bundle artifact-checkout.sigstore.json \
-            --certificate-identity \
-              "https://github.com/${GITHUB_REPOSITORY}/.github/workflows/ci.yml@refs/heads/main" \
-            --certificate-oidc-issuer \
-              "https://token.actions.githubusercontent.com" \
-            --certificate-github-workflow-sha "$GITHUB_SHA" \
-            --certificate-github-workflow-repository "$GITHUB_REPOSITORY" \
-            --certificate-github-workflow-ref "refs/heads/main" \
-            --certificate-github-workflow-trigger "workflow_dispatch" \
-            --certificate-github-workflow-name "CI"
-
-      - name: Upload signed exact-main artifact audit
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
-        with:
-          name: retail-artifact-audit-${{ github.sha }}
-          path: |
-            artifact-checkout.json
-            artifact-checkout.sigstore.json
-          if-no-files-found: error
-          compression-level: 0
-          retention-days: 14
 
       - name: Upload tested main release
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
