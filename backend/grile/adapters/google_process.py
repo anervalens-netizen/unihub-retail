@@ -106,6 +106,31 @@ async def _read_bounded(
         chunks.append(chunk)
 
 
+def _snapshot_from_output(stdout: bytes) -> GrileGoogleSnapshot:
+    try:
+        payload = json.loads(stdout)
+        value_ranges = payload["value_ranges"]
+        modified_time = payload.get("modified_time")
+    except (json.JSONDecodeError, KeyError, TypeError) as exc:
+        raise GrileGoogleProcessError(
+            "provider_output_invalid",
+            "Google child returned an invalid payload",
+        ) from exc
+    if not isinstance(value_ranges, list) or not all(
+        isinstance(item, dict) for item in value_ranges
+    ):
+        raise GrileGoogleProcessError(
+            "provider_output_invalid",
+            "Google child returned an invalid value_ranges payload",
+        )
+    if modified_time is not None and not isinstance(modified_time, str):
+        raise GrileGoogleProcessError(
+            "provider_output_invalid",
+            "Google child returned an invalid modified_time payload",
+        )
+    return GrileGoogleSnapshot(value_ranges=value_ranges, modified_time=modified_time)
+
+
 async def fetch_grile_snapshot(
     sheet_id: str,
     template_version: str,
@@ -197,31 +222,7 @@ async def fetch_grile_snapshot(
                 "provider_failed",
                 detail or "Google provider process failed",
             )
-        try:
-            payload = json.loads(stdout)
-            value_ranges = payload["value_ranges"]
-            modified_time = payload.get("modified_time")
-        except (json.JSONDecodeError, KeyError, TypeError) as exc:
-            raise GrileGoogleProcessError(
-                "provider_output_invalid",
-                "Google child returned an invalid payload",
-            ) from exc
-        if not isinstance(value_ranges, list) or not all(
-            isinstance(item, dict) for item in value_ranges
-        ):
-            raise GrileGoogleProcessError(
-                "provider_output_invalid",
-                "Google child returned an invalid value_ranges payload",
-            )
-        if modified_time is not None and not isinstance(modified_time, str):
-            raise GrileGoogleProcessError(
-                "provider_output_invalid",
-                "Google child returned an invalid modified_time payload",
-            )
-        return GrileGoogleSnapshot(
-            value_ranges=value_ranges,
-            modified_time=modified_time,
-        )
+        return _snapshot_from_output(stdout)
     finally:
         if process.returncode is None:
             await _terminate(process)

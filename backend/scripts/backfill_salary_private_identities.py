@@ -16,6 +16,43 @@ from salary_identity import get_salary_person_id_key, salary_person_id_sql
 BACKFILL_LOCK_ID = 7_221_901_202_607_13
 
 
+async def _validated_backfill_stats(
+    connection: asyncpg.Connection,
+) -> dict[str, int]:
+    stats = await connection.fetchrow(
+        """
+        SELECT
+            (SELECT COUNT(*) FROM salary_private.people) AS people,
+            (SELECT COUNT(*) FROM salary_records) AS records,
+            (SELECT COUNT(*) FROM salary_records WHERE person_id IS NULL) AS records_missing,
+            (SELECT COUNT(*) FROM agent_salary_links WHERE match_status = 'confirmed') AS confirmed_links,
+            (SELECT COUNT(*) FROM agent_salary_links WHERE match_status = 'confirmed' AND person_id IS NULL) AS links_missing,
+            (
+                SELECT COUNT(*)
+                FROM agent_salary_links
+                WHERE match_status = 'confirmed'
+                  AND NULLIF(BTRIM(COALESCE(salary_cnp, '')), '') IS NULL
+                  AND NULLIF(BTRIM(COALESCE(salary_full_name, '')), '') IS NULL
+            ) AS blank_confirmed_links,
+            (
+                SELECT COUNT(*) FROM (
+                    SELECT person_id
+                    FROM salary_records
+                    GROUP BY person_id
+                    HAVING COUNT(DISTINCT COALESCE(NULLIF(BTRIM(cnp), ''), 'name:' || LOWER(BTRIM(full_name)))) > 1
+                ) collisions
+            ) AS collisions
+        """
+    )
+    result = {name: int(stats[name]) for name in stats.keys()}
+    if result["blank_confirmed_links"]:
+        raise RuntimeError("Salary identity backfill found blank confirmed identities")
+    if result["records_missing"] or result["links_missing"] or result["collisions"]:
+        raise RuntimeError("Salary identity backfill validation failed")
+    return result
+
+
+
 async def backfill(connection: asyncpg.Connection, key: str) -> dict[str, int]:
     salary_person_id = salary_person_id_sql("sr", "$1")
     link_person_id = salary_person_id_sql("identity", "$1")
@@ -115,37 +152,7 @@ async def backfill(connection: asyncpg.Connection, key: str) -> dict[str, int]:
         """,
         key,
     )
-    stats = await connection.fetchrow(
-        """
-        SELECT
-            (SELECT COUNT(*) FROM salary_private.people) AS people,
-            (SELECT COUNT(*) FROM salary_records) AS records,
-            (SELECT COUNT(*) FROM salary_records WHERE person_id IS NULL) AS records_missing,
-            (SELECT COUNT(*) FROM agent_salary_links WHERE match_status = 'confirmed') AS confirmed_links,
-            (SELECT COUNT(*) FROM agent_salary_links WHERE match_status = 'confirmed' AND person_id IS NULL) AS links_missing,
-            (
-                SELECT COUNT(*)
-                FROM agent_salary_links
-                WHERE match_status = 'confirmed'
-                  AND NULLIF(BTRIM(COALESCE(salary_cnp, '')), '') IS NULL
-                  AND NULLIF(BTRIM(COALESCE(salary_full_name, '')), '') IS NULL
-            ) AS blank_confirmed_links,
-            (
-                SELECT COUNT(*) FROM (
-                    SELECT person_id
-                    FROM salary_records
-                    GROUP BY person_id
-                    HAVING COUNT(DISTINCT COALESCE(NULLIF(BTRIM(cnp), ''), 'name:' || LOWER(BTRIM(full_name)))) > 1
-                ) collisions
-            ) AS collisions
-        """
-    )
-    result = {name: int(stats[name]) for name in stats.keys()}
-    if result["blank_confirmed_links"]:
-        raise RuntimeError("Salary identity backfill found blank confirmed identities")
-    if result["records_missing"] or result["links_missing"] or result["collisions"]:
-        raise RuntimeError("Salary identity backfill validation failed")
-    return result
+    return await _validated_backfill_stats(connection)
 
 
 async def main() -> None:

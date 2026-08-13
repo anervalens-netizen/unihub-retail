@@ -14,6 +14,7 @@ from services.grile import DEFAULT_TOLERANCE
 from services.grile_pilot_v2_registry import (
     PILOT_V2_MONTH,
     PILOT_V2_SHEETS,
+    PilotV2Sheet,
 )
 
 

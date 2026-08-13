@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from datetime import date, timedelta
-from typing import Protocol, Any
+from typing import Protocol, Any, TypedDict
 
 from services.campaigns import compute_promotion_result, load_campaign_context
 from services.dashboard_specials import load_promotion_rule_products, load_special_cards_config, parse_promotion_definitions
@@ -20,6 +20,14 @@ class ExportRepository(Protocol):
     async def fetch_daily_evolution_rows(self, **kwargs: Any) -> list[Any]: ...
     async def fetch_daily_comparison_rows(self, **kwargs: Any) -> list[Any]: ...
     async def fetch_incentive_product_rows(self, **kwargs: Any) -> list[Any]: ...
+
+
+class _PromotionFilterKwargs(TypedDict):
+    firma: list[str] | None
+    regional: list[str] | None
+    asm: list[str] | None
+    site_code: list[str] | None
+    agent: list[str] | None
 
 
 class CampaignLoaders:
@@ -49,10 +57,13 @@ class CampaignLoaders:
     @staticmethod
     def _promotion_filter_kwargs(
         scoped_filters: dict[str, list[str]],
-    ) -> dict[str, list[str] | None]:
+    ) -> _PromotionFilterKwargs:
         return {
-            key: scoped_filter_values(scoped_filters, key)
-            for key in ("firma", "regional", "asm", "site_code", "agent")
+            "firma": scoped_filter_values(scoped_filters, "firma"),
+            "regional": scoped_filter_values(scoped_filters, "regional"),
+            "asm": scoped_filter_values(scoped_filters, "asm"),
+            "site_code": scoped_filter_values(scoped_filters, "site_code"),
+            "agent": scoped_filter_values(scoped_filters, "agent"),
         }
 
     @staticmethod

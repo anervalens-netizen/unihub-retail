@@ -74,43 +74,77 @@ def _number(name: str, default: float, low: float, high: float, integer: bool = 
     return float(value), None
 
 
-def _parse(production: bool) -> tuple[OIDCVerifierSettings | None, list[str]]:
-    raw = {name: os.getenv(name) for name in _REQUIRED}
-    populated = {name: value for name, value in raw.items() if value not in (None, "")}
-    errors: list[str] = []
-    ttl, ttl_error = _number("JWKS_CACHE_TTL", 3600, 60, 86400)
-    stale, stale_error = _number("JWKS_MAX_STALE_SECONDS", 86400, 60, 604800)
-    timeout, timeout_error = _number("JWKS_FETCH_TIMEOUT_SECONDS", 5.0, 0.5, 30.0)
-    skew, skew_error = _number("OIDC_CLOCK_SKEW_SECONDS", 30, 0, 120, integer=True)
-    cooldown, cooldown_error = _number("JWKS_UNKNOWN_KID_REFRESH_COOLDOWN_SECONDS", 5.0, 1.0, 60.0)
-    retry, retry_error = _number("JWKS_REFRESH_FAILURE_RETRY_SECONDS", 5.0, 1.0, 60.0)
-    for error in (ttl_error, stale_error, timeout_error, skew_error, cooldown_error, retry_error):
-        if error: errors.append(error)
-    if not populated and not production:
-        return None, errors
+def _timing_values(errors: list[str]) -> tuple[float | None, ...]:
+    values_and_errors = (
+        _number("JWKS_CACHE_TTL", 3600, 60, 86400),
+        _number("JWKS_MAX_STALE_SECONDS", 86400, 60, 604800),
+        _number("JWKS_FETCH_TIMEOUT_SECONDS", 5.0, 0.5, 30.0),
+        _number("OIDC_CLOCK_SKEW_SECONDS", 30, 0, 120, integer=True),
+        _number("JWKS_UNKNOWN_KID_REFRESH_COOLDOWN_SECONDS", 5.0, 1.0, 60.0),
+        _number("JWKS_REFRESH_FAILURE_RETRY_SECONDS", 5.0, 1.0, 60.0),
+    )
+    for _value, error in values_and_errors:
+        if error:
+            errors.append(error)
+    return tuple(value for value, _error in values_and_errors)
+
+
+def _identity_values(
+    raw: dict[str, str | None],
+    production: bool,
+    errors: list[str],
+) -> tuple[str | None, str | None, str]:
     for name in _REQUIRED:
-        if raw[name] is None or raw[name] == "":
+        if raw[name] in (None, ""):
             errors.append(f"{name} is required")
     issuer = jwks = None
     if raw["OIDC_ISSUER"] not in (None, ""):
         issuer, error = _url(raw["OIDC_ISSUER"] or "", "OIDC_ISSUER", production)
-        if error: errors.append(error)
+        if error:
+            errors.append(error)
     if raw["OIDC_JWKS_URL"] not in (None, ""):
         jwks, error = _url(raw["OIDC_JWKS_URL"] or "", "OIDC_JWKS_URL", production)
-        if error: errors.append(error)
+        if error:
+            errors.append(error)
     audience = raw["OIDC_AUDIENCE"] or ""
-    if audience and (len(audience) > 256 or any(char.isspace() or not char.isprintable() for char in audience)):
+    if audience and (
+        len(audience) > 256
+        or any(char.isspace() or not char.isprintable() for char in audience)
+    ):
         errors.append("OIDC_AUDIENCE is invalid")
+    return issuer, jwks, audience
+
+
+def _validate_oidc_relationships(
+    issuer: str | None,
+    jwks: str | None,
+    ttl: float | None,
+    stale: float | None,
+    errors: list[str],
+) -> None:
     if ttl is not None and stale is not None and stale < ttl:
         errors.append("JWKS_MAX_STALE_SECONDS must be at least JWKS_CACHE_TTL")
     if issuer and jwks:
         try:
-            origins_match = normalized_origin(urlsplit(issuer)) == normalized_origin(urlsplit(jwks))
+            origins_match = normalized_origin(urlsplit(issuer)) == normalized_origin(
+                urlsplit(jwks)
+            )
         except ValueError:
             errors.append("OIDC_ISSUER or OIDC_JWKS_URL is invalid")
         else:
             if not origins_match:
                 errors.append("OIDC_ISSUER and OIDC_JWKS_URL must have the same origin")
+
+
+def _parse(production: bool) -> tuple[OIDCVerifierSettings | None, list[str]]:
+    raw = {name: os.getenv(name) for name in _REQUIRED}
+    populated = {name: value for name, value in raw.items() if value not in (None, "")}
+    errors: list[str] = []
+    ttl, stale, timeout, skew, cooldown, retry = _timing_values(errors)
+    if not populated and not production:
+        return None, errors
+    issuer, jwks, audience = _identity_values(raw, production, errors)
+    _validate_oidc_relationships(issuer, jwks, ttl, stale, errors)
     if errors or issuer is None or jwks is None or audience == "" or ttl is None or stale is None or timeout is None or skew is None or cooldown is None or retry is None:
         return None, errors
     assert issuer is not None and jwks is not None

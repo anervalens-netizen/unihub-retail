@@ -86,9 +86,9 @@ def _initial_promotion_state(snapshot: CampaignResponseSnapshot) -> _PromotionSt
 
 def _promotion_summary_values(
     snapshot: CampaignResponseSnapshot,
-) -> tuple[int | None, Decimal, dict[tuple[str, str, str], int]]:
-    qty = (
-        snapshot.summary.promo_qty
+) -> tuple[int, Decimal, dict[tuple[str, str, str], int]]:
+    qty = int(
+        snapshot.summary.promo_qty or 0
         if snapshot.include_incentive and snapshot.summary is not None
         else 0
     )

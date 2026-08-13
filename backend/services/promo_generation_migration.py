@@ -22,16 +22,16 @@ from fastapi import HTTPException
 
 from services.dashboard_specials import validate_special_cards_config
 from services.imports import (
-    ImportsService,
-    PromoActualsParseResult,
-    _canonical_json_bytes,
-    _fsync_directory,
-    _promo_actuals_material_bytes,
-    _write_durable_private_file,
+    ImportsService, PromoActualsParseResult, _promo_actuals_material_bytes,
 )
 from services.product_lists import get_repo_root, resolve_path
 from services.promo_generation_migration_hash import (
     target_generation_id as _target_generation_id,
+)
+from services.promo_generation_publisher import (
+    _canonical_json_bytes,
+    _fsync_directory,
+    _write_durable_private_file,
 )
 from services.spreadsheet_safety import (
     PROMO_ACTUALS_SPREADSHEET_LIMITS,

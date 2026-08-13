@@ -1,6 +1,5 @@
 """Authoritative Retail -> Google writer for the isolated Grile V2 pilot."""
 from __future__ import annotations
-
 import asyncio
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
@@ -9,7 +8,6 @@ import hashlib
 import logging
 from typing import Any, Iterable, Mapping
 from zoneinfo import ZoneInfo
-
 from services.forecast import get_forecast_factor
 from services.grile_monthly_google import GoogleSyncAdapter, call_with_backoff
 from services.grile_monthly_integrity import secure_write_json
@@ -18,8 +16,6 @@ from services.grile_pilot_v2 import (
     PILOT_V2_SNAPSHOT_SCHEMA_VERSION,
 )
 from services.grile_pilot_v2_registry import PILOT_V2_MONTH, PILOT_V2_SHEETS, PilotV2Sheet
-
-
 logger = logging.getLogger(__name__)
 _GOOGLE_TIMEOUT_SECONDS = 90.0
 _SHEETS_EPOCH = date(1899, 12, 30)
@@ -30,7 +26,6 @@ _DETAIL_FIRST_ROW_INDEX = 10
 _SALES_ROW_LIMIT = 4999
 _WRITER_SCHEMA_VERSION = 1
 _BUCHAREST_TZ = ZoneInfo("Europe/Bucharest")
-
 
 @dataclass(frozen=True)
 class PilotV2Source:

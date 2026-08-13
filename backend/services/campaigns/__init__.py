@@ -328,26 +328,29 @@ class CampaignsService:
         item_codes = incentive_item_codes(incentive_campaign)
         if incentive_campaign is None or not item_codes:
             return [], []
-        kwargs = {
-            "firma": request.firma,
-            "regional": request.regional,
-            "asm": request.asm,
-            "site_code": request.site_code,
-            "agent": request.agent,
-            "current_scope": request.current_scope,
-            "include_closed_stores": request.include_closed_stores,
-        }
         store_rows = await self.repo.fetch_incentive_store_rows(
             conn,
             item_codes,
             request.month,
-            **kwargs,
+            firma=request.firma,
+            regional=request.regional,
+            asm=request.asm,
+            site_code=request.site_code,
+            agent=request.agent,
+            current_scope=request.current_scope,
+            include_closed_stores=request.include_closed_stores,
         )
         agent_rows = await self.repo.fetch_incentive_agent_rows(
             conn,
             item_codes,
             request.month,
-            **kwargs,
+            firma=request.firma,
+            regional=request.regional,
+            asm=request.asm,
+            site_code=request.site_code,
+            agent=request.agent,
+            current_scope=request.current_scope,
+            include_closed_stores=request.include_closed_stores,
         )
         return store_rows, agent_rows
 

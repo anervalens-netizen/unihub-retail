@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from decimal import Decimal
-from typing import Literal
+from typing import Any, Literal
 
 from fastapi import HTTPException, status
 
@@ -260,7 +260,7 @@ async def _select_performance_entity(
     current_scope: bool,
     include_closed_stores: bool,
 ) -> _PerformanceSelection:
-    common = {
+    common: dict[str, Any] = {
         "conn": conn,
         "month": month,
         "key": key,
