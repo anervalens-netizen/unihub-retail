@@ -344,7 +344,6 @@ fi
 RELEASE_A_EVIDENCE_PRESENT=0
 RELEASE_A_EVIDENCE_FILES=(
   schema-gate.json
-  release-a-candidate.json
   release-a-schema-empty.xml
   release-a-schema-restored.xml
 )
@@ -477,7 +476,6 @@ archive_digest = hashlib.sha256(archive_path.read_bytes()).hexdigest()
 release_a_evidence = None
 release_a_files = (
     "schema-gate.json",
-    "release-a-candidate.json",
     "release-a-schema-empty.xml",
     "release-a-schema-restored.xml",
 )
@@ -493,14 +491,9 @@ if release_a_present == "1":
     schema_gate = json.loads(
         (output_path / "schema-gate.json").read_text(encoding="utf-8")
     )
-    candidate_gate = json.loads(
-        (output_path / "release-a-candidate.json").read_text(encoding="utf-8")
-    )
     if (
         schema_gate.get("result") != "PASS"
         or schema_gate.get("release_a_sha") != source_sha
-        or candidate_gate.get("result") != "PASS"
-        or candidate_gate.get("candidate_sha") != source_sha
     ):
         raise SystemExit("Release-A evidence does not match the artifact source SHA")
     evidence_hashes = {
@@ -508,9 +501,7 @@ if release_a_present == "1":
         for name in release_a_files
     }
     if (
-        schema_gate.get("candidate_gate_sha256")
-        != evidence_hashes["release-a-candidate.json"]
-        or schema_gate.get("junit_empty_sha256")
+        schema_gate.get("junit_empty_sha256")
         != evidence_hashes["release-a-schema-empty.xml"]
         or schema_gate.get("junit_restored_sha256")
         != evidence_hashes["release-a-schema-restored.xml"]

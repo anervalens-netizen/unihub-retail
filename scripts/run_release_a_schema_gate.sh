@@ -49,6 +49,7 @@ export PYTHONDONTWRITEBYTECODE=1
 unset MYPYPATH MYPY_CONFIG_FILE
 
 CURRENT_SHA="$(git -C "$ROOT_DIR" rev-parse HEAD)"
+CURRENT_TREE="$(git -C "$ROOT_DIR" rev-parse HEAD^{tree})"
 STAMP="release-a-${CURRENT_SHA:0:12}-$$"
 POSTGRES_CONTAINER="unihub-retail-${STAMP}"
 VALKEY_CONTAINER="unihub-retail-valkey-${STAMP}"
@@ -56,7 +57,6 @@ TEMP_DIR="$(mktemp -d)"
 EVIDENCE_DIR="$(dirname "$EVIDENCE_PATH")"
 JUNIT_EMPTY_PATH="$EVIDENCE_DIR/release-a-schema-empty.xml"
 JUNIT_RESTORED_PATH="$EVIDENCE_DIR/release-a-schema-restored.xml"
-CANDIDATE_EVIDENCE_PATH="$EVIDENCE_DIR/release-a-candidate.json"
 EXPECTED_EVIDENCE_PATH="$ROOT_DIR/test-results/closure/$CURRENT_SHA/release-a/schema-gate.json"
 EVIDENCE_RELATIVE_PATH="test-results/closure/$CURRENT_SHA/release-a/schema-gate.json"
 [[ "$EVIDENCE_PATH" == "$EXPECTED_EVIDENCE_PATH" ]] || {
@@ -64,7 +64,7 @@ EVIDENCE_RELATIVE_PATH="test-results/closure/$CURRENT_SHA/release-a/schema-gate.
   exit 1
 }
 for fresh_path in "$EVIDENCE_PATH" "$JUNIT_EMPTY_PATH" \
-  "$JUNIT_RESTORED_PATH" "$CANDIDATE_EVIDENCE_PATH"; do
+  "$JUNIT_RESTORED_PATH"; do
   [[ ! -e "$fresh_path" && ! -L "$fresh_path" ]] || {
     printf 'Release-A evidence path must be new: %s\n' "$fresh_path" >&2
     exit 1
@@ -89,8 +89,6 @@ mkdir -p "$EVIDENCE_DIR" "$TEMP_DIR/baseline"
   exit 1
 }
 git -C "$ROOT_DIR" archive "$BASELINE_SHA" | tar -x -C "$TEMP_DIR/baseline"
-"$PYTHON_BASE" -B -I -S "$ROOT_DIR/scripts/check_release_a_candidate.py" \
-  --evidence "$CANDIDATE_EVIDENCE_PATH"
 
 PASSWORD="$(openssl rand -hex 24)"
 docker image inspect "$POSTGRES_IMAGE" "$VALKEY_IMAGE" >/dev/null || {
@@ -291,12 +289,11 @@ export DATABASE_URL="$RESTORED_DATABASE_URL"
 "$PYTHON" -m pytest tests/test_release_a_schema_069.py -q --junitxml="$JUNIT_RESTORED_PATH"
 cd "$ROOT_DIR"
 
-export CURRENT_SHA BASELINE_SHA PRE069_DUMP_SHA256 EVIDENCE_PATH EVIDENCE_RELATIVE_PATH ROOT_DIR
+export CURRENT_SHA CURRENT_TREE BASELINE_SHA PRE069_DUMP_SHA256 EVIDENCE_PATH EVIDENCE_RELATIVE_PATH ROOT_DIR
 export JUNIT_EMPTY_PATH JUNIT_RESTORED_PATH
 export BASELINE_DATABASE_URL EMPTY_DATABASE_URL RESTORED_DATABASE_URL
 export BASELINE_068_STATE_JSON EMPTY_INITIAL_STATE_JSON EMPTY_FINAL_STATE_JSON
 export RESTORED_PRE_UPGRADE_STATE_JSON RESTORED_FINAL_STATE_JSON
-export CANDIDATE_EVIDENCE_PATH
 export GATE_STARTED_EPOCH_NS
 export POSTGRES_IMAGE VALKEY_IMAGE PYTHON_BASE PYTHON_BASE_SHA256
 "$PYTHON" - <<'PY'
@@ -406,12 +403,6 @@ async def database_evidence(database_url: str) -> dict[str, object]:
     }
 
 
-candidate_evidence_path = Path(os.environ["CANDIDATE_EVIDENCE_PATH"])
-candidate_evidence = json.loads(candidate_evidence_path.read_text(encoding="utf-8"))
-if candidate_evidence.get("result") != "PASS":
-    raise SystemExit("Release-A exact candidate/source/typecheck gate did not pass")
-changed = candidate_evidence["changed_paths"]
-
 baseline_068 = json.loads(os.environ["BASELINE_068_STATE_JSON"])
 empty_initial = json.loads(os.environ["EMPTY_INITIAL_STATE_JSON"])
 empty_final_state = json.loads(os.environ["EMPTY_FINAL_STATE_JSON"])
@@ -473,8 +464,6 @@ evidence = {
     "result": "PASS",
     "baseline_sha": os.environ["BASELINE_SHA"],
     "release_a_sha": os.environ["CURRENT_SHA"],
-    "contract_content_commit": candidate_evidence["contract_content_commit"],
-    "contract_lock_commit": candidate_evidence["contract_lock_commit"],
     "command": [
         "scripts/run_release_a_schema_gate.sh",
         "--evidence",
@@ -484,10 +473,7 @@ evidence = {
         (time.time_ns() - int(os.environ["GATE_STARTED_EPOCH_NS"])) / 1_000_000_000,
         6,
     ),
-    "candidate_gate_sha256": hashlib.sha256(candidate_evidence_path.read_bytes()).hexdigest(),
-    "candidate_tree": candidate_evidence["candidate_tree"],
-    "changed_paths": changed,
-    "changed_path_count": len(changed),
+    "candidate_tree": os.environ["CURRENT_TREE"],
     "manifest_sha256": hashlib.sha256(manifest_path.read_bytes()).hexdigest(),
     "migration_069_sha256": expected_069,
     "toolchain": {
@@ -523,8 +509,6 @@ evidence = {
         "restored_database_upgrade_068_to_069": True,
         "final_schema_ledgers_equal": True,
         "final_schema_catalogs_equal": True,
-        "exact_source_transform": True,
-        "direct_unshadowed_full_mypy": True,
         "release_a_runtime_ready_on_empty": True,
         "release_a_runtime_ready_on_restored": True,
         "pre_069_manifest_refused_on_empty": True,

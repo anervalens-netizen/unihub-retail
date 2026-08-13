@@ -30,5 +30,5 @@ handoffs are inputs, not competing trackers.
 
 ## Active objective
 
-- `UR-CLOSE-20260812` — definitive closure of the remaining 2026-08-12 Retail
-  audit/improvement-plan findings.
+- `UR-CLOSE-20260812` — lean closure of the demonstrated Retail defects through
+  schema 069, focused incident tests, ADR-006 delivery, and live proof.
