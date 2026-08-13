@@ -2,10 +2,14 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PYTHON="${UNIHUB_SCALE_PYTHON:-$ROOT/backend/venv/bin/python}"
+PYTHON="$ROOT/backend/venv/bin/python"
+PYTHON_BASE="/usr/bin/python3.12"
+PYTHON_BASE_SHA256="1643dacd9feaedc58f3cc581e4d22577dfe25c09b10282936186ccf0f2e61118"
 POSTGRES_IMAGE="postgres@sha256:9a8afca54e7861fd90fab5fdf4c42477a6b1cb7d293595148e674e0a3181de15"
-[[ -x "$PYTHON" ]] || PYTHON="$ROOT/.venv/bin/python"
-[[ -x "$PYTHON" ]] || PYTHON=python3
+[[ -x "$PYTHON" && "$(readlink -f "$PYTHON")" == "$PYTHON_BASE" ]] \
+  || { echo "AC-13 pinned Python interpreter is unavailable" >&2; exit 1; }
+[[ "$(sha256sum "$PYTHON_BASE" | awk '{print $1}')" == "$PYTHON_BASE_SHA256" ]] \
+  || { echo "AC-13 Python interpreter digest mismatch" >&2; exit 1; }
 
 if [[ "${1:-}" == "--self-test" ]]; then
   UNIHUB_TEST_DATABASE=1 UNIHUB_RUNNING_TESTS=1 "$PYTHON" "$ROOT/backend/scripts/run_retail_scale_profile.py" --self-test

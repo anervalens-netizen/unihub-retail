@@ -84,6 +84,18 @@ python3 "$SCRIPT_DIR/../scripts/validate_release_sbom.py" pypi "$BUILD_DIR/SBOM.
 
 RELEASE_A_EVIDENCE_DIR="${RELEASE_A_EVIDENCE_DIR:-}"
 RELEASE_A_EVIDENCE_RUN_ID="${RELEASE_A_EVIDENCE_RUN_ID:-}"
+FRONTEND_BUILD_INPUT_SHA256_FILE="${FRONTEND_BUILD_INPUT_SHA256_FILE:-}"
+EMPTY_SHA256="e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+FRONTEND_BUILD_INPUT_SHA256="$EMPTY_SHA256"
+if [[ -n "$FRONTEND_BUILD_INPUT_SHA256_FILE" ]]; then
+  [[ -f "$FRONTEND_BUILD_INPUT_SHA256_FILE" \
+    && ! -L "$FRONTEND_BUILD_INPUT_SHA256_FILE" ]] \
+    || die "frontend build-input digest file is unsafe"
+  FRONTEND_BUILD_INPUT_SHA256="$(tr -d '\n' <"$FRONTEND_BUILD_INPUT_SHA256_FILE")"
+  [[ "$FRONTEND_BUILD_INPUT_SHA256" =~ ^[0-9a-f]{64}$ \
+    && "$(wc -l <"$FRONTEND_BUILD_INPUT_SHA256_FILE")" -eq 1 ]] \
+    || die "frontend build-input digest is invalid"
+fi
 RELEASE_A_EVIDENCE_PRESENT=0
 RELEASE_A_EVIDENCE_FILES=(
   schema-gate.json
@@ -110,7 +122,7 @@ fi
 python3 - "$REPO_ROOT" "$BUILD_DIR" "$SOURCE_SHA" "$ARCHIVE_NAME" \
   "${RELEASE_BUILDER_ID:-local:ops/build-retail-release-artifact.sh}" \
   "${RELEASE_INVOCATION_ID:-local}" "$RELEASE_A_EVIDENCE_PRESENT" \
-  "$RELEASE_A_EVIDENCE_RUN_ID" <<'PY'
+  "$RELEASE_A_EVIDENCE_RUN_ID" "$FRONTEND_BUILD_INPUT_SHA256" <<'PY'
 import hashlib
 import json
 import pathlib
@@ -127,6 +139,7 @@ import xml.etree.ElementTree as ET
     invocation_id,
     release_a_present,
     release_a_run_id,
+    frontend_build_input_sha256,
 ) = sys.argv[1:]
 repo_path = pathlib.Path(repo)
 output_path = pathlib.Path(output)
@@ -293,6 +306,10 @@ provenance = {
             "externalParameters": {
                 "sourceSha": source_sha,
                 "releaseAEvidence": release_a_evidence,
+                "frontendBuildInput": {
+                    "name": "VITE_FRONTEND_GLITCHTIP_DSN",
+                    "sha256": frontend_build_input_sha256,
+                },
             },
             "internalParameters": {},
             "resolvedDependencies": [{"uri": "git+https://github.com/anervalens-netizen/unihub-retail", "digest": {"gitCommit": source_sha}}],
@@ -311,7 +328,16 @@ if release_a_evidence is not None:
     evidence_names.extend(release_a_files)
 for name in evidence_names:
     evidence[name] = hashlib.sha256((output_path / name).read_bytes()).hexdigest()
-manifest = {"schemaVersion": 1, "sourceSha": source_sha, "archive": archive_name, "sha256": evidence}
+manifest = {
+    "schemaVersion": 1,
+    "sourceSha": source_sha,
+    "archive": archive_name,
+    "sha256": evidence,
+    "frontendBuildInput": {
+        "name": "VITE_FRONTEND_GLITCHTIP_DSN",
+        "sha256": frontend_build_input_sha256,
+    },
+}
 if release_a_evidence is not None:
     manifest["releaseAEvidence"] = release_a_evidence
 (output_path / "RELEASE_MANIFEST.json").write_text(json.dumps(manifest, sort_keys=True, separators=(",", ":")) + "\n", encoding="utf-8")

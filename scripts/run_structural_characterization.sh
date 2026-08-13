@@ -4,9 +4,11 @@ umask 077
 
 PROGRAM="$(basename "$0")"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-VENV="${UNIHUB_BACKEND_VENV:-$ROOT/backend/venv}"
+VENV="$ROOT/backend/venv"
 PYTHON="$VENV/bin/python"
-PYTEST="$VENV/bin/pytest"
+PYTHON_BASE="/usr/bin/python3.12"
+PYTHON_BASE_SHA256="1643dacd9feaedc58f3cc581e4d22577dfe25c09b10282936186ccf0f2e61118"
+POSTGRES_IMAGE="postgres@sha256:9a8afca54e7861fd90fab5fdf4c42477a6b1cb7d293595148e674e0a3181de15"
 BASELINE_MANIFEST="$ROOT/scripts/structural-characterization-baseline-v1.json"
 BOOTSTRAP="$ROOT/backend/scripts/bootstrap_test_db.py"
 MAX_SECONDS=""
@@ -25,7 +27,10 @@ while [[ "$#" -gt 0 ]]; do
 done
 
 if [[ "$SELF_TEST" == "1" ]]; then
-  [[ -x "$PYTHON" ]] || die "backend virtualenv is required"
+  [[ -x "$PYTHON" && "$(readlink -f "$PYTHON")" == "$PYTHON_BASE" ]] \
+    || die "pinned backend Python is required"
+  [[ "$(sha256sum "$PYTHON_BASE" | awk '{print $1}')" == "$PYTHON_BASE_SHA256" ]] \
+    || die "backend Python digest mismatch"
   [[ -f "$BASELINE_MANIFEST" ]] || die "baseline manifest is missing"
   "$PYTHON" - "$BASELINE_MANIFEST" <<'PY'
 import copy
@@ -55,7 +60,10 @@ fi
 [[ -n "$EVIDENCE" ]] || die "--evidence is required"
 [[ ! -e "$EVIDENCE" && ! -L "$EVIDENCE" ]] || die "evidence already exists"
 [[ "${UNIHUB_TEST_DATABASE:-}" == "1" ]] || die "UNIHUB_TEST_DATABASE=1 is required"
-[[ -x "$PYTHON" && -x "$PYTEST" ]] || die "backend virtualenv is required"
+[[ -x "$PYTHON" && "$(readlink -f "$PYTHON")" == "$PYTHON_BASE" ]] \
+  || die "pinned backend Python is required"
+[[ "$(sha256sum "$PYTHON_BASE" | awk '{print $1}')" == "$PYTHON_BASE_SHA256" ]] \
+  || die "backend Python digest mismatch"
 [[ -f "$BASELINE_MANIFEST" && -x "$BOOTSTRAP" ]] || die "locked manifest/bootstrap missing"
 [[ "$(hostname)" == "dell-standby" ]] || die "AC-10 is locked to dell-standby"
 
@@ -130,7 +138,7 @@ PY
 set +e
 /usr/bin/time -f '%e' -o "$WALL_FILE" env -u UNIHUB_TEST_DATABASE \
   UNIHUB_DATA_DIR="$FIXTURES" HUB_SPECIALS_PATH="$FIXTURES/hub_specials.json" \
-  PYTHONPATH="$ROOT/backend" "$PYTEST" -q "${BASELINE_SELECTORS[@]}" \
+  PYTHONPATH="$ROOT/backend" "$PYTHON" -m pytest -q "${BASELINE_SELECTORS[@]}" \
   --deselect "$ISOLATED_SELECTOR" --junitxml="$TIMED_JUNIT" \
   >"$TIMED_LOG" 2>&1
 TIMED_STATUS=$?
@@ -141,9 +149,11 @@ set -e
 # PostgreSQL harness and is excluded from the 16.7-second timing exactly as the
 # baseline contract states.
 PASSWORD="$($PYTHON -c 'import secrets; print(secrets.token_hex(24))')"
-docker run -d --name "$CONTAINER" --label unihub.test=retail-ac10 \
+docker image inspect "$POSTGRES_IMAGE" >/dev/null \
+  || die "pinned isolated PostgreSQL image is unavailable"
+docker run --pull=never -d --name "$CONTAINER" --label unihub.test=retail-ac10 \
   -e POSTGRES_USER=unihub_test -e POSTGRES_PASSWORD="$PASSWORD" \
-  -e POSTGRES_DB=test_unihub_ac10 -p 127.0.0.1::5432 postgres:18-alpine \
+  -e POSTGRES_DB=test_unihub_ac10 -p 127.0.0.1::5432 "$POSTGRES_IMAGE" \
   >/dev/null
 PORT="$(docker inspect --format '{{(index (index .NetworkSettings.Ports "5432/tcp") 0).HostPort}}' "$CONTAINER")"
 [[ "$PORT" =~ ^[0-9]+$ && "$PORT" != "5432" ]] || die "unsafe isolated PostgreSQL port"
@@ -163,15 +173,15 @@ DB_ENV=(
   "PYTHONPATH=$ROOT/backend"
 )
 env "${DB_ENV[@]}" "$PYTHON" "$BOOTSTRAP" >"$WORK/bootstrap.log"
-env "${DB_ENV[@]}" "$PYTEST" -q "$ISOLATED_SELECTOR" \
+env "${DB_ENV[@]}" "$PYTHON" -m pytest -q "$ISOLATED_SELECTOR" \
   --junitxml="$ISOLATED_JUNIT" >"$ISOLATED_LOG" 2>&1
 
 # Checkpoints 11 and 12 are exact targeted characterization groups, outside
 # the historic timed suite. Checkpoints 8-10 are frontend-owned and referenced
 # as AC-08/AC-11 evidence rather than fabricated here.
-env -u UNIHUB_TEST_DATABASE PYTHONPATH="$ROOT/backend" "$PYTEST" -q \
+env -u UNIHUB_TEST_DATABASE PYTHONPATH="$ROOT/backend" "$PYTHON" -m pytest -q \
   "${CP11_SELECTORS[@]}" --junitxml="$CP11_JUNIT" >/dev/null
-env -u UNIHUB_TEST_DATABASE PYTHONPATH="$ROOT/backend" "$PYTEST" -q \
+env -u UNIHUB_TEST_DATABASE PYTHONPATH="$ROOT/backend" "$PYTHON" -m pytest -q \
   "${CP12_SELECTORS[@]}" --junitxml="$CP12_JUNIT" >/dev/null
 
 "$PYTHON" - "$ROOT" "$BASELINE_MANIFEST" "$TIMED_JUNIT" "$TIMED_LOG" \

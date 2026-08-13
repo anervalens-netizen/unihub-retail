@@ -22,6 +22,9 @@ OBSERVE_SECONDS=120
 EVIDENCE=""
 
 COSIGN_SHA256="4629c757b7618056f8ddd7e2625ae9fdd94c0372a65049520bc7d9df9efc7f71"
+BROWSER_CHROME="/home/andrei/.cache/ms-playwright/chromium-1228/chrome-linux64/chrome"
+BROWSER_CHROME_SHA256="2d18db9d8608b052b6a552ee00ec1e830f93692e928b65ecc67d693bd33fe801"
+BROWSER_CHROME_VERSION="Google Chrome for Testing 149.0.7827.55"
 PUBLIC_BASE="https://retail.unihub.ro"
 LOCAL_BASE="http://127.0.0.1:9898"
 PROMETHEUS_BASE="http://127.0.0.1:9090"
@@ -104,6 +107,11 @@ self_test() {
   [[ "$source" == *'TASK_A_BRANCH="codex/retail-definitive-closure-20260812"'* \
     && "$source" == *'TASK_B_BRANCH="codex/retail-definitive-closure-b-20260813"'* ]] \
     || die "self-test: exact task branches are not frozen"
+  [[ "$source" == *'Grile V2 · pilot'* \
+    && "$source" == *'Statistici Salarii'* \
+    && "$source" == *'Builder export Excel'* \
+    && "$source" == *'refs/heads/main'* ]] \
+    || die "self-test: browser/ref acceptance surface is incomplete"
   tmp="$(mktemp -d)"
   trap 'rm -rf -- "$tmp"' RETURN
   fake_pass="$tmp/manual-pass.json"
@@ -196,6 +204,9 @@ done
 [[ "$(git -C "$LIVE_ROOT" branch --show-current)" == "main" ]] || die "live checkout is not branch main"
 [[ -z "$(git -C "$LIVE_ROOT" status --porcelain=v1 --untracked-files=all)" ]] || die "live checkout is dirty"
 [[ "$(git -C "$LIVE_ROOT" rev-parse origin/main)" == "$MAIN_B_SHA" ]] || die "local origin/main is not MAIN_B_SHA"
+REMOTE_MAIN="$(sudo -u andrei git -C "$LIVE_ROOT" ls-remote origin refs/heads/main)"
+[[ "$REMOTE_MAIN" == "$MAIN_B_SHA"$'\t'refs/heads/main ]] \
+  || die "live GitHub main is not MAIN_B_SHA"
 git -C "$LIVE_ROOT" merge-base --is-ancestor "$MAIN_A_SHA" "$MAIN_B_SHA" \
   || die "MAIN_A_SHA is not an ancestor of MAIN_B_SHA"
 [[ "$(git -C "$LIVE_ROOT" rev-parse "$MAIN_B_SHA:scripts/verify_deployed_release.sh")" \
@@ -208,6 +219,10 @@ trap 'rm -rf -- "$WORK"' EXIT
 mkdir "$WORK/fragments" "$WORK/raw" "$WORK/artifacts"
 PYTHON="$LIVE_ROOT/backend/venv/bin/python"
 [[ -x "$PYTHON" ]] || die "deployed backend Python is unavailable"
+[[ -x "$BROWSER_CHROME" \
+  && "$(sha256_file "$BROWSER_CHROME")" == "$BROWSER_CHROME_SHA256" \
+  && "$($BROWSER_CHROME --version)" == "$BROWSER_CHROME_VERSION" ]] \
+  || die "pinned production browser is unavailable or changed"
 
 verify_b_artifact() {
   local dir="$1" expected_sha="$2" expected_archive_sha="$3" output="$4"
@@ -217,8 +232,8 @@ d = pathlib.Path(sys.argv[1]).resolve(); sha, expected_archive, out = sys.argv[2
 archive_name = f"retail-release-{sha}.tar.gz"
 checksummed = {"SOURCE_SHA", archive_name, "SBOM.cdx.json", "SBOM.npm.cdx.json", "SBOM.python.cdx.json", "PROVENANCE.json", "RELEASE_MANIFEST.json"}
 required = checksummed | {"SHA256SUMS", "RELEASE_MANIFEST.sigstore.json"}
-actual = {p.name for p in d.iterdir() if p.is_file() and not p.is_symlink()}
-if not required <= actual or any((d / n).is_symlink() for n in required): raise SystemExit("artifact inventory incomplete or unsafe")
+actual = {p.name for p in d.iterdir()}
+if actual != required or any(not (d / n).is_file() or (d / n).is_symlink() for n in required): raise SystemExit("artifact inventory incomplete or unsafe")
 if (d / "SOURCE_SHA").read_text().strip() != sha: raise SystemExit("SOURCE_SHA mismatch")
 entries = {}
 for line in (d / "SHA256SUMS").read_text().splitlines():
@@ -234,16 +249,20 @@ if entries[archive_name] != expected_archive: raise SystemExit("Release-B archiv
 m=json.loads((d/"RELEASE_MANIFEST.json").read_text())
 if m.get("schemaVersion")!=1 or m.get("sourceSha")!=sha or m.get("archive")!=archive_name: raise SystemExit("release manifest identity mismatch")
 if m.get("sha256") != {n: entries[n] for n in checksummed if n!="RELEASE_MANIFEST.json"}: raise SystemExit("release manifest digests mismatch")
+frontend_input=m.get("frontendBuildInput")
+if not isinstance(frontend_input,dict) or frontend_input.get("name")!="VITE_FRONTEND_GLITCHTIP_DSN" or not re.fullmatch(r"[0-9a-f]{64}",str(frontend_input.get("sha256",""))): raise SystemExit("release frontend build-input identity mismatch")
 p=json.loads((d/"PROVENANCE.json").read_text()); subjects=p.get("subject")
 if p.get("_type")!="https://in-toto.io/Statement/v1" or p.get("predicateType")!="https://slsa.dev/provenance/v1": raise SystemExit("provenance type mismatch")
 if not isinstance(subjects,list) or len(subjects)!=1 or subjects[0].get("name")!=archive_name or subjects[0].get("digest",{}).get("sha256")!=expected_archive: raise SystemExit("provenance subject mismatch")
 resolved=p.get("predicate",{}).get("buildDefinition",{}).get("resolvedDependencies",[])
+external=p.get("predicate",{}).get("buildDefinition",{}).get("externalParameters",{})
+if external.get("frontendBuildInput")!=frontend_input: raise SystemExit("provenance frontend build-input mismatch")
 if not any(x.get("digest",{}).get("gitCommit")==sha for x in resolved if isinstance(x,dict)): raise SystemExit("provenance source mismatch")
 with tarfile.open(d/archive_name,"r:gz") as tf:
     for member in tf.getmembers():
         q=pathlib.PurePosixPath(member.name)
         if q.is_absolute() or ".." in q.parts or member.issym() or member.islnk(): raise SystemExit("unsafe archive member")
-payload={"schema_version":1,"result":"PASS","source_sha":sha,"archive":archive_name,"archive_sha256":expected_archive,"release_manifest_sha256":hashlib.sha256((d/"RELEASE_MANIFEST.json").read_bytes()).hexdigest(),"provenance_sha256":hashlib.sha256((d/"PROVENANCE.json").read_bytes()).hexdigest(),"sigstore_bundle_sha256":hashlib.sha256((d/"RELEASE_MANIFEST.sigstore.json").read_bytes()).hexdigest(),"inventory":entries}
+payload={"schema_version":1,"result":"PASS","source_sha":sha,"archive":archive_name,"archive_sha256":expected_archive,"release_manifest_sha256":hashlib.sha256((d/"RELEASE_MANIFEST.json").read_bytes()).hexdigest(),"provenance_sha256":hashlib.sha256((d/"PROVENANCE.json").read_bytes()).hexdigest(),"sigstore_bundle_sha256":hashlib.sha256((d/"RELEASE_MANIFEST.sigstore.json").read_bytes()).hexdigest(),"frontend_build_input_sha256":frontend_input["sha256"],"inventory":entries}
 pathlib.Path(out).write_text(json.dumps(payload,sort_keys=True,separators=(",",":"))+"\n")
 PY
   "$PYTHON" "$LIVE_ROOT/scripts/validate_release_sbom.py" npm "$dir/SBOM.npm.cdx.json" >/dev/null
@@ -438,6 +457,258 @@ probe_health_round() {
   probe_get "public-readyz-$round" "$PUBLIC_BASE" /readyz 200
 }
 
+probe_authenticated_browser() {
+  "$PYTHON" - "$BROWSER_CHROME" "$BROWSER_CHROME_SHA256" \
+    "$BROWSER_CHROME_VERSION" "$MANAGER_COOKIE_FILE" "$PUBLIC_BASE" \
+    "$WORK/fragments/browser.json" <<'PY'
+from __future__ import annotations
+
+import hashlib
+import json
+from pathlib import Path
+import socket
+import subprocess
+import sys
+import tempfile
+import time
+from urllib.request import urlopen
+
+from websockets.sync.client import connect
+
+
+chrome_path = Path(sys.argv[1])
+chrome_sha256, chrome_version = sys.argv[2:4]
+cookie_path = Path(sys.argv[4])
+base_url, output_path = sys.argv[5:]
+
+
+def cookie_header(path: Path) -> str:
+    raw = path.read_text(encoding="utf-8").strip()
+    cookies: list[str] = []
+    for original in raw.splitlines():
+        line = original
+        if line.startswith("#HttpOnly_"):
+            line = line[len("#HttpOnly_") :]
+        elif not line or line.startswith("#"):
+            continue
+        parts = line.split("\t")
+        if len(parts) >= 7 and parts[5] and parts[6]:
+            cookies.append(f"{parts[5]}={parts[6]}")
+    if not cookies:
+        if raw.lower().startswith("cookie:"):
+            raw = raw.split(":", 1)[1].strip()
+        if "\n" in raw or "\r" in raw or "=" not in raw:
+            raise SystemExit("manager browser cookie input is malformed")
+        return raw
+    return "; ".join(cookies)
+
+
+def browser_cookies(header: str, url: str) -> list[dict[str, object]]:
+    result: list[dict[str, object]] = []
+    for item in header.split(";"):
+        name, separator, value = item.strip().partition("=")
+        if not separator or not name or any(char.isspace() for char in name):
+            raise SystemExit("manager browser cookie input contains an invalid pair")
+        result.append(
+            {
+                "name": name,
+                "value": value,
+                "url": url,
+                "secure": url.startswith("https://"),
+            }
+        )
+    if not result:
+        raise SystemExit("manager browser cookie input is empty")
+    return result
+
+
+if hashlib.sha256(chrome_path.read_bytes()).hexdigest() != chrome_sha256:
+    raise SystemExit("browser digest changed")
+version = subprocess.check_output([str(chrome_path), "--version"], text=True).strip()
+if version != chrome_version:
+    raise SystemExit("browser version changed")
+
+with socket.socket() as reserved:
+    reserved.bind(("127.0.0.1", 0))
+    port = reserved.getsockname()[1]
+
+with tempfile.TemporaryDirectory(prefix="retail-ac17-browser-") as profile:
+    process = subprocess.Popen(
+        [
+            str(chrome_path),
+            "--headless=new",
+            "--no-sandbox",
+            "--disable-gpu",
+            "--disable-background-networking",
+            "--disable-component-update",
+            "--disable-default-apps",
+            "--disable-sync",
+            "--no-first-run",
+            f"--remote-debugging-port={port}",
+            f"--user-data-dir={profile}",
+            "about:blank",
+        ],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    try:
+        pages = None
+        for _ in range(60):
+            if process.poll() is not None:
+                raise SystemExit("pinned browser exited before DevTools readiness")
+            try:
+                pages = json.load(urlopen(f"http://127.0.0.1:{port}/json/list", timeout=1))
+                if pages:
+                    break
+            except OSError:
+                pass
+            time.sleep(0.25)
+        if not pages:
+            raise SystemExit("pinned browser DevTools endpoint did not become ready")
+
+        with connect(pages[0]["webSocketDebuggerUrl"], open_timeout=5) as websocket:
+            sequence = [0]
+            observed_same_origin_methods: set[str] = set()
+
+            def command(method: str, params: dict[str, object] | None = None) -> dict[str, object]:
+                sequence[0] += 1
+                request_id = sequence[0]
+                websocket.send(json.dumps({"id": request_id, "method": method, "params": params or {}}))
+                deadline = time.monotonic() + 15
+                while time.monotonic() < deadline:
+                    response = json.loads(websocket.recv(timeout=max(0.1, deadline - time.monotonic())))
+                    if response.get("method") == "Network.requestWillBeSent":
+                        request = response.get("params", {}).get("request", {})
+                        request_url = str(request.get("url", ""))
+                        request_method = str(request.get("method", "")).upper()
+                        if request_url.startswith(base_url):
+                            observed_same_origin_methods.add(request_method)
+                            if request_method not in {"GET", "HEAD"}:
+                                raise RuntimeError(
+                                    "browser attempted a non-read-only same-origin request"
+                                )
+                        continue
+                    if response.get("id") != request_id:
+                        continue
+                    if "error" in response:
+                        raise RuntimeError(f"CDP command failed: {method}")
+                    return response.get("result", {})
+                raise TimeoutError(f"CDP command timed out: {method}")
+
+            def evaluate(expression: str) -> object:
+                result = command(
+                    "Runtime.evaluate",
+                    {"expression": expression, "returnByValue": True, "awaitPromise": True},
+                )
+                return result.get("result", {}).get("value")
+
+            def wait_for_text(marker: str) -> None:
+                encoded = json.dumps(marker)
+                deadline = time.monotonic() + 20
+                while time.monotonic() < deadline:
+                    if evaluate(f"document.body?.innerText.includes({encoded}) === true"):
+                        body = str(evaluate("document.body?.innerText || ''"))
+                        forbidden = (
+                            "Nu ești autentificat",
+                            "nu a putut fi afișată",
+                            "nu a putut afisa aplicația",
+                        )
+                        if any(value in body for value in forbidden):
+                            raise RuntimeError("authenticated browser reached a fatal UI state")
+                        return
+                    time.sleep(0.25)
+                raise TimeoutError(f"browser marker did not appear: {marker}")
+
+            def click_button(label: str) -> None:
+                encoded = json.dumps(label)
+                clicked = evaluate(
+                    "(() => { const visible = e => { const r=e.getBoundingClientRect(); "
+                    "const s=getComputedStyle(e); return r.width>0 && r.height>0 && s.visibility!=='hidden' "
+                    "&& s.display!=='none'; }; const b=[...document.querySelectorAll('button')]"
+                    f".find(e => visible(e) && (e.textContent?.trim()==={encoded} || "
+                    f"[...e.querySelectorAll('span')].some(s => s.textContent?.trim()==={encoded}))); "
+                    "if (!b) return false; b.click(); return true; })()"
+                )
+                if clicked is not True:
+                    raise RuntimeError(f"visible browser button not found: {label}")
+
+            command("Network.enable")
+            command(
+                "Network.setCookies",
+                {"cookies": browser_cookies(cookie_header(cookie_path), base_url)},
+            )
+            command("Page.enable")
+            command("Emulation.setDeviceMetricsOverride", {"width": 1440, "height": 900, "deviceScaleFactor": 1, "mobile": False})
+            command("Page.navigate", {"url": base_url})
+            wait_for_text("Sales Hub")
+            checkpoints = [{"surface": "dashboard", "marker": "Sales Hub"}]
+
+            click_button("Agenti")
+            wait_for_text("Prezentare generală")
+            click_button("Grile")
+            wait_for_text("Grila actuală")
+            click_button("V2 · pilot")
+            wait_for_text("Grile V2 · pilot")
+            checkpoints.append({"surface": "grile-v2", "marker": "Grile V2 · pilot"})
+
+            click_button("Management")
+            wait_for_text("Manageri")
+            click_button("Calculator Target")
+            wait_for_text("Calculator Target")
+            checkpoints.append({"surface": "target", "marker": "Calculator Target"})
+            click_button("Salarii")
+            wait_for_text("Statistici Salarii")
+            checkpoints.append({"surface": "salary-read", "marker": "Statistici Salarii"})
+
+            click_button("Setari")
+            wait_for_text("Preferințe")
+            click_button("Importuri")
+            wait_for_text("Import fișier vânzări")
+            checkpoints.append({"surface": "imports", "marker": "Import fișier vânzări"})
+            click_button("Exporturi")
+            wait_for_text("Builder export Excel")
+            checkpoints.append({"surface": "exports-read", "marker": "Builder export Excel"})
+
+            command("Emulation.setDeviceMetricsOverride", {"width": 390, "height": 844, "deviceScaleFactor": 1, "mobile": True})
+            click_button("Hub")
+            wait_for_text("Sales Hub")
+            mobile_nav = evaluate(
+                "(() => { const e=document.querySelector('.mobile-bottom-nav'); "
+                "return !!e && getComputedStyle(e).display!=='none' && e.getBoundingClientRect().height>0; })()"
+            )
+            if mobile_nav is not True:
+                raise RuntimeError("mobile navigation is not visibly rendered")
+            checkpoints.append({"surface": "mobile-dashboard", "marker": "Sales Hub"})
+    finally:
+        process.terminate()
+        try:
+            process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait(timeout=5)
+
+payload = {
+    "schema_version": 1,
+    "result": "PASS",
+    "browser": chrome_version,
+    "browser_sha256": chrome_sha256,
+    "authenticated": True,
+    "desktop_viewport": [1440, 900],
+    "mobile_viewport": [390, 844],
+    "checkpoints": checkpoints,
+    "same_origin_http_methods": sorted(observed_same_origin_methods),
+    "interaction_mode": "navigation_only",
+    "business_mutations": 0,
+    "salary_export_executed": False,
+    "cookie_recorded": False,
+}
+Path(output_path).write_text(
+    json.dumps(payload, sort_keys=True, separators=(",", ":")) + "\n",
+    encoding="utf-8",
+)
+PY
+}
+
 probe_health_round 0
 probe_get dashboard "$PUBLIC_BASE" "/api/dashboard/all?month=$PROBE_MONTH" 200 "$MANAGER_COOKIE_FILE"
 probe_get target "$PUBLIC_BASE" /api/target-calculator/scenarios 200 "$MANAGER_COOKIE_FILE"
@@ -448,6 +719,7 @@ probe_get settings-imports "$PUBLIC_BASE" /api/import/history 200 "$MANAGER_COOK
 probe_get settings-exports "$PUBLIC_BASE" /api/exports/catalog 200 "$MANAGER_COOKIE_FILE"
 probe_get settings-resumable "$PUBLIC_BASE" /api/exports/operations/resumable 200 "$MANAGER_COOKIE_FILE"
 probe_get salary-forbidden "$PUBLIC_BASE" /salarii/agents/summary?limit=1 403 "$FORBIDDEN_COOKIE_FILE"
+probe_authenticated_browser
 sleep 60
 probe_health_round 1
 sleep 60
@@ -582,7 +854,7 @@ sudo -u andrei gh pr view "$RELEASE_B_PR" --repo "$GITHUB_REPOSITORY" \
   --json number,state,isDraft,headRefName,baseRefName,mergeCommit,url \
   | tee "$WORK/raw/pr-b.json" >/dev/null
 sudo -u andrei git -C "$LIVE_ROOT" ls-remote --heads origin \
-  "refs/heads/$TASK_A_BRANCH" "refs/heads/$TASK_B_BRANCH" \
+  refs/heads/main "refs/heads/$TASK_A_BRANCH" "refs/heads/$TASK_B_BRANCH" \
   | tee "$WORK/raw/task-remote-heads.txt" >/dev/null
 "$PYTHON" - "$WORK/raw/pr-a.json" "$WORK/raw/pr-b.json" \
   "$WORK/raw/task-remote-heads.txt" "$MAIN_A_SHA" "$MAIN_B_SHA" \
@@ -594,8 +866,10 @@ av=json.loads(pathlib.Path(pa).read_text()); bv=json.loads(pathlib.Path(pb).read
 def valid(value,number,branch,sha):
  return value.get("number")==int(number) and value.get("state")=="MERGED" and value.get("isDraft") is False and value.get("headRefName")==branch and value.get("baseRefName")=="main" and value.get("mergeCommit",{}).get("oid")==sha
 remote=pathlib.Path(heads).read_text()
-if not valid(av,an,ab,a) or not valid(bv,bn,bb,b) or remote.strip(): raise SystemExit("GitHub PR/task-ref reconciliation failed")
-payload={"schema_version":1,"result":"PASS","repository":"anervalens-netizen/unihub-retail","release_a":{"number":int(an),"branch":ab,"merge_sha":a,"state":"MERGED"},"release_b":{"number":int(bn),"branch":bb,"merge_sha":b,"state":"MERGED"},"task_remote_heads":[],"queries_sha256":hashlib.sha256(pathlib.Path(pa).read_bytes()+pathlib.Path(pb).read_bytes()+pathlib.Path(heads).read_bytes()).hexdigest()}
+remote_lines=remote.splitlines()
+if remote_lines != [f"{b}\trefs/heads/main"]: raise SystemExit("GitHub main/task-ref reconciliation failed")
+if not valid(av,an,ab,a) or not valid(bv,bn,bb,b): raise SystemExit("GitHub PR reconciliation failed")
+payload={"schema_version":1,"result":"PASS","repository":"anervalens-netizen/unihub-retail","remote_main":b,"release_a":{"number":int(an),"branch":ab,"merge_sha":a,"state":"MERGED"},"release_b":{"number":int(bn),"branch":bb,"merge_sha":b,"state":"MERGED"},"task_remote_heads":[],"queries_sha256":hashlib.sha256(pathlib.Path(pa).read_bytes()+pathlib.Path(pb).read_bytes()+pathlib.Path(heads).read_bytes()).hexdigest()}
 pathlib.Path(out).write_text(json.dumps(payload,sort_keys=True,separators=(",",":"))+"\n")
 PY
 rm -f -- "$WORK/raw/pr-a.json" "$WORK/raw/pr-b.json" "$WORK/raw/task-remote-heads.txt"
@@ -609,7 +883,7 @@ for p in sorted((w/"fragments").glob("*.json")):
     value=json.loads(p.read_text())
     if value.get("result") not in (None,"PASS"): raise SystemExit(f"non-PASS fragment: {p.name}")
     fragments[p.name] = {"sha256":hashlib.sha256(p.read_bytes()).hexdigest(),"evidence":value}
-required={"release-a-verification.json","release-b-artifact.json","backup.json","schema-outbox.json","prometheus.json","journal.json","refs-primary.json","refs-dell.json","refs-github.json","http-dashboard.json","http-target.json","http-salary-agents.json","http-salary-records.json","http-grile.json","http-settings-imports.json","http-settings-exports.json","http-settings-resumable.json","http-salary-forbidden.json"}
+required={"release-a-verification.json","release-b-artifact.json","backup.json","schema-outbox.json","prometheus.json","journal.json","refs-primary.json","refs-dell.json","refs-github.json","browser.json","http-dashboard.json","http-target.json","http-salary-agents.json","http-salary-records.json","http-grile.json","http-settings-imports.json","http-settings-exports.json","http-settings-resumable.json","http-salary-forbidden.json"}
 required |= {f"http-{where}-{kind}-{n}.json" for n in range(3) for where in ("local","public") for kind in (("livez","readyz") if where=="local" else ("health","readyz"))}
 missing=sorted(required-set(fragments))
 if missing: raise SystemExit(f"AC-17 fragment inventory incomplete: {missing}")

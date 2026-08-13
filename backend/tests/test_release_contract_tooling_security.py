@@ -27,12 +27,33 @@ def test_release_a_tooling_requires_clean_untracked_scope() -> None:
     schema_gate = (ROOT / "scripts/run_release_a_schema_gate.sh").read_text(
         encoding="utf-8"
     )
+    structural_gate = (ROOT / "scripts/run_structural_characterization.sh").read_text(
+        encoding="utf-8"
+    )
+    scale_gate = (ROOT / "scripts/run_retail_scale_gate.sh").read_text(
+        encoding="utf-8"
+    )
+    local_gate = (ROOT / "scripts/run_local_quality_gate.sh").read_text(
+        encoding="utf-8"
+    )
     assert 'git("status", "--porcelain")' in checker
     assert "--untracked-files=no" not in checker
     assert "status --porcelain" in schema_gate
     assert "PYTHONNOUSERSITE=1" in schema_gate
     assert "PYTHONSAFEPATH=1" in schema_gate
     assert "unset MYPYPATH MYPY_CONFIG_FILE" in schema_gate
+    for source in (schema_gate, structural_gate, scale_gate):
+        assert "postgres@sha256:" in source
+        assert "--pull=never" in source
+        assert 'PYTHON_BASE="/usr/bin/python3.12"' in source
+        assert "PYTHON_BASE_SHA256=" in source
+    assert "valkey/valkey@sha256:" in schema_gate
+    assert "UNIHUB_SCALE_PYTHON" not in scale_gate
+    assert "UNIHUB_BACKEND_VENV" not in structural_gate
+    assert "EXPECTED_NODE_SHA256" in local_gate
+    assert "EXPECTED_NPM_CLI_SHA256" in local_gate
+    assert 'PATH="$(dirname "$NODE"):' in local_gate
+    assert "    export PATH" in local_gate
 
 
 def test_release_a_checker_never_runs_mypy_after_scope_failure() -> None:
@@ -166,20 +187,38 @@ def test_artifact_contract_binds_main_evidence_and_pinned_cosign() -> None:
     assert "shutil.which(\"cosign\")" in checker
     assert "Generate exact-main Release-A schema evidence" in workflow
     assert "retail-release-a-schema-${{ github.sha }}" in workflow
+    assert 'manifest["frontendBuildInput"]' not in builder
+    assert '"frontendBuildInput": {' in builder
+    assert "FRONTEND_BUILD_INPUT_SHA256_FILE" in builder
+    assert "expected_frontend_build_input_sha256" in checker
+    assert "retail-frontend-build-input-${{ github.sha }}" in workflow
+    assert "VITE_FRONTEND_GLITCHTIP_DSN: ${{ secrets.VITE_GLITCHTIP_DSN }}" in workflow
 
 
 def test_artifact_audit_runs_from_exact_checkout_and_compares_source_and_dist() -> None:
     checker = CHECKER_PATH.read_text(encoding="utf-8")
+    workflow = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
     plan = (ROOT / "docs/exec-plans/active/UR-CLOSE-20260812.md").read_text(
         encoding="utf-8"
     )
     assert "--verify-artifact-checkout" in checker
-    assert "build_exact_checkout_frontend()" in checker
+    assert "def build_exact_checkout_frontend(rum_dsn: str)" in checker
     assert '"npm_config_offline": "true"' in checker
     assert '"ci",\n        "--offline",\n        "--ignore-scripts"' in checker
     assert 'r"v22\\.\\d+\\.\\d+"' in checker
     assert "signed archive tracked source differs from exact Git tree" in checker
     assert "signed archive dist differs from exact-checkout tested build" in checker
+    assert "--verify-signed-artifact-audit" in checker
+    assert "artifact-checkout.sigstore.json" in checker
+    assert "frontend_build_input_sha256" in checker
+    assert "Rebuild exact main and audit signed artifact" in workflow
+    assert "retail-artifact-audit-${{ github.sha }}" in workflow
+    assert "--frontend-rum-dsn-from-environment" in workflow
+    assert "ARTIFACT_AUDIT_RUN_ID: ${{ github.run_id }}" in workflow
+    assert "ARTIFACT_AUDIT_RUN_ATTEMPT: ${{ github.run_attempt }}" in workflow
+    assert "ARTIFACT_AUDIT_WORKFLOW_SHA: ${{ github.workflow_sha }}" in workflow
+    assert "--expected-workflow-run-id" in checker
+    assert "artifact provenance does not match the audit workflow run" in checker
     assert "clean detached" in plan and "exact-SHA Git checkout" in plan
     assert "unpacked artifact `git rev-parse HEAD`" not in plan
 
@@ -242,3 +281,18 @@ def test_ac17_freezes_complete_invocation_and_three_way_ref_reconciliation() -> 
     assert "refs-dell.json" in verifier
     assert "refs-github.json" in verifier
     assert "codex/retail-definitive-closure-20260812" in verifier
+    assert "ls-remote origin refs/heads/main" in verifier
+    assert 'remote_lines != [f"{b}\\trefs/heads/main"]' in verifier
+    assert "probe_authenticated_browser" in verifier
+    assert '"browser.json"' in verifier
+    assert "BROWSER_CHROME_SHA256" in verifier
+    for marker in (
+        "Sales Hub",
+        "Grile V2 · pilot",
+        "Calculator Target",
+        "Statistici Salarii",
+        "Import fișier vânzări",
+        "Builder export Excel",
+        "mobile-dashboard",
+    ):
+        assert marker in verifier

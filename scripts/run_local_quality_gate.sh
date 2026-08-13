@@ -10,6 +10,8 @@ PYTEST="$ROOT/backend/venv/bin/pytest"
 NODE=""
 NPM_CLI=""
 EXPECTED_COSIGN_SHA256="4629c757b7618056f8ddd7e2625ae9fdd94c0372a65049520bc7d9df9efc7f71"
+EXPECTED_NODE_SHA256="81925c0995b5c1427b5d538e6a90ca2fdc4daffb786b09af749beaf7369d4e90"
+EXPECTED_NPM_CLI_SHA256="8e5f6f3429f8cdbe693cdc29904e9d5a7b127a494bd15c804bd54c7403bfcbe7"
 SHA=""
 EVIDENCE=""
 RELEASE_A_SHA="${MAIN_A_SHA:-}"
@@ -179,6 +181,8 @@ run_step() {
     cd "$ROOT"
     export PYTHONNOUSERSITE=1 PYTHONSAFEPATH=1
     export npm_config_offline=true VITE_FRONTEND_GLITCHTIP_DSN=
+    PATH="$(dirname "$NODE"):/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+    export PATH
     unset MYPYPATH MYPY_CONFIG_FILE
     bash -Eeuo pipefail -c "$command"
   ) >"$log" 2>&1
@@ -552,8 +556,8 @@ fi
 [[ "$(hostname)" == "dell-standby" ]] || die "integrated local gate is locked to dell-standby"
 [[ -x "$PYTHON" && -x "$PYTEST" ]] || die "backend/venv is required"
 [[ -d "$ROOT/node_modules" ]] || die "offline node_modules is required"
-NODE="$(readlink -f "$(command -v node || true)")"
-NPM_CLI="$(readlink -f "$(command -v npm || true)")"
+NODE="/opt/codex-desktop/resources/node-runtime/bin/node"
+NPM_CLI="/opt/codex-desktop/resources/node-runtime/lib/node_modules/npm/bin/npm-cli.js"
 [[ -f "$NODE" && -x "$NODE" && -f "$NPM_CLI" ]] || die "Node.js/npm are required"
 [[ "$NODE" != "$ROOT"/* && "$NPM_CLI" != "$ROOT"/* ]] \
   || die "Node.js/npm must not resolve from the candidate tree"
@@ -561,6 +565,9 @@ NPM_CLI="$(readlink -f "$(command -v npm || true)")"
   || die "unsafe Node.js/npm path"
 [[ "$($NODE --version)" =~ ^v22\.[0-9]+\.[0-9]+$ ]] || die "Node.js 22.x is required"
 [[ "$($NODE "$NPM_CLI" --version)" =~ ^10\.[0-9]+\.[0-9]+$ ]] || die "npm 10.x is required"
+[[ "$(sha256sum "$NODE" | awk '{print $1}')" == "$EXPECTED_NODE_SHA256" \
+  && "$(sha256sum "$NPM_CLI" | awk '{print $1}')" == "$EXPECTED_NPM_CLI_SHA256" ]] \
+  || die "Node.js/npm executable digest mismatch"
 [[ "$(git -C "$ROOT" rev-parse HEAD)" == "$SHA" ]] || die "--sha differs from HEAD"
 [[ "$(git -C "$ROOT" rev-parse "$RELEASE_A_SHA")" == "$RELEASE_A_SHA" ]] || die "Release-A SHA is not an exact local commit"
 git -C "$ROOT" merge-base --is-ancestor "$RELEASE_A_SHA" "$SHA" || die "Release-A SHA is not an ancestor"

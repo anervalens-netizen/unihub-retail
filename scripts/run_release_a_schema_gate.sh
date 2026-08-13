@@ -6,7 +6,10 @@ GATE_STARTED_EPOCH_NS="$(date +%s%N)"
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BASELINE_SHA="0be82b430e55b7414babf470abe3fc5404b6cdc9"
 PYTHON="$ROOT_DIR/backend/venv/bin/python"
-PYTEST="$ROOT_DIR/backend/venv/bin/pytest"
+PYTHON_BASE="/usr/bin/python3.12"
+PYTHON_BASE_SHA256="1643dacd9feaedc58f3cc581e4d22577dfe25c09b10282936186ccf0f2e61118"
+POSTGRES_IMAGE="postgres@sha256:9a8afca54e7861fd90fab5fdf4c42477a6b1cb7d293595148e674e0a3181de15"
+VALKEY_IMAGE="valkey/valkey@sha256:b027235326507cfdade9b6684056ec1d0b0c0757412e628245129b5d7b788618"
 EVIDENCE_PATH=""
 
 usage() {
@@ -31,7 +34,8 @@ done
 if [[ "$EVIDENCE_PATH" != /* ]]; then
   EVIDENCE_PATH="$ROOT_DIR/$EVIDENCE_PATH"
 fi
-[[ -x "$PYTHON" && -x "$PYTEST" ]] || {
+[[ -x "$PYTHON" && "$(readlink -f "$PYTHON")" == "$PYTHON_BASE" \
+  && "$(sha256sum "$PYTHON_BASE" | awk '{print $1}')" == "$PYTHON_BASE_SHA256" ]] || {
   printf 'Release-A gate requires backend/venv.\n' >&2
   exit 1
 }
@@ -87,19 +91,23 @@ git -C "$ROOT_DIR" archive "$BASELINE_SHA" | tar -x -C "$TEMP_DIR/baseline"
   --evidence "$CANDIDATE_EVIDENCE_PATH"
 
 PASSWORD="$(openssl rand -hex 24)"
-docker run -d \
+docker image inspect "$POSTGRES_IMAGE" "$VALKEY_IMAGE" >/dev/null || {
+  printf 'Release-A pinned database images are not pre-provisioned.\n' >&2
+  exit 1
+}
+docker run --pull=never -d \
   --name "$POSTGRES_CONTAINER" \
   --label unihub.test=retail-release-a \
   -e POSTGRES_USER=unihub_test \
   -e POSTGRES_PASSWORD="$PASSWORD" \
   -e POSTGRES_DB=unihub_test \
   -p 127.0.0.1::5432 \
-  postgres:18-alpine >/dev/null
-docker run -d \
+  "$POSTGRES_IMAGE" >/dev/null
+docker run --pull=never -d \
   --name "$VALKEY_CONTAINER" \
   --label unihub.test=retail-release-a \
   -p 127.0.0.1::6379 \
-  valkey/valkey:8.1.7-alpine >/dev/null
+  "$VALKEY_IMAGE" >/dev/null
 
 POSTGRES_READY=0
 VALKEY_READY=0
@@ -276,9 +284,9 @@ RESTORED_FINAL_STATE_JSON="$(database_state "$RESTORED_DATABASE_URL")"
 
 cd "$ROOT_DIR/backend"
 export DATABASE_URL="$EMPTY_DATABASE_URL"
-"$PYTEST" tests/test_release_a_schema_069.py -q --junitxml="$JUNIT_EMPTY_PATH"
+"$PYTHON" -m pytest tests/test_release_a_schema_069.py -q --junitxml="$JUNIT_EMPTY_PATH"
 export DATABASE_URL="$RESTORED_DATABASE_URL"
-"$PYTEST" tests/test_release_a_schema_069.py -q --junitxml="$JUNIT_RESTORED_PATH"
+"$PYTHON" -m pytest tests/test_release_a_schema_069.py -q --junitxml="$JUNIT_RESTORED_PATH"
 cd "$ROOT_DIR"
 
 export CURRENT_SHA BASELINE_SHA PRE069_DUMP_SHA256 EVIDENCE_PATH ROOT_DIR
@@ -288,6 +296,7 @@ export BASELINE_068_STATE_JSON EMPTY_INITIAL_STATE_JSON EMPTY_FINAL_STATE_JSON
 export RESTORED_PRE_UPGRADE_STATE_JSON RESTORED_FINAL_STATE_JSON
 export CANDIDATE_EVIDENCE_PATH
 export GATE_STARTED_EPOCH_NS
+export POSTGRES_IMAGE VALKEY_IMAGE PYTHON_BASE PYTHON_BASE_SHA256
 "$PYTHON" - <<'PY'
 from __future__ import annotations
 
@@ -479,6 +488,13 @@ evidence = {
     "changed_path_count": len(changed),
     "manifest_sha256": hashlib.sha256(manifest_path.read_bytes()).hexdigest(),
     "migration_069_sha256": expected_069,
+    "toolchain": {
+        "python_path": os.environ["PYTHON_BASE"],
+        "python_sha256": os.environ["PYTHON_BASE_SHA256"],
+        "postgres_image": os.environ["POSTGRES_IMAGE"],
+        "valkey_image": os.environ["VALKEY_IMAGE"],
+        "network_pull_count": 0,
+    },
     "compatibility_test_sha256": hashlib.sha256(
         (Path(os.environ["ROOT_DIR"]) / "backend/tests/test_release_a_schema_069.py").read_bytes()
     ).hexdigest(),

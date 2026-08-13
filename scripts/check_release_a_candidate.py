@@ -26,6 +26,13 @@ ROOT = Path(__file__).resolve().parents[1]
 EXPECTED_BASELINE = "0be82b430e55b7414babf470abe3fc5404b6cdc9"
 COSIGN_VERSION = "v3.1.3"
 COSIGN_LINUX_AMD64_SHA256 = "4629c757b7618056f8ddd7e2625ae9fdd94c0372a65049520bc7d9df9efc7f71"
+NODE_LINUX_X64_SHA256 = "81925c0995b5c1427b5d538e6a90ca2fdc4daffb786b09af749beaf7369d4e90"
+NPM_CLI_SHA256 = "8e5f6f3429f8cdbe693cdc29904e9d5a7b127a494bd15c804bd54c7403bfcbe7"
+NODE_LINUX_X64_PATH = Path("/opt/codex-desktop/resources/node-runtime/bin/node")
+NPM_CLI_PATH = Path(
+    "/opt/codex-desktop/resources/node-runtime/lib/node_modules/npm/bin/npm-cli.js"
+)
+FRONTEND_BUILD_INPUT_ENV = "VITE_FRONTEND_GLITCHTIP_DSN"
 EXPECTED_CHANGED_PATHS = {
     ".agent/PLANS.md",
     ".agent/contract-lock.json",
@@ -217,9 +224,9 @@ EXPECTED_SOURCE_SNAPSHOTS = {
         "tree": "ec1590144b44d47aa9d9d3603813870cae482293",
     },
     "release_b_integrated_preview": {
-        "commit": "71c6ebb98cd5a30faf02a002c16ebe2919b2e595",
-        "ref": "refs/tags/ur-close-20260812-preview-v1",
-        "tree": "1e6c675f0c8c199b74be7fb70450f986a704cc9a",
+        "commit": "20503703e39474077ae68d32089bb11ce1e842f5",
+        "ref": "refs/tags/ur-close-20260812-preview-v2",
+        "tree": "863e9ae83a1d62ed03e6b5e7bfdf191d76fc2950",
     },
     "scale_authority": {
         "commit": "e2daba1b45ff12852629889e48f01a9eb3a8a643",
@@ -709,6 +716,17 @@ def verify_release_b_mutation_policy(
         "promtool-cache-${{ github.sha }}",
         "Generate exact-main Release-A schema evidence",
         "retail-release-a-schema-${{ github.sha }}",
+        "retail-frontend-build-input-${{ github.sha }}",
+        "FRONTEND_BUILD_INPUT_SHA256_FILE",
+        "release_a_sha",
+        "release_a_run_id",
+        "Download exact Release-A artifact for Release-B policy proof",
+        "Rebuild exact main and audit signed artifact",
+        "--frontend-rum-dsn-from-environment",
+        "ARTIFACT_AUDIT_RUN_ID",
+        "ARTIFACT_AUDIT_RUN_ATTEMPT",
+        "ARTIFACT_AUDIT_WORKFLOW_SHA",
+        "retail-artifact-audit-${{ github.sha }}",
         "RELEASE_A_EVIDENCE_DIR",
         '--cache-dir "${RUNNER_TOOL_CACHE}/unihub-prometheus"',
         "--sha256 \"$PROMETHEUS_SHA256\"",
@@ -746,6 +764,7 @@ def verify_release_a_artifact(
     expected_sha: str,
     *,
     require_release_a_evidence: bool = True,
+    expected_frontend_build_input_sha256: str | None = None,
 ) -> dict[str, Any]:
     archive_name = f"retail-release-{expected_sha}.tar.gz"
     release_a_evidence_names = {
@@ -813,6 +832,20 @@ def verify_release_a_artifact(
         raise ValueError("Release-A release manifest source SHA mismatch")
     if manifest.get("archive") != archive_name:
         raise ValueError("Release-A release manifest archive is not checksummed")
+    frontend_build_input = manifest.get("frontendBuildInput")
+    if (
+        not isinstance(frontend_build_input, dict)
+        or frontend_build_input.get("name") != FRONTEND_BUILD_INPUT_ENV
+        or not re.fullmatch(
+            r"[0-9a-f]{64}", str(frontend_build_input.get("sha256", ""))
+        )
+        or (
+            expected_frontend_build_input_sha256 is not None
+            and frontend_build_input.get("sha256")
+            != expected_frontend_build_input_sha256
+        )
+    ):
+        raise ValueError("Release artifact frontend build-input identity mismatch")
     manifest_digests = manifest.get("sha256")
     expected_manifest_names = checksummed_names - {"RELEASE_MANIFEST.json"}
     if not isinstance(manifest_digests, dict) or set(manifest_digests) != expected_manifest_names:
@@ -855,17 +888,34 @@ def verify_release_a_artifact(
         raise ValueError("Release-A provenance subject mismatch")
     predicate = provenance.get("predicate")
     build_definition = predicate.get("buildDefinition") if isinstance(predicate, dict) else None
+    run_details = predicate.get("runDetails") if isinstance(predicate, dict) else None
     external = build_definition.get("externalParameters") if isinstance(build_definition, dict) else None
     resolved = build_definition.get("resolvedDependencies") if isinstance(build_definition, dict) else None
     if not isinstance(external, dict) or external.get("sourceSha") != expected_sha:
         raise ValueError("Release-A provenance external source SHA mismatch")
     if external.get("releaseAEvidence") != release_a_evidence:
         raise ValueError("Release-A provenance evidence binding mismatch")
+    if external.get("frontendBuildInput") != frontend_build_input:
+        raise ValueError("Release artifact provenance frontend build-input mismatch")
     if not isinstance(resolved, list) or not any(
         isinstance(item, dict) and item.get("digest", {}).get("gitCommit") == expected_sha
         for item in resolved
     ):
         raise ValueError("Release-A provenance resolved dependency mismatch")
+    builder_id = (
+        run_details.get("builder", {}).get("id")
+        if isinstance(run_details, dict)
+        else None
+    )
+    invocation_id = (
+        run_details.get("metadata", {}).get("invocationId")
+        if isinstance(run_details, dict)
+        else None
+    )
+    if not isinstance(builder_id, str) or not builder_id or not isinstance(
+        invocation_id, str
+    ) or not invocation_id:
+        raise ValueError("Release-A provenance run identity is absent")
     cosign_path_text = shutil.which("cosign")
     if cosign_path_text is None:
         raise ValueError("trusted cosign is unavailable")
@@ -926,6 +976,9 @@ def verify_release_a_artifact(
         "sigstore_output_sha256": sha256_bytes(signature_output.encode("utf-8")),
         "checksummed_file_count": len(checksums),
         "release_a_evidence": release_a_evidence,
+        "frontend_build_input": frontend_build_input,
+        "builder_id": builder_id,
+        "invocation_id": invocation_id,
     }
 
 
@@ -965,15 +1018,18 @@ def extract_regular_tar(archive: tarfile.TarFile, destination: Path) -> None:
     archive.extractall(destination, members=members, filter="data")
 
 
-def build_exact_checkout_frontend() -> dict[str, Any]:
-    node_text = shutil.which("node")
-    npm_text = shutil.which("npm")
-    if node_text is None or npm_text is None:
+def build_exact_checkout_frontend(rum_dsn: str) -> dict[str, Any]:
+    node_path = NODE_LINUX_X64_PATH.resolve()
+    npm_path = NPM_CLI_PATH.resolve()
+    if not node_path.is_file() or not npm_path.is_file():
         raise ValueError("trusted Node.js/npm runtime is unavailable")
-    node_path = Path(node_text).resolve()
-    npm_path = Path(npm_text).resolve()
     if ROOT in node_path.parents or ROOT in npm_path.parents:
         raise ValueError("Node.js/npm runtime must not resolve from the candidate tree")
+    if (
+        sha256_bytes(node_path.read_bytes()) != NODE_LINUX_X64_SHA256
+        or sha256_bytes(npm_path.read_bytes()) != NPM_CLI_SHA256
+    ):
+        raise ValueError("artifact audit Node.js/npm executable digest mismatch")
     node_version = subprocess.run(
         [str(node_path), "--version"], capture_output=True, text=True, check=True
     ).stdout.strip()
@@ -1000,7 +1056,7 @@ def build_exact_checkout_frontend() -> dict[str, Any]:
             "npm_config_fund": "false",
             "npm_config_ignore_scripts": "true",
             "npm_config_offline": "true",
-            "VITE_FRONTEND_GLITCHTIP_DSN": "",
+            FRONTEND_BUILD_INPUT_ENV: rum_dsn,
         }
     )
     install_command = [
@@ -1052,6 +1108,7 @@ def build_exact_checkout_frontend() -> dict[str, Any]:
         "build_output_sha256": sha256_bytes(
             (build.stdout + build.stderr).encode("utf-8")
         ),
+        "frontend_build_input_sha256": sha256_bytes(rum_dsn.encode("utf-8")),
     }
 
 
@@ -1061,6 +1118,7 @@ def verify_artifact_checkout(
     artifact_phase: str,
     release_a_sha: str | None,
     release_a_artifact_dir: Path | None,
+    rum_dsn: str,
     output_path: Path,
 ) -> int:
     started = time.monotonic()
@@ -1072,13 +1130,30 @@ def verify_artifact_checkout(
         raise ValueError("artifact audit checkout must be clean including untracked files")
     if not artifact_dir.is_dir() or artifact_dir.is_symlink():
         raise ValueError("artifact directory is absent or unsafe")
+    rum_dsn_sha256 = sha256_bytes(rum_dsn.encode("utf-8"))
+    workflow_run_id = os.environ.get("ARTIFACT_AUDIT_RUN_ID", "")
+    workflow_run_attempt = os.environ.get("ARTIFACT_AUDIT_RUN_ATTEMPT", "")
+    workflow_sha = os.environ.get("ARTIFACT_AUDIT_WORKFLOW_SHA", "")
+    if (
+        not re.fullmatch(r"[1-9][0-9]*", workflow_run_id)
+        or not re.fullmatch(r"[1-9][0-9]*", workflow_run_attempt)
+        or workflow_sha != expected_sha
+    ):
+        raise ValueError("exact GitHub workflow run identity is required for artifact audit")
     artifact = verify_release_a_artifact(
         artifact_dir,
         expected_sha,
         require_release_a_evidence=artifact_phase == "release-a",
+        expected_frontend_build_input_sha256=rum_dsn_sha256,
     )
+    expected_invocation_id = (
+        "https://github.com/anervalens-netizen/unihub-retail/actions/runs/"
+        f"{workflow_run_id}/attempts/{workflow_run_attempt}"
+    )
+    if artifact["invocation_id"] != expected_invocation_id:
+        raise ValueError("artifact provenance does not match the audit workflow run")
     archive_path = artifact_dir / artifact["archive"]
-    frontend_build = build_exact_checkout_frontend()
+    frontend_build = build_exact_checkout_frontend(rum_dsn)
     current_dist = ROOT / "dist"
 
     release_b_policy: dict[str, Any] | None = None
@@ -1139,6 +1214,7 @@ def verify_artifact_checkout(
             expected_sha,
             "--artifact-phase",
             artifact_phase,
+            "--frontend-rum-dsn-from-environment",
             *(
                 [
                     "--release-a-sha",
@@ -1155,6 +1231,12 @@ def verify_artifact_checkout(
         "checkout_sha": expected_sha,
         "checkout_tree": git("rev-parse", "HEAD^{tree}"),
         "artifact_phase": artifact_phase,
+        "workflow_run": {
+            "repository": "anervalens-netizen/unihub-retail",
+            "run_id": workflow_run_id,
+            "run_attempt": workflow_run_attempt,
+            "workflow_sha": workflow_sha,
+        },
         "tracked_file_count": len(git_inventory),
         "tracked_tree_inventory_sha256": sha256_bytes(
             json.dumps(git_inventory, sort_keys=True, separators=(",", ":")).encode()
@@ -1175,12 +1257,146 @@ def verify_artifact_checkout(
     return 0
 
 
+def verify_signed_artifact_audit(
+    audit_dir: Path,
+    artifact_dir: Path,
+    expected_sha: str,
+    artifact_phase: str,
+    expected_workflow_run_id: str,
+    output_path: Path,
+) -> int:
+    started = time.monotonic()
+    if not re.fullmatch(r"[0-9a-f]{40}", expected_sha):
+        raise ValueError("signed artifact-audit SHA is invalid")
+    if not audit_dir.is_dir() or audit_dir.is_symlink():
+        raise ValueError("signed artifact-audit directory is absent or unsafe")
+    names = {item.name for item in audit_dir.iterdir()}
+    if names != {"artifact-checkout.json", "artifact-checkout.sigstore.json"}:
+        raise ValueError("signed artifact-audit inventory mismatch")
+    audit_path = audit_dir / "artifact-checkout.json"
+    bundle_path = audit_dir / "artifact-checkout.sigstore.json"
+    if any(not path.is_file() or path.is_symlink() for path in (audit_path, bundle_path)):
+        raise ValueError("signed artifact-audit files are absent or unsafe")
+
+    cosign_text = shutil.which("cosign")
+    if cosign_text is None:
+        raise ValueError("trusted cosign is unavailable")
+    cosign_path = Path(cosign_text).resolve()
+    if (
+        not cosign_path.is_file()
+        or sha256_bytes(cosign_path.read_bytes()) != COSIGN_LINUX_AMD64_SHA256
+    ):
+        raise ValueError("cosign binary digest mismatch")
+    signature_command = [
+        str(cosign_path),
+        "verify-blob",
+        str(audit_path),
+        "--bundle",
+        str(bundle_path),
+        "--certificate-identity",
+        "https://github.com/anervalens-netizen/unihub-retail/.github/workflows/ci.yml@refs/heads/main",
+        "--certificate-oidc-issuer",
+        "https://token.actions.githubusercontent.com",
+    ]
+    signature = subprocess.run(
+        signature_command, capture_output=True, text=True, check=False
+    )
+    if signature.returncode != 0:
+        raise ValueError("signed artifact-audit Sigstore verification failed")
+
+    audit = load_json(audit_path)
+    artifact = verify_release_a_artifact(
+        artifact_dir,
+        expected_sha,
+        require_release_a_evidence=artifact_phase == "release-a",
+    )
+    expected_tree = git("rev-parse", f"{expected_sha}^{{tree}}")
+    frontend_build = audit.get("frontend_build")
+    audit_artifact = audit.get("artifact")
+    release_b_policy = audit.get("release_b_static_policy")
+    workflow_run = audit.get("workflow_run")
+    run_attempt = (
+        str(workflow_run.get("run_attempt", ""))
+        if isinstance(workflow_run, dict)
+        else ""
+    )
+    expected_invocation_id = (
+        "https://github.com/anervalens-netizen/unihub-retail/actions/runs/"
+        f"{expected_workflow_run_id}/attempts/{run_attempt}"
+    )
+    if (
+        audit.get("schema_version") != 1
+        or audit.get("result") != "PASS"
+        or audit.get("checkout_sha") != expected_sha
+        or audit.get("checkout_tree") != expected_tree
+        or audit.get("artifact_phase") != artifact_phase
+        or not re.fullmatch(r"[1-9][0-9]*", expected_workflow_run_id)
+        or not isinstance(workflow_run, dict)
+        or workflow_run
+        != {
+            "repository": "anervalens-netizen/unihub-retail",
+            "run_id": expected_workflow_run_id,
+            "run_attempt": run_attempt,
+            "workflow_sha": expected_sha,
+        }
+        or not re.fullmatch(r"[1-9][0-9]*", run_attempt)
+        or artifact["invocation_id"] != expected_invocation_id
+        or not isinstance(frontend_build, dict)
+        or frontend_build.get("frontend_build_input_sha256")
+        != artifact["frontend_build_input"]["sha256"]
+        or not isinstance(audit_artifact, dict)
+        or audit_artifact.get("archive_sha256") != artifact["archive_sha256"]
+        or audit_artifact.get("release_manifest_sha256")
+        != artifact["release_manifest_sha256"]
+        or not re.fullmatch(
+            r"[0-9a-f]{64}", str(audit.get("tracked_tree_inventory_sha256", ""))
+        )
+        or not re.fullmatch(
+            r"[0-9a-f]{64}", str(audit.get("dist_inventory_sha256", ""))
+        )
+        or int(audit.get("tracked_file_count", 0)) <= 0
+        or int(audit.get("dist_file_count", 0)) <= 0
+        or (
+            artifact_phase == "release-b"
+            and (
+                not isinstance(release_b_policy, dict)
+                or release_b_policy.get("result") != "PASS"
+                or release_b_policy.get("expected_release_b_sha") != expected_sha
+            )
+        )
+        or (artifact_phase == "release-a" and release_b_policy is not None)
+    ):
+        raise ValueError("signed artifact-audit content binding mismatch")
+
+    output = {
+        "schema_version": 1,
+        "result": "PASS",
+        "expected_sha": expected_sha,
+        "expected_tree": expected_tree,
+        "artifact_phase": artifact_phase,
+        "workflow_run_id": expected_workflow_run_id,
+        "workflow_run_attempt": run_attempt,
+        "artifact_archive_sha256": artifact["archive_sha256"],
+        "artifact_audit_sha256": sha256_bytes(audit_path.read_bytes()),
+        "artifact_audit_bundle_sha256": sha256_bytes(bundle_path.read_bytes()),
+        "frontend_build_input_sha256": artifact["frontend_build_input"]["sha256"],
+        "sigstore_command": signature_command,
+        "sigstore_output_sha256": sha256_bytes(
+            (signature.stdout + signature.stderr).encode("utf-8")
+        ),
+        "duration_seconds": round(time.monotonic() - started, 6),
+    }
+    write_evidence(output_path, output)
+    print(json.dumps({"result": "PASS", "artifact_audit_sha": expected_sha}))
+    return 0
+
+
 def verify_lock(
     *, current_paths: set[str] | None = None
 ) -> tuple[dict[str, Any], list[dict[str, str]]]:
     lock = load_json(ROOT / ".agent/contract-lock.json")
-    if lock.get("revision") != 12 or lock.get("baseline_source_sha") != EXPECTED_BASELINE:
-        raise ValueError("Release-A requires exact contract lock revision 12 and baseline")
+    if lock.get("revision") != 13 or lock.get("baseline_source_sha") != EXPECTED_BASELINE:
+        raise ValueError("Release-A requires exact contract lock revision 13 and baseline")
     content_commit = str(lock["contract_content_commit"])
     lock_commits = list(
         filter(
@@ -1195,15 +1411,15 @@ def verify_lock(
         )
     )
     if len(lock_commits) != 1:
-        raise ValueError("revision-12 lock must have exactly one immutable lock commit")
+        raise ValueError("revision-13 lock must have exactly one immutable lock commit")
     lock_commit = lock_commits[0]
     lock_parents = git("show", "-s", "--format=%P", lock_commit).split()
     if lock_parents != [content_commit]:
-        raise ValueError("revision-12 lock commit must directly follow content commit")
+        raise ValueError("revision-13 lock commit must directly follow content commit")
     current_lock_blob = git("rev-parse", "HEAD:.agent/contract-lock.json")
     locked_blob = git("rev-parse", f"{lock_commit}:.agent/contract-lock.json")
     if current_lock_blob != locked_blob:
-        raise ValueError("current revision-12 lock differs from its sole lock commit")
+        raise ValueError("current revision-13 lock differs from its sole lock commit")
     lock["verified_lock_commit"] = lock_commit
     verified: list[dict[str, str]] = []
     locked_objects = [lock["plan"], *lock["assets"]]
@@ -1625,20 +1841,81 @@ def main() -> int:
     parser.add_argument("--evidence", type=Path, required=True)
     parser.add_argument("--verify-main-evidence", type=Path)
     parser.add_argument("--verify-artifact-checkout", type=Path)
+    parser.add_argument("--verify-signed-artifact-audit", type=Path)
     parser.add_argument("--artifact-phase", choices=("release-a", "release-b"))
     parser.add_argument("--expected-sha")
     parser.add_argument("--release-a-sha")
     parser.add_argument("--expected-candidate-sha")
     parser.add_argument("--release-a-artifact-dir", type=Path)
+    parser.add_argument("--artifact-dir", type=Path)
+    parser.add_argument("--frontend-rum-dsn-from-environment", action="store_true")
+    parser.add_argument("--expected-workflow-run-id")
     args = parser.parse_args()
     evidence_path = args.evidence if args.evidence.is_absolute() else ROOT / args.evidence
-    if args.verify_main_evidence is not None and args.verify_artifact_checkout is not None:
-        parser.error("artifact-checkout and main-evidence verification are mutually exclusive")
-    if args.verify_artifact_checkout is not None:
-        if args.expected_sha is None or args.artifact_phase is None:
+    selected_modes = sum(
+        value is not None
+        for value in (
+            args.verify_main_evidence,
+            args.verify_artifact_checkout,
+            args.verify_signed_artifact_audit,
+        )
+    )
+    if selected_modes > 1:
+        parser.error("artifact/main evidence verification modes are mutually exclusive")
+    if args.verify_signed_artifact_audit is not None:
+        if (
+            args.expected_sha is None
+            or args.artifact_phase is None
+            or args.artifact_dir is None
+            or args.expected_workflow_run_id is None
+        ):
             parser.error(
-                "--expected-sha and --artifact-phase are required with --verify-artifact-checkout"
+                "--expected-sha, --artifact-phase, --artifact-dir and --expected-workflow-run-id are required with --verify-signed-artifact-audit"
             )
+        audit_dir = (
+            args.verify_signed_artifact_audit
+            if args.verify_signed_artifact_audit.is_absolute()
+            else ROOT / args.verify_signed_artifact_audit
+        )
+        artifact_dir = (
+            args.artifact_dir
+            if args.artifact_dir.is_absolute()
+            else ROOT / args.artifact_dir
+        )
+        try:
+            return verify_signed_artifact_audit(
+                audit_dir,
+                artifact_dir,
+                args.expected_sha,
+                args.artifact_phase,
+                args.expected_workflow_run_id,
+                evidence_path,
+            )
+        except (
+            KeyError,
+            OSError,
+            subprocess.CalledProcessError,
+            tarfile.TarError,
+            ValueError,
+        ) as exc:
+            write_evidence(
+                evidence_path,
+                {"schema_version": 1, "result": "FAIL", "failures": [str(exc)]},
+            )
+            print(f"FAIL: {exc}", file=sys.stderr)
+            return 1
+    if args.verify_artifact_checkout is not None:
+        if (
+            args.expected_sha is None
+            or args.artifact_phase is None
+            or not args.frontend_rum_dsn_from_environment
+        ):
+            parser.error(
+                "--expected-sha, --artifact-phase and --frontend-rum-dsn-from-environment are required with --verify-artifact-checkout"
+            )
+        rum_dsn = os.environ.get(FRONTEND_BUILD_INPUT_ENV, "")
+        if not rum_dsn or "\n" in rum_dsn or "\r" in rum_dsn:
+            parser.error("exact non-empty frontend RUM build input is required")
         artifact_dir = (
             args.verify_artifact_checkout
             if args.verify_artifact_checkout.is_absolute()
@@ -1656,6 +1933,7 @@ def main() -> int:
                     or args.release_a_artifact_dir.is_absolute()
                     else ROOT / args.release_a_artifact_dir
                 ),
+                rum_dsn,
                 evidence_path,
             )
         except (
