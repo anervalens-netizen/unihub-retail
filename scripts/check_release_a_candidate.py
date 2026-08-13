@@ -7,10 +7,12 @@ import argparse
 import hashlib
 import json
 from pathlib import Path
+import re
 import subprocess
 import sys
 import time
 from typing import Any
+import xml.etree.ElementTree as ET
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -45,11 +47,16 @@ EXPECTED_TYPECHECK_STEP = """      - name: Python typecheck
           cat mypy-report.txt
           exit $status
 """
-MUTABLE_CURRENT_LOCK_PATHS = {
+RELEASE_B_EVIDENCE_CURRENT_PATHS = {
+    ".agent/PLANS.md",
     "docs/exec-plans/active/UR-CLOSE-20260812.md",
+    "scripts/check_release_a_candidate.py",
+    "scripts/release-a-source-contract-v1.json",
+    "backend/db/migrations/069_ai_cohort_and_transactional_outbox.sql",
+    "backend/db/migrations/manifest.json",
+    "backend/db/migrations/README.md",
+    "backend/tests/test_release_a_schema_069.py",
 }
-
-
 def sha256_bytes(payload: bytes) -> str:
     return hashlib.sha256(payload).hexdigest()
 
@@ -71,10 +78,12 @@ def load_json(path: Path) -> dict[str, Any]:
     return value
 
 
-def verify_lock() -> tuple[dict[str, Any], list[dict[str, str]]]:
+def verify_lock(
+    *, current_paths: set[str] | None = None
+) -> tuple[dict[str, Any], list[dict[str, str]]]:
     lock = load_json(ROOT / ".agent/contract-lock.json")
-    if lock.get("revision") != 8 or lock.get("baseline_source_sha") != EXPECTED_BASELINE:
-        raise ValueError("Release-A requires exact contract lock revision 8 and baseline")
+    if lock.get("revision") != 9 or lock.get("baseline_source_sha") != EXPECTED_BASELINE:
+        raise ValueError("Release-A requires exact contract lock revision 9 and baseline")
     content_commit = str(lock["contract_content_commit"])
     lock_commits = list(
         filter(
@@ -89,15 +98,15 @@ def verify_lock() -> tuple[dict[str, Any], list[dict[str, str]]]:
         )
     )
     if len(lock_commits) != 1:
-        raise ValueError("revision-8 lock must have exactly one immutable lock commit")
+        raise ValueError("revision-9 lock must have exactly one immutable lock commit")
     lock_commit = lock_commits[0]
     lock_parents = git("show", "-s", "--format=%P", lock_commit).split()
     if lock_parents != [content_commit]:
-        raise ValueError("revision-8 lock commit must directly follow content commit")
+        raise ValueError("revision-9 lock commit must directly follow content commit")
     current_lock_blob = git("rev-parse", "HEAD:.agent/contract-lock.json")
     locked_blob = git("rev-parse", f"{lock_commit}:.agent/contract-lock.json")
     if current_lock_blob != locked_blob:
-        raise ValueError("current revision-8 lock differs from its sole lock commit")
+        raise ValueError("current revision-9 lock differs from its sole lock commit")
     lock["verified_lock_commit"] = lock_commit
     verified: list[dict[str, str]] = []
     locked_objects = [lock["plan"], *lock["assets"]]
@@ -112,7 +121,7 @@ def verify_lock() -> tuple[dict[str, Any], list[dict[str, str]]]:
         actual_digest = sha256_bytes(payload)
         if actual_blob != expected_blob or actual_digest != expected_digest:
             raise ValueError(f"locked object mismatch: {path}")
-        if path not in MUTABLE_CURRENT_LOCK_PATHS:
+        if current_paths is None or path in current_paths:
             current = (ROOT / path).read_bytes()
             if sha256_bytes(current) != expected_digest:
                 raise ValueError(f"current locked asset drift: {path}")
@@ -222,12 +231,174 @@ def write_evidence(path: Path, evidence: dict[str, Any]) -> None:
     path.write_text(json.dumps(evidence, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
+def verify_main_evidence(
+    input_path: Path,
+    expected_sha: str,
+    output_path: Path,
+) -> int:
+    started = time.monotonic()
+    evidence = load_json(input_path)
+    lock, locked_objects = verify_lock(current_paths=RELEASE_B_EVIDENCE_CURRENT_PATHS)
+    if len(expected_sha) != 40 or git("rev-parse", expected_sha) != expected_sha:
+        raise ValueError("expected Release-A SHA is not an exact commit")
+    expected_tree = git("rev-parse", f"{expected_sha}^{{tree}}")
+    lock_commit = str(lock["verified_lock_commit"])
+    checks: dict[str, bool] = {
+        "result_pass": evidence.get("result") == "PASS",
+        "release_a_sha": evidence.get("release_a_sha") == expected_sha,
+        "candidate_tree": evidence.get("candidate_tree") == expected_tree,
+        "contract_content_commit": evidence.get("contract_content_commit")
+        == lock.get("contract_content_commit"),
+        "contract_lock_commit": evidence.get("contract_lock_commit") == lock_commit,
+        "main_contains_lock": subprocess.run(
+            ["git", "-C", str(ROOT), "merge-base", "--is-ancestor", lock_commit, expected_sha],
+            check=False,
+        ).returncode
+        == 0,
+    }
+    required_assertions = {
+        "database_identities_distinct",
+        "empty_database_initially_zero_tables",
+        "empty_database_bootstrap_through_069",
+        "sanitized_dump_restore",
+        "restored_database_pre_upgrade_through_068",
+        "restored_database_upgrade_068_to_069",
+        "final_schema_ledgers_equal",
+        "final_schema_catalogs_equal",
+        "exact_source_transform",
+        "direct_unshadowed_full_mypy",
+        "release_a_runtime_ready_on_empty",
+        "release_a_runtime_ready_on_restored",
+        "pre_069_manifest_refused_on_empty",
+        "pre_069_manifest_refused_on_restored",
+        "outbox_inert",
+    }
+    assertions = evidence.get("assertions")
+    checks["assertions"] = isinstance(assertions, dict) and {
+        key for key, value in assertions.items() if value is True
+    } == required_assertions
+    database_paths = evidence.get("database_paths")
+    identity_entries = []
+    if isinstance(database_paths, dict):
+        identity_entries = [
+            database_paths.get(name)
+            for name in ("baseline_068", "empty_initial", "restored_pre_upgrade")
+        ]
+    checks["database_identities"] = (
+        len(identity_entries) == 3
+        and all(isinstance(entry, dict) for entry in identity_entries)
+        and len({entry.get("database_name") for entry in identity_entries}) == 3
+    )
+    locked_by_path = {item["path"]: item for item in locked_objects}
+    immutable_files = {
+        "migration_069_sha256": "backend/db/migrations/069_ai_cohort_and_transactional_outbox.sql",
+        "manifest_sha256": "backend/db/migrations/manifest.json",
+        "compatibility_test_sha256": "backend/tests/test_release_a_schema_069.py",
+    }
+    for evidence_key, relative_path in immutable_files.items():
+        digest = sha256_bytes((ROOT / relative_path).read_bytes())
+        checks[evidence_key] = (
+            evidence.get(evidence_key) == digest
+            and locked_by_path.get(relative_path, {}).get("sha256") == digest
+        )
+    artifact_files = {
+        "candidate_gate_sha256": "release-a-candidate.json",
+        "junit_empty_sha256": "release-a-schema-empty.xml",
+        "junit_restored_sha256": "release-a-schema-restored.xml",
+    }
+    for evidence_key, filename in artifact_files.items():
+        artifact = input_path.parent / filename
+        checks[evidence_key] = artifact.is_file() and evidence.get(evidence_key) == sha256_bytes(
+            artifact.read_bytes()
+        )
+    candidate_artifact = input_path.parent / "release-a-candidate.json"
+    if candidate_artifact.is_file():
+        candidate = load_json(candidate_artifact)
+        mypy = candidate.get("mypy")
+        checks["candidate_evidence_identity"] = (
+            candidate.get("result") == "PASS"
+            and candidate.get("candidate_sha") == expected_sha
+            and candidate.get("candidate_tree") == expected_tree
+            and candidate.get("contract_content_commit") == lock.get("contract_content_commit")
+            and candidate.get("contract_lock_commit") == lock_commit
+            and set(candidate.get("changed_paths", [])) == EXPECTED_CHANGED_PATHS
+            and isinstance(mypy, dict)
+            and mypy.get("exit_code") == 0
+            and mypy.get("success_marker") is True
+            and mypy.get("shadow_or_substitution") is False
+        )
+    else:
+        checks["candidate_evidence_identity"] = False
+    for label in ("empty", "restored"):
+        junit_path = input_path.parent / f"release-a-schema-{label}.xml"
+        junit_ok = False
+        if junit_path.is_file():
+            root = ET.parse(junit_path).getroot()
+            suites = [root] if root.tag == "testsuite" else list(root.findall("testsuite"))
+            totals = {
+                key: sum(int(suite.attrib.get(key, "0")) for suite in suites)
+                for key in ("tests", "failures", "errors", "skipped")
+            }
+            junit_ok = totals == {"tests": 6, "failures": 0, "errors": 0, "skipped": 0}
+        checks[f"junit_{label}_six_of_six"] = junit_ok
+    checks["dump_sha256_shape"] = bool(
+        re.fullmatch(r"[0-9a-f]{64}", str(evidence.get("pre_069_dump_sha256", "")))
+    )
+    failures = sorted(key for key, passed in checks.items() if not passed)
+    output = {
+        "schema_version": 1,
+        "result": "PASS" if not failures else "FAIL",
+        "command": [
+            "scripts/check_release_a_candidate.py",
+            "--verify-main-evidence",
+            str(input_path),
+            "--expected-sha",
+            expected_sha,
+            "--evidence",
+            str(output_path),
+        ],
+        "expected_release_a_sha": expected_sha,
+        "expected_release_a_tree": expected_tree,
+        "contract_content_commit": lock["contract_content_commit"],
+        "contract_lock_commit": lock_commit,
+        "source_evidence_sha256": sha256_bytes(input_path.read_bytes()),
+        "checks": checks,
+        "failures": failures,
+        "duration_seconds": round(time.monotonic() - started, 6),
+    }
+    write_evidence(output_path, output)
+    if failures:
+        print(f"FAIL: Release-A main evidence mismatches: {failures}", file=sys.stderr)
+        return 1
+    print(json.dumps({"result": "PASS", "release_a_sha": expected_sha}))
+    return 0
+
+
 def main() -> int:
     started = time.monotonic()
     parser = argparse.ArgumentParser()
     parser.add_argument("--evidence", type=Path, required=True)
+    parser.add_argument("--verify-main-evidence", type=Path)
+    parser.add_argument("--expected-sha")
     args = parser.parse_args()
     evidence_path = args.evidence if args.evidence.is_absolute() else ROOT / args.evidence
+    if args.verify_main_evidence is not None:
+        if args.expected_sha is None:
+            parser.error("--expected-sha is required with --verify-main-evidence")
+        input_path = (
+            args.verify_main_evidence
+            if args.verify_main_evidence.is_absolute()
+            else ROOT / args.verify_main_evidence
+        )
+        try:
+            return verify_main_evidence(input_path, args.expected_sha, evidence_path)
+        except (KeyError, OSError, subprocess.CalledProcessError, ValueError) as exc:
+            write_evidence(
+                evidence_path,
+                {"schema_version": 1, "result": "FAIL", "failures": [str(exc)]},
+            )
+            print(f"FAIL: {exc}", file=sys.stderr)
+            return 1
     evidence: dict[str, Any] = {
         "schema_version": 1,
         "baseline_sha": EXPECTED_BASELINE,

@@ -44,7 +44,8 @@ POSTGRES_CONTAINER="unihub-retail-${STAMP}"
 VALKEY_CONTAINER="unihub-retail-valkey-${STAMP}"
 TEMP_DIR="$(mktemp -d)"
 EVIDENCE_DIR="$(dirname "$EVIDENCE_PATH")"
-JUNIT_PATH="$EVIDENCE_DIR/release-a-schema.xml"
+JUNIT_EMPTY_PATH="$EVIDENCE_DIR/release-a-schema-empty.xml"
+JUNIT_RESTORED_PATH="$EVIDENCE_DIR/release-a-schema-restored.xml"
 
 cleanup() {
   timeout 30 docker rm -f -v "$POSTGRES_CONTAINER" >/dev/null 2>&1 || true
@@ -250,10 +251,14 @@ export DATABASE_URL="$RESTORED_DATABASE_URL"
 RESTORED_FINAL_STATE_JSON="$(database_state "$RESTORED_DATABASE_URL")"
 
 cd "$ROOT_DIR/backend"
-"$PYTEST" tests/test_release_a_schema_069.py -q --junitxml="$JUNIT_PATH"
+export DATABASE_URL="$EMPTY_DATABASE_URL"
+"$PYTEST" tests/test_release_a_schema_069.py -q --junitxml="$JUNIT_EMPTY_PATH"
+export DATABASE_URL="$RESTORED_DATABASE_URL"
+"$PYTEST" tests/test_release_a_schema_069.py -q --junitxml="$JUNIT_RESTORED_PATH"
 cd "$ROOT_DIR"
 
-export CURRENT_SHA BASELINE_SHA PRE069_DUMP_SHA256 EVIDENCE_PATH JUNIT_PATH ROOT_DIR
+export CURRENT_SHA BASELINE_SHA PRE069_DUMP_SHA256 EVIDENCE_PATH ROOT_DIR
+export JUNIT_EMPTY_PATH JUNIT_RESTORED_PATH
 export BASELINE_DATABASE_URL EMPTY_DATABASE_URL RESTORED_DATABASE_URL
 export BASELINE_068_STATE_JSON EMPTY_INITIAL_STATE_JSON EMPTY_FINAL_STATE_JSON
 export RESTORED_PRE_UPGRADE_STATE_JSON RESTORED_FINAL_STATE_JSON
@@ -433,6 +438,8 @@ evidence = {
     "result": "PASS",
     "baseline_sha": os.environ["BASELINE_SHA"],
     "release_a_sha": os.environ["CURRENT_SHA"],
+    "contract_content_commit": candidate_evidence["contract_content_commit"],
+    "contract_lock_commit": candidate_evidence["contract_lock_commit"],
     "command": [
         "scripts/run_release_a_schema_gate.sh",
         "--evidence",
@@ -448,8 +455,16 @@ evidence = {
     "changed_path_count": len(changed),
     "manifest_sha256": hashlib.sha256(manifest_path.read_bytes()).hexdigest(),
     "migration_069_sha256": expected_069,
+    "compatibility_test_sha256": hashlib.sha256(
+        (Path(os.environ["ROOT_DIR"]) / "backend/tests/test_release_a_schema_069.py").read_bytes()
+    ).hexdigest(),
     "pre_069_dump_sha256": os.environ["PRE069_DUMP_SHA256"],
-    "junit_sha256": hashlib.sha256(Path(os.environ["JUNIT_PATH"]).read_bytes()).hexdigest(),
+    "junit_empty_sha256": hashlib.sha256(
+        Path(os.environ["JUNIT_EMPTY_PATH"]).read_bytes()
+    ).hexdigest(),
+    "junit_restored_sha256": hashlib.sha256(
+        Path(os.environ["JUNIT_RESTORED_PATH"]).read_bytes()
+    ).hexdigest(),
     "database_paths": {
         "baseline_068": baseline_068,
         "empty_initial": empty_initial,
@@ -468,8 +483,10 @@ evidence = {
         "final_schema_catalogs_equal": True,
         "exact_source_transform": True,
         "direct_unshadowed_full_mypy": True,
-        "release_a_runtime_ready": True,
-        "pre_069_manifest_refused": True,
+        "release_a_runtime_ready_on_empty": True,
+        "release_a_runtime_ready_on_restored": True,
+        "pre_069_manifest_refused_on_empty": True,
+        "pre_069_manifest_refused_on_restored": True,
         "outbox_inert": True,
     },
 }
