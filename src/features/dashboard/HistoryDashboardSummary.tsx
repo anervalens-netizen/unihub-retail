@@ -13,30 +13,35 @@ type SummaryProps = Pick<HistoryDashboardProps<string, string, string>,
   | 'historyReceiptBucketChartData' | 'historyFocusSubcategoryChartData'>;
 
 export function HistorySelection({ props, visible }: { props: SummaryProps; visible: boolean }) {
+  const {
+    includeClosedStores, onIncludeClosedStoresChange, dropdownRef, onDropdownToggle,
+    dropdownOpen, draftSelectionLabel, selectionLabel, months, draftSelectedMonths,
+    onToggleMonth, onApplyMonths, onApplyPreset,
+  } = props;
   return <div className={`glass relative z-50 rounded-3xl p-4 ${!visible ? 'hidden lg:block' : ''}`}>
     <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
       <div>
         <h3 className="text-sm font-bold">Luni analizate</h3>
         <p className="text-[11px] text-slate-500">Alege un interval rapid sau bifează lunile; rezultatele se agregă automat.</p>
         <div className="mt-2 flex flex-wrap gap-1.5" aria-label="Intervale rapide">
-          {[3, 6, 12].map((count) => <button key={count} type="button" onClick={() => props.onApplyPreset?.(count)} className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-600 hover:border-indigo-300 hover:text-indigo-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">Ultimele {count} luni</button>)}
+          {[3, 6, 12].map((count) => <button key={count} type="button" onClick={() => onApplyPreset?.(count)} className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-600 hover:border-indigo-300 hover:text-indigo-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">Ultimele {count} luni</button>)}
         </div>
       </div>
       <div className="flex flex-wrap items-start gap-2">
         <label className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
-          <input type="checkbox" checked={props.includeClosedStores} onChange={(event) => props.onIncludeClosedStoresChange(event.target.checked)} className="h-3.5 w-3.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500" />
+          <input type="checkbox" checked={includeClosedStores} onChange={(event) => onIncludeClosedStoresChange(event.target.checked)} className="h-3.5 w-3.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500" />
           Include magazine inchise
         </label>
-        <details ref={props.dropdownRef} onToggle={props.onDropdownToggle} className="group relative z-50">
+        <details ref={dropdownRef} onToggle={onDropdownToggle} className="group relative z-50">
           <summary className="flex min-w-60 cursor-pointer list-none items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold outline-none transition-colors hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:hover:bg-slate-700">
-            <span className="truncate">{props.dropdownOpen ? props.draftSelectionLabel : props.selectionLabel}</span>
+            <span className="truncate">{dropdownOpen ? draftSelectionLabel : selectionLabel}</span>
             <ChevronDown size={14} className="shrink-0 text-slate-400 transition-transform group-open:rotate-180" />
           </summary>
           <div className="absolute right-0 z-[100] mt-2 w-64 rounded-2xl border border-slate-200 bg-white p-2 shadow-xl dark:border-slate-700 dark:bg-slate-900">
-            <div className="max-h-72 overflow-auto pr-1">{props.months.map((month) => <MonthOption key={month} month={month} props={props} />)}</div>
+            <div className="max-h-72 overflow-auto pr-1">{months.map((month) => <MonthOption key={month} month={month} draftSelectedMonths={draftSelectedMonths} onToggleMonth={onToggleMonth} />)}</div>
             <div className="mt-2 flex items-center justify-between border-t border-slate-100 pt-2 dark:border-slate-800">
-              <span className="text-[10px] font-semibold text-slate-400">{props.draftSelectedMonths.length}/{MAX_DASHBOARD_BATCH_MONTHS} selectate</span>
-              <button type="button" onClick={props.onApplyMonths} className="rounded-xl bg-indigo-600 px-3 py-1.5 text-xs font-bold text-white shadow-sm transition-colors hover:bg-indigo-700">OK</button>
+              <span className="text-[10px] font-semibold text-slate-400">{draftSelectedMonths.length}/{MAX_DASHBOARD_BATCH_MONTHS} selectate</span>
+              <button type="button" onClick={onApplyMonths} className="rounded-xl bg-indigo-600 px-3 py-1.5 text-xs font-bold text-white shadow-sm transition-colors hover:bg-indigo-700">OK</button>
             </div>
           </div>
         </details>
@@ -46,11 +51,11 @@ export function HistorySelection({ props, visible }: { props: SummaryProps; visi
   </div>;
 }
 
-function MonthOption({ month, props }: { month: string; props: SummaryProps }) {
-  const checked = props.draftSelectedMonths.includes(month);
-  const disabled = !checked && props.draftSelectedMonths.length >= MAX_DASHBOARD_BATCH_MONTHS;
+function MonthOption({ month, draftSelectedMonths, onToggleMonth }: { month: string; draftSelectedMonths: string[]; onToggleMonth: SummaryProps['onToggleMonth'] }) {
+  const checked = draftSelectedMonths.includes(month);
+  const disabled = !checked && draftSelectedMonths.length >= MAX_DASHBOARD_BATCH_MONTHS;
   return <label className={`flex items-center gap-2 rounded-xl px-2.5 py-2 text-xs font-semibold transition-colors ${disabled ? 'cursor-not-allowed opacity-40' : 'cursor-pointer'} ${checked ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-300' : 'text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-800'}`}>
-    <input type="checkbox" checked={checked} disabled={disabled} onChange={() => props.onToggleMonth(month)} className="h-3.5 w-3.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500" />
+    <input type="checkbox" checked={checked} disabled={disabled} onChange={() => onToggleMonth(month)} className="h-3.5 w-3.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500" />
     <span>{month}</span>
   </label>;
 }

@@ -20,14 +20,15 @@ import * as dashboardPresenters from './presenters';
 const HISTORY_START_YEAR = 2018;
 
 function useDashboardState(props: DashboardProps) {
+  const { currentMonth, filters, initialSection, months, onSectionChange } = props;
   const { user } = useAuth();
   const [currentMode, setCurrentMode] = useState<'overview' | 'forecast'>('overview');
   const [historyYearFilter, setHistoryYearFilter] = useState<number | null>(null);
   const [kpiMetric, setKpiMetric] = useState<'proc_bon2acc' | 'prc_focus_acc_qty' | 'total_receipts'>('proc_bon2acc');
   const [includeClosedStores, setIncludeClosedStores] = useState(false);
-  const performance = useDashboardPerformanceDetail({ currentMonth: props.currentMonth, firma: props.filters.firma });
+  const performance = useDashboardPerformanceDetail({ currentMonth, firma: filters.firma });
   const historySelection = useDashboardHistorySelection({
-    currentMonth: props.currentMonth, months: props.months, initialSection: props.initialSection ?? 'current',
+    currentMonth, months, initialSection: initialSection ?? 'current',
   });
   const data = useDashboardData({
     currentMonth: props.currentMonth,
@@ -40,12 +41,12 @@ function useDashboardState(props: DashboardProps) {
     aggregateDetails: dashboardPresenters.aggregateDashboardDetails,
   });
   useEffect(() => {
-    props.onSectionChange?.(historySelection.activeSection);
-  }, [historySelection.activeSection, props.onSectionChange]);
+    onSectionChange?.(historySelection.activeSection);
+  }, [historySelection.activeSection, onSectionChange]);
   const availableYears = useMemo(() => {
-    const currentYear = parseInt(props.currentMonth.slice(0, 4));
+    const currentYear = parseInt(currentMonth.slice(0, 4));
     return Array.from({ length: currentYear - HISTORY_START_YEAR + 1 }, (_, index) => HISTORY_START_YEAR + index);
-  }, [props.currentMonth]);
+  }, [currentMonth]);
   return {
     canViewSalaries: canAccessSalaries(user?.profile), currentMode, setCurrentMode,
     historyYearFilter, setHistoryYearFilter, kpiMetric, setKpiMetric,

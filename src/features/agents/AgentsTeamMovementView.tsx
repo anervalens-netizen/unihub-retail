@@ -19,10 +19,9 @@ function CustomTooltip({ active, payload, label }: TooltipContentProps) {
   </div>;
 }
 
-function TeamSnapshot({ props }: { props: AgentsTeamMovementViewProps }) {
-  const overview = props.overview;
-  return <div ref={props.teamSectionRef} className="glass scroll-mt-20 rounded-3xl p-4">
-    <div className="mb-3 flex items-start justify-between gap-3"><div><h3 className="text-sm font-bold">Snapshot — {props.currentMonth}</h3><p className="mt-1 text-xs leading-relaxed text-slate-500">{props.filterLabel}</p></div>{props.loadingOverview && <div className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-100 dark:bg-slate-800"><RefreshCw size={14} className="animate-spin text-slate-400" /></div>}</div>
+function TeamSnapshot({ teamSectionRef, overview, currentMonth, filterLabel, loadingOverview }: Pick<AgentsTeamMovementViewProps, 'teamSectionRef' | 'overview' | 'currentMonth' | 'filterLabel' | 'loadingOverview'>) {
+  return <div ref={teamSectionRef} className="glass scroll-mt-20 rounded-3xl p-4">
+    <div className="mb-3 flex items-start justify-between gap-3"><div><h3 className="text-sm font-bold">Snapshot — {currentMonth}</h3><p className="mt-1 text-xs leading-relaxed text-slate-500">{filterLabel}</p></div>{loadingOverview && <div className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-100 dark:bg-slate-800"><RefreshCw size={14} className="animate-spin text-slate-400" /></div>}</div>
     <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
       <MetricCard icon={<Users size={16} className="text-indigo-500" />} label="Activi" value={overview?.active_count ?? '-'} className="bg-slate-50/80 dark:bg-slate-800/40" />
       <MetricCard icon={<UserPlus size={16} className="text-emerald-500" />} label="Noi" value={overview?.new_count ?? '-'} className="bg-emerald-50/50 text-emerald-600 dark:bg-emerald-900/10 dark:text-emerald-400" />
@@ -80,7 +79,7 @@ function MovementChart({ chartData, maxMovement }: Pick<AgentsTeamMovementViewPr
 
 export function AgentsTeamMovementView(props: AgentsTeamMovementViewProps) {
   return <>
-    <TeamSnapshot props={props} />
+    <TeamSnapshot teamSectionRef={props.teamSectionRef} overview={props.overview} currentMonth={props.currentMonth} filterLabel={props.filterLabel} loadingOverview={props.loadingOverview} />
     <TeamHealth overview={props.overview} />
     <ChurnAndFlux props={props} />
     <MovementChart chartData={props.chartData} maxMovement={props.maxMovement} />

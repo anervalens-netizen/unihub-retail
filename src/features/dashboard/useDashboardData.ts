@@ -8,19 +8,9 @@ import {
 } from "../../api/dashboard";
 import type { DashboardQuery } from "../../api/dashboard";
 import type {
-  AgentStat,
-  AsmStat,
-  BrandMixItem,
-  CategoryMixItem,
-  DailySalesPoint,
-  DashboardAllResponse,
-  DashboardSummary,
-  MonthlyHistoryPoint,
-  PeriodComparisonPayload,
-  ReceiptBucketItem,
-  RegionalStat,
-  StoreStat,
-  YearHistoryPoint,
+  AgentStat, AsmStat, BrandMixItem, CategoryMixItem, DailySalesPoint, DashboardAllResponse,
+  DashboardSummary, MonthlyHistoryPoint, PeriodComparisonPayload, ReceiptBucketItem,
+  RegionalStat, StoreStat, YearHistoryPoint,
 } from "../../api/generated/runtime-types";
 import {
   buildCurrentDashboardQuery,

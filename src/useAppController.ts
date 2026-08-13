@@ -119,7 +119,8 @@ export function useAppController() {
   const pnlPending = pnlPermissionIsPending(auth.isLoading, pnl.permissionPending);
   const navigation = useAppNavigation(deepLink, hasManagementAccess, pnlPending, pnl.hasPnlAccess);
   const data = useAppData(deepLink, auth.isAuthenticated, auth.user?.profile.sub ?? 'anonymous');
-  useEffect(() => { setUnauthorizedHandler(() => { void auth.login(); }); }, [auth.login]);
+  const login = auth.login;
+  useEffect(() => { setUnauthorizedHandler(() => { void login(); }); }, [login]);
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   return { deepLink, auth, hasManagementAccess, hasPnlAccess: pnl.hasPnlAccess, navigation, data, isFilterOpen, setIsFilterOpen };
 }

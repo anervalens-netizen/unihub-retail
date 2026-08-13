@@ -35,9 +35,10 @@ function useMonthlyQueries(month: string, job: ActiveMonthlyJob | null) {
     enabled: !!month && permissions.data?.can_run === true,
     staleTime: 10_000,
   });
+  const refetchManifest = manifestQuery.refetch;
   useEffect(() => {
-    if (jobQuery.data?.status === 'complete') void manifestQuery.refetch();
-  }, [jobQuery.data?.status, manifestQuery.refetch]);
+    if (jobQuery.data?.status === 'complete') void refetchManifest();
+  }, [jobQuery.data?.status, refetchManifest]);
   return { permissions, jobQuery, manifestQuery };
 }
 
