@@ -15,9 +15,16 @@ import asyncpg
 import pandas as pd
 import pytest
 from fastapi import HTTPException, UploadFile
+from openpyxl import Workbook
 
 import services.imports as imports_module
 from models import SalesGenerationPromotionRequest
+from services.dashboard_specials import (
+    _generated_config_path,
+    _promotion_products_cache,
+    load_promotion_rule_products,
+    validate_special_cards_config,
+)
 from services.imports import ImportsService
 from services.jobs import JobResult, JobStatus
 
@@ -67,6 +74,46 @@ def _promotion_config(*, source_file: str = "@GENERATION_ACTUALS@") -> dict[str,
                 "item_codes": ["I1"],
                 "actuals_source_file": source_file,
             }
+        ]
+    }
+
+
+def _rule_master_workbook() -> bytes:
+    workbook = Workbook()
+    trigger = workbook.active
+    trigger.title = "Produse trigger"
+    trigger.append(["Cod", "Denumire"])
+    trigger.append(["TRIGGER-1", "Produs trigger"])
+    discounted = workbook.create_sheet("Produse discount")
+    discounted.append(["Cod", "Denumire"])
+    discounted.append(["DISCOUNT-1", "Produs discount"])
+    stream = BytesIO()
+    workbook.save(stream)
+    return stream.getvalue()
+
+
+def _promotion_config_with_shared_rule_master(source_file: Path) -> dict[str, object]:
+    base = {
+        "rule_type": "trigger_discounted",
+        "source_file": str(source_file),
+        "trigger_sheet": "Produse trigger",
+        "discounted_sheet": "Produse discount",
+        "actuals_source_file": "@GENERATION_ACTUALS@",
+    }
+    return {
+        "promotions": [
+            {
+                **base,
+                "key": "rule-june",
+                "start_date": "2026-06-01",
+                "end_date": "2026-06-30",
+            },
+            {
+                **base,
+                "key": "rule-july",
+                "start_date": "2026-07-01",
+                "end_date": "2026-07-31",
+            },
         ]
     }
 
@@ -232,6 +279,101 @@ def test_publish_promo_generation_hashes_external_material_and_rejects_missing_m
             material_sha256="c" * 64,
             expected_pointer_sha256=None,
         )
+
+
+def test_publish_promo_generation_owns_deduplicated_rule_masters_and_fails_closed_on_tamper(
+    tmp_path: Path,
+) -> None:
+    external_rule_master = tmp_path / "private" / "rule-master.xlsx"
+    external_rule_master.parent.mkdir()
+    external_rule_master.write_bytes(_rule_master_workbook())
+    source_sha256 = hashlib.sha256(external_rule_master.read_bytes()).hexdigest()
+    config = _promotion_config_with_shared_rule_master(external_rule_master)
+    _definitions, material_sha256 = validate_special_cards_config(config)
+    data_dir = tmp_path / "data"
+
+    generation_id, _, _ = imports_module._publish_promo_generation(
+        data_dir=data_dir,
+        config=config,
+        content=b"uploaded-actuals",
+        suffix=".xlsx",
+        material_sha256=material_sha256,
+        expected_pointer_sha256=None,
+    )
+
+    generation_dir = data_dir / "promo_generations" / generation_id
+    pointer = json.loads((data_dir / "promo_generations" / "current.json").read_text())
+    config_path = generation_dir / "hub_specials.json"
+    published_config = json.loads(config_path.read_text())
+    published_promotions = cast(list[dict[str, object]], published_config["promotions"])
+    owned_paths = {Path(str(promotion["source_file"])) for promotion in published_promotions}
+    assert len(owned_paths) == 1
+    owned_path = owned_paths.pop()
+    assert owned_path.parent.resolve() == generation_dir.resolve()
+    assert owned_path.is_file()
+    assert not owned_path.is_symlink()
+    assert all(promotion["source_sha256"] == source_sha256 for promotion in published_promotions)
+    assert pointer["rule_sources"] == [
+        {"file": str(owned_path), "sha256": source_sha256}
+    ]
+    assert pointer["rule_sources_sha256"] == hashlib.sha256(
+        imports_module._canonical_json_bytes({"rule_sources": pointer["rule_sources"]})
+    ).hexdigest()
+
+    external_rule_master.unlink()
+    active_config_path = _generated_config_path(data_dir)
+    assert active_config_path == config_path
+    active_config = json.loads(active_config_path.read_text())
+    definitions, _ = validate_special_cards_config(active_config)
+    products, error = load_promotion_rule_products(definitions[0])
+    assert error is None
+    assert products is not None
+
+    owned_path.write_bytes(b"tampered")
+    with pytest.raises(ValueError, match="Masterul.*hashului aprobat"):
+        _generated_config_path(data_dir)
+
+
+def test_publish_promo_generation_identity_binds_rule_master_bytes(
+    tmp_path: Path,
+) -> None:
+    external_rule_master = tmp_path / "rule-master.xlsx"
+    original = _rule_master_workbook()
+    external_rule_master.write_bytes(original)
+    data_dir = tmp_path / "data"
+    first_config = _promotion_config_with_shared_rule_master(external_rule_master)
+    _definitions, first_material_sha256 = validate_special_cards_config(first_config)
+    first_generation_id, _, _ = imports_module._publish_promo_generation(
+        data_dir=data_dir,
+        config=first_config,
+        content=b"uploaded-actuals",
+        suffix=".xlsx",
+        material_sha256=first_material_sha256,
+        expected_pointer_sha256=None,
+    )
+    first_pointer_sha256 = imports_module._promo_pointer_sha256(data_dir)
+
+    # A ZIP reader accepts trailing bytes, so the business rows remain exact while
+    # the approved rule-master bytes and their SHA-256 identity change.
+    external_rule_master.write_bytes(original + b"\n")
+    _promotion_products_cache.clear()
+    second_config = _promotion_config_with_shared_rule_master(external_rule_master)
+    _definitions, second_material_sha256 = validate_special_cards_config(second_config)
+    assert second_material_sha256 == first_material_sha256
+
+    second_generation_id, _, _ = imports_module._publish_promo_generation(
+        data_dir=data_dir,
+        config=second_config,
+        content=b"uploaded-actuals",
+        suffix=".xlsx",
+        material_sha256=second_material_sha256,
+        expected_pointer_sha256=first_pointer_sha256,
+    )
+
+    assert second_generation_id != first_generation_id
+    pointer = json.loads((data_dir / "promo_generations" / "current.json").read_text())
+    assert pointer["previous_generation_id"] == first_generation_id
+    assert pointer["rule_sources"][0]["sha256"] == hashlib.sha256(original + b"\n").hexdigest()
 
 
 def test_publish_promo_generation_reuses_exact_generation(
