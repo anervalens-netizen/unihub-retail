@@ -104,6 +104,7 @@ EXPECTED_CHANGED_PATHS = {
     "scripts/verify_deployed_release.sh",
     "scripts/verify_promtool_cache.sh",
     "ops/build-retail-release-artifact.sh",
+    "ops/config/retail-env.schema.json",
     "ops/deploy-retail-artifact.sh",
     "ops/test-deploy-retail-artifact.sh",
 }
@@ -136,6 +137,7 @@ EXPECTED_RELEASE_A_AUTHORITIES = {
     "backend/scripts/run_retail_scale_profile.py",
     "backend/tests/test_release_contract_tooling_security.py",
     "ops/build-retail-release-artifact.sh",
+    "ops/config/retail-env.schema.json",
     "ops/deploy-retail-artifact.sh",
     "ops/test-deploy-retail-artifact.sh",
     "scripts/check_release_a_candidate.py",
@@ -336,6 +338,7 @@ RELEASE_B_EVIDENCE_CURRENT_PATHS = {
     "scripts/verify_promtool_cache.sh",
     "scripts/release-b-authority-contract-v1.json",
     "ops/build-retail-release-artifact.sh",
+    "ops/config/retail-env.schema.json",
     "ops/deploy-retail-artifact.sh",
     "ops/test-deploy-retail-artifact.sh",
 }
@@ -1200,6 +1203,7 @@ def verify_release_b_mutation_policy(
         "scripts/verify_promtool_cache.sh",
         "scripts/release-b-authority-contract-v1.json",
         "ops/build-retail-release-artifact.sh",
+        "ops/config/retail-env.schema.json",
         "ops/deploy-retail-artifact.sh",
         "ops/test-deploy-retail-artifact.sh",
     }
@@ -2256,8 +2260,8 @@ def verify_lock(
     *, current_paths: set[str] | None = None
 ) -> tuple[dict[str, Any], list[dict[str, str]]]:
     lock = load_json(ROOT / ".agent/contract-lock.json")
-    if lock.get("revision") != 18 or lock.get("baseline_source_sha") != EXPECTED_BASELINE:
-        raise ValueError("Release-A requires exact contract lock revision 18 and baseline")
+    if lock.get("revision") != 19 or lock.get("baseline_source_sha") != EXPECTED_BASELINE:
+        raise ValueError("Release-A requires exact contract lock revision 19 and baseline")
     content_commit = str(lock["contract_content_commit"])
     lock_commits = list(
         filter(
@@ -2272,15 +2276,15 @@ def verify_lock(
         )
     )
     if len(lock_commits) != 1:
-        raise ValueError("revision-18 lock must have exactly one immutable lock commit")
+        raise ValueError("revision-19 lock must have exactly one immutable lock commit")
     lock_commit = lock_commits[0]
     lock_parents = git("show", "-s", "--format=%P", lock_commit).split()
     if lock_parents != [content_commit]:
-        raise ValueError("revision-18 lock commit must directly follow content commit")
+        raise ValueError("revision-19 lock commit must directly follow content commit")
     current_lock_blob = git("rev-parse", "HEAD:.agent/contract-lock.json")
     locked_blob = git("rev-parse", f"{lock_commit}:.agent/contract-lock.json")
     if current_lock_blob != locked_blob:
-        raise ValueError("current revision-18 lock differs from its sole lock commit")
+        raise ValueError("current revision-19 lock differs from its sole lock commit")
     lock["verified_lock_commit"] = lock_commit
     verified: list[dict[str, str]] = []
     locked_objects = [lock["plan"], *lock["assets"]]

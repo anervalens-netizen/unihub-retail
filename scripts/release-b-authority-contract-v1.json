@@ -443,8 +443,7 @@
     {
       "git_mode": "100644",
       "path": "ops/config/retail-env.schema.json",
-      "sha256": "b87eaf6449e3fba9419db1112ff3ce56bcc357059a8df0b028928023a8448adc",
-      "source_snapshot": "release_b_integrated_preview",
+      "sha256": "bf37444e78d4de057bd030ef42cafe1a4ecb09310e04e160648b0b3485071fa2",
       "supports": [
         "AC-16"
       ]
@@ -706,7 +705,7 @@
     {
       "git_mode": "100644",
       "path": "scripts/check_release_a_candidate.py",
-      "sha256": "121ee4e04acd92656b85f35d76e605613f993ce28816e7b39591d9cd34ca3dd3",
+      "sha256": "6404543625b15a87db2029eb14f276f345bf1da54ff6b3e4f003fd8a02b1410e",
       "supports": [
         "AC-12",
         "AC-16",
@@ -2888,6 +2887,7 @@
     "backend/scripts/run_tests_isolated.sh",
     "backend/tests/test_release_contract_tooling_security.py",
     "ops/build-retail-release-artifact.sh",
+    "ops/config/retail-env.schema.json",
     "ops/deploy-retail-artifact.sh",
     "ops/test-deploy-retail-artifact.sh",
     "scripts/check_release_a_candidate.py",
