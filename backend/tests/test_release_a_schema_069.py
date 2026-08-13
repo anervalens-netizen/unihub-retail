@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 import importlib
 import json
 import os
+from typing import Any
 
 import asyncpg
 import httpx
@@ -159,6 +160,31 @@ async def _insert_lineaged_run(
     )
 
 
+async def _assert_lineaged_run_rejected(
+    connection: asyncpg.Connection,
+    snapshot_id: str | None,
+    expected_error: type[BaseException],
+    *,
+    match: str | None = None,
+    **overrides: Any,
+) -> None:
+    with pytest.raises(expected_error, match=match):
+        async with connection.transaction():
+            await _insert_lineaged_run(connection, snapshot_id, **overrides)
+
+
+async def _assert_execute_rejected(
+    connection: asyncpg.Connection,
+    expected_error: type[BaseException],
+    query: str,
+    *args: Any,
+    match: str | None = None,
+) -> None:
+    with pytest.raises(expected_error, match=match):
+        async with connection.transaction():
+            await connection.execute(query, *args)
+
+
 @pytest.mark.asyncio
 async def test_069_is_additive_empty_and_old_ai_insert_remains_compatible() -> None:
     connection = await asyncpg.connect(os.environ["DATABASE_URL"])
@@ -230,9 +256,9 @@ async def test_069_seals_cohort_and_requires_exact_completed_run_lineage() -> No
     await transaction.start()
     try:
         await connection.execute("SET LOCAL ROLE unihub_operations")
-        with pytest.raises(asyncpg.CheckViolationError):
-            async with connection.transaction():
-                await _insert_lineaged_run(connection, None)
+        await _assert_lineaged_run_rejected(
+            connection, None, asyncpg.CheckViolationError
+        )
         snapshot_id = str(
             await connection.fetchval(
                 """
@@ -266,9 +292,12 @@ async def test_069_seals_cohort_and_requires_exact_completed_run_lineage() -> No
             "1" * 64,
         )
 
-        with pytest.raises(asyncpg.RaiseError, match="sealed cohort"):
-            async with connection.transaction():
-                await _insert_lineaged_run(connection, snapshot_id)
+        await _assert_lineaged_run_rejected(
+            connection,
+            snapshot_id,
+            asyncpg.RaiseError,
+            match="sealed cohort",
+        )
 
         sealed = await connection.fetchrow(
             "SELECT state, cohort_sha256, sealed_at FROM seal_ai_forecast_cohort_snapshot($1)",
@@ -314,26 +343,33 @@ async def test_069_seals_cohort_and_requires_exact_completed_run_lineage() -> No
         valid_run_id = await _insert_lineaged_run(connection, snapshot_id)
         assert valid_run_id > 0
 
-        with pytest.raises(asyncpg.CheckViolationError):
-            async with connection.transaction():
-                await _insert_lineaged_run(
-                    connection, snapshot_id, response_profile="quantiles_v1"
-                )
-        with pytest.raises(asyncpg.CheckViolationError):
-            async with connection.transaction():
-                await _insert_lineaged_run(
-                    connection, snapshot_id, model=0, fallback=0
-                )
-        with pytest.raises(asyncpg.CheckViolationError):
-            async with connection.transaction():
-                await _insert_lineaged_run(
-                    connection, snapshot_id, raw_response_sha256=None
-                )
-        with pytest.raises(asyncpg.RaiseError, match="pair count differs"):
-            async with connection.transaction():
-                await _insert_lineaged_run(
-                    connection, snapshot_id, expected=2, model=2
-                )
+        await _assert_lineaged_run_rejected(
+            connection,
+            snapshot_id,
+            asyncpg.CheckViolationError,
+            response_profile="quantiles_v1",
+        )
+        await _assert_lineaged_run_rejected(
+            connection,
+            snapshot_id,
+            asyncpg.CheckViolationError,
+            model=0,
+            fallback=0,
+        )
+        await _assert_lineaged_run_rejected(
+            connection,
+            snapshot_id,
+            asyncpg.CheckViolationError,
+            raw_response_sha256=None,
+        )
+        await _assert_lineaged_run_rejected(
+            connection,
+            snapshot_id,
+            asyncpg.RaiseError,
+            match="pair count differs",
+            expected=2,
+            model=2,
+        )
 
         queued_id = await _insert_lineaged_run(
             connection,
@@ -450,18 +486,18 @@ async def test_069_outbox_is_canonical_private_ordered_and_replayable() -> None:
             "sales:a1234567-89ab-4def-8abc-1234567890ab",
             "sales:sp1_" + "a" * 64,
         ):
-            with pytest.raises(asyncpg.CheckViolationError):
-                async with connection.transaction():
-                    await connection.execute(
-                        """
-                        INSERT INTO retail_outbox_consumer_receipts (
-                            event_id, consumer, domain_generation_key, effect_sha256
-                        ) VALUES ($1, 'grile_v2', $2, $3)
-                        """,
-                        event_id,
-                        forbidden_key,
-                        "8" * 64,
-                    )
+            await _assert_execute_rejected(
+                connection,
+                asyncpg.CheckViolationError,
+                """
+                INSERT INTO retail_outbox_consumer_receipts (
+                    event_id, consumer, domain_generation_key, effect_sha256
+                ) VALUES ($1, 'grile_v2', $2, $3)
+                """,
+                event_id,
+                forbidden_key,
+                "8" * 64,
+            )
         await connection.execute(
             """
             INSERT INTO retail_outbox_consumer_receipts (
@@ -473,24 +509,26 @@ async def test_069_outbox_is_canonical_private_ordered_and_replayable() -> None:
         )
 
         await connection.execute("RESET ROLE")
-        with pytest.raises(asyncpg.RaiseError, match="identity and payload"):
-            async with connection.transaction():
-                await connection.execute(
-                    "UPDATE retail_outbox_events SET payload_sha256 = $1 WHERE id = $2",
-                    "9" * 64,
-                    event_id,
-                )
-        with pytest.raises(asyncpg.RaiseError, match="append-only"):
-            async with connection.transaction():
-                await connection.execute(
-                    """
-                    UPDATE retail_outbox_consumer_receipts
-                    SET effect_sha256 = $1
-                    WHERE event_id = $2 AND consumer = 'grile_v2'
-                    """,
-                    "7" * 64,
-                    event_id,
-                )
+        await _assert_execute_rejected(
+            connection,
+            asyncpg.RaiseError,
+            "UPDATE retail_outbox_events SET payload_sha256 = $1 WHERE id = $2",
+            "9" * 64,
+            event_id,
+            match="identity and payload",
+        )
+        await _assert_execute_rejected(
+            connection,
+            asyncpg.RaiseError,
+            """
+            UPDATE retail_outbox_consumer_receipts
+            SET effect_sha256 = $1
+            WHERE event_id = $2 AND consumer = 'grile_v2'
+            """,
+            "7" * 64,
+            event_id,
+            match="append-only",
+        )
 
         await connection.execute("SET LOCAL ROLE unihub_operations")
         await connection.execute(
@@ -503,13 +541,14 @@ async def test_069_outbox_is_canonical_private_ordered_and_replayable() -> None:
             transition_at + timedelta(seconds=1),
             event_id,
         )
-        with pytest.raises(asyncpg.RaiseError, match="completed"):
-            async with connection.transaction():
-                await connection.execute(
-                    "UPDATE retail_outbox_events SET updated_at = $1 WHERE id = $2",
-                    transition_at + timedelta(seconds=2),
-                    event_id,
-                )
+        await _assert_execute_rejected(
+            connection,
+            asyncpg.RaiseError,
+            "UPDATE retail_outbox_events SET updated_at = $1 WHERE id = $2",
+            transition_at + timedelta(seconds=2),
+            event_id,
+            match="completed",
+        )
 
         await connection.execute("RESET ROLE")
         dead_payload = _payload(aggregate_id="sales-gen-dead", revision=1)
@@ -535,19 +574,20 @@ async def test_069_outbox_is_canonical_private_ordered_and_replayable() -> None:
             dead_payload,
         )
         await connection.execute("SET LOCAL ROLE unihub_operations")
-        with pytest.raises(asyncpg.RaiseError, match="exact dead event"):
-            async with connection.transaction():
-                await connection.execute(
-                    """
-                    INSERT INTO retail_outbox_replay_audit (
-                        event_id, replay_number, previous_attempt_count,
-                        previous_dead_at, reason, requested_by_sub_sha256
-                    ) VALUES ($1, 2, 8, $2, 'operator_retry', $3)
-                    """,
-                    dead_event_id,
-                    OCCURRED_AT,
-                    ACTOR_HASH,
-                )
+        await _assert_execute_rejected(
+            connection,
+            asyncpg.RaiseError,
+            """
+            INSERT INTO retail_outbox_replay_audit (
+                event_id, replay_number, previous_attempt_count,
+                previous_dead_at, reason, requested_by_sub_sha256
+            ) VALUES ($1, 2, 8, $2, 'operator_retry', $3)
+            """,
+            dead_event_id,
+            OCCURRED_AT,
+            ACTOR_HASH,
+            match="exact dead event",
+        )
         await connection.execute(
             """
             INSERT INTO retail_outbox_replay_audit (

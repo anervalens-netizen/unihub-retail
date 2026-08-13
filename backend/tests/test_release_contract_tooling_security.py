@@ -36,6 +36,65 @@ def _load_module(path: Path, name: str) -> ModuleType:
     return module
 
 
+def _assert_release_a_schema_gate_isolated(
+    checker: str,
+    schema_gate: str,
+    structural_gate: str,
+    scale_gate: str,
+) -> None:
+    assert 'git("status", "--porcelain")' in checker
+    assert "--untracked-files=no" not in checker
+    assert 'os.environ.pop(_startup_variable, None)' in checker
+    assert "status --porcelain" in schema_gate
+    assert "PYTHONNOUSERSITE=1" in schema_gate
+    assert "PYTHONSAFEPATH=1" in schema_gate
+    assert "PYTHONDONTWRITEBYTECODE=1" in schema_gate
+    assert '"$PYTHON_BASE" -B -I -S "$ROOT_DIR/scripts/check_release_a_candidate.py"' in schema_gate
+    assert "unset MYPYPATH MYPY_CONFIG_FILE" in schema_gate
+    for source in (schema_gate, structural_gate, scale_gate):
+        assert "postgres@sha256:" in source
+        assert "--pull=never" in source
+        assert 'PYTHON_BASE="/usr/bin/python3.12"' in source
+        assert "PYTHON_BASE_SHA256=" in source
+    assert "valkey/valkey@sha256:" in schema_gate
+    assert "UNIHUB_SCALE_PYTHON" not in scale_gate
+    assert "UNIHUB_BACKEND_VENV" not in structural_gate
+
+
+def _assert_local_python_gate_isolated(local_gate: str) -> None:
+    assert "EXPECTED_NODE_SHA256" in local_gate
+    assert "EXPECTED_NPM_CLI_SHA256" in local_gate
+    assert 'PYTHON_BASE="/usr/bin/python3.12"' in local_gate
+    assert "EXPECTED_PYTHON_SHA256" in local_gate
+    assert "'$PYTHON' -B -I -m mypy" in local_gate
+    assert "python-cache-preflight" in local_gate
+    assert "python-dependencies-final" in local_gate
+    assert 'export PYTHONDONTWRITEBYTECODE=1' in local_gate
+    assert 'PATH="$(dirname "$NODE"):' in local_gate
+    assert "    export PATH" in local_gate
+
+
+def _assert_outbox_gate_isolated(outbox_gate: str) -> None:
+    assert "UNIHUB_BACKEND_VENV" not in outbox_gate
+    assert 'PYTHON_BASE = Path("/usr/bin/python3.12")' in outbox_gate
+    assert 'not sys.flags.isolated' in outbox_gate
+    assert 'os.environ.pop(_startup_variable, None)' in outbox_gate
+    assert '[str(PYTHON), "-B", "-I", str(DRIVER)' in outbox_gate
+
+
+def _assert_e2e_and_deploy_python_isolated(real_e2e: str, deployed: str) -> None:
+    assert 'PYTHON_BASE="/usr/bin/python3.12"' in real_e2e
+    assert "export PYTHONNOUSERSITE=1 PYTHONSAFEPATH=1" in real_e2e
+    assert '"${PYTHON}" -I -c' in real_e2e
+    assert "BACKEND_PYTHON=(" in real_e2e
+    assert 'node_modules/.bin/playwright' not in real_e2e
+    assert '"${NODE}" "${PLAYWRIGHT_CLI}"' in real_e2e
+    assert "NODE_OPTIONS NODE_PATH" in real_e2e
+    assert 'PYTHON_BASE="/usr/bin/python3.12"' in deployed
+    assert "PYTHON_BASE_SHA256" in deployed
+    assert "export PYTHONNOUSERSITE=1 PYTHONSAFEPATH=1" in deployed
+
+
 def test_release_a_tooling_requires_clean_untracked_scope() -> None:
     checker = CHECKER_PATH.read_text(encoding="utf-8")
     schema_gate = (ROOT / "scripts/run_release_a_schema_gate.sh").read_text(
@@ -57,48 +116,12 @@ def test_release_a_tooling_requires_clean_untracked_scope() -> None:
     deployed = (ROOT / "scripts/verify_deployed_release.sh").read_text(
         encoding="utf-8"
     )
-    assert 'git("status", "--porcelain")' in checker
-    assert "--untracked-files=no" not in checker
-    assert 'os.environ.pop(_startup_variable, None)' in checker
-    assert "status --porcelain" in schema_gate
-    assert "PYTHONNOUSERSITE=1" in schema_gate
-    assert "PYTHONSAFEPATH=1" in schema_gate
-    assert "PYTHONDONTWRITEBYTECODE=1" in schema_gate
-    assert '"$PYTHON_BASE" -B -I -S "$ROOT_DIR/scripts/check_release_a_candidate.py"' in schema_gate
-    assert "unset MYPYPATH MYPY_CONFIG_FILE" in schema_gate
-    for source in (schema_gate, structural_gate, scale_gate):
-        assert "postgres@sha256:" in source
-        assert "--pull=never" in source
-        assert 'PYTHON_BASE="/usr/bin/python3.12"' in source
-        assert "PYTHON_BASE_SHA256=" in source
-    assert "valkey/valkey@sha256:" in schema_gate
-    assert "UNIHUB_SCALE_PYTHON" not in scale_gate
-    assert "UNIHUB_BACKEND_VENV" not in structural_gate
-    assert "EXPECTED_NODE_SHA256" in local_gate
-    assert "EXPECTED_NPM_CLI_SHA256" in local_gate
-    assert 'PYTHON_BASE="/usr/bin/python3.12"' in local_gate
-    assert "EXPECTED_PYTHON_SHA256" in local_gate
-    assert "'$PYTHON' -B -I -m mypy" in local_gate
-    assert "python-cache-preflight" in local_gate
-    assert "python-dependencies-final" in local_gate
-    assert 'export PYTHONDONTWRITEBYTECODE=1' in local_gate
-    assert 'PATH="$(dirname "$NODE"):' in local_gate
-    assert "    export PATH" in local_gate
-    assert "UNIHUB_BACKEND_VENV" not in outbox_gate
-    assert 'PYTHON_BASE = Path("/usr/bin/python3.12")' in outbox_gate
-    assert 'not sys.flags.isolated' in outbox_gate
-    assert 'os.environ.pop(_startup_variable, None)' in outbox_gate
-    assert '[str(PYTHON), "-B", "-I", str(DRIVER)' in outbox_gate
-    assert 'PYTHON_BASE="/usr/bin/python3.12"' in real_e2e
-    assert "export PYTHONNOUSERSITE=1 PYTHONSAFEPATH=1" in real_e2e
-    assert '"${PYTHON}" -I -c' in real_e2e
-    assert "BACKEND_PYTHON=(" in real_e2e
-    assert 'node_modules/.bin/playwright' not in real_e2e
-    assert '"${NODE}" "${PLAYWRIGHT_CLI}"' in real_e2e
-    assert "NODE_OPTIONS NODE_PATH" in real_e2e
-    assert 'PYTHON_BASE="/usr/bin/python3.12"' in deployed
-    assert "PYTHON_BASE_SHA256" in deployed
-    assert "export PYTHONNOUSERSITE=1 PYTHONSAFEPATH=1" in deployed
+    _assert_release_a_schema_gate_isolated(
+        checker, schema_gate, structural_gate, scale_gate
+    )
+    _assert_local_python_gate_isolated(local_gate)
+    _assert_outbox_gate_isolated(outbox_gate)
+    _assert_e2e_and_deploy_python_isolated(real_e2e, deployed)
 
 
 def test_outbox_authority_rejects_forged_samples_and_monitors_claimers(
@@ -206,9 +229,9 @@ def test_direct_mypy_subprocess_cannot_write_bytecode(
     assert observed["environment"]["PYTHONDONTWRITEBYTECODE"] == "1"
 
 
-def test_release_a_python_environment_and_runtime_tree_are_cryptographically_bound() -> None:
-    checker = _load_checker()
-    environment = checker.verify_backend_python_environment()
+def _assert_python_record_canonicalization(
+    checker: ModuleType, environment: dict[str, Any]
+) -> None:
     assert environment["site_packages_sha256"] == checker.PYTHON_SITE_PACKAGES_SHA256
     compiled_record = (
         b"package/module.py,sha256=source,1\n"
@@ -229,14 +252,11 @@ def test_release_a_python_environment_and_runtime_tree_are_cryptographically_bou
         == checker.PYTHON_SYSTEM_SITECUSTOMIZE_SHA256
     )
     assert "backend/scripts/run_tests_isolated.sh" in checker.EXPECTED_RELEASE_A_AUTHORITIES
-    validator = (ROOT / "scripts/validate_release_sbom.py").read_text(encoding="utf-8")
-    workflow = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
-    workflow_secret_step = workflow[
-        workflow.index("- name: Tracked secret regression scan") : workflow.index(
-            "- name: Bandit waiver governance"
-        )
-    ]
-    verifier = (ROOT / "scripts/verify_deployed_release.sh").read_text(encoding="utf-8")
+
+
+def _assert_python_runtime_supply_contract(
+    validator: str, workflow: str, verifier: str
+) -> None:
     property_name = "unihub:python-runtime:site-packages-tree-sha256:v1"
     assert property_name in validator
     assert 'metadata.setdefault("properties", [])' in validator
@@ -245,35 +265,38 @@ def test_release_a_python_environment_and_runtime_tree_are_cryptographically_bou
     assert "--clean-runtime-pyc" in workflow
     assert "--no-compile" in workflow
     assert "--verify-python-environment" in workflow
-    local_gate = (ROOT / "scripts/run_local_quality_gate.sh").read_text(
-        encoding="utf-8"
-    )
-    local_secret_step = local_gate[
-        local_gate.index("internal_secret_scan()") : local_gate.index(
-            "internal_python_lock()"
-        )
-    ]
-    for secret_step in (workflow_secret_step, local_secret_step):
-        exact_scan = secret_step[secret_step.index("detect_secrets scan") :]
-        for digest_authority in (
-            "backend/scripts/run_tests_isolated.sh",
-            "ops/deploy-retail-artifact.sh",
-        ):
-            assert f"':(exclude){digest_authority}'" in secret_step
-            assert secret_step.count(digest_authority) == 2
-            assert digest_authority in exact_scan
-        assert "--disable-plugin HexHighEntropyString" in secret_step
-        assert "--disable-plugin Base64HighEntropyString" in secret_step
-        assert secret_step.count("--disable-plugin") == 2
+
+
+def _assert_secret_scan_contract(secret_step: str) -> None:
+    exact_scan = secret_step[secret_step.index("detect_secrets scan") :]
+    for digest_authority in (
+        "backend/scripts/run_tests_isolated.sh",
+        "ops/deploy-retail-artifact.sh",
+    ):
+        assert f"':(exclude){digest_authority}'" in secret_step
+        assert secret_step.count(digest_authority) == 2
+        assert digest_authority in exact_scan
+    assert "--disable-plugin HexHighEntropyString" in secret_step
+    assert "--disable-plugin Base64HighEntropyString" in secret_step
+    assert secret_step.count("--disable-plugin") == 2
+
+
+def _assert_local_python_cache_contract(local_gate: str) -> None:
     assert "is_canonical_generated_pyc" in local_gate
     assert 'path.parts[:5] == ("..", "..", "..", "bin", "__pycache__")' in local_gate
     assert 'for path in venv_root.rglob("*.pyc")' in local_gate
     assert '"$ROOT/backend/venv" "$output"' in local_gate
+
+
+def _assert_python_install_order(workflow: str) -> None:
     pip_install = workflow.index("--no-compile --require-hashes -r requirements-dev.lock")
     cache_clean = workflow.index("--internal-python-cache-clean", pip_install)
     environment_check = workflow.index("--verify-python-environment", cache_clean)
     assert pip_install < cache_clean < environment_check
     assert workflow.count("import sys; sys.path.insert(0, '.')") >= 2
+
+
+def _assert_migration_manifest_loads() -> None:
     completed = subprocess.run(
         [
             str(ROOT / "backend/venv/bin/python"),
@@ -294,6 +317,34 @@ def test_release_a_python_environment_and_runtime_tree_are_cryptographically_bou
         text=True,
     )
     assert completed.returncode == 0, completed.stdout + completed.stderr
+
+
+def test_release_a_python_environment_and_runtime_tree_are_cryptographically_bound() -> None:
+    checker = _load_checker()
+    environment = checker.verify_backend_python_environment()
+    _assert_python_record_canonicalization(checker, environment)
+    validator = (ROOT / "scripts/validate_release_sbom.py").read_text(encoding="utf-8")
+    workflow = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+    workflow_secret_step = workflow[
+        workflow.index("- name: Tracked secret regression scan") : workflow.index(
+            "- name: Bandit waiver governance"
+        )
+    ]
+    verifier = (ROOT / "scripts/verify_deployed_release.sh").read_text(encoding="utf-8")
+    _assert_python_runtime_supply_contract(validator, workflow, verifier)
+    local_gate = (ROOT / "scripts/run_local_quality_gate.sh").read_text(
+        encoding="utf-8"
+    )
+    local_secret_step = local_gate[
+        local_gate.index("internal_secret_scan()") : local_gate.index(
+            "internal_python_lock()"
+        )
+    ]
+    for secret_step in (workflow_secret_step, local_secret_step):
+        _assert_secret_scan_contract(secret_step)
+    _assert_local_python_cache_contract(local_gate)
+    _assert_python_install_order(workflow)
+    _assert_migration_manifest_loads()
 
 
 def test_import_overlap_worker_uses_isolated_explicit_backend_bootstrap() -> None:
@@ -628,12 +679,7 @@ def test_release_b_authorities_reject_digest_or_mode_drift(
         checker.verify_release_b_authorities()
 
 
-def test_artifact_contract_binds_main_evidence_and_pinned_cosign() -> None:
-    checker = CHECKER_PATH.read_text(encoding="utf-8")
-    builder = (ROOT / "ops/build-retail-release-artifact.sh").read_text(
-        encoding="utf-8"
-    )
-    workflow = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+def _assert_release_a_artifact_evidence_contract(checker: str, builder: str) -> None:
     for name in (
         "schema-gate.json",
         "release-a-candidate.json",
@@ -645,9 +691,17 @@ def test_artifact_contract_binds_main_evidence_and_pinned_cosign() -> None:
     assert "RELEASE_A_EVIDENCE_RUN_ID" in builder
     assert 'manifest["releaseAEvidence"]' in builder
     assert 'external.get("releaseAEvidence")' in checker
+
+
+def _assert_artifact_cosign_contract(checker: str) -> None:
     assert "COSIGN_BIN" not in checker
     assert "COSIGN_LINUX_AMD64_SHA256" in checker
     assert "shutil.which(\"cosign\")" in checker
+
+
+def _assert_frontend_build_input_contract(
+    checker: str, builder: str, workflow: str
+) -> None:
     assert "Generate exact-main Release-A schema evidence" in workflow
     assert "retail-release-a-schema-${{ github.sha }}" in workflow
     assert 'manifest["frontendBuildInput"]' not in builder
@@ -656,6 +710,9 @@ def test_artifact_contract_binds_main_evidence_and_pinned_cosign() -> None:
     assert "expected_frontend_build_input_sha256" in checker
     assert "retail-frontend-build-input-${{ github.sha }}" in workflow
     assert "VITE_FRONTEND_GLITCHTIP_DSN: ${{ secrets.VITE_GLITCHTIP_DSN }}" in workflow
+
+
+def _assert_artifact_workflow_toolchain_fences(workflow: str) -> None:
     assert 'PYTHONNOUSERSITE: "1"' in workflow
     assert 'PYTHONSAFEPATH: "1"' in workflow
     assert workflow.count('PYTHONSTARTUP: ""') == 4
@@ -669,12 +726,19 @@ def test_artifact_contract_binds_main_evidence_and_pinned_cosign() -> None:
     assert '"$audit_python" -I -S scripts/check_release_a_candidate.py' in workflow
 
 
-def test_artifact_audit_runs_from_exact_checkout_and_compares_source_and_dist() -> None:
+def test_artifact_contract_binds_main_evidence_and_pinned_cosign() -> None:
     checker = CHECKER_PATH.read_text(encoding="utf-8")
-    workflow = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
-    plan = (ROOT / "docs/exec-plans/active/UR-CLOSE-20260812.md").read_text(
+    builder = (ROOT / "ops/build-retail-release-artifact.sh").read_text(
         encoding="utf-8"
     )
+    workflow = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+    _assert_release_a_artifact_evidence_contract(checker, builder)
+    _assert_artifact_cosign_contract(checker)
+    _assert_frontend_build_input_contract(checker, builder, workflow)
+    _assert_artifact_workflow_toolchain_fences(workflow)
+
+
+def _assert_exact_checkout_audit_contract(checker: str) -> None:
     assert "--verify-artifact-checkout" in checker
     assert "def build_exact_checkout_frontend(rum_dsn: str)" in checker
     assert '"npm_config_offline": "true"' in checker
@@ -686,16 +750,33 @@ def test_artifact_audit_runs_from_exact_checkout_and_compares_source_and_dist() 
     assert "--verify-signed-artifact-audit" in checker
     assert "artifact-checkout.sigstore.json" in checker
     assert "frontend_build_input_sha256" in checker
+    assert "--expected-workflow-run-id" in checker
+    assert "artifact provenance does not match the audit workflow run" in checker
+
+
+def _assert_exact_checkout_audit_workflow(workflow: str) -> None:
     assert "Rebuild exact main and audit signed artifact" in workflow
     assert "retail-artifact-audit-${{ github.sha }}" in workflow
     assert "--frontend-rum-dsn-from-environment" in workflow
     assert "ARTIFACT_AUDIT_RUN_ID: ${{ github.run_id }}" in workflow
     assert "ARTIFACT_AUDIT_RUN_ATTEMPT: ${{ github.run_attempt }}" in workflow
     assert "ARTIFACT_AUDIT_WORKFLOW_SHA: ${{ github.workflow_sha }}" in workflow
-    assert "--expected-workflow-run-id" in checker
-    assert "artifact provenance does not match the audit workflow run" in checker
+
+
+def _assert_exact_checkout_audit_plan(plan: str) -> None:
     assert "clean detached" in plan and "exact-SHA Git checkout" in plan
     assert "unpacked artifact `git rev-parse HEAD`" not in plan
+
+
+def test_artifact_audit_runs_from_exact_checkout_and_compares_source_and_dist() -> None:
+    checker = CHECKER_PATH.read_text(encoding="utf-8")
+    workflow = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+    plan = (ROOT / "docs/exec-plans/active/UR-CLOSE-20260812.md").read_text(
+        encoding="utf-8"
+    )
+    _assert_exact_checkout_audit_contract(checker)
+    _assert_exact_checkout_audit_workflow(workflow)
+    _assert_exact_checkout_audit_plan(plan)
 
 
 def test_release_b_authorities_bind_transitive_runners_and_durable_snapshots() -> None:
@@ -907,13 +988,7 @@ def test_release_b_real_preview_topology_classifies_release_a_preserved_paths() 
     )
 
 
-def test_ac17_freezes_complete_invocation_and_three_way_ref_reconciliation() -> None:
-    verifier = (ROOT / "scripts/verify_deployed_release.sh").read_text(
-        encoding="utf-8"
-    )
-    plan = (ROOT / "docs/exec-plans/active/UR-CLOSE-20260812.md").read_text(
-        encoding="utf-8"
-    )
+def _assert_ac17_invocation_contract(verifier: str, plan: str) -> None:
     for token in (
         "--main-a-sha",
         "--main-b-sha",
@@ -930,6 +1005,9 @@ def test_ac17_freezes_complete_invocation_and_three_way_ref_reconciliation() -> 
     ):
         assert token in verifier
         assert token in plan
+
+
+def _assert_ac17_ref_reconciliation(verifier: str) -> None:
     assert "refs-primary.json" in verifier
     assert "refs-dell.json" in verifier
     assert "refs-github.json" in verifier
@@ -947,6 +1025,9 @@ def test_ac17_freezes_complete_invocation_and_three_way_ref_reconciliation() -> 
     assert verifier.count("GH_HOST=github.com GH_PAGER=cat") == 2
     assert '[[ "$mode" == "400" || "$mode" == "600" ]]' in verifier
     assert '[[ "$owner_uid" == "0" || "$owner_uid" == "$OPERATOR_UID" ]]' in verifier
+
+
+def _assert_ac17_browser_control_is_private(verifier: str) -> None:
     assert "probe_authenticated_browser" in verifier
     assert '"browser.json"' in verifier
     assert "BROWSER_CHROME_SHA256" in verifier
@@ -962,6 +1043,9 @@ def test_ac17_freezes_complete_invocation_and_three_way_ref_reconciliation() -> 
     assert "DEPLOY_HANDLE_EPOCH <= started_epoch && started_epoch <= DEPLOYED_EPOCH" in verifier
     assert 'readlink -f "/proc/$pid/cwd"' in verifier
     assert 'readlink -f "/proc/$pid/exe"' in verifier
+
+
+def _assert_ac17_browser_journeys(verifier: str) -> None:
     assert "services-runtime-before.json" in verifier
     assert "services-runtime-after.json" in verifier
     assert "def drain_network_events(seconds: float = 2.0)" in verifier
@@ -985,6 +1069,9 @@ def test_ac17_freezes_complete_invocation_and_three_way_ref_reconciliation() -> 
         assert marker in verifier
     assert "exercise_journey(mobile=False)" in verifier
     assert "exercise_journey(mobile=True)" in verifier
+
+
+def _assert_ac17_python_runtime_contract(verifier: str) -> None:
     assert "export PYTHONNOUSERSITE=1 PYTHONSAFEPATH=1 PYTHONDONTWRITEBYTECODE=1" in verifier
     assert 'verify_python_runtime "$WORK/fragments/python-runtime-before.json"' in verifier
     assert 'verify_python_runtime "$WORK/fragments/python-runtime-after.json"' in verifier
@@ -1001,12 +1088,18 @@ def test_ac17_freezes_complete_invocation_and_three_way_ref_reconciliation() -> 
     assert '"unowned_file_count": 0' in verifier
     assert '"interpreter_symlink_count": len(expected_interpreter_links)' in verifier
     assert '"unsafe_symlink_count": 0' in verifier
+
+
+def _assert_ac17_rollback_artifacts(verifier: str) -> None:
     assert '"python-runtime-before.json","python-runtime-after.json"' in verifier
     assert '"deploy-entrypoint-bootstrap.json"' in verifier
     assert '"rollback-python-runtime.json"' in verifier
     assert '"rollback-python-supply.json"' in verifier
     assert '"$BACKUP_HANDLE/venv.pre-switch"' in verifier
     assert '"$BACKUP_HANDLE/python-runtime-supply.old"' in verifier
+
+
+def _assert_ac17_cookie_contract(verifier: str) -> None:
     assert 'allowed_domains = {"retail.unihub.ro", ".retail.unihub.ro"}' in verifier
     assert "non-Retail cookie record rejected" in verifier
     assert '"domain": domain' in verifier
@@ -1014,11 +1107,17 @@ def test_ac17_freezes_complete_invocation_and_three_way_ref_reconciliation() -> 
     assert "Retail HTTPS cookie is not Secure" in verifier
     assert "cookie is expired" in verifier
     assert '"values_recorded": False' in verifier
+
+
+def _assert_ac17_outbox_metrics_contract(verifier: str) -> None:
     assert 'query={__name__=~"^(?:retail_outbox_oldest_pending_seconds|' in verifier
     assert 'expected_scalar={"retail_outbox_oldest_pending_seconds","retail_outbox_head_blocked","retail_outbox_completed_total","retail_outbox_failed_total"}' in verifier
     assert 'histogram="retail_outbox_delivery_duration_seconds"' in verifier
     assert "names != expected_exposition" in verifier
     assert 'query=count({__name__=~".*outbox.*"})' not in verifier
+
+
+def _assert_ac17_direct_python_contract(verifier: str) -> None:
     direct_python = [
         line.strip()
         for line in verifier.splitlines()
@@ -1027,6 +1126,9 @@ def test_ac17_freezes_complete_invocation_and_three_way_ref_reconciliation() -> 
     assert direct_python
     assert all(line.startswith('"$PYTHON_BASE" -I -S ') for line in direct_python)
     assert 'COSIGN_BIN="$COSIGN_BIN" "$PYTHON_BASE" -I -S ' in verifier
+
+
+def _assert_ac17_self_test() -> None:
     completed = subprocess.run(
         [str(ROOT / "scripts/verify_deployed_release.sh"), "--self-test"],
         check=True,
@@ -1034,6 +1136,25 @@ def test_ac17_freezes_complete_invocation_and_three_way_ref_reconciliation() -> 
         text=True,
     )
     assert "AC-17 verifier self-test PASS" in completed.stdout
+
+
+def test_ac17_freezes_complete_invocation_and_three_way_ref_reconciliation() -> None:
+    verifier = (ROOT / "scripts/verify_deployed_release.sh").read_text(
+        encoding="utf-8"
+    )
+    plan = (ROOT / "docs/exec-plans/active/UR-CLOSE-20260812.md").read_text(
+        encoding="utf-8"
+    )
+    _assert_ac17_invocation_contract(verifier, plan)
+    _assert_ac17_ref_reconciliation(verifier)
+    _assert_ac17_browser_control_is_private(verifier)
+    _assert_ac17_browser_journeys(verifier)
+    _assert_ac17_python_runtime_contract(verifier)
+    _assert_ac17_rollback_artifacts(verifier)
+    _assert_ac17_cookie_contract(verifier)
+    _assert_ac17_outbox_metrics_contract(verifier)
+    _assert_ac17_direct_python_contract(verifier)
+    _assert_ac17_self_test()
 
 
 def test_ac16_has_executable_github_run_and_signed_audit_authorities() -> None:
