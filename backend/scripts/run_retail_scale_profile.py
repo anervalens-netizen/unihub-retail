@@ -23,7 +23,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, Awaitable, Callable
+from typing import Any, Awaitable, Callable, cast
 from urllib.parse import unquote, urlparse, urlunparse
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -152,7 +152,8 @@ class RecordingConnection:
         return getattr(self.raw, name)
 class RecordingPool:
     def __init__(self, pool: Any):
-        self.pool, self.records = pool, []
+        self.pool = pool
+        self.records: list[tuple[str, tuple[Any, ...]]] = []
 
     def acquire(self) -> Acquire:
         return Acquire(self.pool, lambda raw: RecordingConnection(raw, self.records))
@@ -179,7 +180,8 @@ class BoundPool:
         return None
 class FakeArq:
     def __init__(self, error: BaseException | None = None):
-        self.error, self.calls = error, []
+        self.error = error
+        self.calls: list[tuple[tuple[Any, ...], dict[str, Any]]] = []
 
     async def enqueue_job(self, *args: Any, **kwargs: Any) -> Any:
         self.calls.append((args, kwargs))
@@ -196,7 +198,10 @@ class Flow:
 def prepare_application_imports() -> None:
     sys.path.insert(0, str(BACKEND)) if str(BACKEND) not in sys.path else None
     import env_loader
-    env_loader.load_repository_env = lambda override=False: False
+    def load_repository_env_stub(override: bool = False) -> bool:
+        del override
+        return False
+    env_loader.load_repository_env = load_repository_env_stub
 
 
 def load_asyncpg() -> None:
@@ -442,7 +447,7 @@ async def queue_faults() -> dict[str, str]:
     async def none(): return None
     async def connection_error(): raise ConnectionError("injected adapter failure")
     for name, adapter in (("none", none), ("connection_error", connection_error), ("uncertain", lambda: asyncio.sleep(0, result=FakeArq(ConnectionError("injected uncertain"))))):
-        jobs.get_arq_pool = adapter
+        jobs.get_arq_pool = cast(Any, adapter)
         try: await jobs.enqueue_complex_export(1)
         except Exception as exc: outcomes[name] = type(exc).__name__
         else: outcomes[name] = "unexpected-success"

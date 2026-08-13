@@ -8,6 +8,7 @@ from pathlib import Path
 import subprocess
 import tarfile
 from types import ModuleType
+from typing import Any
 import base64
 
 import pytest
@@ -305,7 +306,7 @@ def test_signed_python_runtime_supply_is_exact_and_content_bound(tmp_path: Path)
         checker.PYTHON_RUNTIME_WHEELS_NAME: sha256(wheel_archive),
         "SBOM.python.cdx.json": sha256(sbom_target),
     }
-    supply = {
+    supply: dict[str, Any] = {
         "schemaVersion": 1,
         "python": {
             "path": str(checker.PYTHON_BASE_PATH),
