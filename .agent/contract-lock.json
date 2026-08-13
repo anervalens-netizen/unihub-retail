@@ -1,11 +1,11 @@
 {
   "version": 1,
   "objective": "UR-CLOSE-20260812",
-  "revision": 7,
+  "revision": 8,
   "baseline_source_sha": "0be82b430e55b7414babf470abe3fc5404b6cdc9",
-  "contract_content_commit": "1ac192fb775565a0a4dd165be1fad43b809d4ecd",
-  "supersedes_lock_commit": "8020ee20de48ac11907b74a70402e5e10263adbf",
-  "created_at": "2026-08-13T03:04:35+03:00",
+  "contract_content_commit": "81931abdec2307684991e880c618364403cd852d",
+  "supersedes_lock_commit": "74268c6dcc8f62fca549df4956654b3b617d727e",
+  "created_at": "2026-08-13T03:23:25+03:00",
   "source_inputs": [
     {
       "path": "/opt/Mobiup/UNIHUB_RETAIL_AUDIT_2026-08-12.md",
@@ -18,8 +18,8 @@
   ],
   "plan": {
     "path": "docs/exec-plans/active/UR-CLOSE-20260812.md",
-    "git_blob": "2e8c747bd003f81536a0711542c8bcd44b1bc24a",
-    "sha256": "8f83b55332ec0c89627c978853ef77bccd9fb5a36c8d28f932794083063f94cb"
+    "git_blob": "a2e73b01de073f8c7801da9f7cb52a3d1b5dea2c",
+    "sha256": "c01359d0cc9cbcb84a3ce6eeeaf7433c5ed257e7172eb4f63ae214fd6aeefb73"
   },
   "assets": [
     {
@@ -66,6 +66,46 @@
       "path": "scripts/release-a-source-contract-v1.json",
       "git_blob": "fb9b00030fc3568c06e33e0894edad41d4719233",
       "sha256": "feb14f72f7a637733c75b79649113d7973615185466f7a9399e43541d1d2e4ed"
+    },
+    {
+      "path": "scripts/check_release_a_candidate.py",
+      "git_blob": "db60dfba9cec2b888ab86fcab998c992f0e9166c",
+      "sha256": "0978ecfd71f56c507f390ea907d5a61b1ee2547dbcb262aaa257dfeed0c24252"
+    },
+    {
+      "path": ".github/workflows/ci.yml",
+      "git_blob": "2556a943890ba50148a633f6ee08d99526818fb2",
+      "sha256": "e407d52886bca53cf2812b8103ef429b86ca4d170fca196884b144b7707fd9c0"
+    },
+    {
+      "path": "scripts/run_release_a_schema_gate.sh",
+      "git_blob": "f6e39f27fded44de2329df50fb524d8a1caa874d",
+      "sha256": "6af94b2a22650f444ce1c1e15371364e0ca2b91b5f6d1fbb60e244300c3f647b"
+    },
+    {
+      "path": "scripts/run_real_e2e.sh",
+      "git_blob": "76fe53096cf8b33e84c56e160d0cae54e78b739a",
+      "sha256": "d5fb51213a43a27a87a591ca0b546e01b4553c1078c2ecead4592430b4d42c52"
+    },
+    {
+      "path": "backend/db/migrations/069_ai_cohort_and_transactional_outbox.sql",
+      "git_blob": "45f39bf2281d981f79e876d3146e482e9cc458cb",
+      "sha256": "e2f3f1ff09c14cbba577ac40ba476250a7b746ebbe0bdf373c6ebf4e552fc8a0"
+    },
+    {
+      "path": "backend/db/migrations/manifest.json",
+      "git_blob": "1f32e678788eb8c6da38ecf75e50f690578f47c6",
+      "sha256": "b496b0426a9f493b19b9c08253ac97c993a1f824ee5bb8aa3192473915e2966c"
+    },
+    {
+      "path": "backend/db/migrations/README.md",
+      "git_blob": "7ae0e1a26e9a58d1b65547eb1ad1bf2e866da8e7",
+      "sha256": "7a14a8e3834fd8ee1371485e648080a77238e2ef41bef2082f15484b0efe4fe5"
+    },
+    {
+      "path": "backend/tests/test_release_a_schema_069.py",
+      "git_blob": "a8ecb94863a405069d85bc33d57a869a253c12f8",
+      "sha256": "e0195ec85ebc5969f3ac05e2a75d918705b1bee65cb147e171b59fb753f98e89"
     }
   ],
   "allowed_plan_mutations_without_relock": [
