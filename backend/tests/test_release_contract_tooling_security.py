@@ -61,6 +61,8 @@ def test_release_a_tooling_requires_clean_untracked_scope() -> None:
     assert "status --porcelain" in schema_gate
     assert "PYTHONNOUSERSITE=1" in schema_gate
     assert "PYTHONSAFEPATH=1" in schema_gate
+    assert "PYTHONDONTWRITEBYTECODE=1" in schema_gate
+    assert '"$PYTHON_BASE" -B -I -S "$ROOT_DIR/scripts/check_release_a_candidate.py"' in schema_gate
     assert "unset MYPYPATH MYPY_CONFIG_FILE" in schema_gate
     for source in (schema_gate, structural_gate, scale_gate):
         assert "postgres@sha256:" in source
@@ -122,7 +124,7 @@ def test_release_a_checker_never_runs_mypy_after_scope_failure() -> None:
     checker = CHECKER_PATH.read_text(encoding="utf-8")
     assert "if scope_ready:\n        _command, mypy = run_direct_mypy()" in checker
     assert '"reason": "scope_precondition_failed"' in checker
-    assert '"/usr/bin/python3.12",\n        "-I",\n        "-S"' in checker
+    assert '"/usr/bin/python3.12",\n        "-B",\n        "-I",\n        "-S"' in checker
     assert "runpy.run_module('mypy',run_name='__main__')" in checker
     assert '"venv/bin/mypy"' not in checker
 
@@ -138,9 +140,41 @@ def test_artifact_policy_can_reconstruct_mypy_command_without_an_ignored_venv(
     )
     command = checker.expected_direct_mypy_command()
     assert command[3] == "/usr/bin/python3.12"
-    assert command[4:6] == ["-I", "-S"]
-    assert "venv/lib/python3.12/site-packages" in command[7]
-    assert str(checker.ROOT) not in command[7]
+    assert command[4:7] == ["-B", "-I", "-S"]
+    assert "venv/lib/python3.12/site-packages" in command[8]
+    assert str(checker.ROOT) not in command[8]
+    source = (ROOT / "scripts/check_release_a_candidate.py").read_text(
+        encoding="utf-8"
+    )
+    assert '"PYTHONDONTWRITEBYTECODE": "1"' in source
+    assert 'evidence["python_environment_post_mypy"]' in source
+    assert "direct mypy changed the verified Python environment" in source
+    assert "python_environment_post_mypy == python_environment" in source
+
+
+def test_direct_mypy_subprocess_cannot_write_bytecode(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    checker = _load_checker()
+    observed: dict[str, Any] = {}
+
+    monkeypatch.setattr(
+        checker,
+        "verified_backend_python",
+        lambda: Path("/usr/bin/python3.12"),
+    )
+
+    def run_stub(args: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        observed["args"] = args
+        observed["environment"] = kwargs["env"]
+        return subprocess.CompletedProcess(args, 0, "Success: no issues found", "")
+
+    monkeypatch.setattr(checker.subprocess, "run", run_stub)
+    command, result = checker.run_direct_mypy()
+    assert result.returncode == 0
+    assert command[1:4] == ["-B", "-I", "-S"]
+    assert observed["args"][1:4] == ["-B", "-I", "-S"]
+    assert observed["environment"]["PYTHONDONTWRITEBYTECODE"] == "1"
 
 
 def test_release_a_python_environment_and_runtime_tree_are_cryptographically_bound() -> None:

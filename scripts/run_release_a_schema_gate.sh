@@ -45,6 +45,7 @@ fi
 }
 export PYTHONNOUSERSITE=1
 export PYTHONSAFEPATH=1
+export PYTHONDONTWRITEBYTECODE=1
 unset MYPYPATH MYPY_CONFIG_FILE
 
 CURRENT_SHA="$(git -C "$ROOT_DIR" rev-parse HEAD)"
@@ -88,7 +89,7 @@ mkdir -p "$EVIDENCE_DIR" "$TEMP_DIR/baseline"
   exit 1
 }
 git -C "$ROOT_DIR" archive "$BASELINE_SHA" | tar -x -C "$TEMP_DIR/baseline"
-"$PYTHON_BASE" -I -S "$ROOT_DIR/scripts/check_release_a_candidate.py" \
+"$PYTHON_BASE" -B -I -S "$ROOT_DIR/scripts/check_release_a_candidate.py" \
   --evidence "$CANDIDATE_EVIDENCE_PATH"
 
 PASSWORD="$(openssl rand -hex 24)"

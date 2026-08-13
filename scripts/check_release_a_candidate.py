@@ -2214,8 +2214,8 @@ def verify_lock(
     *, current_paths: set[str] | None = None
 ) -> tuple[dict[str, Any], list[dict[str, str]]]:
     lock = load_json(ROOT / ".agent/contract-lock.json")
-    if lock.get("revision") != 15 or lock.get("baseline_source_sha") != EXPECTED_BASELINE:
-        raise ValueError("Release-A requires exact contract lock revision 15 and baseline")
+    if lock.get("revision") != 16 or lock.get("baseline_source_sha") != EXPECTED_BASELINE:
+        raise ValueError("Release-A requires exact contract lock revision 16 and baseline")
     content_commit = str(lock["contract_content_commit"])
     lock_commits = list(
         filter(
@@ -2230,15 +2230,15 @@ def verify_lock(
         )
     )
     if len(lock_commits) != 1:
-        raise ValueError("revision-15 lock must have exactly one immutable lock commit")
+        raise ValueError("revision-16 lock must have exactly one immutable lock commit")
     lock_commit = lock_commits[0]
     lock_parents = git("show", "-s", "--format=%P", lock_commit).split()
     if lock_parents != [content_commit]:
-        raise ValueError("revision-15 lock commit must directly follow content commit")
+        raise ValueError("revision-16 lock commit must directly follow content commit")
     current_lock_blob = git("rev-parse", "HEAD:.agent/contract-lock.json")
     locked_blob = git("rev-parse", f"{lock_commit}:.agent/contract-lock.json")
     if current_lock_blob != locked_blob:
-        raise ValueError("current revision-15 lock differs from its sole lock commit")
+        raise ValueError("current revision-16 lock differs from its sole lock commit")
     lock["verified_lock_commit"] = lock_commit
     verified: list[dict[str, str]] = []
     locked_objects = [lock["plan"], *lock["assets"]]
@@ -2346,6 +2346,7 @@ def run_direct_mypy() -> tuple[list[str], subprocess.CompletedProcess[str]]:
     site_packages = PYTHON_SITE_PACKAGES_RELATIVE
     command = [
         "/usr/bin/python3.12",
+        "-B",
         "-I",
         "-S",
         "-c",
@@ -2360,7 +2361,13 @@ def run_direct_mypy() -> tuple[list[str], subprocess.CompletedProcess[str]]:
         "--explicit-package-bases",
     ]
     environment = os.environ.copy()
-    environment.update({"PYTHONNOUSERSITE": "1", "PYTHONSAFEPATH": "1"})
+    environment.update(
+        {
+            "PYTHONDONTWRITEBYTECODE": "1",
+            "PYTHONNOUSERSITE": "1",
+            "PYTHONSAFEPATH": "1",
+        }
+    )
     for key in ("MYPYPATH", "MYPY_CONFIG_FILE"):
         environment.pop(key, None)
     result = subprocess.run(
@@ -2381,6 +2388,7 @@ def expected_direct_mypy_command() -> list[str]:
         "backend",
         "&&",
         str(PYTHON_BASE_PATH),
+        "-B",
         "-I",
         "-S",
         "-c",
@@ -2578,6 +2586,10 @@ def verify_main_evidence(
     if candidate_artifact.is_file():
         candidate = load_json(candidate_artifact)
         mypy = candidate.get("mypy")
+        python_environment = candidate.get("python_environment")
+        python_environment_post_mypy = candidate.get(
+            "python_environment_post_mypy"
+        )
         checks["candidate_evidence_identity"] = (
             candidate.get("result") == "PASS"
             and candidate.get("candidate_sha") == expected_sha
@@ -2589,6 +2601,8 @@ def verify_main_evidence(
             and mypy.get("exit_code") == 0
             and mypy.get("success_marker") is True
             and mypy.get("shadow_or_substitution") is False
+            and isinstance(python_environment, dict)
+            and python_environment_post_mypy == python_environment
         )
         locked_objects = candidate.get("locked_objects")
         checks["candidate_locked_objects"] = (
@@ -2966,6 +2980,13 @@ def main() -> int:
         }
         if mypy.returncode != 0 or "Success: no issues found" not in mypy_output:
             failures.append("direct unshadowed full mypy failed")
+        try:
+            post_mypy_environment = verify_backend_python_environment()
+            evidence["python_environment_post_mypy"] = post_mypy_environment
+            if post_mypy_environment != evidence["python_environment"]:
+                failures.append("direct mypy changed the verified Python environment")
+        except (KeyError, OSError, subprocess.CalledProcessError, ValueError) as exc:
+            failures.append(f"post-mypy Python environment verification failed: {exc}")
     else:
         evidence["mypy"] = {"executed": False, "reason": "scope_precondition_failed"}
     evidence["failures"] = failures
