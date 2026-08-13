@@ -1,11 +1,11 @@
 {
   "version": 1,
   "objective": "UR-CLOSE-20260812",
-  "revision": 9,
+  "revision": 10,
   "baseline_source_sha": "0be82b430e55b7414babf470abe3fc5404b6cdc9",
-  "contract_content_commit": "81f1efc63b16cdb53f2d31ee50bf72cb95f5cbd7",
-  "supersedes_lock_commit": "18f48c125c065f7db91de2a4a6143fb70019d44d",
-  "created_at": "2026-08-13T03:42:28+03:00",
+  "contract_content_commit": "6e0bb2ec1550fd70435d4a09d93a3365076a18eb",
+  "supersedes_lock_commit": "6f90e55f8ea4ea3c8cfcc391cf30a157f9a93c42",
+  "created_at": "2026-08-13T04:13:19+03:00",
   "source_inputs": [
     {
       "path": "/opt/Mobiup/UNIHUB_RETAIL_AUDIT_2026-08-12.md",
@@ -18,8 +18,8 @@
   ],
   "plan": {
     "path": "docs/exec-plans/active/UR-CLOSE-20260812.md",
-    "git_blob": "d767dcced14b76956347aca22c1332e6953cb9b5",
-    "sha256": "6eb1d351fe75814cc967c093308576433a4d9c4d94af22e191fceb15c80858c2"
+    "git_blob": "131792ba44a351651dd7c95dd4325ea55b6bf0fa",
+    "sha256": "09a4e164b90d6d76e69a89af957723e65478bbf40da0acd3b6bc8e544be5ce6e"
   },
   "assets": [
     {
@@ -69,13 +69,13 @@
     },
     {
       "path": "scripts/check_release_a_candidate.py",
-      "git_blob": "499350ac433b815f3c8b36ed5c93a9cbca673cd1",
-      "sha256": "089d67e6a261778304929e22e0a710fd804610a084d451dc908cbec71fe41802"
+      "git_blob": "afb63fe3b1a8db1021ac392d73f92a96cf197771",
+      "sha256": "08a0fe175e130cd47de27e1f73d1b6e269be4fbe4bd14ae00ae51025af133008"
     },
     {
       "path": ".github/workflows/ci.yml",
-      "git_blob": "2556a943890ba50148a633f6ee08d99526818fb2",
-      "sha256": "e407d52886bca53cf2812b8103ef429b86ca4d170fca196884b144b7707fd9c0"
+      "git_blob": "d01ecaaf7fe13f091032c4d77e96cb5328d02939",
+      "sha256": "1d9e851a5fd8a7aed31cfda73430791af2b739d437531a1f64f4c8d4d102f5a0"
     },
     {
       "path": "scripts/run_release_a_schema_gate.sh",
@@ -111,6 +111,11 @@
       "path": ".agent/PLANS.md",
       "git_blob": "4194ef0baf65c925bacc73e2dddb2dcaf516c4c7",
       "sha256": "79341e42d53bc998a6ebaf86789061575245064e867b6f3e9075aa59a462ca2b"
+    },
+    {
+      "path": "scripts/verify_promtool_cache.sh",
+      "git_blob": "438f3cf8225f6ed883346c56e2efa5ee0899608b",
+      "sha256": "86ae3b68b8876bfb8b13fa3079522fbb50778ec324b059462a2bff7a1aaba0d7"
     }
   ],
   "allowed_plan_mutations_without_relock": [],
