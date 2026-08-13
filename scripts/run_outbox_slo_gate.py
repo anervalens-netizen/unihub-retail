@@ -45,6 +45,7 @@ os.environ.update(
 
 ROOT = Path(__file__).resolve().parents[1]
 DRIVER = ROOT / "backend/scripts/run_outbox_slo_workload.py"
+ENGINE = ROOT / "backend/scripts/outbox_slo_workload_engine.py"
 BOOTSTRAP = ROOT / "backend/scripts/bootstrap_test_db.py"
 PYTHON = ROOT / "backend/venv/bin/python"
 PYTHON_BASE = Path("/usr/bin/python3.12")
@@ -391,7 +392,7 @@ def self_test() -> None:
     ]
     for item in ratios:
         item["ratio"] = item["failures"] / item["attempts"]
-    adversarial = {
+    adversarial: dict[str, Any] = {
         "schema_version": 2,
         "authority": "backend/scripts/run_outbox_slo_workload.py",
         "result": "PASS",
@@ -525,7 +526,7 @@ def main() -> None:
     for path in (DRIVER, BOOTSTRAP, PYTHON):
         if not path.is_file() or not os.access(path, os.X_OK):
             raise SystemExit(f"required locked authority missing/not executable: {path}")
-    for path in (MIGRATION, MIGRATION_MANIFEST):
+    for path in (ENGINE, MIGRATION, MIGRATION_MANIFEST):
         if not path.is_file():
             raise SystemExit(f"required locked authority missing: {path}")
     if shutil.which("docker") is None or shutil.which("openssl") is None:
@@ -615,6 +616,7 @@ def main() -> None:
                 for path in (
                     Path(__file__).resolve(),
                     DRIVER,
+                    ENGINE,
                     BOOTSTRAP,
                     MIGRATION,
                     MIGRATION_MANIFEST,

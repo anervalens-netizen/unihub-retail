@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import hashlib
 import importlib.util
 import io
@@ -117,8 +118,35 @@ def test_outbox_authority_rejects_forged_samples_and_monitors_claimers(
     driver = (ROOT / "backend/scripts/run_outbox_slo_workload.py").read_text(
         encoding="utf-8"
     )
-    assert "def ensure_claimers_healthy()" in driver
-    assert driver.count("ensure_claimers_healthy()") >= 4
+    engine = (ROOT / "backend/scripts/outbox_slo_workload_engine.py").read_text(
+        encoding="utf-8"
+    )
+    assert "from scripts.outbox_slo_workload_engine import OutboxWorkload" in driver
+    assert "class OutboxWorkload:" in engine
+    assert "def ensure_claimers_healthy(self)" in engine
+    assert engine.count("self.ensure_claimers_healthy()") >= 4
+    assert gate.ENGINE == ROOT / "backend/scripts/outbox_slo_workload_engine.py"
+    assert "                    ENGINE," in path.read_text(encoding="utf-8")
+
+
+def test_outbox_workload_split_is_bounded_and_gate_binds_engine() -> None:
+    gate_source = (ROOT / "scripts/run_outbox_slo_gate.py").read_text(
+        encoding="utf-8"
+    )
+    driver_path = ROOT / "backend/scripts/run_outbox_slo_workload.py"
+    engine_path = ROOT / "backend/scripts/outbox_slo_workload_engine.py"
+    for path in (driver_path, engine_path):
+        source = path.read_text(encoding="utf-8")
+        tree = compile(source, str(path), "exec", ast.PyCF_ONLY_AST)
+        functions = [
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        ]
+        assert len(source.splitlines()) <= 600
+        assert max((node.end_lineno or node.lineno) - node.lineno + 1 for node in functions) <= 120
+    assert 'ENGINE = ROOT / "backend/scripts/outbox_slo_workload_engine.py"' in gate_source
+    assert "                    ENGINE," in gate_source
 
 
 def test_release_a_checker_never_runs_mypy_after_scope_failure() -> None:
@@ -280,6 +308,23 @@ def test_import_overlap_worker_uses_isolated_explicit_backend_bootstrap() -> Non
     assert "sys.path.insert(0,backend)" in command[3]
     assert Path(command[4]).resolve() == (ROOT / "backend").resolve()
     assert Path(command[5]).resolve() == (ROOT / "backend/worker.py").resolve()
+
+
+def test_release_a_source_transform_binds_exact_grile_whitespace_normalization() -> None:
+    checker = _load_checker()
+    transform = checker.verify_source_transform()
+    assert transform["whitespace_normalization"] == {
+        "path": "backend/services/grile_pilot_v2_sync.py",
+        "baseline_git_mode": "100644",
+        "baseline_git_blob": "27c05c7388cd134aebeae9b98efeb86f4831c77f",
+        "baseline_sha256": "ac31c6551e61c1cc8e59731488dfe44b2468f37b00bc5a88933f6fd88aaa1f60",
+        "preview_git_mode": "100644",
+        "result_git_mode": "100644",
+        "result_git_blob": "00a8f3ab186f2e600d5d810640c85a796a65a359",
+        "result_sha256": "0e2aad80ca331ca5b713f9ab3adb42b72b7c08ed3aab971d94b7033b11319c46",
+        "deleted_blank_lines": 5,
+        "runtime_effect": "none",
+    }
 
 
 def test_production_deploy_binds_signature_and_root_entrypoint_to_exact_artifact() -> None:
@@ -536,7 +581,7 @@ def test_release_b_authorities_reject_digest_or_mode_drift(
         )
     )
     assert real_contract["required_paths"] == sorted(checker.EXPECTED_AUTHORITY_PATHS)
-    assert len(real_contract["authorities"]) == len(checker.EXPECTED_AUTHORITY_PATHS) == 110
+    assert len(real_contract["authorities"]) == len(checker.EXPECTED_AUTHORITY_PATHS) == 111
     assert checker.EXPECTED_RELEASE_A_AUTHORITIES <= checker.EXPECTED_AUTHORITY_PATHS
     assert "ops/deploy-retail-artifact.sh" in checker.EXPECTED_AUTHORITY_PATHS
     monkeypatch.setattr(checker, "EXPECTED_RELEASE_A_AUTHORITIES", set())

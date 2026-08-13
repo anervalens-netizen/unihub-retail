@@ -548,8 +548,6 @@ def verify_profile_evidence(expected: dict[str, int], item: dict[str, Any]) -> N
     if item.get("upload", {}).get("accepted_bytes") != UPLOAD_BYTES or item.get("upload", {}).get("rejected_bytes") != UPLOAD_BYTES+1: raise RuntimeError("invalid upload-boundary evidence")
     if len(item.get("runtime_sentinels", [])) != 8 or item.get("concurrency", {}).get("dashboard_reads") != 8: raise RuntimeError("incomplete runtime/concurrency evidence")
     if len(item.get("migration_manifest", [])) != 69 or not item["migration_manifest"][-1]["filename"].startswith("069_"): raise RuntimeError("incomplete migration evidence")
-
-
 def verify_evidence(payload: dict[str, Any]) -> None:
     if payload.get("contract") != "AC-13-real-scale-v1" or payload.get("seed") != SEED: raise RuntimeError("invalid evidence contract")
     profiles = payload.get("profiles")
@@ -597,7 +595,5 @@ def main() -> int:
         print(json.dumps({"result": "FAIL", "error_type": type(exc).__name__, "error": str(exc)}), file=sys.stderr)
         return 1
     return 0
-
-
 if __name__ == "__main__":
     raise SystemExit(main())

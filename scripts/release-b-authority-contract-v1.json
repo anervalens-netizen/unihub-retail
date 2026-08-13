@@ -124,6 +124,14 @@
     },
     {
       "git_mode": "100644",
+      "path": "backend/scripts/outbox_slo_workload_engine.py",
+      "sha256": "1f78c048931d0a8003249aafdd703326c9d36f3779b0c45941a91383ba903113",
+      "supports": [
+        "AC-12"
+      ]
+    },
+    {
+      "git_mode": "100644",
       "path": "backend/scripts/run_ai_forecast_backtest.py",
       "sha256": "43f3207bc5be80a7a707411504bc899bc1a62818fadfd235c5d05f1b7ce3b005",
       "source_snapshot": "release_b_integrated_preview",
@@ -151,7 +159,7 @@
     {
       "git_mode": "100755",
       "path": "backend/scripts/run_outbox_slo_workload.py",
-      "sha256": "93c19fabb4d415c617a2945b4905ba47ef4284c08550ba62475d99ffd70f4e35",
+      "sha256": "21c5092d702dea224c09ec373147bf34e6a670a028c1d03b8a44ea02a86919fa",
       "supports": [
         "AC-12"
       ]
@@ -159,7 +167,7 @@
     {
       "git_mode": "100755",
       "path": "backend/scripts/run_retail_scale_profile.py",
-      "sha256": "c628c8f279fc1944231a07417b817eb7b7f6b401726467b5f08dba63e7da68c4",
+      "sha256": "2fedd8a8d341f8e09e653eb37db0f748ab1b001e7866451ecb2a635d7b959f37",
       "supports": [
         "AC-13"
       ]
@@ -331,7 +339,7 @@
     {
       "git_mode": "100644",
       "path": "backend/tests/test_release_contract_tooling_security.py",
-      "sha256": "c56209927a632716adfd04897355adbf232def7bff1af879fbb2e6cff97a3538",
+      "sha256": "9587864e2900a591cf3124a11acde9a2e6e653b179e0d6df79e612dd8289cb18",
       "supports": [
         "AC-12",
         "AC-16",
@@ -705,7 +713,7 @@
     {
       "git_mode": "100644",
       "path": "scripts/check_release_a_candidate.py",
-      "sha256": "2af33de1e1b2dc712f26eb2be281f8ead5d75fb7834ca01a507cb029d515a5ca",
+      "sha256": "64373824cfd957cefbe48de137d9ebbe754499b8a7d8c2eab814eeff4b8b159a",
       "supports": [
         "AC-12",
         "AC-16",
@@ -756,7 +764,7 @@
     {
       "git_mode": "100755",
       "path": "scripts/run_outbox_slo_gate.py",
-      "sha256": "015434aab2bfe1ea55a92d1e616735f02362e45920c914bdf717eaaf22f84a9a",
+      "sha256": "fdb9df57240af65e8ae48dd9ea2c661f3d13a280b6ba83e1f60f31d4d3a4b4e7",
       "supports": [
         "AC-12"
       ]
@@ -1894,7 +1902,7 @@
         {
           "git_mode": "100644",
           "path": "backend/tests/test_release_contract_tooling_security.py",
-          "sha256": "c56209927a632716adfd04897355adbf232def7bff1af879fbb2e6cff97a3538"
+          "sha256": "9587864e2900a591cf3124a11acde9a2e6e653b179e0d6df79e612dd8289cb18"
         },
         {
           "git_mode": "100644",
@@ -2881,6 +2889,7 @@
   "baseline_source_sha": "0be82b430e55b7414babf470abe3fc5404b6cdc9",
   "release_a_authorities": [
     ".github/workflows/deploy.yml",
+    "backend/scripts/outbox_slo_workload_engine.py",
     "backend/scripts/run_import_overlap_gate.py",
     "backend/scripts/run_outbox_slo_workload.py",
     "backend/scripts/run_retail_scale_profile.py",
@@ -2915,6 +2924,7 @@
     "backend/scripts/bootstrap_test_db.py",
     "backend/scripts/check_critical_coverage.py",
     "backend/scripts/oidc_e2e_stub.py",
+    "backend/scripts/outbox_slo_workload_engine.py",
     "backend/scripts/run_ai_forecast_backtest.py",
     "backend/scripts/run_import_overlap_gate.py",
     "backend/scripts/run_mixed_load_gate.py",

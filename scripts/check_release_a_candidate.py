@@ -77,10 +77,12 @@ EXPECTED_CHANGED_PATHS = {
     "backend/db/migrations/README.md",
     "backend/db/migrations/manifest.json",
     "backend/scripts/run_tests_isolated.sh",
+    "backend/scripts/outbox_slo_workload_engine.py",
     "backend/scripts/run_outbox_slo_workload.py",
     "backend/scripts/run_import_overlap_gate.py",
     "backend/scripts/run_retail_scale_profile.py",
     "backend/services/grile_pilot_v2.py",
+    "backend/services/grile_pilot_v2_sync.py",
     "backend/tests/test_release_a_schema_069.py",
     "backend/tests/test_release_contract_tooling_security.py",
     "docs/contracts/ai-governance-golden-v1.json",
@@ -88,6 +90,7 @@ EXPECTED_CHANGED_PATHS = {
     "docs/contracts/query-parameter-policy-v1.json",
     "docs/exec-plans/active/UR-CLOSE-20260812.md",
     "scripts/check_release_a_candidate.py",
+    "scripts/complexity-ratchet.json",
     "scripts/release-b-authority-contract-v1.json",
     "scripts/frontend-critical-coverage.json",
     "scripts/python-complexity-contract-v1.json",
@@ -132,6 +135,7 @@ EXPECTED_AUTHORITY_CRITERIA = {
 EXPECTED_RELEASE_A_AUTHORITIES = {
     ".github/workflows/deploy.yml",
     "backend/scripts/run_tests_isolated.sh",
+    "backend/scripts/outbox_slo_workload_engine.py",
     "backend/scripts/run_outbox_slo_workload.py",
     "backend/scripts/run_import_overlap_gate.py",
     "backend/scripts/run_retail_scale_profile.py",
@@ -168,6 +172,7 @@ EXPECTED_AUTHORITY_PATHS = {
     "backend/scripts/run_ai_forecast_backtest.py",
     "backend/scripts/run_import_overlap_gate.py",
     "backend/scripts/run_mixed_load_gate.py",
+    "backend/scripts/outbox_slo_workload_engine.py",
     "backend/scripts/run_outbox_slo_workload.py",
     "backend/scripts/run_retail_scale_profile.py",
     "backend/scripts/run_tests_isolated.sh",
@@ -334,6 +339,7 @@ RELEASE_B_EVIDENCE_CURRENT_PATHS = {
     "backend/db/migrations/README.md",
     "backend/tests/test_release_a_schema_069.py",
     "backend/tests/test_release_contract_tooling_security.py",
+    "backend/scripts/outbox_slo_workload_engine.py",
     "backend/scripts/run_import_overlap_gate.py",
     "scripts/verify_promtool_cache.sh",
     "scripts/release-b-authority-contract-v1.json",
@@ -361,6 +367,7 @@ RELEASE_B_IMMUTABLE_CURRENT_PATHS = {
     "backend/db/migrations/README.md",
     "backend/tests/test_release_a_schema_069.py",
     "backend/tests/test_release_contract_tooling_security.py",
+    "backend/scripts/outbox_slo_workload_engine.py",
     "scripts/verify_promtool_cache.sh",
     "scripts/release-b-authority-contract-v1.json",
     "ops/build-retail-release-artifact.sh",
@@ -543,7 +550,7 @@ def verify_backend_python_environment() -> dict[str, Any]:
     venv_bin = (ROOT / "backend/venv/bin").resolve()
     for name, dist in sorted(distributions.items()):
         for file in dist.files or ():
-            target = Path(dist.locate_file(file))
+            target = Path(str(dist.locate_file(file)))
             try:
                 resolved = target.resolve()
                 in_site_packages = resolved.is_relative_to(site_packages.resolve())
@@ -1499,6 +1506,8 @@ def verify_release_a_artifact(
     ) or not invocation_id:
         raise ValueError("Release-A provenance run identity is absent")
     if require_release_a_evidence:
+        if not isinstance(release_a_evidence, dict):
+            raise ValueError("Release-A signed evidence is absent")
         release_a_run_id = str(release_a_evidence["workflowRunId"])
         if not re.fullmatch(
             rf"https://github\.com/{re.escape(GITHUB_REPOSITORY)}/actions/runs/"
@@ -2275,8 +2284,8 @@ def verify_lock(
     *, current_paths: set[str] | None = None
 ) -> tuple[dict[str, Any], list[dict[str, str]]]:
     lock = load_json(ROOT / ".agent/contract-lock.json")
-    if lock.get("revision") != 21 or lock.get("baseline_source_sha") != EXPECTED_BASELINE:
-        raise ValueError("Release-A requires exact contract lock revision 21 and baseline")
+    if lock.get("revision") != 22 or lock.get("baseline_source_sha") != EXPECTED_BASELINE:
+        raise ValueError("Release-A requires exact contract lock revision 22 and baseline")
     content_commit = str(lock["contract_content_commit"])
     lock_commits = list(
         filter(
@@ -2291,15 +2300,15 @@ def verify_lock(
         )
     )
     if len(lock_commits) != 1:
-        raise ValueError("revision-21 lock must have exactly one immutable lock commit")
+        raise ValueError("revision-22 lock must have exactly one immutable lock commit")
     lock_commit = lock_commits[0]
     lock_parents = git("show", "-s", "--format=%P", lock_commit).split()
     if lock_parents != [content_commit]:
-        raise ValueError("revision-21 lock commit must directly follow content commit")
+        raise ValueError("revision-22 lock commit must directly follow content commit")
     current_lock_blob = git("rev-parse", "HEAD:.agent/contract-lock.json")
     locked_blob = git("rev-parse", f"{lock_commit}:.agent/contract-lock.json")
     if current_lock_blob != locked_blob:
-        raise ValueError("current revision-21 lock differs from its sole lock commit")
+        raise ValueError("current revision-22 lock differs from its sole lock commit")
     lock["verified_lock_commit"] = lock_commit
     verified: list[dict[str, str]] = []
     locked_objects = [lock["plan"], *lock["assets"]]
@@ -2324,7 +2333,7 @@ def verify_lock(
     return lock, verified
 
 
-def verify_source_transform() -> dict[str, str]:
+def verify_source_transform() -> dict[str, Any]:
     contract = load_json(ROOT / "scripts/release-a-source-contract-v1.json")
     if contract.get("baseline_source_sha") != EXPECTED_BASELINE:
         raise ValueError("source transform baseline mismatch")
@@ -2374,7 +2383,71 @@ def verify_source_transform() -> dict[str, str]:
         raise ValueError("TYPE_CHECKING typing import is not exact")
     if text.count("if TYPE_CHECKING:\n    from services.grile_pilot_v2_registry import PilotV2Sheet") != 1:
         raise ValueError("PilotV2Sheet type-only import is not exact")
-    return {"path": path, **checks}
+    whitespace_path = "backend/services/grile_pilot_v2_sync.py"
+    preview_commit = EXPECTED_SOURCE_SNAPSHOTS["release_b_integrated_preview"][
+        "commit"
+    ]
+    whitespace_baseline_payload = subprocess.check_output(
+        ["git", "-C", str(ROOT), "show", f"{EXPECTED_BASELINE}:{whitespace_path}"]
+    )
+    whitespace_preview_payload = subprocess.check_output(
+        ["git", "-C", str(ROOT), "show", f"{preview_commit}:{whitespace_path}"]
+    )
+    whitespace_current_payload = (ROOT / whitespace_path).read_bytes()
+    if whitespace_current_payload != whitespace_preview_payload:
+        raise ValueError("Grile sync whitespace normalization differs from preview")
+    baseline_mode, _baseline_digest = git_path_identity(
+        EXPECTED_BASELINE, whitespace_path
+    )
+    preview_mode, _preview_digest = git_path_identity(
+        preview_commit, whitespace_path
+    )
+    index_fields = git("ls-files", "-s", "--", whitespace_path).split()
+    result_mode = index_fields[0] if len(index_fields) >= 4 else ""
+    if (baseline_mode, preview_mode, result_mode) != ("100644",) * 3:
+        raise ValueError("Grile sync whitespace normalization mode mismatch")
+    baseline_lines = whitespace_baseline_payload.splitlines(keepends=True)
+    current_lines = whitespace_current_payload.splitlines(keepends=True)
+    if [line for line in baseline_lines if line.strip()] != [
+        line for line in current_lines if line.strip()
+    ]:
+        raise ValueError("Grile sync normalization changed nonblank source")
+    deleted_blank_lines = len(baseline_lines) - len(current_lines)
+    if deleted_blank_lines != 5:
+        raise ValueError("Grile sync normalization must delete exactly five blank lines")
+    whitespace_checks = {
+        "path": whitespace_path,
+        "baseline_git_mode": baseline_mode,
+        "baseline_git_blob": git(
+            "rev-parse", f"{EXPECTED_BASELINE}:{whitespace_path}"
+        ),
+        "baseline_sha256": sha256_bytes(whitespace_baseline_payload),
+        "preview_git_mode": preview_mode,
+        "result_git_mode": result_mode,
+        "result_git_blob": git("hash-object", whitespace_path),
+        "result_sha256": sha256_bytes(whitespace_current_payload),
+        "deleted_blank_lines": deleted_blank_lines,
+        "runtime_effect": "none",
+    }
+    expected_whitespace_checks = {
+        "path": whitespace_path,
+        "baseline_git_mode": "100644",
+        "baseline_git_blob": "27c05c7388cd134aebeae9b98efeb86f4831c77f",
+        "baseline_sha256": "ac31c6551e61c1cc8e59731488dfe44b2468f37b00bc5a88933f6fd88aaa1f60",
+        "preview_git_mode": "100644",
+        "result_git_mode": "100644",
+        "result_git_blob": "00a8f3ab186f2e600d5d810640c85a796a65a359",
+        "result_sha256": "0e2aad80ca331ca5b713f9ab3adb42b72b7c08ed3aab971d94b7033b11319c46",
+        "deleted_blank_lines": 5,
+        "runtime_effect": "none",
+    }
+    if whitespace_checks != expected_whitespace_checks:
+        raise ValueError("Grile sync whitespace normalization identity mismatch")
+    return {
+        "path": path,
+        **checks,
+        "whitespace_normalization": whitespace_checks,
+    }
 
 
 def verify_scope() -> list[str]:
@@ -2553,10 +2626,11 @@ def verify_main_evidence(
         restored_final = database_paths.get("restored_final", {})
     else:
         baseline = empty_initial = empty_final = restored_pre = restored_final = {}
+    identity_dicts = [entry for entry in identity_entries if isinstance(entry, dict)]
     checks["database_identities"] = (
         len(identity_entries) == 3
-        and all(isinstance(entry, dict) for entry in identity_entries)
-        and len({entry.get("database_name") for entry in identity_entries}) == 3
+        and len(identity_dicts) == 3
+        and len({entry.get("database_name") for entry in identity_dicts}) == 3
         and empty_final.get("database_name") == empty_initial.get("database_name")
         and restored_final.get("database_name")
         == restored_pre.get("database_name")
@@ -2665,13 +2739,13 @@ def verify_main_evidence(
             and isinstance(python_environment, dict)
             and python_environment_post_mypy == python_environment
         )
-        locked_objects = candidate.get("locked_objects")
+        candidate_locked_objects = candidate.get("locked_objects")
         checks["candidate_locked_objects"] = (
-            isinstance(locked_objects, list)
-            and len(locked_objects) == len(locked_by_path)
+            isinstance(candidate_locked_objects, list)
+            and len(candidate_locked_objects) == len(locked_by_path)
             and {
                 (item.get("path"), item.get("git_blob"), item.get("sha256"))
-                for item in locked_objects
+                for item in candidate_locked_objects
                 if isinstance(item, dict)
             }
             == {
@@ -2681,6 +2755,11 @@ def verify_main_evidence(
         )
         source_transform = candidate.get("source_transform")
         locked_source = locked_by_path["scripts/release-a-source-contract-v1.json"]
+        whitespace_normalization = (
+            source_transform.get("whitespace_normalization")
+            if isinstance(source_transform, dict)
+            else None
+        )
         checks["candidate_source_transform"] = (
             isinstance(source_transform, dict)
             and source_transform.get("path") == "backend/services/grile_pilot_v2.py"
@@ -2689,6 +2768,19 @@ def verify_main_evidence(
             == "e781187478527d41a607d90081e786ed7816cdf89b57fe39aca2872c1d1010b6"
             and source_transform.get("result_git_blob") == "9cc93035b4a39144faa503cd94144f3e57f7ff8f"
             and source_transform.get("result_sha256") == "b63686dc43a1541dc1d4aebdbd52bf6efb5c545d231aacf2d8e5a85b25922f6a"
+            and whitespace_normalization
+            == {
+                "path": "backend/services/grile_pilot_v2_sync.py",
+                "baseline_git_mode": "100644",
+                "baseline_git_blob": "27c05c7388cd134aebeae9b98efeb86f4831c77f",
+                "baseline_sha256": "ac31c6551e61c1cc8e59731488dfe44b2468f37b00bc5a88933f6fd88aaa1f60",
+                "preview_git_mode": "100644",
+                "result_git_mode": "100644",
+                "result_git_blob": "00a8f3ab186f2e600d5d810640c85a796a65a359",
+                "result_sha256": "0e2aad80ca331ca5b713f9ab3adb42b72b7c08ed3aab971d94b7033b11319c46",
+                "deleted_blank_lines": 5,
+                "runtime_effect": "none",
+            }
             and locked_source.get("sha256")
             == "feb14f72f7a637733c75b79649113d7973615185466f7a9399e43541d1d2e4ed"
         )
