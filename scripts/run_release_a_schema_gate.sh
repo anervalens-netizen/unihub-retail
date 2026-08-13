@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
 set -Eeuo pipefail
+GATE_STARTED_EPOCH_NS="$(date +%s%N)"
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BASELINE_SHA="0be82b430e55b7414babf470abe3fc5404b6cdc9"
@@ -56,6 +57,9 @@ trap cleanup EXIT
 
 mkdir -p "$EVIDENCE_DIR" "$TEMP_DIR/baseline"
 git -C "$ROOT_DIR" archive "$BASELINE_SHA" | tar -x -C "$TEMP_DIR/baseline"
+CANDIDATE_EVIDENCE_PATH="$EVIDENCE_DIR/release-a-candidate.json"
+"$PYTHON" "$ROOT_DIR/scripts/check_release_a_candidate.py" \
+  --evidence "$CANDIDATE_EVIDENCE_PATH"
 
 PASSWORD="$(openssl rand -hex 24)"
 docker run -d \
@@ -118,7 +122,83 @@ export VITE_FRONTEND_GLITCHTIP_DSN=
 export DB_POOL_MIN_SIZE=1
 export DB_POOL_MAX_SIZE=4
 export RATE_LIMIT_TEST_VALKEY_URL="redis://127.0.0.1:${VALKEY_PORT}/15"
-export DATABASE_URL="postgresql://unihub_test:${PASSWORD}@127.0.0.1:${POSTGRES_PORT}/unihub_test"
+BASELINE_DATABASE_NAME="unihub_test"
+EMPTY_DATABASE_NAME="unihub_empty_069_test"
+RESTORED_DATABASE_NAME="unihub_restore_069_test"
+BASELINE_DATABASE_URL="postgresql://unihub_test:${PASSWORD}@127.0.0.1:${POSTGRES_PORT}/${BASELINE_DATABASE_NAME}"
+EMPTY_DATABASE_URL="postgresql://unihub_test:${PASSWORD}@127.0.0.1:${POSTGRES_PORT}/${EMPTY_DATABASE_NAME}"
+RESTORED_DATABASE_URL="postgresql://unihub_test:${PASSWORD}@127.0.0.1:${POSTGRES_PORT}/${RESTORED_DATABASE_NAME}"
+export DATABASE_URL="$BASELINE_DATABASE_URL"
+
+database_state() {
+  DATABASE_URL="$1" "$PYTHON" - <<'PY'
+from __future__ import annotations
+
+import asyncio
+import hashlib
+import json
+import os
+
+import asyncpg
+
+
+async def main() -> None:
+    connection = await asyncpg.connect(os.environ["DATABASE_URL"])
+    try:
+        database_name = await connection.fetchval("SELECT current_database()")
+        public_table_count = await connection.fetchval(
+            """
+            SELECT count(*)
+            FROM information_schema.tables
+            WHERE table_schema = 'public' AND table_type = 'BASE TABLE'
+            """
+        )
+        has_ledger = await connection.fetchval(
+            "SELECT to_regclass('public.schema_migrations') IS NOT NULL"
+        )
+        rows = []
+        marker_count = 0
+        if has_ledger:
+            rows = await connection.fetch(
+                "SELECT filename, checksum FROM schema_migrations ORDER BY filename"
+            )
+            has_meta = await connection.fetchval(
+                "SELECT to_regclass('public.schema_meta') IS NOT NULL"
+            )
+            if has_meta:
+                marker_count = await connection.fetchval(
+                    """
+                    SELECT count(*) FROM schema_meta
+                    WHERE schema_name = 'release_a_synthetic_restore_marker'
+                      AND schema_hash = $1
+                    """,
+                    "6" * 64,
+                )
+    finally:
+        await connection.close()
+    ledger = [
+        {"filename": str(row["filename"]), "checksum": str(row["checksum"])}
+        for row in rows
+    ]
+    payload = json.dumps(ledger, sort_keys=True, separators=(",", ":")).encode()
+    print(
+        json.dumps(
+            {
+                "database_name": str(database_name),
+                "public_table_count": int(public_table_count),
+                "migration_count": len(ledger),
+                "last_migration": ledger[-1]["filename"] if ledger else None,
+                "ledger_sha256": hashlib.sha256(payload).hexdigest(),
+                "restored_marker_count": int(marker_count),
+            },
+            sort_keys=True,
+        )
+    )
+
+
+asyncio.run(main())
+PY
+}
 
 "$PYTHON" "$TEMP_DIR/baseline/backend/scripts/bootstrap_test_db.py" >/dev/null
 "$PYTHON" - <<'PY'
@@ -147,24 +227,38 @@ async def main() -> None:
 
 asyncio.run(main())
 PY
+BASELINE_068_STATE_JSON="$(database_state "$BASELINE_DATABASE_URL")"
 
 docker exec "$POSTGRES_CONTAINER" \
   pg_dump -U unihub_test -d unihub_test -Fc -f /tmp/pre069.dump
 PRE069_DUMP_SHA256="$(
   docker exec "$POSTGRES_CONTAINER" sha256sum /tmp/pre069.dump | awk '{print $1}'
 )"
-docker exec "$POSTGRES_CONTAINER" createdb -U unihub_test unihub_restore_test
-docker exec "$POSTGRES_CONTAINER" \
-  pg_restore -U unihub_test -d unihub_restore_test /tmp/pre069.dump
-
-export DATABASE_URL="postgresql://unihub_test:${PASSWORD}@127.0.0.1:${POSTGRES_PORT}/unihub_restore_test"
+docker exec "$POSTGRES_CONTAINER" createdb -U unihub_test "$EMPTY_DATABASE_NAME"
+EMPTY_INITIAL_STATE_JSON="$(database_state "$EMPTY_DATABASE_URL")"
+export DATABASE_URL="$EMPTY_DATABASE_URL"
 "$PYTHON" "$ROOT_DIR/backend/scripts/bootstrap_test_db.py" >/dev/null
+EMPTY_FINAL_STATE_JSON="$(database_state "$EMPTY_DATABASE_URL")"
+
+docker exec "$POSTGRES_CONTAINER" createdb -U unihub_test "$RESTORED_DATABASE_NAME"
+docker exec "$POSTGRES_CONTAINER" \
+  pg_restore -U unihub_test -d "$RESTORED_DATABASE_NAME" /tmp/pre069.dump
+RESTORED_PRE_UPGRADE_STATE_JSON="$(database_state "$RESTORED_DATABASE_URL")"
+
+export DATABASE_URL="$RESTORED_DATABASE_URL"
+"$PYTHON" "$ROOT_DIR/backend/scripts/bootstrap_test_db.py" >/dev/null
+RESTORED_FINAL_STATE_JSON="$(database_state "$RESTORED_DATABASE_URL")"
 
 cd "$ROOT_DIR/backend"
 "$PYTEST" tests/test_release_a_schema_069.py -q --junitxml="$JUNIT_PATH"
 cd "$ROOT_DIR"
 
 export CURRENT_SHA BASELINE_SHA PRE069_DUMP_SHA256 EVIDENCE_PATH JUNIT_PATH ROOT_DIR
+export BASELINE_DATABASE_URL EMPTY_DATABASE_URL RESTORED_DATABASE_URL
+export BASELINE_068_STATE_JSON EMPTY_INITIAL_STATE_JSON EMPTY_FINAL_STATE_JSON
+export RESTORED_PRE_UPGRADE_STATE_JSON RESTORED_FINAL_STATE_JSON
+export CANDIDATE_EVIDENCE_PATH
+export GATE_STARTED_EPOCH_NS
 "$PYTHON" - <<'PY'
 from __future__ import annotations
 
@@ -174,6 +268,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import time
 
 import asyncpg
 
@@ -185,9 +280,10 @@ def git(*args: str) -> str:
     ).strip()
 
 
-async def database_evidence() -> dict[str, object]:
-    connection = await asyncpg.connect(os.environ["DATABASE_URL"])
+async def database_evidence(database_url: str) -> dict[str, object]:
+    connection = await asyncpg.connect(database_url)
     try:
+        database_name = await connection.fetchval("SELECT current_database()")
         marker = await connection.fetchval(
             """
             SELECT count(*)
@@ -251,45 +347,85 @@ async def database_evidence() -> dict[str, object]:
         sort_keys=True,
         separators=(",", ":"),
     ).encode()
+    ledger_serialized = json.dumps(
+        [dict(row) for row in applied],
+        sort_keys=True,
+        separators=(",", ":"),
+        default=str,
+    ).encode()
     return {
+        "database_name": str(database_name),
         "restored_marker_count": int(marker),
         "migration_count": len(applied),
         "last_migration": str(applied[-1]["filename"]),
         "migration_069_checksum": str(applied[-1]["checksum"]),
+        "ledger_sha256": hashlib.sha256(ledger_serialized).hexdigest(),
         "outbox_event_count": int(outbox_count),
         "schema_catalog_sha256": hashlib.sha256(serialized).hexdigest(),
         "schema_catalog_entry_count": len(catalog_rows),
     }
 
 
-changed = git("diff", "--name-only", os.environ["BASELINE_SHA"], os.environ["CURRENT_SHA"]).splitlines()
-runtime_changes = [
-    path
-    for path in changed
-    if path.startswith(("src/", "ops/"))
-    or (path.startswith(".github/") and path != ".github/workflows/ci.yml")
-    or path in {"package.json", "package-lock.json", "vite.config.ts", "tsconfig.json"}
-    or (
-        path.startswith("backend/")
-        and not path.startswith("backend/db/migrations/")
-        and not path.startswith("backend/tests/")
-    )
-]
-if runtime_changes:
-    raise SystemExit(f"Release-A application scope changed: {runtime_changes}")
+candidate_evidence_path = Path(os.environ["CANDIDATE_EVIDENCE_PATH"])
+candidate_evidence = json.loads(candidate_evidence_path.read_text(encoding="utf-8"))
+if candidate_evidence.get("result") != "PASS":
+    raise SystemExit("Release-A exact candidate/source/typecheck gate did not pass")
+changed = candidate_evidence["changed_paths"]
 
-database = asyncio.run(database_evidence())
+baseline_068 = json.loads(os.environ["BASELINE_068_STATE_JSON"])
+empty_initial = json.loads(os.environ["EMPTY_INITIAL_STATE_JSON"])
+empty_final_state = json.loads(os.environ["EMPTY_FINAL_STATE_JSON"])
+restored_pre_upgrade = json.loads(os.environ["RESTORED_PRE_UPGRADE_STATE_JSON"])
+restored_final_state = json.loads(os.environ["RESTORED_FINAL_STATE_JSON"])
+empty_database = asyncio.run(database_evidence(os.environ["EMPTY_DATABASE_URL"]))
+restored_database = asyncio.run(database_evidence(os.environ["RESTORED_DATABASE_URL"]))
 expected_069 = hashlib.sha256(
     (Path(os.environ["ROOT_DIR"]) / "backend/db/migrations/069_ai_cohort_and_transactional_outbox.sql").read_bytes()
 ).hexdigest()
-if database != {
-    **database,
-    "restored_marker_count": 1,
-    "last_migration": "069_ai_cohort_and_transactional_outbox.sql",
-    "migration_069_checksum": expected_069,
-    "outbox_event_count": 0,
+database_names = {
+    baseline_068["database_name"],
+    empty_initial["database_name"],
+    restored_pre_upgrade["database_name"],
+}
+if len(database_names) != 3:
+    raise SystemExit("Release-A database paths are not distinct")
+if empty_initial != {
+    **empty_initial,
+    "public_table_count": 0,
+    "migration_count": 0,
+    "last_migration": None,
+    "restored_marker_count": 0,
 }:
-    raise SystemExit("Release-A restored database evidence failed")
+    raise SystemExit("Release-A empty database was not empty before bootstrap")
+if baseline_068["migration_count"] != 68 or baseline_068["last_migration"] != "068_grile_v2_forecast_digest_authority.sql":
+    raise SystemExit("Release-A baseline fixture did not stop at 068")
+if restored_pre_upgrade != {
+    **restored_pre_upgrade,
+    "migration_count": 68,
+    "last_migration": "068_grile_v2_forecast_digest_authority.sql",
+    "ledger_sha256": baseline_068["ledger_sha256"],
+    "public_table_count": baseline_068["public_table_count"],
+    "restored_marker_count": 1,
+}:
+    raise SystemExit("Release-A restored fixture does not equal the dumped 068 ledger")
+for state in (empty_final_state, restored_final_state):
+    if state["migration_count"] != 69 or state["last_migration"] != "069_ai_cohort_and_transactional_outbox.sql":
+        raise SystemExit("Release-A final database ledger did not reach 069")
+if empty_final_state["ledger_sha256"] != restored_final_state["ledger_sha256"]:
+    raise SystemExit("Release-A empty and restored final ledgers differ")
+for database, marker_count in ((empty_database, 0), (restored_database, 1)):
+    if database["restored_marker_count"] != marker_count:
+        raise SystemExit("Release-A database restore marker mismatch")
+    if database["migration_count"] != 69 or database["last_migration"] != "069_ai_cohort_and_transactional_outbox.sql":
+        raise SystemExit("Release-A database evidence did not reach 069")
+    if database["migration_069_checksum"] != expected_069 or database["outbox_event_count"] != 0:
+        raise SystemExit("Release-A database migration hash or outbox inertness failed")
+if empty_database["ledger_sha256"] != empty_final_state["ledger_sha256"]:
+    raise SystemExit("Release-A empty database ledger changed after bootstrap")
+if restored_database["ledger_sha256"] != restored_final_state["ledger_sha256"]:
+    raise SystemExit("Release-A restored database ledger changed after upgrade")
+if empty_database["schema_catalog_sha256"] != restored_database["schema_catalog_sha256"]:
+    raise SystemExit("Release-A empty and restored schema catalogs differ")
 
 manifest_path = Path(os.environ["ROOT_DIR"]) / "backend/db/migrations/manifest.json"
 evidence = {
@@ -297,18 +433,41 @@ evidence = {
     "result": "PASS",
     "baseline_sha": os.environ["BASELINE_SHA"],
     "release_a_sha": os.environ["CURRENT_SHA"],
-    "application_runtime_changes": runtime_changes,
+    "command": [
+        "scripts/run_release_a_schema_gate.sh",
+        "--evidence",
+        os.environ["EVIDENCE_PATH"],
+    ],
+    "duration_seconds": round(
+        (time.time_ns() - int(os.environ["GATE_STARTED_EPOCH_NS"])) / 1_000_000_000,
+        6,
+    ),
+    "candidate_gate_sha256": hashlib.sha256(candidate_evidence_path.read_bytes()).hexdigest(),
+    "candidate_tree": candidate_evidence["candidate_tree"],
+    "changed_paths": changed,
     "changed_path_count": len(changed),
     "manifest_sha256": hashlib.sha256(manifest_path.read_bytes()).hexdigest(),
     "migration_069_sha256": expected_069,
     "pre_069_dump_sha256": os.environ["PRE069_DUMP_SHA256"],
     "junit_sha256": hashlib.sha256(Path(os.environ["JUNIT_PATH"]).read_bytes()).hexdigest(),
-    "database": database,
+    "database_paths": {
+        "baseline_068": baseline_068,
+        "empty_initial": empty_initial,
+        "empty_final": empty_database,
+        "restored_pre_upgrade": restored_pre_upgrade,
+        "restored_final": restored_database,
+    },
     "assertions": {
-        "empty_database_bootstrap_through_068": True,
+        "database_identities_distinct": True,
+        "empty_database_initially_zero_tables": True,
+        "empty_database_bootstrap_through_069": True,
         "sanitized_dump_restore": True,
-        "upgrade_068_to_069": True,
-        "baseline_application_source_unchanged": True,
+        "restored_database_pre_upgrade_through_068": True,
+        "restored_database_upgrade_068_to_069": True,
+        "final_schema_ledgers_equal": True,
+        "final_schema_catalogs_equal": True,
+        "exact_source_transform": True,
+        "direct_unshadowed_full_mypy": True,
         "release_a_runtime_ready": True,
         "pre_069_manifest_refused": True,
         "outbox_inert": True,

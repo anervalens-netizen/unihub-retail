@@ -126,6 +126,8 @@ jobs:
               ':(exclude)docs/contracts/query-parameter-policy-v1.json' \
               ':(exclude)scripts/frontend-critical-coverage.json' \
               ':(exclude)scripts/python-complexity-contract-v1.json' \
+              ':(exclude)scripts/release-a-source-contract-v1.json' \
+              ':(exclude)scripts/check_release_a_candidate.py' \
               ':(exclude)scripts/target-mutation-contract-v2.json' \
               ':(exclude)scripts/run_release_a_schema_gate.sh' \
               ':(exclude)backend/tests/test_prometheus_topology.py' \
@@ -145,6 +147,8 @@ jobs:
             docs/contracts/query-parameter-policy-v1.json \
             scripts/frontend-critical-coverage.json \
             scripts/python-complexity-contract-v1.json \
+            scripts/release-a-source-contract-v1.json \
+            scripts/check_release_a_candidate.py \
             scripts/target-mutation-contract-v2.json \
             scripts/run_release_a_schema_gate.sh \
             > /tmp/retail-immutable-contract-secret-scan.json
@@ -167,18 +171,8 @@ jobs:
 
       - name: Python typecheck
         run: |
-          pilot_source="services/grile_pilot_v2.py"
-          pilot_baseline_sha="e781187478527d41a607d90081e786ed7816cdf89b57fe39aca2872c1d1010b6"
-          mypy_shadow_args=()
-          if test "$(sha256sum "$pilot_source" | cut -d ' ' -f 1)" = "$pilot_baseline_sha"; then
-            pilot_shadow="$(mktemp)"
-            sed '/^    PILOT_V2_SHEETS,$/a\    PilotV2Sheet,' \
-              "$pilot_source" > "$pilot_shadow"
-            mypy_shadow_args=(--shadow-file "$pilot_source" "$pilot_shadow")
-          fi
           set +e
           venv/bin/mypy . --ignore-missing-imports --explicit-package-bases \
-            "${mypy_shadow_args[@]}" \
             > mypy-report.txt 2>&1
           status=$?
           cat mypy-report.txt
