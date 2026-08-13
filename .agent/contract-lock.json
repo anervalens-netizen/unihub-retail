@@ -1,11 +1,11 @@
 {
   "version": 1,
   "objective": "UR-CLOSE-20260812",
-  "revision": 13,
+  "revision": 14,
   "baseline_source_sha": "0be82b430e55b7414babf470abe3fc5404b6cdc9",
-  "contract_content_commit": "cae7c0812b9945c90e1787ca5d3285d75db43bce",
-  "supersedes_lock_commit": "e76ef023e4fd7010e8c4cc27ba4ed8180aabb6a8",
-  "created_at": "2026-08-13T08:10:16+03:00",
+  "contract_content_commit": "1c889042f0d0ee0077b1839f4dae1d33786fc813",
+  "supersedes_lock_commit": "e3bf8d2671a8e0ce81d4bd994ae5c525003c35b9",
+  "created_at": "2026-08-13T13:25:08+03:00",
   "source_inputs": [
     {
       "path": "/opt/Mobiup/UNIHUB_RETAIL_AUDIT_2026-08-12.md",
@@ -18,8 +18,8 @@
   ],
   "plan": {
     "path": "docs/exec-plans/active/UR-CLOSE-20260812.md",
-    "git_blob": "400bd2d14ec8bfbea66fde5ce4446c593b3cdb46",
-    "sha256": "5e30b36b624106cb46383504ce6d86fb20711aa3f65fadccf61e2ea028d861db"
+    "git_blob": "b0e031e934fabddbcf81f4d55bed5c5e80c19cb2",
+    "sha256": "1c4e6c62f0a4834c268d150b0c8bcde6052dbf73ad41d4829d8cf488542345dd"
   },
   "assets": [
     {
@@ -69,28 +69,63 @@
     },
     {
       "path": "scripts/check_release_a_candidate.py",
-      "git_blob": "648ac58b7aba0d97b73e431f695032d8a5557e5f",
-      "sha256": "084acb81596fa3f9e63af2b341aa389838f2546a8059d9f113b2c31abc228058"
+      "git_blob": "8d3dc18566ed86a71bcc7da034a0d83b5773bf68",
+      "sha256": "065bca7b463226a514f1eb06349fddadbcaac714dd2f115f672e72b8788badda"
     },
     {
       "path": ".github/workflows/ci.yml",
-      "git_blob": "2ec283dc67105e5661719d7b0070a4dd02491deb",
-      "sha256": "19e4c0485fba30e584daa528ff40da0aa9ad5c6fd6ea2b74595fb680b44ac28f"
+      "git_blob": "0ef7ba6ba48aac555394f8aa81ab45bcb5542c69",
+      "sha256": "559d7ef32f9ff6cb80aa5f7eaf18225bcac5cbfe7feabda2be0eb268e1529b4c"
+    },
+    {
+      "path": ".github/workflows/deploy.yml",
+      "git_blob": "f103770bae20b68a315697830c0ce4e52a52e550",
+      "sha256": "4d6f5a9971a6b5f7077215ca0c56c670b74d27dc50c732b2097f24c423819b23"
     },
     {
       "path": "scripts/run_release_a_schema_gate.sh",
-      "git_blob": "66adf98909f8c288a00f7850ccd5795c39490326",
-      "sha256": "ea8c9fad5f58b5052f0bd0902ead8b65ef020618e81108073d911e62dbde92c3"
+      "git_blob": "cc19d17a45580744af5849ff0a7fe5a8bffbea69",
+      "sha256": "76a9070293807f69bf4752ede2f359e4b8f428cf097ddd1c17b24d7430d7b936"
     },
     {
       "path": "ops/build-retail-release-artifact.sh",
-      "git_blob": "8e7950f4f0e5283755a8836378b17b758364f73c",
-      "sha256": "f2ef575f2aa5f9129679777e4796057c39561ad266dbeb361b11b57fe3902a29"
+      "git_blob": "6a4b4892456da0b6a2185b1801752b7e07e2a0e3",
+      "sha256": "16b6e6575fd30f602dfbbb67db28374c31bc83b6d740beed66e45c6bd439208c"
+    },
+    {
+      "path": "ops/deploy-retail-artifact.sh",
+      "git_blob": "f1889fd1dc56fa90d9d54d7476dd6a0d903dcc0d",
+      "sha256": "0328529bd4de2cdb7a0c46f0a45e9f0e37cb8047db451f416c72990d7f7734dc"
+    },
+    {
+      "path": "ops/test-deploy-retail-artifact.sh",
+      "git_blob": "8dd8c11bddebb9efae0bb59d2c5e0f7d66ccfc1c",
+      "sha256": "2b344f73b8dd499a697954a3a1f3adaf3a79fab74f38aa9e431fa2a28b2cb4d1"
+    },
+    {
+      "path": "backend/scripts/run_tests_isolated.sh",
+      "git_blob": "b06685ebfd4efd15f84d433f54f94b73cadc321a",
+      "sha256": "e1ff5f41345038661d37daf34e1665ef4b504c212c8c3d527fa0f68e3b5b9100"
+    },
+    {
+      "path": "backend/scripts/run_outbox_slo_workload.py",
+      "git_blob": "54c3454c5dcf8adfdd8cf90633492aac241075a4",
+      "sha256": "93c19fabb4d415c617a2945b4905ba47ef4284c08550ba62475d99ffd70f4e35"
+    },
+    {
+      "path": "backend/scripts/run_retail_scale_profile.py",
+      "git_blob": "cb71c7073398ca0a467fdd97d89217f95d995f60",
+      "sha256": "6338e2f9f0476f78e798ff936338f60a907506698c13aacb4688f8f13775b70d"
+    },
+    {
+      "path": "scripts/validate_release_sbom.py",
+      "git_blob": "548e5a6cc5a797643fe92fe05430363a6f7bbb87",
+      "sha256": "2cb0b7a41d9ea3ae9652ba7f7d78882a3c4cf9652f0230fb5ef73c1a2128511d"
     },
     {
       "path": "scripts/run_real_e2e.sh",
-      "git_blob": "a2a598db525d096f1e3830d284a108d18627e10b",
-      "sha256": "bc89bc152d2c0fb7056e4208fc44effed4f32cb3b0e225bbd41886f81bc30015"
+      "git_blob": "9a2bdad3379122492149e148e7a0e812804728f1",
+      "sha256": "acc57a606855c21fd05b88e06ca6f70b762a49e7d70e26981852284bc68ba98f"
     },
     {
       "path": "backend/db/migrations/069_ai_cohort_and_transactional_outbox.sql",
@@ -119,28 +154,28 @@
     },
     {
       "path": "scripts/verify_promtool_cache.sh",
-      "git_blob": "b0d358b2c4b162cb04293fe349541e9a7abab28f",
-      "sha256": "f4bb8e07562e8b3c674dfa10be2d6fd12df0a05ac23d81866246b18eed27d9ae"
+      "git_blob": "58b61e86f175e7de4e5cfe3508a98ec88cb7406e",
+      "sha256": "f7f24584ef5f85c2b7041e0b1f7a6a389c6998aae0db0b6b17704149c7fafb4d"
     },
     {
       "path": "scripts/release-b-authority-contract-v1.json",
-      "git_blob": "640f5305acc8cbaf43e3d4bc4872e376828e7467",
-      "sha256": "c352bf102ee0680b8e5217f7ac49e87d975f20b666cd1ea3394ac93cbb6ec1c4"
+      "git_blob": "053921a3f7ee5bc1ef386188c41e8d78825cc62f",
+      "sha256": "88b5e1396b5f23fa5acb89628741dfc0fa911501f5c5298ef2b5d8af9de07008"
     },
     {
       "path": "backend/tests/test_release_contract_tooling_security.py",
-      "git_blob": "7e79e88f50e1eaa3c4e1afbfd5dd26ef1b0e498d",
-      "sha256": "d2a0f72f6fb1846ebc76987dbe6080082a20d0b4c6060236e9024d8945e829a9"
+      "git_blob": "920a41f68c480a76abbc3a54f78d8898ed8acfc3",
+      "sha256": "28e922f55f4c847d0bfef83571021baa42dabc9382be1f636871eafbd1de4280"
     },
     {
       "path": "scripts/run_local_quality_gate.sh",
-      "git_blob": "a08d5bcf36561d348b2515c9202cd5608cf73b9e",
-      "sha256": "2a1a778460396e62e5271ecc143e882c66a754833ce85e18ece6991337c587e0"
+      "git_blob": "fcfc28634fe50c8ada043ded2912b2b33c8e4f35",
+      "sha256": "27e248f12c1b30cd28d671b399e1afb708eb04cef15354701fbbe7a1bdcbc3fe"
     },
     {
       "path": "scripts/run_outbox_slo_gate.py",
-      "git_blob": "d2b498be204f5c9b78eb8685d37f6a0b8d1a80a5",
-      "sha256": "fd3b5d9f8a73ef335b7e8ff060aba1ee118af19a010310c9e9772f09bf9c8acb"
+      "git_blob": "6104b97ac241786f7522f5261f12f13d3ad296b6",
+      "sha256": "015434aab2bfe1ea55a92d1e616735f02362e45920c914bdf717eaaf22f84a9a"
     },
     {
       "path": "scripts/run_retail_scale_gate.sh",
@@ -149,11 +184,11 @@
     },
     {
       "path": "scripts/verify_deployed_release.sh",
-      "git_blob": "cf6187f0860df2e0192db88f1bddb4e51e320c71",
-      "sha256": "b0b0ab6107732e25ceecd90fced48863ac53b2314275730b303b8e2fb8d19e03"
+      "git_blob": "865d2d82aa2d32c752be7a9306727539d71f0d7d",
+      "sha256": "5ece35e7f11bdb313be4df69683564ace079449b21734067fc8180d269949edc"
     }
   ],
   "allowed_plan_mutations_without_relock": [],
   "post_ac17_administrative_mutation": "Only the exact four-path archive defined by the locked plan is allowed after AC-17 PASS.",
-  "semantic_change_rule": "Any scope, criterion, threshold, fixture, expected value, waiver or verification change requires a new revision, content commit, lock and independent contract critique before implementation."
+  "semantic_change_rule": "Any scope, criterion, threshold, fixture, expected value, waiver or verification change requires a new revision, content commit, lock and independent contract critique before implementation continues."
 }
