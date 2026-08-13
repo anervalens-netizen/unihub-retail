@@ -1,11 +1,11 @@
 {
   "version": 1,
   "objective": "UR-CLOSE-20260812",
-  "revision": 21,
+  "revision": 22,
   "baseline_source_sha": "0be82b430e55b7414babf470abe3fc5404b6cdc9",
-  "contract_content_commit": "886289d014cbe3cd3532c5dc0947977cf327b32d",
-  "supersedes_lock_commit": "2d1ba6bd4265f010dd96492a55a4f3ba0874ee5d",
-  "created_at": "2026-08-13T16:20:41+03:00",
+  "contract_content_commit": "66fe5f9c6774f364d620c0764ef54ca38ad76e7d",
+  "supersedes_lock_commit": "d751c3a8deb2f6d9f1dda3b4a5e3fb08ec1db7de",
+  "created_at": "2026-08-13T17:16:11+03:00",
   "source_inputs": [
     {
       "path": "/opt/Mobiup/UNIHUB_RETAIL_AUDIT_2026-08-12.md",
@@ -18,8 +18,8 @@
   ],
   "plan": {
     "path": "docs/exec-plans/active/UR-CLOSE-20260812.md",
-    "git_blob": "3ade3136603e5d1ff214437aa34fcba330ac333b",
-    "sha256": "543084f39a4711b124a054ca30c412ae4b5a0de0b2703332be04c729f4a273cb"
+    "git_blob": "5947e27058e2dc1dda43c8d3fa388cbb3b2b7b37",
+    "sha256": "0d0966177274dca5ff990b7c476d72a38c992f4ba53050d242a952f44f6d3aa3"
   },
   "assets": [
     {
@@ -49,8 +49,8 @@
     },
     {
       "path": "scripts/complexity-ratchet.json",
-      "git_blob": "63d4e96ebb5d813af7f45b05f4b3a006f961f4e4",
-      "sha256": "86a8d624b1d525b0e9db20fa9220b6ad0bc3cd0af5454c163768b1745ebc090c"
+      "git_blob": "2a08fc8577a811b034520b95660747df5d0d3312",
+      "sha256": "0b64eacd7d140bc220996f7edd7c87f1766fb80abbd3cccba637c420fac4f6f6"
     },
     {
       "path": "scripts/ts-function-complexity-ratchet.json",
@@ -69,8 +69,8 @@
     },
     {
       "path": "scripts/check_release_a_candidate.py",
-      "git_blob": "8e254bb2d2eb9771ff19752bb7d09d29820aa3c1",
-      "sha256": "2af33de1e1b2dc712f26eb2be281f8ead5d75fb7834ca01a507cb029d515a5ca"
+      "git_blob": "97096a990686b3f79b62e41cca7dbf89620386ca",
+      "sha256": "64373824cfd957cefbe48de137d9ebbe754499b8a7d8c2eab814eeff4b8b159a"
     },
     {
       "path": ".github/workflows/ci.yml",
@@ -118,14 +118,24 @@
       "sha256": "554cb286d72203d50ee3f667538bb93c5180ce5fb5c00074a7ee733787b09375"
     },
     {
+      "path": "backend/scripts/outbox_slo_workload_engine.py",
+      "git_blob": "d16beb9f1d4bc3c86b8eb3bd64bc0e095b95d3d9",
+      "sha256": "1f78c048931d0a8003249aafdd703326c9d36f3779b0c45941a91383ba903113"
+    },
+    {
       "path": "backend/scripts/run_outbox_slo_workload.py",
-      "git_blob": "54c3454c5dcf8adfdd8cf90633492aac241075a4",
-      "sha256": "93c19fabb4d415c617a2945b4905ba47ef4284c08550ba62475d99ffd70f4e35"
+      "git_blob": "e4beb46cd5eb26ccde80b524f8af19a8b247658f",
+      "sha256": "21c5092d702dea224c09ec373147bf34e6a670a028c1d03b8a44ea02a86919fa"
     },
     {
       "path": "backend/scripts/run_retail_scale_profile.py",
-      "git_blob": "2c493d0c843356b473bf2a9167b1bbc189201f3c",
-      "sha256": "c628c8f279fc1944231a07417b817eb7b7f6b401726467b5f08dba63e7da68c4"
+      "git_blob": "41328166657750d3ce25b16deb725841a1ae6dbb",
+      "sha256": "2fedd8a8d341f8e09e653eb37db0f748ab1b001e7866451ecb2a635d7b959f37"
+    },
+    {
+      "path": "backend/services/grile_pilot_v2_sync.py",
+      "git_blob": "00a8f3ab186f2e600d5d810640c85a796a65a359",
+      "sha256": "0e2aad80ca331ca5b713f9ab3adb42b72b7c08ed3aab971d94b7033b11319c46"
     },
     {
       "path": "scripts/validate_release_sbom.py",
@@ -169,13 +179,13 @@
     },
     {
       "path": "scripts/release-b-authority-contract-v1.json",
-      "git_blob": "1c455e2700ac563572476d180fcd5262371290b8",
-      "sha256": "890d7164031e0a767e8d22f450c45db72e7331112faaf45f602be977c4280e6e"
+      "git_blob": "d9c6767daddad70af68e669ac01373392f98626f",
+      "sha256": "1f12308703a4d5a8d3f8600846d8203352fa6a1e1f54d0798101d8a111d1c8d0"
     },
     {
       "path": "backend/tests/test_release_contract_tooling_security.py",
-      "git_blob": "aee2c2aff41ffa02b10308f1d1f06698046bad09",
-      "sha256": "c56209927a632716adfd04897355adbf232def7bff1af879fbb2e6cff97a3538"
+      "git_blob": "30b0b74c6fdd8c787ab1d18c355ec09d7a8fcbfe",
+      "sha256": "9587864e2900a591cf3124a11acde9a2e6e653b179e0d6df79e612dd8289cb18"
     },
     {
       "path": "scripts/run_local_quality_gate.sh",
@@ -184,8 +194,8 @@
     },
     {
       "path": "scripts/run_outbox_slo_gate.py",
-      "git_blob": "6104b97ac241786f7522f5261f12f13d3ad296b6",
-      "sha256": "015434aab2bfe1ea55a92d1e616735f02362e45920c914bdf717eaaf22f84a9a"
+      "git_blob": "770ca3db9ad2f373f6081c879d39c0a2b2b3a19a",
+      "sha256": "fdb9df57240af65e8ae48dd9ea2c661f3d13a280b6ba83e1f60f31d4d3a4b4e7"
     },
     {
       "path": "scripts/run_retail_scale_gate.sh",
