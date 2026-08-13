@@ -819,6 +819,17 @@ required = {
     "PYTHON_RUNTIME_WHEELS.tar.gz",
     archive_name,
 }
+release_a_evidence = {
+    "schema-gate.json",
+    "release-a-schema-empty.xml",
+    "release-a-schema-restored.xml",
+}
+present_release_a_evidence = {
+    name for name in release_a_evidence if (root / name).exists()
+}
+if present_release_a_evidence and present_release_a_evidence != release_a_evidence:
+    raise SystemExit("Release-A evidence inventory is incomplete")
+required.update(present_release_a_evidence)
 for name in required:
     path = root / name
     if not path.is_file() or path.is_symlink():
@@ -831,15 +842,45 @@ if manifest.get("schemaVersion") != 1 or manifest.get("sourceSha") != expected_s
 if manifest.get("sha256", {}).get(archive_name) != expected_digest:
     raise SystemExit("release manifest artifact digest mismatch")
 manifest_sha256 = manifest.get("sha256")
-if not isinstance(manifest_sha256, dict) or any(
+expected_manifest_files = required - {"SHA256SUMS", "RELEASE_MANIFEST.json"}
+if (
+    not isinstance(manifest_sha256, dict)
+    or set(manifest_sha256) != expected_manifest_files
+    or any(
     manifest_sha256.get(name) != hashlib.sha256((root / name).read_bytes()).hexdigest()
-    for name in required - {"SHA256SUMS", "RELEASE_MANIFEST.json"}
+    for name in expected_manifest_files
+    )
 ):
     raise SystemExit("release manifest evidence digest mismatch")
+release_a_manifest = manifest.get("releaseAEvidence")
+if present_release_a_evidence:
+    expected_release_a_manifest = {
+        "sourceSha": expected_sha,
+        "workflowRunId": str(release_a_manifest.get("workflowRunId", ""))
+        if isinstance(release_a_manifest, dict)
+        else "",
+        "files": {name: manifest_sha256[name] for name in sorted(release_a_evidence)},
+    }
+    if (
+        not isinstance(release_a_manifest, dict)
+        or not expected_release_a_manifest["workflowRunId"].isdigit()
+        or release_a_manifest != expected_release_a_manifest
+    ):
+        raise SystemExit("Release-A evidence manifest is invalid")
+elif release_a_manifest is not None:
+    raise SystemExit("Release-A evidence manifest has no matching files")
 provenance = json.loads((root / "PROVENANCE.json").read_text(encoding="utf-8"))
 subjects = provenance.get("subject", [])
 if len(subjects) != 1 or subjects[0].get("name") != archive_name or subjects[0].get("digest", {}).get("sha256") != expected_digest:
     raise SystemExit("release provenance subject mismatch")
+if (
+    provenance.get("predicate", {})
+    .get("buildDefinition", {})
+    .get("externalParameters", {})
+    .get("releaseAEvidence")
+    != release_a_manifest
+):
+    raise SystemExit("Release-A provenance evidence mismatch")
 sbom = json.loads((root / "SBOM.cdx.json").read_text(encoding="utf-8"))
 if sbom.get("bomFormat") != "CycloneDX" or sbom.get("metadata", {}).get("component", {}).get("version") != expected_sha:
     raise SystemExit("release SBOM identity mismatch")
@@ -2360,9 +2401,14 @@ recover_forward_release() {
 
   local approval_claimed=0
   local runtime_transition_started=0
+  local recovery_owner_pid="$BASHPID"
   work_dir="$(mktemp -d "${TMPDIR:-/tmp}/retail-forward-recovery.XXXXXX")"
   on_recovery_error() {
     local rc=$?
+    if [[ "$BASHPID" != "$recovery_owner_pid" ]]; then
+      trap - ERR EXIT
+      exit "$rc"
+    fi
     trap - EXIT ERR
     if [[ "$runtime_transition_started" == "1" ]]; then
       stop_runtime || true
@@ -2383,9 +2429,9 @@ recover_forward_release() {
   trap on_recovery_error ERR
   trap on_recovery_error EXIT
 
+  artifact_tree="$(copy_and_verify_artifact "$source_archive" "$expected_sha" "$expected_artifact_sha256" "$work_dir")"
   approval_claimed=1
   claim_approval "$ci_run_id" "$expected_sha" "$expected_artifact_sha256"
-  artifact_tree="$(copy_and_verify_artifact "$source_archive" "$expected_sha" "$expected_artifact_sha256" "$work_dir")"
   supply_root="$(<"$work_dir/python-runtime-supply.path")"
   detect_prometheus_network
   assert_prometheus_shared_include
@@ -2724,8 +2770,13 @@ deploy_release() {
   local rollback_needed=0
   local approval_claimed=0
   local migrations_may_have_applied=0
+  local deploy_owner_pid="$BASHPID"
   on_deploy_error() {
     local rc=$?
+    if [[ "$BASHPID" != "$deploy_owner_pid" ]]; then
+      trap - ERR EXIT
+      exit "$rc"
+    fi
     trap - EXIT ERR
     if [[ "$rollback_needed" == "1" ]]; then
       log "deployment failed after switch; starting automatic rollback"
@@ -2758,9 +2809,9 @@ deploy_release() {
   trap on_deploy_error ERR
   trap on_deploy_error EXIT
 
+  artifact_tree="$(copy_and_verify_artifact "$source_archive" "$expected_sha" "$expected_artifact_sha256" "$work_dir")"
   approval_claimed=1
   claim_approval "$ci_run_id" "$expected_sha" "$expected_artifact_sha256"
-  artifact_tree="$(copy_and_verify_artifact "$source_archive" "$expected_sha" "$expected_artifact_sha256" "$work_dir")"
   supply_root="$(<"$work_dir/python-runtime-supply.path")"
   detect_prometheus_network
   assert_prometheus_shared_include

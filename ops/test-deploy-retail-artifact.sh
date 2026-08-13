@@ -154,18 +154,86 @@ chmod 0600 "$BUILDER/dist/index.html" "$BUILDER/dist/assets/app.js"
 build_release() {
   local source_sha="$1"
   local output_dir="$2"
+  local evidence_dir="${3:-}"
+  local -a release_env=(PYTHON_RUNTIME_WHEELHOUSE_PATH="$WHEELHOUSE")
+  if [[ -n "$evidence_dir" ]]; then
+    release_env+=(
+      RELEASE_A_EVIDENCE_DIR="$evidence_dir"
+      RELEASE_A_EVIDENCE_RUN_ID="$CI_RUN_ID"
+    )
+  fi
   (
     cd "$BUILDER"
-    PYTHON_RUNTIME_WHEELHOUSE_PATH="$WHEELHOUSE" \
-      "$BUILD_SCRIPT" "$source_sha" "$output_dir"
+    env "${release_env[@]}" "$BUILD_SCRIPT" "$source_sha" "$output_dir"
   ) >/dev/null
 }
 
+make_release_a_evidence() {
+  local source_sha="$1"
+  local output_dir="$2"
+  mkdir -p "$output_dir"
+  /usr/bin/python3.12 -I -S - "$source_sha" "$output_dir" <<'PY'
+import hashlib
+import json
+import pathlib
+import sys
+import xml.etree.ElementTree as ET
+
+source_sha, output = sys.argv[1:]
+root = pathlib.Path(output)
+names = (
+    "test_069_is_additive_empty_and_old_ai_insert_remains_compatible",
+    "test_069_seals_cohort_and_requires_exact_completed_run_lineage",
+    "test_069_outbox_is_canonical_private_ordered_and_replayable",
+    "test_069_runtime_roles_have_exact_producer_privileges",
+    "test_release_a_runtime_starts_and_is_ready_on_069",
+    "test_pre_069_manifest_is_refused_after_schema_upgrade",
+)
+digests = {}
+for filename in ("release-a-schema-empty.xml", "release-a-schema-restored.xml"):
+    suite = ET.Element(
+        "testsuite", tests="6", failures="0", errors="0", skipped="0"
+    )
+    for name in names:
+        ET.SubElement(
+            suite,
+            "testcase",
+            classname="backend.tests.test_release_a_schema_069",
+            name=name,
+        )
+    path = root / filename
+    ET.ElementTree(suite).write(path, encoding="utf-8", xml_declaration=True)
+    digests[filename] = hashlib.sha256(path.read_bytes()).hexdigest()
+(root / "schema-gate.json").write_text(
+    json.dumps(
+        {
+            "result": "PASS",
+            "release_a_sha": source_sha,
+            "junit_empty_sha256": digests["release-a-schema-empty.xml"],
+            "junit_restored_sha256": digests["release-a-schema-restored.xml"],
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    + "\n",
+    encoding="utf-8",
+)
+PY
+}
+
 RELEASE_DIR="$ROOT/release"
-build_release "$NEW_SHA" "$RELEASE_DIR"
+RELEASE_A_EVIDENCE="$ROOT/release-a-evidence"
+make_release_a_evidence "$NEW_SHA" "$RELEASE_A_EVIDENCE"
+build_release "$NEW_SHA" "$RELEASE_DIR" "$RELEASE_A_EVIDENCE"
 ARTIFACT="$RELEASE_DIR/retail-release-${NEW_SHA}.tar.gz"
 [[ "$(<"$RELEASE_DIR/SOURCE_SHA")" == "$NEW_SHA" ]]
 (cd "$RELEASE_DIR" && sha256sum --check SHA256SUMS >/dev/null)
+for release_a_evidence in \
+  schema-gate.json \
+  release-a-schema-empty.xml \
+  release-a-schema-restored.xml; do
+  [[ -s "$RELEASE_DIR/$release_a_evidence" && ! -L "$RELEASE_DIR/$release_a_evidence" ]]
+done
 for runtime_supply in \
   PYTHON_RUNTIME_SUPPLY.json \
   PYTHON_RUNTIME_REQUIREMENTS.lock \
@@ -626,13 +694,19 @@ TAMPER_SHA256="$(sha256sum "$ROOT/tampered.tar.gz" | awk '{print $1}')"
 approve_release "$CI_RUN_ID" "$NEW_SHA" "$TAMPER_SHA256" >/dev/null
 FAILED_BEFORE_TAMPER="$(find "$ROOT/approval-store" -maxdepth 1 -type f -name '*.failed' | wc -l)"
 set +e
-run_deploy "$ROOT/tampered.tar.gz" "$NEW_SHA" "$CI_RUN_ID" "$TAMPER_SHA256" >/dev/null 2>&1
+run_deploy "$ROOT/tampered.tar.gz" "$NEW_SHA" "$CI_RUN_ID" "$TAMPER_SHA256" \
+  >"$ROOT/tampered-release.log" 2>&1
 TAMPER_RC=$?
 set -e
 [[ "$TAMPER_RC" -ne 0 ]]
 [[ "$(git -C "$LIVE" rev-parse HEAD)" == "$OLD_SHA" ]]
-[[ "$(find "$ROOT/approval-store" -maxdepth 1 -type f -name '*.failed' | wc -l)" -eq "$((FAILED_BEFORE_TAMPER + 1))" ]]
+[[ "$(find "$ROOT/approval-store" -maxdepth 1 -type f -name '*.failed' | wc -l)" -eq "$FAILED_BEFORE_TAMPER" ]]
+[[ "$(find "$ROOT/approval-store" -maxdepth 1 -type f \
+  -name "${CI_RUN_ID}-${NEW_SHA}-${TAMPER_SHA256}-*.approved" | wc -l)" -eq 1 ]]
 [[ "$(find "$ROOT/approval-store" -maxdepth 1 -type f -name '*.claimed.*' | wc -l)" -eq 0 ]]
+if grep -q 'claimed approval record is missing' "$ROOT/tampered-release.log"; then
+  exit 1
+fi
 
 /usr/bin/python3.12 -I -S - "$ROOT/unsafe.tar.gz" <<'PY'
 import io
