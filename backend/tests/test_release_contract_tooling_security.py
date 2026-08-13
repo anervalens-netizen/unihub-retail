@@ -99,18 +99,22 @@ def test_release_b_authorities_reject_digest_or_mode_drift(
         )
     )
     assert real_contract["required_paths"] == sorted(checker.EXPECTED_AUTHORITY_PATHS)
-    assert len(real_contract["authorities"]) == len(checker.EXPECTED_AUTHORITY_PATHS) == 45
+    assert len(real_contract["authorities"]) == len(checker.EXPECTED_AUTHORITY_PATHS) == 106
     monkeypatch.setattr(checker, "EXPECTED_RELEASE_A_AUTHORITIES", set())
     monkeypatch.setattr(checker, "EXPECTED_AUTHORITY_PATHS", {"authority.py"})
+    monkeypatch.setattr(checker, "EXPECTED_AUTHORITY_SET_NAMES", set())
+    monkeypatch.setattr(checker, "EXPECTED_SOURCE_SNAPSHOTS", {})
     authority = tmp_path / "authority.py"
     authority.write_text("print('real gate')\n", encoding="utf-8")
     digest = hashlib.sha256(authority.read_bytes()).hexdigest()
     contract = {
-        "schema_version": 1,
+        "schema_version": 2,
         "baseline_source_sha": checker.EXPECTED_BASELINE,
         "acceptance_criteria": sorted(checker.EXPECTED_AUTHORITY_CRITERIA),
         "release_a_authorities": [],
         "required_paths": ["authority.py"],
+        "authority_sets": [],
+        "source_snapshots": {},
         "authorities": [
             {
                 "path": "authority.py",
@@ -128,9 +132,11 @@ def test_release_b_authorities_reject_digest_or_mode_drift(
     monkeypatch.setattr(
         checker,
         "git",
-        lambda *args, **_kwargs: "100644 blob authority.py"
-        if args[:3] == ("ls-tree", "HEAD", "--")
-        else "",
+        lambda *args, **_kwargs: (
+            "100644 blob authority.py"
+            if args[:3] == ("ls-tree", "HEAD", "--")
+            else ""
+        ),
     )
     assert checker.verify_release_b_authorities()["authority_count"] == 1
     authority.write_text("print('no-op')\n", encoding="utf-8")
@@ -160,3 +166,79 @@ def test_artifact_contract_binds_main_evidence_and_pinned_cosign() -> None:
     assert "shutil.which(\"cosign\")" in checker
     assert "Generate exact-main Release-A schema evidence" in workflow
     assert "retail-release-a-schema-${{ github.sha }}" in workflow
+
+
+def test_artifact_audit_runs_from_exact_checkout_and_compares_source_and_dist() -> None:
+    checker = CHECKER_PATH.read_text(encoding="utf-8")
+    plan = (ROOT / "docs/exec-plans/active/UR-CLOSE-20260812.md").read_text(
+        encoding="utf-8"
+    )
+    assert "--verify-artifact-checkout" in checker
+    assert "build_exact_checkout_frontend()" in checker
+    assert '"npm_config_offline": "true"' in checker
+    assert '"ci",\n        "--offline",\n        "--ignore-scripts"' in checker
+    assert 'r"v22\\.\\d+\\.\\d+"' in checker
+    assert "signed archive tracked source differs from exact Git tree" in checker
+    assert "signed archive dist differs from exact-checkout tested build" in checker
+    assert "clean detached" in plan and "exact-SHA Git checkout" in plan
+    assert "unpacked artifact `git rev-parse HEAD`" not in plan
+
+
+def test_release_b_authorities_bind_transitive_runners_and_durable_snapshots() -> None:
+    checker = _load_checker()
+    contract = json.loads(
+        (ROOT / "scripts/release-b-authority-contract-v1.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    for path in (
+        "package.json",
+        "backend/scripts/run_tests_isolated.sh",
+        "playwright.browser-smoke.config.ts",
+        "playwright.pwa-workbox.config.ts",
+        "playwright.real.config.ts",
+        "scripts/run_pwa_release_lifecycle.sh",
+        "scripts/run_real_e2e.sh",
+        "vitest.config.ts",
+    ):
+        assert path in checker.EXPECTED_AUTHORITY_PATHS
+        assert path in contract["required_paths"]
+    snapshots = contract["source_snapshots"]
+    assert snapshots == checker.EXPECTED_SOURCE_SNAPSHOTS
+    assert all(
+        value["ref"].startswith("refs/tags/ur-close-20260812-")
+        for value in snapshots.values()
+    )
+    verified = checker.verify_source_snapshots(
+        require_ancestors=False, verify_remote=True
+    )
+    assert all(value["remote_ref_verified"] for value in verified.values())
+
+
+def test_ac17_freezes_complete_invocation_and_three_way_ref_reconciliation() -> None:
+    verifier = (ROOT / "scripts/verify_deployed_release.sh").read_text(
+        encoding="utf-8"
+    )
+    plan = (ROOT / "docs/exec-plans/active/UR-CLOSE-20260812.md").read_text(
+        encoding="utf-8"
+    )
+    for token in (
+        "--main-a-sha",
+        "--main-b-sha",
+        "--release-a-artifact-dir",
+        "--release-b-artifact-dir",
+        "--release-a-evidence",
+        "--release-b-archive-sha256",
+        "--backup-handle",
+        "--probe-month",
+        "--manager-cookie-file",
+        "--forbidden-cookie-file",
+        "--release-a-pr",
+        "--release-b-pr",
+    ):
+        assert token in verifier
+        assert token in plan
+    assert "refs-primary.json" in verifier
+    assert "refs-dell.json" in verifier
+    assert "refs-github.json" in verifier
+    assert "codex/retail-definitive-closure-20260812" in verifier

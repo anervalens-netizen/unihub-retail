@@ -16,6 +16,8 @@ BACKUP_HANDLE=""
 PROBE_MONTH=""
 MANAGER_COOKIE_FILE=""
 FORBIDDEN_COOKIE_FILE=""
+RELEASE_A_PR=""
+RELEASE_B_PR=""
 OBSERVE_SECONDS=120
 EVIDENCE=""
 
@@ -28,6 +30,9 @@ RUNTIME_RELEASE_BASE="/var/lib/unihub-retail-deploy/runtime-releases"
 BACKUP_ROOT="/opt/Mobiup/ops/backups/retail-deploy"
 BACKUP_STATUS="/opt/Mobiup/ops/backups/manifests/last-run.env"
 MIGRATION_ENV="$LIVE_ROOT/.env.migrations"
+GITHUB_REPOSITORY="anervalens-netizen/unihub-retail"
+TASK_A_BRANCH="codex/retail-definitive-closure-20260812"
+TASK_B_BRANCH="codex/retail-definitive-closure-b-20260813"
 EXPECTED_UNITS=(
   unihub-backend.service
   unihub-worker.service
@@ -50,6 +55,7 @@ usage() {
     "  --release-a-evidence FILE --release-b-archive-sha256 SHA256" \
     "  --backup-handle DIR --probe-month YYYY-MM" \
     "  --manager-cookie-file FILE --forbidden-cookie-file FILE" \
+    "  --release-a-pr 151 --release-b-pr NUMBER" \
     "  --observe-seconds 120 --evidence NEW_DIR" \
     "       $PROGRAM --self-test"
 }
@@ -77,6 +83,8 @@ while (($#)); do
     --probe-month) (($# >= 2)) || die "missing probe month"; PROBE_MONTH="$2"; shift 2 ;;
     --manager-cookie-file) (($# >= 2)) || die "missing manager cookie file"; MANAGER_COOKIE_FILE="$2"; shift 2 ;;
     --forbidden-cookie-file) (($# >= 2)) || die "missing forbidden cookie file"; FORBIDDEN_COOKIE_FILE="$2"; shift 2 ;;
+    --release-a-pr) (($# >= 2)) || die "missing Release-A PR"; RELEASE_A_PR="$2"; shift 2 ;;
+    --release-b-pr) (($# >= 2)) || die "missing Release-B PR"; RELEASE_B_PR="$2"; shift 2 ;;
     --observe-seconds) (($# >= 2)) || die "missing observation duration"; OBSERVE_SECONDS="$2"; shift 2 ;;
     --evidence) (($# >= 2)) || die "missing evidence path"; EVIDENCE="$2"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
@@ -93,6 +101,9 @@ self_test() {
   [[ "$source" != *'--request '"POST"* && "$source" != *'--request '"PUT"* \
     && "$source" != *'--request '"PATCH"* && "$source" != *'--request '"DELETE"* ]] \
     || die "self-test: mutating HTTP method found"
+  [[ "$source" == *'TASK_A_BRANCH="codex/retail-definitive-closure-20260812"'* \
+    && "$source" == *'TASK_B_BRANCH="codex/retail-definitive-closure-b-20260813"'* ]] \
+    || die "self-test: exact task branches are not frozen"
   tmp="$(mktemp -d)"
   trap 'rm -rf -- "$tmp"' RETURN
   fake_pass="$tmp/manual-pass.json"
@@ -106,6 +117,7 @@ self_test() {
       --release-b-archive-sha256 cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc \
       --backup-handle "$tmp/missing-backup" --probe-month 2026-08 \
       --manager-cookie-file "$fake_pass" --forbidden-cookie-file "$fake_pass" \
+      --release-a-pr 151 --release-b-pr 152 \
       --observe-seconds 120 --evidence "$tmp/new-evidence" >/dev/null 2>&1; then
     die "self-test: a manual PASS file was accepted as an artifact"
   fi
@@ -118,6 +130,7 @@ self_test() {
       --release-b-archive-sha256 cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc \
       --backup-handle "$tmp/backup" --probe-month 2026-08 \
       --manager-cookie-file "$fake_pass" --forbidden-cookie-file "$fake_pass" \
+      --release-a-pr 151 --release-b-pr 152 \
       --observe-seconds 120 --evidence "$tmp/stale-evidence" >/dev/null 2>&1; then
     die "self-test: stale evidence was accepted"
   fi
@@ -147,6 +160,9 @@ is_sha "$MAIN_B_SHA" || die "--main-b-sha must be 40 lowercase hex"
 [[ "$MAIN_A_SHA" != "$MAIN_B_SHA" ]] || die "Release A and B SHA must differ"
 is_sha256 "$B_ARCHIVE_SHA256" || die "Release-B archive digest must be 64 lowercase hex"
 [[ "$PROBE_MONTH" =~ ^20[0-9]{2}-(0[1-9]|1[0-2])$ ]] || die "probe month must be YYYY-MM"
+[[ "$RELEASE_A_PR" == "151" ]] || die "Release-A PR must be exact task PR 151"
+[[ "$RELEASE_B_PR" =~ ^[1-9][0-9]*$ && "$RELEASE_B_PR" != "$RELEASE_A_PR" ]] \
+  || die "Release-B PR must be a distinct positive number"
 [[ "$OBSERVE_SECONDS" == "120" ]] || die "AC-17 observation must be exactly 120 seconds"
 [[ -n "$EVIDENCE" && "$EVIDENCE" == /* ]] || die "evidence must be a new absolute directory"
 [[ ! -e "$EVIDENCE" && ! -L "$EVIDENCE" ]] || die "evidence path already exists"
@@ -161,7 +177,7 @@ require_regular "$FORBIDDEN_COOKIE_FILE"
 [[ "$SCRIPT_PATH" == "$LIVE_ROOT/scripts/verify_deployed_release.sh" ]] \
   || die "AC-17 must run from the deployed primary checkout"
 
-for command in git python3 sha256sum cosign curl systemctl journalctl tar diff awk sed stat; do
+for command in git gh ssh sudo python3 sha256sum cosign curl systemctl journalctl tar diff awk sed stat; do
   command -v "$command" >/dev/null || die "required verifier utility missing: $command"
 done
 COSIGN_BIN="$(command -v cosign)"
@@ -492,17 +508,97 @@ pathlib.Path(sys.argv[2]).write_text(json.dumps({"schema_version":1,"result":"PA
 PY
 rm -f -- "$WORK/raw/journal.txt"
 
-"$PYTHON" - "$LIVE_ROOT" "$MAIN_B_SHA" "$WORK/fragments/refs.json" <<'PY'
-import json,pathlib,subprocess,sys
+"$PYTHON" - "$LIVE_ROOT" "$MAIN_B_SHA" "$WORK/fragments/refs-primary.json" <<'PY'
+import hashlib,json,pathlib,subprocess,sys
 root,sha,out=sys.argv[1:]
+blocked_branches={
+ "codex/retail-definitive-closure-20260812",
+ "codex/retail-definitive-closure-b-20260813",
+ "codex/retail-close-authority","codex/retail-close-contracts",
+ "codex/retail-close-correctness","codex/retail-close-frontend",
+ "codex/retail-close-outbox-contract","codex/retail-close-scale-authority",
+ "codex/retail-close-structural",
+}
+blocked_worktrees={
+ "/opt/Mobiup/.worktrees/retail-close-authority",
+ "/opt/Mobiup/.worktrees/retail-close-contracts",
+ "/opt/Mobiup/.worktrees/retail-close-correctness",
+ "/opt/Mobiup/.worktrees/retail-close-frontend",
+ "/opt/Mobiup/.worktrees/retail-close-outbox-contract",
+ "/opt/Mobiup/.worktrees/retail-close-preview",
+ "/opt/Mobiup/.worktrees/retail-close-scale",
+ "/opt/Mobiup/.worktrees/retail-close-structural",
+}
 def git(*args): return subprocess.check_output(["git","-C",root,*args],text=True).strip()
 refs=git("for-each-ref","--format=%(refname) %(objectname)","refs/heads","refs/remotes/origin").splitlines()
-bad=[r for r in refs if "retail-close" in r]
 worktrees=git("worktree","list","--porcelain").splitlines()
-bad_worktrees=[x for x in worktrees if x.startswith("branch refs/heads/codex/retail-close")]
-if bad or bad_worktrees: raise SystemExit("Release task refs/worktrees remain")
-pathlib.Path(out).write_text(json.dumps({"schema_version":1,"result":"PASS","head":git("rev-parse","HEAD"),"origin_main":git("rev-parse","origin/main"),"expected_sha":sha,"branch":git("branch","--show-current"),"status_clean":git("status","--porcelain=v1","--untracked-files=all")=="","refs_sha256":__import__("hashlib").sha256(("\n".join(refs)+"\n").encode()).hexdigest(),"worktree_manifest_sha256":__import__("hashlib").sha256(("\n".join(worktrees)+"\n").encode()).hexdigest(),"task_refs":[],"task_worktrees":[]},sort_keys=True,separators=(",",":"))+"\n")
+bad_refs=[line for line in refs if line.split()[0].removeprefix("refs/heads/").removeprefix("refs/remotes/origin/") in blocked_branches]
+bad_worktrees=[line for line in worktrees if (line.startswith("worktree ") and line[9:] in blocked_worktrees) or (line.startswith("branch refs/heads/") and line[18:] in blocked_branches)]
+if git("rev-parse","HEAD")!=sha or git("rev-parse","origin/main")!=sha or git("branch","--show-current")!="main" or git("status","--porcelain=v1","--untracked-files=all") or bad_refs or bad_worktrees:
+ raise SystemExit("primary Git/task-ref reconciliation failed")
+payload={"schema_version":1,"result":"PASS","host":"server","head":sha,"origin_main":sha,"branch":"main","status_clean":True,"refs_sha256":hashlib.sha256(("\n".join(refs)+"\n").encode()).hexdigest(),"worktree_manifest_sha256":hashlib.sha256(("\n".join(worktrees)+"\n").encode()).hexdigest(),"blocked_branches":sorted(blocked_branches),"blocked_worktrees":sorted(blocked_worktrees),"task_refs":[],"task_worktrees":[]}
+pathlib.Path(out).write_text(json.dumps(payload,sort_keys=True,separators=(",",":"))+"\n")
 PY
+
+sudo -u andrei ssh -o BatchMode=yes -o ConnectTimeout=10 dell-standby \
+  python3 - "$MAIN_B_SHA" <<'PY' \
+  | tee "$WORK/fragments/refs-dell.json" >/dev/null
+import hashlib,json,pathlib,socket,subprocess,sys
+sha=sys.argv[1]; root="/opt/Mobiup/unihub-retail"
+blocked_branches={
+ "codex/retail-definitive-closure-20260812",
+ "codex/retail-definitive-closure-b-20260813",
+ "codex/retail-close-authority","codex/retail-close-contracts",
+ "codex/retail-close-correctness","codex/retail-close-frontend",
+ "codex/retail-close-outbox-contract","codex/retail-close-scale-authority",
+ "codex/retail-close-structural",
+}
+blocked_worktrees={
+ "/opt/Mobiup/.worktrees/retail-close-authority",
+ "/opt/Mobiup/.worktrees/retail-close-contracts",
+ "/opt/Mobiup/.worktrees/retail-close-correctness",
+ "/opt/Mobiup/.worktrees/retail-close-frontend",
+ "/opt/Mobiup/.worktrees/retail-close-outbox-contract",
+ "/opt/Mobiup/.worktrees/retail-close-preview",
+ "/opt/Mobiup/.worktrees/retail-close-scale",
+ "/opt/Mobiup/.worktrees/retail-close-structural",
+}
+def git(*args): return subprocess.check_output(["git","-C",root,*args],text=True).strip()
+refs=git("for-each-ref","--format=%(refname) %(objectname)","refs/heads","refs/remotes/origin").splitlines()
+worktrees=git("worktree","list","--porcelain").splitlines()
+remote_heads=git("ls-remote","--heads","origin").splitlines()
+bad_refs=[line for line in refs if line.split()[0].removeprefix("refs/heads/").removeprefix("refs/remotes/origin/") in blocked_branches]
+bad_remote=[line for line in remote_heads if line.split()[1].removeprefix("refs/heads/") in blocked_branches]
+bad_worktrees=[line for line in worktrees if (line.startswith("worktree ") and line[9:] in blocked_worktrees) or (line.startswith("branch refs/heads/") and line[18:] in blocked_branches)]
+if socket.gethostname()!="dell-standby" or git("rev-parse","HEAD")!=sha or git("rev-parse","origin/main")!=sha or git("branch","--show-current")!="main" or git("status","--porcelain=v1","--untracked-files=all") or bad_refs or bad_remote or bad_worktrees:
+ raise SystemExit("Dell Git/task-ref reconciliation failed")
+print(json.dumps({"schema_version":1,"result":"PASS","host":"dell-standby","head":sha,"origin_main":sha,"branch":"main","status_clean":True,"refs_sha256":hashlib.sha256(("\n".join(refs)+"\n").encode()).hexdigest(),"remote_heads_sha256":hashlib.sha256(("\n".join(remote_heads)+"\n").encode()).hexdigest(),"worktree_manifest_sha256":hashlib.sha256(("\n".join(worktrees)+"\n").encode()).hexdigest(),"blocked_branches":sorted(blocked_branches),"blocked_worktrees":sorted(blocked_worktrees),"task_refs":[],"task_remote_refs":[],"task_worktrees":[]},sort_keys=True,separators=(",",":")))
+PY
+
+sudo -u andrei gh pr view "$RELEASE_A_PR" --repo "$GITHUB_REPOSITORY" \
+  --json number,state,isDraft,headRefName,baseRefName,mergeCommit,url \
+  | tee "$WORK/raw/pr-a.json" >/dev/null
+sudo -u andrei gh pr view "$RELEASE_B_PR" --repo "$GITHUB_REPOSITORY" \
+  --json number,state,isDraft,headRefName,baseRefName,mergeCommit,url \
+  | tee "$WORK/raw/pr-b.json" >/dev/null
+sudo -u andrei git -C "$LIVE_ROOT" ls-remote --heads origin \
+  "refs/heads/$TASK_A_BRANCH" "refs/heads/$TASK_B_BRANCH" \
+  | tee "$WORK/raw/task-remote-heads.txt" >/dev/null
+"$PYTHON" - "$WORK/raw/pr-a.json" "$WORK/raw/pr-b.json" \
+  "$WORK/raw/task-remote-heads.txt" "$MAIN_A_SHA" "$MAIN_B_SHA" \
+  "$RELEASE_A_PR" "$RELEASE_B_PR" "$TASK_A_BRANCH" "$TASK_B_BRANCH" \
+  "$WORK/fragments/refs-github.json" <<'PY'
+import hashlib,json,pathlib,sys
+pa,pb,heads,a,b,an,bn,ab,bb,out=sys.argv[1:]
+av=json.loads(pathlib.Path(pa).read_text()); bv=json.loads(pathlib.Path(pb).read_text())
+def valid(value,number,branch,sha):
+ return value.get("number")==int(number) and value.get("state")=="MERGED" and value.get("isDraft") is False and value.get("headRefName")==branch and value.get("baseRefName")=="main" and value.get("mergeCommit",{}).get("oid")==sha
+remote=pathlib.Path(heads).read_text()
+if not valid(av,an,ab,a) or not valid(bv,bn,bb,b) or remote.strip(): raise SystemExit("GitHub PR/task-ref reconciliation failed")
+payload={"schema_version":1,"result":"PASS","repository":"anervalens-netizen/unihub-retail","release_a":{"number":int(an),"branch":ab,"merge_sha":a,"state":"MERGED"},"release_b":{"number":int(bn),"branch":bb,"merge_sha":b,"state":"MERGED"},"task_remote_heads":[],"queries_sha256":hashlib.sha256(pathlib.Path(pa).read_bytes()+pathlib.Path(pb).read_bytes()+pathlib.Path(heads).read_bytes()).hexdigest()}
+pathlib.Path(out).write_text(json.dumps(payload,sort_keys=True,separators=(",",":"))+"\n")
+PY
+rm -f -- "$WORK/raw/pr-a.json" "$WORK/raw/pr-b.json" "$WORK/raw/task-remote-heads.txt"
 
 "$PYTHON" - "$WORK" "$EVIDENCE" "$MAIN_A_SHA" "$MAIN_B_SHA" "$SCRIPT_PATH" \
   "$A_ARTIFACT_DIR" "$B_ARTIFACT_DIR" "$BACKUP_HANDLE" "$PROBE_MONTH" <<'PY'
@@ -513,7 +609,7 @@ for p in sorted((w/"fragments").glob("*.json")):
     value=json.loads(p.read_text())
     if value.get("result") not in (None,"PASS"): raise SystemExit(f"non-PASS fragment: {p.name}")
     fragments[p.name] = {"sha256":hashlib.sha256(p.read_bytes()).hexdigest(),"evidence":value}
-required={"release-a-verification.json","release-b-artifact.json","backup.json","schema-outbox.json","prometheus.json","journal.json","refs.json","http-dashboard.json","http-target.json","http-salary-agents.json","http-salary-records.json","http-grile.json","http-settings-imports.json","http-settings-exports.json","http-settings-resumable.json","http-salary-forbidden.json"}
+required={"release-a-verification.json","release-b-artifact.json","backup.json","schema-outbox.json","prometheus.json","journal.json","refs-primary.json","refs-dell.json","refs-github.json","http-dashboard.json","http-target.json","http-salary-agents.json","http-salary-records.json","http-grile.json","http-settings-imports.json","http-settings-exports.json","http-settings-resumable.json","http-salary-forbidden.json"}
 required |= {f"http-{where}-{kind}-{n}.json" for n in range(3) for where in ("local","public") for kind in (("livez","readyz") if where=="local" else ("health","readyz"))}
 missing=sorted(required-set(fragments))
 if missing: raise SystemExit(f"AC-17 fragment inventory incomplete: {missing}")

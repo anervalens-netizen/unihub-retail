@@ -26,8 +26,8 @@ BOOTSTRAP = ROOT / "backend/scripts/bootstrap_test_db.py"
 PYTHON = Path(os.getenv("UNIHUB_BACKEND_VENV", str(ROOT / "backend/venv"))) / "bin/python"
 MIGRATION = ROOT / "backend/db/migrations/069_ai_cohort_and_transactional_outbox.sql"
 MIGRATION_MANIFEST = ROOT / "backend/db/migrations/manifest.json"
-POSTGRES_IMAGE = "postgres:18-alpine"
-VALKEY_IMAGE = "valkey/valkey:8.1.7-alpine"
+POSTGRES_IMAGE = "postgres@sha256:9a8afca54e7861fd90fab5fdf4c42477a6b1cb7d293595148e674e0a3181de15"
+VALKEY_IMAGE = "valkey/valkey@sha256:b027235326507cfdade9b6684056ec1d0b0c0757412e628245129b5d7b788618"
 EXPECTED = {
     "seed": 20260812,
     "warmup": 500,
@@ -311,16 +311,17 @@ def main() -> None:
     postgres = f"unihub-outbox-pg-{stamp}"
     valkey = f"unihub-outbox-valkey-{stamp}"
     containers = [postgres, valkey]
+    run(["docker", "image", "inspect", POSTGRES_IMAGE, VALKEY_IMAGE], stdout=subprocess.DEVNULL)
     with tempfile.TemporaryDirectory(prefix="retail-outbox-slo-") as temp:
         raw = Path(temp) / "raw.json"
         try:
             run([
-                "docker", "run", "-d", "--name", postgres, "--label", "unihub.test=retail-outbox",
+                "docker", "run", "--pull=never", "-d", "--name", postgres, "--label", "unihub.test=retail-outbox",
                 "-e", "POSTGRES_USER=unihub_test", "-e", f"POSTGRES_PASSWORD={password}",
                 "-e", "POSTGRES_DB=unihub_test_outbox", "-p", "127.0.0.1::5432", POSTGRES_IMAGE,
             ], stdout=subprocess.DEVNULL)
             run([
-                "docker", "run", "-d", "--name", valkey, "--label", "unihub.test=retail-outbox",
+                "docker", "run", "--pull=never", "-d", "--name", valkey, "--label", "unihub.test=retail-outbox",
                 "-p", "127.0.0.1::6379", VALKEY_IMAGE,
             ], stdout=subprocess.DEVNULL)
             pg_port = docker_port(postgres, "5432/tcp")

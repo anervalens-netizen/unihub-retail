@@ -6,6 +6,8 @@ PYTHON="${ROOT_DIR}/backend/venv/bin/python"
 STAMP="${GITHUB_RUN_ID:-local}-$$"
 PG_CONTAINER="unihub-retail-real-e2e-pg-${STAMP}"
 VALKEY_CONTAINER="unihub-retail-real-e2e-valkey-${STAMP}"
+POSTGRES_IMAGE="postgres@sha256:9a8afca54e7861fd90fab5fdf4c42477a6b1cb7d293595148e674e0a3181de15"
+VALKEY_IMAGE="valkey/valkey@sha256:b027235326507cfdade9b6684056ec1d0b0c0757412e628245129b5d7b788618"
 RUNTIME_DIR="$(mktemp -d)"
 BACKEND_PID=""
 OIDC_PID=""
@@ -29,12 +31,14 @@ if [[ ! -x "${PYTHON}" ]]; then
 fi
 mkdir -p "${ROOT_DIR}/test-results/real-e2e-runtime"
 
+docker image inspect "${POSTGRES_IMAGE}" "${VALKEY_IMAGE}" >/dev/null \
+  || { printf 'Pinned real-E2E images are not pre-provisioned.\n' >&2; exit 1; }
 password="$(openssl rand -hex 24)"
-docker run -d --name "${PG_CONTAINER}" --label unihub.test=retail \
+docker run --pull=never -d --name "${PG_CONTAINER}" --label unihub.test=retail \
   -e POSTGRES_USER=unihub_test -e POSTGRES_PASSWORD="${password}" \
-  -e POSTGRES_DB=unihub_test -p 127.0.0.1::5432 postgres:18-alpine >/dev/null
-docker run -d --name "${VALKEY_CONTAINER}" --label unihub.test=retail \
-  -p 127.0.0.1::6379 valkey/valkey:8.1.7-alpine >/dev/null
+  -e POSTGRES_DB=unihub_test -p 127.0.0.1::5432 "${POSTGRES_IMAGE}" >/dev/null
+docker run --pull=never -d --name "${VALKEY_CONTAINER}" --label unihub.test=retail \
+  -p 127.0.0.1::6379 "${VALKEY_IMAGE}" >/dev/null
 
 for _ in $(seq 1 60); do
   docker exec "${PG_CONTAINER}" pg_isready -U unihub_test -d unihub_test >/dev/null 2>&1 && break
@@ -162,7 +166,7 @@ curl -fsS "${OIDC_STUB_ORIGIN}/jwks" >/dev/null
 curl -fsS "${REAL_E2E_BASE_URL}/readyz" >/dev/null
 
 cd "${ROOT_DIR}"
-npx playwright test --config=playwright.real.config.ts
+node_modules/.bin/playwright test --config=playwright.real.config.ts
 
 export EXPORT_ARTIFACT_DIR="${RUNTIME_DIR}/export-artifacts"
 RETAIL_WORKER_ROLE=exports "${PYTHON}" backend/worker.py \

@@ -5,12 +5,18 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import io
 import json
+import os
 from pathlib import Path
+from pathlib import PurePosixPath
 import re
 import shutil
+import stat
 import subprocess
 import sys
+import tarfile
+import tempfile
 import time
 from typing import Any
 import xml.etree.ElementTree as ET
@@ -41,9 +47,9 @@ EXPECTED_CHANGED_PATHS = {
     "scripts/frontend-critical-coverage.json",
     "scripts/python-complexity-contract-v1.json",
     "scripts/release-a-source-contract-v1.json",
-    "scripts/run_real_e2e.sh",
     "scripts/run_local_quality_gate.sh",
     "scripts/run_outbox_slo_gate.py",
+    "scripts/run_real_e2e.sh",
     "scripts/run_release_a_schema_gate.sh",
     "scripts/run_retail_scale_gate.sh",
     "scripts/run_structural_characterization.sh",
@@ -82,6 +88,7 @@ EXPECTED_RELEASE_A_AUTHORITIES = {
     "scripts/check_release_a_candidate.py",
     "scripts/run_local_quality_gate.sh",
     "scripts/run_outbox_slo_gate.py",
+    "scripts/run_real_e2e.sh",
     "scripts/run_release_a_schema_gate.sh",
     "scripts/run_retail_scale_gate.sh",
     "scripts/run_structural_characterization.sh",
@@ -90,9 +97,23 @@ EXPECTED_RELEASE_A_AUTHORITIES = {
     "scripts/verify_promtool_cache.sh",
 }
 EXPECTED_AUTHORITY_PATHS = {
+    ".bandit-baseline.json",
+    ".coveragerc",
+    ".secrets.baseline",
+    "backend/architecture_contract.json",
+    "backend/db/migration_runner.py",
+    "backend/requirements-dev.lock",
+    "backend/requirements.lock",
+    "backend/scripts/bootstrap_test_db.py",
+    "backend/scripts/check_critical_coverage.py",
+    "backend/scripts/oidc_e2e_stub.py",
     "backend/scripts/run_ai_forecast_backtest.py",
+    "backend/scripts/run_import_overlap_gate.py",
+    "backend/scripts/run_mixed_load_gate.py",
     "backend/scripts/run_outbox_slo_workload.py",
     "backend/scripts/run_retail_scale_profile.py",
+    "backend/scripts/run_tests_isolated.sh",
+    "backend/tests/conftest.py",
     "backend/tests/test_ai_forecast_asof_cohort.py",
     "backend/tests/test_ai_forecast_backtest.py",
     "backend/tests/test_ai_forecast_governance.py",
@@ -114,27 +135,97 @@ EXPECTED_AUTHORITY_PATHS = {
     "backend/tests/test_target_allocator_properties.py",
     "backend/tests/test_telemetry_privacy_contract.py",
     "backend/tests/test_transactional_outbox.py",
+    "e2e/frontend-lifecycle.spec.ts",
+    "e2e/helpers.ts",
+    "e2e/pwa-release-lifecycle.spec.ts",
+    "e2e/real-auth-stack.spec.ts",
+    "eslint.config.js",
     "ops/build-retail-release-artifact.sh",
+    "ops/config/retail-env.schema.json",
+    "ops/observability/retail-slo-rules.test.yml",
+    "ops/test-deploy-retail-artifact.sh",
+    "package-lock.json",
+    "package.json",
+    "playwright.browser-smoke.config.ts",
+    "playwright.config.ts",
+    "playwright.pwa-workbox.config.ts",
+    "playwright.real.config.ts",
+    "pytest.ini",
+    "scripts/bundle-budget-baseline.json",
     "scripts/check_ai_forecast_governance.py",
     "scripts/check_backend_architecture.py",
+    "scripts/check_bandit_waivers.py",
+    "scripts/check_bundle_budget.mjs",
     "scripts/check_business_golden.py",
+    "scripts/check_changed_function_complexity.py",
+    "scripts/check_changed_line_coverage.py",
     "scripts/check_complexity_ratchet.py",
+    "scripts/check_dependency_policy.mjs",
     "scripts/check_docs_contract.py",
+    "scripts/check_env_contract.py",
     "scripts/check_frontend_critical_coverage.mjs",
     "scripts/check_frontend_structure_contract.mjs",
+    "scripts/check_prometheus_contract.py",
     "scripts/check_python_complexity_contract.py",
     "scripts/check_query_parameter_contract.py",
     "scripts/check_release_a_candidate.py",
     "scripts/check_ts_function_complexity.cjs",
+    "scripts/generate_retail_contract.py",
     "scripts/run_local_quality_gate.sh",
     "scripts/run_outbox_slo_gate.py",
+    "scripts/run_pwa_release_lifecycle.sh",
+    "scripts/run_real_e2e.sh",
     "scripts/run_release_a_schema_gate.sh",
     "scripts/run_retail_scale_gate.sh",
+    "scripts/run_shellcheck.sh",
     "scripts/run_structural_characterization.sh",
     "scripts/run_target_allocator_contract.py",
+    "scripts/run_targeted_mutation_tests.py",
     "scripts/structural-characterization-baseline-v1.json",
     "scripts/verify_deployed_release.sh",
     "scripts/verify_promtool_cache.sh",
+    "scripts/verify_vendored_npm_packages.mjs",
+    "src/components/GrileMonthlyPanel.test.tsx",
+    "src/features/agent-evaluation/AgentEvaluationCritical.test.tsx",
+    "src/features/agents/AgentsCriticalViews.test.tsx",
+    "src/features/ai-forecast/AiForecastViews.test.tsx",
+    "src/features/campaigns/CampaignCriticalViews.test.tsx",
+    "src/features/dashboard/DashboardCriticalHooks.test.tsx",
+    "src/features/dashboard/DashboardCriticalViews.test.tsx",
+    "src/features/salary/SalaryCriticalViews.test.tsx",
+    "src/features/settings/exports/controls.test.tsx",
+    "src/features/target-calculator/TargetCriticalViews.test.tsx",
+    "src/features/visits/VisitsCritical.test.tsx",
+    "src/lib/pwaNavigation.ts",
+    "src/test/PnlLayoutCritical.test.tsx",
+    "src/test/frontendLifecycleContract.test.ts",
+    "src/test/setup.ts",
+    "tsconfig.json",
+    "vite.config.ts",
+    "vitest.config.ts",
+}
+EXPECTED_AUTHORITY_SET_NAMES = {
+    "backend_test_suite",
+    "e2e_test_suite",
+    "frontend_test_suite",
+    "shell_script_suite",
+}
+EXPECTED_SOURCE_SNAPSHOTS = {
+    "outbox_acceptance_contract": {
+        "commit": "ce61b725f0c83b3527bcd88e1b47a8e2c3795380",
+        "ref": "refs/tags/ur-close-20260812-outbox-contract-v1",
+        "tree": "ec1590144b44d47aa9d9d3603813870cae482293",
+    },
+    "release_b_integrated_preview": {
+        "commit": "71c6ebb98cd5a30faf02a002c16ebe2919b2e595",
+        "ref": "refs/tags/ur-close-20260812-preview-v1",
+        "tree": "1e6c675f0c8c199b74be7fb70450f986a704cc9a",
+    },
+    "scale_authority": {
+        "commit": "e2daba1b45ff12852629889e48f01a9eb3a8a643",
+        "ref": "refs/tags/ur-close-20260812-scale-authority-v1",
+        "tree": "7cc64e58957e2bb9edb0fddc805d447e055ca22a",
+    },
 }
 PYTHON_CLOSURE_ANCHOR = """      - name: Python complexity ratchet
         working-directory: .
@@ -229,15 +320,167 @@ def expected_release_b_workflow(baseline: str) -> str:
     return result
 
 
+def git_path_identity(commit: str, path: str) -> tuple[str, str]:
+    fields = git("ls-tree", commit, "--", path).split()
+    if len(fields) < 4:
+        return "", ""
+    payload = subprocess.check_output(
+        ["git", "-C", str(ROOT), "show", f"{commit}:{path}"]
+    )
+    return fields[0], sha256_bytes(payload)
+
+
+def verify_source_snapshots(
+    *, require_ancestors: bool, verify_remote: bool = False
+) -> dict[str, Any]:
+    verified: dict[str, Any] = {}
+    for name, expected in EXPECTED_SOURCE_SNAPSHOTS.items():
+        commit = expected["commit"]
+        ref = expected["ref"]
+        tree = expected["tree"]
+        if git("rev-parse", f"{ref}^{{commit}}") != commit:
+            raise ValueError(f"Release-B source snapshot ref drift: {name}")
+        if verify_remote:
+            remote_ref = subprocess.run(
+                ["git", "-C", str(ROOT), "ls-remote", "--tags", "origin", ref],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if (
+                remote_ref.returncode != 0
+                or remote_ref.stdout.strip() != f"{commit}\t{ref}"
+            ):
+                raise ValueError(f"Release-B source snapshot remote ref drift: {name}")
+        if git("rev-parse", f"{commit}^{{tree}}") != tree:
+            raise ValueError(f"Release-B source snapshot tree drift: {name}")
+        ancestor = subprocess.run(
+            ["git", "-C", str(ROOT), "merge-base", "--is-ancestor", commit, "HEAD"],
+            check=False,
+        ).returncode == 0
+        if require_ancestors and not ancestor:
+            raise ValueError(f"Release-B source snapshot is not an ancestor: {name}")
+        verified[name] = {
+            "commit": commit,
+            "ref": ref,
+            "tree": tree,
+            "candidate_ancestor": ancestor,
+            "remote_ref_verified": verify_remote,
+        }
+    return verified
+
+
+def authority_set_selected_paths(name: str) -> set[str]:
+    tracked = set(git("ls-tree", "-r", "--name-only", "HEAD").splitlines())
+    if name == "backend_test_suite":
+        return {
+            path
+            for path in tracked
+            if path.startswith("backend/tests/test_") and path.endswith(".py")
+        }
+    if name == "frontend_test_suite":
+        return {
+            path
+            for path in tracked
+            if path.startswith("src/")
+            and (path.endswith(".test.ts") or path.endswith(".test.tsx"))
+        }
+    if name == "e2e_test_suite":
+        return {
+            path for path in tracked if path.startswith("e2e/") and path.endswith(".ts")
+        }
+    if name == "shell_script_suite":
+        return {path for path in tracked if path.endswith(".sh")}
+    raise ValueError(f"unknown Release-B authority set: {name}")
+
+
+def verify_authority_sets(contract: dict[str, Any]) -> dict[str, Any]:
+    sets = contract.get("authority_sets")
+    if not isinstance(sets, list):
+        raise ValueError("Release-B authority sets are absent")
+    names = {str(item.get("name", "")) for item in sets if isinstance(item, dict)}
+    if names != EXPECTED_AUTHORITY_SET_NAMES or len(sets) != len(names):
+        raise ValueError("Release-B authority set inventory mismatch")
+    evidence: list[dict[str, Any]] = []
+    for authority_set in sorted(sets, key=lambda item: str(item.get("name", ""))):
+        name = str(authority_set.get("name", ""))
+        supports = authority_set.get("supports")
+        entries = authority_set.get("entries")
+        if (
+            not isinstance(supports, list)
+            or supports != sorted(set(supports))
+            or not supports
+            or not set(supports) <= EXPECTED_AUTHORITY_CRITERIA
+            or not isinstance(entries, list)
+            or not entries
+        ):
+            raise ValueError(f"Release-B authority set is invalid: {name}")
+        selected = authority_set_selected_paths(name)
+        declared = [str(entry.get("path", "")) for entry in entries if isinstance(entry, dict)]
+        if declared != sorted(selected) or len(declared) != len(entries):
+            raise ValueError(f"Release-B authority set path drift: {name}")
+        verified_entries: list[dict[str, str]] = []
+        for entry in entries:
+            path = str(entry.get("path", ""))
+            expected_digest = str(entry.get("sha256", ""))
+            expected_mode = str(entry.get("git_mode", ""))
+            source_name = entry.get("source_snapshot")
+            if (
+                not re.fullmatch(r"[0-9a-f]{64}", expected_digest)
+                or expected_mode not in {"100644", "100755"}
+                or (
+                    source_name is not None
+                    and (
+                        not isinstance(source_name, str)
+                        or source_name not in EXPECTED_SOURCE_SNAPSHOTS
+                    )
+                )
+            ):
+                raise ValueError(f"Release-B authority set entry is invalid: {name}:{path}")
+            target = ROOT / path
+            actual_mode, actual_digest = git_path_identity("HEAD", path)
+            if (
+                not target.is_file()
+                or target.is_symlink()
+                or actual_mode != expected_mode
+                or actual_digest != expected_digest
+                or sha256_bytes(target.read_bytes()) != expected_digest
+            ):
+                raise ValueError(f"Release-B authority set entry drift: {name}:{path}")
+            if source_name is not None:
+                source_commit = EXPECTED_SOURCE_SNAPSHOTS[source_name]["commit"]
+                if git_path_identity(source_commit, path) != (expected_mode, expected_digest):
+                    raise ValueError(
+                        f"Release-B authority set source drift: {name}:{path}"
+                    )
+            verified_entries.append(
+                {"path": path, "git_mode": actual_mode, "sha256": actual_digest}
+            )
+        evidence.append(
+            {
+                "name": name,
+                "supports": supports,
+                "entry_count": len(verified_entries),
+                "inventory_sha256": sha256_bytes(
+                    json.dumps(
+                        verified_entries, sort_keys=True, separators=(",", ":")
+                    ).encode()
+                ),
+            }
+        )
+    return {"set_count": len(evidence), "sets": evidence}
+
+
 def verify_release_b_authorities() -> dict[str, Any]:
     contract = load_json(ROOT / "scripts/release-b-authority-contract-v1.json")
     if (
-        contract.get("schema_version") != 1
+        contract.get("schema_version") != 2
         or contract.get("baseline_source_sha") != EXPECTED_BASELINE
         or contract.get("acceptance_criteria")
         != sorted(EXPECTED_AUTHORITY_CRITERIA)
         or contract.get("release_a_authorities")
         != sorted(EXPECTED_RELEASE_A_AUTHORITIES)
+        or contract.get("source_snapshots") != EXPECTED_SOURCE_SNAPSHOTS
     ):
         raise ValueError("Release-B authority contract identity mismatch")
     entries = contract.get("authorities")
@@ -252,6 +495,7 @@ def verify_release_b_authorities() -> dict[str, Any]:
         path = str(entry.get("path", ""))
         expected_digest = str(entry.get("sha256", ""))
         expected_mode = str(entry.get("git_mode", ""))
+        source_name = entry.get("source_snapshot")
         supports = entry.get("supports")
         if (
             not path
@@ -268,6 +512,13 @@ def verify_release_b_authorities() -> dict[str, Any]:
             or supports != sorted(set(supports))
             or not supports
             or not set(supports) <= EXPECTED_AUTHORITY_CRITERIA
+            or (
+                source_name is not None
+                and (
+                    not isinstance(source_name, str)
+                    or source_name not in EXPECTED_SOURCE_SNAPSHOTS
+                )
+            )
         ):
             raise ValueError(f"Release-B authority entry is unsafe: {path}")
         seen.add(path)
@@ -280,6 +531,10 @@ def verify_release_b_authorities() -> dict[str, Any]:
         actual_mode = tree_fields[0] if len(tree_fields) >= 3 else ""
         if actual_digest != expected_digest or actual_mode != expected_mode:
             raise ValueError(f"Release-B authority drift: {path}")
+        if source_name is not None:
+            source_commit = EXPECTED_SOURCE_SNAPSHOTS[source_name]["commit"]
+            if git_path_identity(source_commit, path) != (expected_mode, expected_digest):
+                raise ValueError(f"Release-B authority source drift: {path}")
         verified.append(
             {
                 "path": path,
@@ -295,12 +550,16 @@ def verify_release_b_authorities() -> dict[str, Any]:
         raise ValueError("Release-B authority lost an A-side authority")
     if covered_criteria != EXPECTED_AUTHORITY_CRITERIA:
         raise ValueError("Release-B authority acceptance coverage mismatch")
+    snapshots = verify_source_snapshots(require_ancestors=True)
+    authority_sets = verify_authority_sets(contract)
     return {
         "contract_sha256": sha256_bytes(
             (ROOT / "scripts/release-b-authority-contract-v1.json").read_bytes()
         ),
         "authority_count": len(verified),
         "authorities": verified,
+        "source_snapshots": snapshots,
+        "authority_sets": authority_sets,
     }
 
 
@@ -308,10 +567,11 @@ def verify_release_a_authority_seed() -> dict[str, Any]:
     """Bind every new A-side B authority before Release A can be published."""
     contract = load_json(ROOT / "scripts/release-b-authority-contract-v1.json")
     if (
-        contract.get("schema_version") != 1
+        contract.get("schema_version") != 2
         or contract.get("baseline_source_sha") != EXPECTED_BASELINE
         or contract.get("release_a_authorities")
         != sorted(EXPECTED_RELEASE_A_AUTHORITIES)
+        or contract.get("source_snapshots") != EXPECTED_SOURCE_SNAPSHOTS
     ):
         raise ValueError("Release-A authority seed identity mismatch")
     entries = contract.get("authorities")
@@ -481,7 +741,12 @@ def verify_release_b_mutation_policy(
     }
 
 
-def verify_release_a_artifact(artifact_dir: Path, expected_sha: str) -> dict[str, Any]:
+def verify_release_a_artifact(
+    artifact_dir: Path,
+    expected_sha: str,
+    *,
+    require_release_a_evidence: bool = True,
+) -> dict[str, Any]:
     archive_name = f"retail-release-{expected_sha}.tar.gz"
     release_a_evidence_names = {
         "schema-gate.json",
@@ -497,8 +762,9 @@ def verify_release_a_artifact(artifact_dir: Path, expected_sha: str) -> dict[str
         "SBOM.python.cdx.json",
         "PROVENANCE.json",
         "RELEASE_MANIFEST.json",
-        *release_a_evidence_names,
     }
+    if require_release_a_evidence:
+        checksummed_names.update(release_a_evidence_names)
     required = {
         *checksummed_names,
         "SHA256SUMS",
@@ -554,14 +820,19 @@ def verify_release_a_artifact(artifact_dir: Path, expected_sha: str) -> dict[str
     if any(manifest_digests[name] != checksums[name] for name in expected_manifest_names):
         raise ValueError("Release-A release manifest checksum mismatch")
     release_a_evidence = manifest.get("releaseAEvidence")
-    if (
-        not isinstance(release_a_evidence, dict)
-        or release_a_evidence.get("sourceSha") != expected_sha
-        or not re.fullmatch(r"[0-9]+", str(release_a_evidence.get("workflowRunId", "")))
-        or release_a_evidence.get("files")
-        != {name: checksums[name] for name in sorted(release_a_evidence_names)}
-    ):
-        raise ValueError("Release-A signed evidence identity mismatch")
+    if require_release_a_evidence:
+        if (
+            not isinstance(release_a_evidence, dict)
+            or release_a_evidence.get("sourceSha") != expected_sha
+            or not re.fullmatch(
+                r"[0-9]+", str(release_a_evidence.get("workflowRunId", ""))
+            )
+            or release_a_evidence.get("files")
+            != {name: checksums[name] for name in sorted(release_a_evidence_names)}
+        ):
+            raise ValueError("Release-A signed evidence identity mismatch")
+    elif release_a_evidence is not None or release_a_evidence_names & actual_names:
+        raise ValueError("Release-B artifact unexpectedly contains Release-A evidence")
     archive = artifact_dir / archive_name
     if not archive.is_file():
         raise ValueError("Release-A release archive is absent")
@@ -658,12 +929,258 @@ def verify_release_a_artifact(artifact_dir: Path, expected_sha: str) -> dict[str
     }
 
 
+def tree_inventory(root: Path, *, exclude_dist: bool = False) -> list[dict[str, Any]]:
+    entries: list[dict[str, Any]] = []
+    for path in sorted(root.rglob("*")):
+        relative = path.relative_to(root)
+        if exclude_dist and relative.parts and relative.parts[0] == "dist":
+            continue
+        if path.is_symlink():
+            raise ValueError(f"artifact tree contains a symlink: {relative.as_posix()}")
+        if path.is_dir():
+            continue
+        if not path.is_file():
+            raise ValueError(f"artifact tree contains a special file: {relative.as_posix()}")
+        mode = stat.S_IMODE(path.stat().st_mode)
+        entries.append(
+            {
+                "path": relative.as_posix(),
+                "sha256": sha256_bytes(path.read_bytes()),
+                "git_mode": "100755" if mode & 0o111 else "100644",
+            }
+        )
+    return entries
+
+
+def extract_regular_tar(archive: tarfile.TarFile, destination: Path) -> None:
+    members = archive.getmembers()
+    for member in members:
+        path = PurePosixPath(member.name)
+        if (
+            path.is_absolute()
+            or ".." in path.parts
+            or not (member.isdir() or member.isfile())
+        ):
+            raise ValueError(f"release archive member is unsafe: {member.name}")
+    archive.extractall(destination, members=members, filter="data")
+
+
+def build_exact_checkout_frontend() -> dict[str, Any]:
+    node_text = shutil.which("node")
+    npm_text = shutil.which("npm")
+    if node_text is None or npm_text is None:
+        raise ValueError("trusted Node.js/npm runtime is unavailable")
+    node_path = Path(node_text).resolve()
+    npm_path = Path(npm_text).resolve()
+    if ROOT in node_path.parents or ROOT in npm_path.parents:
+        raise ValueError("Node.js/npm runtime must not resolve from the candidate tree")
+    node_version = subprocess.run(
+        [str(node_path), "--version"], capture_output=True, text=True, check=True
+    ).stdout.strip()
+    npm_version = subprocess.run(
+        [str(node_path), str(npm_path), "--version"],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+    if not re.fullmatch(r"v22\.\d+\.\d+", node_version):
+        raise ValueError(f"artifact audit requires Node.js 22.x: {node_version!r}")
+    if not re.fullmatch(r"10\.\d+\.\d+", npm_version):
+        raise ValueError(f"artifact audit requires npm 10.x: {npm_version!r}")
+
+    dist = ROOT / "dist"
+    if dist.is_symlink():
+        raise ValueError("exact-checkout dist path is a symlink")
+    if dist.exists():
+        shutil.rmtree(dist)
+    environment = os.environ.copy()
+    environment.update(
+        {
+            "npm_config_audit": "false",
+            "npm_config_fund": "false",
+            "npm_config_ignore_scripts": "true",
+            "npm_config_offline": "true",
+            "VITE_FRONTEND_GLITCHTIP_DSN": "",
+        }
+    )
+    install_command = [
+        str(node_path),
+        str(npm_path),
+        "ci",
+        "--offline",
+        "--ignore-scripts",
+        "--include=dev",
+    ]
+    install = subprocess.run(
+        install_command,
+        cwd=ROOT,
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if install.returncode != 0:
+        raise ValueError("offline npm ci failed for exact-checkout artifact audit")
+    vite_entry = ROOT / "node_modules" / "vite" / "bin" / "vite.js"
+    if not vite_entry.is_file() or vite_entry.is_symlink():
+        raise ValueError("locked Vite entrypoint is absent after offline npm ci")
+    build_command = [str(node_path), str(vite_entry), "build"]
+    build = subprocess.run(
+        build_command,
+        cwd=ROOT,
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if build.returncode != 0:
+        raise ValueError("fresh exact-checkout frontend build failed")
+    if not (dist / "index.html").is_file() or dist.is_symlink():
+        raise ValueError("fresh exact-checkout frontend build is absent")
+    if git("status", "--porcelain"):
+        raise ValueError("fresh frontend build changed tracked or untracked source state")
+    return {
+        "node_version": node_version,
+        "node_sha256": sha256_bytes(node_path.read_bytes()),
+        "npm_version": npm_version,
+        "npm_sha256": sha256_bytes(npm_path.read_bytes()),
+        "npm_ci_command": install_command,
+        "npm_ci_output_sha256": sha256_bytes(
+            (install.stdout + install.stderr).encode("utf-8")
+        ),
+        "build_command": build_command,
+        "build_output_sha256": sha256_bytes(
+            (build.stdout + build.stderr).encode("utf-8")
+        ),
+    }
+
+
+def verify_artifact_checkout(
+    artifact_dir: Path,
+    expected_sha: str,
+    artifact_phase: str,
+    release_a_sha: str | None,
+    release_a_artifact_dir: Path | None,
+    output_path: Path,
+) -> int:
+    started = time.monotonic()
+    if not re.fullmatch(r"[0-9a-f]{40}", expected_sha):
+        raise ValueError("artifact checkout SHA must be exact lowercase 40-char hex")
+    if git("rev-parse", "HEAD") != expected_sha:
+        raise ValueError("artifact audit checkout HEAD mismatch")
+    if git("status", "--porcelain"):
+        raise ValueError("artifact audit checkout must be clean including untracked files")
+    if not artifact_dir.is_dir() or artifact_dir.is_symlink():
+        raise ValueError("artifact directory is absent or unsafe")
+    artifact = verify_release_a_artifact(
+        artifact_dir,
+        expected_sha,
+        require_release_a_evidence=artifact_phase == "release-a",
+    )
+    archive_path = artifact_dir / artifact["archive"]
+    frontend_build = build_exact_checkout_frontend()
+    current_dist = ROOT / "dist"
+
+    release_b_policy: dict[str, Any] | None = None
+    if artifact_phase == "release-b":
+        if release_a_sha is None or release_a_artifact_dir is None:
+            raise ValueError("Release-B artifact audit requires Release-A SHA/artifact")
+        release_a_evidence = release_a_artifact_dir / "schema-gate.json"
+        with tempfile.TemporaryDirectory(prefix="retail-a-policy-") as policy_dir:
+            policy_evidence = Path(policy_dir) / "release-a-policy.json"
+            if verify_main_evidence(
+                release_a_evidence,
+                release_a_sha,
+                expected_sha,
+                release_a_artifact_dir,
+                policy_evidence,
+            ) != 0:
+                raise ValueError("Release-B exact-main static policy verification failed")
+            release_b_policy = load_json(policy_evidence)
+    elif release_a_sha is not None or release_a_artifact_dir is not None:
+        raise ValueError("Release-A artifact audit received unexpected Release-B inputs")
+
+    with tempfile.TemporaryDirectory(prefix="retail-artifact-checkout-") as directory:
+        work = Path(directory)
+        git_source = work / "git-source"
+        artifact_source = work / "artifact-source"
+        git_source.mkdir()
+        artifact_source.mkdir()
+        git_archive = subprocess.run(
+            ["git", "-C", str(ROOT), "archive", "--format=tar", expected_sha],
+            check=True,
+            capture_output=True,
+        ).stdout
+        with tarfile.open(fileobj=io.BytesIO(git_archive), mode="r:") as archive:
+            extract_regular_tar(archive, git_source)
+        with tarfile.open(archive_path, mode="r:gz") as archive:
+            extract_regular_tar(archive, artifact_source)
+
+        git_inventory = tree_inventory(git_source)
+        artifact_inventory = tree_inventory(artifact_source, exclude_dist=True)
+        if artifact_inventory != git_inventory:
+            raise ValueError("signed archive tracked source differs from exact Git tree")
+        archived_dist = artifact_source / "dist"
+        if not (archived_dist / "index.html").is_file() or archived_dist.is_symlink():
+            raise ValueError("signed archive frontend build is absent")
+        checkout_dist_inventory = tree_inventory(current_dist)
+        artifact_dist_inventory = tree_inventory(archived_dist)
+        if artifact_dist_inventory != checkout_dist_inventory:
+            raise ValueError("signed archive dist differs from exact-checkout tested build")
+
+    output = {
+        "schema_version": 1,
+        "result": "PASS",
+        "command": [
+            "scripts/check_release_a_candidate.py",
+            "--verify-artifact-checkout",
+            str(artifact_dir),
+            "--expected-sha",
+            expected_sha,
+            "--artifact-phase",
+            artifact_phase,
+            *(
+                [
+                    "--release-a-sha",
+                    str(release_a_sha),
+                    "--release-a-artifact-dir",
+                    str(release_a_artifact_dir),
+                ]
+                if artifact_phase == "release-b"
+                else []
+            ),
+            "--evidence",
+            str(output_path),
+        ],
+        "checkout_sha": expected_sha,
+        "checkout_tree": git("rev-parse", "HEAD^{tree}"),
+        "artifact_phase": artifact_phase,
+        "tracked_file_count": len(git_inventory),
+        "tracked_tree_inventory_sha256": sha256_bytes(
+            json.dumps(git_inventory, sort_keys=True, separators=(",", ":")).encode()
+        ),
+        "dist_file_count": len(checkout_dist_inventory),
+        "dist_inventory_sha256": sha256_bytes(
+            json.dumps(
+                checkout_dist_inventory, sort_keys=True, separators=(",", ":")
+            ).encode()
+        ),
+        "artifact": artifact,
+        "frontend_build": frontend_build,
+        "release_b_static_policy": release_b_policy,
+        "duration_seconds": round(time.monotonic() - started, 6),
+    }
+    write_evidence(output_path, output)
+    print(json.dumps({"result": "PASS", "artifact_sha": expected_sha}))
+    return 0
+
+
 def verify_lock(
     *, current_paths: set[str] | None = None
 ) -> tuple[dict[str, Any], list[dict[str, str]]]:
     lock = load_json(ROOT / ".agent/contract-lock.json")
-    if lock.get("revision") != 11 or lock.get("baseline_source_sha") != EXPECTED_BASELINE:
-        raise ValueError("Release-A requires exact contract lock revision 11 and baseline")
+    if lock.get("revision") != 12 or lock.get("baseline_source_sha") != EXPECTED_BASELINE:
+        raise ValueError("Release-A requires exact contract lock revision 12 and baseline")
     content_commit = str(lock["contract_content_commit"])
     lock_commits = list(
         filter(
@@ -678,15 +1195,15 @@ def verify_lock(
         )
     )
     if len(lock_commits) != 1:
-        raise ValueError("revision-11 lock must have exactly one immutable lock commit")
+        raise ValueError("revision-12 lock must have exactly one immutable lock commit")
     lock_commit = lock_commits[0]
     lock_parents = git("show", "-s", "--format=%P", lock_commit).split()
     if lock_parents != [content_commit]:
-        raise ValueError("revision-11 lock commit must directly follow content commit")
+        raise ValueError("revision-12 lock commit must directly follow content commit")
     current_lock_blob = git("rev-parse", "HEAD:.agent/contract-lock.json")
     locked_blob = git("rev-parse", f"{lock_commit}:.agent/contract-lock.json")
     if current_lock_blob != locked_blob:
-        raise ValueError("current revision-11 lock differs from its sole lock commit")
+        raise ValueError("current revision-12 lock differs from its sole lock commit")
     lock["verified_lock_commit"] = lock_commit
     verified: list[dict[str, str]] = []
     locked_objects = [lock["plan"], *lock["assets"]]
@@ -1107,11 +1624,53 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--evidence", type=Path, required=True)
     parser.add_argument("--verify-main-evidence", type=Path)
+    parser.add_argument("--verify-artifact-checkout", type=Path)
+    parser.add_argument("--artifact-phase", choices=("release-a", "release-b"))
     parser.add_argument("--expected-sha")
+    parser.add_argument("--release-a-sha")
     parser.add_argument("--expected-candidate-sha")
     parser.add_argument("--release-a-artifact-dir", type=Path)
     args = parser.parse_args()
     evidence_path = args.evidence if args.evidence.is_absolute() else ROOT / args.evidence
+    if args.verify_main_evidence is not None and args.verify_artifact_checkout is not None:
+        parser.error("artifact-checkout and main-evidence verification are mutually exclusive")
+    if args.verify_artifact_checkout is not None:
+        if args.expected_sha is None or args.artifact_phase is None:
+            parser.error(
+                "--expected-sha and --artifact-phase are required with --verify-artifact-checkout"
+            )
+        artifact_dir = (
+            args.verify_artifact_checkout
+            if args.verify_artifact_checkout.is_absolute()
+            else ROOT / args.verify_artifact_checkout
+        )
+        try:
+            return verify_artifact_checkout(
+                artifact_dir,
+                args.expected_sha,
+                args.artifact_phase,
+                args.release_a_sha,
+                (
+                    args.release_a_artifact_dir
+                    if args.release_a_artifact_dir is None
+                    or args.release_a_artifact_dir.is_absolute()
+                    else ROOT / args.release_a_artifact_dir
+                ),
+                evidence_path,
+            )
+        except (
+            KeyError,
+            OSError,
+            subprocess.CalledProcessError,
+            tarfile.TarError,
+            ValueError,
+        ) as exc:
+            write_evidence(
+                evidence_path,
+                {"schema_version": 1, "result": "FAIL", "failures": [str(exc)]},
+            )
+            print(f"FAIL: {exc}", file=sys.stderr)
+            return 1
     if args.verify_main_evidence is not None:
         if (
             args.expected_sha is None

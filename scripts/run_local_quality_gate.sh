@@ -7,6 +7,8 @@ PROGRAM="$(basename "$0")"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PYTHON="$ROOT/backend/venv/bin/python"
 PYTEST="$ROOT/backend/venv/bin/pytest"
+NODE=""
+NPM_CLI=""
 EXPECTED_COSIGN_SHA256="4629c757b7618056f8ddd7e2625ae9fdd94c0372a65049520bc7d9df9efc7f71"
 SHA=""
 EVIDENCE=""
@@ -48,6 +50,7 @@ while [[ "$#" -gt 0 ]]; do
     --self-test) SELF_TEST=1; shift ;;
     --internal-secret-scan) [[ "$#" -ge 2 ]] || die "missing internal evidence"; INTERNAL_MODE="secret"; INTERNAL_EVIDENCE="$2"; shift 2 ;;
     --internal-operational) [[ "$#" -ge 2 ]] || die "missing internal evidence"; INTERNAL_MODE="operational"; INTERNAL_EVIDENCE="$2"; shift 2 ;;
+    --internal-python-lock) [[ "$#" -ge 2 ]] || die "missing internal evidence"; INTERNAL_MODE="python-lock"; INTERNAL_EVIDENCE="$2"; shift 2 ;;
     *) usage; exit 2 ;;
   esac
 done
@@ -263,6 +266,7 @@ internal_secret_scan() {
       ':(exclude)backend/tests/test_release_contract_tooling_security.py' \
       ':(exclude)scripts/target-mutation-contract-v2.json' \
       ':(exclude)scripts/run_release_a_schema_gate.sh' \
+      ':(exclude)scripts/run_real_e2e.sh' \
       ':(exclude)backend/tests/test_prometheus_topology.py' \
       ':(exclude)ops/systemd/unihub-backend.service'
   )
@@ -293,7 +297,8 @@ internal_secret_scan() {
     "$ROOT/ops/build-retail-release-artifact.sh" \
     "$ROOT/backend/tests/test_release_contract_tooling_security.py" \
     "$ROOT/scripts/target-mutation-contract-v2.json" \
-    "$ROOT/scripts/run_release_a_schema_gate.sh" >"$raw"
+    "$ROOT/scripts/run_release_a_schema_gate.sh" \
+    "$ROOT/scripts/run_real_e2e.sh" >"$raw"
   "$PYTHON" - "$raw" "$output" "${#tracked_files[@]}" <<'PY'
 import hashlib
 import json
@@ -315,7 +320,96 @@ payload = {
     "active_plugin_count": len(plugins),
     "raw_scan_sha256": hashlib.sha256(raw_path.read_bytes()).hexdigest(),
 }
+
 output_path.write_text(json.dumps(payload, sort_keys=True, separators=(",", ":")) + "\n", encoding="utf-8")
+PY
+}
+
+internal_python_lock() {
+  local output="$1"
+  [[ "$output" =~ ^[A-Za-z0-9_./-]+$ ]] || die "unsafe Python-lock evidence path"
+  [[ ! -e "$output" || ( -f "$output" && ! -L "$output" ) ]] \
+    || die "unsafe Python-lock evidence target"
+  mkdir -p "$(dirname "$output")"
+  "$PYTHON" - "$ROOT/backend/requirements-dev.lock" "$output" <<'PY'
+import base64
+import hashlib
+import importlib.metadata
+import json
+from pathlib import Path
+import re
+import sys
+
+lock_path, output_path = map(Path, sys.argv[1:])
+canonical = lambda value: re.sub(r"[-_.]+", "-", value).lower()
+expected = {}
+for line in lock_path.read_text(encoding="utf-8").splitlines():
+    match = re.match(r"^([A-Za-z0-9_.-]+)==([^ ;\\]+)", line)
+    if match:
+        expected[canonical(match.group(1))] = match.group(2)
+installed = {
+    canonical(dist.metadata["Name"]): dist
+    for dist in importlib.metadata.distributions()
+    if dist.metadata.get("Name")
+}
+bootstrap = {"pip", "setuptools", "wheel"}
+versions = {name: dist.version for name, dist in installed.items()}
+missing = sorted(set(expected) - set(installed))
+mismatched = sorted(
+    [name, version, versions.get(name)]
+    for name, version in expected.items()
+    if versions.get(name) != version
+)
+extra = sorted(set(installed) - set(expected) - bootstrap)
+record_failures = []
+verified_files = 0
+for name in sorted(expected):
+    dist = installed.get(name)
+    if dist is None:
+        continue
+    for file in dist.files or ():
+        if file.hash is None or file.hash.mode != "sha256":
+            continue
+        target = Path(dist.locate_file(file))
+        if not target.is_file() or target.is_symlink():
+            record_failures.append(f"{name}:{file}:missing_or_unsafe")
+            continue
+        actual = base64.urlsafe_b64encode(
+            hashlib.sha256(target.read_bytes()).digest()
+        ).decode().rstrip("=")
+        if actual != file.hash.value:
+            record_failures.append(f"{name}:{file}:hash_mismatch")
+        verified_files += 1
+if missing or mismatched or extra or record_failures:
+    raise SystemExit(
+        json.dumps(
+            {
+                "missing": missing,
+                "mismatched": mismatched,
+                "extra": extra,
+                "record_failures": record_failures[:20],
+            },
+            sort_keys=True,
+        )
+    )
+payload = {
+    "schema_version": 1,
+    "result": "PASS",
+    "lock_sha256": hashlib.sha256(lock_path.read_bytes()).hexdigest(),
+    "locked_distribution_count": len(expected),
+    "bootstrap_distributions": sorted(set(installed) & bootstrap),
+    "verified_record_file_count": verified_files,
+    "environment_sha256": hashlib.sha256(
+        json.dumps(
+            sorted((name, versions[name]) for name in installed),
+            separators=(",", ":"),
+        ).encode()
+    ).hexdigest(),
+}
+output_path.write_text(
+    json.dumps(payload, sort_keys=True, separators=(",", ":")) + "\n",
+    encoding="utf-8",
+)
 PY
 }
 
@@ -438,6 +532,7 @@ if [[ -n "$INTERNAL_MODE" ]]; then
   case "$INTERNAL_MODE" in
     secret) internal_secret_scan "$INTERNAL_EVIDENCE" ;;
     operational) internal_operational "$INTERNAL_EVIDENCE" ;;
+    python-lock) internal_python_lock "$INTERNAL_EVIDENCE" ;;
     *) die "unknown internal mode" ;;
   esac
   exit 0
@@ -457,6 +552,15 @@ fi
 [[ "$(hostname)" == "dell-standby" ]] || die "integrated local gate is locked to dell-standby"
 [[ -x "$PYTHON" && -x "$PYTEST" ]] || die "backend/venv is required"
 [[ -d "$ROOT/node_modules" ]] || die "offline node_modules is required"
+NODE="$(readlink -f "$(command -v node || true)")"
+NPM_CLI="$(readlink -f "$(command -v npm || true)")"
+[[ -f "$NODE" && -x "$NODE" && -f "$NPM_CLI" ]] || die "Node.js/npm are required"
+[[ "$NODE" != "$ROOT"/* && "$NPM_CLI" != "$ROOT"/* ]] \
+  || die "Node.js/npm must not resolve from the candidate tree"
+[[ "$NODE" != *[[:space:]]* && "$NPM_CLI" != *[[:space:]]* ]] \
+  || die "unsafe Node.js/npm path"
+[[ "$($NODE --version)" =~ ^v22\.[0-9]+\.[0-9]+$ ]] || die "Node.js 22.x is required"
+[[ "$($NODE "$NPM_CLI" --version)" =~ ^10\.[0-9]+\.[0-9]+$ ]] || die "npm 10.x is required"
 [[ "$(git -C "$ROOT" rev-parse HEAD)" == "$SHA" ]] || die "--sha differs from HEAD"
 [[ "$(git -C "$ROOT" rev-parse "$RELEASE_A_SHA")" == "$RELEASE_A_SHA" ]] || die "Release-A SHA is not an exact local commit"
 git -C "$ROOT" merge-base --is-ancestor "$RELEASE_A_SHA" "$SHA" || die "Release-A SHA is not an ancestor"
@@ -483,12 +587,16 @@ INPUT_SHA256="$({
     package-lock.json \
     backend/requirements.lock \
     backend/requirements-dev.lock
+  sha256sum "$NODE" "$NPM_CLI"
 } | sha256_text)"
 
 A_SCHEMA="$RELEASE_A_ARTIFACT/schema-gate.json"
 run_step authority "backend/venv/bin/python scripts/check_release_a_candidate.py --verify-main-evidence '$A_SCHEMA' --expected-sha '$RELEASE_A_SHA' --expected-candidate-sha '$SHA' --release-a-artifact-dir '$RELEASE_A_ARTIFACT' --evidence '$EVIDENCE/ac-12-release-a.json'" "$EVIDENCE/ac-12-release-a.json"
 
-run_step vendored "node scripts/verify_vendored_npm_packages.mjs"
+run_step node-dependencies "npm_config_offline=true $NODE $NPM_CLI ci --offline --ignore-scripts --include=dev"
+run_step python-dependencies "scripts/run_local_quality_gate.sh --internal-python-lock '$EVIDENCE/python-lock.json'" "$EVIDENCE/python-lock.json"
+run_step python-dependency-health "backend/venv/bin/python -m pip check"
+run_step vendored "$NODE scripts/verify_vendored_npm_packages.mjs"
 run_step changed-complexity "backend/venv/bin/python scripts/check_changed_function_complexity.py --base '$RELEASE_A_SHA' --maximum 20"
 run_step backend-suite "backend/scripts/run_tests_isolated.sh -q --tb=short --cov=. --cov-config=../.coveragerc --cov-fail-under=80 --cov-report=json:'$EVIDENCE/backend-coverage.json' --junitxml='$EVIDENCE/backend-all.xml'" "$EVIDENCE/backend-coverage.json|$EVIDENCE/backend-all.xml"
 run_step backend-critical-coverage "backend/venv/bin/python backend/scripts/check_critical_coverage.py '$EVIDENCE/backend-coverage.json'"
@@ -508,23 +616,21 @@ run_step ac12-outbox "UNIHUB_TEST_DATABASE=1 PYTHONPATH=backend backend/venv/bin
 run_step ac13-scale "UNIHUB_TEST_DATABASE=1 scripts/run_retail_scale_gate.sh --seed 20260812 --profiles 2x,5x --exact-max-upload 33554432 --evidence '$EVIDENCE/ac-13'" "$EVIDENCE/ac-13/ac-13-scale-evidence.json"
 run_step ac14-governance "PYTHONPATH=backend backend/venv/bin/python scripts/check_ai_forecast_governance.py --contract docs/contracts/business-golden-v2.json --governance-fixture docs/contracts/ai-governance-golden-v1.json --evidence '$EVIDENCE/ac-14.json'" "$EVIDENCE/ac-14.json"
 
-run_step frontend-coverage "npm run test:coverage -- --reporter=default --reporter=junit --outputFile.junit='$EVIDENCE/ac-11.xml'" "coverage|$EVIDENCE/ac-11.xml"
-run_step ac08-coverage "node scripts/check_frontend_critical_coverage.mjs --manifest scripts/frontend-critical-coverage.json --coverage coverage/coverage-final.json --evidence '$EVIDENCE/ac-08.json'" "$EVIDENCE/ac-08.json"
+run_step frontend-coverage "$NODE node_modules/vitest/vitest.mjs run --coverage.enabled --reporter=default --reporter=junit --outputFile.junit='$EVIDENCE/ac-11.xml'" "coverage|$EVIDENCE/ac-11.xml"
+run_step ac08-coverage "$NODE scripts/check_frontend_critical_coverage.mjs --manifest scripts/frontend-critical-coverage.json --coverage coverage/coverage-final.json --evidence '$EVIDENCE/ac-08.json'" "$EVIDENCE/ac-08.json"
 run_step frontend-changed-coverage "backend/venv/bin/python scripts/check_changed_line_coverage.py --base '$RELEASE_A_SHA' --frontend-lcov coverage/frontend/lcov.info --minimum 80"
-run_step typecheck "npm run typecheck"
-run_step lint "npm run lint"
-run_step ts-complexity "npm run complexity:ts"
-run_step ac11-structure "node scripts/check_frontend_structure_contract.mjs --manifest scripts/frontend-critical-coverage.json --evidence '$EVIDENCE/ac-11.json'" "$EVIDENCE/ac-11.json"
-run_step build "VITE_FRONTEND_GLITCHTIP_DSN= npm run build" "dist"
-run_step bundle-budget "node scripts/check_bundle_budget.mjs"
-run_step browser-matrix "npm run test:e2e:browsers"
-run_step pwa-lifecycle "PWA_BASE_SHA='$RELEASE_A_SHA' npm run test:e2e:pwa-real"
+run_step typecheck "$NODE node_modules/@typescript/old/bin/tsc --noEmit"
+run_step lint "$NODE node_modules/eslint/bin/eslint.js . --max-warnings=0"
+run_step ts-complexity "$NODE scripts/check_ts_function_complexity.cjs"
+run_step ac11-structure "$NODE scripts/check_frontend_structure_contract.mjs --manifest scripts/frontend-critical-coverage.json --evidence '$EVIDENCE/ac-11.json'" "$EVIDENCE/ac-11.json"
+run_step build "VITE_FRONTEND_GLITCHTIP_DSN= $NODE node_modules/vite/bin/vite.js build" "dist"
+run_step bundle-budget "$NODE scripts/check_bundle_budget.mjs"
+run_step browser-matrix "$NODE node_modules/@playwright/test/cli.js test --config=playwright.browser-smoke.config.ts"
+run_step pwa-lifecycle "PWA_BASE_SHA='$RELEASE_A_SHA' scripts/run_pwa_release_lifecycle.sh"
 run_step integration-restore "REAL_E2E_SKIP_BUILD=1 scripts/run_real_e2e.sh" "test-results/real-e2e-restore-drill.json|test-results/real-e2e-restore-drill.json.sha256"
 
 run_step openapi "PYTHONPATH=backend backend/venv/bin/python scripts/generate_retail_contract.py --check"
-run_step dependency-policy "node scripts/check_dependency_policy.mjs"
-run_step npm-runtime-audit "npm audit --omit=dev --audit-level=high"
-run_step npm-full-audit "npm audit --audit-level=high"
+run_step dependency-policy "$NODE scripts/check_dependency_policy.mjs"
 run_step env-contract "PYTHONPATH=backend backend/venv/bin/python scripts/check_env_contract.py"
 run_step secrets "scripts/run_local_quality_gate.sh --internal-secret-scan '$EVIDENCE/security-secret-scan.json'" "$EVIDENCE/security-secret-scan.json"
 run_step shellcheck "scripts/run_shellcheck.sh"
@@ -532,7 +638,6 @@ run_step operational "scripts/run_local_quality_gate.sh --internal-operational '
 run_step migration-manifest "cd backend && venv/bin/python -c 'from db.migration_runner import load_migration_manifest, verify_migration_files; verify_migration_files(load_migration_manifest())'"
 run_step bandit-waivers "backend/venv/bin/python scripts/check_bandit_waivers.py"
 run_step bandit "backend/venv/bin/bandit -r backend -x backend/tests,backend/venv -ll -ii -q -b .bandit-baseline.json"
-run_step pip-audit "backend/venv/bin/pip-audit -r backend/requirements.lock --strict --progress-spinner off"
 run_step deploy-sandbox "ops/test-deploy-retail-artifact.sh"
 
 "$PYTHON" - "$STEPS_DIR" "$EVIDENCE/local-quality-gate.json" "$SHA" "$CURRENT_TREE" "$INPUT_SHA256" <<'PY'

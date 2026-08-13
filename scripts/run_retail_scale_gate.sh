@@ -3,6 +3,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PYTHON="${UNIHUB_SCALE_PYTHON:-$ROOT/backend/venv/bin/python}"
+POSTGRES_IMAGE="postgres@sha256:9a8afca54e7861fd90fab5fdf4c42477a6b1cb7d293595148e674e0a3181de15"
 [[ -x "$PYTHON" ]] || PYTHON="$ROOT/.venv/bin/python"
 [[ -x "$PYTHON" ]] || PYTHON=python3
 
@@ -32,6 +33,8 @@ blocked() {
   mv "$temporary" "$target"; echo "AC-13 BLOCKED: $1; evidence=$target" >&2; exit 1
 }
 command -v docker >/dev/null || blocked docker_unavailable 0 1
+docker image inspect "$POSTGRES_IMAGE" >/dev/null \
+  || blocked pinned_postgres_image_unavailable 0 1
 available_kib="$(df -Pk "${DOCKER_ROOT_DIR:-/var/lib/docker}" 2>/dev/null | awk 'NR==2{print $4}' || df -Pk / | awk 'NR==2{print $4}')"
 available_mem_kib="$(awk '/MemAvailable:/{print $2}' /proc/meminfo)"
 (( available_kib >= 41943040 )) || blocked insufficient_docker_storage "$((available_kib*1024))" 42949672960
@@ -40,9 +43,9 @@ available_mem_kib="$(awk '/MemAvailable:/{print $2}' /proc/meminfo)"
 container="unihub-retail-ac13-${RANDOM}-$$"
 cleanup() { docker rm -f "$container" >/dev/null 2>&1 || true; }
 trap cleanup EXIT INT TERM
-docker run -d --rm --name "$container" --label unihub.retail.scale.authority=ac13 \
+docker run --pull=never -d --rm --name "$container" --label unihub.retail.scale.authority=ac13 \
   -e POSTGRES_HOST_AUTH_METHOD=trust -e POSTGRES_DB=test_scale_admin \
-  -p 127.0.0.1::5432 postgres:18-alpine >/dev/null
+  -p 127.0.0.1::5432 "$POSTGRES_IMAGE" >/dev/null
 for _ in {1..60}; do
   docker exec "$container" pg_isready -U postgres -d test_scale_admin >/dev/null 2>&1 && break
   sleep 1
