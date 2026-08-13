@@ -75,8 +75,8 @@ function TeamLeadersPanel({ groups, loading, onOpenVisit }: { groups: TeamLeader
 
 export function VisiteSubtab(props: VisiteSubtabProps) {
   const model = useVisitsSubtab(props);
+  if (model.availableMonths.length === 0) return <div className="flex h-40 flex-col items-center justify-center gap-2 text-slate-400"><MapPin size={28} strokeWidth={1.5} /><p className="text-sm font-semibold">Nicio vizita inregistrata</p></div>;
   if (model.loadingTree && model.loadingSummary) return <div className="flex h-40 items-center justify-center text-sm font-semibold text-slate-500">Se incarca vizitele...</div>;
   if (model.error) return <div className="mx-4 mt-4 rounded-2xl bg-red-50 p-4 text-sm text-red-600 dark:bg-red-900/20 dark:text-red-400">{model.error.message || 'Eroare la incarcare'}</div>;
-  if (!model.loadingTree && model.availableMonths.length === 0) return <div className="flex h-40 flex-col items-center justify-center gap-2 text-slate-400"><MapPin size={28} strokeWidth={1.5} /><p className="text-sm font-semibold">Nicio vizita inregistrata</p></div>;
   return <div className="space-y-4 px-4"><VisitsToolbar months={model.availableMonths} selectedMonth={model.selectedMonth} search={model.teamLeaderSearch} onMonthChange={model.setSelectedMonth} onSearch={model.setTeamLeaderSearch} /><VisitKpis summary={model.summary} loading={model.loadingSummary} activeStoreCount={model.activeStoreCount} /><CompliancePanel summary={model.summary} selectedMonth={model.selectedMonth} /><TeamLeadersPanel groups={model.filteredGroups} loading={model.loadingTree} onOpenVisit={model.setOpenVisitId} />{model.openVisitId && <VisitDrawer visitId={model.openVisitId} onClose={() => model.setOpenVisitId(null)} />}</div>;
 }
