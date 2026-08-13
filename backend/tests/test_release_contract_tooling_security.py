@@ -203,6 +203,11 @@ def test_release_a_python_environment_and_runtime_tree_are_cryptographically_bou
     assert "backend/scripts/run_tests_isolated.sh" in checker.EXPECTED_RELEASE_A_AUTHORITIES
     validator = (ROOT / "scripts/validate_release_sbom.py").read_text(encoding="utf-8")
     workflow = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+    workflow_secret_step = workflow[
+        workflow.index("- name: Tracked secret regression scan") : workflow.index(
+            "- name: Bandit waiver governance"
+        )
+    ]
     verifier = (ROOT / "scripts/verify_deployed_release.sh").read_text(encoding="utf-8")
     property_name = "unihub:python-runtime:site-packages-tree-sha256:v1"
     assert property_name in validator
@@ -215,6 +220,23 @@ def test_release_a_python_environment_and_runtime_tree_are_cryptographically_bou
     local_gate = (ROOT / "scripts/run_local_quality_gate.sh").read_text(
         encoding="utf-8"
     )
+    local_secret_step = local_gate[
+        local_gate.index("internal_secret_scan()") : local_gate.index(
+            "internal_python_lock()"
+        )
+    ]
+    for secret_step in (workflow_secret_step, local_secret_step):
+        exact_scan = secret_step[secret_step.index("detect_secrets scan") :]
+        for digest_authority in (
+            "backend/scripts/run_tests_isolated.sh",
+            "ops/deploy-retail-artifact.sh",
+        ):
+            assert f"':(exclude){digest_authority}'" in secret_step
+            assert secret_step.count(digest_authority) == 2
+            assert digest_authority in exact_scan
+        assert "--disable-plugin HexHighEntropyString" in secret_step
+        assert "--disable-plugin Base64HighEntropyString" in secret_step
+        assert secret_step.count("--disable-plugin") == 2
     assert "is_canonical_generated_pyc" in local_gate
     assert 'path.parts[:5] == ("..", "..", "..", "bin", "__pycache__")' in local_gate
     assert 'for path in venv_root.rglob("*.pyc")' in local_gate

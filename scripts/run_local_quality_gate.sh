@@ -279,6 +279,7 @@ internal_secret_scan() {
       ':(exclude)scripts/release-b-authority-contract-v1.json' \
       ':(exclude)scripts/check_release_a_candidate.py' \
       ':(exclude)scripts/verify_promtool_cache.sh' \
+      ':(exclude)backend/scripts/run_tests_isolated.sh' \
       ':(exclude)backend/scripts/run_outbox_slo_workload.py' \
       ':(exclude)scripts/run_outbox_slo_gate.py' \
       ':(exclude)scripts/run_structural_characterization.sh' \
@@ -288,6 +289,7 @@ internal_secret_scan() {
       ':(exclude)scripts/run_local_quality_gate.sh' \
       ':(exclude)scripts/verify_deployed_release.sh' \
       ':(exclude)ops/build-retail-release-artifact.sh' \
+      ':(exclude)ops/deploy-retail-artifact.sh' \
       ':(exclude)backend/tests/test_release_contract_tooling_security.py' \
       ':(exclude)scripts/target-mutation-contract-v2.json' \
       ':(exclude)scripts/run_release_a_schema_gate.sh' \
@@ -311,6 +313,7 @@ internal_secret_scan() {
     "$ROOT/scripts/release-b-authority-contract-v1.json" \
     "$ROOT/scripts/check_release_a_candidate.py" \
     "$ROOT/scripts/verify_promtool_cache.sh" \
+    "$ROOT/backend/scripts/run_tests_isolated.sh" \
     "$ROOT/backend/scripts/run_outbox_slo_workload.py" \
     "$ROOT/scripts/run_outbox_slo_gate.py" \
     "$ROOT/scripts/run_structural_characterization.sh" \
@@ -320,6 +323,7 @@ internal_secret_scan() {
     "$ROOT/scripts/run_local_quality_gate.sh" \
     "$ROOT/scripts/verify_deployed_release.sh" \
     "$ROOT/ops/build-retail-release-artifact.sh" \
+    "$ROOT/ops/deploy-retail-artifact.sh" \
     "$ROOT/backend/tests/test_release_contract_tooling_security.py" \
     "$ROOT/scripts/target-mutation-contract-v2.json" \
     "$ROOT/scripts/run_release_a_schema_gate.sh" \

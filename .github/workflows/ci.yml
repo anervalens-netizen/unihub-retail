@@ -221,6 +221,7 @@ jobs:
               ':(exclude)scripts/release-b-authority-contract-v1.json' \
               ':(exclude)scripts/check_release_a_candidate.py' \
               ':(exclude)scripts/verify_promtool_cache.sh' \
+              ':(exclude)backend/scripts/run_tests_isolated.sh' \
               ':(exclude)backend/scripts/run_outbox_slo_workload.py' \
               ':(exclude)scripts/run_outbox_slo_gate.py' \
               ':(exclude)scripts/run_structural_characterization.sh' \
@@ -230,6 +231,7 @@ jobs:
               ':(exclude)scripts/run_local_quality_gate.sh' \
               ':(exclude)scripts/verify_deployed_release.sh' \
               ':(exclude)ops/build-retail-release-artifact.sh' \
+              ':(exclude)ops/deploy-retail-artifact.sh' \
               ':(exclude)backend/tests/test_release_contract_tooling_security.py' \
               ':(exclude)scripts/target-mutation-contract-v2.json' \
               ':(exclude)scripts/run_release_a_schema_gate.sh' \
@@ -255,6 +257,7 @@ jobs:
             scripts/release-b-authority-contract-v1.json \
             scripts/check_release_a_candidate.py \
             scripts/verify_promtool_cache.sh \
+            backend/scripts/run_tests_isolated.sh \
             backend/scripts/run_outbox_slo_workload.py \
             scripts/run_outbox_slo_gate.py \
             scripts/run_structural_characterization.sh \
@@ -264,6 +267,7 @@ jobs:
             scripts/run_local_quality_gate.sh \
             scripts/verify_deployed_release.sh \
             ops/build-retail-release-artifact.sh \
+            ops/deploy-retail-artifact.sh \
             backend/tests/test_release_contract_tooling_security.py \
             scripts/target-mutation-contract-v2.json \
             scripts/run_release_a_schema_gate.sh \
