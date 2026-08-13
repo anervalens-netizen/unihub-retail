@@ -49,7 +49,7 @@ export PYTHONDONTWRITEBYTECODE=1
 unset MYPYPATH MYPY_CONFIG_FILE
 
 CURRENT_SHA="$(git -C "$ROOT_DIR" rev-parse HEAD)"
-CURRENT_TREE="$(git -C "$ROOT_DIR" rev-parse HEAD^{tree})"
+CURRENT_TREE="$(git -C "$ROOT_DIR" rev-parse 'HEAD^{tree}')"
 STAMP="release-a-${CURRENT_SHA:0:12}-$$"
 POSTGRES_CONTAINER="unihub-retail-${STAMP}"
 VALKEY_CONTAINER="unihub-retail-valkey-${STAMP}"
