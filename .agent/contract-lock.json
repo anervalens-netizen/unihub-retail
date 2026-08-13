@@ -1,11 +1,11 @@
 {
   "version": 1,
   "objective": "UR-CLOSE-20260812",
-  "revision": 23,
+  "revision": 24,
   "baseline_source_sha": "0be82b430e55b7414babf470abe3fc5404b6cdc9",
-  "contract_content_commit": "8efe2ace625c7c9984b9291564d3d47b56035028",
-  "supersedes_lock_commit": "d3034031e71063fc342918edf22238ebd7964dc4",
-  "created_at": "2026-08-13T17:44:53+03:00",
+  "contract_content_commit": "4a579e713ef1856428a0c50000aba89fa83ff893",
+  "supersedes_lock_commit": "6ffb99b5132a4ab604bb1c2793eb91974a66411b",
+  "created_at": "2026-08-13T18:46:54+03:00",
   "source_inputs": [
     {
       "path": "/opt/Mobiup/UNIHUB_RETAIL_AUDIT_2026-08-12.md",
@@ -18,8 +18,8 @@
   ],
   "plan": {
     "path": "docs/exec-plans/active/UR-CLOSE-20260812.md",
-    "git_blob": "4728569fc6181da71470fb424889a97efc4a6fd7",
-    "sha256": "5ffdffb02679f03e71cb49c10ea069c1bb4aebf2477c5e6c4fd019635ee4cec9"
+    "git_blob": "07fd874feb36d662e6280907f77aefc09bb92708",
+    "sha256": "bc80ec9b6f27f2316ddcb8b0c5f5905b57320a79403c2f1dde7acbb3469add68"
   },
   "assets": [
     {
@@ -69,13 +69,13 @@
     },
     {
       "path": "scripts/check_release_a_candidate.py",
-      "git_blob": "ea308e8c54c87f18fd42f08cd62ad7f6b5b1c5c5",
-      "sha256": "3875d3ac205e56c2a367668e793b08e550c556a53d5b2281a780234634987a94"
+      "git_blob": "76b00bcc11ef38e2dec6a9d04fb0a72a9a2dc8c5",
+      "sha256": "1b6487c39d62a7590f73efc085630e6ed60d630ffea3d7661c7ef5f1d482f956"
     },
     {
       "path": ".github/workflows/ci.yml",
-      "git_blob": "1e401442a89a5942276cd42267ca6f7014002735",
-      "sha256": "554e46968b7078a2d432670277140eb694c8a828d6b402c705bcd9342a0817e4"
+      "git_blob": "0f659181e7e3ff9d9d76f8a457e10427c729f928",
+      "sha256": "511db784e99694770e5cafdadec0e9011689ef8bf89991e83b7dab3a67b57329"
     },
     {
       "path": ".github/workflows/deploy.yml",
@@ -163,6 +163,11 @@
       "sha256": "7a14a8e3834fd8ee1371485e648080a77238e2ef41bef2082f15484b0efe4fe5"
     },
     {
+      "path": "backend/tests/test_migration_runner_db.py",
+      "git_blob": "6bfa1297f4a30cd298525eaf91f40bd120738c9e",
+      "sha256": "744d5fe0c702f7ec7bc7b7d9d7d1fc45d5f4e4375bacc8f7c2758c67015b1f91"
+    },
+    {
       "path": "backend/tests/test_release_a_schema_069.py",
       "git_blob": "dc9e41aa90968fc340020ee3e79d99c69d3f3de5",
       "sha256": "264e78786d822999fd1da72f8ad2c3ed674b7f38db516fa703400886987447aa"
@@ -179,13 +184,13 @@
     },
     {
       "path": "scripts/release-b-authority-contract-v1.json",
-      "git_blob": "dc8a584954fd0df0ae8c61328e3e10a3d6f22845",
-      "sha256": "271ce8dc9660b502ee70a25e8238ad5c3da68931edf8901922ca9d7c21f21677"
+      "git_blob": "6bfd340d37a2b8abef6e759c0fae8447f9eae102",
+      "sha256": "4b7c300853429111134481e2840c102a678a3960054ba1aed70f5abef3527f99"
     },
     {
       "path": "backend/tests/test_release_contract_tooling_security.py",
-      "git_blob": "f4316be381040fb5c145f32cd9d37d6542f59329",
-      "sha256": "5e2cd2a9e50b1da2b191278dd499944909ab448ef54b406a8607ac17ce7b41f8"
+      "git_blob": "610b67cc622d8e8777366ab7497bdf7d64283976",
+      "sha256": "2e99cbae7bb0ab5ce837664781291f57a884348c502124248e1916399e48fba9"
     },
     {
       "path": "scripts/run_local_quality_gate.sh",
