@@ -339,7 +339,7 @@
     {
       "git_mode": "100644",
       "path": "backend/tests/test_release_contract_tooling_security.py",
-      "sha256": "5e2cd2a9e50b1da2b191278dd499944909ab448ef54b406a8607ac17ce7b41f8",
+      "sha256": "2e99cbae7bb0ab5ce837664781291f57a884348c502124248e1916399e48fba9",
       "supports": [
         "AC-12",
         "AC-16",
@@ -376,8 +376,7 @@
     {
       "git_mode": "100644",
       "path": "backend/tests/test_transactional_outbox.py",
-      "sha256": "68c68cc8659b6f404c6d68fa27926fd09183372ef166d3f1ba171c2c65d85bf9",
-      "source_snapshot": "outbox_acceptance_contract",
+      "sha256": "cc4547bcd56b4d22425fbaa176de43012ee5261620d2fa95fc84fdcef0b3a65e",
       "supports": [
         "AC-12"
       ]
@@ -713,7 +712,7 @@
     {
       "git_mode": "100644",
       "path": "scripts/check_release_a_candidate.py",
-      "sha256": "3875d3ac205e56c2a367668e793b08e550c556a53d5b2281a780234634987a94",
+      "sha256": "1b6487c39d62a7590f73efc085630e6ed60d630ffea3d7661c7ef5f1d482f956",
       "supports": [
         "AC-12",
         "AC-16",
@@ -1729,8 +1728,7 @@
         {
           "git_mode": "100644",
           "path": "backend/tests/test_migration_runner_db.py",
-          "sha256": "46635782eaae96f036c5015dc55dcd57e4c11a49b5e768545e1d8649cbdb473a",
-          "source_snapshot": "release_b_integrated_preview"
+          "sha256": "744d5fe0c702f7ec7bc7b7d9d7d1fc45d5f4e4375bacc8f7c2758c67015b1f91"
         },
         {
           "git_mode": "100644",
@@ -1902,7 +1900,7 @@
         {
           "git_mode": "100644",
           "path": "backend/tests/test_release_contract_tooling_security.py",
-          "sha256": "5e2cd2a9e50b1da2b191278dd499944909ab448ef54b406a8607ac17ce7b41f8"
+          "sha256": "2e99cbae7bb0ab5ce837664781291f57a884348c502124248e1916399e48fba9"
         },
         {
           "git_mode": "100644",
@@ -2177,8 +2175,7 @@
         {
           "git_mode": "100644",
           "path": "backend/tests/test_transactional_outbox.py",
-          "sha256": "68c68cc8659b6f404c6d68fa27926fd09183372ef166d3f1ba171c2c65d85bf9",
-          "source_snapshot": "outbox_acceptance_contract"
+          "sha256": "cc4547bcd56b4d22425fbaa176de43012ee5261620d2fa95fc84fdcef0b3a65e"
         },
         {
           "git_mode": "100644",

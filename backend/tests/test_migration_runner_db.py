@@ -132,6 +132,7 @@ async def test_real_admin_authority_cutover_replays_exact_040_041(
     import db.migration_runner as runner
 
     manifest = runner.load_migration_manifest()
+    removed_rows: list[tuple[str, str | None]] = []
     connection = await asyncpg.connect(get_database_url())
     try:
         assert await connection.fetchval(
@@ -140,37 +141,64 @@ async def test_real_admin_authority_cutover_replays_exact_040_041(
         cutover_and_later = [
             name for name in manifest.checksums if name >= "040_"
         ]
-        await connection.execute(
-            "DELETE FROM schema_migrations WHERE filename = ANY($1::text[])",
-            cutover_and_later,
-        )
+        removed_rows = [
+            (str(row["filename"]), row["checksum"])
+            for row in await connection.fetch(
+                """
+                DELETE FROM schema_migrations
+                WHERE filename = ANY($1::text[])
+                RETURNING filename, checksum
+                """,
+                cutover_and_later,
+            )
+        ]
     finally:
         await connection.close()
 
-    monkeypatch.setenv(AUTHORITY_CUTOVER_BOOTSTRAP_ENV, "1")
-    monkeypatch.delenv("UNIHUB_DB_PROCESS_AUTHORITY", raising=False)
-    assert await run_migrations(get_database_url()) == [
-        "040_db_authority_append_only.sql",
-        "041_schema_owner_handoff.sql",
-    ]
-
-    connection = await asyncpg.connect(get_database_url())
     try:
-        rows = await connection.fetch(
-            "SELECT filename, checksum FROM schema_migrations "
-            "WHERE filename = ANY($1::text[]) ORDER BY filename",
-            sorted(AUTHORITY_CUTOVER_MIGRATIONS),
+        assert {filename for filename, _checksum in removed_rows} == set(
+            cutover_and_later
         )
-        assert {row["filename"]: row["checksum"] for row in rows} == {
-            name: manifest.checksums[name]
-            for name in sorted(AUTHORITY_CUTOVER_MIGRATIONS)
-        }
-        assert not await connection.fetchval(
-            "SELECT EXISTS (SELECT 1 FROM schema_migrations WHERE filename = $1)",
-            "042_fieldops_visits_web_authority.sql",
-        )
+        monkeypatch.setenv(AUTHORITY_CUTOVER_BOOTSTRAP_ENV, "1")
+        monkeypatch.delenv("UNIHUB_DB_PROCESS_AUTHORITY", raising=False)
+        assert await run_migrations(get_database_url()) == [
+            "040_db_authority_append_only.sql",
+            "041_schema_owner_handoff.sql",
+        ]
+
+        connection = await asyncpg.connect(get_database_url())
+        try:
+            rows = await connection.fetch(
+                "SELECT filename, checksum FROM schema_migrations "
+                "WHERE filename = ANY($1::text[]) ORDER BY filename",
+                sorted(AUTHORITY_CUTOVER_MIGRATIONS),
+            )
+            assert {row["filename"]: row["checksum"] for row in rows} == {
+                name: manifest.checksums[name]
+                for name in sorted(AUTHORITY_CUTOVER_MIGRATIONS)
+            }
+            assert not await connection.fetchval(
+                "SELECT EXISTS (SELECT 1 FROM schema_migrations WHERE filename = $1)",
+                "042_fieldops_visits_web_authority.sql",
+            )
+        finally:
+            await connection.close()
     finally:
-        await connection.close()
+        connection = await asyncpg.connect(get_database_url())
+        try:
+            async with connection.transaction():
+                await connection.execute(
+                    "DELETE FROM schema_migrations WHERE filename >= '040_'"
+                )
+                await connection.executemany(
+                    """
+                    INSERT INTO schema_migrations (filename, checksum)
+                    VALUES ($1, $2)
+                    """,
+                    removed_rows,
+                )
+        finally:
+            await connection.close()
 
 
 @pytest.mark.asyncio

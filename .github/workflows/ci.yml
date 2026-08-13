@@ -462,6 +462,8 @@ jobs:
 
       - name: Backend tests
         run: |
+          ../scripts/run_local_quality_gate.sh \
+            --internal-python-cache-clean "$RUNNER_TEMP/python-cache-before-backend-tests.json"
           set +e
           scripts/run_tests_isolated.sh \
             -v \

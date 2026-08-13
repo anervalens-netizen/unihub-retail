@@ -293,6 +293,10 @@ def _assert_python_install_order(workflow: str) -> None:
     cache_clean = workflow.index("--internal-python-cache-clean", pip_install)
     environment_check = workflow.index("--verify-python-environment", cache_clean)
     assert pip_install < cache_clean < environment_check
+    backend_tests = workflow.index("- name: Backend tests", environment_check)
+    backend_cache_clean = workflow.index("--internal-python-cache-clean", backend_tests)
+    backend_test_runner = workflow.index("scripts/run_tests_isolated.sh", backend_cache_clean)
+    assert environment_check < backend_tests < backend_cache_clean < backend_test_runner
     assert workflow.count("import sys; sys.path.insert(0, '.')") >= 2
 
 
