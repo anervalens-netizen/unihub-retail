@@ -376,7 +376,7 @@
     {
       "git_mode": "100644",
       "path": "backend/tests/test_transactional_outbox.py",
-      "sha256": "cc4547bcd56b4d22425fbaa176de43012ee5261620d2fa95fc84fdcef0b3a65e",
+      "sha256": "09347511a79340d87dddf41ddafc1779e7c337d808575f4a332d497e9078abe5",
       "supports": [
         "AC-12"
       ]
@@ -712,7 +712,7 @@
     {
       "git_mode": "100644",
       "path": "scripts/check_release_a_candidate.py",
-      "sha256": "1b6487c39d62a7590f73efc085630e6ed60d630ffea3d7661c7ef5f1d482f956",
+      "sha256": "c081d199860cdf8d350e8663d631999b85a0420c2680f8b5b8012b10ddabc349",
       "supports": [
         "AC-12",
         "AC-16",
@@ -2175,7 +2175,7 @@
         {
           "git_mode": "100644",
           "path": "backend/tests/test_transactional_outbox.py",
-          "sha256": "cc4547bcd56b4d22425fbaa176de43012ee5261620d2fa95fc84fdcef0b3a65e"
+          "sha256": "09347511a79340d87dddf41ddafc1779e7c337d808575f4a332d497e9078abe5"
         },
         {
           "git_mode": "100644",
