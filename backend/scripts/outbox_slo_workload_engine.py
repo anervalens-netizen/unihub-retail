@@ -419,9 +419,11 @@ class OutboxWorkload:
                 "dispatcher_valkey_dependency": False,
             },
             "fixture_adapters": {
-                "non_sales_producers": [item[2] for item in self.event_types[1:]],
+                "protected_sql_fixture_emitters": [
+                    item[2] for item in self.event_types[1:]
+                ],
                 "source": "backend/db/migrations/069_ai_cohort_and_transactional_outbox.sql",
-                "effects": "deterministic non-network callbacks; sales uses production delivery chain",
+                "effects": "receipt-only deterministic non-network fixture callbacks; sales uses production delivery chain",
             },
             "workload": {
                 "warmup": self.args.warmup,

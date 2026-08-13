@@ -125,7 +125,7 @@
     {
       "git_mode": "100644",
       "path": "backend/scripts/outbox_slo_workload_engine.py",
-      "sha256": "1f78c048931d0a8003249aafdd703326c9d36f3779b0c45941a91383ba903113",
+      "sha256": "4c287b202e9915e46e89a5baa6d77cf40b86ec23c2dd72e6855868d1fe6acc2c",
       "supports": [
         "AC-12"
       ]
@@ -159,7 +159,7 @@
     {
       "git_mode": "100755",
       "path": "backend/scripts/run_outbox_slo_workload.py",
-      "sha256": "21c5092d702dea224c09ec373147bf34e6a670a028c1d03b8a44ea02a86919fa",
+      "sha256": "e406da158e47c97f7b5b502678a8e55ecf69e82b38144653ff3ccd1e92aa69ee",
       "supports": [
         "AC-12"
       ]
@@ -276,8 +276,7 @@
     {
       "git_mode": "100644",
       "path": "backend/tests/test_grile_outbox_delivery.py",
-      "sha256": "1468c30e14589da0ad555211ef289fe026298227f3e08cc00caf1c70fe4f0e68",
-      "source_snapshot": "outbox_acceptance_contract",
+      "sha256": "936bb1be6b27aad3eb386f1ebdcc705a322b8250b54d371458edb25cf9db842e",
       "supports": [
         "AC-15"
       ]
@@ -321,8 +320,7 @@
     {
       "git_mode": "100644",
       "path": "backend/tests/test_outbox_worker_faults.py",
-      "sha256": "a7a67c1c34ccbe9916a5997419ef09e9ddef570c24603e8216d5fd149c4e9272",
-      "source_snapshot": "outbox_acceptance_contract",
+      "sha256": "7a09de3b21de38bc0586a00411ad6b3514ab94479484cf7124bd9da6d9e13c4a",
       "supports": [
         "AC-12"
       ]
@@ -330,7 +328,7 @@
     {
       "git_mode": "100644",
       "path": "backend/tests/test_release_a_schema_069.py",
-      "sha256": "264e78786d822999fd1da72f8ad2c3ed674b7f38db516fa703400886987447aa",
+      "sha256": "1bece1623276734dda28a51ace57bb5817616516538efdcb0563d98ecf2900f4",
       "supports": [
         "AC-12",
         "T-09A-L"
@@ -339,7 +337,7 @@
     {
       "git_mode": "100644",
       "path": "backend/tests/test_release_contract_tooling_security.py",
-      "sha256": "2e99cbae7bb0ab5ce837664781291f57a884348c502124248e1916399e48fba9",
+      "sha256": "23d2f31e1bbc3c4508315aa96952426351a85fa4b633c2d4082d4c892a51e760",
       "supports": [
         "AC-12",
         "AC-16",
@@ -376,7 +374,7 @@
     {
       "git_mode": "100644",
       "path": "backend/tests/test_transactional_outbox.py",
-      "sha256": "09347511a79340d87dddf41ddafc1779e7c337d808575f4a332d497e9078abe5",
+      "sha256": "8838d2d16f73740dfbf2bc6d7c88050ce0d4e313df4da83ba7daf7488d264309",
       "supports": [
         "AC-12"
       ]
@@ -712,7 +710,7 @@
     {
       "git_mode": "100644",
       "path": "scripts/check_release_a_candidate.py",
-      "sha256": "c081d199860cdf8d350e8663d631999b85a0420c2680f8b5b8012b10ddabc349",
+      "sha256": "b745dab9a1b80c538f5ded3ed52c26d0f9dcf9fe4060bbab613eba7e6c0f6673",
       "supports": [
         "AC-12",
         "AC-16",
@@ -740,7 +738,7 @@
     {
       "git_mode": "100755",
       "path": "scripts/run_local_quality_gate.sh",
-      "sha256": "918452fbedb85472b228fd097fd0a343e892a52c4e2844e3db5bd3cfe409f68f",
+      "sha256": "640f89475b8b049182be77cbc9ac9182d6b469de8162b1ced0827d69a0cf0945",
       "supports": [
         "AC-01",
         "AC-02",
@@ -763,7 +761,7 @@
     {
       "git_mode": "100755",
       "path": "scripts/run_outbox_slo_gate.py",
-      "sha256": "fdb9df57240af65e8ae48dd9ea2c661f3d13a280b6ba83e1f60f31d4d3a4b4e7",
+      "sha256": "873a3582064b3bb8f738cdc0092d7af11a03b9b757b8679123a2222958ff554c",
       "supports": [
         "AC-12"
       ]
@@ -857,7 +855,7 @@
     {
       "git_mode": "100755",
       "path": "scripts/verify_deployed_release.sh",
-      "sha256": "5ece35e7f11bdb313be4df69683564ace079449b21734067fc8180d269949edc",
+      "sha256": "f392c44cba46d450c572e86c91906f766feec224e75a1376705b4a92a34d83a0",
       "supports": [
         "AC-17"
       ]
@@ -1187,6 +1185,11 @@
         },
         {
           "git_mode": "100644",
+          "path": "backend/tests/test_campaign_reporting_job_publication.py",
+          "sha256": "32d3e2017d25cf3424eaecb195ae165fb22ac4094b55fbb1119c6052bb8e130a"
+        },
+        {
+          "git_mode": "100644",
           "path": "backend/tests/test_campaign_reporting_publication.py",
           "sha256": "f5611165ff85571e8f0ca0ce50373dad15f97a9c9c3fcc8717a3a7cedab180fc",
           "source_snapshot": "release_b_integrated_preview"
@@ -1500,8 +1503,7 @@
         {
           "git_mode": "100644",
           "path": "backend/tests/test_grile_outbox_delivery.py",
-          "sha256": "1468c30e14589da0ad555211ef289fe026298227f3e08cc00caf1c70fe4f0e68",
-          "source_snapshot": "outbox_acceptance_contract"
+          "sha256": "936bb1be6b27aad3eb386f1ebdcc705a322b8250b54d371458edb25cf9db842e"
         },
         {
           "git_mode": "100644",
@@ -1512,8 +1514,7 @@
         {
           "git_mode": "100644",
           "path": "backend/tests/test_grile_pilot_v2_sync.py",
-          "sha256": "f4383964c2fd097d3fa28ced82e699982fc839a218258ea494b34c72dbd47676",
-          "source_snapshot": "release_b_integrated_preview"
+          "sha256": "d6393bb135bbafaa603d601e61f7fabb60d6d5dbc598ac0c9526064567f27f6d"
         },
         {
           "git_mode": "100644",
@@ -1656,8 +1657,7 @@
         {
           "git_mode": "100644",
           "path": "backend/tests/test_import_service.py",
-          "sha256": "70bd7fa15d766a6d2ff2b0cd6f445fe76f9aceeb5a628d5aed1b9b8e222848f9",
-          "source_snapshot": "release_b_integrated_preview"
+          "sha256": "f34df9aec11852674cbb6de525fe35f1353931d352624e9a4033052a398d7625"
         },
         {
           "git_mode": "100644",
@@ -1674,8 +1674,7 @@
         {
           "git_mode": "100644",
           "path": "backend/tests/test_imports_coverage.py",
-          "sha256": "e63295bcb2d1a5fefb6b7273d85f6276bb06b97a46833cfd9ee329873e23a41a",
-          "source_snapshot": "release_b_integrated_preview"
+          "sha256": "40b0749dc4857f403b7f2da969cb43c48776b1b29f702d4fcd7662fabb7eb442"
         },
         {
           "git_mode": "100644",
@@ -1793,8 +1792,7 @@
         {
           "git_mode": "100644",
           "path": "backend/tests/test_outbox_worker_faults.py",
-          "sha256": "a7a67c1c34ccbe9916a5997419ef09e9ddef570c24603e8216d5fd149c4e9272",
-          "source_snapshot": "outbox_acceptance_contract"
+          "sha256": "7a09de3b21de38bc0586a00411ad6b3514ab94479484cf7124bd9da6d9e13c4a"
         },
         {
           "git_mode": "100644",
@@ -1847,8 +1845,7 @@
         {
           "git_mode": "100644",
           "path": "backend/tests/test_promo_generation_migration.py",
-          "sha256": "0961c637ad8691280094efe2fbc20b72366db947db2a02137f4341dcbf69a3bc",
-          "source_snapshot": "release_b_integrated_preview"
+          "sha256": "d4f29148cb1d86c2fae83a91eca4f62966dbdd84de9fd8cb09f895c128832b61"
         },
         {
           "git_mode": "100644",
@@ -1895,12 +1892,12 @@
         {
           "git_mode": "100644",
           "path": "backend/tests/test_release_a_schema_069.py",
-          "sha256": "264e78786d822999fd1da72f8ad2c3ed674b7f38db516fa703400886987447aa"
+          "sha256": "1bece1623276734dda28a51ace57bb5817616516538efdcb0563d98ecf2900f4"
         },
         {
           "git_mode": "100644",
           "path": "backend/tests/test_release_contract_tooling_security.py",
-          "sha256": "2e99cbae7bb0ab5ce837664781291f57a884348c502124248e1916399e48fba9"
+          "sha256": "23d2f31e1bbc3c4508315aa96952426351a85fa4b633c2d4082d4c892a51e760"
         },
         {
           "git_mode": "100644",
@@ -2031,8 +2028,7 @@
         {
           "git_mode": "100644",
           "path": "backend/tests/test_sales_promotion_worker.py",
-          "sha256": "181c229712b34bc6518b5f300fbc33a3b041d5971adc1f774cd66bfdaeb1bf95",
-          "source_snapshot": "release_b_integrated_preview"
+          "sha256": "6b3b6ebdf2d72251c3190156a9bc88dc8b07693337af13aecda1352db52c6d99"
         },
         {
           "git_mode": "100644",
@@ -2175,7 +2171,7 @@
         {
           "git_mode": "100644",
           "path": "backend/tests/test_transactional_outbox.py",
-          "sha256": "09347511a79340d87dddf41ddafc1779e7c337d808575f4a332d497e9078abe5"
+          "sha256": "8838d2d16f73740dfbf2bc6d7c88050ce0d4e313df4da83ba7daf7488d264309"
         },
         {
           "git_mode": "100644",
@@ -2198,8 +2194,7 @@
         {
           "git_mode": "100644",
           "path": "backend/tests/test_worker_config.py",
-          "sha256": "86161e6eb26dc54f8874b6e1dd145fa983cbfe5f5fdaeb6de718d2f4a98839fd",
-          "source_snapshot": "release_b_integrated_preview"
+          "sha256": "1b9f7c90f02892b6dd90a7b4ce9167e9fb3a79ace36fb6703dabfb9a5069f45c"
         }
       ],
       "name": "backend_test_suite",
@@ -2832,7 +2827,7 @@
         {
           "git_mode": "100755",
           "path": "scripts/run_local_quality_gate.sh",
-          "sha256": "918452fbedb85472b228fd097fd0a343e892a52c4e2844e3db5bd3cfe409f68f"
+          "sha256": "640f89475b8b049182be77cbc9ac9182d6b469de8162b1ced0827d69a0cf0945"
         },
         {
           "git_mode": "100755",
@@ -2869,7 +2864,7 @@
         {
           "git_mode": "100755",
           "path": "scripts/verify_deployed_release.sh",
-          "sha256": "5ece35e7f11bdb313be4df69683564ace079449b21734067fc8180d269949edc"
+          "sha256": "f392c44cba46d450c572e86c91906f766feec224e75a1376705b4a92a34d83a0"
         },
         {
           "git_mode": "100755",

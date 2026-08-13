@@ -336,14 +336,14 @@ def validate_payload(payload: dict[str, Any]) -> None:
             raise RuntimeError(f"production source authority mismatch: {module}")
     fixture = payload.get("fixture_adapters")
     if fixture != {
-        "non_sales_producers": [
+        "protected_sql_fixture_emitters": [
             "emit_retail_pnl_generation_promoted",
             "emit_retail_salary_import_completed",
             "emit_retail_planning_forecast_promoted",
             "emit_retail_grile_manifest_approved",
         ],
         "source": "backend/db/migrations/069_ai_cohort_and_transactional_outbox.sql",
-        "effects": "deterministic non-network callbacks; sales uses production delivery chain",
+        "effects": "receipt-only deterministic non-network fixture callbacks; sales uses production delivery chain",
     }:
         raise RuntimeError("fixture adapters are not explicitly bounded")
     migration_manifest = json.loads(MIGRATION_MANIFEST.read_text(encoding="utf-8"))

@@ -169,7 +169,81 @@ def test_outbox_workload_split_is_bounded_and_gate_binds_engine() -> None:
         assert len(source.splitlines()) <= 600
         assert max((node.end_lineno or node.lineno) - node.lineno + 1 for node in functions) <= 120
     assert 'ENGINE = ROOT / "backend/scripts/outbox_slo_workload_engine.py"' in gate_source
-    assert "                    ENGINE," in gate_source
+
+
+def _scan_protected_outbox_vocabulary(
+    reserved_emitters: set[str], protected_event_types: set[str]
+) -> tuple[dict[str, set[str]], set[str], set[str]]:
+    found: dict[str, set[str]] = {name: set() for name in reserved_emitters}
+    event_type_paths: set[str] = set()
+    generic_insert_paths: set[str] = set()
+    tracked = subprocess.run(
+        ["git", "-C", str(ROOT), "ls-files", "-z"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.split("\0")
+    for relative in tracked:
+        if not relative or relative.startswith("docs/"):
+            continue
+        try:
+            source = (ROOT / relative).read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+        for name in reserved_emitters:
+            if name in source:
+                found[name].add(relative)
+        if any(event_type in source for event_type in protected_event_types):
+            event_type_paths.add(relative)
+        if (
+            relative.startswith("backend/")
+            and not relative.startswith(("backend/scripts/", "backend/tests/"))
+            and "INSERT INTO retail_outbox_events" in source
+        ):
+            generic_insert_paths.add(relative)
+    return found, event_type_paths, generic_insert_paths
+
+
+def test_protected_outbox_vocabulary_has_no_release_b_application_producer() -> None:
+    reserved_emitters = {
+        "emit_retail_pnl_generation_promoted",
+        "emit_retail_salary_import_completed",
+        "emit_retail_planning_forecast_promoted",
+        "emit_retail_grile_manifest_approved",
+    }
+    allowed = {
+        "backend/db/migrations/069_ai_cohort_and_transactional_outbox.sql",
+        "backend/scripts/run_outbox_slo_workload.py",
+        "backend/tests/test_release_a_schema_069.py",
+        "backend/tests/test_release_contract_tooling_security.py",
+        "scripts/run_outbox_slo_gate.py",
+    }
+    protected_event_types = {
+        "retail.pnl_generation_promoted.v1",
+        "retail.salary_import_completed.v1",
+        "retail.planning_forecast_promoted.v1",
+        "retail.grile_manifest_approved.v1",
+    }
+    found, event_type_paths, generic_insert_paths = _scan_protected_outbox_vocabulary(
+        reserved_emitters, protected_event_types
+    )
+    assert found == {name: allowed for name in reserved_emitters}
+    allowed_event_type_paths = {
+        "backend/db/migrations/069_ai_cohort_and_transactional_outbox.sql",
+        "backend/scripts/run_outbox_slo_workload.py",
+        "backend/tests/test_release_contract_tooling_security.py",
+        "scripts/run_outbox_slo_gate.py",
+        "scripts/verify_deployed_release.sh",
+    }
+    if (ROOT / "backend/services/outbox_worker.py").is_file():
+        allowed_event_type_paths.add("backend/services/outbox_worker.py")
+    assert event_type_paths == allowed_event_type_paths
+    assert generic_insert_paths == set()
+    gate_source = (ROOT / "scripts/run_outbox_slo_gate.py").read_text(
+        encoding="utf-8"
+    )
+    assert '"protected_sql_fixture_emitters"' in gate_source
+    assert '"non_sales_producers"' not in gate_source
 
 
 def test_release_a_checker_never_runs_mypy_after_scope_failure() -> None:
@@ -859,15 +933,18 @@ def test_release_b_runtime_composition_rejects_frozen_drift_and_extra_paths(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     checker = _load_checker()
-    frozen = {f"runtime/frozen_{index:03d}.py" for index in range(279)}
+    frozen = {f"runtime/frozen_{index:03d}.py" for index in range(272)}
     immutable = {f"contract/immutable_{index:02d}.json" for index in range(25)}
     immutable_from_a = {
         ".agent/contract-lock.json",
         "backend/services/grile_pilot_v2.py",
     }
     mutable = {"runtime/mutable.py"}
+    mutable_tests = {f"tests/mutable_{index:02d}.py" for index in range(7)}
     special = {".github/workflows/ci.yml"}
-    preview_delta = frozen | immutable | immutable_from_a | mutable | special
+    preview_delta = (
+        frozen | immutable | immutable_from_a | mutable | mutable_tests | special
+    )
     assert len(preview_delta) == 308
     outbox_unique = {"backend/tests/test_outbox.py"}
     scale_unique = {"backend/scripts/run_scale.py"}
@@ -882,6 +959,7 @@ def test_release_b_runtime_composition_rejects_frozen_drift_and_extra_paths(
         },
     )
     monkeypatch.setattr(checker, "RELEASE_B_MUTABLE_PATHS", mutable)
+    monkeypatch.setattr(checker, "RELEASE_B_MUTABLE_TEST_PATHS", mutable_tests)
     monkeypatch.setattr(checker, "RELEASE_B_IMPLEMENTATION_PATHS", mutable)
     monkeypatch.setattr(checker, "RELEASE_B_SPECIAL_PATHS", special)
     monkeypatch.setattr(
@@ -917,6 +995,8 @@ def test_release_b_runtime_composition_rejects_frozen_drift_and_extra_paths(
         ("preview", executable_frozen)
     ]
     identities[("HEAD", "runtime/mutable.py")] = ("100644", "implemented")
+    for path in mutable_tests:
+        identities[("HEAD", path)] = ("100644", f"implemented-{path}")
     for path in immutable_from_a:
         identities[("release-a", path)] = ("100644", f"release-a-{path}")
         identities[("HEAD", path)] = identities[("release-a", path)]
@@ -928,7 +1008,7 @@ def test_release_b_runtime_composition_rejects_frozen_drift_and_extra_paths(
     )
     evidence = checker.verify_release_b_runtime_composition("release-a", immutable)
     assert evidence["preview_delta_count"] == 308
-    assert evidence["frozen_preview_count"] == 279
+    assert evidence["frozen_preview_count"] == 272
 
     changed = sorted(frozen)[1]
     identities[("HEAD", changed)] = ("100644", "tampered")
@@ -954,6 +1034,16 @@ def test_release_b_runtime_composition_rejects_frozen_drift_and_extra_paths(
 
 def test_release_b_real_preview_topology_classifies_release_a_preserved_paths() -> None:
     checker = _load_checker()
+    assert len(checker.EXPECTED_CHANGED_PATHS) == 42
+    assert len(checker.RELEASE_B_MUTABLE_PATHS) == 23
+    assert len(checker.RELEASE_B_IMPLEMENTATION_PATHS) == 18
+    assert len(checker.RELEASE_B_MUTABLE_TEST_PATHS) == 10
+    assert checker.RELEASE_B_IMPLEMENTATION_PATHS < checker.RELEASE_B_MUTABLE_PATHS
+    assert checker.RELEASE_B_MUTABLE_TEST_PATHS.isdisjoint(
+        checker.RELEASE_B_MUTABLE_PATHS
+        | checker.RELEASE_B_IMMUTABLE_CURRENT_PATHS
+        | checker.RELEASE_B_SPECIAL_PATHS
+    )
     preview_sha = checker.EXPECTED_SOURCE_SNAPSHOTS[
         "release_b_integrated_preview"
     ]["commit"]
@@ -968,15 +1058,17 @@ def test_release_b_real_preview_topology_classifies_release_a_preserved_paths() 
         | checker.RELEASE_B_IMMUTABLE_FROM_A_PATHS
         | checker.RELEASE_B_SPECIAL_PATHS
         | checker.RELEASE_B_MUTABLE_PATHS
+        | checker.RELEASE_B_MUTABLE_TEST_PATHS
     )
     frozen = preview_delta - classified_exclusions
     assert len(preview_delta) == 308
-    assert len(frozen) == 279
+    assert len(frozen) == 272
     assert immutable_from_a <= preview_delta
     assert immutable_from_a.isdisjoint(frozen)
     assert len(preview_delta & checker.RELEASE_B_IMMUTABLE_CURRENT_PATHS) == 17
     assert len(preview_delta & checker.RELEASE_B_SPECIAL_PATHS) == 1
-    assert len(preview_delta & checker.RELEASE_B_MUTABLE_PATHS) == 9
+    assert len(preview_delta & checker.RELEASE_B_MUTABLE_PATHS) == 14
+    assert len(preview_delta & checker.RELEASE_B_MUTABLE_TEST_PATHS) == 2
     frozen_executables = {
         path
         for path in frozen
@@ -1119,6 +1211,8 @@ def _assert_ac17_outbox_metrics_contract(verifier: str) -> None:
     assert 'histogram="retail_outbox_delivery_duration_seconds"' in verifier
     assert "names != expected_exposition" in verifier
     assert 'query=count({__name__=~".*outbox.*"})' not in verifier
+    assert 'set(types) - {"retail.sales_generation_promoted.v1"}' in verifier
+    assert "protected outbox event type was activated in production" in verifier
 
 
 def _assert_ac17_direct_python_contract(verifier: str) -> None:

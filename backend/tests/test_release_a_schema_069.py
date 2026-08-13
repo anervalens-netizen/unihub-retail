@@ -627,6 +627,21 @@ async def test_069_runtime_roles_have_exact_producer_privileges() -> None:
     transaction = connection.transaction()
     await transaction.start()
     try:
+        protected_trigger_count = await connection.fetchval(
+            """
+            SELECT count(*)
+            FROM pg_trigger AS trigger
+            JOIN pg_proc AS procedure ON procedure.oid = trigger.tgfoid
+            WHERE NOT trigger.tgisinternal
+              AND (
+                pg_get_functiondef(procedure.oid) LIKE '%emit_retail_pnl_generation_promoted%'
+                OR pg_get_functiondef(procedure.oid) LIKE '%emit_retail_salary_import_completed%'
+                OR pg_get_functiondef(procedure.oid) LIKE '%emit_retail_planning_forecast_promoted%'
+                OR pg_get_functiondef(procedure.oid) LIKE '%emit_retail_grile_manifest_approved%'
+              )
+            """
+        )
+        assert protected_trigger_count == 0
         roles = [*EMITTER_ROLES.values(), "unihub_web_read"]
         for role in roles:
             assert not await connection.fetchval(

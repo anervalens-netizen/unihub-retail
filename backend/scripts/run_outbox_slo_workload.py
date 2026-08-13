@@ -300,9 +300,9 @@ async def _emit_fixture(
                 occurred_at=occurred_at,
             )
         else:
-            # Release B intentionally freezes no Python producer for these four
-            # paths. Their exact event-specific SQL wrappers from migration 069
-            # are used only to seed this disposable test database.
+            # These four event types are reserved in Release B. Their exact
+            # migration-069 SQL wrappers are isolated transport fixtures, not
+            # application producers or protected business lineage.
             event_id = await connection.fetchval(
                 f"SELECT public.{spec.fixture_sql_function}($1,$2,$3,$4,$5,$6,$7)",
                 spec.aggregate_id,

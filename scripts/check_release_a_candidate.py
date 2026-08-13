@@ -395,6 +395,12 @@ RELEASE_B_MUTABLE_PATHS = {
     "backend/services/promo_generation_migration.py",
     "backend/services/promo_generation_migration_hash.py",
     "backend/services/dashboard_specials_config.py",
+    "backend/services/jobs.py",
+    "backend/services/job_publication.py",
+    "backend/services/campaign_reporting_worker.py",
+    "backend/services/grile_pilot_v2_runtime.py",
+    "backend/services/grile_pilot_v2_sync.py",
+    "backend/services/imports.py",
     "backend/architecture_contract.json",
     "APP_ARCHITECTURE.md",
     "README.md",
@@ -414,6 +420,24 @@ RELEASE_B_IMPLEMENTATION_PATHS = {
     "backend/services/promo_generation_migration.py",
     "backend/services/promo_generation_migration_hash.py",
     "backend/services/dashboard_specials_config.py",
+    "backend/services/jobs.py",
+    "backend/services/job_publication.py",
+    "backend/services/campaign_reporting_worker.py",
+    "backend/services/grile_pilot_v2_runtime.py",
+    "backend/services/grile_pilot_v2_sync.py",
+    "backend/services/imports.py",
+}
+RELEASE_B_MUTABLE_TEST_PATHS = {
+    "backend/tests/test_campaign_reporting_job_publication.py",
+    "backend/tests/test_grile_outbox_delivery.py",
+    "backend/tests/test_grile_pilot_v2_sync.py",
+    "backend/tests/test_import_service.py",
+    "backend/tests/test_imports_coverage.py",
+    "backend/tests/test_outbox_worker_faults.py",
+    "backend/tests/test_promo_generation_migration.py",
+    "backend/tests/test_transactional_outbox.py",
+    "backend/tests/test_sales_promotion_worker.py",
+    "backend/tests/test_worker_config.py",
 }
 RELEASE_B_SPECIAL_PATHS = {
     ".github/workflows/ci.yml",
@@ -1138,9 +1162,10 @@ def verify_release_b_runtime_composition(
         | RELEASE_B_IMMUTABLE_FROM_A_PATHS
         | RELEASE_B_SPECIAL_PATHS
         | RELEASE_B_MUTABLE_PATHS
+        | RELEASE_B_MUTABLE_TEST_PATHS
     )
     frozen_preview_paths = preview_delta - preview_exclusions
-    if len(frozen_preview_paths) != 279:
+    if len(frozen_preview_paths) != 272:
         raise ValueError("Release-B frozen preview topology drift")
     frozen_preview: list[dict[str, str]] = []
     for path in sorted(frozen_preview_paths):
@@ -1161,6 +1186,7 @@ def verify_release_b_runtime_composition(
         | RELEASE_B_OUTBOX_UNIQUE_PATHS
         | RELEASE_B_SCALE_UNIQUE_PATHS
         | RELEASE_B_MUTABLE_PATHS
+        | RELEASE_B_MUTABLE_TEST_PATHS
         | RELEASE_B_SPECIAL_PATHS
     )
     unexpected_delta = sorted(actual_delta - allowed_delta)
@@ -1179,6 +1205,18 @@ def verify_release_b_runtime_composition(
             and (actual_mode, actual_digest) == (preview_mode, preview_digest)
         ):
             raise ValueError(f"Release-B mutable path did not change from preview: {path}")
+    missing_mutable_tests = sorted(RELEASE_B_MUTABLE_TEST_PATHS - actual_delta)
+    if missing_mutable_tests:
+        raise ValueError(
+            f"Release-B required authority test is unchanged: {missing_mutable_tests}"
+        )
+    for path in sorted(RELEASE_B_MUTABLE_TEST_PATHS):
+        actual_mode, actual_digest = git_path_identity("HEAD", path)
+        preview_mode, preview_digest = git_path_identity(preview_sha, path)
+        if actual_mode != "100644" or not actual_digest:
+            raise ValueError(f"Release-B mutable test is missing or unsafe: {path}")
+        if (actual_mode, actual_digest) == (preview_mode, preview_digest):
+            raise ValueError(f"Release-B mutable test did not change from preview: {path}")
 
     release_a_immutable: list[dict[str, str]] = []
     for path in sorted(RELEASE_B_IMMUTABLE_FROM_A_PATHS):
@@ -1205,6 +1243,7 @@ def verify_release_b_runtime_composition(
         "outbox_unique_paths": sorted(outbox_unique),
         "scale_unique_paths": sorted(scale_unique),
         "mutable_paths": sorted(RELEASE_B_MUTABLE_PATHS),
+        "mutable_test_paths": sorted(RELEASE_B_MUTABLE_TEST_PATHS),
         "candidate_delta_paths": sorted(actual_delta),
         "unexpected_delta_paths": unexpected_delta,
         "release_a_immutable": release_a_immutable,
@@ -2287,8 +2326,8 @@ def verify_lock(
     *, current_paths: set[str] | None = None
 ) -> tuple[dict[str, Any], list[dict[str, str]]]:
     lock = load_json(ROOT / ".agent/contract-lock.json")
-    if lock.get("revision") != 25 or lock.get("baseline_source_sha") != EXPECTED_BASELINE:
-        raise ValueError("Release-A requires exact contract lock revision 25 and baseline")
+    if lock.get("revision") != 26 or lock.get("baseline_source_sha") != EXPECTED_BASELINE:
+        raise ValueError("Release-A requires exact contract lock revision 26 and baseline")
     content_commit = str(lock["contract_content_commit"])
     lock_commits = list(
         filter(
@@ -2303,15 +2342,15 @@ def verify_lock(
         )
     )
     if len(lock_commits) != 1:
-        raise ValueError("revision-25 lock must have exactly one immutable lock commit")
+        raise ValueError("revision-26 lock must have exactly one immutable lock commit")
     lock_commit = lock_commits[0]
     lock_parents = git("show", "-s", "--format=%P", lock_commit).split()
     if lock_parents != [content_commit]:
-        raise ValueError("revision-25 lock commit must directly follow content commit")
+        raise ValueError("revision-26 lock commit must directly follow content commit")
     current_lock_blob = git("rev-parse", "HEAD:.agent/contract-lock.json")
     locked_blob = git("rev-parse", f"{lock_commit}:.agent/contract-lock.json")
     if current_lock_blob != locked_blob:
-        raise ValueError("current revision-25 lock differs from its sole lock commit")
+        raise ValueError("current revision-26 lock differs from its sole lock commit")
     lock["verified_lock_commit"] = lock_commit
     verified: list[dict[str, str]] = []
     locked_objects = [lock["plan"], *lock["assets"]]

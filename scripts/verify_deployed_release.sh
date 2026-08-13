@@ -1759,6 +1759,8 @@ async def main():
             receipts=int(await conn.fetchval("SELECT count(*) FROM retail_outbox_consumer_receipts") or 0)
             if dead or stale or pending_age>=60: raise SystemExit("production outbox health contract failed")
             types={r["event_type"]:int(r["n"]) for r in await conn.fetch("SELECT event_type,count(*) n FROM retail_outbox_events GROUP BY event_type ORDER BY event_type")}
+            if set(types) - {"retail.sales_generation_promoted.v1"}:
+                raise SystemExit("protected outbox event type was activated in production")
     finally: await conn.close()
     pathlib.Path(sys.argv[3]).write_text(json.dumps({"schema_version":1,"result":"PASS","migration_count":len(actual),"last_migration":"069_ai_cohort_and_transactional_outbox.sql","migration_manifest":actual,"outbox_states":states,"outbox_event_types":types,"outbox_receipts":receipts,"oldest_pending_seconds":pending_age,"stale_processing":stale},sort_keys=True,separators=(",",":"))+"\n")
 asyncio.run(main())
