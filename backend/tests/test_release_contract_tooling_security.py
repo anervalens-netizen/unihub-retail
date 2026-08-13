@@ -697,6 +697,17 @@ def test_release_b_workflow_is_only_the_three_frozen_insertions() -> None:
         assert name not in baseline
         assert candidate.count(name) == 1
     assert candidate.count(checker.EXPECTED_TYPECHECK_STEP) == 1
+    assert all(token in candidate for token in checker.RELEASE_B_REQUIRED_CI_TOKENS)
+    assert "SOURCE_SHA" not in checker.RELEASE_B_REQUIRED_CI_TOKENS
+    assert "SHA256SUMS" not in checker.RELEASE_B_REQUIRED_CI_TOKENS
+    artifact_builder = (ROOT / "ops/build-retail-release-artifact.sh").read_text(
+        encoding="utf-8"
+    )
+    artifact_checker = CHECKER_PATH.read_text(encoding="utf-8")
+    for artifact_token in ("SOURCE_SHA", "SHA256SUMS"):
+        assert artifact_token not in candidate
+        assert artifact_token in artifact_builder
+        assert artifact_token in artifact_checker
     assert candidate != checker.expected_release_b_workflow(candidate)
 
 

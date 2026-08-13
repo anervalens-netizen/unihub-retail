@@ -329,6 +329,32 @@ FRONTEND_COVERAGE_INSERT = """
             --coverage coverage/coverage-final.json \\
             --evidence test-results/frontend-critical-coverage.json
 """
+RELEASE_B_REQUIRED_CI_TOKENS = (
+    "scripts/verify_promtool_cache.sh prepare",
+    "promtool-cache-${{ github.sha }}",
+    "Generate exact-main Release-A schema evidence",
+    "retail-release-a-schema-${{ github.sha }}",
+    "retail-frontend-build-input-${{ github.sha }}",
+    "FRONTEND_BUILD_INPUT_SHA256_FILE",
+    "release_a_sha",
+    "release_a_run_id",
+    "Download exact Release-A artifact for Release-B policy proof",
+    "Rebuild exact main and audit signed artifact",
+    "--frontend-rum-dsn-from-environment",
+    "ARTIFACT_AUDIT_RUN_ID",
+    "ARTIFACT_AUDIT_RUN_ATTEMPT",
+    "ARTIFACT_AUDIT_WORKFLOW_SHA",
+    "retail-artifact-audit-${{ github.sha }}",
+    "RELEASE_A_EVIDENCE_DIR",
+    '--cache-dir "${RUNNER_TOOL_CACHE}/unihub-prometheus"',
+    "--sha256 \"$PROMETHEUS_SHA256\"",
+    "scripts/check_complexity_ratchet.py",
+    "scripts/check_python_complexity_contract.py",
+    "scripts/check_frontend_critical_coverage.mjs",
+    "scripts/check_frontend_structure_contract.mjs",
+    "ops/build-retail-release-artifact.sh \"$GITHUB_SHA\" release-artifact",
+    "retail-release-${{ github.sha }}",
+)
 RELEASE_B_EVIDENCE_CURRENT_PATHS = {
     ".github/workflows/deploy.yml",
     ".agent/PLANS.md",
@@ -1326,35 +1352,7 @@ def verify_release_b_mutation_policy(
     forbidden = ("--shadow-file", "mypy_shadow", "pilot_shadow")
     if any(token in workflow for token in forbidden):
         raise ValueError("Release-B CI reintroduced typecheck substitution")
-    required_ci_tokens = (
-        "scripts/verify_promtool_cache.sh prepare",
-        "promtool-cache-${{ github.sha }}",
-        "Generate exact-main Release-A schema evidence",
-        "retail-release-a-schema-${{ github.sha }}",
-        "retail-frontend-build-input-${{ github.sha }}",
-        "FRONTEND_BUILD_INPUT_SHA256_FILE",
-        "release_a_sha",
-        "release_a_run_id",
-        "Download exact Release-A artifact for Release-B policy proof",
-        "Rebuild exact main and audit signed artifact",
-        "--frontend-rum-dsn-from-environment",
-        "ARTIFACT_AUDIT_RUN_ID",
-        "ARTIFACT_AUDIT_RUN_ATTEMPT",
-        "ARTIFACT_AUDIT_WORKFLOW_SHA",
-        "retail-artifact-audit-${{ github.sha }}",
-        "RELEASE_A_EVIDENCE_DIR",
-        '--cache-dir "${RUNNER_TOOL_CACHE}/unihub-prometheus"',
-        "--sha256 \"$PROMETHEUS_SHA256\"",
-        "scripts/check_complexity_ratchet.py",
-        "scripts/check_python_complexity_contract.py",
-        "scripts/check_frontend_critical_coverage.mjs",
-        "scripts/check_frontend_structure_contract.mjs",
-        "ops/build-retail-release-artifact.sh \"$GITHUB_SHA\" release-artifact",
-        "retail-release-${{ github.sha }}",
-        "SOURCE_SHA",
-        "SHA256SUMS",
-    )
-    missing_ci = [token for token in required_ci_tokens if token not in workflow]
+    missing_ci = [token for token in RELEASE_B_REQUIRED_CI_TOKENS if token not in workflow]
     if missing_ci:
         raise ValueError(f"Release-B CI lost required semantics: {missing_ci}")
     if "prometheus/releases/download" in workflow or "curl " in workflow[workflow.index("Operational configuration validation"):workflow.index("Exact-SHA deploy and rollback sandbox")]:
@@ -1368,7 +1366,7 @@ def verify_release_b_mutation_policy(
         "ratchets": ratchet_evidence,
         "ci_sha256": sha256_bytes(workflow.encode("utf-8")),
         "ci_exact_three_gate_transform": True,
-        "ci_required_tokens": list(required_ci_tokens),
+        "ci_required_tokens": list(RELEASE_B_REQUIRED_CI_TOKENS),
         "ci_direct_mypy": True,
         "ci_direct_prometheus_download": False,
         "authorities": verify_release_b_authorities(),
@@ -2326,8 +2324,8 @@ def verify_lock(
     *, current_paths: set[str] | None = None
 ) -> tuple[dict[str, Any], list[dict[str, str]]]:
     lock = load_json(ROOT / ".agent/contract-lock.json")
-    if lock.get("revision") != 26 or lock.get("baseline_source_sha") != EXPECTED_BASELINE:
-        raise ValueError("Release-A requires exact contract lock revision 26 and baseline")
+    if lock.get("revision") != 27 or lock.get("baseline_source_sha") != EXPECTED_BASELINE:
+        raise ValueError("Release-A requires exact contract lock revision 27 and baseline")
     content_commit = str(lock["contract_content_commit"])
     lock_commits = list(
         filter(
