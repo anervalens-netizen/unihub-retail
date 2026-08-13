@@ -1137,7 +1137,7 @@ def verify_release_b_runtime_composition(
         expected_mode, expected_digest = git_path_identity(preview_sha, path)
         actual_mode, actual_digest = git_path_identity("HEAD", path)
         if (
-            expected_mode != "100644"
+            expected_mode not in {"100644", "100755"}
             or (actual_mode, actual_digest) != (expected_mode, expected_digest)
         ):
             raise ValueError(f"Release-B frozen preview runtime drift: {path}")
@@ -1175,7 +1175,7 @@ def verify_release_b_runtime_composition(
         expected_mode, expected_digest = git_path_identity(expected_release_a_sha, path)
         actual_mode, actual_digest = git_path_identity("HEAD", path)
         if (
-            expected_mode not in {"100644", "100755"}
+            expected_mode != "100644"
             or not expected_digest
             or (actual_mode, actual_digest) != (expected_mode, expected_digest)
         ):
@@ -2275,8 +2275,8 @@ def verify_lock(
     *, current_paths: set[str] | None = None
 ) -> tuple[dict[str, Any], list[dict[str, str]]]:
     lock = load_json(ROOT / ".agent/contract-lock.json")
-    if lock.get("revision") != 20 or lock.get("baseline_source_sha") != EXPECTED_BASELINE:
-        raise ValueError("Release-A requires exact contract lock revision 20 and baseline")
+    if lock.get("revision") != 21 or lock.get("baseline_source_sha") != EXPECTED_BASELINE:
+        raise ValueError("Release-A requires exact contract lock revision 21 and baseline")
     content_commit = str(lock["contract_content_commit"])
     lock_commits = list(
         filter(
@@ -2291,15 +2291,15 @@ def verify_lock(
         )
     )
     if len(lock_commits) != 1:
-        raise ValueError("revision-20 lock must have exactly one immutable lock commit")
+        raise ValueError("revision-21 lock must have exactly one immutable lock commit")
     lock_commit = lock_commits[0]
     lock_parents = git("show", "-s", "--format=%P", lock_commit).split()
     if lock_parents != [content_commit]:
-        raise ValueError("revision-20 lock commit must directly follow content commit")
+        raise ValueError("revision-21 lock commit must directly follow content commit")
     current_lock_blob = git("rev-parse", "HEAD:.agent/contract-lock.json")
     locked_blob = git("rev-parse", f"{lock_commit}:.agent/contract-lock.json")
     if current_lock_blob != locked_blob:
-        raise ValueError("current revision-20 lock differs from its sole lock commit")
+        raise ValueError("current revision-21 lock differs from its sole lock commit")
     lock["verified_lock_commit"] = lock_commit
     verified: list[dict[str, str]] = []
     locked_objects = [lock["plan"], *lock["assets"]]

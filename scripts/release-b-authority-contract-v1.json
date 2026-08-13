@@ -331,7 +331,7 @@
     {
       "git_mode": "100644",
       "path": "backend/tests/test_release_contract_tooling_security.py",
-      "sha256": "398ed3554f1ac005b8cb60235ce3ed5713e42b7720a6b50270fdb077cd343ccb",
+      "sha256": "c56209927a632716adfd04897355adbf232def7bff1af879fbb2e6cff97a3538",
       "supports": [
         "AC-12",
         "AC-16",
@@ -705,7 +705,7 @@
     {
       "git_mode": "100644",
       "path": "scripts/check_release_a_candidate.py",
-      "sha256": "87f08dfd7be063bd46ee1fbca447894ff1e4c4da2d4871a441a2e0c9464929e9",
+      "sha256": "2af33de1e1b2dc712f26eb2be281f8ead5d75fb7834ca01a507cb029d515a5ca",
       "supports": [
         "AC-12",
         "AC-16",
@@ -1894,7 +1894,7 @@
         {
           "git_mode": "100644",
           "path": "backend/tests/test_release_contract_tooling_security.py",
-          "sha256": "398ed3554f1ac005b8cb60235ce3ed5713e42b7720a6b50270fdb077cd343ccb"
+          "sha256": "c56209927a632716adfd04897355adbf232def7bff1af879fbb2e6cff97a3538"
         },
         {
           "git_mode": "100644",

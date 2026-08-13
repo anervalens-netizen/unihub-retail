@@ -778,6 +778,14 @@ def test_release_b_runtime_composition_rejects_frozen_drift_and_extra_paths(
     identities.update(
         {("HEAD", path): value for (_commit, path), value in identities.items()}
     )
+    executable_frozen = sorted(frozen)[0]
+    identities[("preview", executable_frozen)] = (
+        "100755",
+        f"preview-{executable_frozen}",
+    )
+    identities[("HEAD", executable_frozen)] = identities[
+        ("preview", executable_frozen)
+    ]
     identities[("HEAD", "runtime/mutable.py")] = ("100644", "implemented")
     for path in immutable_from_a:
         identities[("release-a", path)] = ("100644", f"release-a-{path}")
@@ -792,13 +800,20 @@ def test_release_b_runtime_composition_rejects_frozen_drift_and_extra_paths(
     assert evidence["preview_delta_count"] == 308
     assert evidence["frozen_preview_count"] == 279
 
-    changed = next(iter(frozen))
+    changed = sorted(frozen)[1]
     identities[("HEAD", changed)] = ("100644", "tampered")
     with pytest.raises(ValueError, match="frozen preview runtime drift"):
         checker.verify_release_b_runtime_composition("release-a", immutable)
     identities[("HEAD", changed)] = identities[("preview", changed)]
     for path in immutable_from_a:
         identities[("HEAD", path)] = ("100644", "tampered")
+        with pytest.raises(ValueError, match="changed immutable Release-A path"):
+            checker.verify_release_b_runtime_composition("release-a", immutable)
+        identities[("HEAD", path)] = identities[("release-a", path)]
+        identities[("HEAD", path)] = (
+            "100755",
+            identities[("release-a", path)][1],
+        )
         with pytest.raises(ValueError, match="changed immutable Release-A path"):
             checker.verify_release_b_runtime_composition("release-a", immutable)
         identities[("HEAD", path)] = identities[("release-a", path)]
@@ -832,6 +847,19 @@ def test_release_b_real_preview_topology_classifies_release_a_preserved_paths() 
     assert len(preview_delta & checker.RELEASE_B_IMMUTABLE_CURRENT_PATHS) == 17
     assert len(preview_delta & checker.RELEASE_B_SPECIAL_PATHS) == 1
     assert len(preview_delta & checker.RELEASE_B_MUTABLE_PATHS) == 9
+    frozen_executables = {
+        path
+        for path in frozen
+        if checker.git_path_identity(preview_sha, path)[0] == "100755"
+    }
+    assert frozen_executables == {
+        "backend/scripts/run_tests_isolated.sh",
+        "scripts/run_pwa_release_lifecycle.sh",
+    }
+    assert all(
+        checker.git_path_identity("HEAD", path)[0] == "100644"
+        for path in immutable_from_a
+    )
 
 
 def test_ac17_freezes_complete_invocation_and_three_way_ref_reconciliation() -> None:
