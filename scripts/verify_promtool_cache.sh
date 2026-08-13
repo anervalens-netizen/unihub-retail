@@ -47,49 +47,39 @@ prepare() {
   [[ -n "$cache_dir" && -n "$destination" && -n "$evidence" ]] || { usage; return 2; }
 
   mkdir -p "$cache_dir" "$(dirname "$destination")"
-  local system_promtool="" source="" download_count=0 archive_sha="$expected_sha"
-  if [[ "${PROMTOOL_IGNORE_SYSTEM:-0}" != "1" ]]; then
-    system_promtool="$(command -v promtool || true)"
-  fi
-  if [[ -n "$system_promtool" ]] \
-      && "$system_promtool" --version 2>&1 | grep -Eq "(^|[ ,])${version}([ ,]|$)"; then
-    install -m 0755 "$system_promtool" "$destination"
-    source="system"
-    archive_sha=""
-  else
-    local archive="$cache_dir/prometheus-${version}.linux-amd64.tar.gz"
-    local lock="$cache_dir/prometheus-${version}.lock"
-    exec 9>"$lock"
-    flock 9
-    if [[ ! -f "$archive" ]] \
-        || ! printf '%s  %s\n' "$expected_sha" "$archive" | sha256sum --check --status -; then
-      local download_tmp
-      download_tmp="$(mktemp "$cache_dir/.prometheus-download.XXXXXX")"
-      if [[ -n "${PROMTOOL_TEST_SOURCE_ARCHIVE:-}" && "${UNIHUB_RUNNING_TESTS:-0}" == "1" ]]; then
-        cp -- "$PROMTOOL_TEST_SOURCE_ARCHIVE" "$download_tmp"
-      else
-        curl --fail --silent --show-error --location \
-          --connect-timeout 10 --max-time 120 --retry 2 \
-          "https://github.com/prometheus/prometheus/releases/download/v${version}/prometheus-${version}.linux-amd64.tar.gz" \
-          --output "$download_tmp"
-      fi
-      printf '%s  %s\n' "$expected_sha" "$download_tmp" | sha256sum --check --status -
-      mv -- "$download_tmp" "$archive"
-      download_count=1
-      source="download"
+  local source="" download_count=0 archive_sha="$expected_sha"
+  local archive="$cache_dir/prometheus-${version}.linux-amd64.tar.gz"
+  local lock="$cache_dir/prometheus-${version}.lock"
+  exec 9>"$lock"
+  flock 9
+  if [[ ! -f "$archive" ]] \
+      || ! printf '%s  %s\n' "$expected_sha" "$archive" | sha256sum --check --status -; then
+    local download_tmp
+    download_tmp="$(mktemp "$cache_dir/.prometheus-download.XXXXXX")"
+    if [[ -n "${PROMTOOL_TEST_SOURCE_ARCHIVE:-}" && "${UNIHUB_RUNNING_TESTS:-0}" == "1" ]]; then
+      cp -- "$PROMTOOL_TEST_SOURCE_ARCHIVE" "$download_tmp"
     else
-      source="cache"
+      curl --fail --silent --show-error --location \
+        --connect-timeout 10 --max-time 120 --retry 2 \
+        "https://github.com/prometheus/prometheus/releases/download/v${version}/prometheus-${version}.linux-amd64.tar.gz" \
+        --output "$download_tmp"
     fi
-    flock -u 9
-    local extract_dir
-    extract_dir="$(mktemp -d)"
-    trap 'rm -rf -- "$extract_dir"' RETURN
-    tar --extract --gzip --file "$archive" --directory "$extract_dir" \
-      --strip-components=1 "prometheus-${version}.linux-amd64/promtool"
-    install -m 0755 "$extract_dir/promtool" "$destination"
-    rm -rf -- "$extract_dir"
-    trap - RETURN
+    printf '%s  %s\n' "$expected_sha" "$download_tmp" | sha256sum --check --status -
+    mv -- "$download_tmp" "$archive"
+    download_count=1
+    source="download"
+  else
+    source="cache"
   fi
+  flock -u 9
+  local extract_dir
+  extract_dir="$(mktemp -d)"
+  trap 'rm -rf -- "$extract_dir"' RETURN
+  tar --extract --gzip --file "$archive" --directory "$extract_dir" \
+    --strip-components=1 "prometheus-${version}.linux-amd64/promtool"
+  install -m 0755 "$extract_dir/promtool" "$destination"
+  rm -rf -- "$extract_dir"
+  trap - RETURN
   "$destination" --version 2>&1 | grep -Eq "(^|[ ,])${version}([ ,]|$)"
   local binary_sha
   binary_sha="$(sha256sum "$destination" | awk '{print $1}')"
@@ -119,12 +109,12 @@ self_test() {
   local digest
   digest="$(sha256sum "$source_archive" | awk '{print $1}')"
   local cold_json="$test_root/cold.json" warm_json="$test_root/warm.json"
-  UNIHUB_RUNNING_TESTS=1 PROMTOOL_IGNORE_SYSTEM=1 \
+  UNIHUB_RUNNING_TESTS=1 \
     PROMTOOL_TEST_SOURCE_ARCHIVE="$source_archive" \
     "$0" prepare --version "$version" --sha256 "$digest" \
       --cache-dir "$test_root/cache" --destination "$test_root/bin/promtool" \
       --evidence "$cold_json"
-  UNIHUB_RUNNING_TESTS=1 PROMTOOL_IGNORE_SYSTEM=1 \
+  UNIHUB_RUNNING_TESTS=1 \
     "$0" prepare --version "$version" --sha256 "$digest" \
       --cache-dir "$test_root/cache" --destination "$test_root/bin/promtool" \
       --evidence "$warm_json"

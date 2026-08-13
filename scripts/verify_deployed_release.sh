@@ -36,6 +36,12 @@ EXPECTED_UNITS=(
   unihub-export-worker.service
   unihub-salary-export-worker.service
 )
+artifact_unit_path() {
+  case "$1" in
+    unihub-worker.service) printf '%s\n' "unihub-worker.service" ;;
+    *) printf '%s\n' "ops/systemd/$1" ;;
+  esac
+}
 
 die() { printf '%s: %s\n' "$PROGRAM" "$*" >&2; exit 1; }
 usage() {
@@ -246,7 +252,7 @@ COSIGN_BIN="$COSIGN_BIN" PYTHONPATH="$LIVE_ROOT/backend" "$PYTHON" \
 "$PYTHON" - "$WORK/fragments/release-a-verification.json" "$MAIN_A_SHA" <<'PY'
 import json,pathlib,sys
 p=json.loads(pathlib.Path(sys.argv[1]).read_text())
-if p.get("result")!="PASS" or p.get("release_a_sha")!=sys.argv[2]: raise SystemExit("Release-A checker did not authorize exact SHA")
+if p.get("result")!="PASS" or p.get("expected_release_a_sha")!=sys.argv[2]: raise SystemExit("Release-A checker did not authorize exact SHA")
 PY
 
 B_ARCHIVE="$B_ARTIFACT_DIR/retail-release-$MAIN_B_SHA.tar.gz"
@@ -265,11 +271,12 @@ require_directory "$RUNTIME_RELEASE"
 diff -qr -- "$WORK/artifacts/b/dist" "$LIVE_ROOT/dist" >"$WORK/raw/frontend-diff.log" \
   || die "live frontend differs from signed Release-B artifact"
 for unit in "${EXPECTED_UNITS[@]}"; do
+  artifact_unit="$(artifact_unit_path "$unit")"
   require_regular "$RUNTIME_RELEASE/systemd/$unit"
   [[ -L "/etc/systemd/system/$unit" ]] || die "systemd unit is not an immutable runtime symlink: $unit"
   [[ "$(readlink -f "/etc/systemd/system/$unit")" == "$RUNTIME_RELEASE/systemd/$unit" ]] \
     || die "systemd unit is not bound to MAIN_B_SHA: $unit"
-  cmp -s "$WORK/artifacts/b/ops/systemd/$unit" "$RUNTIME_RELEASE/systemd/$unit" \
+  cmp -s "$WORK/artifacts/b/$artifact_unit" "$RUNTIME_RELEASE/systemd/$unit" \
     || die "runtime unit differs from signed Release-B artifact: $unit"
 done
 cmp -s "$WORK/artifacts/b/ops/observability/retail-slo-rules.yml" \
@@ -475,11 +482,13 @@ import collections,hashlib,json,pathlib,re,sys
 lines=pathlib.Path(sys.argv[1]).read_text(errors="replace").splitlines()
 fatal=re.compile(r"traceback|critical|panic|unhandled exception|segmentation fault",re.I)
 warn=re.compile(r"\bwarn(?:ing)?\b",re.I); volatile=re.compile(r"\b(?:[0-9a-f]{8,}|\d{2,}|sp1_[0-9a-f]{64})\b",re.I)
+google_get=re.compile(r"\bGET\b[^\n]*(?:sheets\.googleapis\.com|www\.googleapis\.com/.*/spreadsheets)",re.I)
 fatals=[x for x in lines if fatal.search(x)]
+google_get_count=sum(bool(google_get.search(x)) for x in lines)
 fingerprints=collections.Counter(hashlib.sha256(volatile.sub("<v>",x).encode()).hexdigest() for x in lines if warn.search(x))
 repeated={k:v for k,v in fingerprints.items() if v>=3}
-if fatals or repeated: raise SystemExit("journal contains fatal or repeated warning pattern")
-pathlib.Path(sys.argv[2]).write_text(json.dumps({"schema_version":1,"result":"PASS","line_count":len(lines),"raw_sha256":hashlib.sha256(("\n".join(lines)+"\n").encode()).hexdigest(),"fatal_count":len(fatals),"warning_fingerprint_counts":dict(fingerprints),"repeated_warning_fingerprints":repeated},sort_keys=True,separators=(",",":"))+"\n")
+if fatals or repeated or google_get_count: raise SystemExit("journal contains fatal, repeated warning or Google Sheets GET pattern")
+pathlib.Path(sys.argv[2]).write_text(json.dumps({"schema_version":1,"result":"PASS","line_count":len(lines),"raw_sha256":hashlib.sha256(("\n".join(lines)+"\n").encode()).hexdigest(),"fatal_count":len(fatals),"warning_fingerprint_counts":dict(fingerprints),"repeated_warning_fingerprints":repeated,"google_sheets_get_count":google_get_count},sort_keys=True,separators=(",",":"))+"\n")
 PY
 rm -f -- "$WORK/raw/journal.txt"
 

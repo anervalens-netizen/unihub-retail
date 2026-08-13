@@ -477,6 +477,8 @@ def dependencies(app: Any) -> list[dict[str, str]]:
     paths.update({BACKEND / "services/reporting_refresh.py", BACKEND / "services/jobs.py", BACKEND / "services/sales_artifacts.py", BACKEND / "db/schema_v2.sql", BACKEND / "db/migrations/manifest.json", BACKEND / "db/migration_runner.py"})
     paths.update((BACKEND / item) for item in REQUIRED_B)
     for pattern in DEPENDENCY_GLOBS: paths.update(BACKEND.glob(pattern))
+    loaded = [Path(raw).resolve() for module in tuple(sys.modules.values()) if (raw := getattr(module, "__file__", None))]
+    paths.update(path for path in loaded if path.suffix == ".py" and path.is_relative_to(BACKEND) and "tests" not in path.parts)
     return [{"path": str(path.relative_to(ROOT)), "sha256": hashlib.sha256(path.read_bytes()).hexdigest()} for path in sorted(paths) if path.is_file()]
 async def environment(pool: Any) -> dict[str, Any]:
     async with pool.acquire() as conn:

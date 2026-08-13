@@ -35,8 +35,13 @@ fi
   printf 'Release-A gate requires backend/venv.\n' >&2
   exit 1
 }
-git -C "$ROOT_DIR" diff --quiet
-git -C "$ROOT_DIR" diff --cached --quiet
+[[ -z "$(git -C "$ROOT_DIR" status --porcelain)" ]] || {
+  printf 'Release-A gate requires a clean worktree including untracked files.\n' >&2
+  exit 1
+}
+export PYTHONNOUSERSITE=1
+export PYTHONSAFEPATH=1
+unset MYPYPATH MYPY_CONFIG_FILE
 
 CURRENT_SHA="$(git -C "$ROOT_DIR" rev-parse HEAD)"
 STAMP="release-a-${CURRENT_SHA:0:12}-$$"
@@ -46,6 +51,19 @@ TEMP_DIR="$(mktemp -d)"
 EVIDENCE_DIR="$(dirname "$EVIDENCE_PATH")"
 JUNIT_EMPTY_PATH="$EVIDENCE_DIR/release-a-schema-empty.xml"
 JUNIT_RESTORED_PATH="$EVIDENCE_DIR/release-a-schema-restored.xml"
+CANDIDATE_EVIDENCE_PATH="$EVIDENCE_DIR/release-a-candidate.json"
+EXPECTED_EVIDENCE_PATH="$ROOT_DIR/test-results/closure/$CURRENT_SHA/release-a/schema-gate.json"
+[[ "$EVIDENCE_PATH" == "$EXPECTED_EVIDENCE_PATH" ]] || {
+  printf 'Release-A evidence path must be exact-SHA canonical path.\n' >&2
+  exit 1
+}
+for fresh_path in "$EVIDENCE_PATH" "$JUNIT_EMPTY_PATH" \
+  "$JUNIT_RESTORED_PATH" "$CANDIDATE_EVIDENCE_PATH"; do
+  [[ ! -e "$fresh_path" && ! -L "$fresh_path" ]] || {
+    printf 'Release-A evidence path must be new: %s\n' "$fresh_path" >&2
+    exit 1
+  }
+done
 
 cleanup() {
   timeout 30 docker rm -f -v "$POSTGRES_CONTAINER" >/dev/null 2>&1 || true
@@ -57,8 +75,14 @@ cleanup() {
 trap cleanup EXIT
 
 mkdir -p "$EVIDENCE_DIR" "$TEMP_DIR/baseline"
+[[ ! -L "$ROOT_DIR/test-results" && ! -L "$ROOT_DIR/test-results/closure" \
+  && ! -L "$ROOT_DIR/test-results/closure/$CURRENT_SHA" \
+  && ! -L "$EVIDENCE_DIR" \
+  && "$(realpath -m "$EVIDENCE_DIR")" == "$EVIDENCE_DIR" ]] || {
+  printf 'Release-A evidence directory contains an unsafe symlink.\n' >&2
+  exit 1
+}
 git -C "$ROOT_DIR" archive "$BASELINE_SHA" | tar -x -C "$TEMP_DIR/baseline"
-CANDIDATE_EVIDENCE_PATH="$EVIDENCE_DIR/release-a-candidate.json"
 "$PYTHON" "$ROOT_DIR/scripts/check_release_a_candidate.py" \
   --evidence "$CANDIDATE_EVIDENCE_PATH"
 

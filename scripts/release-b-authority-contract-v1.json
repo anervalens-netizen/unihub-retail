@@ -1,0 +1,482 @@
+{
+  "acceptance_criteria": [
+    "AC-01",
+    "AC-02",
+    "AC-03",
+    "AC-04",
+    "AC-05",
+    "AC-06",
+    "AC-07",
+    "AC-08",
+    "AC-09",
+    "AC-10",
+    "AC-11",
+    "AC-12",
+    "AC-13",
+    "AC-14",
+    "AC-15",
+    "AC-16",
+    "AC-17",
+    "T-09A-L"
+  ],
+  "authorities": [
+    {
+      "git_mode": "100644",
+      "path": "backend/scripts/run_ai_forecast_backtest.py",
+      "sha256": "43f3207bc5be80a7a707411504bc899bc1a62818fadfd235c5d05f1b7ce3b005",
+      "supports": [
+        "AC-03"
+      ]
+    },
+    {
+      "git_mode": "100755",
+      "path": "backend/scripts/run_outbox_slo_workload.py",
+      "sha256": "fbcaff78b4a08066ad241d28d7ab01b3f7fd3ad2b08fda8e1ae770c1c5577194",
+      "supports": [
+        "AC-12"
+      ]
+    },
+    {
+      "git_mode": "100755",
+      "path": "backend/scripts/run_retail_scale_profile.py",
+      "sha256": "6338e2f9f0476f78e798ff936338f60a907506698c13aacb4688f8f13775b70d",
+      "supports": [
+        "AC-13"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": "backend/tests/test_ai_forecast_asof_cohort.py",
+      "sha256": "ed7f7eede2b251602314ae0c58c3d7c61988aa9b98349d90976386ae6d3c69a0",
+      "supports": [
+        "AC-03"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": "backend/tests/test_ai_forecast_backtest.py",
+      "sha256": "faac4454d1a95bb6ff2e4f7cf9dc6dcb4768a74c9db4e9db7c71a44a3cf74371",
+      "supports": [
+        "AC-03"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": "backend/tests/test_ai_forecast_governance.py",
+      "sha256": "9e81ecab88ec28d9b593f27b9ae1c4f6fa5d0eb46ebf769eb54db7e88ebcb51c",
+      "supports": [
+        "AC-14"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": "backend/tests/test_ai_forecast_import_contract.py",
+      "sha256": "35c84a7a4210e56ef0c4a871132583a4fd7037a2dfe95e196264c12cbc23a426",
+      "supports": [
+        "AC-02"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": "backend/tests/test_ai_forecast_response_contract.py",
+      "sha256": "61a58da00c5678387164750f56633c100afee9b92c87f7a658ca5b164bfcfd3c",
+      "supports": [
+        "AC-02"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": "backend/tests/test_business_golden_contract.py",
+      "sha256": "79ba77c43069f137110104d6d7ec69b0621af2ba452d8e88c5c68525db76b790",
+      "supports": [
+        "AC-07"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": "backend/tests/test_grile_monthly.py",
+      "sha256": "5ccbf79132bacf8f286bbd61db86c5b75d580862f92c9061299ae65f41511ba0",
+      "supports": [
+        "AC-09",
+        "AC-10"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": "backend/tests/test_grile_monthly_operations.py",
+      "sha256": "4c95f166977ff1747b7a0b0e2db39467ce581e56a8b280b42c3f0a6c6a437139",
+      "supports": [
+        "AC-09",
+        "AC-10"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": "backend/tests/test_grile_monthly_state.py",
+      "sha256": "965cd3958bd6dbbb854ca2f15a5b8358d26bfc304f7b85736c5b30338d5b6f64",
+      "supports": [
+        "AC-09",
+        "AC-10"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": "backend/tests/test_grile_outbox_delivery.py",
+      "sha256": "1468c30e14589da0ad555211ef289fe026298227f3e08cc00caf1c70fe4f0e68",
+      "supports": [
+        "AC-15"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": "backend/tests/test_grile_pilot_v2.py",
+      "sha256": "344de5f2e76794f313134944da5be120751de3cf07699b2eafe806b47d7c7f01",
+      "supports": [
+        "AC-15"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": "backend/tests/test_grile_repository_contracts.py",
+      "sha256": "f2047a376b5d5aa4b1ede7b389d423619419d31fa04ed8adc5b11517277ad489",
+      "supports": [
+        "AC-09"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": "backend/tests/test_grile_v2_contract.py",
+      "sha256": "ad03d8b6eba7092a41ab3925c67b94112092f1053ba94f00368e0c6d6de9d35b",
+      "supports": [
+        "AC-15"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": "backend/tests/test_outbox_replay.py",
+      "sha256": "5865e24c73f2657eebe4edb497c22ace419acac810aeeecd24584a6ca4216820",
+      "supports": [
+        "AC-12"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": "backend/tests/test_outbox_worker_faults.py",
+      "sha256": "a7a67c1c34ccbe9916a5997419ef09e9ddef570c24603e8216d5fd149c4e9272",
+      "supports": [
+        "AC-12"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": "backend/tests/test_release_a_schema_069.py",
+      "sha256": "e0195ec85ebc5969f3ac05e2a75d918705b1bee65cb147e171b59fb753f98e89",
+      "supports": [
+        "AC-12",
+        "T-09A-L"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": "backend/tests/test_release_contract_tooling_security.py",
+      "sha256": "0e7b1674886861114a88693c721405aaac2bfae600be43f8d4d7318bf6b78ad1",
+      "supports": [
+        "AC-12",
+        "AC-16",
+        "T-09A-L"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": "backend/tests/test_target_allocator_exact.py",
+      "sha256": "4a20d629b9966ebcac56c3528d63d55e712d2b0c7872e05635d4182c625a5705",
+      "supports": [
+        "AC-01"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": "backend/tests/test_target_allocator_properties.py",
+      "sha256": "3f183245a2028c2fd9a82b9c768dbdd5b14ac7e524e70a838e6a71e4744f0c83",
+      "supports": [
+        "AC-01"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": "backend/tests/test_telemetry_privacy_contract.py",
+      "sha256": "dd0803b996b3071ba44643e5c36a6832ef7bfc0bb006decd784477cda4410645",
+      "supports": [
+        "AC-04"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": "backend/tests/test_transactional_outbox.py",
+      "sha256": "68c68cc8659b6f404c6d68fa27926fd09183372ef166d3f1ba171c2c65d85bf9",
+      "supports": [
+        "AC-12"
+      ]
+    },
+    {
+      "git_mode": "100755",
+      "path": "ops/build-retail-release-artifact.sh",
+      "sha256": "bb3cb17c2daadcbc2be9974b7a14cb6959e412a6b83d41dc4d9d7dcce1b6a8dc",
+      "supports": [
+        "AC-12",
+        "AC-16",
+        "AC-17",
+        "T-09A-L"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": "scripts/check_ai_forecast_governance.py",
+      "sha256": "85316342afc9f62baffe5cc2e8cf5f980fabeffb218e2ba25c1806ae3ec7da33",
+      "supports": [
+        "AC-14"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": "scripts/check_backend_architecture.py",
+      "sha256": "bd68ccfd3a15405c62b647eecb0de61d6049e87e4c533c5ca2e415735e47f438",
+      "supports": [
+        "AC-10"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": "scripts/check_business_golden.py",
+      "sha256": "34af288038c58742d00ae15035cf30c3725e148bc2ad003d87f050883748149c",
+      "supports": [
+        "AC-07"
+      ]
+    },
+    {
+      "git_mode": "100755",
+      "path": "scripts/check_complexity_ratchet.py",
+      "sha256": "66124ff30c0969ad538afe1b679352d45f98a49f6207d4faf46d81937fbb34db",
+      "supports": [
+        "AC-09",
+        "AC-10",
+        "AC-11"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": "scripts/check_docs_contract.py",
+      "sha256": "5a0e806ed5890688ba9e06c25cdfb06386e654041d00d4e73bf2a3ac9d9ed1e1",
+      "supports": [
+        "AC-06"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": "scripts/check_frontend_critical_coverage.mjs",
+      "sha256": "b159c98791d253c100f0ce4fdcb26b76a44cbd5dcdae9b9d4b3e2a851197db26",
+      "supports": [
+        "AC-08"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": "scripts/check_frontend_structure_contract.mjs",
+      "sha256": "855b7b049b4149e4431cca28a569bfdded9154e8d27161be4339e0edcd9e7865",
+      "supports": [
+        "AC-11"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": "scripts/check_python_complexity_contract.py",
+      "sha256": "5fbd7b30d389510b979431bdf7a0de95240a9ae40f5e8deebd37bbdb44b684e3",
+      "supports": [
+        "AC-10"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": "scripts/check_query_parameter_contract.py",
+      "sha256": "9c148d55ea1b32b3c8479040c425f8b23a5e09daa87a713e9db60cc75a737cdf",
+      "supports": [
+        "AC-05"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": "scripts/check_release_a_candidate.py",
+      "sha256": "3d57c5b404e789b2bad35b4a27f78ebb146e20e678c608ef7155566e258527ba",
+      "supports": [
+        "AC-12",
+        "AC-16",
+        "T-09A-L"
+      ]
+    },
+    {
+      "git_mode": "100755",
+      "path": "scripts/check_ts_function_complexity.cjs",
+      "sha256": "b4144ae5afcc8692d9894a35da2435b4d1402adace894a692758ede446561a96",
+      "supports": [
+        "AC-11"
+      ]
+    },
+    {
+      "git_mode": "100755",
+      "path": "scripts/run_local_quality_gate.sh",
+      "sha256": "621b44f2ff9f4efbc02f382a58998cc35971346f6d1e1c26e8dc1d6f94d543e1",
+      "supports": [
+        "AC-01",
+        "AC-02",
+        "AC-03",
+        "AC-04",
+        "AC-05",
+        "AC-06",
+        "AC-07",
+        "AC-08",
+        "AC-09",
+        "AC-10",
+        "AC-11",
+        "AC-12",
+        "AC-13",
+        "AC-14",
+        "AC-15",
+        "AC-16"
+      ]
+    },
+    {
+      "git_mode": "100755",
+      "path": "scripts/run_outbox_slo_gate.py",
+      "sha256": "9b8800790065b81d10ec7968bfdb76e4d184366efbe563f38c2945c7c4fdfbdd",
+      "supports": [
+        "AC-12"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": "scripts/run_release_a_schema_gate.sh",
+      "sha256": "71e59dec328a7c3572e5f32c12bff38c36a42ddd7583c23d954f165890c011f2",
+      "supports": [
+        "AC-12",
+        "T-09A-L"
+      ]
+    },
+    {
+      "git_mode": "100755",
+      "path": "scripts/run_retail_scale_gate.sh",
+      "sha256": "e00a6077230545974d8b479f87c3ccfdbaaf6f70454fc524a1d06bda83e58092",
+      "supports": [
+        "AC-13"
+      ]
+    },
+    {
+      "git_mode": "100755",
+      "path": "scripts/run_structural_characterization.sh",
+      "sha256": "6066b12476b59d8d53e32f17e658d582039b4251255ca12b153dce5ed0545a94",
+      "supports": [
+        "AC-10"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": "scripts/run_target_allocator_contract.py",
+      "sha256": "a4fb23eab3cc4f00b100120446d36497a72d22e26d3db9899c7fcea644ca1653",
+      "supports": [
+        "AC-01"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": "scripts/structural-characterization-baseline-v1.json",
+      "sha256": "e1e17f24eb56a0e0daa9083383b96999472070f821cf9ad771264688f7d67202",
+      "supports": [
+        "AC-10"
+      ]
+    },
+    {
+      "git_mode": "100755",
+      "path": "scripts/verify_deployed_release.sh",
+      "sha256": "a314280eece76d71b1133a6603190aff2b3e58b35533276c0f175677cbf059d3",
+      "supports": [
+        "AC-17"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": "scripts/verify_promtool_cache.sh",
+      "sha256": "f4bb8e07562e8b3c674dfa10be2d6fd12df0a05ac23d81866246b18eed27d9ae",
+      "supports": [
+        "AC-16"
+      ]
+    }
+  ],
+  "baseline_source_sha": "0be82b430e55b7414babf470abe3fc5404b6cdc9",
+  "release_a_authorities": [
+    "backend/scripts/run_outbox_slo_workload.py",
+    "backend/scripts/run_retail_scale_profile.py",
+    "backend/tests/test_release_contract_tooling_security.py",
+    "ops/build-retail-release-artifact.sh",
+    "scripts/check_release_a_candidate.py",
+    "scripts/run_local_quality_gate.sh",
+    "scripts/run_outbox_slo_gate.py",
+    "scripts/run_release_a_schema_gate.sh",
+    "scripts/run_retail_scale_gate.sh",
+    "scripts/run_structural_characterization.sh",
+    "scripts/structural-characterization-baseline-v1.json",
+    "scripts/verify_deployed_release.sh",
+    "scripts/verify_promtool_cache.sh"
+  ],
+  "required_paths": [
+    "backend/scripts/run_ai_forecast_backtest.py",
+    "backend/scripts/run_outbox_slo_workload.py",
+    "backend/scripts/run_retail_scale_profile.py",
+    "backend/tests/test_ai_forecast_asof_cohort.py",
+    "backend/tests/test_ai_forecast_backtest.py",
+    "backend/tests/test_ai_forecast_governance.py",
+    "backend/tests/test_ai_forecast_import_contract.py",
+    "backend/tests/test_ai_forecast_response_contract.py",
+    "backend/tests/test_business_golden_contract.py",
+    "backend/tests/test_grile_monthly.py",
+    "backend/tests/test_grile_monthly_operations.py",
+    "backend/tests/test_grile_monthly_state.py",
+    "backend/tests/test_grile_outbox_delivery.py",
+    "backend/tests/test_grile_pilot_v2.py",
+    "backend/tests/test_grile_repository_contracts.py",
+    "backend/tests/test_grile_v2_contract.py",
+    "backend/tests/test_outbox_replay.py",
+    "backend/tests/test_outbox_worker_faults.py",
+    "backend/tests/test_release_a_schema_069.py",
+    "backend/tests/test_release_contract_tooling_security.py",
+    "backend/tests/test_target_allocator_exact.py",
+    "backend/tests/test_target_allocator_properties.py",
+    "backend/tests/test_telemetry_privacy_contract.py",
+    "backend/tests/test_transactional_outbox.py",
+    "ops/build-retail-release-artifact.sh",
+    "scripts/check_ai_forecast_governance.py",
+    "scripts/check_backend_architecture.py",
+    "scripts/check_business_golden.py",
+    "scripts/check_complexity_ratchet.py",
+    "scripts/check_docs_contract.py",
+    "scripts/check_frontend_critical_coverage.mjs",
+    "scripts/check_frontend_structure_contract.mjs",
+    "scripts/check_python_complexity_contract.py",
+    "scripts/check_query_parameter_contract.py",
+    "scripts/check_release_a_candidate.py",
+    "scripts/check_ts_function_complexity.cjs",
+    "scripts/run_local_quality_gate.sh",
+    "scripts/run_outbox_slo_gate.py",
+    "scripts/run_release_a_schema_gate.sh",
+    "scripts/run_retail_scale_gate.sh",
+    "scripts/run_structural_characterization.sh",
+    "scripts/run_target_allocator_contract.py",
+    "scripts/structural-characterization-baseline-v1.json",
+    "scripts/verify_deployed_release.sh",
+    "scripts/verify_promtool_cache.sh"
+  ],
+  "schema_version": 1,
+  "source_snapshots": {
+    "outbox_acceptance_contract": "ce61b725f0c83b3527bcd88e1b47a8e2c3795380",
+    "release_b_integrated_preview": "3092d9b8067dcf40b996e061c9646cf0ed6103ce",
+    "scale_authority": "e2daba1b45ff12852629889e48f01a9eb3a8a643"
+  }
+}

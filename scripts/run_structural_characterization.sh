@@ -60,7 +60,7 @@ fi
 [[ "$(hostname)" == "dell-standby" ]] || die "AC-10 is locked to dell-standby"
 
 HEAD_SHA="$(git -C "$ROOT" rev-parse HEAD)"
-TREE_SHA="$(git -C "$ROOT" rev-parse HEAD^{tree})"
+TREE_SHA="$(git -C "$ROOT" rev-parse 'HEAD^{tree}')"
 [[ -z "$(git -C "$ROOT" status --porcelain=v1 --untracked-files=all)" ]] \
   || die "candidate worktree must be clean"
 

@@ -1,0 +1,568 @@
+#!/usr/bin/env bash
+
+set -Eeuo pipefail
+umask 077
+
+PROGRAM="$(basename "$0")"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+PYTHON="$ROOT/backend/venv/bin/python"
+PYTEST="$ROOT/backend/venv/bin/pytest"
+EXPECTED_COSIGN_SHA256="4629c757b7618056f8ddd7e2625ae9fdd94c0372a65049520bc7d9df9efc7f71"
+SHA=""
+EVIDENCE=""
+RELEASE_A_SHA="${MAIN_A_SHA:-}"
+RELEASE_A_ARTIFACT="${ARTIFACT_A_DIR:-}"
+SEQUENTIAL=0
+SELF_TEST=0
+INTERNAL_MODE=""
+INTERNAL_EVIDENCE=""
+CURRENT_TREE=""
+INPUT_SHA256=""
+STEPS_DIR=""
+SELF_TEST_TEMP=""
+INTERNAL_TEMP=""
+
+cleanup_transient() {
+  if [[ -n "$SELF_TEST_TEMP" && -d "$SELF_TEST_TEMP" ]]; then
+    rm -rf -- "$SELF_TEST_TEMP"
+  fi
+  if [[ -n "$INTERNAL_TEMP" && -d "$INTERNAL_TEMP" ]]; then
+    rm -rf -- "$INTERNAL_TEMP"
+  fi
+}
+trap cleanup_transient EXIT
+
+die() { printf '%s: %s\n' "$PROGRAM" "$*" >&2; exit 1; }
+
+usage() {
+  printf 'usage: %s --sha <40-char-sha> --sequential --evidence <dir> [--release-a-sha <sha>] [--release-a-artifact-dir <dir>]\n' "$PROGRAM" >&2
+}
+
+while [[ "$#" -gt 0 ]]; do
+  case "$1" in
+    --sha) [[ "$#" -ge 2 ]] || die "missing --sha value"; SHA="$2"; shift 2 ;;
+    --sequential) SEQUENTIAL=1; shift ;;
+    --evidence) [[ "$#" -ge 2 ]] || die "missing --evidence value"; EVIDENCE="$2"; shift 2 ;;
+    --release-a-sha) [[ "$#" -ge 2 ]] || die "missing Release-A SHA"; RELEASE_A_SHA="$2"; shift 2 ;;
+    --release-a-artifact-dir) [[ "$#" -ge 2 ]] || die "missing Release-A artifact"; RELEASE_A_ARTIFACT="$2"; shift 2 ;;
+    --self-test) SELF_TEST=1; shift ;;
+    --internal-secret-scan) [[ "$#" -ge 2 ]] || die "missing internal evidence"; INTERNAL_MODE="secret"; INTERNAL_EVIDENCE="$2"; shift 2 ;;
+    --internal-operational) [[ "$#" -ge 2 ]] || die "missing internal evidence"; INTERNAL_MODE="operational"; INTERNAL_EVIDENCE="$2"; shift 2 ;;
+    *) usage; exit 2 ;;
+  esac
+done
+
+sha256_text() {
+  "$PYTHON" -c 'import hashlib,sys; print(hashlib.sha256(sys.stdin.buffer.read()).hexdigest())'
+}
+
+validate_pass_record() {
+  local record="$1" command_sha="$2"
+  [[ -f "$record" && ! -L "$record" ]] || return 1
+  "$PYTHON" - "$record" "$SHA" "$CURRENT_TREE" "$INPUT_SHA256" "$command_sha" <<'PY'
+import hashlib
+import json
+from pathlib import Path
+import sys
+
+def tree_digest(root: Path) -> str:
+    entries = []
+    for path in sorted(root.rglob("*")):
+        if path.is_symlink():
+            raise SystemExit(1)
+        if path.is_file():
+            entries.append(
+                [path.relative_to(root).as_posix(), hashlib.sha256(path.read_bytes()).hexdigest()]
+            )
+    return hashlib.sha256(
+        json.dumps(entries, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+
+record_path = Path(sys.argv[1])
+payload = json.loads(record_path.read_text(encoding="utf-8"))
+expected = {
+    "schema_version": 1,
+    "result": "PASS",
+    "sha": sys.argv[2],
+    "tree": sys.argv[3],
+    "input_sha256": sys.argv[4],
+    "command_sha256": sys.argv[5],
+}
+if any(payload.get(key) != value for key, value in expected.items()):
+    raise SystemExit(1)
+log = Path(str(payload.get("log", "")))
+if not log.is_file() or log.is_symlink():
+    raise SystemExit(1)
+if hashlib.sha256(log.read_bytes()).hexdigest() != payload.get("log_sha256"):
+    raise SystemExit(1)
+for item in payload.get("outputs", []):
+    path = Path(str(item.get("path", "")))
+    kind = item.get("type")
+    if path.is_symlink() or kind not in {"file", "directory"}:
+        raise SystemExit(1)
+    if kind == "file":
+        if not path.is_file() or hashlib.sha256(path.read_bytes()).hexdigest() != item.get("sha256"):
+            raise SystemExit(1)
+    elif not path.is_dir() or tree_digest(path) != item.get("sha256"):
+        raise SystemExit(1)
+    if kind == "file" and path.suffix == ".json":
+        value = json.loads(path.read_text(encoding="utf-8"))
+        if isinstance(value, dict):
+            if value.get("result") in {"FAIL", "BLOCKED"} or value.get("pass") is False:
+                raise SystemExit(1)
+PY
+}
+
+write_pass_record() {
+  local record="$1" command_sha="$2" log="$3" outputs_raw="$4"
+  "$PYTHON" - "$record" "$SHA" "$CURRENT_TREE" "$INPUT_SHA256" "$command_sha" "$log" "$outputs_raw" <<'PY'
+import hashlib
+import json
+from pathlib import Path
+import sys
+
+def tree_digest(root: Path) -> str:
+    entries = []
+    for item in sorted(root.rglob("*")):
+        if item.is_symlink():
+            raise SystemExit(f"required step output contains symlink: {item}")
+        if item.is_file():
+            entries.append(
+                [item.relative_to(root).as_posix(), hashlib.sha256(item.read_bytes()).hexdigest()]
+            )
+    return hashlib.sha256(
+        json.dumps(entries, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+
+record, sha, tree, input_sha, command_sha, log, raw_outputs = sys.argv[1:]
+log_path = Path(log).resolve()
+outputs = []
+for raw in filter(None, raw_outputs.split("|")):
+    path = Path(raw).resolve()
+    if path.is_symlink() or not (path.is_file() or path.is_dir()):
+        raise SystemExit(f"required step output is absent or unsafe: {path}")
+    kind = "file" if path.is_file() else "directory"
+    digest = hashlib.sha256(path.read_bytes()).hexdigest() if kind == "file" else tree_digest(path)
+    outputs.append({"path": str(path), "type": kind, "sha256": digest})
+payload = {
+    "schema_version": 1,
+    "result": "PASS",
+    "sha": sha,
+    "tree": tree,
+    "input_sha256": input_sha,
+    "command_sha256": command_sha,
+    "log": str(log_path),
+    "log_sha256": hashlib.sha256(log_path.read_bytes()).hexdigest(),
+    "outputs": outputs,
+}
+Path(record).write_text(json.dumps(payload, sort_keys=True, separators=(",", ":")) + "\n", encoding="utf-8")
+PY
+}
+
+run_step() {
+  local id="$1" command="$2" outputs_raw="${3:-}"
+  local command_sha record log
+  command_sha="$(printf '%s' "$command" | sha256_text)"
+  record="$STEPS_DIR/$id.json"
+  log="$STEPS_DIR/$id.log"
+  if validate_pass_record "$record" "$command_sha"; then
+    printf 'REUSE %s\n' "$id"
+    return
+  fi
+  [[ ! -L "$record" && ! -L "$log" ]] || die "unsafe step evidence: $id"
+  printf 'RUN %s\n' "$id"
+  set +e
+  (
+    cd "$ROOT"
+    export PYTHONNOUSERSITE=1 PYTHONSAFEPATH=1
+    export npm_config_offline=true VITE_FRONTEND_GLITCHTIP_DSN=
+    unset MYPYPATH MYPY_CONFIG_FILE
+    bash -Eeuo pipefail -c "$command"
+  ) >"$log" 2>&1
+  local status=$?
+  set -e
+  if [[ "$status" -ne 0 ]]; then
+    tail -200 "$log" >&2 || true
+    die "step $id failed with exit $status"
+  fi
+  write_pass_record "$record" "$command_sha" "$log" "$outputs_raw"
+}
+
+self_test() {
+  [[ "$ROOT" == */unihub-retail ]] || die "repository root resolution failed"
+  local record log forbidden command_sha output_a output_b output_c
+  SELF_TEST_TEMP="$(mktemp -d)"
+  SHA="1111111111111111111111111111111111111111"
+  CURRENT_TREE="2222222222222222222222222222222222222222"
+  INPUT_SHA256="$(printf stable | sha256sum | awk '{print $1}')"
+  log="$SELF_TEST_TEMP/fake.log"
+  printf 'manual PASS\n' >"$log"
+  record="$SELF_TEST_TEMP/fake.json"
+  printf '{"schema_version":1,"result":"PASS"}\n' >"$record"
+  command_sha="$(printf command | sha256sum | awk '{print $1}')"
+  if validate_pass_record "$record" "$command_sha"; then
+    die "self-test accepted a hand-written PASS"
+  fi
+  output_a="$SELF_TEST_TEMP/a.json"
+  output_b="$SELF_TEST_TEMP/b.xml"
+  output_c="$SELF_TEST_TEMP/tree"
+  mkdir "$output_c"
+  printf '{"result":"PASS"}\n' >"$output_a"
+  printf '<testsuite tests="1"/>\n' >"$output_b"
+  printf 'bound tree\n' >"$output_c/member.txt"
+  write_pass_record "$record" "$command_sha" "$log" "$output_a|$output_b|$output_c"
+  validate_pass_record "$record" "$command_sha" || die "self-test rejected a genuine bound PASS"
+  printf 'tampered\n' >>"$log"
+  if validate_pass_record "$record" "$command_sha"; then
+    die "self-test accepted tampered evidence"
+  fi
+  printf 'manual PASS\n' >"$log"
+  printf 'manual tree change\n' >>"$output_c/member.txt"
+  if validate_pass_record "$record" "$command_sha"; then
+    die "self-test accepted tampered directory output"
+  fi
+  forbidden="$(printf '%s%s|%s%s|%s%s|%s%s|%s%s|%s%s|%s%s' \
+    create_salary_ export_operation reserve_ salary SalaryExports Service \
+    enqueue_salary_ export /salarii/ exports finalize_ scenario save_final_ targets)"
+  if sed '/^self_test()/,/^}/d' "$0" | grep -Eq "$forbidden"; then
+    die "self-test found a protected operation in the local gate"
+  fi
+  printf 'local quality gate self-test PASS: restart binding, tamper and protected-operation guards\n'
+}
+
+internal_secret_scan() {
+  local output="$1" raw
+  [[ "$output" =~ ^[A-Za-z0-9_./-]+$ ]] || die "unsafe secret evidence path"
+  [[ ! -e "$output" || ( -f "$output" && ! -L "$output" ) ]] || die "unsafe secret evidence target"
+  mkdir -p "$(dirname "$output")"
+  raw="${output%.json}.raw.json"
+  mapfile -d '' tracked_files < <(
+    git -C "$ROOT" ls-files -z -- . \
+      ':(exclude).secrets.baseline' \
+      ':(exclude).bandit-baseline.json' \
+      ':(exclude)backend/db/migrations/manifest.json' \
+      ':(exclude).agent/contract-lock.json' \
+      ':(exclude)docs/contracts/ai-governance-golden-v1.json' \
+      ':(exclude)docs/contracts/business-golden-v2.json' \
+      ':(exclude)docs/contracts/query-parameter-policy-v1.json' \
+      ':(exclude)scripts/frontend-critical-coverage.json' \
+      ':(exclude)scripts/python-complexity-contract-v1.json' \
+      ':(exclude)scripts/release-a-source-contract-v1.json' \
+      ':(exclude)scripts/release-b-authority-contract-v1.json' \
+      ':(exclude)scripts/check_release_a_candidate.py' \
+      ':(exclude)scripts/verify_promtool_cache.sh' \
+      ':(exclude)backend/scripts/run_outbox_slo_workload.py' \
+      ':(exclude)scripts/run_outbox_slo_gate.py' \
+      ':(exclude)scripts/run_structural_characterization.sh' \
+      ':(exclude)scripts/structural-characterization-baseline-v1.json' \
+      ':(exclude)backend/scripts/run_retail_scale_profile.py' \
+      ':(exclude)scripts/run_retail_scale_gate.sh' \
+      ':(exclude)scripts/run_local_quality_gate.sh' \
+      ':(exclude)scripts/verify_deployed_release.sh' \
+      ':(exclude)ops/build-retail-release-artifact.sh' \
+      ':(exclude)backend/tests/test_release_contract_tooling_security.py' \
+      ':(exclude)scripts/target-mutation-contract-v2.json' \
+      ':(exclude)scripts/run_release_a_schema_gate.sh' \
+      ':(exclude)backend/tests/test_prometheus_topology.py' \
+      ':(exclude)ops/systemd/unihub-backend.service'
+  )
+  [[ "${#tracked_files[@]}" -gt 0 ]] || die "tracked secret scan inventory is empty"
+  "$ROOT/backend/venv/bin/detect-secrets-hook" \
+    --baseline "$ROOT/.secrets.baseline" "${tracked_files[@]}"
+  "$ROOT/backend/venv/bin/detect-secrets" scan \
+    --disable-plugin HexHighEntropyString \
+    --disable-plugin Base64HighEntropyString \
+    "$ROOT/.agent/contract-lock.json" \
+    "$ROOT/docs/contracts/ai-governance-golden-v1.json" \
+    "$ROOT/docs/contracts/business-golden-v2.json" \
+    "$ROOT/docs/contracts/query-parameter-policy-v1.json" \
+    "$ROOT/scripts/frontend-critical-coverage.json" \
+    "$ROOT/scripts/python-complexity-contract-v1.json" \
+    "$ROOT/scripts/release-a-source-contract-v1.json" \
+    "$ROOT/scripts/release-b-authority-contract-v1.json" \
+    "$ROOT/scripts/check_release_a_candidate.py" \
+    "$ROOT/scripts/verify_promtool_cache.sh" \
+    "$ROOT/backend/scripts/run_outbox_slo_workload.py" \
+    "$ROOT/scripts/run_outbox_slo_gate.py" \
+    "$ROOT/scripts/run_structural_characterization.sh" \
+    "$ROOT/scripts/structural-characterization-baseline-v1.json" \
+    "$ROOT/backend/scripts/run_retail_scale_profile.py" \
+    "$ROOT/scripts/run_retail_scale_gate.sh" \
+    "$ROOT/scripts/run_local_quality_gate.sh" \
+    "$ROOT/scripts/verify_deployed_release.sh" \
+    "$ROOT/ops/build-retail-release-artifact.sh" \
+    "$ROOT/backend/tests/test_release_contract_tooling_security.py" \
+    "$ROOT/scripts/target-mutation-contract-v2.json" \
+    "$ROOT/scripts/run_release_a_schema_gate.sh" >"$raw"
+  "$PYTHON" - "$raw" "$output" "${#tracked_files[@]}" <<'PY'
+import hashlib
+import json
+from pathlib import Path
+import sys
+
+raw_path, output_path = map(Path, sys.argv[1:3])
+tracked_count = int(sys.argv[3])
+scan = json.loads(raw_path.read_text(encoding="utf-8"))
+finding_count = sum(len(items) for items in scan.get("results", {}).values())
+if finding_count:
+    raise SystemExit(f"credential-shaped findings in immutable files: {finding_count}")
+plugins = sorted(scan.get("plugins_used", []), key=lambda item: str(item))
+payload = {
+    "schema_version": 1,
+    "result": "PASS",
+    "tracked_file_count": tracked_count,
+    "immutable_finding_count": finding_count,
+    "active_plugin_count": len(plugins),
+    "raw_scan_sha256": hashlib.sha256(raw_path.read_bytes()).hexdigest(),
+}
+output_path.write_text(json.dumps(payload, sort_keys=True, separators=(",", ":")) + "\n", encoding="utf-8")
+PY
+}
+
+internal_operational() {
+  local output="$1" temp systemd_root prom_root cache_dir archive promtool
+  local version="3.11.3"
+  local archive_sha="9479af67673316278958cda1f39b88a09f8921084e039c65acca060d0447bb38"
+  [[ "$output" =~ ^[A-Za-z0-9_./-]+$ ]] || die "unsafe operational evidence path"
+  [[ ! -e "$output" || ( -f "$output" && ! -L "$output" ) ]] || die "unsafe operational evidence target"
+  mkdir -p "$(dirname "$output")"
+  INTERNAL_TEMP="$(mktemp -d)"
+  temp="$INTERNAL_TEMP"
+  systemd_root="$temp/systemd"
+  prom_root="$temp/prometheus"
+  cache_dir="${UNIHUB_PROMETHEUS_CACHE_DIR:-/opt/Mobiup/.cache/unihub-prometheus}"
+  archive="$cache_dir/prometheus-${version}.linux-amd64.tar.gz"
+  promtool="$prom_root/promtool"
+  [[ -f "$archive" && ! -L "$archive" ]] || die "pre-provisioned Prometheus archive is required"
+  printf '%s  %s\n' "$archive_sha" "$archive" | sha256sum --check --status - \
+    || die "Prometheus archive digest mismatch"
+  mkdir -p \
+    "$systemd_root/usr/lib/systemd" \
+    "$systemd_root/etc/systemd/system" \
+    "$systemd_root/usr/bin" \
+    "$systemd_root/opt/Mobiup/unihub-retail/backend/venv/bin" \
+    "$systemd_root/opt/Mobiup/ops/prometheus" \
+    "$prom_root/scrape.d"
+  cp -a /usr/lib/systemd/system "$systemd_root/usr/lib/systemd/"
+  cp \
+    "$ROOT/ops/systemd/unihub-backend.service" \
+    "$ROOT/unihub-worker.service" \
+    "$ROOT/ops/systemd/unihub-import-worker.service" \
+    "$ROOT/ops/systemd/unihub-grile-worker.service" \
+    "$ROOT/ops/systemd/unihub-export-worker.service" \
+    "$ROOT/ops/systemd/unihub-salary-export-worker.service" \
+    "$ROOT/ops/systemd/unihub-legacy-worker.service" \
+    "$ROOT/ops/systemd/unihub-retail-migrate.service" \
+    "$systemd_root/etc/systemd/system/"
+  printf '[Service]\nType=oneshot\nExecStart=/usr/bin/true\n' \
+    >"$systemd_root/etc/systemd/system/docker.service"
+  cp "$systemd_root/etc/systemd/system/docker.service" \
+    "$systemd_root/etc/systemd/system/mobiup-dwh-postgres.service"
+  touch \
+    "$systemd_root/opt/Mobiup/unihub-retail/.env" \
+    "$systemd_root/opt/Mobiup/unihub-retail/.env.worker" \
+    "$systemd_root/opt/Mobiup/unihub-retail/.env.import-worker" \
+    "$systemd_root/opt/Mobiup/unihub-retail/.env.salary-export-worker" \
+    "$systemd_root/opt/Mobiup/unihub-retail/.env.migrations" \
+    "$systemd_root/opt/Mobiup/ops/prometheus/unihub-retail-network.env"
+  cp /usr/bin/true "$systemd_root/usr/bin/true"
+  cp /usr/bin/false "$systemd_root/usr/bin/false"
+  cp /usr/bin/timeout "$systemd_root/usr/bin/timeout"
+  cp /usr/bin/true "$systemd_root/opt/Mobiup/unihub-retail/backend/venv/bin/python"
+  cp /usr/bin/true "$systemd_root/opt/Mobiup/unihub-retail/backend/venv/bin/python3"
+  systemd-analyze verify --root="$systemd_root" \
+    "$systemd_root/etc/systemd/system/unihub-backend.service" \
+    "$systemd_root/etc/systemd/system/unihub-worker.service" \
+    "$systemd_root/etc/systemd/system/unihub-import-worker.service" \
+    "$systemd_root/etc/systemd/system/unihub-grile-worker.service" \
+    "$systemd_root/etc/systemd/system/unihub-export-worker.service" \
+    "$systemd_root/etc/systemd/system/unihub-salary-export-worker.service" \
+    "$systemd_root/etc/systemd/system/unihub-legacy-worker.service" \
+    "$systemd_root/etc/systemd/system/unihub-retail-migrate.service"
+  visudo -cf "$ROOT/ops/unihub-deploy.sudoers"
+  grep -Fq '/usr/local/sbin/unihub-deploy-lock acquire *' "$ROOT/ops/unihub-deploy.sudoers"
+  grep -Fq '/usr/local/sbin/unihub-deploy-lock release *' "$ROOT/ops/unihub-deploy.sudoers"
+  "$ROOT/scripts/verify_promtool_cache.sh" prepare \
+    --version "$version" --sha256 "$archive_sha" --cache-dir "$cache_dir" \
+    --destination "$promtool" --evidence "$temp/promtool-cache.json"
+  "$PYTHON" - "$temp/promtool-cache.json" <<'PY'
+import json
+from pathlib import Path
+import sys
+
+value = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+if value.get("result") != "PASS" or value.get("source") != "cache" or value.get("download_count") != 0:
+    raise SystemExit("operational gate did not use the pre-provisioned Promtool archive")
+PY
+  "$promtool" check rules "$ROOT/ops/observability/retail-slo-rules.yml"
+  "$PYTHON" "$ROOT/scripts/check_prometheus_contract.py"
+  (
+    cd "$ROOT/ops/observability"
+    "$promtool" test rules retail-slo-rules.test.yml
+  )
+  sed 's/__PROMETHEUS_DOCKER_GATEWAY__/172.23.0.1/g' \
+    "$ROOT/ops/observability/retail-process-scrape.yml" \
+    >"$prom_root/scrape.d/unihub-retail.yml"
+  printf '%s\n' \
+    'global:' '  scrape_interval: 15s' 'scrape_config_files:' \
+    "  - $prom_root/scrape.d/*.yml" >"$prom_root/prometheus.yml"
+  "$promtool" check config "$prom_root/prometheus.yml"
+  [[ "$(grep -Fc '172.23.0.1:' "$prom_root/scrape.d/unihub-retail.yml")" -eq 6 ]]
+  if grep -Eq '__PROMETHEUS_DOCKER_GATEWAY__|0\.0\.0\.0|127\.0\.0\.1' \
+    "$prom_root/scrape.d/unihub-retail.yml"; then
+    return 1
+  fi
+  "$PYTHON" - "$temp/promtool-cache.json" "$output" <<'PY'
+import hashlib
+import json
+from pathlib import Path
+import sys
+
+cache_path, output_path = map(Path, sys.argv[1:])
+payload = {
+    "schema_version": 1,
+    "result": "PASS",
+    "systemd_units": 8,
+    "prometheus_targets": 6,
+    "promtool_cache_sha256": hashlib.sha256(cache_path.read_bytes()).hexdigest(),
+    "network_download_count": 0,
+}
+output_path.write_text(json.dumps(payload, sort_keys=True, separators=(",", ":")) + "\n", encoding="utf-8")
+PY
+  rm -rf -- "$temp"
+  INTERNAL_TEMP=""
+}
+
+if [[ -n "$INTERNAL_MODE" ]]; then
+  [[ "$SELF_TEST" == "0" && -n "$INTERNAL_EVIDENCE" ]] || die "invalid internal mode"
+  case "$INTERNAL_MODE" in
+    secret) internal_secret_scan "$INTERNAL_EVIDENCE" ;;
+    operational) internal_operational "$INTERNAL_EVIDENCE" ;;
+    *) die "unknown internal mode" ;;
+  esac
+  exit 0
+fi
+
+if [[ "$SELF_TEST" == "1" ]]; then
+  self_test
+  exit 0
+fi
+
+[[ "$SEQUENTIAL" == "1" ]] || die "--sequential is mandatory"
+[[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || die "--sha must be exact lowercase 40-char hex"
+[[ "$RELEASE_A_SHA" =~ ^[0-9a-f]{40}$ ]] || die "Release-A SHA is required"
+[[ -n "$EVIDENCE" && -n "$RELEASE_A_ARTIFACT" ]] || die "evidence and Release-A artifact are required"
+[[ "$EVIDENCE" =~ ^[A-Za-z0-9_./-]+$ ]] || die "unsafe evidence path"
+[[ "$RELEASE_A_ARTIFACT" =~ ^[A-Za-z0-9_./-]+$ ]] || die "unsafe Release-A artifact path"
+[[ "$(hostname)" == "dell-standby" ]] || die "integrated local gate is locked to dell-standby"
+[[ -x "$PYTHON" && -x "$PYTEST" ]] || die "backend/venv is required"
+[[ -d "$ROOT/node_modules" ]] || die "offline node_modules is required"
+[[ "$(git -C "$ROOT" rev-parse HEAD)" == "$SHA" ]] || die "--sha differs from HEAD"
+[[ "$(git -C "$ROOT" rev-parse "$RELEASE_A_SHA")" == "$RELEASE_A_SHA" ]] || die "Release-A SHA is not an exact local commit"
+git -C "$ROOT" merge-base --is-ancestor "$RELEASE_A_SHA" "$SHA" || die "Release-A SHA is not an ancestor"
+[[ -z "$(git -C "$ROOT" status --porcelain=v1 --untracked-files=all)" ]] || die "worktree must be clean"
+CURRENT_TREE="$(git -C "$ROOT" rev-parse 'HEAD^{tree}')"
+[[ -d "$RELEASE_A_ARTIFACT" && ! -L "$RELEASE_A_ARTIFACT" ]] || die "Release-A artifact directory is unsafe"
+RELEASE_A_ARTIFACT="$(cd "$RELEASE_A_ARTIFACT" && pwd)"
+
+cosign_path="$(command -v cosign || true)"
+[[ -x "$cosign_path" ]] || die "pre-provisioned pinned cosign is required"
+[[ "$(sha256sum "$cosign_path" | awk '{print $1}')" == "$EXPECTED_COSIGN_SHA256" ]] || die "cosign digest mismatch"
+"$cosign_path" version 2>&1 | grep -Eq '^GitVersion:[[:space:]]+v3\.1\.3[[:space:]]*$' || die "cosign version mismatch"
+
+[[ ! -e "$EVIDENCE" || ( -d "$EVIDENCE" && ! -L "$EVIDENCE" ) ]] || die "evidence directory is unsafe"
+mkdir -p "$EVIDENCE/steps"
+[[ -d "$EVIDENCE/steps" && ! -L "$EVIDENCE/steps" ]] || die "step evidence directory is unsafe"
+EVIDENCE="$(cd "$EVIDENCE" && pwd)"
+STEPS_DIR="$EVIDENCE/steps"
+INPUT_SHA256="$({
+  printf '%s\n%s\n' "$SHA" "$CURRENT_TREE"
+  sha256sum \
+    scripts/release-b-authority-contract-v1.json \
+    .agent/contract-lock.json \
+    package-lock.json \
+    backend/requirements.lock \
+    backend/requirements-dev.lock
+} | sha256_text)"
+
+A_SCHEMA="$RELEASE_A_ARTIFACT/schema-gate.json"
+run_step authority "backend/venv/bin/python scripts/check_release_a_candidate.py --verify-main-evidence '$A_SCHEMA' --expected-sha '$RELEASE_A_SHA' --expected-candidate-sha '$SHA' --release-a-artifact-dir '$RELEASE_A_ARTIFACT' --evidence '$EVIDENCE/ac-12-release-a.json'" "$EVIDENCE/ac-12-release-a.json"
+
+run_step vendored "node scripts/verify_vendored_npm_packages.mjs"
+run_step changed-complexity "backend/venv/bin/python scripts/check_changed_function_complexity.py --base '$RELEASE_A_SHA' --maximum 20"
+run_step backend-suite "backend/scripts/run_tests_isolated.sh -q --tb=short --cov=. --cov-config=../.coveragerc --cov-fail-under=80 --cov-report=json:'$EVIDENCE/backend-coverage.json' --junitxml='$EVIDENCE/backend-all.xml'" "$EVIDENCE/backend-coverage.json|$EVIDENCE/backend-all.xml"
+run_step backend-critical-coverage "backend/venv/bin/python backend/scripts/check_critical_coverage.py '$EVIDENCE/backend-coverage.json'"
+run_step backend-changed-coverage "cd backend && venv/bin/python ../scripts/check_changed_line_coverage.py --base '$RELEASE_A_SHA' --backend-json '$EVIDENCE/backend-coverage.json' --minimum 80"
+run_step mypy "cd backend && venv/bin/mypy . --ignore-missing-imports --explicit-package-bases"
+run_step mutation "backend/venv/bin/python scripts/run_targeted_mutation_tests.py"
+run_step ac01-target "PYTHONPATH=backend backend/venv/bin/python scripts/run_target_allocator_contract.py --contract scripts/target-mutation-contract-v2.json --seed 20260812 --evidence '$EVIDENCE/ac-01.json'" "$EVIDENCE/ac-01.json"
+run_step ac03-backtest "PYTHONPATH=backend backend/venv/bin/python backend/scripts/run_ai_forecast_backtest.py --contract-fixture docs/contracts/business-golden-v2.json --governance-fixture docs/contracts/ai-governance-golden-v1.json --candidate-only --seed 20260812 --evidence '$EVIDENCE/ac-03.json'" "$EVIDENCE/ac-03.json"
+run_step ac05-query "PYTHONPATH=backend backend/venv/bin/python scripts/check_query_parameter_contract.py --policy docs/contracts/query-parameter-policy-v1.json --evidence '$EVIDENCE/ac-05.json'" "$EVIDENCE/ac-05.json"
+run_step ac06-docs "backend/venv/bin/python scripts/check_docs_contract.py --catalog docs/catalog.json --release docs/releases/current.json --evidence '$EVIDENCE/ac-06.json'" "$EVIDENCE/ac-06.json"
+run_step ac07-golden "backend/venv/bin/python scripts/check_business_golden.py --contract docs/contracts/business-golden-v2.json --evidence '$EVIDENCE/ac-07.json'" "$EVIDENCE/ac-07.json"
+run_step ac10-structural "UNIHUB_TEST_DATABASE=1 scripts/run_structural_characterization.sh --max-seconds 16.7 --evidence '$EVIDENCE/ac-10.json'" "$EVIDENCE/ac-10.json"
+run_step ac10-line-ratchet "backend/venv/bin/python scripts/check_complexity_ratchet.py"
+run_step ac10-ast "backend/venv/bin/python scripts/check_python_complexity_contract.py --contract scripts/python-complexity-contract-v1.json --evidence '$EVIDENCE/ac-10-complexity.json'" "$EVIDENCE/ac-10-complexity.json"
+run_step ac10-architecture "PYTHONPATH=backend backend/venv/bin/python scripts/check_backend_architecture.py"
+run_step ac12-outbox "UNIHUB_TEST_DATABASE=1 PYTHONPATH=backend backend/venv/bin/python scripts/run_outbox_slo_gate.py --seed 20260812 --warmup 500 --events 10000 --rate 20 --claimers 4 --batch-size 50 --handlers 8 --evidence '$EVIDENCE/ac-12.json'" "$EVIDENCE/ac-12.json"
+run_step ac13-scale "UNIHUB_TEST_DATABASE=1 scripts/run_retail_scale_gate.sh --seed 20260812 --profiles 2x,5x --exact-max-upload 33554432 --evidence '$EVIDENCE/ac-13'" "$EVIDENCE/ac-13/ac-13-scale-evidence.json"
+run_step ac14-governance "PYTHONPATH=backend backend/venv/bin/python scripts/check_ai_forecast_governance.py --contract docs/contracts/business-golden-v2.json --governance-fixture docs/contracts/ai-governance-golden-v1.json --evidence '$EVIDENCE/ac-14.json'" "$EVIDENCE/ac-14.json"
+
+run_step frontend-coverage "npm run test:coverage -- --reporter=default --reporter=junit --outputFile.junit='$EVIDENCE/ac-11.xml'" "coverage|$EVIDENCE/ac-11.xml"
+run_step ac08-coverage "node scripts/check_frontend_critical_coverage.mjs --manifest scripts/frontend-critical-coverage.json --coverage coverage/coverage-final.json --evidence '$EVIDENCE/ac-08.json'" "$EVIDENCE/ac-08.json"
+run_step frontend-changed-coverage "backend/venv/bin/python scripts/check_changed_line_coverage.py --base '$RELEASE_A_SHA' --frontend-lcov coverage/frontend/lcov.info --minimum 80"
+run_step typecheck "npm run typecheck"
+run_step lint "npm run lint"
+run_step ts-complexity "npm run complexity:ts"
+run_step ac11-structure "node scripts/check_frontend_structure_contract.mjs --manifest scripts/frontend-critical-coverage.json --evidence '$EVIDENCE/ac-11.json'" "$EVIDENCE/ac-11.json"
+run_step build "VITE_FRONTEND_GLITCHTIP_DSN= npm run build" "dist"
+run_step bundle-budget "node scripts/check_bundle_budget.mjs"
+run_step browser-matrix "npm run test:e2e:browsers"
+run_step pwa-lifecycle "PWA_BASE_SHA='$RELEASE_A_SHA' npm run test:e2e:pwa-real"
+run_step integration-restore "REAL_E2E_SKIP_BUILD=1 scripts/run_real_e2e.sh" "test-results/real-e2e-restore-drill.json|test-results/real-e2e-restore-drill.json.sha256"
+
+run_step openapi "PYTHONPATH=backend backend/venv/bin/python scripts/generate_retail_contract.py --check"
+run_step dependency-policy "node scripts/check_dependency_policy.mjs"
+run_step npm-runtime-audit "npm audit --omit=dev --audit-level=high"
+run_step npm-full-audit "npm audit --audit-level=high"
+run_step env-contract "PYTHONPATH=backend backend/venv/bin/python scripts/check_env_contract.py"
+run_step secrets "scripts/run_local_quality_gate.sh --internal-secret-scan '$EVIDENCE/security-secret-scan.json'" "$EVIDENCE/security-secret-scan.json"
+run_step shellcheck "scripts/run_shellcheck.sh"
+run_step operational "scripts/run_local_quality_gate.sh --internal-operational '$EVIDENCE/operational.json'" "$EVIDENCE/operational.json"
+run_step migration-manifest "cd backend && venv/bin/python -c 'from db.migration_runner import load_migration_manifest, verify_migration_files; verify_migration_files(load_migration_manifest())'"
+run_step bandit-waivers "backend/venv/bin/python scripts/check_bandit_waivers.py"
+run_step bandit "backend/venv/bin/bandit -r backend -x backend/tests,backend/venv -ll -ii -q -b .bandit-baseline.json"
+run_step pip-audit "backend/venv/bin/pip-audit -r backend/requirements.lock --strict --progress-spinner off"
+run_step deploy-sandbox "ops/test-deploy-retail-artifact.sh"
+
+"$PYTHON" - "$STEPS_DIR" "$EVIDENCE/local-quality-gate.json" "$SHA" "$CURRENT_TREE" "$INPUT_SHA256" <<'PY'
+import hashlib
+import json
+from pathlib import Path
+import sys
+
+steps_dir, output, sha, tree, input_sha = sys.argv[1:]
+records = []
+for path in sorted(Path(steps_dir).glob("*.json")):
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if payload.get("result") != "PASS" or payload.get("sha") != sha or payload.get("tree") != tree:
+        raise SystemExit(f"invalid final step record: {path}")
+    records.append({"id": path.stem, "sha256": hashlib.sha256(path.read_bytes()).hexdigest()})
+if len(records) < 30:
+    raise SystemExit("integrated gate step inventory is incomplete")
+payload = {
+    "schema_version": 1,
+    "result": "PASS",
+    "sha": sha,
+    "tree": tree,
+    "input_sha256": input_sha,
+    "sequential": True,
+    "network_dependency_install": False,
+    "salary_export_executed": False,
+    "protected_live_promotion_executed": False,
+    "steps": records,
+}
+Path(output).write_text(json.dumps(payload, sort_keys=True, separators=(",", ":")) + "\n", encoding="utf-8")
+PY
+
+printf 'Local integrated quality gate PASS: %s (%s)\n' "$SHA" "$EVIDENCE/local-quality-gate.json"

@@ -82,16 +82,52 @@ fi
 python3 "$SCRIPT_DIR/../scripts/validate_release_sbom.py" npm "$BUILD_DIR/SBOM.npm.cdx.json"
 python3 "$SCRIPT_DIR/../scripts/validate_release_sbom.py" pypi "$BUILD_DIR/SBOM.python.cdx.json"
 
+RELEASE_A_EVIDENCE_DIR="${RELEASE_A_EVIDENCE_DIR:-}"
+RELEASE_A_EVIDENCE_RUN_ID="${RELEASE_A_EVIDENCE_RUN_ID:-}"
+RELEASE_A_EVIDENCE_PRESENT=0
+RELEASE_A_EVIDENCE_FILES=(
+  schema-gate.json
+  release-a-candidate.json
+  release-a-schema-empty.xml
+  release-a-schema-restored.xml
+)
+if [[ -n "$RELEASE_A_EVIDENCE_DIR" ]]; then
+  [[ -d "$RELEASE_A_EVIDENCE_DIR" && ! -L "$RELEASE_A_EVIDENCE_DIR" ]] \
+    || die "Release-A evidence directory is unsafe"
+  [[ "$RELEASE_A_EVIDENCE_RUN_ID" =~ ^[0-9]+$ ]] \
+    || die "Release-A evidence requires an exact numeric workflow run ID"
+  for evidence_name in "${RELEASE_A_EVIDENCE_FILES[@]}"; do
+    evidence_source="$RELEASE_A_EVIDENCE_DIR/$evidence_name"
+    [[ -f "$evidence_source" && ! -L "$evidence_source" ]] \
+      || die "Release-A evidence is missing or unsafe: $evidence_name"
+    cp -- "$evidence_source" "$BUILD_DIR/$evidence_name"
+  done
+  RELEASE_A_EVIDENCE_PRESENT=1
+elif [[ -n "$RELEASE_A_EVIDENCE_RUN_ID" ]]; then
+  die "Release-A evidence run ID was supplied without evidence"
+fi
+
 python3 - "$REPO_ROOT" "$BUILD_DIR" "$SOURCE_SHA" "$ARCHIVE_NAME" \
   "${RELEASE_BUILDER_ID:-local:ops/build-retail-release-artifact.sh}" \
-  "${RELEASE_INVOCATION_ID:-local}" <<'PY'
+  "${RELEASE_INVOCATION_ID:-local}" "$RELEASE_A_EVIDENCE_PRESENT" \
+  "$RELEASE_A_EVIDENCE_RUN_ID" <<'PY'
 import hashlib
 import json
 import pathlib
 import sys
 import uuid
+import xml.etree.ElementTree as ET
 
-repo, output, source_sha, archive_name, builder_id, invocation_id = sys.argv[1:]
+(
+    repo,
+    output,
+    source_sha,
+    archive_name,
+    builder_id,
+    invocation_id,
+    release_a_present,
+    release_a_run_id,
+) = sys.argv[1:]
 repo_path = pathlib.Path(repo)
 output_path = pathlib.Path(output)
 archive_path = output_path / archive_name
@@ -180,6 +216,73 @@ sbom = {
 (output_path / "SBOM.cdx.json").write_text(json.dumps(sbom, sort_keys=True, separators=(",", ":")) + "\n", encoding="utf-8")
 
 archive_digest = hashlib.sha256(archive_path.read_bytes()).hexdigest()
+release_a_evidence = None
+release_a_files = (
+    "schema-gate.json",
+    "release-a-candidate.json",
+    "release-a-schema-empty.xml",
+    "release-a-schema-restored.xml",
+)
+release_a_test_names = {
+    "test_069_is_additive_empty_and_old_ai_insert_remains_compatible",
+    "test_069_seals_cohort_and_requires_exact_completed_run_lineage",
+    "test_069_outbox_is_canonical_private_ordered_and_replayable",
+    "test_069_runtime_roles_have_exact_producer_privileges",
+    "test_release_a_runtime_starts_and_is_ready_on_069",
+    "test_pre_069_manifest_is_refused_after_schema_upgrade",
+}
+if release_a_present == "1":
+    schema_gate = json.loads(
+        (output_path / "schema-gate.json").read_text(encoding="utf-8")
+    )
+    candidate_gate = json.loads(
+        (output_path / "release-a-candidate.json").read_text(encoding="utf-8")
+    )
+    if (
+        schema_gate.get("result") != "PASS"
+        or schema_gate.get("release_a_sha") != source_sha
+        or candidate_gate.get("result") != "PASS"
+        or candidate_gate.get("candidate_sha") != source_sha
+    ):
+        raise SystemExit("Release-A evidence does not match the artifact source SHA")
+    evidence_hashes = {
+        name: hashlib.sha256((output_path / name).read_bytes()).hexdigest()
+        for name in release_a_files
+    }
+    if (
+        schema_gate.get("candidate_gate_sha256")
+        != evidence_hashes["release-a-candidate.json"]
+        or schema_gate.get("junit_empty_sha256")
+        != evidence_hashes["release-a-schema-empty.xml"]
+        or schema_gate.get("junit_restored_sha256")
+        != evidence_hashes["release-a-schema-restored.xml"]
+    ):
+        raise SystemExit("Release-A evidence internal digests do not match")
+    for junit_name in ("release-a-schema-empty.xml", "release-a-schema-restored.xml"):
+        junit_root = ET.parse(output_path / junit_name).getroot()
+        suites = [junit_root] if junit_root.tag == "testsuite" else list(junit_root.findall("testsuite"))
+        totals = {
+            key: sum(int(suite.attrib.get(key, "0")) for suite in suites)
+            for key in ("tests", "failures", "errors", "skipped")
+        }
+        testcases = {
+            (case.attrib.get("classname"), case.attrib.get("name"))
+            for case in junit_root.iter("testcase")
+        }
+        expected_testcases = {
+            ("backend.tests.test_release_a_schema_069", name)
+            for name in release_a_test_names
+        }
+        if (
+            totals != {"tests": 6, "failures": 0, "errors": 0, "skipped": 0}
+            or testcases != expected_testcases
+        ):
+            raise SystemExit(f"Release-A JUnit is not 6/6: {junit_name}")
+    release_a_evidence = {
+        "sourceSha": source_sha,
+        "workflowRunId": release_a_run_id,
+        "files": evidence_hashes,
+    }
 provenance = {
     "_type": "https://in-toto.io/Statement/v1",
     "subject": [{"name": archive_name, "digest": {"sha256": archive_digest}}],
@@ -187,7 +290,10 @@ provenance = {
     "predicate": {
         "buildDefinition": {
             "buildType": "https://github.com/anervalens-netizen/unihub-retail/retail-release@v1",
-            "externalParameters": {"sourceSha": source_sha},
+            "externalParameters": {
+                "sourceSha": source_sha,
+                "releaseAEvidence": release_a_evidence,
+            },
             "internalParameters": {},
             "resolvedDependencies": [{"uri": "git+https://github.com/anervalens-netizen/unihub-retail", "digest": {"gitCommit": source_sha}}],
         },
@@ -197,20 +303,31 @@ provenance = {
 (output_path / "PROVENANCE.json").write_text(json.dumps(provenance, sort_keys=True, separators=(",", ":")) + "\n", encoding="utf-8")
 
 evidence = {}
-for name in (
+evidence_names = [
     archive_name, "SOURCE_SHA", "SBOM.cdx.json", "SBOM.npm.cdx.json",
     "SBOM.python.cdx.json", "PROVENANCE.json",
-):
+]
+if release_a_evidence is not None:
+    evidence_names.extend(release_a_files)
+for name in evidence_names:
     evidence[name] = hashlib.sha256((output_path / name).read_bytes()).hexdigest()
 manifest = {"schemaVersion": 1, "sourceSha": source_sha, "archive": archive_name, "sha256": evidence}
+if release_a_evidence is not None:
+    manifest["releaseAEvidence"] = release_a_evidence
 (output_path / "RELEASE_MANIFEST.json").write_text(json.dumps(manifest, sort_keys=True, separators=(",", ":")) + "\n", encoding="utf-8")
 PY
 python3 "$SCRIPT_DIR/../scripts/validate_release_sbom.py" aggregate \
   "$BUILD_DIR/SBOM.cdx.json" --expected-sha "$SOURCE_SHA"
 (
   cd "$BUILD_DIR"
-  sha256sum SOURCE_SHA "$ARCHIVE_NAME" SBOM.cdx.json SBOM.npm.cdx.json \
-    SBOM.python.cdx.json PROVENANCE.json RELEASE_MANIFEST.json > SHA256SUMS
+  checksum_files=(
+    SOURCE_SHA "$ARCHIVE_NAME" SBOM.cdx.json SBOM.npm.cdx.json
+    SBOM.python.cdx.json PROVENANCE.json RELEASE_MANIFEST.json
+  )
+  if [[ "$RELEASE_A_EVIDENCE_PRESENT" == "1" ]]; then
+    checksum_files+=("${RELEASE_A_EVIDENCE_FILES[@]}")
+  fi
+  sha256sum "${checksum_files[@]}" > SHA256SUMS
 )
 
 mv -- "$BUILD_DIR" "$OUTPUT_DIR"
