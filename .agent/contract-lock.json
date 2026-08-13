@@ -1,11 +1,11 @@
 {
   "version": 1,
   "objective": "UR-CLOSE-20260812",
-  "revision": 16,
+  "revision": 17,
   "baseline_source_sha": "0be82b430e55b7414babf470abe3fc5404b6cdc9",
-  "contract_content_commit": "c04c63b636977bd6a64fc00e7b6ed2220f9788e9",
-  "supersedes_lock_commit": "fb8673b03a4cf657fd0df6cf5e8e418af8e65e82",
-  "created_at": "2026-08-13T13:57:09+03:00",
+  "contract_content_commit": "025278b769f16fec6021f112b7190154e60bbb2d",
+  "supersedes_lock_commit": "5b5f89474748ff53e4b92f034827e467ee9d52ad",
+  "created_at": "2026-08-13T14:43:04+03:00",
   "source_inputs": [
     {
       "path": "/opt/Mobiup/UNIHUB_RETAIL_AUDIT_2026-08-12.md",
@@ -18,8 +18,8 @@
   ],
   "plan": {
     "path": "docs/exec-plans/active/UR-CLOSE-20260812.md",
-    "git_blob": "2aa764a8ecc80d0ab3355adb486fcec60ab7e64b",
-    "sha256": "c9fd40da1931097f8cab59ae828acc97e5889c16684a4c62bf9aad3ee4fa6caa"
+    "git_blob": "1b1fb5bdc446cd333db5e5340d9d1076ba25f7c8",
+    "sha256": "c6fbe6749126350420d992684698499aa3d3a057eae8bed506cb5b5292fab777"
   },
   "assets": [
     {
@@ -69,8 +69,8 @@
     },
     {
       "path": "scripts/check_release_a_candidate.py",
-      "git_blob": "267d9557a5df74845c2bffd95cb7e5d7af10f1d1",
-      "sha256": "ea50e7539c193774344f30a4788217466951500aad0bacb6c71c4815d90382f3"
+      "git_blob": "df33dd4aca83d8d24c9561a8627d432fe92cbc73",
+      "sha256": "e723e31379698cbb2fea7353abc03fd3fef6f76ed76eb3f8a27acee9ee409f02"
     },
     {
       "path": ".github/workflows/ci.yml",
@@ -106,6 +106,11 @@
       "path": "backend/scripts/run_tests_isolated.sh",
       "git_blob": "b06685ebfd4efd15f84d433f54f94b73cadc321a",
       "sha256": "e1ff5f41345038661d37daf34e1665ef4b504c212c8c3d527fa0f68e3b5b9100"
+    },
+    {
+      "path": "backend/scripts/run_import_overlap_gate.py",
+      "git_blob": "de18f02653a4cc6a81f531eedfe67b45a4c056c1",
+      "sha256": "554cb286d72203d50ee3f667538bb93c5180ce5fb5c00074a7ee733787b09375"
     },
     {
       "path": "backend/scripts/run_outbox_slo_workload.py",
@@ -159,18 +164,18 @@
     },
     {
       "path": "scripts/release-b-authority-contract-v1.json",
-      "git_blob": "eb8d8b69df062ec305bd6617ceb92b6765fe76af",
-      "sha256": "41ea6c01fe72fb9325a9fca2bbfadb53f9c3f6a7c75fe2441f70e94377ae7077"
+      "git_blob": "223fd8ba391abad3ae2c628584a39988a6d97c0d",
+      "sha256": "08ea54032117607377cd51ac79a05e25e19c5d80379625772d84158dab5e7fa6"
     },
     {
       "path": "backend/tests/test_release_contract_tooling_security.py",
-      "git_blob": "740d7e51a54a0d88340d14e2cb04d1053d7b52fd",
-      "sha256": "f0576cdce2fceb98304abc4eb54e30fa6c5e330a08e15f4c69e2f54209f6ac30"
+      "git_blob": "a2852e99005854f38e0ebcc1e9ece300d6267516",
+      "sha256": "869e877f51a5d84d268bd6ba19810e1eae1de971ee02dbe1240e97cf15b661cd"
     },
     {
       "path": "scripts/run_local_quality_gate.sh",
-      "git_blob": "fcfc28634fe50c8ada043ded2912b2b33c8e4f35",
-      "sha256": "27e248f12c1b30cd28d671b399e1afb708eb04cef15354701fbbe7a1bdcbc3fe"
+      "git_blob": "542a64f81ac7386f9dbd0d0a6b93bd174031c3f8",
+      "sha256": "99fdebcd4e1fd3e616fa8fa7c22d22a00654b6cf9b347a166c5fb1f62c05245c"
     },
     {
       "path": "scripts/run_outbox_slo_gate.py",
