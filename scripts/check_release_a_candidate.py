@@ -342,6 +342,36 @@ RELEASE_B_EVIDENCE_CURRENT_PATHS = {
     "ops/deploy-retail-artifact.sh",
     "ops/test-deploy-retail-artifact.sh",
 }
+RELEASE_B_IMMUTABLE_CURRENT_PATHS = {
+    ".github/workflows/deploy.yml",
+    ".agent/PLANS.md",
+    "docs/exec-plans/active/UR-CLOSE-20260812.md",
+    "docs/contracts/query-parameter-policy-v1.json",
+    "docs/contracts/business-golden-v2.json",
+    "docs/contracts/ai-governance-golden-v1.json",
+    "scripts/frontend-critical-coverage.json",
+    "scripts/target-mutation-contract-v2.json",
+    "scripts/python-complexity-contract-v1.json",
+    "scripts/release-a-source-contract-v1.json",
+    "scripts/check_release_a_candidate.py",
+    "scripts/run_release_a_schema_gate.sh",
+    "scripts/run_real_e2e.sh",
+    "backend/db/migrations/069_ai_cohort_and_transactional_outbox.sql",
+    "backend/db/migrations/manifest.json",
+    "backend/db/migrations/README.md",
+    "backend/tests/test_release_a_schema_069.py",
+    "backend/tests/test_release_contract_tooling_security.py",
+    "scripts/verify_promtool_cache.sh",
+    "scripts/release-b-authority-contract-v1.json",
+    "ops/build-retail-release-artifact.sh",
+    "ops/config/retail-env.schema.json",
+    "ops/deploy-retail-artifact.sh",
+    "ops/test-deploy-retail-artifact.sh",
+}
+RELEASE_B_IMMUTABLE_FROM_A_PATHS = {
+    ".agent/contract-lock.json",
+    "backend/services/grile_pilot_v2.py",
+}
 RELEASE_B_MUTABLE_PATHS = {
     "backend/repositories/transactional_outbox.py",
     "backend/services/outbox_worker.py",
@@ -1094,7 +1124,10 @@ def verify_release_b_runtime_composition(
         raise ValueError("Release-B scale snapshot topology drift")
 
     preview_exclusions = (
-        immutable_current | RELEASE_B_SPECIAL_PATHS | RELEASE_B_MUTABLE_PATHS
+        immutable_current
+        | RELEASE_B_IMMUTABLE_FROM_A_PATHS
+        | RELEASE_B_SPECIAL_PATHS
+        | RELEASE_B_MUTABLE_PATHS
     )
     frozen_preview_paths = preview_delta - preview_exclusions
     if len(frozen_preview_paths) != 279:
@@ -1104,7 +1137,7 @@ def verify_release_b_runtime_composition(
         expected_mode, expected_digest = git_path_identity(preview_sha, path)
         actual_mode, actual_digest = git_path_identity("HEAD", path)
         if (
-            expected_mode not in {"100644", "100755"}
+            expected_mode != "100644"
             or (actual_mode, actual_digest) != (expected_mode, expected_digest)
         ):
             raise ValueError(f"Release-B frozen preview runtime drift: {path}")
@@ -1137,17 +1170,24 @@ def verify_release_b_runtime_composition(
         ):
             raise ValueError(f"Release-B mutable path did not change from preview: {path}")
 
-    release_a_lock_mode, release_a_lock_digest = git_path_identity(
-        expected_release_a_sha, ".agent/contract-lock.json"
+    release_a_immutable: list[dict[str, str]] = []
+    for path in sorted(RELEASE_B_IMMUTABLE_FROM_A_PATHS):
+        expected_mode, expected_digest = git_path_identity(expected_release_a_sha, path)
+        actual_mode, actual_digest = git_path_identity("HEAD", path)
+        if (
+            expected_mode not in {"100644", "100755"}
+            or not expected_digest
+            or (actual_mode, actual_digest) != (expected_mode, expected_digest)
+        ):
+            raise ValueError(f"Release-B changed immutable Release-A path: {path}")
+        release_a_immutable.append(
+            {"path": path, "git_mode": expected_mode, "sha256": expected_digest}
+        )
+    release_a_lock_digest = next(
+        item["sha256"]
+        for item in release_a_immutable
+        if item["path"] == ".agent/contract-lock.json"
     )
-    candidate_lock_mode, candidate_lock_digest = git_path_identity(
-        "HEAD", ".agent/contract-lock.json"
-    )
-    if (candidate_lock_mode, candidate_lock_digest) != (
-        release_a_lock_mode,
-        release_a_lock_digest,
-    ):
-        raise ValueError("Release-B changed the Release-A contract lock")
     return {
         "preview_delta_count": len(preview_delta),
         "frozen_preview_count": len(frozen_preview),
@@ -1157,6 +1197,7 @@ def verify_release_b_runtime_composition(
         "mutable_paths": sorted(RELEASE_B_MUTABLE_PATHS),
         "candidate_delta_paths": sorted(actual_delta),
         "unexpected_delta_paths": unexpected_delta,
+        "release_a_immutable": release_a_immutable,
         "release_a_lock_sha256": release_a_lock_digest,
     }
 
@@ -1181,39 +1222,13 @@ def verify_release_b_mutation_policy(
     ).returncode != 0:
         raise ValueError("Release-A SHA is not an ancestor of Release-B candidate")
 
-    immutable_current = {
-        ".github/workflows/deploy.yml",
-        ".agent/PLANS.md",
-        "docs/exec-plans/active/UR-CLOSE-20260812.md",
-        "docs/contracts/query-parameter-policy-v1.json",
-        "docs/contracts/business-golden-v2.json",
-        "docs/contracts/ai-governance-golden-v1.json",
-        "scripts/frontend-critical-coverage.json",
-        "scripts/target-mutation-contract-v2.json",
-        "scripts/python-complexity-contract-v1.json",
-        "scripts/release-a-source-contract-v1.json",
-        "scripts/check_release_a_candidate.py",
-        "scripts/run_release_a_schema_gate.sh",
-        "scripts/run_real_e2e.sh",
-        "backend/db/migrations/069_ai_cohort_and_transactional_outbox.sql",
-        "backend/db/migrations/manifest.json",
-        "backend/db/migrations/README.md",
-        "backend/tests/test_release_a_schema_069.py",
-        "backend/tests/test_release_contract_tooling_security.py",
-        "scripts/verify_promtool_cache.sh",
-        "scripts/release-b-authority-contract-v1.json",
-        "ops/build-retail-release-artifact.sh",
-        "ops/config/retail-env.schema.json",
-        "ops/deploy-retail-artifact.sh",
-        "ops/test-deploy-retail-artifact.sh",
-    }
-    for path in immutable_current:
+    for path in RELEASE_B_IMMUTABLE_CURRENT_PATHS:
         expected_digest = locked_by_path.get(path, {}).get("sha256")
         if expected_digest is None or sha256_bytes((ROOT / path).read_bytes()) != expected_digest:
             raise ValueError(f"Release-B immutable contract drift: {path}")
 
     runtime_composition = verify_release_b_runtime_composition(
-        expected_release_a_sha, immutable_current
+        expected_release_a_sha, RELEASE_B_IMMUTABLE_CURRENT_PATHS
     )
 
     monotonic_ratchets = (
@@ -1299,7 +1314,7 @@ def verify_release_b_mutation_policy(
         "candidate_sha": expected_candidate_sha,
         "candidate_tree": git("rev-parse", "HEAD^{tree}"),
         "release_a_is_ancestor": True,
-        "immutable_paths": sorted(immutable_current),
+        "immutable_paths": sorted(RELEASE_B_IMMUTABLE_CURRENT_PATHS),
         "runtime_composition": runtime_composition,
         "ratchets": ratchet_evidence,
         "ci_sha256": sha256_bytes(workflow.encode("utf-8")),
@@ -2260,8 +2275,8 @@ def verify_lock(
     *, current_paths: set[str] | None = None
 ) -> tuple[dict[str, Any], list[dict[str, str]]]:
     lock = load_json(ROOT / ".agent/contract-lock.json")
-    if lock.get("revision") != 19 or lock.get("baseline_source_sha") != EXPECTED_BASELINE:
-        raise ValueError("Release-A requires exact contract lock revision 19 and baseline")
+    if lock.get("revision") != 20 or lock.get("baseline_source_sha") != EXPECTED_BASELINE:
+        raise ValueError("Release-A requires exact contract lock revision 20 and baseline")
     content_commit = str(lock["contract_content_commit"])
     lock_commits = list(
         filter(
@@ -2276,15 +2291,15 @@ def verify_lock(
         )
     )
     if len(lock_commits) != 1:
-        raise ValueError("revision-19 lock must have exactly one immutable lock commit")
+        raise ValueError("revision-20 lock must have exactly one immutable lock commit")
     lock_commit = lock_commits[0]
     lock_parents = git("show", "-s", "--format=%P", lock_commit).split()
     if lock_parents != [content_commit]:
-        raise ValueError("revision-19 lock commit must directly follow content commit")
+        raise ValueError("revision-20 lock commit must directly follow content commit")
     current_lock_blob = git("rev-parse", "HEAD:.agent/contract-lock.json")
     locked_blob = git("rev-parse", f"{lock_commit}:.agent/contract-lock.json")
     if current_lock_blob != locked_blob:
-        raise ValueError("current revision-19 lock differs from its sole lock commit")
+        raise ValueError("current revision-20 lock differs from its sole lock commit")
     lock["verified_lock_commit"] = lock_commit
     verified: list[dict[str, str]] = []
     locked_objects = [lock["plan"], *lock["assets"]]

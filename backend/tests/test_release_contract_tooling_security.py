@@ -730,10 +730,14 @@ def test_release_b_runtime_composition_rejects_frozen_drift_and_extra_paths(
 ) -> None:
     checker = _load_checker()
     frozen = {f"runtime/frozen_{index:03d}.py" for index in range(279)}
-    immutable = {f"contract/immutable_{index:02d}.json" for index in range(27)}
+    immutable = {f"contract/immutable_{index:02d}.json" for index in range(25)}
+    immutable_from_a = {
+        ".agent/contract-lock.json",
+        "backend/services/grile_pilot_v2.py",
+    }
     mutable = {"runtime/mutable.py"}
     special = {".github/workflows/ci.yml"}
-    preview_delta = frozen | immutable | mutable | special
+    preview_delta = frozen | immutable | immutable_from_a | mutable | special
     assert len(preview_delta) == 308
     outbox_unique = {"backend/tests/test_outbox.py"}
     scale_unique = {"backend/scripts/run_scale.py"}
@@ -750,6 +754,9 @@ def test_release_b_runtime_composition_rejects_frozen_drift_and_extra_paths(
     monkeypatch.setattr(checker, "RELEASE_B_MUTABLE_PATHS", mutable)
     monkeypatch.setattr(checker, "RELEASE_B_IMPLEMENTATION_PATHS", mutable)
     monkeypatch.setattr(checker, "RELEASE_B_SPECIAL_PATHS", special)
+    monkeypatch.setattr(
+        checker, "RELEASE_B_IMMUTABLE_FROM_A_PATHS", immutable_from_a
+    )
     monkeypatch.setattr(checker, "RELEASE_B_OUTBOX_UNIQUE_PATHS", outbox_unique)
     monkeypatch.setattr(checker, "RELEASE_B_SCALE_UNIQUE_PATHS", scale_unique)
     actual_delta = preview_delta | outbox_unique | scale_unique
@@ -772,14 +779,9 @@ def test_release_b_runtime_composition_rejects_frozen_drift_and_extra_paths(
         {("HEAD", path): value for (_commit, path), value in identities.items()}
     )
     identities[("HEAD", "runtime/mutable.py")] = ("100644", "implemented")
-    identities[("release-a", ".agent/contract-lock.json")] = (
-        "100644",
-        "release-a-lock",
-    )
-    identities[("HEAD", ".agent/contract-lock.json")] = (
-        "100644",
-        "release-a-lock",
-    )
+    for path in immutable_from_a:
+        identities[("release-a", path)] = ("100644", f"release-a-{path}")
+        identities[("HEAD", path)] = identities[("release-a", path)]
     monkeypatch.setattr(checker, "git_diff_paths", fake_diff)
     monkeypatch.setattr(
         checker,
@@ -795,9 +797,41 @@ def test_release_b_runtime_composition_rejects_frozen_drift_and_extra_paths(
     with pytest.raises(ValueError, match="frozen preview runtime drift"):
         checker.verify_release_b_runtime_composition("release-a", immutable)
     identities[("HEAD", changed)] = identities[("preview", changed)]
+    for path in immutable_from_a:
+        identities[("HEAD", path)] = ("100644", "tampered")
+        with pytest.raises(ValueError, match="changed immutable Release-A path"):
+            checker.verify_release_b_runtime_composition("release-a", immutable)
+        identities[("HEAD", path)] = identities[("release-a", path)]
     actual_delta.add("backend/services/backdoor.py")
     with pytest.raises(ValueError, match="unexpected path mutation"):
         checker.verify_release_b_runtime_composition("release-a", immutable)
+
+
+def test_release_b_real_preview_topology_classifies_release_a_preserved_paths() -> None:
+    checker = _load_checker()
+    preview_sha = checker.EXPECTED_SOURCE_SNAPSHOTS[
+        "release_b_integrated_preview"
+    ]["commit"]
+    preview_delta = checker.git_diff_paths(checker.EXPECTED_BASELINE, preview_sha)
+    immutable_from_a = {
+        ".agent/contract-lock.json",
+        "backend/services/grile_pilot_v2.py",
+    }
+    assert checker.RELEASE_B_IMMUTABLE_FROM_A_PATHS == immutable_from_a
+    classified_exclusions = (
+        checker.RELEASE_B_IMMUTABLE_CURRENT_PATHS
+        | checker.RELEASE_B_IMMUTABLE_FROM_A_PATHS
+        | checker.RELEASE_B_SPECIAL_PATHS
+        | checker.RELEASE_B_MUTABLE_PATHS
+    )
+    frozen = preview_delta - classified_exclusions
+    assert len(preview_delta) == 308
+    assert len(frozen) == 279
+    assert immutable_from_a <= preview_delta
+    assert immutable_from_a.isdisjoint(frozen)
+    assert len(preview_delta & checker.RELEASE_B_IMMUTABLE_CURRENT_PATHS) == 17
+    assert len(preview_delta & checker.RELEASE_B_SPECIAL_PATHS) == 1
+    assert len(preview_delta & checker.RELEASE_B_MUTABLE_PATHS) == 9
 
 
 def test_ac17_freezes_complete_invocation_and_three_way_ref_reconciliation() -> None:
