@@ -6,6 +6,7 @@ import io
 import json
 from pathlib import Path
 import subprocess
+import sys
 import tarfile
 from types import ModuleType
 from typing import Any
@@ -181,6 +182,20 @@ def test_release_a_python_environment_and_runtime_tree_are_cryptographically_bou
     checker = _load_checker()
     environment = checker.verify_backend_python_environment()
     assert environment["site_packages_sha256"] == checker.PYTHON_SITE_PACKAGES_SHA256
+    compiled_record = (
+        b"package/module.py,sha256=source,1\n"
+        b"package/__pycache__/module.cpython-312.pyc,,\n"
+        b"../../../bin/__pycache__/runxlrd.cpython-312.pyc,,\n"
+        b"../../../bin/package,sha256=path-bound,99\n"
+    )
+    assert checker.canonical_python_record_bytes(compiled_record) == (
+        b"package/module.py,sha256=source,1\n"
+        b"../../../bin/package,<venv-script>,<size>\n"
+    )
+    malicious_record = b"../../outside.pyc,,\n"
+    assert checker.canonical_python_record_bytes(malicious_record) == malicious_record
+    nested_record = b"package/__pycache__/nested/module.cpython-312.pyc,,\n"
+    assert checker.canonical_python_record_bytes(nested_record) == nested_record
     assert (
         environment["system_sitecustomize_sha256"]
         == checker.PYTHON_SYSTEM_SITECUSTOMIZE_SHA256
@@ -197,6 +212,13 @@ def test_release_a_python_environment_and_runtime_tree_are_cryptographically_bou
     assert "--clean-runtime-pyc" in workflow
     assert "--no-compile" in workflow
     assert "--verify-python-environment" in workflow
+    local_gate = (ROOT / "scripts/run_local_quality_gate.sh").read_text(
+        encoding="utf-8"
+    )
+    assert "is_canonical_generated_pyc" in local_gate
+    assert 'path.parts[:5] == ("..", "..", "..", "bin", "__pycache__")' in local_gate
+    assert 'for path in venv_root.rglob("*.pyc")' in local_gate
+    assert '"$ROOT/backend/venv" "$output"' in local_gate
     pip_install = workflow.index("--no-compile --require-hashes -r requirements-dev.lock")
     cache_clean = workflow.index("--internal-python-cache-clean", pip_install)
     environment_check = workflow.index("--verify-python-environment", cache_clean)
@@ -222,6 +244,20 @@ def test_release_a_python_environment_and_runtime_tree_are_cryptographically_bou
         text=True,
     )
     assert completed.returncode == 0, completed.stdout + completed.stderr
+
+
+def test_import_overlap_worker_uses_isolated_explicit_backend_bootstrap() -> None:
+    path = ROOT / "backend/scripts/run_import_overlap_gate.py"
+    spec = importlib.util.spec_from_file_location("import_overlap_gate", path)
+    assert spec is not None and spec.loader is not None
+    gate = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(gate)
+    command = gate.worker_command()
+    assert command[0] == sys.executable
+    assert command[1:3] == ("-I", "-c")
+    assert "sys.path.insert(0,backend)" in command[3]
+    assert Path(command[4]).resolve() == (ROOT / "backend").resolve()
+    assert Path(command[5]).resolve() == (ROOT / "backend/worker.py").resolve()
 
 
 def test_production_deploy_binds_signature_and_root_entrypoint_to_exact_artifact() -> None:
@@ -671,8 +707,8 @@ def test_release_b_runtime_composition_rejects_frozen_drift_and_extra_paths(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     checker = _load_checker()
-    frozen = {f"runtime/frozen_{index:03d}.py" for index in range(280)}
-    immutable = {f"contract/immutable_{index:02d}.json" for index in range(26)}
+    frozen = {f"runtime/frozen_{index:03d}.py" for index in range(279)}
+    immutable = {f"contract/immutable_{index:02d}.json" for index in range(27)}
     mutable = {"runtime/mutable.py"}
     special = {".github/workflows/ci.yml"}
     preview_delta = frozen | immutable | mutable | special
@@ -730,7 +766,7 @@ def test_release_b_runtime_composition_rejects_frozen_drift_and_extra_paths(
     )
     evidence = checker.verify_release_b_runtime_composition("release-a", immutable)
     assert evidence["preview_delta_count"] == 308
-    assert evidence["frozen_preview_count"] == 280
+    assert evidence["frozen_preview_count"] == 279
 
     changed = next(iter(frozen))
     identities[("HEAD", changed)] = ("100644", "tampered")

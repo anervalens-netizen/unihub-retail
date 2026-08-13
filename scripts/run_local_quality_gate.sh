@@ -15,7 +15,7 @@ PYTHON="$ROOT/backend/venv/bin/python"
 PYTHON_BASE="/usr/bin/python3.12"
 EXPECTED_PYTHON_SHA256="1643dacd9feaedc58f3cc581e4d22577dfe25c09b10282936186ccf0f2e61118"
 EXPECTED_SYSTEM_SITECUSTOMIZE_SHA256="43d81125d92376b1a69d53a71126a041cc9a18d8080e92dea0a2ae23be138b1e"
-EXPECTED_SITE_PACKAGES_SHA256="117a14d30ed1f06711b632f396e70c94166936197d60f3bab366ca500ab0da87"
+EXPECTED_SITE_PACKAGES_SHA256="81524f503c2b5b2e66bba0ab4cf434e53f79f3fbcd390f6e3aba884acb50848d"
 NODE=""
 NPM_CLI=""
 EXPECTED_COSIGN_SHA256="4629c757b7618056f8ddd7e2625ae9fdd94c0372a65049520bc7d9df9efc7f71"
@@ -366,7 +366,7 @@ import base64
 import hashlib
 import importlib.metadata
 import json
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import re
 import sys
 
@@ -429,6 +429,24 @@ record_failures = []
 verified_files = 0
 verified_entries = []
 claimed_files = set()
+def is_canonical_venv_bin_pyc(value):
+    path = PurePosixPath(value)
+    return (
+        not path.is_absolute()
+        and len(path.parts) == 6
+        and path.parts[:5] == ("..", "..", "..", "bin", "__pycache__")
+        and path.suffix == ".pyc"
+    )
+def is_canonical_generated_pyc(value):
+    path = PurePosixPath(value)
+    return (
+        not path.is_absolute()
+        and len(path.parts) >= 2
+        and path.parts[-2] == "__pycache__"
+        and path.suffix == ".pyc"
+        and (".." not in path.parts or is_canonical_venv_bin_pyc(value))
+    )
+venv_bin = site_packages.parents[2] / "bin"
 for name in sorted(installed):
     dist = installed.get(name)
     if dist is None:
@@ -436,11 +454,20 @@ for name in sorted(installed):
     for file in dist.files or ():
         target = Path(dist.locate_file(file))
         try:
-            if target.resolve().is_relative_to(site_packages.resolve()):
-                claimed_files.add(target.resolve())
+            resolved = target.resolve()
+            in_site_packages = resolved.is_relative_to(site_packages.resolve())
         except (OSError, ValueError):
             record_failures.append(f"{name}:{file}:unsafe_path")
             continue
+        if is_canonical_generated_pyc(str(file)):
+            if not in_site_packages and not (
+                is_canonical_venv_bin_pyc(str(file))
+                and resolved.is_relative_to(venv_bin.resolve())
+            ):
+                record_failures.append(f"{name}:{file}:unsafe_path")
+            continue
+        if in_site_packages:
+            claimed_files.add(resolved)
         if not target.is_file() or target.is_symlink():
             record_failures.append(f"{name}:{file}:missing_or_unsafe")
             continue
@@ -459,9 +486,10 @@ for name in sorted(installed):
             record_failures.append(f"{name}:{file}:hash_mismatch")
         verified_entries.append([name, str(file), actual])
         verified_files += 1
+venv_root = site_packages.parents[2]
 pyc_files = sorted(
-    str(path.relative_to(site_packages))
-    for path in site_packages.rglob("*.pyc")
+    str(path.relative_to(venv_root))
+    for path in venv_root.rglob("*.pyc")
     if path.is_file()
 )
 unowned_files = sorted(
@@ -484,6 +512,10 @@ def stable_file_bytes(path: Path) -> bytes:
     lines = []
     for line in payload.decode("utf-8").splitlines():
         fields = line.split(",")
+        if len(fields) != 3:
+            raise SystemExit("Python RECORD row must contain exactly three fields")
+        if is_canonical_generated_pyc(fields[0]):
+            continue
         if fields[0].startswith("../../../bin/"):
             fields[1:] = ["<venv-script>", "<size>"]
         lines.append(",".join(fields))
@@ -564,7 +596,7 @@ internal_python_cache_clean() {
     || die "unsafe Python-cache evidence target"
   mkdir -p "$(dirname "$output")"
   "$PYTHON_BASE" -I -S - \
-    "$ROOT/backend/venv/lib/python3.12/site-packages" "$output" <<'PY'
+    "$ROOT/backend/venv" "$output" <<'PY'
 import json
 import os
 from pathlib import Path

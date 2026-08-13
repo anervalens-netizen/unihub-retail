@@ -58,7 +58,7 @@ PYTHON_SYSTEM_SITECUSTOMIZE_RESOLVED = Path("/etc/python3.12/sitecustomize.py")
 PYTHON_SYSTEM_SITECUSTOMIZE_SHA256 = "43d81125d92376b1a69d53a71126a041cc9a18d8080e92dea0a2ae23be138b1e"
 PYTHON_SITE_PACKAGES_RELATIVE = "venv/lib/python3.12/site-packages"
 PYTHON_SITE_PACKAGES = ROOT / "backend" / PYTHON_SITE_PACKAGES_RELATIVE
-PYTHON_SITE_PACKAGES_SHA256 = "117a14d30ed1f06711b632f396e70c94166936197d60f3bab366ca500ab0da87"
+PYTHON_SITE_PACKAGES_SHA256 = "81524f503c2b5b2e66bba0ab4cf434e53f79f3fbcd390f6e3aba884acb50848d"
 PYTHON_RUNTIME_TREE_PROPERTY = "unihub:python-runtime:site-packages-tree-sha256:v1"
 PYTHON_RUNTIME_SUPPLY_NAME = "PYTHON_RUNTIME_SUPPLY.json"
 PYTHON_RUNTIME_REQUIREMENTS_NAME = "PYTHON_RUNTIME_REQUIREMENTS.lock"
@@ -78,6 +78,7 @@ EXPECTED_CHANGED_PATHS = {
     "backend/db/migrations/manifest.json",
     "backend/scripts/run_tests_isolated.sh",
     "backend/scripts/run_outbox_slo_workload.py",
+    "backend/scripts/run_import_overlap_gate.py",
     "backend/scripts/run_retail_scale_profile.py",
     "backend/services/grile_pilot_v2.py",
     "backend/tests/test_release_a_schema_069.py",
@@ -131,6 +132,7 @@ EXPECTED_RELEASE_A_AUTHORITIES = {
     ".github/workflows/deploy.yml",
     "backend/scripts/run_tests_isolated.sh",
     "backend/scripts/run_outbox_slo_workload.py",
+    "backend/scripts/run_import_overlap_gate.py",
     "backend/scripts/run_retail_scale_profile.py",
     "backend/tests/test_release_contract_tooling_security.py",
     "ops/build-retail-release-artifact.sh",
@@ -330,6 +332,7 @@ RELEASE_B_EVIDENCE_CURRENT_PATHS = {
     "backend/db/migrations/README.md",
     "backend/tests/test_release_a_schema_069.py",
     "backend/tests/test_release_contract_tooling_security.py",
+    "backend/scripts/run_import_overlap_gate.py",
     "scripts/verify_promtool_cache.sh",
     "scripts/release-b-authority-contract-v1.json",
     "ops/build-retail-release-artifact.sh",
@@ -388,6 +391,41 @@ RELEASE_B_SCALE_UNIQUE_PATHS = {
 
 def sha256_bytes(payload: bytes) -> str:
     return hashlib.sha256(payload).hexdigest()
+
+
+def is_canonical_venv_bin_pyc(value: str) -> bool:
+    path = PurePosixPath(value)
+    return (
+        not path.is_absolute()
+        and len(path.parts) == 6
+        and path.parts[:5] == ("..", "..", "..", "bin", "__pycache__")
+        and path.suffix == ".pyc"
+    )
+
+
+def is_canonical_generated_pyc(value: str) -> bool:
+    path = PurePosixPath(value)
+    return (
+        not path.is_absolute()
+        and len(path.parts) >= 2
+        and path.parts[-2] == "__pycache__"
+        and path.suffix == ".pyc"
+        and (".." not in path.parts or is_canonical_venv_bin_pyc(value))
+    )
+
+
+def canonical_python_record_bytes(payload: bytes) -> bytes:
+    lines: list[str] = []
+    for line in payload.decode("utf-8").splitlines():
+        fields = line.split(",")
+        if len(fields) != 3:
+            raise ValueError("Python RECORD row must contain exactly three fields")
+        if is_canonical_generated_pyc(fields[0]):
+            continue
+        if fields[0].startswith("../../../bin/"):
+            fields[1:] = ["<venv-script>", "<size>"]
+        lines.append(",".join(fields))
+    return ("\n".join(lines) + "\n").encode()
 
 
 def verify_python_runtime() -> dict[str, str]:
@@ -469,15 +507,24 @@ def verify_backend_python_environment() -> dict[str, Any]:
         raise ValueError("backend Python distribution inventory mismatch")
     claimed: set[Path] = set()
     record_failures: list[str] = []
+    venv_bin = (ROOT / "backend/venv/bin").resolve()
     for name, dist in sorted(distributions.items()):
         for file in dist.files or ():
             target = Path(dist.locate_file(file))
             try:
                 resolved = target.resolve()
-                if not resolved.is_relative_to(site_packages.resolve()):
-                    continue
+                in_site_packages = resolved.is_relative_to(site_packages.resolve())
             except (OSError, ValueError):
                 record_failures.append(f"{name}:{file}:unsafe_path")
+                continue
+            if is_canonical_generated_pyc(str(file)):
+                if not in_site_packages and not (
+                    is_canonical_venv_bin_pyc(str(file))
+                    and resolved.is_relative_to(venv_bin)
+                ):
+                    record_failures.append(f"{name}:{file}:unsafe_path")
+                continue
+            if not in_site_packages:
                 continue
             claimed.add(resolved)
             if not target.is_file() or target.is_symlink():
@@ -495,7 +542,8 @@ def verify_backend_python_environment() -> dict[str, Any]:
             ).decode().rstrip("=")
             if actual != file.hash.value:
                 record_failures.append(f"{name}:{file}:hash_mismatch")
-    pyc = [path for path in site_packages.rglob("*.pyc") if path.is_file()]
+    venv_root = ROOT / "backend/venv"
+    pyc = [path for path in venv_root.rglob("*.pyc") if path.is_file()]
     symlinks = [path for path in site_packages.rglob("*") if path.is_symlink()]
     unowned = [
         path
@@ -510,13 +558,7 @@ def verify_backend_python_environment() -> dict[str, Any]:
         payload = path.read_bytes()
         if path.name != "RECORD":
             return payload
-        lines = []
-        for line in payload.decode("utf-8").splitlines():
-            fields = line.split(",")
-            if fields[0].startswith("../../../bin/"):
-                fields[1:] = ["<venv-script>", "<size>"]
-            lines.append(",".join(fields))
-        return ("\n".join(lines) + "\n").encode()
+        return canonical_python_record_bytes(payload)
 
     tree_entries = [
         [
@@ -1052,7 +1094,7 @@ def verify_release_b_runtime_composition(
         immutable_current | RELEASE_B_SPECIAL_PATHS | RELEASE_B_MUTABLE_PATHS
     )
     frozen_preview_paths = preview_delta - preview_exclusions
-    if len(frozen_preview_paths) != 280:
+    if len(frozen_preview_paths) != 279:
         raise ValueError("Release-B frozen preview topology drift")
     frozen_preview: list[dict[str, str]] = []
     for path in sorted(frozen_preview_paths):
@@ -2214,8 +2256,8 @@ def verify_lock(
     *, current_paths: set[str] | None = None
 ) -> tuple[dict[str, Any], list[dict[str, str]]]:
     lock = load_json(ROOT / ".agent/contract-lock.json")
-    if lock.get("revision") != 16 or lock.get("baseline_source_sha") != EXPECTED_BASELINE:
-        raise ValueError("Release-A requires exact contract lock revision 16 and baseline")
+    if lock.get("revision") != 17 or lock.get("baseline_source_sha") != EXPECTED_BASELINE:
+        raise ValueError("Release-A requires exact contract lock revision 17 and baseline")
     content_commit = str(lock["contract_content_commit"])
     lock_commits = list(
         filter(
@@ -2230,15 +2272,15 @@ def verify_lock(
         )
     )
     if len(lock_commits) != 1:
-        raise ValueError("revision-16 lock must have exactly one immutable lock commit")
+        raise ValueError("revision-17 lock must have exactly one immutable lock commit")
     lock_commit = lock_commits[0]
     lock_parents = git("show", "-s", "--format=%P", lock_commit).split()
     if lock_parents != [content_commit]:
-        raise ValueError("revision-16 lock commit must directly follow content commit")
+        raise ValueError("revision-17 lock commit must directly follow content commit")
     current_lock_blob = git("rev-parse", "HEAD:.agent/contract-lock.json")
     locked_blob = git("rev-parse", f"{lock_commit}:.agent/contract-lock.json")
     if current_lock_blob != locked_blob:
-        raise ValueError("current revision-16 lock differs from its sole lock commit")
+        raise ValueError("current revision-17 lock differs from its sole lock commit")
     lock["verified_lock_commit"] = lock_commit
     verified: list[dict[str, str]] = []
     locked_objects = [lock["plan"], *lock["assets"]]

@@ -134,8 +134,7 @@
     {
       "git_mode": "100644",
       "path": "backend/scripts/run_import_overlap_gate.py",
-      "sha256": "ee94e70403ef5a2c10e00af30a2c2c2ebaa2bfe6519f478631bf8c7e19026c2d",
-      "source_snapshot": "release_b_integrated_preview",
+      "sha256": "554cb286d72203d50ee3f667538bb93c5180ce5fb5c00074a7ee733787b09375",
       "supports": [
         "AC-16"
       ]
@@ -332,7 +331,7 @@
     {
       "git_mode": "100644",
       "path": "backend/tests/test_release_contract_tooling_security.py",
-      "sha256": "f0576cdce2fceb98304abc4eb54e30fa6c5e330a08e15f4c69e2f54209f6ac30",
+      "sha256": "869e877f51a5d84d268bd6ba19810e1eae1de971ee02dbe1240e97cf15b661cd",
       "supports": [
         "AC-12",
         "AC-16",
@@ -707,7 +706,7 @@
     {
       "git_mode": "100644",
       "path": "scripts/check_release_a_candidate.py",
-      "sha256": "ea50e7539c193774344f30a4788217466951500aad0bacb6c71c4815d90382f3",
+      "sha256": "e723e31379698cbb2fea7353abc03fd3fef6f76ed76eb3f8a27acee9ee409f02",
       "supports": [
         "AC-12",
         "AC-16",
@@ -735,7 +734,7 @@
     {
       "git_mode": "100755",
       "path": "scripts/run_local_quality_gate.sh",
-      "sha256": "27e248f12c1b30cd28d671b399e1afb708eb04cef15354701fbbe7a1bdcbc3fe",
+      "sha256": "99fdebcd4e1fd3e616fa8fa7c22d22a00654b6cf9b347a166c5fb1f62c05245c",
       "supports": [
         "AC-01",
         "AC-02",
@@ -1896,7 +1895,7 @@
         {
           "git_mode": "100644",
           "path": "backend/tests/test_release_contract_tooling_security.py",
-          "sha256": "f0576cdce2fceb98304abc4eb54e30fa6c5e330a08e15f4c69e2f54209f6ac30"
+          "sha256": "869e877f51a5d84d268bd6ba19810e1eae1de971ee02dbe1240e97cf15b661cd"
         },
         {
           "git_mode": "100644",
@@ -2829,7 +2828,7 @@
         {
           "git_mode": "100755",
           "path": "scripts/run_local_quality_gate.sh",
-          "sha256": "27e248f12c1b30cd28d671b399e1afb708eb04cef15354701fbbe7a1bdcbc3fe"
+          "sha256": "99fdebcd4e1fd3e616fa8fa7c22d22a00654b6cf9b347a166c5fb1f62c05245c"
         },
         {
           "git_mode": "100755",
@@ -2883,6 +2882,7 @@
   "baseline_source_sha": "0be82b430e55b7414babf470abe3fc5404b6cdc9",
   "release_a_authorities": [
     ".github/workflows/deploy.yml",
+    "backend/scripts/run_import_overlap_gate.py",
     "backend/scripts/run_outbox_slo_workload.py",
     "backend/scripts/run_retail_scale_profile.py",
     "backend/scripts/run_tests_isolated.sh",

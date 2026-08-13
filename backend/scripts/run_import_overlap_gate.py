@@ -22,6 +22,24 @@ STALE_MONTH = "2099-12"
 STALE_DATE = "01.12.2099"
 
 
+def worker_command() -> tuple[str, ...]:
+    backend = Path(__file__).resolve().parents[1]
+    worker = backend / "worker.py"
+    return (
+        sys.executable,
+        "-I",
+        "-c",
+        (
+            "import runpy,sys; "
+            "backend=sys.argv.pop(1); script=sys.argv.pop(1); "
+            "sys.path.insert(0,backend); sys.argv[0]=script; "
+            "runpy.run_path(script,run_name='__main__')"
+        ),
+        str(backend),
+        str(worker),
+    )
+
+
 def workbook(marker: str, business_date: str = TEST_DATE) -> bytes:
     rows = [
         {
@@ -52,8 +70,7 @@ def workbook(marker: str, business_date: str = TEST_DATE) -> bytes:
 async def start_worker(log_path: Path) -> tuple[asyncio.subprocess.Process, Any]:
     log_file = log_path.open("wb")
     process = await asyncio.create_subprocess_exec(
-        sys.executable,
-        "worker.py",
+        *worker_command(),
         cwd=Path(__file__).resolve().parents[1],
         env={
             **os.environ,
