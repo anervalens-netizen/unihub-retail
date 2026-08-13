@@ -128,6 +128,7 @@ jobs:
               ':(exclude)scripts/python-complexity-contract-v1.json' \
               ':(exclude)scripts/release-a-source-contract-v1.json' \
               ':(exclude)scripts/check_release_a_candidate.py' \
+              ':(exclude)scripts/verify_promtool_cache.sh' \
               ':(exclude)scripts/target-mutation-contract-v2.json' \
               ':(exclude)scripts/run_release_a_schema_gate.sh' \
               ':(exclude)backend/tests/test_prometheus_topology.py' \
@@ -149,6 +150,7 @@ jobs:
             scripts/python-complexity-contract-v1.json \
             scripts/release-a-source-contract-v1.json \
             scripts/check_release_a_candidate.py \
+            scripts/verify_promtool_cache.sh \
             scripts/target-mutation-contract-v2.json \
             scripts/run_release_a_schema_gate.sh \
             > /tmp/retail-immutable-contract-secret-scan.json
@@ -283,13 +285,12 @@ jobs:
             "$GITHUB_WORKSPACE/ops/unihub-deploy.sudoers"
           grep -Fq "/usr/local/sbin/unihub-deploy-lock release *" \
             "$GITHUB_WORKSPACE/ops/unihub-deploy.sudoers"
-          archive="$prom_root/prometheus.tar.gz"
-          curl --fail --silent --show-error --location \
-            "https://github.com/prometheus/prometheus/releases/download/v${PROMETHEUS_VERSION}/prometheus-${PROMETHEUS_VERSION}.linux-amd64.tar.gz" \
-            --output "$archive"
-          echo "$PROMETHEUS_SHA256  $archive" | sha256sum --check -
-          tar --extract --gzip --file "$archive" --directory "$prom_root" \
-            --strip-components=1
+          scripts/verify_promtool_cache.sh prepare \
+            --version "$PROMETHEUS_VERSION" \
+            --sha256 "$PROMETHEUS_SHA256" \
+            --cache-dir "${RUNNER_TOOL_CACHE}/unihub-prometheus" \
+            --destination "$prom_root/promtool" \
+            --evidence "$GITHUB_WORKSPACE/test-results/promtool-cache.json"
           "$prom_root/promtool" check rules \
             "$GITHUB_WORKSPACE/ops/observability/retail-slo-rules.yml"
           python3 "$GITHUB_WORKSPACE/scripts/check_prometheus_contract.py"
@@ -310,6 +311,15 @@ jobs:
           test "$(grep -Fc '172.23.0.1:' "$prom_root/scrape.d/unihub-retail.yml")" -eq 6
           ! grep -Eq '__PROMETHEUS_DOCKER_GATEWAY__|0\.0\.0\.0|127\.0\.0\.1' \
             "$prom_root/scrape.d/unihub-retail.yml"
+
+      - name: Upload Promtool cache evidence
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: promtool-cache-${{ github.sha }}
+          path: test-results/promtool-cache.json
+          if-no-files-found: error
+          retention-days: 14
 
       - name: Exact-SHA deploy and rollback sandbox
         working-directory: .
