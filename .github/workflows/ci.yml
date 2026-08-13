@@ -31,6 +31,23 @@ concurrency:
 permissions:
   contents: read
 
+env:
+  PYTHONNOUSERSITE: "1"
+  PYTHONSAFEPATH: "1"
+  PYTHONHOME: ""
+  PYTHONPATH: ""
+  PYTHONSTARTUP: ""
+  PYTHONINSPECT: ""
+  PYTHONDONTWRITEBYTECODE: "1"
+  MYPYPATH: ""
+  MYPY_CONFIG_FILE: ""
+  NODE_OPTIONS: ""
+  NODE_PATH: ""
+  BASH_ENV: ""
+  ENV: ""
+  CDPATH: ""
+  GLOBIGNORE: ""
+
 jobs:
   runner-isolation:
     name: runner-isolation
@@ -73,6 +90,21 @@ jobs:
     needs: runner-isolation
     runs-on: [self-hosted, Linux, X64, dell-compute, unihub-build, unihub-retail-build]
     timeout-minutes: 30
+    env:
+      PYTHONNOUSERSITE: "1"
+      PYTHONSAFEPATH: "1"
+      PYTHONHOME: ""
+      PYTHONPATH: ""
+      PYTHONSTARTUP: ""
+      PYTHONINSPECT: ""
+      MYPYPATH: ""
+      MYPY_CONFIG_FILE: ""
+      NODE_OPTIONS: ""
+      NODE_PATH: ""
+      BASH_ENV: ""
+      ENV: ""
+      CDPATH: ""
+      GLOBIGNORE: ""
     defaults:
       run:
         working-directory: backend
@@ -93,9 +125,20 @@ jobs:
 
       - name: Prepare Python environment
         run: |
-          python -m venv venv
-          venv/bin/pip install --disable-pip-version-check --quiet \
-            --require-hashes -r requirements-dev.lock
+          python_base=/usr/bin/python3.12
+          test "$(sha256sum "$python_base" | awk '{print $1}')" = \
+            1643dacd9feaedc58f3cc581e4d22577dfe25c09b10282936186ccf0f2e61118
+          test "$(sha256sum /usr/lib/python3.12/sitecustomize.py | awk '{print $1}')" = \
+            43d81125d92376b1a69d53a71126a041cc9a18d8080e92dea0a2ae23be138b1e
+          "$python_base" -I -m venv venv
+          test "$(readlink -f venv/bin/python)" = "$python_base"
+          PYTHONDONTWRITEBYTECODE=1 venv/bin/python -B -I -m pip install --disable-pip-version-check --quiet \
+            --no-compile --require-hashes -r requirements-dev.lock
+          ../scripts/run_local_quality_gate.sh \
+            --internal-python-cache-clean "$RUNNER_TEMP/python-cache-clean.json"
+          "$python_base" -I -S ../scripts/check_release_a_candidate.py \
+            --verify-python-environment \
+            --evidence "$RUNNER_TEMP/python-lock.json"
 
       - name: Generate exact-main Release-A schema evidence
         if: github.event_name == 'workflow_dispatch' && inputs.release_phase == 'release-a'
@@ -115,10 +158,20 @@ jobs:
 
       - name: Generate faithful Python runtime SBOM
         run: |
-          venv/bin/cyclonedx-py requirements requirements.lock \
+          runtime_root="$(mktemp -d)"
+          trap 'rm -rf "$runtime_root"' EXIT
+          runtime_venv="$runtime_root/venv"
+          /usr/bin/python3.12 -I -m venv "$runtime_venv"
+          PYTHONDONTWRITEBYTECODE=1 "$runtime_venv/bin/python" -B -I -m pip install \
+            --disable-pip-version-check --quiet --no-compile \
+            --require-hashes -r requirements.lock
+          PYTHONDONTWRITEBYTECODE=1 venv/bin/python -B -I -m cyclonedx_py requirements requirements.lock \
             --output-reproducible --output-format JSON \
             --output-file python-runtime.cdx.json
-          venv/bin/python ../scripts/validate_release_sbom.py \
+          PYTHONDONTWRITEBYTECODE=1 venv/bin/python -B -I \
+            ../scripts/validate_release_sbom.py \
+            --runtime-venv "$runtime_venv" \
+            --clean-runtime-pyc \
             pypi python-runtime.cdx.json
 
       - name: Upload Python runtime SBOM
@@ -134,14 +187,16 @@ jobs:
           runtime_root="$(mktemp -d)"
           trap 'rm -rf "$runtime_root"' EXIT
           runtime_venv="$runtime_root/venv"
-          python -m venv "$runtime_venv"
-          "$runtime_venv/bin/pip" install --disable-pip-version-check --quiet \
+          /usr/bin/python3.12 -I -m venv "$runtime_venv"
+          test "$(readlink -f "$runtime_venv/bin/python")" = /usr/bin/python3.12
+          "$runtime_venv/bin/python" -I -m pip install --disable-pip-version-check --quiet \
             --require-hashes -r requirements.lock
-          "$runtime_venv/bin/pip" check
-          "$runtime_venv/bin/python" -c "import auth; import main; import worker"
+          "$runtime_venv/bin/python" -I -m pip check
+          "$runtime_venv/bin/python" -I -c \
+            "import sys; sys.path.insert(0, '.'); import auth; import main; import worker"
 
       - name: Python dependency vulnerability audit
-        run: venv/bin/pip-audit -r requirements.lock --strict --progress-spinner off
+        run: venv/bin/python -I -m pip_audit -r requirements.lock --strict --progress-spinner off
 
       - name: Tracked secret regression scan
         working-directory: .
@@ -182,12 +237,12 @@ jobs:
               ':(exclude)backend/tests/test_prometheus_topology.py' \
               ':(exclude)ops/systemd/unihub-backend.service'
           )
-          backend/venv/bin/detect-secrets-hook \
+          backend/venv/bin/python -I -m detect_secrets.pre_commit_hook \
             --baseline .secrets.baseline \
             "${tracked_files[@]}"
           # Keep all credential-shaped detectors active on the exact immutable
           # files while disabling only the two noisy entropy heuristics.
-          backend/venv/bin/detect-secrets scan \
+          backend/venv/bin/python -I -m detect_secrets scan \
             --disable-plugin HexHighEntropyString \
             --disable-plugin Base64HighEntropyString \
             .agent/contract-lock.json \
@@ -214,16 +269,16 @@ jobs:
             scripts/run_release_a_schema_gate.sh \
             scripts/run_real_e2e.sh \
             > /tmp/retail-immutable-contract-secret-scan.json
-          test "$(backend/venv/bin/python -c 'import json; print(sum(len(v) for v in json.load(open("/tmp/retail-immutable-contract-secret-scan.json"))["results"].values()))')" = 0
+          test "$(backend/venv/bin/python -I -c 'import json; print(sum(len(v) for v in json.load(open("/tmp/retail-immutable-contract-secret-scan.json"))["results"].values()))')" = 0
 
       - name: Bandit waiver governance
         working-directory: .
-        run: backend/venv/bin/python scripts/check_bandit_waivers.py
+        run: backend/venv/bin/python -I scripts/check_bandit_waivers.py
 
       - name: Python static security regression scan
         working-directory: .
         run: |
-          backend/venv/bin/bandit \
+          backend/venv/bin/python -I -m bandit \
             -r backend \
             -x backend/tests,backend/venv \
             -ll \
@@ -234,7 +289,7 @@ jobs:
       - name: Python typecheck
         run: |
           set +e
-          venv/bin/mypy . --ignore-missing-imports --explicit-package-bases \
+          venv/bin/python -I -m mypy . --ignore-missing-imports --explicit-package-bases \
             > mypy-report.txt 2>&1
           status=$?
           cat mypy-report.txt
@@ -242,31 +297,38 @@ jobs:
 
       - name: Immutable migration manifest
         run: |
-          venv/bin/python -c "from db.migration_runner import load_migration_manifest, verify_migration_files; verify_migration_files(load_migration_manifest())"
+          venv/bin/python -I -c \
+            "import sys; sys.path.insert(0, '.'); from db.migration_runner import load_migration_manifest, verify_migration_files; verify_migration_files(load_migration_manifest())"
 
       - name: OpenAPI contract drift
         working-directory: .
-        run: PYTHONPATH=backend backend/venv/bin/python scripts/generate_retail_contract.py --check
+        run: backend/venv/bin/python -I scripts/generate_retail_contract.py --check
 
       - name: Environment schema and process templates
         working-directory: .
-        run: PYTHONPATH=backend backend/venv/bin/python scripts/check_env_contract.py
+        run: backend/venv/bin/python -I scripts/check_env_contract.py
 
       - name: Versioned Retail edge request limits
         working-directory: .
         run: |
-          docker run --rm --network none \
+          caddy_image=caddy@sha256:844f60b64e4724a5aa8245e019dace0d3f199f7433ce6c57676cb30a920dbad9
+          docker image inspect "$caddy_image" >/dev/null
+          docker run --pull=never --rm --network none \
             -v "$PWD/ops/caddy:/etc/caddy:ro" \
-            caddy:2.11.4 \
+            "$caddy_image" \
             caddy validate --config /etc/caddy/Caddyfile.validate --adapter caddyfile
 
       - name: Frontend dependency policy
         working-directory: .
-        run: node scripts/check_dependency_policy.mjs
+        run: |
+          node_base=/opt/codex-desktop/resources/node-runtime/bin/node
+          test "$(sha256sum "$node_base" | awk '{print $1}')" = \
+            81925c0995b5c1427b5d538e6a90ca2fdc4daffb786b09af749beaf7369d4e90
+          "$node_base" scripts/check_dependency_policy.mjs
 
       - name: Python complexity ratchet
         working-directory: .
-        run: backend/venv/bin/python scripts/check_complexity_ratchet.py
+        run: backend/venv/bin/python -I scripts/check_complexity_ratchet.py
 
       - name: Changed-function complexity gate
         if: github.event_name == 'pull_request'
@@ -275,12 +337,12 @@ jobs:
           COMPLEXITY_BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           git fetch --no-tags --depth=1 origin "$COMPLEXITY_BASE_SHA"
-          backend/venv/bin/python scripts/check_changed_function_complexity.py \
+          backend/venv/bin/python -I scripts/check_changed_function_complexity.py \
             --base "$COMPLEXITY_BASE_SHA" --maximum 20
 
       - name: Backend architecture boundaries
         working-directory: .
-        run: backend/venv/bin/python scripts/check_backend_architecture.py
+        run: backend/venv/bin/python -I scripts/check_backend_architecture.py
 
       - name: Shell static analysis
         working-directory: .
@@ -353,7 +415,7 @@ jobs:
             --evidence "$GITHUB_WORKSPACE/test-results/promtool-cache.json"
           "$prom_root/promtool" check rules \
             "$GITHUB_WORKSPACE/ops/observability/retail-slo-rules.yml"
-          python3 "$GITHUB_WORKSPACE/scripts/check_prometheus_contract.py"
+          /usr/bin/python3.12 -I "$GITHUB_WORKSPACE/scripts/check_prometheus_contract.py"
           (
             cd "$GITHUB_WORKSPACE/ops/observability"
             "$prom_root/promtool" test rules retail-slo-rules.test.yml
@@ -408,7 +470,7 @@ jobs:
             > backend-test-report.txt 2>&1
           status=$?
           if [ "$status" -eq 0 ]; then
-            venv/bin/python scripts/check_critical_coverage.py \
+            venv/bin/python -I scripts/check_critical_coverage.py \
               global-coverage.json >> backend-test-report.txt 2>&1
             status=$?
           fi
@@ -417,7 +479,7 @@ jobs:
 
       - name: Targeted business mutation gate
         working-directory: .
-        run: backend/venv/bin/python scripts/run_targeted_mutation_tests.py
+        run: backend/venv/bin/python -I scripts/run_targeted_mutation_tests.py
 
       - name: Backend changed-line coverage gate
         if: github.event_name == 'pull_request'
@@ -425,7 +487,7 @@ jobs:
           COVERAGE_BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           git fetch --no-tags --depth=1 origin "$COVERAGE_BASE_SHA"
-          venv/bin/python ../scripts/check_changed_line_coverage.py \
+          venv/bin/python -I ../scripts/check_changed_line_coverage.py \
             --base "$COVERAGE_BASE_SHA" \
             --backend-json global-coverage.json \
             --minimum 80
@@ -447,7 +509,22 @@ jobs:
     runs-on: [self-hosted, Linux, X64, dell-compute, unihub-build, unihub-retail-build]
     timeout-minutes: 25
     env:
+      RETAIL_NODE: /opt/codex-desktop/resources/node-runtime/bin/node
+      RETAIL_NPM_CLI: /opt/codex-desktop/resources/node-runtime/lib/node_modules/npm/bin/npm-cli.js
+      PATH: /opt/codex-desktop/resources/node-runtime/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
       VITE_FRONTEND_GLITCHTIP_DSN: ${{ secrets.VITE_GLITCHTIP_DSN }}
+      PYTHONNOUSERSITE: "1"
+      PYTHONSAFEPATH: "1"
+      PYTHONHOME: ""
+      PYTHONPATH: ""
+      PYTHONSTARTUP: ""
+      PYTHONINSPECT: ""
+      NODE_OPTIONS: ""
+      NODE_PATH: ""
+      BASH_ENV: ""
+      ENV: ""
+      CDPATH: ""
+      GLOBIGNORE: ""
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
@@ -455,23 +532,29 @@ jobs:
           fetch-depth: 0
           fetch-tags: true
 
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: "22"
-          cache: npm
+      - name: Verify pinned Node.js and npm
+        run: |
+          test "$(sha256sum "$RETAIL_NODE" | awk '{print $1}')" = \
+            81925c0995b5c1427b5d538e6a90ca2fdc4daffb786b09af749beaf7369d4e90
+          test "$(sha256sum "$RETAIL_NPM_CLI" | awk '{print $1}')" = \
+            8e5f6f3429f8cdbe693cdc29904e9d5a7b127a494bd15c804bd54c7403bfcbe7
+          test "$("$RETAIL_NODE" --version)" = v22.22.2
+          test "$("$RETAIL_NODE" "$RETAIL_NPM_CLI" --version)" = 10.9.7
 
       - name: Verify vendored private packages
-        run: node scripts/verify_vendored_npm_packages.mjs
+        run: |
+          "$RETAIL_NODE" scripts/verify_vendored_npm_packages.mjs
 
       - name: Install frontend dependencies
-        run: npm ci --include=dev
+        run: |
+          "$RETAIL_NODE" "$RETAIL_NPM_CLI" ci --include=dev
 
       - name: Generate faithful npm runtime SBOM
         run: |
-          npm sbom --package-lock-only --omit=dev \
+          "$RETAIL_NODE" "$RETAIL_NPM_CLI" sbom --package-lock-only --omit=dev \
             --sbom-format cyclonedx --sbom-type application \
             > npm-runtime.cdx.json
-          python3 scripts/validate_release_sbom.py npm npm-runtime.cdx.json
+          /usr/bin/python3.12 -I -S scripts/validate_release_sbom.py npm npm-runtime.cdx.json
 
       - name: Upload npm runtime SBOM
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
@@ -482,16 +565,20 @@ jobs:
           retention-days: 5
 
       - name: Frontend typecheck
-        run: npm run typecheck
+        run: |
+          "$RETAIL_NODE" "$RETAIL_NPM_CLI" run typecheck
 
       - name: TypeScript complexity ratchet
-        run: node scripts/check_ts_function_complexity.cjs
+        run: |
+          "$RETAIL_NODE" scripts/check_ts_function_complexity.cjs
 
       - name: Frontend lint
-        run: npm run lint
+        run: |
+          "$RETAIL_NODE" "$RETAIL_NPM_CLI" run lint
 
       - name: Unit tests with global coverage floor
-        run: npm run test:coverage
+        run: |
+          "$RETAIL_NODE" "$RETAIL_NPM_CLI" run test:coverage
 
       - name: Changed-line coverage gate
         if: github.event_name == 'pull_request'
@@ -499,23 +586,27 @@ jobs:
           COVERAGE_BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           git fetch --no-tags --depth=1 origin "$COVERAGE_BASE_SHA"
-          python3 scripts/check_changed_line_coverage.py \
+          /usr/bin/python3.12 -I -S scripts/check_changed_line_coverage.py \
             --base "$COVERAGE_BASE_SHA" \
             --frontend-lcov coverage/frontend/lcov.info \
             --minimum 80
 
       - name: Runtime dependency audit
-        run: npm audit --omit=dev --audit-level=high
+        run: |
+          "$RETAIL_NODE" "$RETAIL_NPM_CLI" audit --omit=dev --audit-level=high
 
       - name: Full dependency audit
-        run: npm audit --audit-level=high
+        run: |
+          "$RETAIL_NODE" "$RETAIL_NPM_CLI" audit --audit-level=high
 
       - name: Build
-        run: npm run build
+        run: |
+          "$RETAIL_NODE" "$RETAIL_NPM_CLI" run build
 
       - name: Verify production RUM artifact
         if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
-        run: npm run verify:rum-build
+        run: |
+          "$RETAIL_NODE" "$RETAIL_NPM_CLI" run verify:rum-build
 
       - name: Bind production frontend build input without disclosure
         if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
@@ -527,13 +618,16 @@ jobs:
             | sha256sum | awk '{print $1}' > frontend-build-input.sha256
 
       - name: Bundle budget
-        run: node scripts/check_bundle_budget.mjs
+        run: |
+          "$RETAIL_NODE" scripts/check_bundle_budget.mjs
 
       - name: Install Playwright browser
-        run: npx playwright install chromium
+        run: |
+          "$RETAIL_NODE" node_modules/@playwright/test/cli.js install chromium
 
       - name: Browser and accessibility tests
-        run: npm run test:e2e
+        run: |
+          "$RETAIL_NODE" "$RETAIL_NPM_CLI" run test:e2e
 
       - name: Real Workbox release lifecycle
         env:
@@ -585,6 +679,16 @@ jobs:
     needs: runner-isolation
     runs-on: [self-hosted, Linux, X64, dell-compute, unihub-build, unihub-retail-build]
     timeout-minutes: 20
+    env:
+      RETAIL_NODE: /opt/codex-desktop/resources/node-runtime/bin/node
+      RETAIL_NPM_CLI: /opt/codex-desktop/resources/node-runtime/lib/node_modules/npm/bin/npm-cli.js
+      PATH: /opt/codex-desktop/resources/node-runtime/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+      NODE_OPTIONS: ""
+      NODE_PATH: ""
+      BASH_ENV: ""
+      ENV: ""
+      CDPATH: ""
+      GLOBIGNORE: ""
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
@@ -592,24 +696,32 @@ jobs:
           fetch-depth: 0
           fetch-tags: true
 
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: "22"
-          cache: npm
+      - name: Verify pinned Node.js and npm
+        run: |
+          test "$(sha256sum "$RETAIL_NODE" | awk '{print $1}')" = \
+            81925c0995b5c1427b5d538e6a90ca2fdc4daffb786b09af749beaf7369d4e90
+          test "$(sha256sum "$RETAIL_NPM_CLI" | awk '{print $1}')" = \
+            8e5f6f3429f8cdbe693cdc29904e9d5a7b127a494bd15c804bd54c7403bfcbe7
+          test "$("$RETAIL_NODE" --version)" = v22.22.2
+          test "$("$RETAIL_NODE" "$RETAIL_NPM_CLI" --version)" = 10.9.7
 
       - name: Install frontend dependencies
-        run: npm ci --include=dev
+        run: |
+          "$RETAIL_NODE" "$RETAIL_NPM_CLI" ci --include=dev
 
       - name: Build browser-smoke artifact
         env:
           VITE_FRONTEND_GLITCHTIP_DSN: ""
-        run: npm run build
+        run: |
+          "$RETAIL_NODE" "$RETAIL_NPM_CLI" run build
 
       - name: Install Firefox and WebKit
-        run: npx playwright install firefox webkit
+        run: |
+          "$RETAIL_NODE" node_modules/@playwright/test/cli.js install firefox webkit
 
       - name: Cross-browser keyboard smoke
-        run: npm run test:e2e:browsers
+        run: |
+          "$RETAIL_NODE" "$RETAIL_NPM_CLI" run test:e2e:browsers
 
       - name: Upload cross-browser diagnostics
         if: failure()
@@ -627,6 +739,24 @@ jobs:
     needs: runner-isolation
     runs-on: [self-hosted, Linux, X64, dell-compute, unihub-build, unihub-retail-build]
     timeout-minutes: 50
+    env:
+      RETAIL_NODE: /opt/codex-desktop/resources/node-runtime/bin/node
+      RETAIL_NPM_CLI: /opt/codex-desktop/resources/node-runtime/lib/node_modules/npm/bin/npm-cli.js
+      PATH: /opt/codex-desktop/resources/node-runtime/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+      PYTHONNOUSERSITE: "1"
+      PYTHONSAFEPATH: "1"
+      PYTHONHOME: ""
+      PYTHONPATH: ""
+      PYTHONSTARTUP: ""
+      PYTHONINSPECT: ""
+      MYPYPATH: ""
+      MYPY_CONFIG_FILE: ""
+      NODE_OPTIONS: ""
+      NODE_PATH: ""
+      BASH_ENV: ""
+      ENV: ""
+      CDPATH: ""
+      GLOBIGNORE: ""
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
@@ -642,25 +772,32 @@ jobs:
             backend/requirements.lock
             backend/requirements-dev.lock
 
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: "22"
-          cache: npm
-
       - name: Install full-stack test dependencies
         run: |
-          python -m venv backend/venv
-          backend/venv/bin/pip install --disable-pip-version-check --quiet \
+          python_base=/usr/bin/python3.12
+          test "$(sha256sum "$python_base" | awk '{print $1}')" = \
+            1643dacd9feaedc58f3cc581e4d22577dfe25c09b10282936186ccf0f2e61118
+          "$python_base" -I -m venv backend/venv
+          test "$(readlink -f backend/venv/bin/python)" = "$python_base"
+          backend/venv/bin/python -I -m pip install --disable-pip-version-check --quiet \
             --require-hashes -r backend/requirements-dev.lock
-          npm ci --include=dev
+          test "$(sha256sum "$RETAIL_NODE" | awk '{print $1}')" = \
+            81925c0995b5c1427b5d538e6a90ca2fdc4daffb786b09af749beaf7369d4e90
+          test "$(sha256sum "$RETAIL_NPM_CLI" | awk '{print $1}')" = \
+            8e5f6f3429f8cdbe693cdc29904e9d5a7b127a494bd15c804bd54c7403bfcbe7
+          test "$("$RETAIL_NODE" --version)" = v22.22.2
+          test "$("$RETAIL_NODE" "$RETAIL_NPM_CLI" --version)" = 10.9.7
+          "$RETAIL_NODE" "$RETAIL_NPM_CLI" ci --include=dev
 
       - name: Build tested frontend
         env:
           VITE_FRONTEND_GLITCHTIP_DSN: ""
-        run: npm run build
+        run: |
+          "$RETAIL_NODE" "$RETAIL_NPM_CLI" run build
 
       - name: Install Chromium
-        run: npx playwright install chromium
+        run: |
+          "$RETAIL_NODE" node_modules/@playwright/test/cli.js install chromium
 
       - name: Real full-stack integration gate
         env:
@@ -790,7 +927,12 @@ jobs:
             --certificate-identity \
               "https://github.com/${GITHUB_REPOSITORY}/.github/workflows/ci.yml@refs/heads/main" \
             --certificate-oidc-issuer \
-              "https://token.actions.githubusercontent.com"
+              "https://token.actions.githubusercontent.com" \
+            --certificate-github-workflow-sha "$GITHUB_SHA" \
+            --certificate-github-workflow-repository "$GITHUB_REPOSITORY" \
+            --certificate-github-workflow-ref "refs/heads/main" \
+            --certificate-github-workflow-trigger "workflow_dispatch" \
+            --certificate-github-workflow-name "CI"
 
       - name: Rebuild exact main and audit signed artifact
         env:
@@ -823,7 +965,7 @@ jobs:
             1643dacd9feaedc58f3cc581e4d22577dfe25c09b10282936186ccf0f2e61118
           (
             cd "$audit_root/checkout"
-            "$audit_python" scripts/check_release_a_candidate.py "${args[@]}"
+            "$audit_python" -I -S scripts/check_release_a_candidate.py "${args[@]}"
           )
           cosign sign-blob --yes \
             --bundle artifact-checkout.sigstore.json artifact-checkout.json
@@ -832,7 +974,12 @@ jobs:
             --certificate-identity \
               "https://github.com/${GITHUB_REPOSITORY}/.github/workflows/ci.yml@refs/heads/main" \
             --certificate-oidc-issuer \
-              "https://token.actions.githubusercontent.com"
+              "https://token.actions.githubusercontent.com" \
+            --certificate-github-workflow-sha "$GITHUB_SHA" \
+            --certificate-github-workflow-repository "$GITHUB_REPOSITORY" \
+            --certificate-github-workflow-ref "refs/heads/main" \
+            --certificate-github-workflow-trigger "workflow_dispatch" \
+            --certificate-github-workflow-name "CI"
 
       - name: Upload signed exact-main artifact audit
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6

@@ -7,7 +7,7 @@ from decimal import Decimal
 import json
 import os
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from repositories.grile import GrileRepository
 from services.grile import DEFAULT_TOLERANCE
@@ -15,6 +15,9 @@ from services.grile_pilot_v2_registry import (
     PILOT_V2_MONTH,
     PILOT_V2_SHEETS,
 )
+
+if TYPE_CHECKING:
+    from services.grile_pilot_v2_registry import PilotV2Sheet
 
 
 PILOT_V2_SNAPSHOT_SCHEMA_VERSION = 1

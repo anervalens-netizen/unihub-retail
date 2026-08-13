@@ -40,6 +40,17 @@
     },
     {
       "git_mode": "100644",
+      "path": ".github/workflows/deploy.yml",
+      "sha256": "4d6f5a9971a6b5f7077215ca0c56c670b74d27dc50c732b2097f24c423819b23",
+      "supports": [
+        "AC-12",
+        "AC-16",
+        "AC-17",
+        "T-09A-L"
+      ]
+    },
+    {
+      "git_mode": "100644",
       "path": ".secrets.baseline",
       "sha256": "0a452b3fbf2914f07130f96935dbbf7042aef6c71931040a2cace529ad42ccc8",
       "source_snapshot": "release_b_integrated_preview",
@@ -141,7 +152,7 @@
     {
       "git_mode": "100755",
       "path": "backend/scripts/run_outbox_slo_workload.py",
-      "sha256": "fbcaff78b4a08066ad241d28d7ab01b3f7fd3ad2b08fda8e1ae770c1c5577194",
+      "sha256": "93c19fabb4d415c617a2945b4905ba47ef4284c08550ba62475d99ffd70f4e35",
       "supports": [
         "AC-12"
       ]
@@ -158,7 +169,6 @@
       "git_mode": "100755",
       "path": "backend/scripts/run_tests_isolated.sh",
       "sha256": "e1ff5f41345038661d37daf34e1665ef4b504c212c8c3d527fa0f68e3b5b9100",
-      "source_snapshot": "release_b_integrated_preview",
       "supports": [
         "AC-16"
       ]
@@ -322,7 +332,7 @@
     {
       "git_mode": "100644",
       "path": "backend/tests/test_release_contract_tooling_security.py",
-      "sha256": "d2a0f72f6fb1846ebc76987dbe6080082a20d0b4c6060236e9024d8945e829a9",
+      "sha256": "28e922f55f4c847d0bfef83571021baa42dabc9382be1f636871eafbd1de4280",
       "supports": [
         "AC-12",
         "AC-16",
@@ -423,7 +433,7 @@
     {
       "git_mode": "100755",
       "path": "ops/build-retail-release-artifact.sh",
-      "sha256": "f2ef575f2aa5f9129679777e4796057c39561ad266dbeb361b11b57fe3902a29",
+      "sha256": "16b6e6575fd30f602dfbbb67db28374c31bc83b6d740beed66e45c6bd439208c",
       "supports": [
         "AC-12",
         "AC-16",
@@ -441,6 +451,17 @@
       ]
     },
     {
+      "git_mode": "100755",
+      "path": "ops/deploy-retail-artifact.sh",
+      "sha256": "0328529bd4de2cdb7a0c46f0a45e9f0e37cb8047db451f416c72990d7f7734dc",
+      "supports": [
+        "AC-12",
+        "AC-16",
+        "AC-17",
+        "T-09A-L"
+      ]
+    },
+    {
       "git_mode": "100644",
       "path": "ops/observability/retail-slo-rules.test.yml",
       "sha256": "36e1722cc3d006d90d38eda04ec84f32786f031bd3a7ae34d2bb880d6b5d00a5",
@@ -452,8 +473,7 @@
     {
       "git_mode": "100755",
       "path": "ops/test-deploy-retail-artifact.sh",
-      "sha256": "8dff950c96c7297d0e0808a825228d071a4af954aadb96f85543415bf9c5fdf9",
-      "source_snapshot": "release_b_integrated_preview",
+      "sha256": "2b344f73b8dd499a697954a3a1f3adaf3a79fab74f38aa9e431fa2a28b2cb4d1",
       "supports": [
         "AC-16"
       ]
@@ -687,7 +707,7 @@
     {
       "git_mode": "100644",
       "path": "scripts/check_release_a_candidate.py",
-      "sha256": "084acb81596fa3f9e63af2b341aa389838f2546a8059d9f113b2c31abc228058",
+      "sha256": "065bca7b463226a514f1eb06349fddadbcaac714dd2f115f672e72b8788badda",
       "supports": [
         "AC-12",
         "AC-16",
@@ -715,7 +735,7 @@
     {
       "git_mode": "100755",
       "path": "scripts/run_local_quality_gate.sh",
-      "sha256": "2a1a778460396e62e5271ecc143e882c66a754833ce85e18ece6991337c587e0",
+      "sha256": "27e248f12c1b30cd28d671b399e1afb708eb04cef15354701fbbe7a1bdcbc3fe",
       "supports": [
         "AC-01",
         "AC-02",
@@ -738,7 +758,7 @@
     {
       "git_mode": "100755",
       "path": "scripts/run_outbox_slo_gate.py",
-      "sha256": "fd3b5d9f8a73ef335b7e8ff060aba1ee118af19a010310c9e9772f09bf9c8acb",
+      "sha256": "015434aab2bfe1ea55a92d1e616735f02362e45920c914bdf717eaaf22f84a9a",
       "supports": [
         "AC-12"
       ]
@@ -755,7 +775,7 @@
     {
       "git_mode": "100755",
       "path": "scripts/run_real_e2e.sh",
-      "sha256": "bc89bc152d2c0fb7056e4208fc44effed4f32cb3b0e225bbd41886f81bc30015",
+      "sha256": "acc57a606855c21fd05b88e06ca6f70b762a49e7d70e26981852284bc68ba98f",
       "supports": [
         "AC-16"
       ]
@@ -763,7 +783,7 @@
     {
       "git_mode": "100755",
       "path": "scripts/run_release_a_schema_gate.sh",
-      "sha256": "ea8c9fad5f58b5052f0bd0902ead8b65ef020618e81108073d911e62dbde92c3",
+      "sha256": "76a9070293807f69bf4752ede2f359e4b8f428cf097ddd1c17b24d7430d7b936",
       "supports": [
         "AC-12",
         "T-09A-L"
@@ -821,17 +841,34 @@
       ]
     },
     {
+      "git_mode": "100644",
+      "path": "scripts/validate_release_sbom.py",
+      "sha256": "2cb0b7a41d9ea3ae9652ba7f7d78882a3c4cf9652f0230fb5ef73c1a2128511d",
+      "supports": [
+        "AC-16",
+        "AC-17"
+      ]
+    },
+    {
       "git_mode": "100755",
       "path": "scripts/verify_deployed_release.sh",
-      "sha256": "b0b0ab6107732e25ceecd90fced48863ac53b2314275730b303b8e2fb8d19e03",
+      "sha256": "5ece35e7f11bdb313be4df69683564ace079449b21734067fc8180d269949edc",
       "supports": [
         "AC-17"
       ]
     },
     {
       "git_mode": "100644",
+      "path": "scripts/verify_frontend_rum_build.mjs",
+      "sha256": "30eed03e646cf10662cd4c6b98f57a25c62b205e2bed3bec38cd73b58ccc4e49",
+      "supports": [
+        "AC-16"
+      ]
+    },
+    {
+      "git_mode": "100755",
       "path": "scripts/verify_promtool_cache.sh",
-      "sha256": "f4bb8e07562e8b3c674dfa10be2d6fd12df0a05ac23d81866246b18eed27d9ae",
+      "sha256": "f7f24584ef5f85c2b7041e0b1f7a6a389c6998aae0db0b6b17704149c7fafb4d",
       "supports": [
         "AC-16"
       ]
@@ -1047,6 +1084,12 @@
   "authority_sets": [
     {
       "entries": [
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/conftest.py",
+          "sha256": "d8912b105cf4d30d84dc0407bb7d6c7a221c2d3d986c6d83270fd239694abb04",
+          "source_snapshot": "release_b_integrated_preview"
+        },
         {
           "git_mode": "100644",
           "path": "backend/tests/test_agent_evaluation_scoring.py",
@@ -1626,7 +1669,7 @@
         {
           "git_mode": "100644",
           "path": "backend/tests/test_imports_coverage.py",
-          "sha256": "b94029ca2b30815175d098e9d2914fa38cce79ca7d2901cdf79196637b2d88e3",
+          "sha256": "e63295bcb2d1a5fefb6b7273d85f6276bb06b97a46833cfd9ee329873e23a41a",
           "source_snapshot": "release_b_integrated_preview"
         },
         {
@@ -1800,7 +1843,7 @@
         {
           "git_mode": "100644",
           "path": "backend/tests/test_promo_generation_migration.py",
-          "sha256": "2cd7c413d26ea05e03ddb3e4d35af24a1334d98c20af9e999d252682413e7c7d",
+          "sha256": "0961c637ad8691280094efe2fbc20b72366db947db2a02137f4341dcbf69a3bc",
           "source_snapshot": "release_b_integrated_preview"
         },
         {
@@ -1853,7 +1896,7 @@
         {
           "git_mode": "100644",
           "path": "backend/tests/test_release_contract_tooling_security.py",
-          "sha256": "d2a0f72f6fb1846ebc76987dbe6080082a20d0b4c6060236e9024d8945e829a9"
+          "sha256": "28e922f55f4c847d0bfef83571021baa42dabc9382be1f636871eafbd1de4280"
         },
         {
           "git_mode": "100644",
@@ -1966,7 +2009,7 @@
         {
           "git_mode": "100644",
           "path": "backend/tests/test_sales_artifact_lifecycle.py",
-          "sha256": "94aede7c2e96c14263227a771cb69165c686c2b09ea88d62468b52f80c5ae451",
+          "sha256": "5b4d31b9cd89b0c055149341273976bf3afdf0c81adf8dfb3c9fde1f4afb1ae8",
           "source_snapshot": "release_b_integrated_preview"
         },
         {
@@ -2736,8 +2779,7 @@
         {
           "git_mode": "100755",
           "path": "backend/scripts/run_tests_isolated.sh",
-          "sha256": "e1ff5f41345038661d37daf34e1665ef4b504c212c8c3d527fa0f68e3b5b9100",
-          "source_snapshot": "release_b_integrated_preview"
+          "sha256": "e1ff5f41345038661d37daf34e1665ef4b504c212c8c3d527fa0f68e3b5b9100"
         },
         {
           "git_mode": "100755",
@@ -2748,7 +2790,7 @@
         {
           "git_mode": "100755",
           "path": "ops/build-retail-release-artifact.sh",
-          "sha256": "f2ef575f2aa5f9129679777e4796057c39561ad266dbeb361b11b57fe3902a29"
+          "sha256": "16b6e6575fd30f602dfbbb67db28374c31bc83b6d740beed66e45c6bd439208c"
         },
         {
           "git_mode": "100755",
@@ -2759,8 +2801,7 @@
         {
           "git_mode": "100755",
           "path": "ops/deploy-retail-artifact.sh",
-          "sha256": "53ed4331f463e65c30e0d64b968eb785a61f89ab91f79349b8df4464add08439",
-          "source_snapshot": "release_b_integrated_preview"
+          "sha256": "0328529bd4de2cdb7a0c46f0a45e9f0e37cb8047db451f416c72990d7f7734dc"
         },
         {
           "git_mode": "100755",
@@ -2777,8 +2818,7 @@
         {
           "git_mode": "100755",
           "path": "ops/test-deploy-retail-artifact.sh",
-          "sha256": "8dff950c96c7297d0e0808a825228d071a4af954aadb96f85543415bf9c5fdf9",
-          "source_snapshot": "release_b_integrated_preview"
+          "sha256": "2b344f73b8dd499a697954a3a1f3adaf3a79fab74f38aa9e431fa2a28b2cb4d1"
         },
         {
           "git_mode": "100755",
@@ -2789,7 +2829,7 @@
         {
           "git_mode": "100755",
           "path": "scripts/run_local_quality_gate.sh",
-          "sha256": "2a1a778460396e62e5271ecc143e882c66a754833ce85e18ece6991337c587e0"
+          "sha256": "27e248f12c1b30cd28d671b399e1afb708eb04cef15354701fbbe7a1bdcbc3fe"
         },
         {
           "git_mode": "100755",
@@ -2800,12 +2840,12 @@
         {
           "git_mode": "100755",
           "path": "scripts/run_real_e2e.sh",
-          "sha256": "bc89bc152d2c0fb7056e4208fc44effed4f32cb3b0e225bbd41886f81bc30015"
+          "sha256": "acc57a606855c21fd05b88e06ca6f70b762a49e7d70e26981852284bc68ba98f"
         },
         {
           "git_mode": "100755",
           "path": "scripts/run_release_a_schema_gate.sh",
-          "sha256": "ea8c9fad5f58b5052f0bd0902ead8b65ef020618e81108073d911e62dbde92c3"
+          "sha256": "76a9070293807f69bf4752ede2f359e4b8f428cf097ddd1c17b24d7430d7b936"
         },
         {
           "git_mode": "100755",
@@ -2826,12 +2866,12 @@
         {
           "git_mode": "100755",
           "path": "scripts/verify_deployed_release.sh",
-          "sha256": "b0b0ab6107732e25ceecd90fced48863ac53b2314275730b303b8e2fb8d19e03"
+          "sha256": "5ece35e7f11bdb313be4df69683564ace079449b21734067fc8180d269949edc"
         },
         {
-          "git_mode": "100644",
+          "git_mode": "100755",
           "path": "scripts/verify_promtool_cache.sh",
-          "sha256": "f4bb8e07562e8b3c674dfa10be2d6fd12df0a05ac23d81866246b18eed27d9ae"
+          "sha256": "f7f24584ef5f85c2b7041e0b1f7a6a389c6998aae0db0b6b17704149c7fafb4d"
         }
       ],
       "name": "shell_script_suite",
@@ -2842,10 +2882,14 @@
   ],
   "baseline_source_sha": "0be82b430e55b7414babf470abe3fc5404b6cdc9",
   "release_a_authorities": [
+    ".github/workflows/deploy.yml",
     "backend/scripts/run_outbox_slo_workload.py",
     "backend/scripts/run_retail_scale_profile.py",
+    "backend/scripts/run_tests_isolated.sh",
     "backend/tests/test_release_contract_tooling_security.py",
     "ops/build-retail-release-artifact.sh",
+    "ops/deploy-retail-artifact.sh",
+    "ops/test-deploy-retail-artifact.sh",
     "scripts/check_release_a_candidate.py",
     "scripts/run_local_quality_gate.sh",
     "scripts/run_outbox_slo_gate.py",
@@ -2854,12 +2898,15 @@
     "scripts/run_retail_scale_gate.sh",
     "scripts/run_structural_characterization.sh",
     "scripts/structural-characterization-baseline-v1.json",
+    "scripts/validate_release_sbom.py",
     "scripts/verify_deployed_release.sh",
+    "scripts/verify_frontend_rum_build.mjs",
     "scripts/verify_promtool_cache.sh"
   ],
   "required_paths": [
     ".bandit-baseline.json",
     ".coveragerc",
+    ".github/workflows/deploy.yml",
     ".secrets.baseline",
     "backend/architecture_contract.json",
     "backend/db/migration_runner.py",
@@ -2903,6 +2950,7 @@
     "eslint.config.js",
     "ops/build-retail-release-artifact.sh",
     "ops/config/retail-env.schema.json",
+    "ops/deploy-retail-artifact.sh",
     "ops/observability/retail-slo-rules.test.yml",
     "ops/test-deploy-retail-artifact.sh",
     "package-lock.json",
@@ -2943,7 +2991,9 @@
     "scripts/run_target_allocator_contract.py",
     "scripts/run_targeted_mutation_tests.py",
     "scripts/structural-characterization-baseline-v1.json",
+    "scripts/validate_release_sbom.py",
     "scripts/verify_deployed_release.sh",
+    "scripts/verify_frontend_rum_build.mjs",
     "scripts/verify_promtool_cache.sh",
     "scripts/verify_vendored_npm_packages.mjs",
     "src/components/GrileMonthlyPanel.test.tsx",
@@ -2973,9 +3023,9 @@
       "tree": "ec1590144b44d47aa9d9d3603813870cae482293"
     },
     "release_b_integrated_preview": {
-      "commit": "20503703e39474077ae68d32089bb11ce1e842f5",
-      "ref": "refs/tags/ur-close-20260812-preview-v2",
-      "tree": "863e9ae83a1d62ed03e6b5e7bfdf191d76fc2950"
+      "commit": "c8031175abc035671bff04143cdc3eb0cb92303f",
+      "ref": "refs/tags/ur-close-20260812-preview-v4-content",
+      "tree": "c13556d3f647c1e1052b561af9d36bcfee887ca0"
     },
     "scale_authority": {
       "commit": "e2daba1b45ff12852629889e48f01a9eb3a8a643",

@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import hashlib
 import json
 import math
@@ -20,10 +21,34 @@ import time
 from typing import Any
 
 
+for _startup_variable in (
+    "PYTHONHOME",
+    "PYTHONPATH",
+    "PYTHONSTARTUP",
+    "PYTHONINSPECT",
+    "MYPYPATH",
+    "MYPY_CONFIG_FILE",
+    "BASH_ENV",
+    "ENV",
+    "CDPATH",
+    "GLOBIGNORE",
+):
+    os.environ.pop(_startup_variable, None)
+os.environ.update(
+    {
+        "PYTHONNOUSERSITE": "1",
+        "PYTHONSAFEPATH": "1",
+        "PYTHONDONTWRITEBYTECODE": "1",
+    }
+)
+
+
 ROOT = Path(__file__).resolve().parents[1]
 DRIVER = ROOT / "backend/scripts/run_outbox_slo_workload.py"
 BOOTSTRAP = ROOT / "backend/scripts/bootstrap_test_db.py"
-PYTHON = Path(os.getenv("UNIHUB_BACKEND_VENV", str(ROOT / "backend/venv"))) / "bin/python"
+PYTHON = ROOT / "backend/venv/bin/python"
+PYTHON_BASE = Path("/usr/bin/python3.12")
+PYTHON_BASE_SHA256 = "1643dacd9feaedc58f3cc581e4d22577dfe25c09b10282936186ccf0f2e61118"
 MIGRATION = ROOT / "backend/db/migrations/069_ai_cohort_and_transactional_outbox.sql"
 MIGRATION_MANIFEST = ROOT / "backend/db/migrations/manifest.json"
 POSTGRES_IMAGE = "postgres@sha256:9a8afca54e7861fd90fab5fdf4c42477a6b1cb7d293595148e674e0a3181de15"
@@ -37,6 +62,13 @@ EXPECTED = {
     "batch_size": 50,
     "handlers": 8,
 }
+EXPECTED_EVENT_TYPES = (
+    "retail.sales_generation_promoted.v1",
+    "retail.pnl_generation_promoted.v1",
+    "retail.salary_import_completed.v1",
+    "retail.planning_forecast_promoted.v1",
+    "retail.grile_manifest_approved.v1",
+)
 
 
 def run(command: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
@@ -45,6 +77,19 @@ def run(command: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
 
 def digest(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def verify_python_identity() -> None:
+    if (
+        not PYTHON.is_file()
+        or not os.access(PYTHON, os.X_OK)
+        or PYTHON.resolve() != PYTHON_BASE
+        or Path(sys.executable).resolve() != PYTHON_BASE
+        or not PYTHON_BASE.is_file()
+        or digest(PYTHON_BASE) != PYTHON_BASE_SHA256
+        or not sys.flags.isolated
+    ):
+        raise SystemExit("AC-12 requires the pinned /usr/bin/python3.12 runtime")
 
 
 def authority(path: Path) -> dict[str, Any]:
@@ -109,6 +154,8 @@ def validate_payload(payload: dict[str, Any]) -> None:
     for key, expected in expected_fields.items():
         if workload.get(key) != expected:
             raise RuntimeError(f"workload field mismatch: {key}")
+    if workload.get("event_types") != list(EXPECTED_EVENT_TYPES):
+        raise RuntimeError("workload event types differ from the frozen contract")
     if payload.get("terminal") != {
         "completed": 10_000, "pending": 0, "processing": 0, "dead": 0, "total": 10_000
     }:
@@ -121,7 +168,10 @@ def validate_payload(payload: dict[str, Any]) -> None:
     ).hexdigest()
     if latency_hash != payload.get("latency_input_sha256"):
         raise RuntimeError("latency input digest mismatch")
-    calculated_p95 = sorted(float(value) for value in latencies)[
+    numeric_latencies = [float(value) for value in latencies]
+    if any(not math.isfinite(value) or value < 0 for value in numeric_latencies):
+        raise RuntimeError("latency series contains a non-finite/negative value")
+    calculated_p95 = sorted(numeric_latencies)[
         math.ceil(0.95 * len(latencies)) - 1
     ]
     if abs(calculated_p95 - float(payload.get("p95_delivery_seconds", -1))) > 1e-9:
@@ -134,34 +184,90 @@ def validate_payload(payload: dict[str, Any]) -> None:
     ).hexdigest()
     if enqueue_hash != payload.get("enqueue_offsets_sha256"):
         raise RuntimeError("enqueue timing digest mismatch")
-    if any(
-        abs(float(offset) - index / 20.0) > 0.75
-        for index, offset in enumerate(enqueue)
+    numeric_enqueue = [float(offset) for offset in enqueue]
+    if any(not math.isfinite(value) or value < 0 for value in numeric_enqueue):
+        raise RuntimeError("enqueue series contains a non-finite/negative value")
+    if numeric_enqueue != sorted(numeric_enqueue) or any(
+        abs(offset - index / 20.0) > 0.75
+        for index, offset in enumerate(numeric_enqueue)
     ):
         raise RuntimeError("measured feed did not hold the locked 20 events/second schedule")
     ratios = payload.get("failure_ratio_samples")
     pending = payload.get("pending_age_samples")
     if not isinstance(ratios, list) or not ratios or not isinstance(pending, list) or not pending:
         raise RuntimeError("raw ratio/pending samples missing")
+    pending_keys = {
+        "elapsed_seconds",
+        "oldest_pending_seconds",
+        "head_blocked_age_seconds",
+    }
+    if any(not isinstance(item, dict) or set(item) != pending_keys for item in pending):
+        raise RuntimeError("pending-age sample schema differs from the contract")
     pending_elapsed = [float(item["elapsed_seconds"]) for item in pending]
-    if pending_elapsed != sorted(pending_elapsed) or pending_elapsed[-1] < 499.0:
+    oldest_pending = [float(item["oldest_pending_seconds"]) for item in pending]
+    head_blocked = [float(item["head_blocked_age_seconds"]) for item in pending]
+    if any(
+        not math.isfinite(value) or value < 0
+        for value in pending_elapsed + oldest_pending + head_blocked
+    ):
+        raise RuntimeError("pending-age samples contain non-finite/negative values")
+    if (
+        len(pending_elapsed) < 200
+        or pending_elapsed[0] > 2.5
+        or pending_elapsed != sorted(pending_elapsed)
+        or pending_elapsed[-1] < 499.0
+    ):
         raise RuntimeError("pending-age samples do not cover the full 500-second feed")
     if any(
         later - earlier > 2.5
         for earlier, later in zip(pending_elapsed, pending_elapsed[1:])
     ):
         raise RuntimeError("pending-age sampling has an unexplained gap")
+    ratio_keys = {"elapsed_seconds", "attempts", "failures", "ratio"}
+    if any(not isinstance(item, dict) or set(item) != ratio_keys for item in ratios):
+        raise RuntimeError("failure-ratio sample schema differs from the contract")
     ratio_elapsed = [float(item["elapsed_seconds"]) for item in ratios]
+    ratio_values = [float(item["ratio"]) for item in ratios]
+    ratio_attempts = [item["attempts"] for item in ratios]
+    ratio_failures = [item["failures"] for item in ratios]
+    if any(not math.isfinite(value) or value < 0 for value in ratio_elapsed + ratio_values):
+        raise RuntimeError("failure-ratio samples contain non-finite/negative values")
+    if any(type(value) is not int or value < 200 for value in ratio_attempts):
+        raise RuntimeError("failure-ratio sample attempts are invalid")
+    if any(type(value) is not int or value < 0 for value in ratio_failures):
+        raise RuntimeError("failure-ratio sample failures are invalid")
+    if (
+        len(ratio_elapsed) < 65
+        or ratio_elapsed[0] > 15.0
+        or ratio_elapsed[-1] < 495.0
+        or ratio_elapsed != sorted(ratio_elapsed)
+        or ratio_attempts != sorted(ratio_attempts)
+        or ratio_failures != sorted(ratio_failures)
+    ):
+        raise RuntimeError("failure-ratio samples are not monotonic")
+    if any(
+        failures > attempts or abs(ratio - failures / attempts) > 1e-12
+        for attempts, failures, ratio in zip(
+            ratio_attempts, ratio_failures, ratio_values
+        )
+    ):
+        raise RuntimeError("failure-ratio samples are not bound to raw counts")
     if any(
         later - earlier > 7.5
         for earlier, later in zip(ratio_elapsed, ratio_elapsed[1:])
     ):
         raise RuntimeError("failure-ratio sampling has an unexplained gap")
-    if max(float(item["ratio"]) for item in ratios) >= 0.01:
+    if max(ratio_values) >= 0.01:
         raise RuntimeError("one-hour failure-ratio threshold failed")
     if not calculated_p95 < 30:
         raise RuntimeError("p95 delivery threshold failed")
-    if not float(payload["oldest_pending_seconds"]) < 60:
+    declared_oldest = float(payload["oldest_pending_seconds"])
+    if (
+        not math.isfinite(declared_oldest)
+        or abs(declared_oldest - max(oldest_pending)) > 1e-9
+        or max(oldest_pending) >= 60
+        or max(head_blocked) >= 60
+    ):
         raise RuntimeError("oldest pending threshold failed")
     if (
         payload.get("delivery_attempts") != 10_050
@@ -171,12 +277,22 @@ def validate_payload(payload: dict[str, Any]) -> None:
     ):
         raise RuntimeError("fault/idempotency counts differ from contract")
     if (
+        ratio_attempts[-1] != payload["delivery_attempts"]
+        or ratio_failures[-1] != payload["failed_attempts"]
+        or abs(ratio_values[-1] - float(payload["failure_ratio"])) > 1e-12
+    ):
+        raise RuntimeError("failure-ratio samples are not bound to terminal attempts")
+    if (
         payload.get("effective_sales_mutations") != 2_000
         or payload.get("sales_transport_calls") != 2_000
     ):
         raise RuntimeError("sales effective-once count differs from contract")
     receipts = payload.get("receipt_counts")
-    if not isinstance(receipts, dict) or len(receipts) != 5 or set(receipts.values()) != {2_000}:
+    if (
+        not isinstance(receipts, dict)
+        or set(receipts) != set(EXPECTED_EVENT_TYPES)
+        or any(type(value) is not int or value != 2_000 for value in receipts.values())
+    ):
         raise RuntimeError("consumer receipt counts differ from contract")
     if payload.get("protected_live_promotion_executed") is not False:
         raise RuntimeError("protected live promotion was executed")
@@ -249,9 +365,121 @@ def self_test() -> None:
         pass
     else:
         raise SystemExit("manual PASS payload was accepted")
-    environment = {**os.environ, "PYTHONPATH": str(ROOT / "backend")}
+    latencies = [0.1] * 10_000
+    enqueue = [index / 20.0 for index in range(10_000)]
+    pending = [
+        {
+            "elapsed_seconds": float(index),
+            "oldest_pending_seconds": 1.0,
+            "head_blocked_age_seconds": 1.0,
+        }
+        for index in range(501)
+    ]
+    ratio_elapsed = list(range(0, 501, 5))
+    ratios = [
+        {
+            "elapsed_seconds": float(elapsed),
+            "attempts": 200 + ((10_050 - 200) * index // (len(ratio_elapsed) - 1)),
+            "failures": (
+                50
+                if index == len(ratio_elapsed) - 1
+                else min(49, (50 * index // (len(ratio_elapsed) - 1)))
+            ),
+            "ratio": 0.0,
+        }
+        for index, elapsed in enumerate(ratio_elapsed)
+    ]
+    for item in ratios:
+        item["ratio"] = item["failures"] / item["attempts"]
+    adversarial = {
+        "schema_version": 2,
+        "authority": "backend/scripts/run_outbox_slo_workload.py",
+        "result": "PASS",
+        "workload": {
+            "warmup": 500,
+            "events": 10_000,
+            "rate_per_second": 20,
+            "claimers": 4,
+            "batch_size": 50,
+            "handlers": 8,
+            "event_types": list(EXPECTED_EVENT_TYPES),
+            "aggregates_per_type": 200,
+            "sequences_per_aggregate": 10,
+            "transient_failures": 50,
+        },
+        "terminal": {
+            "completed": 10_000,
+            "pending": 0,
+            "processing": 0,
+            "dead": 0,
+            "total": 10_000,
+        },
+        "latency_seconds": latencies,
+        "latency_input_sha256": hashlib.sha256(
+            (json.dumps(latencies, sort_keys=True, separators=(",", ":")) + "\n").encode()
+        ).hexdigest(),
+        "p95_delivery_seconds": 0.1,
+        "enqueue_offsets_seconds": enqueue,
+        "enqueue_offsets_sha256": hashlib.sha256(
+            (json.dumps(enqueue, sort_keys=True, separators=(",", ":")) + "\n").encode()
+        ).hexdigest(),
+        "failure_ratio_samples": ratios,
+        "pending_age_samples": pending,
+        "oldest_pending_seconds": 1.0,
+        "delivery_attempts": 10_050,
+        "failed_attempts": 50,
+        "duplicate_effects": 0,
+        "failure_ratio": 50 / 10_050,
+        "effective_sales_mutations": 2_000,
+        "sales_transport_calls": 2_000,
+        "receipt_counts": {event_type: 2_000 for event_type in EXPECTED_EVENT_TYPES},
+    }
+    forged_oldest = copy.deepcopy(adversarial)
+    forged_oldest["pending_age_samples"][0]["oldest_pending_seconds"] = 9_999.0
+    try:
+        validate_payload(forged_oldest)
+    except RuntimeError as exc:
+        if "oldest pending threshold failed" not in str(exc):
+            raise
+    else:
+        raise SystemExit("forged oldest-pending summary was accepted")
+    sparse_samples = copy.deepcopy(adversarial)
+    sparse_samples["pending_age_samples"] = [pending[-1]]
+    sparse_samples["failure_ratio_samples"] = [ratios[-1]]
+    try:
+        validate_payload(sparse_samples)
+    except RuntimeError as exc:
+        if "samples do not cover" not in str(exc):
+            raise
+    else:
+        raise SystemExit("sparse pending/ratio samples were accepted")
+    forged_ratio = copy.deepcopy(adversarial)
+    forged_ratio["failure_ratio_samples"][10]["ratio"] = 0.0
+    try:
+        validate_payload(forged_ratio)
+    except RuntimeError as exc:
+        if "not bound to raw counts" not in str(exc):
+            raise
+    else:
+        raise SystemExit("forged intermediate failure-ratio sample was accepted")
+    forged_receipts = copy.deepcopy(adversarial)
+    forged_receipts["receipt_counts"] = {
+        f"retail.fake_event_{index}.v1": 2_000 for index in range(5)
+    }
+    try:
+        validate_payload(forged_receipts)
+    except RuntimeError as exc:
+        if "consumer receipt counts differ" not in str(exc):
+            raise
+    else:
+        raise SystemExit("forged receipt event types were accepted")
+    environment = {
+        **os.environ,
+        "PYTHONNOUSERSITE": "1",
+        "PYTHONSAFEPATH": "1",
+    }
     completed = subprocess.run(
-        [str(PYTHON if PYTHON.exists() else Path(sys.executable)), str(DRIVER), "--self-test"],
+        [str(PYTHON), "-B", "-I", str(DRIVER), "--self-test"],
         env=environment,
         text=True,
         capture_output=True,
@@ -259,7 +487,10 @@ def self_test() -> None:
     )
     if completed.returncode != 0:
         raise SystemExit(completed.stderr or completed.stdout)
-    print("outbox gate self-test PASS: fake PASS rejected; driver contract stable")
+    print(
+        "outbox gate self-test PASS: fake PASS, forged pending summary and "
+        "forged receipt keys rejected; driver contract stable"
+    )
 
 
 def parse_args() -> argparse.Namespace:
@@ -283,6 +514,7 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
+    verify_python_identity()
     if args.self_test:
         self_test()
         return
@@ -335,11 +567,16 @@ def main() -> None:
                 "DATABASE_URL": dsn,
                 "UNIHUB_TEST_DATABASE": "1",
                 "UNIHUB_RUNNING_TESTS": "1",
-                "PYTHONPATH": str(ROOT / "backend"),
+                "PYTHONNOUSERSITE": "1",
+                "PYTHONSAFEPATH": "1",
             }
-            run([str(PYTHON), str(BOOTSTRAP)], env=env, stdout=subprocess.DEVNULL)
+            run(
+                [str(PYTHON), "-B", "-I", str(BOOTSTRAP)],
+                env=env,
+                stdout=subprocess.DEVNULL,
+            )
             command = [
-                str(PYTHON), str(DRIVER), "--dsn", dsn, "--valkey-url", valkey_url,
+                str(PYTHON), "-B", "-I", str(DRIVER), "--dsn", dsn, "--valkey-url", valkey_url,
                 "--seed", str(args.seed), "--warmup", str(args.warmup),
                 "--events", str(args.events), "--rate", str(args.rate),
                 "--claimers", str(args.claimers), "--batch-size", str(args.batch_size),
@@ -363,11 +600,13 @@ def main() -> None:
             "result": "PASS",
             "sha": sha,
             "tree": tree,
-            "command": "UNIHUB_TEST_DATABASE=1 PYTHONPATH=backend backend/venv/bin/python scripts/run_outbox_slo_gate.py --seed 20260812 --warmup 500 --events 10000 --rate 20 --claimers 4 --batch-size 50 --handlers 8 --evidence <path>",
+            "command": "UNIHUB_TEST_DATABASE=1 backend/venv/bin/python -B -I scripts/run_outbox_slo_gate.py --seed 20260812 --warmup 500 --events 10000 --rate 20 --claimers 4 --batch-size 50 --handlers 8 --evidence <path>",
             "duration_seconds": duration,
             "environment": {
                 "host": socket.gethostname(),
                 "python": platform.python_version(),
+                "python_resolved_path": str(PYTHON_BASE),
+                "python_sha256": PYTHON_BASE_SHA256,
                 "postgres_image": POSTGRES_IMAGE,
                 "valkey_image": VALKEY_IMAGE,
             },

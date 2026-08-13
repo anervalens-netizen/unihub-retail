@@ -22,6 +22,24 @@ from typing import Any
 import xml.etree.ElementTree as ET
 
 
+for _startup_variable in (
+    "PYTHONHOME",
+    "PYTHONPATH",
+    "PYTHONSTARTUP",
+    "PYTHONINSPECT",
+    "MYPYPATH",
+    "MYPY_CONFIG_FILE",
+    "NODE_OPTIONS",
+    "NODE_PATH",
+    "BASH_ENV",
+    "ENV",
+    "CDPATH",
+    "GLOBIGNORE",
+):
+    os.environ.pop(_startup_variable, None)
+os.environ.update({"PYTHONNOUSERSITE": "1", "PYTHONSAFEPATH": "1"})
+
+
 ROOT = Path(__file__).resolve().parents[1]
 EXPECTED_BASELINE = "0be82b430e55b7414babf470abe3fc5404b6cdc9"
 COSIGN_VERSION = "v3.1.3"
@@ -33,13 +51,32 @@ NPM_CLI_PATH = Path(
     "/opt/codex-desktop/resources/node-runtime/lib/node_modules/npm/bin/npm-cli.js"
 )
 FRONTEND_BUILD_INPUT_ENV = "VITE_FRONTEND_GLITCHTIP_DSN"
+PYTHON_BASE_PATH = Path("/usr/bin/python3.12")
+PYTHON_BASE_SHA256 = "1643dacd9feaedc58f3cc581e4d22577dfe25c09b10282936186ccf0f2e61118"
+PYTHON_SYSTEM_SITECUSTOMIZE_PATH = Path("/usr/lib/python3.12/sitecustomize.py")
+PYTHON_SYSTEM_SITECUSTOMIZE_RESOLVED = Path("/etc/python3.12/sitecustomize.py")
+PYTHON_SYSTEM_SITECUSTOMIZE_SHA256 = "43d81125d92376b1a69d53a71126a041cc9a18d8080e92dea0a2ae23be138b1e"
+PYTHON_SITE_PACKAGES_RELATIVE = "venv/lib/python3.12/site-packages"
+PYTHON_SITE_PACKAGES = ROOT / "backend" / PYTHON_SITE_PACKAGES_RELATIVE
+PYTHON_SITE_PACKAGES_SHA256 = "117a14d30ed1f06711b632f396e70c94166936197d60f3bab366ca500ab0da87"
+PYTHON_RUNTIME_TREE_PROPERTY = "unihub:python-runtime:site-packages-tree-sha256:v1"
+PYTHON_RUNTIME_SUPPLY_NAME = "PYTHON_RUNTIME_SUPPLY.json"
+PYTHON_RUNTIME_REQUIREMENTS_NAME = "PYTHON_RUNTIME_REQUIREMENTS.lock"
+PYTHON_RUNTIME_WHEELS_NAME = "PYTHON_RUNTIME_WHEELS.tar.gz"
+GH_PATH = Path("/usr/bin/gh")
+GH_DELL_SHA256 = "2fd925d68889746976958342fb749bf102bc7dc8bcba3abfa533a80ad7791673"
+GITHUB_REPOSITORY = "anervalens-netizen/unihub-retail"
+TASK_A_BRANCH = "codex/retail-definitive-closure-20260812"
+TASK_B_BRANCH = "codex/retail-definitive-closure-b-20260813"
 EXPECTED_CHANGED_PATHS = {
     ".agent/PLANS.md",
     ".agent/contract-lock.json",
     ".github/workflows/ci.yml",
+    ".github/workflows/deploy.yml",
     "backend/db/migrations/069_ai_cohort_and_transactional_outbox.sql",
     "backend/db/migrations/README.md",
     "backend/db/migrations/manifest.json",
+    "backend/scripts/run_tests_isolated.sh",
     "backend/scripts/run_outbox_slo_workload.py",
     "backend/scripts/run_retail_scale_profile.py",
     "backend/services/grile_pilot_v2.py",
@@ -62,14 +99,17 @@ EXPECTED_CHANGED_PATHS = {
     "scripts/run_structural_characterization.sh",
     "scripts/structural-characterization-baseline-v1.json",
     "scripts/target-mutation-contract-v2.json",
+    "scripts/validate_release_sbom.py",
     "scripts/verify_deployed_release.sh",
     "scripts/verify_promtool_cache.sh",
     "ops/build-retail-release-artifact.sh",
+    "ops/deploy-retail-artifact.sh",
+    "ops/test-deploy-retail-artifact.sh",
 }
 EXPECTED_TYPECHECK_STEP = """      - name: Python typecheck
         run: |
           set +e
-          venv/bin/mypy . --ignore-missing-imports --explicit-package-bases \\
+          venv/bin/python -I -m mypy . --ignore-missing-imports --explicit-package-bases \\
             > mypy-report.txt 2>&1
           status=$?
           cat mypy-report.txt
@@ -88,10 +128,14 @@ EXPECTED_AUTHORITY_CRITERIA = {
     *(f"AC-{index:02d}" for index in range(1, 18)),
 }
 EXPECTED_RELEASE_A_AUTHORITIES = {
+    ".github/workflows/deploy.yml",
+    "backend/scripts/run_tests_isolated.sh",
     "backend/scripts/run_outbox_slo_workload.py",
     "backend/scripts/run_retail_scale_profile.py",
     "backend/tests/test_release_contract_tooling_security.py",
     "ops/build-retail-release-artifact.sh",
+    "ops/deploy-retail-artifact.sh",
+    "ops/test-deploy-retail-artifact.sh",
     "scripts/check_release_a_candidate.py",
     "scripts/run_local_quality_gate.sh",
     "scripts/run_outbox_slo_gate.py",
@@ -100,10 +144,13 @@ EXPECTED_RELEASE_A_AUTHORITIES = {
     "scripts/run_retail_scale_gate.sh",
     "scripts/run_structural_characterization.sh",
     "scripts/structural-characterization-baseline-v1.json",
+    "scripts/validate_release_sbom.py",
     "scripts/verify_deployed_release.sh",
+    "scripts/verify_frontend_rum_build.mjs",
     "scripts/verify_promtool_cache.sh",
 }
 EXPECTED_AUTHORITY_PATHS = {
+    ".github/workflows/deploy.yml",
     ".bandit-baseline.json",
     ".coveragerc",
     ".secrets.baseline",
@@ -148,6 +195,7 @@ EXPECTED_AUTHORITY_PATHS = {
     "e2e/real-auth-stack.spec.ts",
     "eslint.config.js",
     "ops/build-retail-release-artifact.sh",
+    "ops/deploy-retail-artifact.sh",
     "ops/config/retail-env.schema.json",
     "ops/observability/retail-slo-rules.test.yml",
     "ops/test-deploy-retail-artifact.sh",
@@ -189,7 +237,9 @@ EXPECTED_AUTHORITY_PATHS = {
     "scripts/run_target_allocator_contract.py",
     "scripts/run_targeted_mutation_tests.py",
     "scripts/structural-characterization-baseline-v1.json",
+    "scripts/validate_release_sbom.py",
     "scripts/verify_deployed_release.sh",
+    "scripts/verify_frontend_rum_build.mjs",
     "scripts/verify_promtool_cache.sh",
     "scripts/verify_vendored_npm_packages.mjs",
     "src/components/GrileMonthlyPanel.test.tsx",
@@ -224,9 +274,9 @@ EXPECTED_SOURCE_SNAPSHOTS = {
         "tree": "ec1590144b44d47aa9d9d3603813870cae482293",
     },
     "release_b_integrated_preview": {
-        "commit": "20503703e39474077ae68d32089bb11ce1e842f5",
-        "ref": "refs/tags/ur-close-20260812-preview-v2",
-        "tree": "863e9ae83a1d62ed03e6b5e7bfdf191d76fc2950",
+        "commit": "c8031175abc035671bff04143cdc3eb0cb92303f",
+        "ref": "refs/tags/ur-close-20260812-preview-v4-content",
+        "tree": "c13556d3f647c1e1052b561af9d36bcfee887ca0",
     },
     "scale_authority": {
         "commit": "e2daba1b45ff12852629889e48f01a9eb3a8a643",
@@ -236,38 +286,41 @@ EXPECTED_SOURCE_SNAPSHOTS = {
 }
 PYTHON_CLOSURE_ANCHOR = """      - name: Python complexity ratchet
         working-directory: .
-        run: backend/venv/bin/python scripts/check_complexity_ratchet.py
+        run: backend/venv/bin/python -I scripts/check_complexity_ratchet.py
 """
 PYTHON_CLOSURE_INSERT = """
       - name: Python complexity closure contract
         working-directory: .
         run: |
-          backend/venv/bin/python scripts/check_python_complexity_contract.py \\
+          backend/venv/bin/python -I scripts/check_python_complexity_contract.py \\
             --contract scripts/python-complexity-contract-v1.json \\
             --evidence test-results/python-complexity-contract.json
 """
 FRONTEND_STRUCTURE_ANCHOR = """      - name: TypeScript complexity ratchet
-        run: node scripts/check_ts_function_complexity.cjs
+        run: |
+          "$RETAIL_NODE" scripts/check_ts_function_complexity.cjs
 """
 FRONTEND_STRUCTURE_INSERT = """
       - name: Frontend structure closure contract
         run: |
-          node scripts/check_frontend_structure_contract.mjs \\
+          "$RETAIL_NODE" scripts/check_frontend_structure_contract.mjs \\
             --manifest scripts/frontend-critical-coverage.json \\
             --evidence test-results/frontend-structure-contract.json
 """
 FRONTEND_COVERAGE_ANCHOR = """      - name: Unit tests with global coverage floor
-        run: npm run test:coverage
+        run: |
+          "$RETAIL_NODE" "$RETAIL_NPM_CLI" run test:coverage
 """
 FRONTEND_COVERAGE_INSERT = """
       - name: Frontend critical coverage closure contract
         run: |
-          node scripts/check_frontend_critical_coverage.mjs \\
+          "$RETAIL_NODE" scripts/check_frontend_critical_coverage.mjs \\
             --manifest scripts/frontend-critical-coverage.json \\
             --coverage coverage/coverage-final.json \\
             --evidence test-results/frontend-critical-coverage.json
 """
 RELEASE_B_EVIDENCE_CURRENT_PATHS = {
+    ".github/workflows/deploy.yml",
     ".agent/PLANS.md",
     "docs/exec-plans/active/UR-CLOSE-20260812.md",
     "scripts/check_release_a_candidate.py",
@@ -280,11 +333,225 @@ RELEASE_B_EVIDENCE_CURRENT_PATHS = {
     "scripts/verify_promtool_cache.sh",
     "scripts/release-b-authority-contract-v1.json",
     "ops/build-retail-release-artifact.sh",
+    "ops/deploy-retail-artifact.sh",
+    "ops/test-deploy-retail-artifact.sh",
+}
+RELEASE_B_MUTABLE_PATHS = {
+    "backend/repositories/transactional_outbox.py",
+    "backend/services/outbox_worker.py",
+    "backend/services/outbox_replay.py",
+    "backend/services/grile_outbox_delivery.py",
+    "backend/scripts/replay_outbox_event.py",
+    "backend/services/sales_generation_flow.py",
+    "backend/worker.py",
+    "backend/services/sales_artifacts.py",
+    "backend/services/promo_generation_publisher.py",
+    "backend/services/promo_generation_migration.py",
+    "backend/services/promo_generation_migration_hash.py",
+    "backend/services/dashboard_specials_config.py",
+    "backend/architecture_contract.json",
+    "APP_ARCHITECTURE.md",
+    "README.md",
+    "docs/RUNBOOK-campanii-promo-incentive-concursuri.md",
+    "docs/operations/retail-slo-readiness.md",
+}
+RELEASE_B_IMPLEMENTATION_PATHS = {
+    "backend/repositories/transactional_outbox.py",
+    "backend/services/outbox_worker.py",
+    "backend/services/outbox_replay.py",
+    "backend/services/grile_outbox_delivery.py",
+    "backend/scripts/replay_outbox_event.py",
+    "backend/services/sales_generation_flow.py",
+    "backend/worker.py",
+    "backend/services/sales_artifacts.py",
+    "backend/services/promo_generation_publisher.py",
+    "backend/services/promo_generation_migration.py",
+    "backend/services/promo_generation_migration_hash.py",
+    "backend/services/dashboard_specials_config.py",
+}
+RELEASE_B_SPECIAL_PATHS = {
+    ".github/workflows/ci.yml",
+    "scripts/complexity-ratchet.json",
+    "scripts/ts-function-complexity-ratchet.json",
+}
+RELEASE_B_OUTBOX_UNIQUE_PATHS = {
+    "backend/tests/test_grile_outbox_delivery.py",
+    "backend/tests/test_outbox_replay.py",
+    "backend/tests/test_outbox_worker_faults.py",
+    "backend/tests/test_transactional_outbox.py",
+}
+RELEASE_B_SCALE_UNIQUE_PATHS = {
+    "backend/scripts/run_retail_scale_profile.py",
+    "scripts/run_retail_scale_gate.sh",
 }
 
 
 def sha256_bytes(payload: bytes) -> str:
     return hashlib.sha256(payload).hexdigest()
+
+
+def verify_python_runtime() -> dict[str, str]:
+    executable = Path(sys.executable)
+    if (
+        not executable.is_file()
+        or executable.resolve() != PYTHON_BASE_PATH
+        or not PYTHON_BASE_PATH.is_file()
+        or sha256_bytes(PYTHON_BASE_PATH.read_bytes()) != PYTHON_BASE_SHA256
+        or not (sys.flags.isolated and sys.flags.no_site)
+    ):
+        raise ValueError(
+            "checker Python must be pinned and started with -I -S"
+        )
+    return {
+        "invoked_path": str(executable),
+        "resolved_path": str(PYTHON_BASE_PATH),
+        "sha256": PYTHON_BASE_SHA256,
+    }
+
+
+def verify_backend_python_environment() -> dict[str, Any]:
+    import base64
+    import importlib.metadata
+
+    verified_backend_python()
+    site_packages = PYTHON_SITE_PACKAGES
+    config_path = ROOT / "backend/venv/pyvenv.cfg"
+    lock_path = ROOT / "backend/requirements-dev.lock"
+    if (
+        not config_path.is_file()
+        or config_path.is_symlink()
+        or not lock_path.is_file()
+        or lock_path.is_symlink()
+        or not PYTHON_SYSTEM_SITECUSTOMIZE_PATH.is_file()
+        or PYTHON_SYSTEM_SITECUSTOMIZE_PATH.resolve()
+        != PYTHON_SYSTEM_SITECUSTOMIZE_RESOLVED
+        or sha256_bytes(PYTHON_SYSTEM_SITECUSTOMIZE_PATH.read_bytes())
+        != PYTHON_SYSTEM_SITECUSTOMIZE_SHA256
+    ):
+        raise ValueError("backend Python environment inputs are unsafe")
+    config = {
+        key.strip().lower(): value.strip().lower()
+        for line in config_path.read_text(encoding="utf-8").splitlines()
+        if "=" in line
+        for key, value in (line.split("=", 1),)
+    }
+    expected_config = {
+        "home": "/usr/bin",
+        "include-system-site-packages": "false",
+        "version": "3.12.3",
+        "executable": "/usr/bin/python3.12",
+        "command": (
+            "/usr/bin/python3.12 -m venv "
+            f"{(ROOT / 'backend/venv').as_posix().lower()}"
+        ),
+    }
+    if config != expected_config:
+        raise ValueError("backend pyvenv.cfg identity mismatch")
+    canonical = lambda value: re.sub(r"[-_.]+", "-", value).lower()
+    expected: dict[str, str] = {}
+    for line in lock_path.read_text(encoding="utf-8").splitlines():
+        match = re.match(r"^([A-Za-z0-9_.-]+)(?:\[[^]]+\])?==([^ ;\\]+)", line)
+        if match:
+            expected[canonical(match.group(1))] = match.group(2)
+    distributions = {
+        canonical(dist.metadata["Name"]): dist
+        for dist in importlib.metadata.distributions(path=[str(site_packages)])
+        if dist.metadata.get("Name")
+    }
+    bootstrap = {"pip", "setuptools", "wheel"}
+    versions = {name: dist.version for name, dist in distributions.items()}
+    if (
+        not expected
+        or set(expected) - set(distributions)
+        or any(versions.get(name) != version for name, version in expected.items())
+        or set(distributions) - set(expected) - bootstrap
+    ):
+        raise ValueError("backend Python distribution inventory mismatch")
+    claimed: set[Path] = set()
+    record_failures: list[str] = []
+    for name, dist in sorted(distributions.items()):
+        for file in dist.files or ():
+            target = Path(dist.locate_file(file))
+            try:
+                resolved = target.resolve()
+                if not resolved.is_relative_to(site_packages.resolve()):
+                    continue
+            except (OSError, ValueError):
+                record_failures.append(f"{name}:{file}:unsafe_path")
+                continue
+            claimed.add(resolved)
+            if not target.is_file() or target.is_symlink():
+                record_failures.append(f"{name}:{file}:missing_or_unsafe")
+                continue
+            if file.hash is None:
+                if Path(str(file)).name != "RECORD" and Path(str(file)).suffix != ".pyc":
+                    record_failures.append(f"{name}:{file}:unhashed")
+                continue
+            if file.hash.mode != "sha256":
+                record_failures.append(f"{name}:{file}:unsupported_hash")
+                continue
+            actual = base64.urlsafe_b64encode(
+                hashlib.sha256(target.read_bytes()).digest()
+            ).decode().rstrip("=")
+            if actual != file.hash.value:
+                record_failures.append(f"{name}:{file}:hash_mismatch")
+    pyc = [path for path in site_packages.rglob("*.pyc") if path.is_file()]
+    symlinks = [path for path in site_packages.rglob("*") if path.is_symlink()]
+    unowned = [
+        path
+        for path in site_packages.rglob("*")
+        if path.is_file()
+        and not path.is_symlink()
+        and path.suffix != ".pyc"
+        and path.resolve() not in claimed
+    ]
+
+    def stable_bytes(path: Path) -> bytes:
+        payload = path.read_bytes()
+        if path.name != "RECORD":
+            return payload
+        lines = []
+        for line in payload.decode("utf-8").splitlines():
+            fields = line.split(",")
+            if fields[0].startswith("../../../bin/"):
+                fields[1:] = ["<venv-script>", "<size>"]
+            lines.append(",".join(fields))
+        return ("\n".join(lines) + "\n").encode()
+
+    tree_entries = [
+        [
+            str(path.relative_to(site_packages)),
+            hashlib.sha256(stable_bytes(path)).hexdigest(),
+        ]
+        for path in sorted(site_packages.rglob("*"))
+        if path.is_file() and not path.is_symlink() and path.suffix != ".pyc"
+    ]
+    tree_digest = sha256_bytes(
+        json.dumps(tree_entries, separators=(",", ":")).encode()
+    )
+    if record_failures or pyc or symlinks or unowned or tree_digest != PYTHON_SITE_PACKAGES_SHA256:
+        raise ValueError("backend Python RECORD/tree identity mismatch")
+    return {
+        "lock_sha256": sha256_bytes(lock_path.read_bytes()),
+        "distribution_count": len(expected),
+        "site_packages_file_count": len(tree_entries),
+        "site_packages_sha256": tree_digest,
+        "system_sitecustomize_sha256": PYTHON_SYSTEM_SITECUSTOMIZE_SHA256,
+    }
+
+
+def verified_backend_python() -> Path:
+    executable = ROOT / "backend/venv/bin/python"
+    if (
+        not executable.is_file()
+        or not os.access(executable, os.X_OK)
+        or executable.resolve() != PYTHON_BASE_PATH
+        or sha256_bytes(PYTHON_BASE_PATH.read_bytes()) != PYTHON_BASE_SHA256
+        or not PYTHON_SITE_PACKAGES.is_dir()
+        or PYTHON_SITE_PACKAGES.is_symlink()
+    ):
+        raise ValueError("backend venv Python is not rooted in the pinned interpreter")
+    return PYTHON_BASE_PATH
 
 
 def git(*args: str, check: bool = True) -> str:
@@ -302,6 +569,149 @@ def load_json(path: Path) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise ValueError(f"{path} must contain a JSON object")
     return value
+
+
+def python_runtime_tree_digest_from_sbom(python_sbom: dict[str, Any]) -> str:
+    metadata = python_sbom.get("metadata")
+    properties = metadata.get("properties") if isinstance(metadata, dict) else None
+    runtime_tree_values = [
+        str(item.get("value", ""))
+        for item in properties
+        if isinstance(item, dict)
+        and item.get("name") == PYTHON_RUNTIME_TREE_PROPERTY
+    ] if isinstance(properties, list) else []
+    if len(runtime_tree_values) != 1 or not re.fullmatch(
+        r"[0-9a-f]{64}", runtime_tree_values[0]
+    ):
+        raise ValueError("signed Python SBOM lacks exact runtime tree identity")
+    return runtime_tree_values[0]
+
+
+def verify_python_runtime_supply(
+    artifact_dir: Path,
+    checksums: dict[str, str],
+    expected_sha: str,
+    runtime_tree_sha256: str,
+) -> dict[str, Any]:
+    supply = load_json(artifact_dir / PYTHON_RUNTIME_SUPPLY_NAME)
+    expected_keys = {
+        "schemaVersion",
+        "python",
+        "requirements",
+        "sitePackages",
+        "sbom",
+        "bootstrapDistributions",
+        "wheelArchive",
+        "wheels",
+    }
+    if set(supply) != expected_keys or supply.get("schemaVersion") != 1:
+        raise ValueError("Python runtime supply schema is not exact")
+    if supply.get("python") != {
+        "path": str(PYTHON_BASE_PATH),
+        "sha256": PYTHON_BASE_SHA256,
+        "version": "3.12.3",
+    }:
+        raise ValueError("Python runtime supply interpreter identity mismatch")
+    requirements = supply.get("requirements")
+    if requirements != {
+        "name": PYTHON_RUNTIME_REQUIREMENTS_NAME,
+        "sha256": checksums[PYTHON_RUNTIME_REQUIREMENTS_NAME],
+    }:
+        raise ValueError("Python runtime supply requirements identity mismatch")
+    tracked_requirements = subprocess.run(
+        [
+            "git",
+            "-C",
+            str(ROOT),
+            "show",
+            f"{expected_sha}:backend/requirements.lock",
+        ],
+        check=True,
+        capture_output=True,
+    ).stdout
+    if (artifact_dir / PYTHON_RUNTIME_REQUIREMENTS_NAME).read_bytes() != tracked_requirements:
+        raise ValueError("Python runtime supply requirements differ from source SHA")
+    if supply.get("sitePackages") != {
+        "property": PYTHON_RUNTIME_TREE_PROPERTY,
+        "sha256": runtime_tree_sha256,
+    }:
+        raise ValueError("Python runtime supply tree identity mismatch")
+    if supply.get("sbom") != {
+        "name": "SBOM.python.cdx.json",
+        "sha256": checksums["SBOM.python.cdx.json"],
+    }:
+        raise ValueError("Python runtime supply SBOM identity mismatch")
+    if supply.get("bootstrapDistributions") != {"pip": "24.0"}:
+        raise ValueError("Python runtime supply bootstrap inventory mismatch")
+
+    wheel_archive = supply.get("wheelArchive")
+    wheels = supply.get("wheels")
+    if not isinstance(wheel_archive, dict) or not isinstance(wheels, list):
+        raise ValueError("Python runtime wheel inventory is malformed")
+    file_count = wheel_archive.get("fileCount")
+    total_bytes = wheel_archive.get("totalBytes")
+    if (
+        set(wheel_archive) != {"name", "sha256", "fileCount", "totalBytes"}
+        or wheel_archive.get("name") != PYTHON_RUNTIME_WHEELS_NAME
+        or wheel_archive.get("sha256") != checksums[PYTHON_RUNTIME_WHEELS_NAME]
+        or not isinstance(file_count, int)
+        or isinstance(file_count, bool)
+        or not 1 <= file_count <= 512
+        or not isinstance(total_bytes, int)
+        or isinstance(total_bytes, bool)
+        or not 1 <= total_bytes <= 536_870_912
+        or len(wheels) != file_count
+    ):
+        raise ValueError("Python runtime wheel archive identity mismatch")
+    expected_wheels: dict[str, tuple[str, int]] = {}
+    for item in wheels:
+        if (
+            not isinstance(item, dict)
+            or set(item) != {"name", "sha256", "size"}
+            or re.fullmatch(r"[A-Za-z0-9_.+-]+\.whl", str(item.get("name", "")))
+            is None
+            or re.fullmatch(r"[0-9a-f]{64}", str(item.get("sha256", ""))) is None
+            or not isinstance(item.get("size"), int)
+            or isinstance(item.get("size"), bool)
+            or item["size"] <= 0
+            or item["name"] in expected_wheels
+        ):
+            raise ValueError("Python runtime wheel entry is invalid")
+        expected_wheels[item["name"]] = (item["sha256"], item["size"])
+    if [item["name"] for item in wheels] != sorted(expected_wheels):
+        raise ValueError("Python runtime wheel inventory is not canonical")
+    if sum(size for _digest, size in expected_wheels.values()) != total_bytes:
+        raise ValueError("Python runtime wheel byte total mismatch")
+
+    observed_wheels: dict[str, tuple[str, int]] = {}
+    with tarfile.open(artifact_dir / PYTHON_RUNTIME_WHEELS_NAME, mode="r:gz") as archive:
+        for member in archive.getmembers():
+            normalized = PurePosixPath(member.name.removeprefix("./"))
+            if not normalized.parts:
+                continue
+            if member.isdir() and normalized.as_posix() == ".":
+                continue
+            if (
+                not member.isfile()
+                or len(normalized.parts) != 1
+                or normalized.name not in expected_wheels
+                or normalized.name in observed_wheels
+            ):
+                raise ValueError("Python runtime wheel archive member is unsafe")
+            stream = archive.extractfile(member)
+            if stream is None:
+                raise ValueError("Python runtime wheel archive member is unreadable")
+            payload = stream.read(expected_wheels[normalized.name][1] + 1)
+            observed_wheels[normalized.name] = (sha256_bytes(payload), len(payload))
+    if observed_wheels != expected_wheels:
+        raise ValueError("Python runtime wheel archive content mismatch")
+    return {
+        "requirements_sha256": checksums[PYTHON_RUNTIME_REQUIREMENTS_NAME],
+        "runtime_tree_sha256": runtime_tree_sha256,
+        "wheel_archive_sha256": checksums[PYTHON_RUNTIME_WHEELS_NAME],
+        "wheel_file_count": file_count,
+        "wheel_total_bytes": total_bytes,
+    }
 
 
 def is_submapping(candidate: Any, baseline: Any) -> bool:
@@ -335,6 +745,11 @@ def git_path_identity(commit: str, path: str) -> tuple[str, str]:
         ["git", "-C", str(ROOT), "show", f"{commit}:{path}"]
     )
     return fields[0], sha256_bytes(payload)
+
+
+def git_diff_paths(before: str, after: str) -> set[str]:
+    output = git("diff", "--no-renames", "--name-only", before, after)
+    return set(filter(None, output.splitlines()))
 
 
 def verify_source_snapshots(
@@ -380,11 +795,10 @@ def verify_source_snapshots(
 def authority_set_selected_paths(name: str) -> set[str]:
     tracked = set(git("ls-tree", "-r", "--name-only", "HEAD").splitlines())
     if name == "backend_test_suite":
-        return {
-            path
-            for path in tracked
-            if path.startswith("backend/tests/test_") and path.endswith(".py")
-        }
+        # Freeze the whole pytest tree, not only top-level test_*.py files.
+        # This is deliberately a superset of pytest's recursive
+        # test_*.py/*_test.py discovery and also binds conftest/helpers/data.
+        return {path for path in tracked if path.startswith("backend/tests/")}
     if name == "frontend_test_suite":
         return {
             path
@@ -393,9 +807,9 @@ def authority_set_selected_paths(name: str) -> set[str]:
             and (path.endswith(".test.ts") or path.endswith(".test.tsx"))
         }
     if name == "e2e_test_suite":
-        return {
-            path for path in tracked if path.startswith("e2e/") and path.endswith(".ts")
-        }
+        # Playwright discovers multiple JS/TS extensions recursively. Binding
+        # the complete e2e tree also freezes helpers and future fixture files.
+        return {path for path in tracked if path.startswith("e2e/")}
     if name == "shell_script_suite":
         return {path for path in tracked if path.endswith(".sh")}
     raise ValueError(f"unknown Release-B authority set: {name}")
@@ -618,6 +1032,90 @@ def verify_release_a_authority_seed() -> dict[str, Any]:
     }
 
 
+def verify_release_b_runtime_composition(
+    expected_release_a_sha: str, immutable_current: set[str]
+) -> dict[str, Any]:
+    preview_sha = EXPECTED_SOURCE_SNAPSHOTS["release_b_integrated_preview"]["commit"]
+    outbox_sha = EXPECTED_SOURCE_SNAPSHOTS["outbox_acceptance_contract"]["commit"]
+    scale_sha = EXPECTED_SOURCE_SNAPSHOTS["scale_authority"]["commit"]
+    preview_delta = git_diff_paths(EXPECTED_BASELINE, preview_sha)
+    outbox_unique = git_diff_paths(EXPECTED_BASELINE, outbox_sha) - preview_delta
+    scale_unique = git_diff_paths(EXPECTED_BASELINE, scale_sha) - preview_delta
+    if len(preview_delta) != 308:
+        raise ValueError("Release-B preview topology drift")
+    if outbox_unique != RELEASE_B_OUTBOX_UNIQUE_PATHS:
+        raise ValueError("Release-B outbox snapshot topology drift")
+    if scale_unique != RELEASE_B_SCALE_UNIQUE_PATHS:
+        raise ValueError("Release-B scale snapshot topology drift")
+
+    preview_exclusions = (
+        immutable_current | RELEASE_B_SPECIAL_PATHS | RELEASE_B_MUTABLE_PATHS
+    )
+    frozen_preview_paths = preview_delta - preview_exclusions
+    if len(frozen_preview_paths) != 280:
+        raise ValueError("Release-B frozen preview topology drift")
+    frozen_preview: list[dict[str, str]] = []
+    for path in sorted(frozen_preview_paths):
+        expected_mode, expected_digest = git_path_identity(preview_sha, path)
+        actual_mode, actual_digest = git_path_identity("HEAD", path)
+        if (
+            expected_mode not in {"100644", "100755"}
+            or (actual_mode, actual_digest) != (expected_mode, expected_digest)
+        ):
+            raise ValueError(f"Release-B frozen preview runtime drift: {path}")
+        frozen_preview.append(
+            {"path": path, "git_mode": expected_mode, "sha256": expected_digest}
+        )
+
+    actual_delta = git_diff_paths(expected_release_a_sha, "HEAD")
+    allowed_delta = (
+        preview_delta
+        | RELEASE_B_OUTBOX_UNIQUE_PATHS
+        | RELEASE_B_SCALE_UNIQUE_PATHS
+        | RELEASE_B_MUTABLE_PATHS
+        | RELEASE_B_SPECIAL_PATHS
+    )
+    unexpected_delta = sorted(actual_delta - allowed_delta)
+    if unexpected_delta:
+        raise ValueError(f"Release-B unexpected path mutation: {unexpected_delta}")
+    missing_mutable = sorted(RELEASE_B_MUTABLE_PATHS - actual_delta)
+    if missing_mutable:
+        raise ValueError(f"Release-B required implementation path is unchanged: {missing_mutable}")
+    for path in sorted(RELEASE_B_MUTABLE_PATHS):
+        actual_mode, actual_digest = git_path_identity("HEAD", path)
+        preview_mode, preview_digest = git_path_identity(preview_sha, path)
+        if actual_mode != "100644" or not actual_digest:
+            raise ValueError(f"Release-B mutable path is missing or unsafe: {path}")
+        if (
+            path in RELEASE_B_IMPLEMENTATION_PATHS
+            and (actual_mode, actual_digest) == (preview_mode, preview_digest)
+        ):
+            raise ValueError(f"Release-B mutable path did not change from preview: {path}")
+
+    release_a_lock_mode, release_a_lock_digest = git_path_identity(
+        expected_release_a_sha, ".agent/contract-lock.json"
+    )
+    candidate_lock_mode, candidate_lock_digest = git_path_identity(
+        "HEAD", ".agent/contract-lock.json"
+    )
+    if (candidate_lock_mode, candidate_lock_digest) != (
+        release_a_lock_mode,
+        release_a_lock_digest,
+    ):
+        raise ValueError("Release-B changed the Release-A contract lock")
+    return {
+        "preview_delta_count": len(preview_delta),
+        "frozen_preview_count": len(frozen_preview),
+        "frozen_preview": frozen_preview,
+        "outbox_unique_paths": sorted(outbox_unique),
+        "scale_unique_paths": sorted(scale_unique),
+        "mutable_paths": sorted(RELEASE_B_MUTABLE_PATHS),
+        "candidate_delta_paths": sorted(actual_delta),
+        "unexpected_delta_paths": unexpected_delta,
+        "release_a_lock_sha256": release_a_lock_digest,
+    }
+
+
 def verify_release_b_mutation_policy(
     expected_candidate_sha: str,
     expected_release_a_sha: str,
@@ -639,6 +1137,7 @@ def verify_release_b_mutation_policy(
         raise ValueError("Release-A SHA is not an ancestor of Release-B candidate")
 
     immutable_current = {
+        ".github/workflows/deploy.yml",
         ".agent/PLANS.md",
         "docs/exec-plans/active/UR-CLOSE-20260812.md",
         "docs/contracts/query-parameter-policy-v1.json",
@@ -659,11 +1158,17 @@ def verify_release_b_mutation_policy(
         "scripts/verify_promtool_cache.sh",
         "scripts/release-b-authority-contract-v1.json",
         "ops/build-retail-release-artifact.sh",
+        "ops/deploy-retail-artifact.sh",
+        "ops/test-deploy-retail-artifact.sh",
     }
     for path in immutable_current:
         expected_digest = locked_by_path.get(path, {}).get("sha256")
         if expected_digest is None or sha256_bytes((ROOT / path).read_bytes()) != expected_digest:
             raise ValueError(f"Release-B immutable contract drift: {path}")
+
+    runtime_composition = verify_release_b_runtime_composition(
+        expected_release_a_sha, immutable_current
+    )
 
     monotonic_ratchets = (
         (
@@ -749,6 +1254,7 @@ def verify_release_b_mutation_policy(
         "candidate_tree": git("rev-parse", "HEAD^{tree}"),
         "release_a_is_ancestor": True,
         "immutable_paths": sorted(immutable_current),
+        "runtime_composition": runtime_composition,
         "ratchets": ratchet_evidence,
         "ci_sha256": sha256_bytes(workflow.encode("utf-8")),
         "ci_exact_three_gate_transform": True,
@@ -779,6 +1285,9 @@ def verify_release_a_artifact(
         "SBOM.cdx.json",
         "SBOM.npm.cdx.json",
         "SBOM.python.cdx.json",
+        PYTHON_RUNTIME_SUPPLY_NAME,
+        PYTHON_RUNTIME_REQUIREMENTS_NAME,
+        PYTHON_RUNTIME_WHEELS_NAME,
         "PROVENANCE.json",
         "RELEASE_MANIFEST.json",
     }
@@ -872,6 +1381,14 @@ def verify_release_a_artifact(
     archive_digest = sha256_bytes(archive.read_bytes())
     if archive_digest != checksums[archive_name]:
         raise ValueError("Release-A archive digest mismatch")
+    python_sbom = load_json(artifact_dir / "SBOM.python.cdx.json")
+    python_runtime_tree_sha256 = python_runtime_tree_digest_from_sbom(python_sbom)
+    python_runtime_supply = verify_python_runtime_supply(
+        artifact_dir,
+        checksums,
+        expected_sha,
+        python_runtime_tree_sha256,
+    )
     provenance = load_json(artifact_dir / "PROVENANCE.json")
     sigstore_bundle = load_json(artifact_dir / "RELEASE_MANIFEST.sigstore.json")
     if not sigstore_bundle:
@@ -912,10 +1429,24 @@ def verify_release_a_artifact(
         if isinstance(run_details, dict)
         else None
     )
-    if not isinstance(builder_id, str) or not builder_id or not isinstance(
+    expected_builder_id = (
+        "github-actions://anervalens-netizen/unihub-retail/"
+        f".github/workflows/ci.yml@{expected_sha}"
+    )
+    if builder_id != expected_builder_id or not isinstance(
         invocation_id, str
     ) or not invocation_id:
         raise ValueError("Release-A provenance run identity is absent")
+    if require_release_a_evidence:
+        release_a_run_id = str(release_a_evidence["workflowRunId"])
+        if not re.fullmatch(
+            rf"https://github\.com/{re.escape(GITHUB_REPOSITORY)}/actions/runs/"
+            rf"{re.escape(release_a_run_id)}/attempts/[1-9][0-9]*",
+            invocation_id,
+        ):
+            raise ValueError(
+                "Release-A signed evidence run differs from artifact provenance"
+            )
     cosign_path_text = shutil.which("cosign")
     if cosign_path_text is None:
         raise ValueError("trusted cosign is unavailable")
@@ -949,6 +1480,16 @@ def verify_release_a_artifact(
         "https://github.com/anervalens-netizen/unihub-retail/.github/workflows/ci.yml@refs/heads/main",
         "--certificate-oidc-issuer",
         "https://token.actions.githubusercontent.com",
+        "--certificate-github-workflow-sha",
+        expected_sha,
+        "--certificate-github-workflow-repository",
+        GITHUB_REPOSITORY,
+        "--certificate-github-workflow-ref",
+        "refs/heads/main",
+        "--certificate-github-workflow-trigger",
+        "workflow_dispatch",
+        "--certificate-github-workflow-name",
+        "CI",
     ]
     signature = subprocess.run(
         cosign_command,
@@ -977,6 +1518,8 @@ def verify_release_a_artifact(
         "checksummed_file_count": len(checksums),
         "release_a_evidence": release_a_evidence,
         "frontend_build_input": frontend_build_input,
+        "python_runtime_tree_sha256": python_runtime_tree_sha256,
+        "python_runtime_supply": python_runtime_supply,
         "builder_id": builder_id,
         "invocation_id": invocation_id,
     }
@@ -1050,6 +1593,8 @@ def build_exact_checkout_frontend(rum_dsn: str) -> dict[str, Any]:
     if dist.exists():
         shutil.rmtree(dist)
     environment = os.environ.copy()
+    for key in ("NODE_OPTIONS", "NODE_PATH"):
+        environment.pop(key, None)
     environment.update(
         {
             "npm_config_audit": "false",
@@ -1297,6 +1842,16 @@ def verify_signed_artifact_audit(
         "https://github.com/anervalens-netizen/unihub-retail/.github/workflows/ci.yml@refs/heads/main",
         "--certificate-oidc-issuer",
         "https://token.actions.githubusercontent.com",
+        "--certificate-github-workflow-sha",
+        expected_sha,
+        "--certificate-github-workflow-repository",
+        GITHUB_REPOSITORY,
+        "--certificate-github-workflow-ref",
+        "refs/heads/main",
+        "--certificate-github-workflow-trigger",
+        "workflow_dispatch",
+        "--certificate-github-workflow-name",
+        "CI",
     ]
     signature = subprocess.run(
         signature_command, capture_output=True, text=True, check=False
@@ -1391,12 +1946,276 @@ def verify_signed_artifact_audit(
     return 0
 
 
+def verify_github_release_runs(
+    *,
+    release_a_pr: int,
+    release_b_pr: int,
+    release_a_pr_sha: str,
+    release_b_pr_sha: str,
+    release_a_sha: str,
+    release_b_sha: str,
+    release_a_pr_run_id: str,
+    release_b_pr_run_id: str,
+    release_a_run_id: str,
+    release_b_run_id: str,
+    output_path: Path,
+) -> int:
+    started = time.monotonic()
+    sha_values = (
+        release_a_pr_sha,
+        release_b_pr_sha,
+        release_a_sha,
+        release_b_sha,
+    )
+    run_ids = (
+        release_a_pr_run_id,
+        release_b_pr_run_id,
+        release_a_run_id,
+        release_b_run_id,
+    )
+    if (
+        release_a_pr != 151
+        or release_b_pr <= 0
+        or release_b_pr == release_a_pr
+        or any(not re.fullmatch(r"[0-9a-f]{40}", value) for value in sha_values)
+        or any(not re.fullmatch(r"[1-9][0-9]*", value) for value in run_ids)
+        or release_a_sha == release_b_sha
+    ):
+        raise ValueError("GitHub release-run identities are invalid")
+    if git("rev-parse", "HEAD") != release_b_sha or git("status", "--porcelain"):
+        raise ValueError("GitHub evidence must be verified from clean exact MAIN_B_SHA")
+    if subprocess.run(
+        [
+            "git",
+            "-C",
+            str(ROOT),
+            "merge-base",
+            "--is-ancestor",
+            release_a_sha,
+            release_b_sha,
+        ],
+        check=False,
+    ).returncode:
+        raise ValueError("MAIN_A_SHA is not an ancestor of MAIN_B_SHA")
+    if (
+        not GH_PATH.is_file()
+        or sha256_bytes(GH_PATH.read_bytes()) != GH_DELL_SHA256
+    ):
+        raise ValueError("GitHub CLI is not the pinned Dell binary")
+    gh_version = subprocess.run(
+        [str(GH_PATH), "--version"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if gh_version.returncode or not gh_version.stdout.startswith("gh version 2.45.0 "):
+        raise ValueError("GitHub CLI version mismatch")
+
+    raw_hashes: dict[str, str] = {}
+
+    def api(label: str, endpoint: str) -> dict[str, Any]:
+        environment = os.environ.copy()
+        environment.pop("GH_HOST", None)
+        environment.update(
+            {"GH_PAGER": "cat", "NO_COLOR": "1", "GH_PROMPT_DISABLED": "1"}
+        )
+        result = subprocess.run(
+            [
+                str(GH_PATH),
+                "api",
+                "--hostname",
+                "github.com",
+                "--method",
+                "GET",
+                endpoint,
+            ],
+            env=environment,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if result.returncode:
+            raise ValueError(f"GitHub API query failed: {label}")
+        raw_hashes[label] = sha256_bytes(result.stdout.encode("utf-8"))
+        value = json.loads(result.stdout)
+        if not isinstance(value, dict):
+            raise ValueError(f"GitHub API response is invalid: {label}")
+        return value
+
+    run_specs = {
+        "release_a_pr": (
+            release_a_pr_run_id,
+            release_a_pr_sha,
+            "pull_request",
+            TASK_A_BRANCH,
+            release_a_pr,
+        ),
+        "release_a_main": (
+            release_a_run_id,
+            release_a_sha,
+            "workflow_dispatch",
+            "main",
+            None,
+        ),
+        "release_b_pr": (
+            release_b_pr_run_id,
+            release_b_pr_sha,
+            "pull_request",
+            TASK_B_BRANCH,
+            release_b_pr,
+        ),
+        "release_b_main": (
+            release_b_run_id,
+            release_b_sha,
+            "workflow_dispatch",
+            "main",
+            None,
+        ),
+    }
+    run_evidence: dict[str, dict[str, Any]] = {}
+    repository_api_url = f"https://api.github.com/repos/{GITHUB_REPOSITORY}"
+    for label, (run_id, sha, event, branch, expected_pr) in run_specs.items():
+        value = api(label, f"repos/{GITHUB_REPOSITORY}/actions/runs/{run_id}")
+        repository = value.get("repository")
+        head_repository = value.get("head_repository")
+        associated_pulls = value.get("pull_requests")
+        if (
+            value.get("id") != int(run_id)
+            or value.get("head_sha") != sha
+            or value.get("head_branch") != branch
+            or value.get("event") != event
+            or value.get("status") != "completed"
+            or value.get("conclusion") != "success"
+            or value.get("path") != ".github/workflows/ci.yml"
+            or not isinstance(value.get("run_attempt"), int)
+            or value["run_attempt"] < 1
+            or not isinstance(repository, dict)
+            or repository.get("full_name") != GITHUB_REPOSITORY
+            or not isinstance(head_repository, dict)
+            or head_repository.get("full_name") != GITHUB_REPOSITORY
+        ):
+            raise ValueError(f"GitHub workflow run identity mismatch: {label}")
+        if expected_pr is not None:
+            if not isinstance(associated_pulls, list) or len(associated_pulls) != 1:
+                raise ValueError(
+                    f"GitHub workflow run PR association mismatch: {label}"
+                )
+            associated_pull = associated_pulls[0]
+            if not isinstance(associated_pull, dict):
+                raise ValueError(
+                    f"GitHub workflow run PR association mismatch: {label}"
+                )
+            associated_head = associated_pull.get("head", {})
+            associated_base = associated_pull.get("base", {})
+            associated_head_repo = (
+                associated_head.get("repo", {})
+                if isinstance(associated_head, dict)
+                else {}
+            )
+            associated_base_repo = (
+                associated_base.get("repo", {})
+                if isinstance(associated_base, dict)
+                else {}
+            )
+            if (
+                associated_pull.get("number") != expected_pr
+                or associated_pull.get("url")
+                != f"{repository_api_url}/pulls/{expected_pr}"
+                or not isinstance(associated_head, dict)
+                or associated_head.get("sha") != sha
+                or associated_head.get("ref") != branch
+                or not isinstance(associated_head_repo, dict)
+                or associated_head_repo.get("url") != repository_api_url
+                or not isinstance(associated_base, dict)
+                or associated_base.get("ref") != "main"
+                or not isinstance(associated_base_repo, dict)
+                or associated_base_repo.get("url") != repository_api_url
+            ):
+                raise ValueError(
+                    f"GitHub workflow run PR association mismatch: {label}"
+                )
+        run_evidence[label] = {
+            "run_id": int(run_id),
+            "run_attempt": value["run_attempt"],
+            "head_sha": sha,
+            "head_branch": branch,
+            "event": event,
+            "status": "completed",
+            "conclusion": "success",
+            "html_url": value.get("html_url"),
+            "pull_request_number": expected_pr,
+        }
+
+    pull_specs = {
+        "release_a": (release_a_pr, TASK_A_BRANCH, release_a_pr_sha, release_a_sha),
+        "release_b": (release_b_pr, TASK_B_BRANCH, release_b_pr_sha, release_b_sha),
+    }
+    pull_evidence: dict[str, dict[str, Any]] = {}
+    for label, (number, branch, head_sha, merge_sha) in pull_specs.items():
+        value = api(label, f"repos/{GITHUB_REPOSITORY}/pulls/{number}")
+        head = value.get("head")
+        base = value.get("base")
+        if (
+            value.get("number") != number
+            or value.get("state") != "closed"
+            or value.get("draft") is not False
+            or not value.get("merged_at")
+            or value.get("merge_commit_sha") != merge_sha
+            or not isinstance(head, dict)
+            or head.get("ref") != branch
+            or head.get("sha") != head_sha
+            or not isinstance(base, dict)
+            or base.get("ref") != "main"
+        ):
+            raise ValueError(f"GitHub pull-request identity mismatch: {label}")
+        pull_evidence[label] = {
+            "number": number,
+            "head_ref": branch,
+            "head_sha": head_sha,
+            "merge_sha": merge_sha,
+            "state": "MERGED",
+            "html_url": value.get("html_url"),
+        }
+
+    remote_main = api("remote_main", f"repos/{GITHUB_REPOSITORY}/git/ref/heads/main")
+    remote_object = remote_main.get("object")
+    if (
+        remote_main.get("ref") != "refs/heads/main"
+        or not isinstance(remote_object, dict)
+        or remote_object.get("type") != "commit"
+        or remote_object.get("sha") != release_b_sha
+    ):
+        raise ValueError("live GitHub refs/heads/main differs from MAIN_B_SHA")
+
+    output = {
+        "schema_version": 1,
+        "result": "PASS",
+        "repository": GITHUB_REPOSITORY,
+        "python_runtime": verify_python_runtime(),
+        "gh": {
+            "path": str(GH_PATH),
+            "sha256": GH_DELL_SHA256,
+            "version": gh_version.stdout.splitlines()[0],
+        },
+        "release_a_sha": release_a_sha,
+        "release_b_sha": release_b_sha,
+        "remote_main": release_b_sha,
+        "pull_requests": pull_evidence,
+        "workflow_runs": run_evidence,
+        "raw_response_sha256": raw_hashes,
+        "duration_seconds": round(time.monotonic() - started, 6),
+    }
+    write_evidence(output_path, output)
+    print(json.dumps({"result": "PASS", "github_main_sha": release_b_sha}))
+    return 0
+
+
 def verify_lock(
     *, current_paths: set[str] | None = None
 ) -> tuple[dict[str, Any], list[dict[str, str]]]:
     lock = load_json(ROOT / ".agent/contract-lock.json")
-    if lock.get("revision") != 13 or lock.get("baseline_source_sha") != EXPECTED_BASELINE:
-        raise ValueError("Release-A requires exact contract lock revision 13 and baseline")
+    if lock.get("revision") != 14 or lock.get("baseline_source_sha") != EXPECTED_BASELINE:
+        raise ValueError("Release-A requires exact contract lock revision 14 and baseline")
     content_commit = str(lock["contract_content_commit"])
     lock_commits = list(
         filter(
@@ -1411,15 +2230,15 @@ def verify_lock(
         )
     )
     if len(lock_commits) != 1:
-        raise ValueError("revision-13 lock must have exactly one immutable lock commit")
+        raise ValueError("revision-14 lock must have exactly one immutable lock commit")
     lock_commit = lock_commits[0]
     lock_parents = git("show", "-s", "--format=%P", lock_commit).split()
     if lock_parents != [content_commit]:
-        raise ValueError("revision-13 lock commit must directly follow content commit")
+        raise ValueError("revision-14 lock commit must directly follow content commit")
     current_lock_blob = git("rev-parse", "HEAD:.agent/contract-lock.json")
     locked_blob = git("rev-parse", f"{lock_commit}:.agent/contract-lock.json")
     if current_lock_blob != locked_blob:
-        raise ValueError("current revision-13 lock differs from its sole lock commit")
+        raise ValueError("current revision-14 lock differs from its sole lock commit")
     lock["verified_lock_commit"] = lock_commit
     verified: list[dict[str, str]] = []
     locked_objects = [lock["plan"], *lock["assets"]]
@@ -1523,20 +2342,64 @@ def verify_ci_typecheck() -> str:
 
 
 def run_direct_mypy() -> tuple[list[str], subprocess.CompletedProcess[str]]:
+    python = verified_backend_python()
+    site_packages = PYTHON_SITE_PACKAGES_RELATIVE
     command = [
-        "venv/bin/mypy",
+        "/usr/bin/python3.12",
+        "-I",
+        "-S",
+        "-c",
+        (
+            "import runpy,sys; "
+            f"sys.path.insert(0,{site_packages!r}); "
+            "sys.argv=['mypy',*sys.argv[1:]]; "
+            "runpy.run_module('mypy',run_name='__main__')"
+        ),
         ".",
         "--ignore-missing-imports",
         "--explicit-package-bases",
     ]
+    environment = os.environ.copy()
+    environment.update({"PYTHONNOUSERSITE": "1", "PYTHONSAFEPATH": "1"})
+    for key in ("MYPYPATH", "MYPY_CONFIG_FILE"):
+        environment.pop(key, None)
     result = subprocess.run(
-        command,
+        [str(python), *command[1:]],
         cwd=ROOT / "backend",
+        env=environment,
         capture_output=True,
         text=True,
         check=False,
     )
     return command, result
+
+
+def expected_direct_mypy_command() -> list[str]:
+    site_packages = PYTHON_SITE_PACKAGES_RELATIVE
+    return [
+        "cd",
+        "backend",
+        "&&",
+        str(PYTHON_BASE_PATH),
+        "-I",
+        "-S",
+        "-c",
+        (
+            "import runpy,sys; "
+            f"sys.path.insert(0,{site_packages!r}); "
+            "sys.argv=['mypy',*sys.argv[1:]]; "
+            "runpy.run_module('mypy',run_name='__main__')"
+        ),
+        ".",
+        "--ignore-missing-imports",
+        "--explicit-package-bases",
+    ]
+
+
+def release_a_evidence_logical_path(release_a_sha: str) -> str:
+    if not re.fullmatch(r"[0-9a-f]{40}", release_a_sha):
+        raise ValueError("Release-A SHA must be exact lowercase 40-char hex")
+    return f"test-results/closure/{release_a_sha}/release-a/schema-gate.json"
 
 
 def write_evidence(path: Path, evidence: dict[str, Any]) -> None:
@@ -1571,7 +2434,7 @@ def verify_main_evidence(
         == [
             "scripts/run_release_a_schema_gate.sh",
             "--evidence",
-            str(input_path),
+            release_a_evidence_logical_path(expected_sha),
         ],
         "changed_paths": evidence.get("changed_paths") == sorted(EXPECTED_CHANGED_PATHS),
         "changed_path_count": evidence.get("changed_path_count")
@@ -1754,15 +2617,10 @@ def verify_main_evidence(
             and locked_source.get("sha256")
             == "feb14f72f7a637733c75b79649113d7973615185466f7a9399e43541d1d2e4ed"
         )
-        checks["candidate_mypy_command"] = isinstance(mypy, dict) and mypy.get("command") == [
-            "cd",
-            "backend",
-            "&&",
-            "venv/bin/mypy",
-            ".",
-            "--ignore-missing-imports",
-            "--explicit-package-bases",
-        ]
+        checks["candidate_mypy_command"] = (
+            isinstance(mypy, dict)
+            and mypy.get("command") == expected_direct_mypy_command()
+        )
         checks["candidate_mypy_output_hash"] = isinstance(mypy, dict) and bool(
             re.fullmatch(r"[0-9a-f]{64}", str(mypy.get("output_sha256", "")))
         )
@@ -1842,6 +2700,8 @@ def main() -> int:
     parser.add_argument("--verify-main-evidence", type=Path)
     parser.add_argument("--verify-artifact-checkout", type=Path)
     parser.add_argument("--verify-signed-artifact-audit", type=Path)
+    parser.add_argument("--verify-github-release-runs", action="store_true")
+    parser.add_argument("--verify-python-environment", action="store_true")
     parser.add_argument("--artifact-phase", choices=("release-a", "release-b"))
     parser.add_argument("--expected-sha")
     parser.add_argument("--release-a-sha")
@@ -1850,18 +2710,101 @@ def main() -> int:
     parser.add_argument("--artifact-dir", type=Path)
     parser.add_argument("--frontend-rum-dsn-from-environment", action="store_true")
     parser.add_argument("--expected-workflow-run-id")
+    parser.add_argument("--release-a-pr", type=int)
+    parser.add_argument("--release-b-pr", type=int)
+    parser.add_argument("--release-a-pr-sha")
+    parser.add_argument("--release-b-pr-sha")
+    parser.add_argument("--release-a-pr-run-id")
+    parser.add_argument("--release-b-pr-run-id")
+    parser.add_argument("--release-a-run-id")
+    parser.add_argument("--release-b-run-id")
     args = parser.parse_args()
     evidence_path = args.evidence if args.evidence.is_absolute() else ROOT / args.evidence
     selected_modes = sum(
-        value is not None
+        bool(value)
         for value in (
             args.verify_main_evidence,
             args.verify_artifact_checkout,
             args.verify_signed_artifact_audit,
+            args.verify_github_release_runs,
+            args.verify_python_environment,
         )
     )
     if selected_modes > 1:
         parser.error("artifact/main evidence verification modes are mutually exclusive")
+    try:
+        python_runtime = verify_python_runtime()
+    except (OSError, ValueError) as exc:
+        write_evidence(
+            evidence_path,
+            {"schema_version": 1, "result": "FAIL", "failures": [str(exc)]},
+        )
+        print(f"FAIL: {exc}", file=sys.stderr)
+        return 1
+    if args.verify_python_environment:
+        try:
+            environment = verify_backend_python_environment()
+            write_evidence(
+                evidence_path,
+                {
+                    "schema_version": 1,
+                    "result": "PASS",
+                    "python_runtime": python_runtime,
+                    "python_environment": environment,
+                },
+            )
+            print(json.dumps({"result": "PASS", **environment}, sort_keys=True))
+            return 0
+        except (OSError, ValueError) as exc:
+            write_evidence(
+                evidence_path,
+                {"schema_version": 1, "result": "FAIL", "failures": [str(exc)]},
+            )
+            print(f"FAIL: {exc}", file=sys.stderr)
+            return 1
+    if args.verify_github_release_runs:
+        required = (
+            args.release_a_pr,
+            args.release_b_pr,
+            args.release_a_pr_sha,
+            args.release_b_pr_sha,
+            args.release_a_sha,
+            args.expected_sha,
+            args.release_a_pr_run_id,
+            args.release_b_pr_run_id,
+            args.release_a_run_id,
+            args.release_b_run_id,
+        )
+        if any(value is None for value in required):
+            parser.error(
+                "all Release-A/B PR, SHA and workflow-run identities are required with --verify-github-release-runs"
+            )
+        try:
+            return verify_github_release_runs(
+                release_a_pr=int(args.release_a_pr),
+                release_b_pr=int(args.release_b_pr),
+                release_a_pr_sha=str(args.release_a_pr_sha),
+                release_b_pr_sha=str(args.release_b_pr_sha),
+                release_a_sha=str(args.release_a_sha),
+                release_b_sha=str(args.expected_sha),
+                release_a_pr_run_id=str(args.release_a_pr_run_id),
+                release_b_pr_run_id=str(args.release_b_pr_run_id),
+                release_a_run_id=str(args.release_a_run_id),
+                release_b_run_id=str(args.release_b_run_id),
+                output_path=evidence_path,
+            )
+        except (
+            KeyError,
+            OSError,
+            subprocess.CalledProcessError,
+            ValueError,
+        ) as exc:
+            write_evidence(
+                evidence_path,
+                {"schema_version": 1, "result": "FAIL", "failures": [str(exc)]},
+            )
+            print(f"FAIL: {exc}", file=sys.stderr)
+            return 1
     if args.verify_signed_artifact_audit is not None:
         if (
             args.expected_sha is None
@@ -1989,12 +2932,14 @@ def main() -> int:
         "candidate_sha": git("rev-parse", "HEAD"),
         "candidate_tree": git("rev-parse", "HEAD^{tree}"),
         "result": "FAIL",
+        "python_runtime": python_runtime,
     }
     failures: list[str] = []
     scope_ready = True
     try:
         if git("status", "--porcelain"):
             raise ValueError("worktree must be clean including untracked files")
+        evidence["python_environment"] = verify_backend_python_environment()
         lock, locked_objects = verify_lock()
         evidence["contract_revision"] = lock["revision"]
         evidence["contract_content_commit"] = lock["contract_content_commit"]
@@ -2010,10 +2955,10 @@ def main() -> int:
 
     mypy_output = ""
     if scope_ready:
-        command, mypy = run_direct_mypy()
+        _command, mypy = run_direct_mypy()
         mypy_output = mypy.stdout + mypy.stderr
         evidence["mypy"] = {
-            "command": ["cd", "backend", "&&", *command],
+            "command": expected_direct_mypy_command(),
             "exit_code": mypy.returncode,
             "output_sha256": sha256_bytes(mypy_output.encode("utf-8")),
             "success_marker": "Success: no issues found" in mypy_output,

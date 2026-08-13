@@ -1,10 +1,20 @@
-#!/usr/bin/env bash
+#!/usr/bin/bash -p
 
 set -Eeuo pipefail
 umask 077
+unset BASH_ENV ENV CDPATH GLOBIGNORE PYTHONSTARTUP PYTHONINSPECT || true
+export PYTHONNOUSERSITE=1 PYTHONSAFEPATH=1 PYTHONDONTWRITEBYTECODE=1
+unset PYTHONHOME PYTHONPATH MYPYPATH MYPY_CONFIG_FILE
 
 PROGRAM="$(basename "$0")"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PYTHON_BASE="/usr/bin/python3.12"
+PYTHON_BASE_SHA256="1643dacd9feaedc58f3cc581e4d22577dfe25c09b10282936186ccf0f2e61118"
+PYTHON_VERSION="3.12.3"
+PYTHON_RUNTIME_TREE_PROPERTY="unihub:python-runtime:site-packages-tree-sha256:v1"
+PYTHON_RUNTIME_REQUIREMENTS_NAME="PYTHON_RUNTIME_REQUIREMENTS.lock"
+PYTHON_RUNTIME_WHEELS_NAME="PYTHON_RUNTIME_WHEELS.tar.gz"
+PYTHON_RUNTIME_SUPPLY_NAME="PYTHON_RUNTIME_SUPPLY.json"
 
 die() {
   printf '%s: %s\n' "$PROGRAM" "$*" >&2
@@ -42,6 +52,13 @@ trap 'rm -rf -- "$BUILD_DIR"' EXIT
 SOURCE_DIR="$BUILD_DIR/source"
 ARCHIVE_NAME="retail-release-${SOURCE_SHA}.tar.gz"
 
+[[ -x "$PYTHON_BASE" && ! -L "$PYTHON_BASE" ]] \
+  || die "pinned Python base interpreter is unavailable or unsafe"
+[[ "$(sha256sum "$PYTHON_BASE" | awk '{print $1}')" == "$PYTHON_BASE_SHA256" ]] \
+  || die "pinned Python base interpreter digest mismatch"
+[[ "$($PYTHON_BASE -I -S -c 'import platform; print(platform.python_version())')" == "$PYTHON_VERSION" ]] \
+  || die "pinned Python base interpreter version mismatch"
+
 mkdir -p "$SOURCE_DIR"
 git -C "$REPO_ROOT" archive --format=tar "$SOURCE_SHA" \
   | tar --extract --file=- --directory="$SOURCE_DIR"
@@ -69,6 +86,79 @@ else
   (cd "$REPO_ROOT" && npm sbom --package-lock-only --omit=dev --sbom-format cyclonedx --sbom-type application) \
     >"$BUILD_DIR/SBOM.npm.cdx.json"
 fi
+
+runtime_wheelhouse="$BUILD_DIR/python-runtime-wheelhouse"
+runtime_validation_venv="$BUILD_DIR/python-runtime-validation-venv"
+runtime_wheelhouse_source="${PYTHON_RUNTIME_WHEELHOUSE_PATH:-}"
+mkdir -p "$runtime_wheelhouse"
+if [[ -n "$runtime_wheelhouse_source" ]]; then
+  [[ -d "$runtime_wheelhouse_source" && ! -L "$runtime_wheelhouse_source" ]] \
+    || die "Python runtime wheelhouse input is unsafe"
+  unsafe_wheelhouse_entry="$(find "$runtime_wheelhouse_source" -mindepth 1 -maxdepth 1 \
+    \( ! -type f -o -type l \) -print -quit)"
+  [[ -z "$unsafe_wheelhouse_entry" ]] \
+    || die "Python runtime wheelhouse contains a non-regular entry"
+  cp -- "$runtime_wheelhouse_source"/*.whl "$runtime_wheelhouse/" 2>/dev/null \
+    || die "Python runtime wheelhouse contains no wheels"
+else
+  runtime_download_venv="$BUILD_DIR/python-runtime-download-venv"
+  "$PYTHON_BASE" -I -m venv "$runtime_download_venv"
+  env -i \
+    PATH=/usr/bin:/bin \
+    LANG=C.UTF-8 \
+    PYTHONNOUSERSITE=1 \
+    PYTHONSAFEPATH=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    "$runtime_download_venv/bin/python" -B -I -m pip download \
+      --disable-pip-version-check --no-deps --only-binary=:all: \
+      --require-hashes --dest "$runtime_wheelhouse" \
+      -r "$REPO_ROOT/backend/requirements.lock"
+fi
+
+"$PYTHON_BASE" -I -S - "$runtime_wheelhouse" <<'PY'
+import pathlib
+import re
+import sys
+
+root = pathlib.Path(sys.argv[1])
+entries = list(root.iterdir())
+if not entries or len(entries) > 512:
+    raise SystemExit("Python runtime wheelhouse file count is invalid")
+total = 0
+for entry in entries:
+    if (
+        not entry.is_file()
+        or entry.is_symlink()
+        or entry.parent != root
+        or re.fullmatch(r"[A-Za-z0-9_.+-]+\.whl", entry.name) is None
+    ):
+        raise SystemExit(f"unsafe Python runtime wheel: {entry.name}")
+    total += entry.stat().st_size
+if total <= 0 or total > 536_870_912:
+    raise SystemExit("Python runtime wheelhouse size is invalid")
+PY
+
+cp -- "$REPO_ROOT/backend/requirements.lock" \
+  "$BUILD_DIR/$PYTHON_RUNTIME_REQUIREMENTS_NAME"
+"$PYTHON_BASE" -I -m venv "$runtime_validation_venv"
+env -i \
+  PATH=/usr/bin:/bin \
+  LANG=C.UTF-8 \
+  PYTHONNOUSERSITE=1 \
+  PYTHONSAFEPATH=1 \
+  PYTHONDONTWRITEBYTECODE=1 \
+  "$runtime_validation_venv/bin/python" -B -I -m pip install \
+    --disable-pip-version-check --no-index \
+    --find-links "$runtime_wheelhouse" --no-compile --require-hashes \
+    -r "$BUILD_DIR/$PYTHON_RUNTIME_REQUIREMENTS_NAME"
+env -i \
+  PATH=/usr/bin:/bin \
+  LANG=C.UTF-8 \
+  PYTHONNOUSERSITE=1 \
+  PYTHONSAFEPATH=1 \
+  PYTHONDONTWRITEBYTECODE=1 \
+  "$runtime_validation_venv/bin/python" -B -I -m pip check
+
 if [[ -n "$python_sbom_source" ]]; then
   [[ -f "$python_sbom_source" && ! -L "$python_sbom_source" ]] || die "Python SBOM input is unsafe"
   cp -- "$python_sbom_source" "$BUILD_DIR/SBOM.python.cdx.json"
@@ -79,8 +169,163 @@ else
     --output-reproducible --output-format JSON \
     --output-file "$BUILD_DIR/SBOM.python.cdx.json"
 fi
-python3 "$SCRIPT_DIR/../scripts/validate_release_sbom.py" npm "$BUILD_DIR/SBOM.npm.cdx.json"
-python3 "$SCRIPT_DIR/../scripts/validate_release_sbom.py" pypi "$BUILD_DIR/SBOM.python.cdx.json"
+"$PYTHON_BASE" -I -S "$SCRIPT_DIR/../scripts/validate_release_sbom.py" \
+  npm "$BUILD_DIR/SBOM.npm.cdx.json"
+if [[ -n "$python_sbom_source" ]]; then
+  runtime_sbom_recheck="$BUILD_DIR/python-runtime-recheck.cdx.json"
+  "$PYTHON_BASE" -I -S - \
+    "$BUILD_DIR/SBOM.python.cdx.json" "$runtime_sbom_recheck" \
+    "$PYTHON_RUNTIME_TREE_PROPERTY" <<'PY'
+import json
+import pathlib
+import re
+import sys
+
+source, output = map(pathlib.Path, sys.argv[1:3])
+property_name = sys.argv[3]
+payload = json.loads(source.read_text(encoding="utf-8"))
+metadata = payload.get("metadata")
+if not isinstance(metadata, dict):
+    raise SystemExit("Python runtime SBOM metadata is invalid")
+properties = metadata.get("properties")
+if not isinstance(properties, list):
+    raise SystemExit("Python runtime SBOM properties are missing")
+matches = [
+    item for item in properties
+    if isinstance(item, dict) and item.get("name") == property_name
+]
+if (
+    len(matches) != 1
+    or re.fullmatch(r"[0-9a-f]{64}", str(matches[0].get("value", ""))) is None
+):
+    raise SystemExit("Python runtime SBOM tree property is missing or invalid")
+metadata["properties"] = [item for item in properties if item is not matches[0]]
+output.write_text(
+    json.dumps(payload, sort_keys=True, separators=(",", ":")) + "\n",
+    encoding="utf-8",
+)
+PY
+  "$PYTHON_BASE" -I -S "$SCRIPT_DIR/../scripts/validate_release_sbom.py" \
+    --runtime-venv "$runtime_validation_venv" --clean-runtime-pyc \
+    pypi "$runtime_sbom_recheck"
+  "$PYTHON_BASE" -I -S - \
+    "$BUILD_DIR/SBOM.python.cdx.json" "$runtime_sbom_recheck" \
+    "$PYTHON_RUNTIME_TREE_PROPERTY" <<'PY'
+import json
+import pathlib
+import sys
+
+def value(path: pathlib.Path, name: str) -> str:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    matches = [
+        str(item.get("value", ""))
+        for item in payload.get("metadata", {}).get("properties", [])
+        if isinstance(item, dict) and item.get("name") == name
+    ]
+    if len(matches) != 1:
+        raise SystemExit("Python runtime SBOM tree property is not unique")
+    return matches[0]
+
+source, recheck = map(pathlib.Path, sys.argv[1:3])
+if value(source, sys.argv[3]) != value(recheck, sys.argv[3]):
+    raise SystemExit("offline Python runtime differs from signed SBOM tree")
+PY
+else
+  "$PYTHON_BASE" -I -S "$SCRIPT_DIR/../scripts/validate_release_sbom.py" \
+    --runtime-venv "$runtime_validation_venv" --clean-runtime-pyc \
+    pypi "$BUILD_DIR/SBOM.python.cdx.json"
+fi
+"$PYTHON_BASE" -I -S "$SCRIPT_DIR/../scripts/validate_release_sbom.py" \
+  pypi "$BUILD_DIR/SBOM.python.cdx.json"
+
+tar --create \
+  --file "$BUILD_DIR/${PYTHON_RUNTIME_WHEELS_NAME%.gz}" \
+  --directory "$runtime_wheelhouse" \
+  --sort=name \
+  --mtime='@0' \
+  --owner=0 \
+  --group=0 \
+  --numeric-owner \
+  .
+gzip -n "$BUILD_DIR/${PYTHON_RUNTIME_WHEELS_NAME%.gz}"
+"$PYTHON_BASE" -I -S - \
+  "$runtime_wheelhouse" \
+  "$BUILD_DIR/$PYTHON_RUNTIME_REQUIREMENTS_NAME" \
+  "$BUILD_DIR/$PYTHON_RUNTIME_WHEELS_NAME" \
+  "$BUILD_DIR/SBOM.python.cdx.json" \
+  "$BUILD_DIR/$PYTHON_RUNTIME_SUPPLY_NAME" \
+  "$PYTHON_BASE" "$PYTHON_BASE_SHA256" "$PYTHON_VERSION" \
+  "$PYTHON_RUNTIME_TREE_PROPERTY" <<'PY'
+import hashlib
+import json
+import pathlib
+import sys
+
+(
+    wheelhouse_value,
+    requirements_value,
+    archive_value,
+    sbom_value,
+    output_value,
+    python_path,
+    python_sha256,
+    python_version,
+    tree_property,
+) = sys.argv[1:]
+wheelhouse = pathlib.Path(wheelhouse_value)
+requirements = pathlib.Path(requirements_value)
+archive = pathlib.Path(archive_value)
+sbom = json.loads(pathlib.Path(sbom_value).read_text(encoding="utf-8"))
+tree_values = [
+    str(item.get("value", ""))
+    for item in sbom.get("metadata", {}).get("properties", [])
+    if isinstance(item, dict) and item.get("name") == tree_property
+]
+if len(tree_values) != 1:
+    raise SystemExit("Python runtime tree property is not unique")
+wheels = [
+    {
+        "name": path.name,
+        "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+        "size": path.stat().st_size,
+    }
+    for path in sorted(wheelhouse.iterdir())
+]
+payload = {
+    "schemaVersion": 1,
+    "python": {
+        "path": python_path,
+        "sha256": python_sha256,
+        "version": python_version,
+    },
+    "requirements": {
+        "name": requirements.name,
+        "sha256": hashlib.sha256(requirements.read_bytes()).hexdigest(),
+    },
+    "sitePackages": {
+        "property": tree_property,
+        "sha256": tree_values[0],
+    },
+    "sbom": {
+        "name": pathlib.Path(sbom_value).name,
+        "sha256": hashlib.sha256(pathlib.Path(sbom_value).read_bytes()).hexdigest(),
+    },
+    "bootstrapDistributions": {"pip": "24.0"},
+    "wheelArchive": {
+        "name": archive.name,
+        "sha256": hashlib.sha256(archive.read_bytes()).hexdigest(),
+        "fileCount": len(wheels),
+        "totalBytes": sum(item["size"] for item in wheels),
+    },
+    "wheels": wheels,
+}
+pathlib.Path(output_value).write_text(
+    json.dumps(payload, sort_keys=True, separators=(",", ":")) + "\n",
+    encoding="utf-8",
+)
+PY
+rm -rf -- "$runtime_wheelhouse" "$runtime_validation_venv" \
+  "${runtime_download_venv:-}" "${runtime_sbom_recheck:-}"
 
 RELEASE_A_EVIDENCE_DIR="${RELEASE_A_EVIDENCE_DIR:-}"
 RELEASE_A_EVIDENCE_RUN_ID="${RELEASE_A_EVIDENCE_RUN_ID:-}"
@@ -119,7 +364,7 @@ elif [[ -n "$RELEASE_A_EVIDENCE_RUN_ID" ]]; then
   die "Release-A evidence run ID was supplied without evidence"
 fi
 
-python3 - "$REPO_ROOT" "$BUILD_DIR" "$SOURCE_SHA" "$ARCHIVE_NAME" \
+"$PYTHON_BASE" -I -S - "$REPO_ROOT" "$BUILD_DIR" "$SOURCE_SHA" "$ARCHIVE_NAME" \
   "${RELEASE_BUILDER_ID:-local:ops/build-retail-release-artifact.sh}" \
   "${RELEASE_INVOCATION_ID:-local}" "$RELEASE_A_EVIDENCE_PRESENT" \
   "$RELEASE_A_EVIDENCE_RUN_ID" "$FRONTEND_BUILD_INPUT_SHA256" <<'PY'
@@ -323,6 +568,8 @@ evidence = {}
 evidence_names = [
     archive_name, "SOURCE_SHA", "SBOM.cdx.json", "SBOM.npm.cdx.json",
     "SBOM.python.cdx.json", "PROVENANCE.json",
+    "PYTHON_RUNTIME_REQUIREMENTS.lock", "PYTHON_RUNTIME_SUPPLY.json",
+    "PYTHON_RUNTIME_WHEELS.tar.gz",
 ]
 if release_a_evidence is not None:
     evidence_names.extend(release_a_files)
@@ -342,13 +589,15 @@ if release_a_evidence is not None:
     manifest["releaseAEvidence"] = release_a_evidence
 (output_path / "RELEASE_MANIFEST.json").write_text(json.dumps(manifest, sort_keys=True, separators=(",", ":")) + "\n", encoding="utf-8")
 PY
-python3 "$SCRIPT_DIR/../scripts/validate_release_sbom.py" aggregate \
+"$PYTHON_BASE" -I -S "$SCRIPT_DIR/../scripts/validate_release_sbom.py" aggregate \
   "$BUILD_DIR/SBOM.cdx.json" --expected-sha "$SOURCE_SHA"
 (
   cd "$BUILD_DIR"
   checksum_files=(
     SOURCE_SHA "$ARCHIVE_NAME" SBOM.cdx.json SBOM.npm.cdx.json
     SBOM.python.cdx.json PROVENANCE.json RELEASE_MANIFEST.json
+    PYTHON_RUNTIME_REQUIREMENTS.lock PYTHON_RUNTIME_SUPPLY.json
+    PYTHON_RUNTIME_WHEELS.tar.gz
   )
   if [[ "$RELEASE_A_EVIDENCE_PRESENT" == "1" ]]; then
     checksum_files+=("${RELEASE_A_EVIDENCE_FILES[@]}")

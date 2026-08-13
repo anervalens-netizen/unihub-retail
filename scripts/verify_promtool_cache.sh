@@ -1,6 +1,21 @@
-#!/usr/bin/env bash
+#!/usr/bin/bash -p
 
 set -Eeuo pipefail
+
+unset \
+  PYTHONHOME PYTHONPATH PYTHONSTARTUP PYTHONINSPECT \
+  MYPYPATH MYPY_CONFIG_FILE \
+  NODE_OPTIONS NODE_PATH \
+  BASH_ENV ENV CDPATH GLOBIGNORE || true
+export PYTHONNOUSERSITE=1 PYTHONSAFEPATH=1
+
+PYTHON="/usr/bin/python3.12"
+PYTHON_SHA256="1643dacd9feaedc58f3cc581e4d22577dfe25c09b10282936186ccf0f2e61118"
+[[ -x "$PYTHON" \
+  && "$(sha256sum "$PYTHON" | awk '{print $1}')" == "$PYTHON_SHA256" ]] || {
+  printf 'Pinned Python runtime unavailable.\n' >&2
+  exit 1
+}
 
 usage() {
   printf '%s\n' \
@@ -11,7 +26,7 @@ usage() {
 write_evidence() {
   local path="$1" version="$2" source="$3" downloads="$4" archive_sha="$5" binary_sha="$6"
   mkdir -p "$(dirname "$path")"
-  python3 - "$path" "$version" "$source" "$downloads" "$archive_sha" "$binary_sha" <<'PY'
+  "$PYTHON" -I -S - "$path" "$version" "$source" "$downloads" "$archive_sha" "$binary_sha" <<'PY'
 import json
 from pathlib import Path
 import sys
@@ -71,7 +86,6 @@ prepare() {
   else
     source="cache"
   fi
-  flock -u 9
   local extract_dir
   extract_dir="$(mktemp -d)"
   trap 'rm -rf -- "$extract_dir"' RETURN
@@ -84,6 +98,10 @@ prepare() {
   local binary_sha
   binary_sha="$(sha256sum "$destination" | awk '{print $1}')"
   write_evidence "$evidence" "$version" "$source" "$download_count" "$archive_sha" "$binary_sha"
+  # Keep the per-version lock across verification, extraction, install
+  # and evidence creation. A concurrent cache writer therefore cannot replace
+  # the archive between the checksum check and the installed binary.
+  flock -u 9
 }
 
 self_test() {
@@ -118,7 +136,7 @@ self_test() {
     "$0" prepare --version "$version" --sha256 "$digest" \
       --cache-dir "$test_root/cache" --destination "$test_root/bin/promtool" \
       --evidence "$warm_json"
-  python3 - "$cold_json" "$warm_json" "$evidence" <<'PY'
+  "$PYTHON" -I -S - "$cold_json" "$warm_json" "$evidence" <<'PY'
 import json
 from pathlib import Path
 import sys

@@ -3,10 +3,150 @@
 from __future__ import annotations
 
 import argparse
+import base64
+import hashlib
+import importlib.metadata
 import json
+import re
 import uuid
 from pathlib import Path
 from typing import Any
+
+
+PYTHON_RUNTIME_TREE_PROPERTY = (
+    "unihub:python-runtime:site-packages-tree-sha256:v1"
+)
+
+
+def _stable_runtime_file_bytes(path: Path) -> bytes:
+    payload = path.read_bytes()
+    if path.name != "RECORD":
+        return payload
+    lines: list[str] = []
+    for line in payload.decode("utf-8").splitlines():
+        fields = line.split(",")
+        if fields[0].startswith("../../../bin/"):
+            continue
+        lines.append(",".join(fields))
+    return ("\n".join(lines) + "\n").encode()
+
+
+def bind_python_runtime_tree(path: Path, runtime_venv: Path) -> str:
+    site_packages = runtime_venv / "lib/python3.12/site-packages"
+    if (
+        not runtime_venv.is_dir()
+        or runtime_venv.is_symlink()
+        or not site_packages.is_dir()
+        or site_packages.is_symlink()
+    ):
+        raise ValueError("runtime venv/site-packages is absent or unsafe")
+    canonical = lambda value: re.sub(r"[-_.]+", "-", value).lower()
+    distributions = {
+        canonical(dist.metadata["Name"]): dist
+        for dist in importlib.metadata.distributions(path=[str(site_packages)])
+        if dist.metadata.get("Name")
+    }
+    if not distributions:
+        raise ValueError("runtime venv distribution inventory is empty")
+    claimed: set[Path] = set()
+    record_failures: list[str] = []
+    for name, dist in sorted(distributions.items()):
+        for file in dist.files or ():
+            target = Path(dist.locate_file(file))
+            try:
+                resolved = target.resolve()
+                if not resolved.is_relative_to(site_packages.resolve()):
+                    continue
+            except (OSError, ValueError):
+                record_failures.append(f"{name}:{file}:unsafe_path")
+                continue
+            claimed.add(resolved)
+            if not target.is_file() or target.is_symlink():
+                record_failures.append(f"{name}:{file}:missing_or_unsafe")
+                continue
+            if file.hash is None:
+                file_path = Path(str(file))
+                if file_path.name != "RECORD" and file_path.suffix != ".pyc":
+                    record_failures.append(f"{name}:{file}:unhashed")
+                continue
+            if file.hash.mode != "sha256":
+                record_failures.append(f"{name}:{file}:unsupported_hash")
+                continue
+            actual = base64.urlsafe_b64encode(
+                hashlib.sha256(target.read_bytes()).digest()
+            ).decode().rstrip("=")
+            if actual != file.hash.value:
+                record_failures.append(f"{name}:{file}:hash_mismatch")
+    pyc_files = [item for item in site_packages.rglob("*.pyc") if item.is_file()]
+    symlinks = [item for item in site_packages.rglob("*") if item.is_symlink()]
+    unowned = [
+        item
+        for item in site_packages.rglob("*")
+        if item.is_file()
+        and not item.is_symlink()
+        and item.suffix != ".pyc"
+        and item.resolve() not in claimed
+    ]
+    if record_failures or pyc_files or symlinks or unowned:
+        raise ValueError(
+            "runtime venv RECORD/tree is unsafe: "
+            f"record={record_failures[:5]}, pyc={len(pyc_files)}, "
+            f"symlinks={len(symlinks)}, unowned={len(unowned)}"
+        )
+    entries = [
+        [
+            str(item.relative_to(site_packages)),
+            hashlib.sha256(_stable_runtime_file_bytes(item)).hexdigest(),
+        ]
+        for item in sorted(site_packages.rglob("*"))
+        if item.is_file() and not item.is_symlink() and item.suffix != ".pyc"
+    ]
+    digest = hashlib.sha256(
+        json.dumps(entries, separators=(",", ":")).encode()
+    ).hexdigest()
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    metadata = payload.setdefault("metadata", {})
+    if not isinstance(metadata, dict):
+        raise ValueError("Python SBOM metadata is invalid")
+    properties = metadata.setdefault("properties", [])
+    if not isinstance(properties, list) or any(
+        isinstance(item, dict) and item.get("name") == PYTHON_RUNTIME_TREE_PROPERTY
+        for item in properties
+    ):
+        raise ValueError("Python runtime tree property is invalid or duplicated")
+    properties.append({"name": PYTHON_RUNTIME_TREE_PROPERTY, "value": digest})
+    properties.sort(key=lambda item: str(item.get("name", "")))
+    path.write_text(
+        json.dumps(payload, sort_keys=True, separators=(",", ":")) + "\n",
+        encoding="utf-8",
+    )
+    return digest
+
+
+def clean_python_runtime_cache(runtime_venv: Path) -> int:
+    site_packages = runtime_venv / "lib/python3.12/site-packages"
+    if not site_packages.is_dir() or site_packages.is_symlink():
+        raise ValueError("runtime site-packages is absent or unsafe")
+    removed = 0
+    cache_directories: list[Path] = []
+    for item in sorted(site_packages.rglob("*"), reverse=True):
+        if item.is_symlink():
+            continue
+        if item.is_file() and item.suffix == ".pyc":
+            item.unlink()
+            removed += 1
+        elif item.is_dir() and item.name == "__pycache__":
+            cache_directories.append(item)
+    for directory in sorted(
+        cache_directories, key=lambda item: len(item.parts), reverse=True
+    ):
+        try:
+            directory.rmdir()
+        except OSError:
+            pass
+    if any(item.is_file() for item in site_packages.rglob("*.pyc")):
+        raise ValueError("runtime bytecode cleanup is incomplete")
+    return removed
 
 
 def validate(path: Path, ecosystem: str) -> dict[str, Any]:
@@ -121,7 +261,17 @@ def main() -> None:
     parser.add_argument("ecosystem", choices=("npm", "pypi", "aggregate"))
     parser.add_argument("path", type=Path)
     parser.add_argument("--expected-sha")
+    parser.add_argument("--runtime-venv", type=Path)
+    parser.add_argument("--clean-runtime-pyc", action="store_true")
     args = parser.parse_args()
+    if args.runtime_venv is not None:
+        if args.ecosystem != "pypi":
+            parser.error("--runtime-venv is valid only for the pypi SBOM")
+        if args.clean_runtime_pyc:
+            clean_python_runtime_cache(args.runtime_venv)
+        bind_python_runtime_tree(args.path, args.runtime_venv)
+    elif args.clean_runtime_pyc:
+        parser.error("--clean-runtime-pyc requires --runtime-venv")
     payload = (
         validate_aggregate(args.path, args.expected_sha)
         if args.ecosystem == "aggregate"

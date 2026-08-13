@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/usr/bin/bash -p
 
 set -Eeuo pipefail
 GATE_STARTED_EPOCH_NS="$(date +%s%N)"
@@ -57,6 +57,7 @@ JUNIT_EMPTY_PATH="$EVIDENCE_DIR/release-a-schema-empty.xml"
 JUNIT_RESTORED_PATH="$EVIDENCE_DIR/release-a-schema-restored.xml"
 CANDIDATE_EVIDENCE_PATH="$EVIDENCE_DIR/release-a-candidate.json"
 EXPECTED_EVIDENCE_PATH="$ROOT_DIR/test-results/closure/$CURRENT_SHA/release-a/schema-gate.json"
+EVIDENCE_RELATIVE_PATH="test-results/closure/$CURRENT_SHA/release-a/schema-gate.json"
 [[ "$EVIDENCE_PATH" == "$EXPECTED_EVIDENCE_PATH" ]] || {
   printf 'Release-A evidence path must be exact-SHA canonical path.\n' >&2
   exit 1
@@ -87,7 +88,7 @@ mkdir -p "$EVIDENCE_DIR" "$TEMP_DIR/baseline"
   exit 1
 }
 git -C "$ROOT_DIR" archive "$BASELINE_SHA" | tar -x -C "$TEMP_DIR/baseline"
-"$PYTHON" "$ROOT_DIR/scripts/check_release_a_candidate.py" \
+"$PYTHON_BASE" -I -S "$ROOT_DIR/scripts/check_release_a_candidate.py" \
   --evidence "$CANDIDATE_EVIDENCE_PATH"
 
 PASSWORD="$(openssl rand -hex 24)"
@@ -289,7 +290,7 @@ export DATABASE_URL="$RESTORED_DATABASE_URL"
 "$PYTHON" -m pytest tests/test_release_a_schema_069.py -q --junitxml="$JUNIT_RESTORED_PATH"
 cd "$ROOT_DIR"
 
-export CURRENT_SHA BASELINE_SHA PRE069_DUMP_SHA256 EVIDENCE_PATH ROOT_DIR
+export CURRENT_SHA BASELINE_SHA PRE069_DUMP_SHA256 EVIDENCE_PATH EVIDENCE_RELATIVE_PATH ROOT_DIR
 export JUNIT_EMPTY_PATH JUNIT_RESTORED_PATH
 export BASELINE_DATABASE_URL EMPTY_DATABASE_URL RESTORED_DATABASE_URL
 export BASELINE_068_STATE_JSON EMPTY_INITIAL_STATE_JSON EMPTY_FINAL_STATE_JSON
@@ -476,7 +477,7 @@ evidence = {
     "command": [
         "scripts/run_release_a_schema_gate.sh",
         "--evidence",
-        os.environ["EVIDENCE_PATH"],
+        os.environ["EVIDENCE_RELATIVE_PATH"],
     ],
     "duration_seconds": round(
         (time.time_ns() - int(os.environ["GATE_STARTED_EPOCH_NS"])) / 1_000_000_000,

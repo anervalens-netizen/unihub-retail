@@ -1,8 +1,13 @@
-#!/usr/bin/env bash
+#!/usr/bin/bash -p
 set -Eeuo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PYTHON="${ROOT_DIR}/backend/venv/bin/python"
+PYTHON_BASE="/usr/bin/python3.12"
+PYTHON_BASE_SHA256="1643dacd9feaedc58f3cc581e4d22577dfe25c09b10282936186ccf0f2e61118"
+NODE="/opt/codex-desktop/resources/node-runtime/bin/node"
+NODE_SHA256="81925c0995b5c1427b5d538e6a90ca2fdc4daffb786b09af749beaf7369d4e90"
+PLAYWRIGHT_CLI="${ROOT_DIR}/node_modules/@playwright/test/cli.js"
 STAMP="${GITHUB_RUN_ID:-local}-$$"
 PG_CONTAINER="unihub-retail-real-e2e-pg-${STAMP}"
 VALKEY_CONTAINER="unihub-retail-real-e2e-valkey-${STAMP}"
@@ -15,6 +20,13 @@ WORKER_PID=""
 EXPORT_WORKER_PID=""
 RESTORE_BACKEND_PID=""
 
+export PYTHONNOUSERSITE=1 PYTHONSAFEPATH=1
+unset \
+  PYTHONHOME PYTHONPATH PYTHONSTARTUP PYTHONINSPECT \
+  MYPYPATH MYPY_CONFIG_FILE \
+  NODE_OPTIONS NODE_PATH \
+  BASH_ENV ENV CDPATH GLOBIGNORE
+
 cleanup() {
   for pid in "${EXPORT_WORKER_PID}" "${RESTORE_BACKEND_PID}" "${WORKER_PID}" "${BACKEND_PID}" "${OIDC_PID}"; do
     if [[ -n "${pid}" ]]; then kill "${pid}" >/dev/null 2>&1 || true; fi
@@ -25,10 +37,21 @@ cleanup() {
 }
 trap cleanup EXIT
 
-if [[ ! -x "${PYTHON}" ]]; then
-  printf 'Missing backend virtualenv.\n' >&2
+if [[ ! -x "${PYTHON}" || "$(readlink -f "${PYTHON}")" != "${PYTHON_BASE}" \
+  || "$(sha256sum "${PYTHON_BASE}" | awk '{print $1}')" != "${PYTHON_BASE_SHA256}" ]]; then
+  printf 'Pinned backend Python is unavailable.\n' >&2
   exit 1
 fi
+if [[ ! -x "${NODE}" || ! -f "${PLAYWRIGHT_CLI}" \
+  || "$(sha256sum "${NODE}" | awk '{print $1}')" != "${NODE_SHA256}" ]]; then
+  printf 'Pinned Node.js/Playwright authority is unavailable.\n' >&2
+  exit 1
+fi
+BACKEND_PYTHON=(
+  "${PYTHON}" -I -c
+  'import runpy,sys; backend=sys.argv.pop(1); script=sys.argv.pop(1); sys.path.insert(0,backend); sys.argv[0]=script; runpy.run_path(script,run_name="__main__")'
+  "${ROOT_DIR}/backend"
+)
 mkdir -p "${ROOT_DIR}/test-results/real-e2e-runtime"
 
 docker image inspect "${POSTGRES_IMAGE}" "${VALKEY_IMAGE}" >/dev/null \
@@ -50,8 +73,8 @@ for _ in $(seq 1 60); do
 done
 pg_port="$(docker inspect --format '{{(index (index .NetworkSettings.Ports "5432/tcp") 0).HostPort}}' "${PG_CONTAINER}")"
 valkey_port="$(docker inspect --format '{{(index (index .NetworkSettings.Ports "6379/tcp") 0).HostPort}}' "${VALKEY_CONTAINER}")"
-backend_port="$(${PYTHON} -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()')"
-oidc_port="$(${PYTHON} -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()')"
+backend_port="$(${PYTHON} -I -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()')"
+oidc_port="$(${PYTHON} -I -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()')"
 
 export DATABASE_URL="postgresql://unihub_test:${password}@127.0.0.1:${pg_port}/unihub_test"
 export UNIHUB_RUNNING_TESTS=1 UNIHUB_TEST_DATABASE=1 UNIHUB_ENV=development
@@ -81,7 +104,7 @@ export SENTRY_DSN=""
 export VITE_FRONTEND_GLITCHTIP_DSN=""
 
 cd "${ROOT_DIR}/backend"
-"${PYTHON}" scripts/bootstrap_test_db.py
+"${BACKEND_PYTHON[@]}" "${ROOT_DIR}/backend/scripts/bootstrap_test_db.py"
 docker exec -i "${PG_CONTAINER}" psql -U unihub_test -d unihub_test \
   -v ON_ERROR_STOP=1 >/dev/null <<'SQL'
 CREATE TABLE fieldops_visits (
@@ -151,10 +174,12 @@ SET status = 'completed', promoted_at = now(), lease_until = NULL
 WHERE filename = 'restore-drill.xlsx';
 SQL
 
-"${PYTHON}" -m uvicorn scripts.oidc_e2e_stub:app --host 127.0.0.1 --port "${oidc_port}" \
+"${PYTHON}" -I -m uvicorn scripts.oidc_e2e_stub:app \
+  --app-dir "${ROOT_DIR}/backend" --host 127.0.0.1 --port "${oidc_port}" \
   >"${ROOT_DIR}/test-results/real-e2e-runtime/oidc.log" 2>&1 &
 OIDC_PID=$!
-"${PYTHON}" -m uvicorn main:app --host 127.0.0.1 --port "${backend_port}" \
+"${PYTHON}" -I -m uvicorn main:app --app-dir "${ROOT_DIR}/backend" \
+  --host 127.0.0.1 --port "${backend_port}" \
   >"${ROOT_DIR}/test-results/real-e2e-runtime/backend.log" 2>&1 &
 BACKEND_PID=$!
 for _ in $(seq 1 60); do
@@ -166,10 +191,10 @@ curl -fsS "${OIDC_STUB_ORIGIN}/jwks" >/dev/null
 curl -fsS "${REAL_E2E_BASE_URL}/readyz" >/dev/null
 
 cd "${ROOT_DIR}"
-node_modules/.bin/playwright test --config=playwright.real.config.ts
+"${NODE}" "${PLAYWRIGHT_CLI}" test --config=playwright.real.config.ts
 
 export EXPORT_ARTIFACT_DIR="${RUNTIME_DIR}/export-artifacts"
-RETAIL_WORKER_ROLE=exports "${PYTHON}" backend/worker.py \
+RETAIL_WORKER_ROLE=exports "${BACKEND_PYTHON[@]}" "${ROOT_DIR}/backend/worker.py" \
   >test-results/real-e2e-runtime/export-worker.log 2>&1 &
 EXPORT_WORKER_PID=$!
 sleep 3
@@ -178,7 +203,7 @@ if ! kill -0 "${EXPORT_WORKER_PID}" 2>/dev/null; then
   cat test-results/real-e2e-runtime/export-worker.log >&2
   exit 1
 fi
-"${PYTHON}" backend/scripts/run_mixed_load_gate.py \
+"${BACKEND_PYTHON[@]}" "${ROOT_DIR}/backend/scripts/run_mixed_load_gate.py" \
   --base-url "${REAL_E2E_BASE_URL}" --token-url "${OIDC_STUB_ORIGIN}/test-token/admin" \
   --output test-results/real-e2e-load-gate.json
 kill "${EXPORT_WORKER_PID}"
@@ -212,10 +237,10 @@ business_state unihub_test "$source_state"
 business_state unihub_restore_test "$restored_state"
 cmp "$source_state" "$restored_state" || { printf 'Restore business hashes differ.\n' >&2; exit 1; }
 
-restore_backend_port="$(${PYTHON} -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()')"
+restore_backend_port="$(${PYTHON} -I -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()')"
 restore_database_url="postgresql://unihub_test:${password}@127.0.0.1:${pg_port}/unihub_restore_test"
 DATABASE_URL="$restore_database_url" SESSION_PUBLIC_ORIGIN="http://127.0.0.1:${restore_backend_port}" \
-  "${PYTHON}" -m uvicorn main:app --app-dir "${ROOT_DIR}/backend" \
+  "${PYTHON}" -I -m uvicorn main:app --app-dir "${ROOT_DIR}/backend" \
   --host 127.0.0.1 --port "$restore_backend_port" \
   >test-results/real-e2e-runtime/restore-backend.log 2>&1 &
 RESTORE_BACKEND_PID=$!
@@ -228,7 +253,7 @@ kill "$RESTORE_BACKEND_PID"
 wait "$RESTORE_BACKEND_PID" || true
 RESTORE_BACKEND_PID=""
 
-"${PYTHON}" - "$source_state" test-results/real-e2e-restore-drill.json <<'PY'
+"${PYTHON}" -I - "$source_state" test-results/real-e2e-restore-drill.json <<'PY'
 from hashlib import sha256
 import json
 from pathlib import Path
@@ -272,13 +297,15 @@ wait_for_worker_health() {
 }
 
 docker exec "${VALKEY_CONTAINER}" valkey-cli del "${worker_health_key}" >/dev/null
-"${PYTHON}" backend/worker.py >test-results/real-e2e-runtime/worker-first.log 2>&1 &
+"${BACKEND_PYTHON[@]}" "${ROOT_DIR}/backend/worker.py" \
+  >test-results/real-e2e-runtime/worker-first.log 2>&1 &
 WORKER_PID=$!
 wait_for_worker_health "${WORKER_PID}" test-results/real-e2e-runtime/worker-first.log
 kill "${WORKER_PID}"
 wait "${WORKER_PID}" || true
 docker exec "${VALKEY_CONTAINER}" valkey-cli del "${worker_health_key}" >/dev/null
-"${PYTHON}" backend/worker.py >test-results/real-e2e-runtime/worker-restarted.log 2>&1 &
+"${BACKEND_PYTHON[@]}" "${ROOT_DIR}/backend/worker.py" \
+  >test-results/real-e2e-runtime/worker-restarted.log 2>&1 &
 WORKER_PID=$!
 wait_for_worker_health "${WORKER_PID}" test-results/real-e2e-runtime/worker-restarted.log
 kill "${WORKER_PID}"
@@ -291,7 +318,7 @@ fi
 printf '{"status":"passed","role":"operations","restart_count":1}\n' \
   >test-results/real-e2e-worker-recovery.json
 
-PYTHONPATH="${ROOT_DIR}/backend" "${PYTHON}" backend/scripts/run_import_overlap_gate.py \
+"${BACKEND_PYTHON[@]}" "${ROOT_DIR}/backend/scripts/run_import_overlap_gate.py" \
   test-results/real-e2e-import-overlap.json
 if ! rg -q 'ImportAlreadyRunningError: Exista deja un import in curs pentru luna 2099-11' \
   test-results/real-e2e-runtime/import-overlap-worker-*.log; then

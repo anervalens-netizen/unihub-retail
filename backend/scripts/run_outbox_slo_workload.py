@@ -19,9 +19,18 @@ import json
 import math
 import os
 from pathlib import Path
+import sys
 import time
 from typing import Any, Awaitable, Callable
 from urllib.parse import urlparse
+
+
+# The authority is launched with ``python -I``. Add only the intended backend
+# package root after isolated startup so PYTHONPATH/sitecustomize cannot replace
+# the frozen workload before its own checks run.
+BACKEND_ROOT = Path(__file__).resolve().parents[1]
+if str(BACKEND_ROOT) not in sys.path:
+    sys.path.insert(0, str(BACKEND_ROOT))
 
 import asyncpg
 from redis.asyncio import Redis
@@ -363,9 +372,34 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
         args.dsn, min_size=4, max_size=16, command_timeout=30
     )
     valkey = Redis.from_url(args.valkey_url, decode_responses=True)
-    valkey_info = await valkey.info(section="server")
-    if not valkey_info.get("redis_version"):
-        raise RuntimeError("isolated Valkey did not identify its server version")
+    try:
+        valkey_info = await valkey.info(section="server")
+        if not valkey_info.get("redis_version"):
+            raise RuntimeError("isolated Valkey did not identify its server version")
+        return await run_workload(
+            args,
+            pool=pool,
+            valkey=valkey,
+            valkey_info=valkey_info,
+            api=api,
+            db_identity=db_identity,
+            valkey_identity=valkey_identity,
+        )
+    finally:
+        await valkey.aclose()
+        await pool.close()
+
+
+async def run_workload(
+    args: argparse.Namespace,
+    *,
+    pool: asyncpg.Pool,
+    valkey: Redis,
+    valkey_info: dict[str, Any],
+    api: ProductionApi,
+    db_identity: dict[str, Any],
+    valkey_identity: dict[str, Any],
+) -> dict[str, Any]:
 
     handler_limit = asyncio.Semaphore(args.handlers)
     stop = asyncio.Event()
@@ -485,6 +519,30 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
         asyncio.create_task(claimer(index), name=f"outbox-slo-claimer-{index}")
         for index in range(args.claimers)
     ]
+    sampler: asyncio.Task[None] | None = None
+
+    def ensure_claimers_healthy() -> None:
+        for task in claim_tasks:
+            if not task.done():
+                continue
+            if task.cancelled():
+                raise RuntimeError(f"outbox claimer stopped early: {task.get_name()}")
+            error = task.exception()
+            if error is not None:
+                raise RuntimeError(
+                    f"outbox claimer failed early: {task.get_name()}"
+                ) from error
+            if not stop.is_set():
+                raise RuntimeError(
+                    f"outbox claimer exited before workload completion: {task.get_name()}"
+                )
+        if sampler is not None and sampler.done() and not feed_done.is_set():
+            if sampler.cancelled():
+                raise RuntimeError("outbox sampler stopped during the measured feed")
+            error = sampler.exception()
+            if error is not None:
+                raise RuntimeError("outbox sampler failed during the measured feed") from error
+            raise RuntimeError("outbox sampler exited before the measured feed completed")
 
     async def feed(specs: list[EventSpec], *, paced: bool) -> None:
         nonlocal first_measured
@@ -493,11 +551,13 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
             first_measured = started
         async with pool.acquire() as connection:
             for index, spec in enumerate(specs):
+                ensure_claimers_healthy()
                 if paced:
                     due = started + index / args.rate
                     delay = due - time.monotonic()
                     if delay > 0:
                         await asyncio.sleep(delay)
+                    ensure_claimers_healthy()
 
                 def register(event_id: str, item: EventSpec = spec) -> None:
                     if paced:
@@ -513,6 +573,7 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
     async def wait_for_warmup(timeout: float = 60.0) -> None:
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
+            ensure_claimers_healthy()
             async with pool.acquire() as connection:
                 completed = await connection.fetchval(
                     "SELECT count(*) FROM retail_outbox_events WHERE state='completed'"
@@ -526,6 +587,7 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
         last_ratio_sample = -5.0
         drain_deadline: float | None = None
         while True:
+            ensure_claimers_healthy()
             async with pool.acquire() as connection:
                 row = await connection.fetchrow(
                     """SELECT
@@ -559,7 +621,12 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
             if attempts >= 200 and elapsed - last_ratio_sample >= 5:
                 ratio = failures / attempts
                 ratio_samples.append(
-                    {"elapsed_seconds": elapsed, "attempts": attempts, "ratio": ratio}
+                    {
+                        "elapsed_seconds": elapsed,
+                        "attempts": attempts,
+                        "failures": failures,
+                        "ratio": ratio,
+                    }
                 )
                 if ratio >= 0.01:
                     raise RuntimeError(f"failure ratio reached {ratio:.6f}")
@@ -581,13 +648,19 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
         sampler = asyncio.create_task(sample_until_done(), name="outbox-slo-sampler")
         try:
             await feed(event_specs(args.events, measured=True), paced=True)
-        finally:
             feed_done.set()
-        await sampler
+            await sampler
+        except BaseException:
+            feed_done.set()
+            if not sampler.done():
+                sampler.cancel()
+            await asyncio.gather(sampler, return_exceptions=True)
+            raise
     finally:
         stop.set()
-        await asyncio.gather(*claim_tasks, return_exceptions=False)
-        await valkey.aclose()
+        # Do not let a secondary cleanup exception mask the primary workload
+        # failure; the wrapper still receives a non-zero exit immediately.
+        await asyncio.gather(*claim_tasks, return_exceptions=True)
 
     async with pool.acquire() as connection:
         terminal = dict(
@@ -610,8 +683,6 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
                    GROUP BY event_type ORDER BY event_type"""
             )
         }
-    await pool.close()
-
     latencies = list(latencies_by_event.values())
     p95 = nearest_rank(latencies, 0.95)
     oldest = max(sample["oldest_pending_seconds"] for sample in pending_age_samples)
@@ -637,7 +708,7 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
         and effects.sales_transport_calls == 2_000
         and set(receipt_counts.values()) == {2_000}
     )
-    return {
+    payload = {
         "schema_version": 2,
         "authority": "backend/scripts/run_outbox_slo_workload.py",
         "seed": args.seed,
@@ -698,6 +769,7 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
         "salary_export_executed": False,
         "result": "PASS" if passed else "FAIL",
     }
+    return payload
 
 
 def self_test() -> None:
