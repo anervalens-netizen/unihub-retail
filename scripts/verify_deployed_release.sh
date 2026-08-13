@@ -57,8 +57,14 @@ BACKUP_STATUS="/opt/Mobiup/ops/backups/manifests/last-run.env"
 MIGRATION_ENV="$LIVE_ROOT/.env.migrations"
 GITHUB_REPOSITORY="anervalens-netizen/unihub-retail"
 GITHUB_ORIGIN_URL="https://github.com/anervalens-netizen/unihub-retail.git"
-TASK_A_BRANCH="codex/retail-definitive-closure-20260812"
+TASK_A_BRANCH="codex/retail-definitive-closure-rev27"
 TASK_B_BRANCH="codex/retail-definitive-closure-b-20260813"
+RELEASE_A_PR_NUMBER="152"
+RELEASE_A_PREDECESSOR_PR_NUMBER="151"
+RELEASE_A_PREDECESSOR_BRANCH="codex/retail-definitive-closure-20260812"
+RELEASE_A_PREDECESSOR_HEAD_SHA="95154037c78c4bb11e0892327315507e16e603f3"
+RELEASE_A_PREDECESSOR_MERGE_SHA="ad83c7a850f637d475907e80c8e06c62fdfeba66"
+RELEASE_A_PREDECESSOR_BASE_SHA="0be82b430e55b7414babf470abe3fc5404b6cdc9"
 EXPECTED_UNITS=(
   unihub-backend.service
   unihub-worker.service
@@ -81,7 +87,7 @@ usage() {
     "  --release-a-evidence FILE --release-b-archive-sha256 SHA256" \
     "  --backup-handle DIR --probe-month YYYY-MM" \
     "  --manager-cookie-file FILE --forbidden-cookie-file FILE" \
-    "  --release-a-pr 151 --release-b-pr NUMBER" \
+    "  --release-a-pr 152 --release-b-pr NUMBER" \
     "  --observe-seconds 120 --evidence NEW_DIR" \
     "       $PROGRAM --self-test"
 }
@@ -854,8 +860,11 @@ self_test() {
   [[ "$source" != *'--request '"POST"* && "$source" != *'--request '"PUT"* \
     && "$source" != *'--request '"PATCH"* && "$source" != *'--request '"DELETE"* ]] \
     || die "self-test: mutating HTTP method found"
-  [[ "$source" == *'TASK_A_BRANCH="codex/retail-definitive-closure-20260812"'* \
-    && "$source" == *'TASK_B_BRANCH="codex/retail-definitive-closure-b-20260813"'* ]] \
+  [[ "$source" == *'TASK_A_BRANCH="codex/retail-definitive-closure-rev27"'* \
+    && "$source" == *'TASK_B_BRANCH="codex/retail-definitive-closure-b-20260813"'* \
+    && "$source" == *'RELEASE_A_PR_NUMBER="152"'* \
+    && "$source" == *'RELEASE_A_PREDECESSOR_PR_NUMBER="151"'* \
+    && "$source" == *'RELEASE_A_PREDECESSOR_MERGE_SHA="ad83c7a850f637d475907e80c8e06c62fdfeba66"'* ]] \
     || die "self-test: exact task branches are not frozen"
   [[ "$source" == *'Grile V2 · pilot'* \
     && "$source" == *'Statistici Salarii'* \
@@ -1138,7 +1147,7 @@ PY
       --release-b-archive-sha256 cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc \
       --backup-handle "$tmp/missing-backup" --probe-month 2026-08 \
       --manager-cookie-file "$fake_pass" --forbidden-cookie-file "$fake_pass" \
-      --release-a-pr 151 --release-b-pr 152 \
+      --release-a-pr 152 --release-b-pr 153 \
       --observe-seconds 120 --evidence "$tmp/new-evidence" >/dev/null 2>&1; then
     die "self-test: a manual PASS file was accepted as an artifact"
   fi
@@ -1151,7 +1160,7 @@ PY
       --release-b-archive-sha256 cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc \
       --backup-handle "$tmp/backup" --probe-month 2026-08 \
       --manager-cookie-file "$fake_pass" --forbidden-cookie-file "$fake_pass" \
-      --release-a-pr 151 --release-b-pr 152 \
+      --release-a-pr 152 --release-b-pr 153 \
       --observe-seconds 120 --evidence "$tmp/stale-evidence" >/dev/null 2>&1; then
     die "self-test: stale evidence was accepted"
   fi
@@ -1181,7 +1190,8 @@ is_sha "$MAIN_B_SHA" || die "--main-b-sha must be 40 lowercase hex"
 [[ "$MAIN_A_SHA" != "$MAIN_B_SHA" ]] || die "Release A and B SHA must differ"
 is_sha256 "$B_ARCHIVE_SHA256" || die "Release-B archive digest must be 64 lowercase hex"
 [[ "$PROBE_MONTH" =~ ^20[0-9]{2}-(0[1-9]|1[0-2])$ ]] || die "probe month must be YYYY-MM"
-[[ "$RELEASE_A_PR" == "151" ]] || die "Release-A PR must be exact task PR 151"
+[[ "$RELEASE_A_PR" == "$RELEASE_A_PR_NUMBER" ]] \
+  || die "Release-A PR must be exact task PR $RELEASE_A_PR_NUMBER"
 [[ "$RELEASE_B_PR" =~ ^[1-9][0-9]*$ && "$RELEASE_B_PR" != "$RELEASE_A_PR" ]] \
   || die "Release-B PR must be a distinct positive number"
 [[ "$OBSERVE_SECONDS" == "120" ]] || die "AC-17 observation must be exactly 120 seconds"
@@ -2390,7 +2400,9 @@ import hashlib,json,pathlib,subprocess,sys
 root,sha,canonical_origin,out=sys.argv[1:]
 blocked_branches={
  "codex/retail-definitive-closure-20260812",
+ "codex/retail-definitive-closure-rev27",
  "codex/retail-definitive-closure-b-20260813",
+ "codex/retail-definitive-closure-b-projected-rev27",
  "codex/retail-close-authority","codex/retail-close-contracts",
  "codex/retail-close-correctness","codex/retail-close-frontend",
  "codex/retail-close-outbox-contract","codex/retail-close-preview-v3",
@@ -2398,12 +2410,14 @@ blocked_branches={
  "codex/retail-close-structural",
 }
 blocked_worktrees={
+ "/opt/Mobiup/.worktrees/retail-close-a-rev27",
  "/opt/Mobiup/.worktrees/retail-close-authority",
  "/opt/Mobiup/.worktrees/retail-close-contracts",
  "/opt/Mobiup/.worktrees/retail-close-correctness",
  "/opt/Mobiup/.worktrees/retail-close-frontend",
  "/opt/Mobiup/.worktrees/retail-close-outbox-contract",
  "/opt/Mobiup/.worktrees/retail-close-preview",
+ "/opt/Mobiup/.worktrees/retail-close-b-projected-rev27",
  "/opt/Mobiup/.worktrees/retail-close-scale",
  "/opt/Mobiup/.worktrees/retail-close-structural",
 }
@@ -2427,7 +2441,9 @@ import hashlib,json,pathlib,socket,subprocess,sys
 sha,canonical_origin=sys.argv[1:]; root="/opt/Mobiup/unihub-retail"
 blocked_branches={
  "codex/retail-definitive-closure-20260812",
+ "codex/retail-definitive-closure-rev27",
  "codex/retail-definitive-closure-b-20260813",
+ "codex/retail-definitive-closure-b-projected-rev27",
  "codex/retail-close-authority","codex/retail-close-contracts",
  "codex/retail-close-correctness","codex/retail-close-frontend",
  "codex/retail-close-outbox-contract","codex/retail-close-preview-v3",
@@ -2435,12 +2451,14 @@ blocked_branches={
  "codex/retail-close-structural",
 }
 blocked_worktrees={
+ "/opt/Mobiup/.worktrees/retail-close-a-rev27",
  "/opt/Mobiup/.worktrees/retail-close-authority",
  "/opt/Mobiup/.worktrees/retail-close-contracts",
  "/opt/Mobiup/.worktrees/retail-close-correctness",
  "/opt/Mobiup/.worktrees/retail-close-frontend",
  "/opt/Mobiup/.worktrees/retail-close-outbox-contract",
  "/opt/Mobiup/.worktrees/retail-close-preview",
+ "/opt/Mobiup/.worktrees/retail-close-b-projected-rev27",
  "/opt/Mobiup/.worktrees/retail-close-scale",
  "/opt/Mobiup/.worktrees/retail-close-structural",
 }
@@ -2458,33 +2476,47 @@ print(json.dumps({"schema_version":1,"result":"PASS","host":"dell-standby","head
 PY
 
 sudo -u andrei /usr/bin/env GH_HOST=github.com GH_PAGER=cat NO_COLOR=1 GH_PROMPT_DISABLED=1 \
+  "$GH_BIN" pr view "$RELEASE_A_PREDECESSOR_PR_NUMBER" --repo "$GITHUB_REPOSITORY" \
+  --json number,state,isDraft,headRefName,headRefOid,baseRefName,mergeCommit,url \
+  | tee "$WORK/raw/pr-a-predecessor.json" >/dev/null
+sudo -u andrei /usr/bin/env GH_HOST=github.com GH_PAGER=cat NO_COLOR=1 GH_PROMPT_DISABLED=1 \
   "$GH_BIN" pr view "$RELEASE_A_PR" --repo "$GITHUB_REPOSITORY" \
-  --json number,state,isDraft,headRefName,baseRefName,mergeCommit,url \
+  --json number,state,isDraft,headRefName,headRefOid,baseRefName,mergeCommit,url \
   | tee "$WORK/raw/pr-a.json" >/dev/null
 sudo -u andrei /usr/bin/env GH_HOST=github.com GH_PAGER=cat NO_COLOR=1 GH_PROMPT_DISABLED=1 \
   "$GH_BIN" pr view "$RELEASE_B_PR" --repo "$GITHUB_REPOSITORY" \
-  --json number,state,isDraft,headRefName,baseRefName,mergeCommit,url \
+  --json number,state,isDraft,headRefName,headRefOid,baseRefName,mergeCommit,url \
   | tee "$WORK/raw/pr-b.json" >/dev/null
 sudo -u andrei git -C "$LIVE_ROOT" ls-remote --heads origin \
-  refs/heads/main "refs/heads/$TASK_A_BRANCH" "refs/heads/$TASK_B_BRANCH" \
+  refs/heads/main "refs/heads/$RELEASE_A_PREDECESSOR_BRANCH" \
+  "refs/heads/$TASK_A_BRANCH" "refs/heads/$TASK_B_BRANCH" \
   | tee "$WORK/raw/task-remote-heads.txt" >/dev/null
-"$PYTHON_BASE" -I -S - "$WORK/raw/pr-a.json" "$WORK/raw/pr-b.json" \
+"$PYTHON_BASE" -I -S - "$WORK/raw/pr-a-predecessor.json" \
+  "$WORK/raw/pr-a.json" "$WORK/raw/pr-b.json" \
   "$WORK/raw/task-remote-heads.txt" "$MAIN_A_SHA" "$MAIN_B_SHA" \
   "$RELEASE_A_PR" "$RELEASE_B_PR" "$TASK_A_BRANCH" "$TASK_B_BRANCH" \
+  "$RELEASE_A_PREDECESSOR_PR_NUMBER" "$RELEASE_A_PREDECESSOR_BRANCH" \
+  "$RELEASE_A_PREDECESSOR_HEAD_SHA" "$RELEASE_A_PREDECESSOR_MERGE_SHA" \
+  "$RELEASE_A_PREDECESSOR_BASE_SHA" "$LIVE_ROOT" \
   "$WORK/fragments/refs-github.json" <<'PY'
-import hashlib,json,pathlib,sys
-pa,pb,heads,a,b,an,bn,ab,bb,out=sys.argv[1:]
-av=json.loads(pathlib.Path(pa).read_text()); bv=json.loads(pathlib.Path(pb).read_text())
-def valid(value,number,branch,sha):
- return value.get("number")==int(number) and value.get("state")=="MERGED" and value.get("isDraft") is False and value.get("headRefName")==branch and value.get("baseRefName")=="main" and value.get("mergeCommit",{}).get("oid")==sha
+import hashlib,json,pathlib,subprocess,sys
+pp,pa,pb,heads,a,b,an,bn,ab,bb,pn,pbranch,phead,pmerge,pbase,root,out=sys.argv[1:]
+pv=json.loads(pathlib.Path(pp).read_text()); av=json.loads(pathlib.Path(pa).read_text()); bv=json.loads(pathlib.Path(pb).read_text())
+def valid(value,number,branch,head,merge):
+ return value.get("number")==int(number) and value.get("state")=="MERGED" and value.get("isDraft") is False and value.get("headRefName")==branch and value.get("headRefOid")==head and value.get("baseRefName")=="main" and value.get("mergeCommit",{}).get("oid")==merge
+def parents(sha):
+ return subprocess.check_output(["git","-C",root,"show","-s","--format=%P",sha],text=True).strip().split()
 remote=pathlib.Path(heads).read_text()
 remote_lines=remote.splitlines()
 if remote_lines != [f"{b}\trefs/heads/main"]: raise SystemExit("GitHub main/task-ref reconciliation failed")
-if not valid(av,an,ab,a) or not valid(bv,bn,bb,b): raise SystemExit("GitHub PR reconciliation failed")
-payload={"schema_version":1,"result":"PASS","repository":"anervalens-netizen/unihub-retail","remote_main":b,"release_a":{"number":int(an),"branch":ab,"merge_sha":a,"state":"MERGED"},"release_b":{"number":int(bn),"branch":bb,"merge_sha":b,"state":"MERGED"},"task_remote_heads":[],"queries_sha256":hashlib.sha256(pathlib.Path(pa).read_bytes()+pathlib.Path(pb).read_bytes()+pathlib.Path(heads).read_bytes()).hexdigest()}
+if not valid(pv,pn,pbranch,phead,pmerge) or not valid(av,an,ab,av.get("headRefOid"),a) or not valid(bv,bn,bb,bv.get("headRefOid"),b): raise SystemExit("GitHub PR reconciliation failed")
+predecessor_parents=parents(pmerge); release_a_parents=parents(a)
+if predecessor_parents != [pbase,phead] or release_a_parents != [pmerge,av["headRefOid"]]: raise SystemExit("Release-A merge topology reconciliation failed")
+payload={"schema_version":1,"result":"PASS","repository":"anervalens-netizen/unihub-retail","remote_main":b,"release_a_predecessor":{"number":int(pn),"branch":pbranch,"head_sha":phead,"merge_sha":pmerge,"parents":predecessor_parents,"state":"MERGED"},"release_a":{"number":int(an),"branch":ab,"head_sha":av["headRefOid"],"merge_sha":a,"parents":release_a_parents,"state":"MERGED"},"release_b":{"number":int(bn),"branch":bb,"head_sha":bv["headRefOid"],"merge_sha":b,"state":"MERGED"},"task_remote_heads":[],"queries_sha256":hashlib.sha256(pathlib.Path(pp).read_bytes()+pathlib.Path(pa).read_bytes()+pathlib.Path(pb).read_bytes()+pathlib.Path(heads).read_bytes()).hexdigest()}
 pathlib.Path(out).write_text(json.dumps(payload,sort_keys=True,separators=(",",":"))+"\n")
 PY
-rm -f -- "$WORK/raw/pr-a.json" "$WORK/raw/pr-b.json" "$WORK/raw/task-remote-heads.txt"
+rm -f -- "$WORK/raw/pr-a-predecessor.json" "$WORK/raw/pr-a.json" \
+  "$WORK/raw/pr-b.json" "$WORK/raw/task-remote-heads.txt"
 
 verify_python_runtime "$WORK/fragments/python-runtime-after.json" \
   "$WORK/fragments/python-runtime-before.json"

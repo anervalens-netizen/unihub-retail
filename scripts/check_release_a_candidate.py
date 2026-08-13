@@ -66,8 +66,13 @@ PYTHON_RUNTIME_WHEELS_NAME = "PYTHON_RUNTIME_WHEELS.tar.gz"
 GH_PATH = Path("/usr/bin/gh")
 GH_DELL_SHA256 = "2fd925d68889746976958342fb749bf102bc7dc8bcba3abfa533a80ad7791673"
 GITHUB_REPOSITORY = "anervalens-netizen/unihub-retail"
-TASK_A_BRANCH = "codex/retail-definitive-closure-20260812"
+TASK_A_BRANCH = "codex/retail-definitive-closure-rev27"
 TASK_B_BRANCH = "codex/retail-definitive-closure-b-20260813"
+RELEASE_A_PR_NUMBER = 152
+RELEASE_A_PREDECESSOR_PR_NUMBER = 151
+RELEASE_A_PREDECESSOR_BRANCH = "codex/retail-definitive-closure-20260812"
+RELEASE_A_PREDECESSOR_HEAD_SHA = "95154037c78c4bb11e0892327315507e16e603f3"
+RELEASE_A_PREDECESSOR_MERGE_SHA = "ad83c7a850f637d475907e80c8e06c62fdfeba66"
 EXPECTED_CHANGED_PATHS = {
     ".agent/PLANS.md",
     ".agent/contract-lock.json",
@@ -2056,6 +2061,27 @@ def verify_signed_artifact_audit(
     return 0
 
 
+def verify_release_a_merge_topology(
+    release_a_pr_sha: str, release_a_sha: str
+) -> dict[str, Any]:
+    predecessor_parents = git(
+        "show", "-s", "--format=%P", RELEASE_A_PREDECESSOR_MERGE_SHA
+    ).split()
+    release_a_parents = git("show", "-s", "--format=%P", release_a_sha).split()
+    if predecessor_parents != [EXPECTED_BASELINE, RELEASE_A_PREDECESSOR_HEAD_SHA]:
+        raise ValueError("Release-A predecessor merge topology mismatch")
+    if release_a_parents != [RELEASE_A_PREDECESSOR_MERGE_SHA, release_a_pr_sha]:
+        raise ValueError("final Release-A merge topology mismatch")
+    return {
+        "predecessor_pr": RELEASE_A_PREDECESSOR_PR_NUMBER,
+        "predecessor_branch": RELEASE_A_PREDECESSOR_BRANCH,
+        "predecessor_head_sha": RELEASE_A_PREDECESSOR_HEAD_SHA,
+        "predecessor_merge_sha": RELEASE_A_PREDECESSOR_MERGE_SHA,
+        "predecessor_parents": predecessor_parents,
+        "release_a_parents": release_a_parents,
+    }
+
+
 def verify_github_release_runs(
     *,
     release_a_pr: int,
@@ -2084,7 +2110,7 @@ def verify_github_release_runs(
         release_b_run_id,
     )
     if (
-        release_a_pr != 151
+        release_a_pr != RELEASE_A_PR_NUMBER
         or release_b_pr <= 0
         or release_b_pr == release_a_pr
         or any(not re.fullmatch(r"[0-9a-f]{40}", value) for value in sha_values)
@@ -2094,6 +2120,9 @@ def verify_github_release_runs(
         raise ValueError("GitHub release-run identities are invalid")
     if git("rev-parse", "HEAD") != release_b_sha or git("status", "--porcelain"):
         raise ValueError("GitHub evidence must be verified from clean exact MAIN_B_SHA")
+    release_a_topology = verify_release_a_merge_topology(
+        release_a_pr_sha, release_a_sha
+    )
     if subprocess.run(
         [
             "git",
@@ -2257,6 +2286,12 @@ def verify_github_release_runs(
         }
 
     pull_specs = {
+        "release_a_predecessor": (
+            RELEASE_A_PREDECESSOR_PR_NUMBER,
+            RELEASE_A_PREDECESSOR_BRANCH,
+            RELEASE_A_PREDECESSOR_HEAD_SHA,
+            RELEASE_A_PREDECESSOR_MERGE_SHA,
+        ),
         "release_a": (release_a_pr, TASK_A_BRANCH, release_a_pr_sha, release_a_sha),
         "release_b": (release_b_pr, TASK_B_BRANCH, release_b_pr_sha, release_b_sha),
     }
@@ -2309,6 +2344,7 @@ def verify_github_release_runs(
         },
         "release_a_sha": release_a_sha,
         "release_b_sha": release_b_sha,
+        "release_a_topology": release_a_topology,
         "remote_main": release_b_sha,
         "pull_requests": pull_evidence,
         "workflow_runs": run_evidence,
@@ -2324,8 +2360,8 @@ def verify_lock(
     *, current_paths: set[str] | None = None
 ) -> tuple[dict[str, Any], list[dict[str, str]]]:
     lock = load_json(ROOT / ".agent/contract-lock.json")
-    if lock.get("revision") != 27 or lock.get("baseline_source_sha") != EXPECTED_BASELINE:
-        raise ValueError("Release-A requires exact contract lock revision 27 and baseline")
+    if lock.get("revision") != 28 or lock.get("baseline_source_sha") != EXPECTED_BASELINE:
+        raise ValueError("Release-A requires exact contract lock revision 28 and baseline")
     content_commit = str(lock["contract_content_commit"])
     lock_commits = list(
         filter(
@@ -2340,15 +2376,15 @@ def verify_lock(
         )
     )
     if len(lock_commits) != 1:
-        raise ValueError("revision-26 lock must have exactly one immutable lock commit")
+        raise ValueError("revision-28 lock must have exactly one immutable lock commit")
     lock_commit = lock_commits[0]
     lock_parents = git("show", "-s", "--format=%P", lock_commit).split()
     if lock_parents != [content_commit]:
-        raise ValueError("revision-26 lock commit must directly follow content commit")
+        raise ValueError("revision-28 lock commit must directly follow content commit")
     current_lock_blob = git("rev-parse", "HEAD:.agent/contract-lock.json")
     locked_blob = git("rev-parse", f"{lock_commit}:.agent/contract-lock.json")
     if current_lock_blob != locked_blob:
-        raise ValueError("current revision-26 lock differs from its sole lock commit")
+        raise ValueError("current revision-28 lock differs from its sole lock commit")
     lock["verified_lock_commit"] = lock_commit
     verified: list[dict[str, str]] = []
     locked_objects = [lock["plan"], *lock["assets"]]

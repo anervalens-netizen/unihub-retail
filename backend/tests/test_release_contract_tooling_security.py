@@ -1095,6 +1095,46 @@ def test_release_b_real_preview_topology_classifies_release_a_preserved_paths() 
     )
 
 
+def test_release_a_merge_topology_binds_predecessor_and_final_pr(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    checker = _load_checker()
+    final_head = "f" * 40
+    final_merge = "e" * 40
+    parents = {
+        checker.RELEASE_A_PREDECESSOR_MERGE_SHA: (
+            f"{checker.EXPECTED_BASELINE} {checker.RELEASE_A_PREDECESSOR_HEAD_SHA}"
+        ),
+        final_merge: f"{checker.RELEASE_A_PREDECESSOR_MERGE_SHA} {final_head}",
+    }
+
+    def fake_git(*args: str) -> str:
+        assert args[:3] == ("show", "-s", "--format=%P")
+        return parents[args[3]]
+
+    monkeypatch.setattr(checker, "git", fake_git)
+    evidence = checker.verify_release_a_merge_topology(final_head, final_merge)
+    assert evidence["predecessor_pr"] == 151
+    assert evidence["predecessor_branch"] == (
+        "codex/retail-definitive-closure-20260812"
+    )
+    assert evidence["release_a_parents"] == [
+        checker.RELEASE_A_PREDECESSOR_MERGE_SHA,
+        final_head,
+    ]
+    parents[final_merge] = f"{checker.EXPECTED_BASELINE} {final_head}"
+    with pytest.raises(ValueError, match="final Release-A merge topology mismatch"):
+        checker.verify_release_a_merge_topology(final_head, final_merge)
+    parents[final_merge] = (
+        f"{checker.RELEASE_A_PREDECESSOR_MERGE_SHA} {final_head}"
+    )
+    parents[checker.RELEASE_A_PREDECESSOR_MERGE_SHA] = (
+        f"{checker.RELEASE_A_PREDECESSOR_HEAD_SHA} {checker.EXPECTED_BASELINE}"
+    )
+    with pytest.raises(ValueError, match="predecessor merge topology mismatch"):
+        checker.verify_release_a_merge_topology(final_head, final_merge)
+
+
 def _assert_ac17_invocation_contract(verifier: str, plan: str) -> None:
     for token in (
         "--main-a-sha",
@@ -1112,6 +1152,8 @@ def _assert_ac17_invocation_contract(verifier: str, plan: str) -> None:
     ):
         assert token in verifier
         assert token in plan
+    assert 'RELEASE_A_PR_NUMBER="152"' in verifier
+    assert "--release-a-pr 152" in plan
 
 
 def _assert_ac17_ref_reconciliation(verifier: str) -> None:
@@ -1119,6 +1161,13 @@ def _assert_ac17_ref_reconciliation(verifier: str) -> None:
     assert "refs-dell.json" in verifier
     assert "refs-github.json" in verifier
     assert "codex/retail-definitive-closure-20260812" in verifier
+    assert "codex/retail-definitive-closure-rev27" in verifier
+    assert "codex/retail-definitive-closure-b-projected-rev27" in verifier
+    assert "pr-a-predecessor.json" in verifier
+    assert "headRefOid" in verifier
+    assert '"refs/heads/$RELEASE_A_PREDECESSOR_BRANCH"' in verifier
+    assert "predecessor_parents != [pbase,phead]" in verifier
+    assert "release_a_parents != [pmerge,av[\"headRefOid\"]]" in verifier
     assert verifier.count("codex/retail-close-preview-v3") == 2
     assert "ls-remote origin refs/heads/main" in verifier
     assert 'remote_lines != [f"{b}\\trefs/heads/main"]' in verifier
@@ -1129,7 +1178,7 @@ def _assert_ac17_ref_reconciliation(verifier: str) -> None:
     )
     assert 'origin=git("remote","get-url","origin")' in verifier
     assert verifier.count("origin!=canonical_origin") == 2
-    assert verifier.count("GH_HOST=github.com GH_PAGER=cat") == 2
+    assert verifier.count("GH_HOST=github.com GH_PAGER=cat") == 3
     assert '[[ "$mode" == "400" || "$mode" == "600" ]]' in verifier
     assert '[[ "$owner_uid" == "0" || "$owner_uid" == "$OPERATOR_UID" ]]' in verifier
 
@@ -1274,8 +1323,14 @@ def test_ac16_has_executable_github_run_and_signed_audit_authorities() -> None:
     assert "--verify-github-release-runs" in checker
     assert 'GH_PATH = Path("/usr/bin/gh")' in checker
     assert "GH_DELL_SHA256" in checker
+    assert 'TASK_A_BRANCH = "codex/retail-definitive-closure-rev27"' in checker
+    assert "RELEASE_A_PR_NUMBER = 152" in checker
+    assert "RELEASE_A_PREDECESSOR_PR_NUMBER = 151" in checker
+    assert "RELEASE_A_PREDECESSOR_MERGE_SHA" in checker
+    assert "verify_release_a_merge_topology" in checker
     assert "live GitHub refs/heads/main differs from MAIN_B_SHA" in checker
     assert "--verify-github-release-runs" in plan
     assert "--verify-signed-artifact-audit" in plan
-    ac16 = plan.split("| AC-16 |", 1)[1].split("\n", 1)[0]
+    ac16 = plan.rsplit("| AC-16 |", 1)[1].split("\n", 1)[0]
     assert "..." not in ac16
+    assert "--release-a-pr 152" in ac16
