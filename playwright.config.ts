@@ -28,8 +28,8 @@ export default defineConfig({
   webServer: [
     {
       command: process.env.CI
-        ? 'npx vite preview --port 3333 --host 0.0.0.0'
-        : 'npm run build && npx vite preview --port 3333 --host 0.0.0.0',
+        ? 'node_modules/.bin/vite preview --port 3333 --host 0.0.0.0'
+        : 'node_modules/.bin/vite build && node_modules/.bin/vite preview --port 3333 --host 0.0.0.0',
       url: 'http://localhost:3333',
       // The test run must own the preview lifecycle. Reusing a preview from
       // an interrupted run can make it disappear while parallel tests run.
