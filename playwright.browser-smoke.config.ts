@@ -34,7 +34,7 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: 'npx vite preview --port 3334 --host 127.0.0.1',
+    command: 'node_modules/.bin/vite preview --port 3334 --host 127.0.0.1',
     url: 'http://127.0.0.1:3334',
     reuseExistingServer: false,
     timeout: 30_000,

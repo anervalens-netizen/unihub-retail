@@ -33,12 +33,13 @@ git -C "$REPO_ROOT" archive --format=tar "$BASE_SHA" \
 
 (
   cd "$BASE_SOURCE"
-  npm ci --include=dev
-  npm run build
+  npm_config_offline=true npm ci --offline --ignore-scripts --include=dev
+  node_modules/.bin/vite build
 )
 [[ -s "$BASE_SOURCE/dist/sw.js" ]] \
   || die "previous release did not produce dist/sw.js"
 
 PWA_PREVIOUS_DIST="$BASE_SOURCE/dist" \
 PWA_CANDIDATE_DIST="$REPO_ROOT/dist" \
-  npm --prefix "$REPO_ROOT" run test:e2e:pwa-workbox
+  "$REPO_ROOT/node_modules/.bin/playwright" test \
+    --config="$REPO_ROOT/playwright.pwa-workbox.config.ts"
