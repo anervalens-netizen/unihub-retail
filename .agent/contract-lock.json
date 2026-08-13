@@ -1,11 +1,11 @@
 {
   "version": 1,
   "objective": "UR-CLOSE-20260812",
-  "revision": 14,
+  "revision": 15,
   "baseline_source_sha": "0be82b430e55b7414babf470abe3fc5404b6cdc9",
-  "contract_content_commit": "1c889042f0d0ee0077b1839f4dae1d33786fc813",
-  "supersedes_lock_commit": "e3bf8d2671a8e0ce81d4bd994ae5c525003c35b9",
-  "created_at": "2026-08-13T13:25:08+03:00",
+  "contract_content_commit": "fad62efb54d70cece94dbb90f2630d9154e6fa2a",
+  "supersedes_lock_commit": "3450fd145004365fc54c87ad19827fcce26b403b",
+  "created_at": "2026-08-13T13:38:30+03:00",
   "source_inputs": [
     {
       "path": "/opt/Mobiup/UNIHUB_RETAIL_AUDIT_2026-08-12.md",
@@ -18,8 +18,8 @@
   ],
   "plan": {
     "path": "docs/exec-plans/active/UR-CLOSE-20260812.md",
-    "git_blob": "b0e031e934fabddbcf81f4d55bed5c5e80c19cb2",
-    "sha256": "1c4e6c62f0a4834c268d150b0c8bcde6052dbf73ad41d4829d8cf488542345dd"
+    "git_blob": "2aae483e20f8c7d0bc9a211e90723731ccf56ffd",
+    "sha256": "5f4cb0ed75ae5491aa15d64e9e18f2df72388de86138753877521881e2c0ee29"
   },
   "assets": [
     {
@@ -69,8 +69,8 @@
     },
     {
       "path": "scripts/check_release_a_candidate.py",
-      "git_blob": "8d3dc18566ed86a71bcc7da034a0d83b5773bf68",
-      "sha256": "065bca7b463226a514f1eb06349fddadbcaac714dd2f115f672e72b8788badda"
+      "git_blob": "939efde35deea0424e4afbd65c429646b63e0807",
+      "sha256": "bc11556187f6a49601aef9d35cb1921207a3ffcd8037fd14e41c650f0c7367fa"
     },
     {
       "path": ".github/workflows/ci.yml",
@@ -114,8 +114,8 @@
     },
     {
       "path": "backend/scripts/run_retail_scale_profile.py",
-      "git_blob": "cb71c7073398ca0a467fdd97d89217f95d995f60",
-      "sha256": "6338e2f9f0476f78e798ff936338f60a907506698c13aacb4688f8f13775b70d"
+      "git_blob": "2c493d0c843356b473bf2a9167b1bbc189201f3c",
+      "sha256": "c628c8f279fc1944231a07417b817eb7b7f6b401726467b5f08dba63e7da68c4"
     },
     {
       "path": "scripts/validate_release_sbom.py",
@@ -159,13 +159,13 @@
     },
     {
       "path": "scripts/release-b-authority-contract-v1.json",
-      "git_blob": "053921a3f7ee5bc1ef386188c41e8d78825cc62f",
-      "sha256": "88b5e1396b5f23fa5acb89628741dfc0fa911501f5c5298ef2b5d8af9de07008"
+      "git_blob": "ab952800a44207b2ca5f885d7e1ca44577a7e1bf",
+      "sha256": "de126b7d91e3c39005eeed42544486b05a7d1c65e47613197cfb720146e165c3"
     },
     {
       "path": "backend/tests/test_release_contract_tooling_security.py",
-      "git_blob": "920a41f68c480a76abbc3a54f78d8898ed8acfc3",
-      "sha256": "28e922f55f4c847d0bfef83571021baa42dabc9382be1f636871eafbd1de4280"
+      "git_blob": "ee91e3b80c29beab86aaa2b956f4b782315a98bc",
+      "sha256": "56561cb73cc3373c26d7a02f0621ac018718eeb96ed7398c10c9acd2320db6d7"
     },
     {
       "path": "scripts/run_local_quality_gate.sh",
