@@ -1,0 +1,313 @@
+{
+  "version": 1,
+  "contract": "ai-governance-golden-v1",
+  "baseline_source_sha": "0be82b430e55b7414babf470abe3fc5404b6cdc9",
+  "metric": "sales_value",
+  "response_profile": "point_quantiles_v1",
+  "expansion_rule": "For every month in listed order, create one pair per store in listed order using the store constants; no row is omitted.",
+  "months": [
+    "2025-08",
+    "2025-09",
+    "2025-10",
+    "2025-11",
+    "2025-12",
+    "2026-01",
+    "2026-02",
+    "2026-03",
+    "2026-04",
+    "2026-05",
+    "2026-06",
+    "2026-07"
+  ],
+  "windows": {
+    "3": [
+      "2026-05",
+      "2026-06",
+      "2026-07"
+    ],
+    "6": [
+      "2026-02",
+      "2026-03",
+      "2026-04",
+      "2026-05",
+      "2026-06",
+      "2026-07"
+    ],
+    "12": [
+      "2025-08",
+      "2025-09",
+      "2025-10",
+      "2025-11",
+      "2025-12",
+      "2026-01",
+      "2026-02",
+      "2026-03",
+      "2026-04",
+      "2026-05",
+      "2026-06",
+      "2026-07"
+    ]
+  },
+  "stores": [
+    {
+      "site_code": "SYN-A",
+      "firma": "F1",
+      "regional": "R1",
+      "asm": "A1",
+      "is_operating": true,
+      "authority_source": "official_store_target",
+      "confidence": "authoritative",
+      "actual": "100.00",
+      "candidate_point": "100.00",
+      "candidate_quantile_layout": [
+        "95.00",
+        "97.00",
+        "98.00",
+        "99.00",
+        "100.00",
+        "101.00",
+        "102.00",
+        "103.00",
+        "105.00"
+      ],
+      "baseline_points": {
+        "seasonal_naive_low": "90.00",
+        "moving_average_high": "105.00"
+      }
+    },
+    {
+      "site_code": "SYN-B",
+      "firma": "F2",
+      "regional": "R2",
+      "asm": "A2",
+      "is_operating": true,
+      "authority_source": "source_month_reporting",
+      "confidence": "authoritative",
+      "actual": "200.00",
+      "candidate_point": "200.00",
+      "candidate_quantile_layout": [
+        "200.00",
+        "190.00",
+        "194.00",
+        "196.00",
+        "198.00",
+        "200.00",
+        "202.00",
+        "204.00",
+        "206.00",
+        "210.00"
+      ],
+      "baseline_points": {
+        "seasonal_naive_low": "180.00",
+        "moving_average_high": "210.00"
+      }
+    }
+  ],
+  "quantile_indexes": {
+    "9": {
+      "q10": 0,
+      "q20": 1,
+      "q50": 4,
+      "q80": 7,
+      "q90": 8
+    },
+    "10": {
+      "ignored_point_mean": 0,
+      "q10": 1,
+      "q20": 2,
+      "q50": 5,
+      "q80": 8,
+      "q90": 9
+    }
+  },
+  "formulas": {
+    "pinball": "max(tau*(actual-quantile),(tau-1)*(actual-quantile))",
+    "normalized_pinball": "sum(pair_pinball)/sum(actual)",
+    "wape": "sum(abs(point-actual))/sum(actual)",
+    "bias": "sum(point-actual)/sum(actual)"
+  },
+  "expected": {
+    "expanded_pairs": 24,
+    "pair_coverage": "1.000000",
+    "fallback_ratio": "0.000000",
+    "invalid_pairs": 0,
+    "candidate_point": {
+      "actual_total": "3600.00",
+      "forecast_total": "3600.00",
+      "absolute_error_total": "0.00",
+      "wape": "0.000000",
+      "bias": "0.000000"
+    },
+    "baseline_point": {
+      "seasonal_naive_low": {
+        "forecast_total": "3240.00",
+        "absolute_error_total": "360.00",
+        "wape": "0.100000",
+        "bias": "-0.100000"
+      },
+      "moving_average_high": {
+        "forecast_total": "3780.00",
+        "absolute_error_total": "180.00",
+        "wape": "0.050000",
+        "bias": "0.050000"
+      }
+    },
+    "pinball_by_window": {
+      "3": {
+        "actual_denominator": "900.00",
+        "candidate": {
+          "q10": {
+            "loss": "4.50",
+            "normalized": "0.005000"
+          },
+          "q50": {
+            "loss": "0.00",
+            "normalized": "0.000000"
+          },
+          "q90": {
+            "loss": "4.50",
+            "normalized": "0.005000"
+          }
+        },
+        "seasonal_naive_low": {
+          "q10": {
+            "loss": "9.00",
+            "normalized": "0.010000"
+          },
+          "q50": {
+            "loss": "45.00",
+            "normalized": "0.050000"
+          },
+          "q90": {
+            "loss": "81.00",
+            "normalized": "0.090000"
+          }
+        },
+        "moving_average_high": {
+          "q10": {
+            "loss": "40.50",
+            "normalized": "0.045000"
+          },
+          "q50": {
+            "loss": "22.50",
+            "normalized": "0.025000"
+          },
+          "q90": {
+            "loss": "4.50",
+            "normalized": "0.005000"
+          }
+        }
+      },
+      "6": {
+        "actual_denominator": "1800.00",
+        "candidate": {
+          "q10": {
+            "loss": "9.00",
+            "normalized": "0.005000"
+          },
+          "q50": {
+            "loss": "0.00",
+            "normalized": "0.000000"
+          },
+          "q90": {
+            "loss": "9.00",
+            "normalized": "0.005000"
+          }
+        },
+        "seasonal_naive_low": {
+          "q10": {
+            "loss": "18.00",
+            "normalized": "0.010000"
+          },
+          "q50": {
+            "loss": "90.00",
+            "normalized": "0.050000"
+          },
+          "q90": {
+            "loss": "162.00",
+            "normalized": "0.090000"
+          }
+        },
+        "moving_average_high": {
+          "q10": {
+            "loss": "81.00",
+            "normalized": "0.045000"
+          },
+          "q50": {
+            "loss": "45.00",
+            "normalized": "0.025000"
+          },
+          "q90": {
+            "loss": "9.00",
+            "normalized": "0.005000"
+          }
+        }
+      },
+      "12": {
+        "actual_denominator": "3600.00",
+        "candidate": {
+          "q10": {
+            "loss": "18.00",
+            "normalized": "0.005000"
+          },
+          "q50": {
+            "loss": "0.00",
+            "normalized": "0.000000"
+          },
+          "q90": {
+            "loss": "18.00",
+            "normalized": "0.005000"
+          }
+        },
+        "seasonal_naive_low": {
+          "q10": {
+            "loss": "36.00",
+            "normalized": "0.010000"
+          },
+          "q50": {
+            "loss": "180.00",
+            "normalized": "0.050000"
+          },
+          "q90": {
+            "loss": "324.00",
+            "normalized": "0.090000"
+          }
+        },
+        "moving_average_high": {
+          "q10": {
+            "loss": "162.00",
+            "normalized": "0.045000"
+          },
+          "q50": {
+            "loss": "90.00",
+            "normalized": "0.025000"
+          },
+          "q90": {
+            "loss": "18.00",
+            "normalized": "0.005000"
+          }
+        }
+      }
+    },
+    "pinball_gate": {
+      "candidate_quantile_coverage": "1.000000",
+      "maximum_best_baseline_ratio": "1.05",
+      "pass_by_window_and_tau": true
+    },
+    "bootstrap": {
+      "seed": 20260812,
+      "resampling_unit": "site_code cluster with all months",
+      "replicates": 10000,
+      "best_point_baseline": "moving_average_high",
+      "delta_every_replicate": "-0.050000",
+      "ci95_lower": "-0.050000",
+      "ci95_upper": "-0.050000"
+    },
+    "six_month_wins": 6,
+    "relative_wape_improvement": "1.000000",
+    "governance_decision": "eligible_candidate_only_no_live_promotion"
+  },
+  "privacy": "fully synthetic; no production identifiers or values",
+  "mutation_rule": "Inputs and expected outputs are immutable after lock; any change requires asset version increment, semantic relock and independent critique.",
+  "contract_payload_sha256": "e8f4fd3bf56bc1ac7ed8b34636ee920bb6912ce141fa9371ac8f1f1b6ea23ac2"
+}

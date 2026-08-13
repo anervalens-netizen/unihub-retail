@@ -4,10 +4,13 @@ set -Eeuo pipefail
 
 BACKEND_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PYTHON="${BACKEND_DIR}/venv/bin/python"
-PYTEST="${BACKEND_DIR}/venv/bin/pytest"
+PYTHON_BASE="/usr/bin/python3.12"
+PYTHON_BASE_SHA256="1643dacd9feaedc58f3cc581e4d22577dfe25c09b10282936186ccf0f2e61118"
 STAMP="${GITHUB_RUN_ID:-local}-$(date +%s)-$$"
 CONTAINER="unihub-retail-test-${STAMP}"
 VALKEY_CONTAINER="unihub-retail-valkey-test-${STAMP}"
+POSTGRES_IMAGE="postgres@sha256:9a8afca54e7861fd90fab5fdf4c42477a6b1cb7d293595148e674e0a3181de15"
+VALKEY_IMAGE="valkey/valkey@sha256:b027235326507cfdade9b6684056ec1d0b0c0757412e628245129b5d7b788618"
 VISITS_TEST_DIR=""
 
 cleanup() {
@@ -19,26 +22,29 @@ cleanup() {
 }
 trap cleanup EXIT
 
-if [[ ! -x "${PYTHON}" || ! -x "${PYTEST}" ]]; then
+if [[ ! -x "${PYTHON}" || "$(readlink -f "${PYTHON}")" != "${PYTHON_BASE}" \
+  || "$(sha256sum "${PYTHON_BASE}" | awk '{print $1}')" != "${PYTHON_BASE_SHA256}" ]]; then
   printf 'Missing backend virtualenv. Install requirements in backend/venv first.\n' >&2
   exit 1
 fi
 
 password="$(openssl rand -hex 24)"
-docker run -d \
+docker image inspect "${POSTGRES_IMAGE}" "${VALKEY_IMAGE}" >/dev/null \
+  || { printf 'Pinned isolated-test images are not pre-provisioned.\n' >&2; exit 1; }
+docker run --pull=never -d \
   --name "${CONTAINER}" \
   --label unihub.test=retail \
   -e POSTGRES_USER=unihub_test \
   -e POSTGRES_PASSWORD="${password}" \
   -e POSTGRES_DB=unihub_test \
   -p 127.0.0.1::5432 \
-  postgres:18-alpine >/dev/null
+  "${POSTGRES_IMAGE}" >/dev/null
 
-docker run -d \
+docker run --pull=never -d \
   --name "${VALKEY_CONTAINER}" \
   --label unihub.test=retail \
   -p 127.0.0.1::6379 \
-  valkey/valkey:8.1.7-alpine >/dev/null
+  "${VALKEY_IMAGE}" >/dev/null
 
 port="$(
   docker inspect \
@@ -130,4 +136,4 @@ if [[ "$#" -eq 0 ]]; then
 elif [[ "$1" == -* ]]; then
   set -- tests "$@"
 fi
-"${PYTEST}" "$@"
+"${PYTHON}" -m pytest "$@"

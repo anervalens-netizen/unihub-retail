@@ -1,9 +1,23 @@
-#!/usr/bin/env bash
+#!/usr/bin/bash -p
 
 set -Eeuo pipefail
 umask 077
+unset BASH_ENV ENV CDPATH GLOBIGNORE PYTHONSTARTUP PYTHONINSPECT || true
+export PYTHONNOUSERSITE=1 PYTHONSAFEPATH=1 PYTHONDONTWRITEBYTECODE=1
+unset PYTHONHOME PYTHONPATH MYPYPATH MYPY_CONFIG_FILE
 
 PROGRAM="$(basename "$0")"
+SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
+PYTHON_BASE="/usr/bin/python3.12"
+PYTHON_BASE_SHA256="1643dacd9feaedc58f3cc581e4d22577dfe25c09b10282936186ccf0f2e61118"
+PYTHON_VERSION="3.12.3"
+SYSTEM_SITECUSTOMIZE="/usr/lib/python3.12/sitecustomize.py"
+SYSTEM_SITECUSTOMIZE_RESOLVED="/etc/python3.12/sitecustomize.py"
+SYSTEM_SITECUSTOMIZE_SHA256="43d81125d92376b1a69d53a71126a041cc9a18d8080e92dea0a2ae23be138b1e"
+PYTHON_RUNTIME_TREE_PROPERTY="unihub:python-runtime:site-packages-tree-sha256:v1"
+PYTHON_RUNTIME_REQUIREMENTS_NAME="PYTHON_RUNTIME_REQUIREMENTS.lock"
+PYTHON_RUNTIME_WHEELS_NAME="PYTHON_RUNTIME_WHEELS.tar.gz"
+PYTHON_RUNTIME_SUPPLY_NAME="PYTHON_RUNTIME_SUPPLY.json"
 TEST_MODE="${RETAIL_DEPLOY_TEST_MODE:-0}"
 TEST_FAIL_PHASE="${RETAIL_DEPLOY_TEST_FAIL_PHASE:-}"
 TEST_NOW="${RETAIL_DEPLOY_TEST_NOW:-}"
@@ -254,7 +268,7 @@ wait_for_planned_deployment_inhibition() {
   for attempt in {1..45}; do
     payload="$(curl --silent --show-error --fail --max-time 5 \
       http://127.0.0.1:9093/api/v2/alerts)" || payload=""
-    if python3 -c '
+    if "$PYTHON_BASE" -I -S -c '
 import json
 import sys
 
@@ -468,9 +482,22 @@ current_epoch() {
   fi
 }
 
+verify_python_base() {
+  [[ -x "$PYTHON_BASE" && ! -L "$PYTHON_BASE" ]] \
+    || die "pinned Python base interpreter is unavailable or unsafe"
+  [[ "$(sha256sum "$PYTHON_BASE" | awk '{print $1}')" == "$PYTHON_BASE_SHA256" ]] \
+    || die "pinned Python base interpreter digest mismatch"
+  [[ "$($PYTHON_BASE -I -S -c 'import platform; print(platform.python_version())')" == "$PYTHON_VERSION" ]] \
+    || die "pinned Python base interpreter version mismatch"
+  [[ -f "$SYSTEM_SITECUSTOMIZE" && ! -L "$SYSTEM_SITECUSTOMIZE_RESOLVED" \
+    && "$(readlink -f "$SYSTEM_SITECUSTOMIZE")" == "$SYSTEM_SITECUSTOMIZE_RESOLVED" \
+    && "$(sha256sum "$SYSTEM_SITECUSTOMIZE" | awk '{print $1}')" == "$SYSTEM_SITECUSTOMIZE_SHA256" ]] \
+    || die "system sitecustomize identity mismatch"
+}
+
 validate_artifact_archive() {
   local archive="$1"
-  python3 - "$archive" <<'PY'
+  "$PYTHON_BASE" -I -S - "$archive" <<'PY'
 import pathlib
 import sys
 import tarfile
@@ -721,7 +748,7 @@ assert_rollback_migration_compatible() {
     die "rollback target has a different migration manifest; use a schema-compatible target or reviewed roll-forward"
   fi
 
-  if ! python3 - "$current_manifest" "$target_manifest" <<'PY'
+  if ! "$PYTHON_BASE" -I -S - "$current_manifest" "$target_manifest" <<'PY'
 import json
 import re
 import sys
@@ -776,7 +803,7 @@ copy_and_verify_artifact() {
   local bundle_dir
   bundle_dir="$(dirname -- "$source_archive")"
 
-  python3 - "$bundle_dir" "$(basename -- "$source_archive")" "$expected_sha" "$expected_artifact_sha256" <<'PY'
+  "$PYTHON_BASE" -I -S - "$bundle_dir" "$(basename -- "$source_archive")" "$expected_sha" "$expected_artifact_sha256" <<'PY'
 import hashlib
 import json
 import pathlib
@@ -788,6 +815,8 @@ archive_name, expected_sha, expected_digest = sys.argv[2:]
 required = {
     "SOURCE_SHA", "SHA256SUMS", "SBOM.cdx.json", "SBOM.npm.cdx.json",
     "SBOM.python.cdx.json", "PROVENANCE.json", "RELEASE_MANIFEST.json",
+    "PYTHON_RUNTIME_REQUIREMENTS.lock", "PYTHON_RUNTIME_SUPPLY.json",
+    "PYTHON_RUNTIME_WHEELS.tar.gz",
     archive_name,
 }
 for name in required:
@@ -801,6 +830,12 @@ if manifest.get("schemaVersion") != 1 or manifest.get("sourceSha") != expected_s
     raise SystemExit("release manifest identity mismatch")
 if manifest.get("sha256", {}).get(archive_name) != expected_digest:
     raise SystemExit("release manifest artifact digest mismatch")
+manifest_sha256 = manifest.get("sha256")
+if not isinstance(manifest_sha256, dict) or any(
+    manifest_sha256.get(name) != hashlib.sha256((root / name).read_bytes()).hexdigest()
+    for name in required - {"SHA256SUMS", "RELEASE_MANIFEST.json"}
+):
+    raise SystemExit("release manifest evidence digest mismatch")
 provenance = json.loads((root / "PROVENANCE.json").read_text(encoding="utf-8"))
 subjects = provenance.get("subject", [])
 if len(subjects) != 1 or subjects[0].get("name") != archive_name or subjects[0].get("digest", {}).get("sha256") != expected_digest:
@@ -867,6 +902,137 @@ PY
   mv -- "$tested_dist" "$artifact_tree/dist"
   [[ -f "$artifact_tree/dist/index.html" && ! -L "$artifact_tree/dist/index.html" \
     && -s "$artifact_tree/dist/index.html" ]] || die "tested frontend artifact is missing"
+
+  local supply_root="$work_dir/python-runtime-supply"
+  mkdir -p "$supply_root/wheels"
+  install -m 0400 -- "$bundle_dir/$PYTHON_RUNTIME_REQUIREMENTS_NAME" \
+    "$supply_root/$PYTHON_RUNTIME_REQUIREMENTS_NAME"
+  install -m 0400 -- "$bundle_dir/$PYTHON_RUNTIME_SUPPLY_NAME" \
+    "$supply_root/$PYTHON_RUNTIME_SUPPLY_NAME"
+  install -m 0400 -- "$bundle_dir/SBOM.python.cdx.json" \
+    "$supply_root/SBOM.python.cdx.json"
+  "$PYTHON_BASE" -I -S - \
+    "$bundle_dir/$PYTHON_RUNTIME_WHEELS_NAME" \
+    "$supply_root/wheels" \
+    "$supply_root/$PYTHON_RUNTIME_SUPPLY_NAME" \
+    "$supply_root/$PYTHON_RUNTIME_REQUIREMENTS_NAME" \
+    "$supply_root/SBOM.python.cdx.json" \
+    "$PYTHON_BASE" "$PYTHON_BASE_SHA256" "$PYTHON_VERSION" \
+    "$PYTHON_RUNTIME_TREE_PROPERTY" <<'PY'
+import hashlib
+import json
+import pathlib
+import re
+import sys
+import tarfile
+
+(
+    archive_value,
+    output_value,
+    supply_value,
+    requirements_value,
+    sbom_value,
+    python_path,
+    python_sha256,
+    python_version,
+    tree_property,
+) = sys.argv[1:]
+archive = pathlib.Path(archive_value)
+output = pathlib.Path(output_value)
+supply_path = pathlib.Path(supply_value)
+requirements = pathlib.Path(requirements_value)
+sbom_path = pathlib.Path(sbom_value)
+if any(path.is_symlink() or not path.is_file() for path in (archive, supply_path, requirements, sbom_path)):
+    raise SystemExit("Python runtime supply inputs are unsafe")
+supply = json.loads(supply_path.read_text(encoding="utf-8"))
+sbom = json.loads(sbom_path.read_text(encoding="utf-8"))
+tree_values = [
+    str(item.get("value", ""))
+    for item in sbom.get("metadata", {}).get("properties", [])
+    if isinstance(item, dict) and item.get("name") == tree_property
+]
+wheels = supply.get("wheels")
+wheel_archive = supply.get("wheelArchive")
+if (
+    supply.get("schemaVersion") != 1
+    or supply.get("python")
+    != {"path": python_path, "sha256": python_sha256, "version": python_version}
+    or supply.get("requirements")
+    != {
+        "name": requirements.name,
+        "sha256": hashlib.sha256(requirements.read_bytes()).hexdigest(),
+    }
+    or supply.get("sbom")
+    != {"name": sbom_path.name, "sha256": hashlib.sha256(sbom_path.read_bytes()).hexdigest()}
+    or supply.get("bootstrapDistributions") != {"pip": "24.0"}
+    or len(tree_values) != 1
+    or supply.get("sitePackages")
+    != {"property": tree_property, "sha256": tree_values[0]}
+    or not isinstance(wheels, list)
+    or not wheels
+    or len(wheels) > 512
+    or not isinstance(wheel_archive, dict)
+    or wheel_archive.get("name") != archive.name
+    or wheel_archive.get("sha256") != hashlib.sha256(archive.read_bytes()).hexdigest()
+    or wheel_archive.get("fileCount") != len(wheels)
+):
+    raise SystemExit("Python runtime supply manifest identity mismatch")
+expected = {}
+total = 0
+for item in wheels:
+    if not isinstance(item, dict):
+        raise SystemExit("Python runtime wheel manifest entry is invalid")
+    name = item.get("name")
+    digest = item.get("sha256")
+    size = item.get("size")
+    if (
+        not isinstance(name, str)
+        or pathlib.PurePosixPath(name).name != name
+        or re.fullmatch(r"[A-Za-z0-9_.+-]+\.whl", name) is None
+        or not isinstance(digest, str)
+        or re.fullmatch(r"[0-9a-f]{64}", digest) is None
+        or not isinstance(size, int)
+        or size <= 0
+        or name in expected
+    ):
+        raise SystemExit("Python runtime wheel manifest entry is unsafe")
+    expected[name] = (digest, size)
+    total += size
+if total != wheel_archive.get("totalBytes") or total > 536_870_912:
+    raise SystemExit("Python runtime wheel manifest size mismatch")
+seen = set()
+with tarfile.open(archive, mode="r:gz") as bundle:
+    for member in bundle.getmembers():
+        normalized = pathlib.PurePosixPath(member.name).as_posix()
+        while normalized.startswith("./"):
+            normalized = normalized[2:]
+        if normalized in {"", "."}:
+            if not member.isdir():
+                raise SystemExit("Python runtime wheel archive root is invalid")
+            continue
+        if member.isdir():
+            raise SystemExit("Python runtime wheel archive contains an unexpected directory")
+        if not member.isfile() or pathlib.PurePosixPath(normalized).name != normalized or normalized in seen:
+            raise SystemExit("Python runtime wheel archive member is unsafe")
+        if normalized not in expected or member.size != expected[normalized][1]:
+            raise SystemExit("Python runtime wheel archive inventory mismatch")
+        handle = bundle.extractfile(member)
+        if handle is None:
+            raise SystemExit("Python runtime wheel archive member is unreadable")
+        payload = handle.read()
+        if len(payload) != member.size or hashlib.sha256(payload).hexdigest() != expected[normalized][0]:
+            raise SystemExit("Python runtime wheel archive digest mismatch")
+        target = output / normalized
+        target.write_bytes(payload)
+        target.chmod(0o400)
+        seen.add(normalized)
+if seen != set(expected):
+    raise SystemExit("Python runtime wheel archive is incomplete")
+PY
+  cmp -s -- "$artifact_tree/backend/requirements.lock" \
+    "$supply_root/$PYTHON_RUNTIME_REQUIREMENTS_NAME" \
+    || die "Python runtime supply lock differs from approved source"
+  printf '%s\n' "$supply_root" >"$work_dir/python-runtime-supply.path"
   printf '%s\n' "$artifact_tree"
 }
 
@@ -877,7 +1043,7 @@ PROMETHEUS_DOCKER_SUBNET=""
 validate_prometheus_network_values() {
   local gateway="$1"
   local subnet="$2"
-  python3 - "$gateway" "$subnet" <<'PY'
+  "$PYTHON_BASE" -I -S - "$gateway" "$subnet" <<'PY'
 import ipaddress
 import sys
 
@@ -906,7 +1072,7 @@ detect_prometheus_network() {
     inspect_json="$(docker inspect "$PROMETHEUS_CONTAINER")" \
       || die "Prometheus container is unavailable"
     mapfile -t network_values < <(
-      python3 -c '
+      "$PYTHON_BASE" -I -S -c '
 import json, sys
 payload = json.load(sys.stdin)
 if len(payload) != 1 or not payload[0].get("State", {}).get("Running"):
@@ -927,7 +1093,7 @@ print(name)
     network_json="$(docker network inspect "$PROMETHEUS_NETWORK_NAME")" \
       || die "unable to inspect the Prometheus Docker network"
     mapfile -t network_values < <(
-      python3 -c '
+      "$PYTHON_BASE" -I -S -c '
 import ipaddress, json, sys
 payload = json.load(sys.stdin)
 if len(payload) != 1:
@@ -963,7 +1129,7 @@ assert_prometheus_shared_include() {
     || die "shared Prometheus config is unavailable"
   [[ -d "$PROMETHEUS_SCRAPE_ROOT" && ! -L "$PROMETHEUS_SCRAPE_ROOT" ]] \
     || die "shared Prometheus scrape include directory is unavailable"
-  python3 - "$PROMETHEUS_HOST_CONFIG" "$PROMETHEUS_CONTAINER_SCRAPE_ROOT/*.yml" <<'PY'
+  "$PYTHON_BASE" -I -S - "$PROMETHEUS_HOST_CONFIG" "$PROMETHEUS_CONTAINER_SCRAPE_ROOT/*.yml" <<'PY'
 import pathlib
 import re
 import sys
@@ -990,7 +1156,7 @@ PY
     || die "Prometheus host include directory must be root:root mode 0755"
   local inspect_json
   inspect_json="$(docker inspect "$PROMETHEUS_CONTAINER")"
-  python3 -c '
+  "$PYTHON_BASE" -I -S -c '
 import json
 import pathlib
 import sys
@@ -1017,6 +1183,7 @@ require_mount(sys.argv[3], sys.argv[4])
 prepare_runtime_release() {
   local artifact_tree="$1"
   local stage_root="$2"
+  local supply_root="$3"
   local unit_source
   rm -rf -- "$stage_root"
   mkdir -p "$stage_root/systemd"
@@ -1105,7 +1272,7 @@ prepare_runtime_release() {
   local fragment_source="$artifact_tree/ops/observability/retail-process-scrape.yml"
   [[ -f "$fragment_source" && ! -L "$fragment_source" ]] \
     || die "Retail Prometheus scrape template is missing"
-  python3 - "$fragment_source" "$stage_root/unihub-retail.yml" "$PROMETHEUS_DOCKER_GATEWAY" <<'PY'
+  "$PYTHON_BASE" -I -S - "$fragment_source" "$stage_root/unihub-retail.yml" "$PROMETHEUS_DOCKER_GATEWAY" <<'PY'
 from pathlib import Path
 import sys
 
@@ -1130,6 +1297,11 @@ PY
     || die "Retail Prometheus rules still use the retired scrape job"
   grep -Fq 'alert: UniHubRetailPlannedDeployment' "$stage_root/retail-slo-rules.yml" \
     || die "Retail Prometheus rules are missing the planned deployment marker"
+
+  [[ -d "$supply_root" && ! -L "$supply_root" \
+    && -d "$supply_root/wheels" && ! -L "$supply_root/wheels" ]] \
+    || die "verified Python runtime supply is missing"
+  cp -a -- "$supply_root" "$stage_root/python-runtime-supply"
 }
 
 runtime_asset_destinations() {
@@ -1295,11 +1467,529 @@ restore_runtime_assets() {
   fi
 }
 
+python_runtime_tree_digest() {
+  local venv_root="$1"
+  "$PYTHON_BASE" -I -S - "$venv_root" <<'PY'
+import hashlib
+import json
+import pathlib
+import sys
+
+site = pathlib.Path(sys.argv[1]) / "lib/python3.12/site-packages"
+if not site.is_dir() or site.is_symlink():
+    raise SystemExit("Python runtime site-packages is unavailable or unsafe")
+
+def stable(path: pathlib.Path) -> bytes:
+    payload = path.read_bytes()
+    if path.name != "RECORD":
+        return payload
+    lines = []
+    for line in payload.decode("utf-8").splitlines():
+        fields = line.split(",")
+        if len(fields) != 3:
+            raise SystemExit("installed Python RECORD is not canonical CSV")
+        if fields[0].startswith("../../../bin/"):
+            continue
+        lines.append(",".join(fields))
+    return ("\n".join(lines) + "\n").encode()
+
+entries = [
+    [str(path.relative_to(site)), hashlib.sha256(stable(path)).hexdigest()]
+    for path in sorted(site.rglob("*"))
+    if path.is_file() and not path.is_symlink() and path.suffix != ".pyc"
+]
+print(hashlib.sha256(json.dumps(entries, separators=(",", ":")).encode()).hexdigest())
+PY
+}
+
+verify_runtime_venv() {
+  local venv_root="$1"
+  local supply_root="$2"
+  local expected_path="$3"
+  local evidence_path="${4:-}"
+  local staged="${5:-0}"
+  [[ "$staged" == "0" || "$staged" == "1" || "$staged" == "2" ]] \
+    || die "invalid Python runtime location mode"
+  "$PYTHON_BASE" -I -S - \
+    "$venv_root" "$supply_root" "$expected_path" \
+    "$PYTHON_BASE" "$PYTHON_BASE_SHA256" "$PYTHON_VERSION" \
+    "$SYSTEM_SITECUSTOMIZE" "$SYSTEM_SITECUSTOMIZE_RESOLVED" \
+    "$SYSTEM_SITECUSTOMIZE_SHA256" "$PYTHON_RUNTIME_TREE_PROPERTY" \
+    "$evidence_path" "$staged" <<'PY'
+import base64
+import hashlib
+import importlib.metadata
+import json
+import pathlib
+import re
+import sys
+
+(
+    venv_value,
+    supply_value,
+    expected_path_value,
+    python_value,
+    python_sha256,
+    python_version,
+    sitecustomize_value,
+    sitecustomize_resolved_value,
+    sitecustomize_sha256,
+    tree_property,
+    evidence_value,
+    staged_value,
+) = sys.argv[1:]
+venv = pathlib.Path(venv_value)
+supply = pathlib.Path(supply_value)
+expected_path = pathlib.Path(expected_path_value)
+python = pathlib.Path(python_value)
+sitecustomize = pathlib.Path(sitecustomize_value)
+sitecustomize_resolved = pathlib.Path(sitecustomize_resolved_value)
+requirements = supply / "PYTHON_RUNTIME_REQUIREMENTS.lock"
+supply_manifest = supply / "PYTHON_RUNTIME_SUPPLY.json"
+sbom_path = supply / "SBOM.python.cdx.json"
+site = venv / "lib/python3.12/site-packages"
+bin_dir = venv / "bin"
+config_path = venv / "pyvenv.cfg"
+if (
+    not venv.is_dir()
+    or venv.is_symlink()
+    or not site.is_dir()
+    or site.is_symlink()
+    or not bin_dir.is_dir()
+    or bin_dir.is_symlink()
+    or not config_path.is_file()
+    or config_path.is_symlink()
+    or any(not path.is_file() or path.is_symlink() for path in (requirements, supply_manifest, sbom_path))
+):
+    raise SystemExit("Python runtime verification inputs are unsafe")
+if expected_path.is_symlink():
+    raise SystemExit("Python runtime canonical path is a symlink")
+if staged_value == "0" and venv.resolve() != expected_path:
+    raise SystemExit("Python runtime is not installed at its canonical non-symlink path")
+if staged_value == "1" and venv.parent.resolve() != expected_path.parent.resolve():
+    raise SystemExit("Python runtime staging path is outside the canonical filesystem boundary")
+if (
+    not python.is_file()
+    or python.is_symlink()
+    or hashlib.sha256(python.read_bytes()).hexdigest() != python_sha256
+    or not sitecustomize.is_file()
+    or sitecustomize.resolve() != sitecustomize_resolved
+    or sitecustomize_resolved.is_symlink()
+    or hashlib.sha256(sitecustomize.read_bytes()).hexdigest() != sitecustomize_sha256
+):
+    raise SystemExit("Python runtime base identity mismatch")
+config = {
+    key.strip().lower(): value.strip()
+    for line in config_path.read_text(encoding="utf-8").splitlines()
+    if "=" in line
+    for key, value in (line.split("=", 1),)
+}
+expected_config = {
+    "home": "/usr/bin",
+    "include-system-site-packages": "false",
+    "version": python_version,
+    "executable": str(python),
+    "command": f"{python} -m venv {expected_path}",
+}
+if config != expected_config:
+    raise SystemExit("Python runtime pyvenv.cfg identity mismatch")
+
+expected_interpreter_links = {
+    venv / "bin/python": pathlib.Path("python3.12"),
+    venv / "bin/python3": pathlib.Path("python3.12"),
+    venv / "bin/python3.12": python,
+}
+for link, target in expected_interpreter_links.items():
+    if (
+        not link.is_symlink()
+        or link.readlink() != target
+        or link.resolve(strict=True) != python
+    ):
+        raise SystemExit(f"Python runtime interpreter link is invalid: {link.name}")
+if set(bin_dir.iterdir()) != set(expected_interpreter_links):
+    raise SystemExit("Python runtime bin inventory is not interpreter-only")
+
+canonical = lambda value: re.sub(r"[-_.]+", "-", value).lower()
+expected = {}
+for raw in requirements.read_text(encoding="utf-8").splitlines():
+    match = re.match(r"^([A-Za-z0-9_.-]+)(?:\[[^]]+\])?==([^ ;\\]+)", raw)
+    if match:
+        name = canonical(match.group(1))
+        if name in expected:
+            raise SystemExit("duplicate Python runtime lock distribution")
+        expected[name] = match.group(2)
+if not expected:
+    raise SystemExit("Python runtime lock is empty")
+dists = {
+    canonical(dist.metadata["Name"]): dist
+    for dist in importlib.metadata.distributions(path=[str(site)])
+    if dist.metadata.get("Name")
+}
+versions = {name: dist.version for name, dist in dists.items()}
+manifest = json.loads(supply_manifest.read_text(encoding="utf-8"))
+bootstrap = manifest.get("bootstrapDistributions")
+if not isinstance(bootstrap, dict) or versions != expected | bootstrap:
+    raise SystemExit("Python runtime distribution inventory mismatch")
+
+claimed = set()
+record_failures = []
+for name, dist in sorted(dists.items()):
+    files = tuple(dist.files or ())
+    if not files or not any(pathlib.Path(str(file)).name == "RECORD" for file in files):
+        record_failures.append(f"{name}:missing_RECORD")
+        continue
+    for file in files:
+        target = pathlib.Path(dist.locate_file(file))
+        try:
+            resolved = target.resolve(strict=True)
+        except (OSError, RuntimeError):
+            record_failures.append(f"{name}:{file}:missing_or_unsafe")
+            continue
+        if target.is_symlink() or not resolved.is_file() or not resolved.is_relative_to(venv.resolve()):
+            record_failures.append(f"{name}:{file}:outside_or_symlink")
+            continue
+        if resolved.is_relative_to(site.resolve()):
+            claimed.add(resolved)
+        if file.hash is None:
+            if pathlib.Path(str(file)).name != "RECORD":
+                record_failures.append(f"{name}:{file}:unhashed")
+            continue
+        if file.hash.mode != "sha256":
+            record_failures.append(f"{name}:{file}:unsupported_hash")
+            continue
+        actual = base64.urlsafe_b64encode(hashlib.sha256(resolved.read_bytes()).digest()).decode().rstrip("=")
+        if actual != file.hash.value:
+            record_failures.append(f"{name}:{file}:hash_mismatch")
+pyc = [path for path in site.rglob("*.pyc") if path.is_file()]
+allowed_symlinks = set(expected_interpreter_links)
+symlinks = [
+    path for path in venv.rglob("*")
+    if path.is_symlink() and path not in allowed_symlinks
+]
+unowned = [
+    path for path in site.rglob("*")
+    if path.is_file() and not path.is_symlink() and path.resolve() not in claimed
+]
+if record_failures or pyc or symlinks or unowned:
+    raise SystemExit(
+        f"Python runtime tree is unsafe: record={record_failures[:5]}, "
+        f"pyc={len(pyc)}, symlinks={len(symlinks)}, unowned={len(unowned)}"
+    )
+
+def stable(path: pathlib.Path) -> bytes:
+    payload = path.read_bytes()
+    if path.name != "RECORD":
+        return payload
+    lines = []
+    for line in payload.decode("utf-8").splitlines():
+        fields = line.split(",")
+        if len(fields) != 3:
+            raise SystemExit("installed Python RECORD is not canonical CSV")
+        if fields[0].startswith("../../../bin/"):
+            continue
+        lines.append(",".join(fields))
+    return ("\n".join(lines) + "\n").encode()
+
+entries = [
+    [str(path.relative_to(site)), hashlib.sha256(stable(path)).hexdigest()]
+    for path in sorted(site.rglob("*"))
+    if path.is_file() and not path.is_symlink() and path.suffix != ".pyc"
+]
+tree = hashlib.sha256(json.dumps(entries, separators=(",", ":")).encode()).hexdigest()
+sbom = json.loads(sbom_path.read_text(encoding="utf-8"))
+tree_values = [
+    str(item.get("value", ""))
+    for item in sbom.get("metadata", {}).get("properties", [])
+    if isinstance(item, dict) and item.get("name") == tree_property
+]
+if len(tree_values) != 1 or tree != tree_values[0] or manifest.get("sitePackages", {}).get("sha256") != tree:
+    raise SystemExit("Python runtime tree differs from signed SBOM")
+payload = {
+    "schemaVersion": 1,
+    "path": str(expected_path),
+    "pythonSha256": python_sha256,
+    "requirementsSha256": hashlib.sha256(requirements.read_bytes()).hexdigest(),
+    "sbomSha256": hashlib.sha256(sbom_path.read_bytes()).hexdigest(),
+    "sitePackagesTreeSha256": tree,
+    "distributionCount": len(versions),
+    "sitePackagesFileCount": len(entries),
+}
+if evidence_value:
+    pathlib.Path(evidence_value).write_text(
+        json.dumps(payload, sort_keys=True, separators=(",", ":")) + "\n",
+        encoding="utf-8",
+    )
+print(tree)
+PY
+}
+
+stage_runtime_venv() {
+  local supply_root="$1"
+  local stage_path="$2"
+  local canonical_path="$LIVE_ROOT/backend/venv"
+  verify_python_base
+  [[ ! -e "$stage_path" && ! -L "$stage_path" ]] \
+    || die "Python runtime staging path already exists"
+  [[ "$(stat -c %d "$(dirname "$stage_path")")" == "$(stat -c %d "$LIVE_ROOT/backend")" ]] \
+    || die "Python runtime staging and live path must share a filesystem"
+  "$PYTHON_BASE" -I -m venv "$stage_path"
+  env -i \
+    PATH=/usr/bin:/bin \
+    LANG=C.UTF-8 \
+    PYTHONNOUSERSITE=1 \
+    PYTHONSAFEPATH=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    "$stage_path/bin/python" -B -I -m pip install \
+      --disable-pip-version-check --no-index \
+      --find-links "$supply_root/wheels" --no-compile --require-hashes \
+      -r "$supply_root/$PYTHON_RUNTIME_REQUIREMENTS_NAME"
+  env -i \
+    PATH=/usr/bin:/bin \
+    LANG=C.UTF-8 \
+    PYTHONNOUSERSITE=1 \
+    PYTHONSAFEPATH=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    "$stage_path/bin/python" -B -I -m pip check
+  "$PYTHON_BASE" -I -S - "$stage_path" "$canonical_path" <<'PY'
+import csv
+import io
+import pathlib
+import sys
+
+stage = pathlib.Path(sys.argv[1])
+canonical = pathlib.Path(sys.argv[2])
+config_path = stage / "pyvenv.cfg"
+text = config_path.read_text(encoding="utf-8")
+lines = []
+found = 0
+for line in text.splitlines():
+    if line.lower().startswith("command ="):
+        lines.append(f"command = /usr/bin/python3.12 -m venv {canonical}")
+        found += 1
+    else:
+        lines.append(line)
+if found != 1:
+    raise SystemExit("Python runtime pyvenv.cfg command is missing or duplicated")
+config_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+# The production runtime invokes modules through the three pinned interpreter
+# links only. Remove path-bound console scripts and their RECORD rows so no
+# unsigned executable surface remains under venv/bin.
+site = stage / "lib/python3.12/site-packages"
+for record in sorted(site.glob("*.dist-info/RECORD")):
+    rows = list(csv.reader(io.StringIO(record.read_text(encoding="utf-8"))))
+    kept = []
+    for row in rows:
+        if len(row) != 3:
+            raise SystemExit(f"non-canonical RECORD row: {record.name}")
+        if not row[0].startswith("../../../bin/"):
+            kept.append(row)
+    if kept != rows:
+        buffer = io.StringIO(newline="")
+        writer = csv.writer(buffer, lineterminator="\n")
+        writer.writerows(kept)
+        record.write_text(buffer.getvalue(), encoding="utf-8")
+for entry in (stage / "bin").iterdir():
+    if entry.is_file() and not entry.is_symlink():
+        entry.unlink()
+PY
+  find "$stage_path" -type f -name '*.pyc' -delete
+  find "$stage_path" -depth -type d -name __pycache__ -empty -delete
+  if [[ -L "$stage_path/lib64" ]]; then
+    [[ "$(readlink -- "$stage_path/lib64")" == "lib" ]] \
+      || die "Python runtime lib64 link is non-canonical"
+    unlink -- "$stage_path/lib64"
+  elif [[ -e "$stage_path/lib64" ]]; then
+    die "Python runtime lib64 entry is non-canonical"
+  fi
+  find "$stage_path" -type d -exec chmod 0755 {} +
+  find "$stage_path" -type f -exec chmod 0644 {} +
+  find "$stage_path/bin" -type f -exec chmod 0755 {} +
+  if [[ "$TEST_MODE" != "1" ]]; then
+    chown -R root:root "$stage_path"
+  fi
+  verify_runtime_venv "$stage_path" "$supply_root" "$canonical_path" "" 1
+}
+
+switch_runtime_venv() {
+  local staged_venv="$1"
+  local backup_dir="$2"
+  local current_venv="$LIVE_ROOT/backend/venv"
+  local prior_venv="$backup_dir/venv.pre-switch"
+  [[ -d "$staged_venv" && ! -L "$staged_venv" ]] \
+    || die "staged Python runtime is unavailable or unsafe"
+  [[ -d "$current_venv" && ! -L "$current_venv" ]] \
+    || die "current Python runtime is unavailable or unsafe"
+  [[ ! -e "$prior_venv" && ! -L "$prior_venv" ]] \
+    || die "Python runtime switch backup already exists"
+  mv --no-copy -- "$current_venv" "$prior_venv"
+  if [[ "$TEST_MODE" == "1" && "$TEST_FAIL_PHASE" == "venv_after_old_move" ]]; then
+    die "TEST Python runtime failure after old runtime move"
+  fi
+  mv --no-copy -- "$staged_venv" "$current_venv"
+  if [[ "$TEST_MODE" == "1" && "$TEST_FAIL_PHASE" == "venv_after_swap" ]]; then
+    die "TEST Python runtime failure after new runtime swap"
+  fi
+}
+
+backup_runtime_venv_identity() {
+  local backup_dir="$1"
+  local live_venv="$LIVE_ROOT/backend/venv"
+  local evidence="$backup_dir/venv-before.json"
+  local live_supply="$backup_dir/python-runtime-supply.old"
+  local current_sha current_supply
+  current_sha="$(git_service rev-parse HEAD)"
+  current_supply="$RUNTIME_RELEASE_BASE/$current_sha/python-runtime-supply"
+  [[ -d "$live_venv" && ! -L "$live_venv" ]] \
+    || die "current Python runtime is unavailable or unsafe"
+  mkdir -p "$live_supply"
+  if [[ -f "$LIVE_ROOT/backend/requirements.lock" ]]; then
+    cp -- "$LIVE_ROOT/backend/requirements.lock" "$live_supply/$PYTHON_RUNTIME_REQUIREMENTS_NAME"
+  fi
+  # A legacy pre-contract venv is accepted as an opaque rollback asset; all
+  # contract-managed handles additionally bind the signed tree below.
+  if [[ -d "$RUNTIME_RELEASE_BASE/$current_sha" && ! -L "$RUNTIME_RELEASE_BASE/$current_sha" \
+    && ! -f "$current_supply/PYTHON_RUNTIME_SUPPLY.json" ]]; then
+    die "contract-managed current release is missing its signed Python runtime supply"
+  fi
+  if [[ -f "$current_supply/PYTHON_RUNTIME_SUPPLY.json" ]]; then
+    cp -a -- "$current_supply/." "$live_supply/"
+    verify_runtime_venv "$live_venv" "$live_supply" "$live_venv" "$evidence"
+  else
+    "$PYTHON_BASE" -I -S - "$live_venv" "$evidence" <<'PY'
+import hashlib
+import json
+import pathlib
+import sys
+
+root = pathlib.Path(sys.argv[1])
+if not root.is_dir() or root.is_symlink():
+    raise SystemExit("legacy Python runtime backup source is unsafe")
+entries = []
+for path in sorted(root.rglob("*")):
+    if path.is_symlink():
+        entries.append([str(path.relative_to(root)), "symlink", path.readlink().as_posix()])
+    elif path.is_file():
+        entries.append([str(path.relative_to(root)), "file", hashlib.sha256(path.read_bytes()).hexdigest()])
+digest = hashlib.sha256(json.dumps(entries, separators=(",", ":")).encode()).hexdigest()
+pathlib.Path(sys.argv[2]).write_text(
+    json.dumps({"schemaVersion": 1, "legacyOpaque": True, "treeSha256": digest}, sort_keys=True, separators=(",", ":")) + "\n",
+    encoding="utf-8",
+)
+PY
+  fi
+  chmod 0600 "$evidence"
+}
+
+verify_legacy_runtime_venv_identity() {
+  local venv_root="$1"
+  local evidence="$2"
+  "$PYTHON_BASE" -I -S - "$venv_root" "$evidence" <<'PY'
+import hashlib
+import json
+import pathlib
+import sys
+
+root = pathlib.Path(sys.argv[1])
+evidence_path = pathlib.Path(sys.argv[2])
+if (
+    not root.is_dir()
+    or root.is_symlink()
+    or not evidence_path.is_file()
+    or evidence_path.is_symlink()
+):
+    raise SystemExit("legacy Python runtime rollback inputs are unsafe")
+evidence = json.loads(evidence_path.read_text(encoding="utf-8"))
+if set(evidence) != {"schemaVersion", "legacyOpaque", "treeSha256"} or evidence.get("schemaVersion") != 1 or evidence.get("legacyOpaque") is not True:
+    raise SystemExit("legacy Python runtime rollback evidence is invalid")
+entries = []
+for path in sorted(root.rglob("*")):
+    if path.is_symlink():
+        entries.append([str(path.relative_to(root)), "symlink", path.readlink().as_posix()])
+    elif path.is_file():
+        entries.append([str(path.relative_to(root)), "file", hashlib.sha256(path.read_bytes()).hexdigest()])
+digest = hashlib.sha256(json.dumps(entries, separators=(",", ":")).encode()).hexdigest()
+if digest != evidence.get("treeSha256"):
+    raise SystemExit("legacy Python runtime rollback identity mismatch")
+PY
+}
+
+preflight_runtime_venv_restore() {
+  local backup_dir="$1"
+  local current_venv="$LIVE_ROOT/backend/venv"
+  local prior_venv="$backup_dir/venv.pre-switch"
+  local evidence="$backup_dir/venv-before.json"
+  local old_supply="$backup_dir/python-runtime-supply.old"
+  local candidate mode generated
+  [[ -f "$evidence" && ! -L "$evidence" ]] \
+    || die "rollback Python runtime evidence is unavailable or unsafe"
+  if [[ -d "$prior_venv" && ! -L "$prior_venv" ]]; then
+    candidate="$prior_venv"
+  elif [[ -d "$current_venv" && ! -L "$current_venv" ]]; then
+    candidate="$current_venv"
+  else
+    die "rollback Python runtime backup is unavailable or unsafe"
+  fi
+  mode="$("$PYTHON_BASE" -I -S - "$evidence" <<'PY'
+import json
+import pathlib
+import sys
+
+path = pathlib.Path(sys.argv[1])
+if not path.is_file() or path.is_symlink():
+    raise SystemExit("rollback Python runtime evidence is unsafe")
+payload = json.loads(path.read_text(encoding="utf-8"))
+if payload.get("schemaVersion") != 1:
+    raise SystemExit("rollback Python runtime evidence schema is invalid")
+print("legacy" if payload.get("legacyOpaque") is True else "managed")
+PY
+)"
+  if [[ "$mode" == "legacy" ]]; then
+    verify_legacy_runtime_venv_identity "$candidate" "$evidence"
+    return
+  fi
+  [[ "$mode" == "managed" ]] || die "rollback Python runtime evidence mode is invalid"
+  [[ -d "$old_supply" && ! -L "$old_supply" \
+    && -f "$old_supply/PYTHON_RUNTIME_SUPPLY.json" \
+    && ! -L "$old_supply/PYTHON_RUNTIME_SUPPLY.json" ]] \
+    || die "managed rollback Python runtime supply is unavailable or unsafe"
+  generated="$(mktemp "$backup_dir/.venv-restore-preflight.XXXXXX")"
+  if ! verify_runtime_venv \
+    "$candidate" "$old_supply" "$current_venv" "$generated" 2 >/dev/null; then
+    rm -f -- "$generated"
+    die "managed rollback Python runtime verification failed"
+  fi
+  if ! cmp -s -- "$generated" "$evidence"; then
+    rm -f -- "$generated"
+    die "managed rollback Python runtime evidence mismatch"
+  fi
+  rm -f -- "$generated"
+}
+
+restore_runtime_venv() {
+  local backup_dir="$1"
+  local current_venv="$LIVE_ROOT/backend/venv"
+  local prior_venv="$backup_dir/venv.pre-switch"
+  local failed_venv
+  preflight_runtime_venv_restore "$backup_dir"
+  failed_venv="$backup_dir/venv.failed.$(date -u +%Y%m%dT%H%M%SZ)"
+  if [[ -d "$prior_venv" && ! -L "$prior_venv" ]]; then
+    if [[ -e "$current_venv" || -L "$current_venv" ]]; then
+      mv --no-copy -- "$current_venv" "$failed_venv"
+    fi
+    mv --no-copy -- "$prior_venv" "$current_venv"
+  elif [[ ! -d "$current_venv" || -L "$current_venv" ]]; then
+    die "rollback Python runtime backup is unavailable or unsafe"
+  fi
+  preflight_runtime_venv_restore "$backup_dir"
+}
+
 check_prometheus_config() {
   if [[ "$TEST_MODE" == "1" ]]; then
     log "TEST Prometheus config check"
     [[ ! -e "$PROMETHEUS_FRAGMENT" ]] && return 0
-    ! grep -Eq '__PROMETHEUS_DOCKER_GATEWAY__|0\.0\.0\.0|127\.0\.0\.1' "$PROMETHEUS_FRAGMENT"
+    if grep -Eq '__PROMETHEUS_DOCKER_GATEWAY__|0\.0\.0\.0|127\.0\.0\.1' "$PROMETHEUS_FRAGMENT"; then
+      return 1
+    fi
     return
   fi
   docker exec "$PROMETHEUS_CONTAINER" promtool check config "$PROMETHEUS_CONTAINER_CONFIG"
@@ -1324,7 +2014,7 @@ verify_prometheus_targets() {
   for attempt in {1..30}; do
     payload="$(curl --silent --show-error --fail --max-time 5 \
       http://127.0.0.1:9090/api/v1/targets)" || payload=""
-    if python3 -c '
+    if "$PYTHON_BASE" -I -S -c '
 import json
 import sys
 
@@ -1360,7 +2050,7 @@ verify_prometheus_recording_series() {
     payload="$(curl --silent --show-error --fail --max-time 5 --get \
       --data-urlencode 'query=count({__name__=~"unihub_retail:(http_requests_excluding_probes|http_5xx_ratio|http_latency_p95_seconds|dashboard_latency_p95_seconds):rate5m"}) by (__name__)' \
       http://127.0.0.1:9090/api/v1/query)" || payload=""
-    if python3 -c '
+    if "$PYTHON_BASE" -I -S -c '
 import json
 import sys
 
@@ -1660,7 +2350,7 @@ recover_forward_release() {
   local expected_artifact_sha256="$4"
   local backup_dir="$5"
   local manifest="$backup_dir/release.env"
-  local old_sha state work_dir artifact_tree next_dist failed_dist prior_link prior_approval_id stage_root
+  local old_sha state work_dir artifact_tree next_dist failed_dist prior_link prior_approval_id stage_root supply_root staged_venv
 
   old_sha="$(read_manifest_value "$manifest" OLD_SHA)"
   state="$(read_manifest_value "$manifest" STATE)"
@@ -1683,6 +2373,10 @@ recover_forward_release() {
     if [[ "$approval_claimed" == "1" && -n "$APPROVAL_CLAIM" ]]; then
       finalize_approval failed "$backup_dir" || true
     fi
+    if [[ -n "${staged_venv:-}" && "$staged_venv" == "$LIVE_ROOT/backend/.venv."* \
+      && -d "$staged_venv" && ! -L "$staged_venv" ]]; then
+      rm -rf -- "$staged_venv"
+    fi
     rm -rf -- "$work_dir"
     exit "$rc"
   }
@@ -1692,10 +2386,13 @@ recover_forward_release() {
   approval_claimed=1
   claim_approval "$ci_run_id" "$expected_sha" "$expected_artifact_sha256"
   artifact_tree="$(copy_and_verify_artifact "$source_archive" "$expected_sha" "$expected_artifact_sha256" "$work_dir")"
+  supply_root="$(<"$work_dir/python-runtime-supply.path")"
   detect_prometheus_network
   assert_prometheus_shared_include
   stage_root="$work_dir/runtime-release"
-  prepare_runtime_release "$artifact_tree" "$stage_root"
+  prepare_runtime_release "$artifact_tree" "$stage_root" "$supply_root"
+  staged_venv="$LIVE_ROOT/backend/.venv.${expected_sha}.recovery.$$.${RANDOM}"
+  stage_runtime_venv "$supply_root" "$staged_venv"
   next_dist="$backup_dir/dist.recovery.next"
   rm -rf -- "$next_dist"
   mkdir -p "$next_dist"
@@ -1713,11 +2410,18 @@ recover_forward_release() {
   mark_planned_deployment
   wait_for_planned_deployment_inhibition \
     || die "planned deployment inhibition did not become active"
+  preflight_runtime_venv_restore "$backup_dir"
   runtime_transition_started=1
   stop_runtime
+  restore_runtime_venv "$backup_dir"
+  switch_runtime_venv "$staged_venv" "$backup_dir"
   apply_runtime_identity_filesystem
   verify_runtime_identity_filesystem
   install_runtime_assets "$stage_root" "$expected_sha"
+  verify_runtime_venv \
+    "$LIVE_ROOT/backend/venv" \
+    "$RUNTIME_RELEASE_BASE/$expected_sha/python-runtime-supply" \
+    "$LIVE_ROOT/backend/venv"
   if ! diff -qr -- "$LIVE_ROOT/dist" "$next_dist" >/dev/null; then
     failed_dist="$backup_dir/dist.recovery.failed.$(date -u +%Y%m%dT%H%M%SZ)"
     mv -- "$LIVE_ROOT/dist" "$failed_dist"
@@ -1943,7 +2647,9 @@ rollback_from_backup() {
   fi
 
   log "rolling back code from $expected_current_sha to $old_sha"
+  preflight_runtime_venv_restore "$backup_dir"
   stop_runtime || true
+  restore_runtime_venv "$backup_dir"
   git_service reset --hard "$old_sha"
   normalize_tracked_source_permissions
   restore_dist "$backup_dir"
@@ -1963,11 +2669,12 @@ deploy_release() {
   validate_sha "$expected_sha"
   validate_ci_run_id "$ci_run_id"
   validate_sha256 "$expected_artifact_sha256"
+  verify_python_base
   assert_live_checkout
   assert_worktree_safe
   verify_runtime_identity_prerequisites
 
-  local old_sha stamp backup_dir work_dir artifact_tree backup_started next_dist backup_nonce stage_root
+  local old_sha stamp backup_dir work_dir artifact_tree backup_started next_dist backup_nonce stage_root supply_root staged_venv
   old_sha="$(git_service rev-parse HEAD)"
   if [[ "$old_sha" == "$expected_sha" ]]; then
     local recovery_handle=""
@@ -1995,6 +2702,10 @@ deploy_release() {
     detect_prometheus_network
     assert_prometheus_shared_include
     verify_active_runtime_assets "$expected_sha"
+    verify_runtime_venv \
+      "$LIVE_ROOT/backend/venv" \
+      "$RUNTIME_RELEASE_BASE/$expected_sha/python-runtime-supply" \
+      "$LIVE_ROOT/backend/venv"
     verify_runtime_identity_filesystem
     verify_tracked_source_permissions
     verify_frontend_permissions "$LIVE_ROOT/dist"
@@ -2035,6 +2746,10 @@ deploy_release() {
     if [[ "$approval_claimed" == "1" && -n "$APPROVAL_CLAIM" ]]; then
       finalize_approval failed "$backup_dir" || true
     fi
+    if [[ -n "${staged_venv:-}" && "$staged_venv" == "$LIVE_ROOT/backend/.venv."* \
+      && -d "$staged_venv" && ! -L "$staged_venv" ]]; then
+      rm -rf -- "$staged_venv"
+    fi
     exit "$rc"
   }
   # ERR performs rollback while deploy_release locals are still in scope.
@@ -2046,10 +2761,13 @@ deploy_release() {
   approval_claimed=1
   claim_approval "$ci_run_id" "$expected_sha" "$expected_artifact_sha256"
   artifact_tree="$(copy_and_verify_artifact "$source_archive" "$expected_sha" "$expected_artifact_sha256" "$work_dir")"
+  supply_root="$(<"$work_dir/python-runtime-supply.path")"
   detect_prometheus_network
   assert_prometheus_shared_include
   stage_root="$work_dir/runtime-release"
-  prepare_runtime_release "$artifact_tree" "$stage_root"
+  prepare_runtime_release "$artifact_tree" "$stage_root" "$supply_root"
+  staged_venv="$LIVE_ROOT/backend/.venv.${expected_sha}.staged.$$.${RANDOM}"
+  stage_runtime_venv "$supply_root" "$staged_venv"
   ensure_backup_root
   mkdir -p "$backup_dir"
   chmod 0700 "$backup_dir"
@@ -2063,6 +2781,7 @@ deploy_release() {
   next_dist="$(prepare_tested_dist "$artifact_tree" "$backup_dir")"
   backup_current_dist "$backup_dir"
   backup_runtime_assets "$backup_dir"
+  backup_runtime_venv_identity "$backup_dir"
   rollback_needed=1
 
   runtime_touched=1
@@ -2070,9 +2789,14 @@ deploy_release() {
   wait_for_planned_deployment_inhibition \
     || die "planned deployment inhibition did not become active"
   stop_runtime
+  switch_runtime_venv "$staged_venv" "$backup_dir"
   apply_runtime_identity_filesystem
   verify_runtime_identity_filesystem
   install_runtime_assets "$stage_root" "$expected_sha"
+  verify_runtime_venv \
+    "$LIVE_ROOT/backend/venv" \
+    "$RUNTIME_RELEASE_BASE/$expected_sha/python-runtime-supply" \
+    "$LIVE_ROOT/backend/venv"
   switch_dist "$next_dist" "$backup_dir"
   git_service merge --ff-only "$expected_sha"
   normalize_tracked_source_permissions
@@ -2124,25 +2848,135 @@ validate_release() {
   local source_archive="$1"
   local expected_sha="$2"
   validate_sha "$expected_sha"
+  verify_python_base
   assert_live_checkout
   assert_worktree_safe
   fetch_and_verify_commit "$expected_sha"
-  local work_dir artifact_tree artifact_sha256 stage_root
+  local work_dir artifact_tree artifact_sha256 stage_root supply_root
   work_dir="$(mktemp -d "${TMPDIR:-/tmp}/retail-deploy-validate.XXXXXX")"
   trap 'rm -rf -- "$work_dir"' RETURN
   artifact_sha256="$(sha256sum "$source_archive" | awk '{print $1}')"
   validate_sha256 "$artifact_sha256"
   artifact_tree="$(copy_and_verify_artifact "$source_archive" "$expected_sha" "$artifact_sha256" "$work_dir")"
+  supply_root="$(<"$work_dir/python-runtime-supply.path")"
   [[ -f "$artifact_tree/dist/index.html" && ! -L "$artifact_tree/dist/index.html" \
     && -s "$artifact_tree/dist/index.html" ]] || die "tested frontend artifact is missing"
   detect_prometheus_network
   assert_prometheus_shared_include
   stage_root="$work_dir/runtime-release"
-  prepare_runtime_release "$artifact_tree" "$stage_root"
+  prepare_runtime_release "$artifact_tree" "$stage_root" "$supply_root"
   log "artifact and runtime topology match the approved source without mutation: $expected_sha"
 }
 
+bootstrap_entrypoint() {
+  local source_release_sha="$1"
+  local source_artifact_sha256="$2"
+  validate_sha "$source_release_sha"
+  validate_sha256 "$source_artifact_sha256"
+  [[ "$EUID" -eq 0 || "$TEST_MODE" == "1" ]] \
+    || die "deploy entrypoint bootstrap requires root"
+  [[ "${SUDO_USER:-}" != "unihub-deploy" ]] \
+    || die "deploy runner cannot bootstrap its own privileged entrypoint"
+  verify_python_base
+  local target backup_root evidence_root new_sha old_sha="" stamp temp backup="" evidence
+  if [[ "$TEST_MODE" == "1" ]]; then
+    target="$OPS_ROOT/scripts/deploy-retail-artifact.sh"
+    backup_root="$OPS_ROOT/backups/retail-deploy-entrypoints"
+    evidence_root="$OPS_ROOT/release-evidence/deploy-entrypoint-bootstrap"
+  else
+    target="/opt/Mobiup/ops/scripts/deploy-retail-artifact.sh"
+    backup_root="/opt/Mobiup/ops/backups/retail-deploy-entrypoints"
+    evidence_root="/var/lib/unihub-retail-deploy/bootstrap-evidence"
+  fi
+  [[ -f "$SCRIPT_PATH" && ! -L "$SCRIPT_PATH" ]] \
+    || die "bootstrap source must be a regular non-symlink file"
+  new_sha="$(sha256sum "$SCRIPT_PATH" | awk '{print $1}')"
+  validate_sha256 "$new_sha"
+  stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+  mkdir -p "$(dirname "$target")" "$backup_root" "$evidence_root"
+  evidence="$evidence_root/${new_sha}.json"
+  if [[ "$TEST_MODE" != "1" ]]; then
+    chown root:root "$(dirname "$target")" "$backup_root" "$evidence_root"
+    chmod 0755 "$(dirname "$target")"
+    chmod 0700 "$backup_root" "$evidence_root"
+  fi
+  if [[ -e "$target" || -L "$target" ]]; then
+    [[ -f "$target" && ! -L "$target" ]] \
+      || die "existing deploy entrypoint is unsafe"
+    old_sha="$(sha256sum "$target" | awk '{print $1}')"
+    if [[ "$old_sha" == "$new_sha" ]]; then
+      [[ -f "$evidence" && ! -L "$evidence" ]] \
+        || die "idempotent deploy entrypoint bootstrap lacks durable evidence"
+      "$PYTHON_BASE" -I -S - "$evidence" "$target" "$new_sha" <<'PY'
+import json,pathlib,re,sys
+evidence,target,new_sha=sys.argv[1:]
+payload=json.loads(pathlib.Path(evidence).read_text(encoding="utf-8"))
+if (
+    payload.get("schema_version") != 1
+    or payload.get("result") != "PASS"
+    or payload.get("target") != target
+    or payload.get("new_sha256") != new_sha
+    or payload.get("root_owned") is not True
+    or payload.get("mode") != "0755"
+    or re.fullmatch(r"[0-9a-f]{40}", str(payload.get("source_release_sha", ""))) is None
+    or re.fullmatch(r"[0-9a-f]{64}", str(payload.get("source_artifact_sha256", ""))) is None
+):
+    raise SystemExit("durable deploy entrypoint bootstrap evidence is invalid")
+PY
+      log "root-owned deploy entrypoint already matches durable bootstrap evidence: $new_sha"
+      return 0
+    fi
+    if [[ "$old_sha" != "$new_sha" ]]; then
+      backup="$backup_root/${stamp}-${old_sha}.sh"
+      [[ ! -e "$backup" && ! -L "$backup" ]] \
+        || die "deploy entrypoint backup already exists"
+      install -m 0400 -- "$target" "$backup"
+      [[ -f "$backup" && ! -L "$backup" \
+        && "$(sha256sum "$backup" | awk '{print $1}')" == "$old_sha" ]] \
+        || die "deploy entrypoint backup digest mismatch"
+      if [[ "$TEST_MODE" != "1" ]]; then
+        [[ "$(stat -c '%u:%g:%a' "$backup")" == "0:0:400" ]] \
+          || die "deploy entrypoint backup ownership/mode mismatch"
+      fi
+    fi
+  fi
+  [[ ! -e "$evidence" && ! -L "$evidence" ]] \
+    || die "deploy entrypoint bootstrap evidence already exists"
+  temp="$(dirname "$target")/.deploy-retail-artifact.${new_sha}.new.$$"
+  [[ ! -e "$temp" && ! -L "$temp" ]] || die "bootstrap temporary path exists"
+  install -m 0755 -- "$SCRIPT_PATH" "$temp"
+  if [[ "$TEST_MODE" != "1" ]]; then
+    chown root:root "$temp"
+  fi
+  [[ "$(sha256sum "$temp" | awk '{print $1}')" == "$new_sha" ]] \
+    || die "bootstrap temporary entrypoint digest mismatch"
+  mv -f -- "$temp" "$target"
+  [[ "$(sha256sum "$target" | awk '{print $1}')" == "$new_sha" ]] \
+    || die "installed deploy entrypoint digest mismatch"
+  if [[ "$TEST_MODE" != "1" ]]; then
+    [[ "$(stat -c '%u:%g:%a' "$target")" == "0:0:755" ]] \
+      || die "installed deploy entrypoint ownership/mode mismatch"
+  fi
+  "$PYTHON_BASE" -I -S - \
+    "$evidence" "$target" "$new_sha" "$old_sha" "$backup" "$stamp" \
+    "$source_release_sha" "$source_artifact_sha256" <<'PY'
+import json,pathlib,sys
+output,target,new_sha,old_sha,backup,installed_at,source_release_sha,source_artifact_sha256=sys.argv[1:]
+payload={"schema_version":1,"result":"PASS","target":target,"new_sha256":new_sha,"old_sha256":old_sha or None,"backup_path":backup or None,"installed_at":installed_at,"source_release_sha":source_release_sha,"source_artifact_sha256":source_artifact_sha256,"root_owned":True,"mode":"0755"}
+path=pathlib.Path(output)
+path.write_text(json.dumps(payload,sort_keys=True,separators=(",",":"))+"\n",encoding="utf-8")
+path.chmod(0o600)
+PY
+  log "root-owned deploy entrypoint bootstrapped: $new_sha"
+  log "bootstrap evidence: $evidence"
+}
+
 case "${1:-}" in
+  bootstrap-entrypoint)
+    [[ "$#" -eq 3 ]] \
+      || die "usage: $PROGRAM bootstrap-entrypoint <source-sha> <artifact-sha256>"
+    bootstrap_entrypoint "$2" "$3"
+    ;;
   validate)
     [[ "$#" -eq 3 ]] || die "usage: $PROGRAM validate <artifact.tar.gz> <source-sha>"
     validate_release "$2" "$3"

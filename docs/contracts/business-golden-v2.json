@@ -1,0 +1,796 @@
+{
+  "version": 2,
+  "contract": "business-golden-v2",
+  "baseline_source_sha": "0be82b430e55b7414babf470abe3fc5404b6cdc9",
+  "normalization": {
+    "object_keys": "lexicographic",
+    "money": "decimal strings at declared scale",
+    "row_order": "explicit unless canonical_site_order is present",
+    "encoding": "UTF-8 JSON without whitespace"
+  },
+  "privacy": "synthetic opaque identifiers only; no production rows, names, CNP or salary values",
+  "mutation_rule": "expected values and case hashes are immutable after contract lock; change requires version increment, relock and fresh critique",
+  "cases": [
+    {
+      "id": "target_exact_breakpoint_115000",
+      "domain": "target",
+      "verifier": "allocate_with_bounds",
+      "input": {
+        "requested": "115000.00",
+        "rows": [
+          {
+            "site": "A",
+            "weight": "9000",
+            "floor": "15000.00",
+            "cap": "42000.00"
+          },
+          {
+            "site": "B",
+            "weight": "18000",
+            "floor": "30000.00",
+            "cap": "66000.00"
+          },
+          {
+            "site": "C",
+            "weight": "6000",
+            "floor": "18000.00",
+            "cap": "18000.00"
+          },
+          {
+            "site": "D",
+            "weight": "0",
+            "floor": "26000.00",
+            "cap": "31000.00"
+          },
+          {
+            "site": "E",
+            "weight": "18000",
+            "floor": "12000.00",
+            "cap": "26000.00"
+          }
+        ]
+      },
+      "expected": {
+        "floor_total": "101000.00",
+        "cap_total": "183000.00",
+        "sum": "115000.00",
+        "rows": [
+          {
+            "site": "A",
+            "allocated": "15000.00",
+            "flags": [
+              "FLOOR_APPLIED"
+            ],
+            "reason": "floor"
+          },
+          {
+            "site": "B",
+            "allocated": "30000.00",
+            "flags": [
+              "FLOOR_APPLIED"
+            ],
+            "reason": "floor"
+          },
+          {
+            "site": "C",
+            "allocated": "18000.00",
+            "flags": [
+              "FLOOR_APPLIED",
+              "CAP_APPLIED"
+            ],
+            "reason": "floor_cap"
+          },
+          {
+            "site": "D",
+            "allocated": "26000.00",
+            "flags": [
+              "FLOOR_APPLIED"
+            ],
+            "reason": "floor"
+          },
+          {
+            "site": "E",
+            "allocated": "26000.00",
+            "flags": [
+              "CAP_APPLIED"
+            ],
+            "reason": "cap"
+          }
+        ]
+      },
+      "case_sha256": "33a7ada96a9c5bbf5a0a55fbd8f920dc8395841b8c9655e7cdb423cf0fda9f02"
+    },
+    {
+      "id": "target_zero_weight_reserve",
+      "domain": "target",
+      "verifier": "allocate_with_bounds",
+      "input": {
+        "requested": "80.00",
+        "rows": [
+          {
+            "site": "P",
+            "weight": "100",
+            "floor": "0.00",
+            "cap": "60.00"
+          },
+          {
+            "site": "Z",
+            "weight": "0",
+            "floor": "10.00",
+            "cap": "50.00"
+          }
+        ]
+      },
+      "expected": {
+        "sum": "80.00",
+        "rows": [
+          {
+            "site": "P",
+            "allocated": "60.00",
+            "flags": [
+              "CAP_APPLIED"
+            ],
+            "reason": "cap"
+          },
+          {
+            "site": "Z",
+            "allocated": "20.00",
+            "flags": [],
+            "reason": "proportional"
+          }
+        ]
+      },
+      "case_sha256": "11498c33fb47f43a1ed9febae9dbbca8bd25ab725c72ff9c939c274e15d3074f"
+    },
+    {
+      "id": "target_floor_equals_cap",
+      "domain": "target",
+      "verifier": "allocate_with_bounds",
+      "input": {
+        "requested": "50.00",
+        "rows": [
+          {
+            "site": "X",
+            "weight": "9",
+            "floor": "20.00",
+            "cap": "20.00"
+          },
+          {
+            "site": "Y",
+            "weight": "1",
+            "floor": "0.00",
+            "cap": "100.00"
+          }
+        ]
+      },
+      "expected": {
+        "sum": "50.00",
+        "rows": [
+          {
+            "site": "X",
+            "allocated": "20.00",
+            "flags": [
+              "FLOOR_APPLIED",
+              "CAP_APPLIED"
+            ],
+            "reason": "floor_cap"
+          },
+          {
+            "site": "Y",
+            "allocated": "30.00",
+            "flags": [],
+            "reason": "proportional"
+          }
+        ]
+      },
+      "case_sha256": "098c1c78bbccba482cbd31544af2e0c78499c39765d8ff37a89b6df53925099c"
+    },
+    {
+      "id": "target_infeasible_low",
+      "domain": "target",
+      "verifier": "allocate_with_bounds",
+      "input": {
+        "requested": "29.99",
+        "rows": [
+          {
+            "site": "A",
+            "weight": "1",
+            "floor": "10.00",
+            "cap": "10.00"
+          },
+          {
+            "site": "B",
+            "weight": "1",
+            "floor": "20.00",
+            "cap": "20.00"
+          }
+        ]
+      },
+      "expected": {
+        "error": "TargetBudgetInfeasibleError",
+        "requested": "29.99",
+        "floor_total": "30.00",
+        "cap_total": "30.00"
+      },
+      "case_sha256": "7e1dc48b878585c1045932e825a32d6773516dc13f1fc8d5dd43b84619b23d6a"
+    },
+    {
+      "id": "target_infeasible_high",
+      "domain": "target",
+      "verifier": "allocate_with_bounds",
+      "input": {
+        "requested": "30.01",
+        "rows": [
+          {
+            "site": "A",
+            "weight": "1",
+            "floor": "10.00",
+            "cap": "10.00"
+          },
+          {
+            "site": "B",
+            "weight": "1",
+            "floor": "20.00",
+            "cap": "20.00"
+          }
+        ]
+      },
+      "expected": {
+        "error": "TargetBudgetInfeasibleError",
+        "requested": "30.01",
+        "floor_total": "30.00",
+        "cap_total": "30.00"
+      },
+      "case_sha256": "cff91e39b70a63b415e92285594afaa6da320d634335681ddde33eb719bf250c"
+    },
+    {
+      "id": "target_cohort_closed_new",
+      "domain": "target",
+      "verifier": "target_cohort",
+      "input": {
+        "target_month": "2026-08",
+        "stores": [
+          {
+            "site": "CLOSED",
+            "opened": "2020-01",
+            "closed": "2026-07"
+          },
+          {
+            "site": "ACTIVE",
+            "opened": "2020-01",
+            "closed": null
+          },
+          {
+            "site": "NEW",
+            "opened": "2026-09",
+            "closed": null
+          }
+        ]
+      },
+      "expected": {
+        "included": [
+          "ACTIVE"
+        ],
+        "excluded": {
+          "CLOSED": "closed_before_target_month",
+          "NEW": "opened_after_target_month"
+        }
+      },
+      "case_sha256": "9d03fcbff6dfe83451f6db573b39a89fa6af47d695df01ba15884b333b94e3f7"
+    },
+    {
+      "id": "target_effective_vat",
+      "domain": "target",
+      "verifier": "fiscal_rules",
+      "input": {
+        "values": [
+          {
+            "date": "2025-07-31",
+            "gross": "119.00"
+          },
+          {
+            "date": "2025-08-01",
+            "gross": "121.00"
+          }
+        ]
+      },
+      "expected": {
+        "rows": [
+          {
+            "rule": "ro-standard-vat-19",
+            "net": "100.00",
+            "rate": "0.19"
+          },
+          {
+            "rule": "ro-standard-vat-21",
+            "net": "100.00",
+            "rate": "0.21"
+          }
+        ]
+      },
+      "case_sha256": "0d302aaf9a70b1fbcba35669c3cab8de2b3898cd0f9120fec5483aae3522183b"
+    },
+    {
+      "id": "target_profitability_cutoff",
+      "domain": "target",
+      "verifier": "target_profitability",
+      "input": {
+        "period": "2026-08",
+        "gross_sales": "1210.00",
+        "costs": "800.00"
+      },
+      "expected": {
+        "vat_rule": "ro-standard-vat-21",
+        "net_sales": "1000.00",
+        "profit": "200.00",
+        "profit_margin_pct": "20.00"
+      },
+      "case_sha256": "58db605922f16e58ad2943df6011fe3b3ca3c582ce9b4c525e1f1f72bf069b7c"
+    },
+    {
+      "id": "target_api_export_parity",
+      "domain": "target",
+      "verifier": "target_api_export_parity",
+      "input": {
+        "rows": [
+          {
+            "site": "A",
+            "allocated": "10.01"
+          },
+          {
+            "site": "B",
+            "allocated": "20.02"
+          }
+        ]
+      },
+      "expected": {
+        "api_total": "30.03",
+        "export_total": "30.03",
+        "canonical_site_order": [
+          "A",
+          "B"
+        ]
+      },
+      "case_sha256": "d75ecc2a430d88a9c5aed9265a88d47f3a8542dd8e6b05e01cd22c56bcd4ee66"
+    },
+    {
+      "id": "pnl_vat_boundary",
+      "domain": "pnl",
+      "verifier": "gross_to_net",
+      "input": {
+        "rows": [
+          {
+            "period": "2025-07",
+            "gross": "1190.00"
+          },
+          {
+            "period": "2025-08",
+            "gross": "1210.00"
+          }
+        ]
+      },
+      "expected": {
+        "net": [
+          "1000.00",
+          "1000.00"
+        ],
+        "rules": [
+          "ro-standard-vat-19",
+          "ro-standard-vat-21"
+        ]
+      },
+      "case_sha256": "93287de6ba28110345f693037863c94417edd9c904d1b8e7645b0c90e9bf4934"
+    },
+    {
+      "id": "pnl_return_negative_actual",
+      "domain": "pnl",
+      "verifier": "pnl_aggregate",
+      "input": {
+        "revenue": "-100.00",
+        "cost_of_goods": "-40.00",
+        "operating_cost": "0.00"
+      },
+      "expected": {
+        "gross_margin": "-60.00",
+        "ebitda": "-60.00",
+        "classification": "actual_return"
+      },
+      "case_sha256": "1a4de51bda0bf1d9ff4c597c5468165ed95191fb1e2f5f1abb44e16c600c2ce2"
+    },
+    {
+      "id": "pnl_missing_cost_category",
+      "domain": "pnl",
+      "verifier": "pnl_completeness",
+      "input": {
+        "revenue": "1000.00",
+        "cost_categories": {
+          "goods": "600.00",
+          "rent": null
+        }
+      },
+      "expected": {
+        "status": "unavailable",
+        "missing": [
+          "rent"
+        ],
+        "profit": null
+      },
+      "case_sha256": "911f63af28e85a2ef197188cf7cef87fecd53489c22b3e0a8bf841431f02d423"
+    },
+    {
+      "id": "pnl_company_transfer",
+      "domain": "pnl",
+      "verifier": "pnl_scope",
+      "input": {
+        "rows": [
+          {
+            "company": "M1",
+            "site": "S1",
+            "amount": "100.00"
+          },
+          {
+            "company": "M2",
+            "site": "S1",
+            "amount": "50.00"
+          }
+        ]
+      },
+      "expected": {
+        "M1": "100.00",
+        "M2": "50.00",
+        "all": "150.00",
+        "cross_company_merge": false
+      },
+      "case_sha256": "77c7c55a8052e0066feffe9897e7a55c8ff54be0624c479db004e4ef982df554"
+    },
+    {
+      "id": "pnl_partial_month",
+      "domain": "pnl",
+      "verifier": "pnl_period_status",
+      "input": {
+        "period": "2026-08",
+        "cutoff": "2026-08-12",
+        "actual": "120.00"
+      },
+      "expected": {
+        "status": "partial",
+        "reported_actual": "120.00",
+        "implicit_extrapolation": false
+      },
+      "case_sha256": "ade561d55c40c5addda8a9aa3f923295763f0bc6377eca7997d75ee61e1f89d9"
+    },
+    {
+      "id": "pnl_close_reopen",
+      "domain": "pnl",
+      "verifier": "pnl_generation_head",
+      "input": {
+        "generations": [
+          {
+            "id": "g1",
+            "state": "closed",
+            "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          {
+            "id": "g2",
+            "state": "draft",
+            "hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          }
+        ]
+      },
+      "expected": {
+        "current": "g1",
+        "g1_mutable": false,
+        "reopen_creates_new_generation": true
+      },
+      "case_sha256": "9a09588fac341338e7caa06000a4e26e3ba9c8d86242693b3bea3a3c0d9aa98a"
+    },
+    {
+      "id": "pnl_aggregate_equals_detail",
+      "domain": "pnl",
+      "verifier": "pnl_aggregate",
+      "input": {
+        "detail": [
+          "100.01",
+          "-20.00",
+          "0.99"
+        ]
+      },
+      "expected": {
+        "aggregate": "81.00",
+        "difference": "0.00"
+      },
+      "case_sha256": "23b78a4ba309819ad2723411fdea9ac4ebde65a8c2ab3f8ea1c12aa065ba32cd"
+    },
+    {
+      "id": "campaign_identity_transfer",
+      "domain": "campaign_contest",
+      "verifier": "contest_identity",
+      "input": {
+        "identity_mode": "site_agent",
+        "rows": [
+          {
+            "site": "S1",
+            "agent": "agent-x",
+            "sales": "10.00"
+          },
+          {
+            "site": "S2",
+            "agent": "agent-x",
+            "sales": "20.00"
+          }
+        ]
+      },
+      "expected": {
+        "row_count": 2,
+        "totals": {
+          "S1|agent-x": "10.00",
+          "S2|agent-x": "20.00"
+        },
+        "cross_store_transfer": false
+      },
+      "case_sha256": "01d08a7aa7c75a9cb1e530073c164ace8b5d79b0bd2f463933dee362a9ca7d7a"
+    },
+    {
+      "id": "campaign_homonym_rejected",
+      "domain": "campaign_contest",
+      "verifier": "contest_identity",
+      "input": {
+        "identity_mode": "person_id",
+        "rows": [
+          {
+            "site": "S1",
+            "normalized_name": "same",
+            "person_id": null
+          },
+          {
+            "site": "S2",
+            "normalized_name": "same",
+            "person_id": null
+          }
+        ]
+      },
+      "expected": {
+        "status": "blocked",
+        "reason": "unconfirmed_person_identity",
+        "merged": false
+      },
+      "case_sha256": "81095dddb2d267a0809634ce731f4c4b50e97eedefa7149aa58dcb08b57d59d3"
+    },
+    {
+      "id": "campaign_alias_ambiguity_rejected",
+      "domain": "campaign_contest",
+      "verifier": "contest_identity",
+      "input": {
+        "identity_mode": "person_id",
+        "aliases": [
+          {
+            "alias": "agent-alias",
+            "person_id": "P001"
+          },
+          {
+            "alias": "agent-alias",
+            "person_id": "P002"
+          }
+        ],
+        "row": {
+          "site": "S1",
+          "alias": "agent-alias",
+          "sales": "10.00"
+        }
+      },
+      "expected": {
+        "status": "blocked",
+        "reason": "ambiguous_alias",
+        "candidate_person_ids": [
+          "P001",
+          "P002"
+        ],
+        "merged": false
+      },
+      "case_sha256": "965cf68c1525b403edae3e8a23c47a1dea2394e71937afa9cdc8a4c4f2a9681a"
+    },
+    {
+      "id": "campaign_promo_exclusion",
+      "domain": "campaign_contest",
+      "verifier": "promo_scope",
+      "input": {
+        "rows": [
+          {
+            "site": "S1",
+            "category": "Cartele",
+            "value": "100.00"
+          },
+          {
+            "site": "TR 01",
+            "category": "Accessory",
+            "value": "200.00"
+          },
+          {
+            "site": "S2",
+            "category": "Accessory",
+            "value": "300.00"
+          }
+        ]
+      },
+      "expected": {
+        "eligible_total": "300.00",
+        "excluded": [
+          "S1",
+          "TR 01"
+        ]
+      },
+      "case_sha256": "0059fa37390945529c9939954b81fe7ef9eb45f0cf0dc11968c9a433b4fa7a57"
+    },
+    {
+      "id": "campaign_threshold_90_100",
+      "domain": "campaign_contest",
+      "verifier": "thresholds",
+      "input": {
+        "values": [
+          "89.99",
+          "90.00",
+          "99.99",
+          "100.00"
+        ],
+        "thresholds": [
+          "90.00",
+          "100.00"
+        ]
+      },
+      "expected": {
+        "tiers": [
+          null,
+          "90",
+          "90",
+          "100"
+        ]
+      },
+      "case_sha256": "6aa8d0b00d5e5b050de329bb2dc0916537e8a64664bb6aa539ab8a58016f5de0"
+    },
+    {
+      "id": "campaign_tie_ranking",
+      "domain": "campaign_contest",
+      "verifier": "contest_ranking",
+      "input": {
+        "rows": [
+          {
+            "identity": "B",
+            "score": "10.00"
+          },
+          {
+            "identity": "A",
+            "score": "10.00"
+          },
+          {
+            "identity": "C",
+            "score": "9.00"
+          }
+        ]
+      },
+      "expected": {
+        "ordered": [
+          "A",
+          "B",
+          "C"
+        ],
+        "ranks": [
+          1,
+          1,
+          3
+        ],
+        "tie_break_display": "identity_ascending"
+      },
+      "case_sha256": "93475226d80cedb911c040280d2fc835ac04c6a98384305ce4a8622408856fd6"
+    },
+    {
+      "id": "campaign_generation_change",
+      "domain": "campaign_contest",
+      "verifier": "generation_fencing",
+      "input": {
+        "old_generation": "g1",
+        "old_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "new_generation": "g2",
+        "new_hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      },
+      "expected": {
+        "current": "g2",
+        "g1_immutable": true,
+        "hash_changed": true
+      },
+      "case_sha256": "c049cde26bc19e2dafd620870cd1d268779cb3c561c5ca12eefcd3b7ba7dfb6f"
+    },
+    {
+      "id": "campaign_explain_trace",
+      "domain": "campaign_contest",
+      "verifier": "campaign_explain",
+      "input": {
+        "receipt": "opaque-r1",
+        "qualifying": true,
+        "quantity": "2",
+        "threshold": "2"
+      },
+      "expected": {
+        "qualifying_receipts": 1,
+        "incentive_quantity": "2",
+        "metrics_are_distinct": true,
+        "reason_code": "threshold_met"
+      },
+      "case_sha256": "95f0e8dd70fb5711f3b6fcc7099774f5146cdd8007240b33be7473a21feb5041"
+    },
+    {
+      "id": "grile_effective_rule_date",
+      "domain": "grile_salary_calculation",
+      "verifier": "grile_rule_registry",
+      "input": {
+        "month": "2026-08",
+        "before_rule": "v1",
+        "effective_rule": "v2",
+        "effective_from": "2026-08-01"
+      },
+      "expected": {
+        "selected_rule": "v2",
+        "selection_date": "2026-08-01"
+      },
+      "case_sha256": "f112bf6b16e4e31527be206eab894b453ac59de988ac2a2575f458e177589efc"
+    },
+    {
+      "id": "grile_approval_fence",
+      "domain": "grile_salary_calculation",
+      "verifier": "grile_state_machine",
+      "input": {
+        "state": "approved",
+        "operation": "edit_manual_cells"
+      },
+      "expected": {
+        "allowed": false,
+        "error": "approved_generation_immutable"
+      },
+      "case_sha256": "a3607269681635eeae7061d589a1c0d5230aa5408b63e0fa369ed824c37155a2"
+    },
+    {
+      "id": "grile_target_sync_dry_run",
+      "domain": "grile_salary_calculation",
+      "verifier": "grile_target_sync",
+      "input": {
+        "mode": "dry_run",
+        "before_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "proposed_hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      },
+      "expected": {
+        "applied": false,
+        "current_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "candidate_hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      },
+      "case_sha256": "b239a606f874c8e7cfda0693fe6d7b85ca0d01f46b215f6befd131bef5b938ae"
+    },
+    {
+      "id": "grile_archive_retry_uncertain",
+      "domain": "grile_salary_calculation",
+      "verifier": "grile_archive_state",
+      "input": {
+        "checkpoint": "uncertain",
+        "automatic_retry": true
+      },
+      "expected": {
+        "allowed": false,
+        "requires_manual_reconciliation": true
+      },
+      "case_sha256": "2fa6c114e3549591772b5ea43c3325a0e33cd667af4d19482b731bec44f6f913"
+    },
+    {
+      "id": "grile_decimal_formula_parity",
+      "domain": "grile_salary_calculation",
+      "verifier": "grile_formula",
+      "input": {
+        "target": "100.00",
+        "achieved": "90.00"
+      },
+      "expected": {
+        "attainment_pct": "90.0",
+        "python_sheet_difference": "0.0"
+      },
+      "case_sha256": "3749810d6535067b4f542b18b0516d8f76c72b7786fdf09080994da1189b3f47"
+    }
+  ],
+  "contract_payload_sha256": "b87f0b271c6a00de6c85094a452c8a2227341835735461df97ae470515b81f0a"
+}

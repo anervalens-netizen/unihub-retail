@@ -73,6 +73,7 @@
     "065_salary_export_evidence.sql": "c6bf02313f4dfeeebe3796cdf6607a1e5e797ca6aa0d76b4ee654a5773cd42bf",
     "066_salary_export_authority.sql": "ab13ccc87b3da126f9935f1bb4ee66773afcc01417e08e3193242ddc2ed88fa5",
     "067_grile_v2_operations_read_authority.sql": "06b3c857983669677a741d6f743b47de370ce5195df33ba69d7c1f5c6b13057a",
-    "068_grile_v2_forecast_digest_authority.sql": "766e550ddf03474979c2bf8c26067d5dc3a79a1e501a705a6988ae9fc47afa79"
+    "068_grile_v2_forecast_digest_authority.sql": "766e550ddf03474979c2bf8c26067d5dc3a79a1e501a705a6988ae9fc47afa79",
+    "069_ai_cohort_and_transactional_outbox.sql": "e2f3f1ff09c14cbba577ac40ba476250a7b746ebbe0bdf373c6ebf4e552fc8a0"
   }
 }

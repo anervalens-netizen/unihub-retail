@@ -30,7 +30,7 @@
     "backend/services/reporting_refresh.py": 828,
     "backend/services/sales_generation_flow.py": 674,
     "backend/services/store_pnl_import.py": 725,
-    "backend/worker.py": 913,
+    "backend/worker.py": 909,
     "src/components/GrileSubtab.tsx": 667,
     "src/components/PnlSubtab.tsx": 706,
     "src/components/SalariiSubtab.tsx": 727,

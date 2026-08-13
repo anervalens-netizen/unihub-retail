@@ -76,6 +76,7 @@ release-ului `v2.1.0` include:
 | 066 | `066_salary_export_authority.sql` | `ab13ccc87b3da126f9935f1bb4ee66773afcc01417e08e3193242ddc2ed88fa5` | autoritate DB dedicată exporturilor salariale, granturi column-level și RLS care separă operațiile salariale de workerul generic |
 | 067 | `067_grile_v2_operations_read_authority.sql` | `06b3c857983669677a741d6f743b47de370ce5195df33ba69d7c1f5c6b13057a` | acces SELECT minim pentru workerul Grile V2 la actuals, cartele, forecast și proiecția Campaigns versionată |
 | 068 | `068_grile_v2_forecast_digest_authority.sql` | `766e550ddf03474979c2bf8c26067d5dc3a79a1e501a705a6988ae9fc47afa79` | EXECUTE minim pentru digestul de integritate folosit tranzitiv de read-model-ul Campaigns, fără acces la tabelele Planning |
+| 069 | `069_ai_cohort_and_transactional_outbox.sql` | `e2f3f1ff09c14cbba577ac40ba476250a7b746ebbe0bdf373c6ebf4e552fc8a0` | cohortă AI istorică sigilată immutable și outbox tranzacțional cu producători tipizați; runtime-ul rămâne inert până la Release B |
 
 Aplicarea se face numai prin `unihub-retail-migrate.service`, cu `MIGRATION_DATABASE_URL`, backup/read-only reconciliation și verificarea checksumului. Nu edita 032–036 după aplicare; corecția este o migrare nouă.
 

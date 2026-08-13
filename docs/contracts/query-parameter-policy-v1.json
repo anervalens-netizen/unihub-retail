@@ -1,0 +1,1856 @@
+{
+  "version": 1,
+  "baseline_source_sha": "0be82b430e55b7414babf470abe3fc5404b6cdc9",
+  "baseline_openapi_sha256": "420756d13c95101303697ebcec05ab83fe1679c27203c4589031e6d537cb6844",
+  "coverage": "every OpenAPI query parameter is enumerated exactly once by method, route template and name",
+  "policies": {
+    "month_str": {
+      "type": "string",
+      "pattern": "^\\d{4}-(0[1-9]|1[0-2])$"
+    },
+    "month_1_12": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 12
+    },
+    "bounded_month_window": {
+      "one_of": [
+        {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 24
+        },
+        {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120,
+          "format": "comma-separated unique MonthStr values"
+        }
+      ]
+    },
+    "year_2018_2100": {
+      "type": "integer",
+      "minimum": 2018,
+      "maximum": 2100
+    },
+    "limit_1_100": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 100
+    },
+    "limit_1_500": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 500
+    },
+    "limit_1_2000": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 2000
+    },
+    "offset_0_100000": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100000
+    },
+    "bounded_text_32": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 32
+    },
+    "bounded_text_120": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120
+    },
+    "bounded_code_64": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "bounded_code_list_100x100": {
+      "type": "array",
+      "maxItems": 100,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 100
+      }
+    },
+    "bounded_list_100x100": {
+      "type": "array",
+      "maxItems": 100,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 100
+      }
+    },
+    "finite_enum": {
+      "waiver": "schema enum or checked finite regex is already bounded; checker requires exact finite values"
+    },
+    "boolean": {
+      "waiver": "typed boolean has a finite domain"
+    },
+    "iso_date": {
+      "waiver": "typed ISO date is structurally finite and parsed before service use"
+    },
+    "bounded_integer_existing": {
+      "waiver": "OpenAPI minimum and maximum must both exist and be finite"
+    }
+  },
+  "parameters": [
+    {
+      "method": "GET",
+      "path": "/api/agents/evaluation",
+      "parameter": "month",
+      "required": false,
+      "policy": "month_str",
+      "baseline_schema_sha256": "9b22fb8b84329927fac2183cb6b5a277bb749d773abdd93dcb1824a7d42ac9da"
+    },
+    {
+      "method": "GET",
+      "path": "/api/agents/evaluation",
+      "parameter": "months",
+      "required": false,
+      "policy": "bounded_month_window",
+      "baseline_schema_sha256": "d1291d5dae32867b85fa144b3cdc121ad05b1f71707f8a971194ee8bbde0d9f6"
+    },
+    {
+      "method": "GET",
+      "path": "/api/agents/evaluation",
+      "parameter": "firma",
+      "required": false,
+      "policy": "bounded_text_120",
+      "baseline_schema_sha256": "c2c259c167f0de88bf8379ea8c2430dfff5a7a72b611ea5865c34c2e8e4f3295"
+    },
+    {
+      "method": "GET",
+      "path": "/api/agents/evaluation",
+      "parameter": "asm",
+      "required": false,
+      "policy": "bounded_text_120",
+      "baseline_schema_sha256": "4c0ac1c424eb56bee3c849d30c814ca65c9fa5964748e1240f257791445bac97"
+    },
+    {
+      "method": "GET",
+      "path": "/api/agents/evaluation",
+      "parameter": "site_code",
+      "required": false,
+      "policy": "bounded_code_list_100x100",
+      "baseline_schema_sha256": "93d57d28a159b0921ed6daa11cf783592e1ea3d7dc0cbf3c4a53c4f1bad7d276"
+    },
+    {
+      "method": "GET",
+      "path": "/api/agents/evaluation-v2",
+      "parameter": "month",
+      "required": false,
+      "policy": "month_str",
+      "baseline_schema_sha256": "9b22fb8b84329927fac2183cb6b5a277bb749d773abdd93dcb1824a7d42ac9da"
+    },
+    {
+      "method": "GET",
+      "path": "/api/agents/evaluation-v2",
+      "parameter": "months",
+      "required": false,
+      "policy": "bounded_month_window",
+      "baseline_schema_sha256": "d1291d5dae32867b85fa144b3cdc121ad05b1f71707f8a971194ee8bbde0d9f6"
+    },
+    {
+      "method": "GET",
+      "path": "/api/agents/evaluation-v2",
+      "parameter": "firma",
+      "required": false,
+      "policy": "bounded_text_120",
+      "baseline_schema_sha256": "c2c259c167f0de88bf8379ea8c2430dfff5a7a72b611ea5865c34c2e8e4f3295"
+    },
+    {
+      "method": "GET",
+      "path": "/api/agents/evaluation-v2",
+      "parameter": "asm",
+      "required": false,
+      "policy": "bounded_text_120",
+      "baseline_schema_sha256": "4c0ac1c424eb56bee3c849d30c814ca65c9fa5964748e1240f257791445bac97"
+    },
+    {
+      "method": "GET",
+      "path": "/api/agents/evaluation-v2",
+      "parameter": "site_code",
+      "required": false,
+      "policy": "bounded_code_list_100x100",
+      "baseline_schema_sha256": "93d57d28a159b0921ed6daa11cf783592e1ea3d7dc0cbf3c4a53c4f1bad7d276"
+    },
+    {
+      "method": "GET",
+      "path": "/api/agents/history",
+      "parameter": "agent",
+      "required": true,
+      "policy": "bounded_text_120",
+      "baseline_schema_sha256": "4b9f7b6bc2e438c827d3e2afaf0313dc6cd24c2b1c8865670157efb799162438"
+    },
+    {
+      "method": "GET",
+      "path": "/api/agents/list",
+      "parameter": "selected_month",
+      "required": true,
+      "policy": "month_str",
+      "baseline_schema_sha256": "7a5ff0147a2bb0bf8a05b1f35c851da5514eca06741b5c4275e95e7bd489238a"
+    },
+    {
+      "method": "GET",
+      "path": "/api/agents/list",
+      "parameter": "search",
+      "required": false,
+      "policy": "bounded_text_120",
+      "baseline_schema_sha256": "d92becc1e67232db298caba6940ae019bc51cc35e0e871941f6e2fab88b630e0"
+    },
+    {
+      "method": "GET",
+      "path": "/api/agents/list",
+      "parameter": "firma",
+      "required": false,
+      "policy": "bounded_text_120",
+      "baseline_schema_sha256": "c2c259c167f0de88bf8379ea8c2430dfff5a7a72b611ea5865c34c2e8e4f3295"
+    },
+    {
+      "method": "GET",
+      "path": "/api/agents/list",
+      "parameter": "regional",
+      "required": false,
+      "policy": "bounded_text_120",
+      "baseline_schema_sha256": "6d2b60a603e3c54fa527bc0239ad596245412954c00892daf10d644b3343656d"
+    },
+    {
+      "method": "GET",
+      "path": "/api/agents/list",
+      "parameter": "asm",
+      "required": false,
+      "policy": "bounded_text_120",
+      "baseline_schema_sha256": "4c0ac1c424eb56bee3c849d30c814ca65c9fa5964748e1240f257791445bac97"
+    },
+    {
+      "method": "GET",
+      "path": "/api/agents/list",
+      "parameter": "site_code",
+      "required": false,
+      "policy": "bounded_code_list_100x100",
+      "baseline_schema_sha256": "93d57d28a159b0921ed6daa11cf783592e1ea3d7dc0cbf3c4a53c4f1bad7d276"
+    },
+    {
+      "method": "GET",
+      "path": "/api/agents/movement",
+      "parameter": "selected_month",
+      "required": true,
+      "policy": "month_str",
+      "baseline_schema_sha256": "7a5ff0147a2bb0bf8a05b1f35c851da5514eca06741b5c4275e95e7bd489238a"
+    },
+    {
+      "method": "GET",
+      "path": "/api/agents/movement",
+      "parameter": "firma",
+      "required": false,
+      "policy": "bounded_text_120",
+      "baseline_schema_sha256": "c2c259c167f0de88bf8379ea8c2430dfff5a7a72b611ea5865c34c2e8e4f3295"
+    },
+    {
+      "method": "GET",
+      "path": "/api/agents/movement",
+      "parameter": "regional",
+      "required": false,
+      "policy": "bounded_text_120",
+      "baseline_schema_sha256": "6d2b60a603e3c54fa527bc0239ad596245412954c00892daf10d644b3343656d"
+    },
+    {
+      "method": "GET",
+      "path": "/api/agents/movement",
+      "parameter": "asm",
+      "required": false,
+      "policy": "bounded_text_120",
+      "baseline_schema_sha256": "4c0ac1c424eb56bee3c849d30c814ca65c9fa5964748e1240f257791445bac97"
+    },
+    {
+      "method": "GET",
+      "path": "/api/agents/movement",
+      "parameter": "site_code",
+      "required": false,
+      "policy": "bounded_code_list_100x100",
+      "baseline_schema_sha256": "93d57d28a159b0921ed6daa11cf783592e1ea3d7dc0cbf3c4a53c4f1bad7d276"
+    },
+    {
+      "method": "GET",
+      "path": "/api/agents/movement",
+      "parameter": "agent",
+      "required": false,
+      "policy": "bounded_code_list_100x100",
+      "baseline_schema_sha256": "74955804d1c61651a658782b5cee1f6f3ff3b030a8af04e571a4d1879bdb1347"
+    },
+    {
+      "method": "GET",
+      "path": "/api/agents/overview",
+      "parameter": "selected_month",
+      "required": true,
+      "policy": "month_str",
+      "baseline_schema_sha256": "7a5ff0147a2bb0bf8a05b1f35c851da5514eca06741b5c4275e95e7bd489238a"
+    },
+    {
+      "method": "GET",
+      "path": "/api/agents/overview",
+      "parameter": "firma",
+      "required": false,
+      "policy": "bounded_text_120",
+      "baseline_schema_sha256": "c2c259c167f0de88bf8379ea8c2430dfff5a7a72b611ea5865c34c2e8e4f3295"
+    },
+    {
+      "method": "GET",
+      "path": "/api/agents/overview",
+      "parameter": "regional",
+      "required": false,
+      "policy": "bounded_text_120",
+      "baseline_schema_sha256": "6d2b60a603e3c54fa527bc0239ad596245412954c00892daf10d644b3343656d"
+    },
+    {
+      "method": "GET",
+      "path": "/api/agents/overview",
+      "parameter": "asm",
+      "required": false,
+      "policy": "bounded_text_120",
+      "baseline_schema_sha256": "4c0ac1c424eb56bee3c849d30c814ca65c9fa5964748e1240f257791445bac97"
+    },
+    {
+      "method": "GET",
+      "path": "/api/agents/overview",
+      "parameter": "site_code",
+      "required": false,
+      "policy": "bounded_code_list_100x100",
+      "baseline_schema_sha256": "93d57d28a159b0921ed6daa11cf783592e1ea3d7dc0cbf3c4a53c4f1bad7d276"
+    },
+    {
+      "method": "GET",
+      "path": "/api/agents/overview",
+      "parameter": "agent",
+      "required": false,
+      "policy": "bounded_code_list_100x100",
+      "baseline_schema_sha256": "74955804d1c61651a658782b5cee1f6f3ff3b030a8af04e571a4d1879bdb1347"
+    },
+    {
+      "method": "GET",
+      "path": "/api/agents/profile",
+      "parameter": "agent",
+      "required": true,
+      "policy": "bounded_text_120",
+      "baseline_schema_sha256": "4b9f7b6bc2e438c827d3e2afaf0313dc6cd24c2b1c8865670157efb799162438"
+    },
+    {
+      "method": "GET",
+      "path": "/api/agents/profile",
+      "parameter": "selected_month",
+      "required": true,
+      "policy": "month_str",
+      "baseline_schema_sha256": "7a5ff0147a2bb0bf8a05b1f35c851da5514eca06741b5c4275e95e7bd489238a"
+    },
+    {
+      "method": "GET",
+      "path": "/api/agents/stores-coverage",
+      "parameter": "selected_month",
+      "required": true,
+      "policy": "month_str",
+      "baseline_schema_sha256": "7a5ff0147a2bb0bf8a05b1f35c851da5514eca06741b5c4275e95e7bd489238a"
+    },
+    {
+      "method": "GET",
+      "path": "/api/agents/stores-coverage",
+      "parameter": "firma",
+      "required": false,
+      "policy": "bounded_text_120",
+      "baseline_schema_sha256": "c2c259c167f0de88bf8379ea8c2430dfff5a7a72b611ea5865c34c2e8e4f3295"
+    },
+    {
+      "method": "GET",
+      "path": "/api/agents/stores-coverage",
+      "parameter": "regional",
+      "required": false,
+      "policy": "bounded_text_120",
+      "baseline_schema_sha256": "6d2b60a603e3c54fa527bc0239ad596245412954c00892daf10d644b3343656d"
+    },
+    {
+      "method": "GET",
+      "path": "/api/agents/stores-coverage",
+      "parameter": "asm",
+      "required": false,
+      "policy": "bounded_text_120",
+      "baseline_schema_sha256": "4c0ac1c424eb56bee3c849d30c814ca65c9fa5964748e1240f257791445bac97"
+    },
+    {
+      "method": "GET",
+      "path": "/api/ai-forecast/current",
+      "parameter": "month",
+      "required": true,
+      "policy": "month_str",
+      "baseline_schema_sha256": "6d5ee7e0c9cafb1e6a0973782372a2138e0db31520203d9537451391d7b0048e"
+    },
+    {
+      "method": "GET",
+      "path": "/api/ai-forecast/current",
+      "parameter": "metric",
+      "required": false,
+      "policy": "finite_enum",
+      "baseline_schema_sha256": "cbdda8bbe250dce6a9cf6aca54e8c03023a7027882734c45e129c797a9509dfa"
+    },
+    {
+      "method": "GET",
+      "path": "/api/ai-forecast/current",
+      "parameter": "firma",
+      "required": false,
+      "policy": "bounded_text_120",
+      "baseline_schema_sha256": "c2c259c167f0de88bf8379ea8c2430dfff5a7a72b611ea5865c34c2e8e4f3295"
+    },
+    {
+      "method": "GET",
+      "path": "/api/ai-forecast/current",
+      "parameter": "regional",
+      "required": false,
+      "policy": "bounded_text_120",
+      "baseline_schema_sha256": "6d2b60a603e3c54fa527bc0239ad596245412954c00892daf10d644b3343656d"
+    },
+    {
+      "method": "GET",
+      "path": "/api/ai-forecast/current",
+      "parameter": "asm",
+      "required": false,
+      "policy": "bounded_text_120",
+      "baseline_schema_sha256": "4c0ac1c424eb56bee3c849d30c814ca65c9fa5964748e1240f257791445bac97"
+    },
+    {
+      "method": "GET",
+      "path": "/api/ai-forecast/current",
+      "parameter": "site_code",
+      "required": false,
+      "policy": "bounded_code_list_100x100",
+      "baseline_schema_sha256": "93d57d28a159b0921ed6daa11cf783592e1ea3d7dc0cbf3c4a53c4f1bad7d276"
+    },
+    {
+      "method": "GET",
+      "path": "/api/ai-forecast/rolling-12",
+      "parameter": "month",
+      "required": true,
+      "policy": "month_str",
+      "baseline_schema_sha256": "6d5ee7e0c9cafb1e6a0973782372a2138e0db31520203d9537451391d7b0048e"
+    },
+    {
+      "method": "GET",
+      "path": "/api/ai-forecast/rolling-12",
+      "parameter": "metric",
+      "required": false,
+      "policy": "finite_enum",
+      "baseline_schema_sha256": "cbdda8bbe250dce6a9cf6aca54e8c03023a7027882734c45e129c797a9509dfa"
+    },
+    {
+      "method": "GET",
+      "path": "/api/ai-forecast/rolling-12",
+      "parameter": "firma",
+      "required": false,
+      "policy": "bounded_text_120",
+      "baseline_schema_sha256": "c2c259c167f0de88bf8379ea8c2430dfff5a7a72b611ea5865c34c2e8e4f3295"
+    },
+    {
+      "method": "GET",
+      "path": "/api/ai-forecast/rolling-12",
+      "parameter": "regional",
+      "required": false,
+      "policy": "bounded_text_120",
+      "baseline_schema_sha256": "6d2b60a603e3c54fa527bc0239ad596245412954c00892daf10d644b3343656d"
+    },
+    {
+      "method": "GET",
+      "path": "/api/ai-forecast/rolling-12",
+      "parameter": "asm",
+      "required": false,
+      "policy": "bounded_text_120",
+      "baseline_schema_sha256": "4c0ac1c424eb56bee3c849d30c814ca65c9fa5964748e1240f257791445bac97"
+    },
+    {
+      "method": "GET",
+      "path": "/api/ai-forecast/rolling-12",
+      "parameter": "site_code",
+      "required": false,
+      "policy": "bounded_code_list_100x100",
+      "baseline_schema_sha256": "93d57d28a159b0921ed6daa11cf783592e1ea3d7dc0cbf3c4a53c4f1bad7d276"
+    },
+    {
+      "method": "GET",
+      "path": "/api/campaigns/history",
+      "parameter": "month",
+      "required": true,
+      "policy": "month_str",
+      "baseline_schema_sha256": "6d5ee7e0c9cafb1e6a0973782372a2138e0db31520203d9537451391d7b0048e"
+    },
+    {
+      "method": "GET",
+      "path": "/api/campaigns/history",
+      "parameter": "months_back",
+      "required": false,
+      "policy": "bounded_month_window",
+      "baseline_schema_sha256": "350647d02ae7ff525dbb019c1e23165b2a8199d12a9879ebc71999fb9b4db03d"
+    },
+    {
+      "method": "GET",
+      "path": "/api/campaigns/history",
+      "parameter": "firma",
+      "required": false,
+      "policy": "bounded_text_120",
+      "baseline_schema_sha256": "c2c259c167f0de88bf8379ea8c2430dfff5a7a72b611ea5865c34c2e8e4f3295"
+    },
+    {
+      "method": "GET",
+      "path": "/api/campaigns/history",
+      "parameter": "regional",
+      "required": false,
+      "policy": "bounded_text_120",
+      "baseline_schema_sha256": "6d2b60a603e3c54fa527bc0239ad596245412954c00892daf10d644b3343656d"
+    },
+    {
+      "method": "GET",
+      "path": "/api/campaigns/history",
+      "parameter": "asm",
+      "required": false,
+      "policy": "bounded_text_120",
+      "baseline_schema_sha256": "4c0ac1c424eb56bee3c849d30c814ca65c9fa5964748e1240f257791445bac97"
+    },
+    {
+      "method": "GET",
+      "path": "/api/campaigns/history",
+      "parameter": "site_code",
+      "required": false,
+      "policy": "bounded_code_list_100x100",
+      "baseline_schema_sha256": "93d57d28a159b0921ed6daa11cf783592e1ea3d7dc0cbf3c4a53c4f1bad7d276"
+    },
+    {
+      "method": "GET",
+      "path": "/api/campaigns/history",
+      "parameter": "agent",
+      "required": false,
+      "policy": "bounded_code_list_100x100",
+      "baseline_schema_sha256": "74955804d1c61651a658782b5cee1f6f3ff3b030a8af04e571a4d1879bdb1347"
+    },
+    {
+      "method": "GET",
+      "path": "/api/campaigns/overview",
+      "parameter": "month",
+      "required": true,
+      "policy": "month_str",
+      "baseline_schema_sha256": "6d5ee7e0c9cafb1e6a0973782372a2138e0db31520203d9537451391d7b0048e"
+    },
+    {
+      "method": "GET",
+      "path": "/api/campaigns/overview",
+      "parameter": "firma",
+      "required": false,
+      "policy": "bounded_text_120",
+      "baseline_schema_sha256": "c2c259c167f0de88bf8379ea8c2430dfff5a7a72b611ea5865c34c2e8e4f3295"
+    },
+    {
+      "method": "GET",
+      "path": "/api/campaigns/overview",
+      "parameter": "regional",
+      "required": false,
+      "policy": "bounded_text_120",
+      "baseline_schema_sha256": "6d2b60a603e3c54fa527bc0239ad596245412954c00892daf10d644b3343656d"
+    },
+    {
+      "method": "GET",
+      "path": "/api/campaigns/overview",
+      "parameter": "asm",
+      "required": false,
+      "policy": "bounded_text_120",
+      "baseline_schema_sha256": "4c0ac1c424eb56bee3c849d30c814ca65c9fa5964748e1240f257791445bac97"
+    },
+    {
+      "method": "GET",
+      "path": "/api/campaigns/overview",
+      "parameter": "site_code",
+      "required": false,
+      "policy": "bounded_code_list_100x100",
+      "baseline_schema_sha256": "93d57d28a159b0921ed6daa11cf783592e1ea3d7dc0cbf3c4a53c4f1bad7d276"
+    },
+    {
+      "method": "GET",
+      "path": "/api/campaigns/overview",
+      "parameter": "agent",
+      "required": false,
+      "policy": "bounded_code_list_100x100",
+      "baseline_schema_sha256": "74955804d1c61651a658782b5cee1f6f3ff3b030a8af04e571a4d1879bdb1347"
+    },
+    {
+      "method": "GET",
+      "path": "/api/campaigns/promotions-incentives",
+      "parameter": "start_date",
+      "required": true,
+      "policy": "iso_date",
+      "baseline_schema_sha256": "37e391b5e1529cb7301cbf6ec9c81caa64fbc21598eb171d8c4e0dbd5cef861e"
+    },
+    {
+      "method": "GET",
+      "path": "/api/campaigns/promotions-incentives",
+      "parameter": "end_date",
+      "required": true,
+      "policy": "iso_date",
+      "baseline_schema_sha256": "50d4c90c0d41fe2c72fa94af74f67b27bd3a623a238184d228654ade8b879a59"
+    },
+    {
+      "method": "GET",
+      "path": "/api/campaigns/promotions-incentives",
+      "parameter": "firma",
+      "required": false,
+      "policy": "bounded_text_120",
+      "baseline_schema_sha256": "c2c259c167f0de88bf8379ea8c2430dfff5a7a72b611ea5865c34c2e8e4f3295"
+    },
+    {
+      "method": "GET",
+      "path": "/api/campaigns/promotions-incentives",
+      "parameter": "regional",
+      "required": false,
+      "policy": "bounded_text_120",
+      "baseline_schema_sha256": "6d2b60a603e3c54fa527bc0239ad596245412954c00892daf10d644b3343656d"
+    },
+    {
+      "method": "GET",
+      "path": "/api/campaigns/promotions-incentives",
+      "parameter": "asm",
+      "required": false,
+      "policy": "bounded_text_120",
+      "baseline_schema_sha256": "4c0ac1c424eb56bee3c849d30c814ca65c9fa5964748e1240f257791445bac97"
+    },
+    {
+      "method": "GET",
+      "path": "/api/campaigns/promotions-incentives",
+      "parameter": "site_code",
+      "required": false,
+      "policy": "bounded_code_list_100x100",
+      "baseline_schema_sha256": "93d57d28a159b0921ed6daa11cf783592e1ea3d7dc0cbf3c4a53c4f1bad7d276"
+    },
+    {
+      "method": "GET",
+      "path": "/api/campaigns/promotions-incentives",
+      "parameter": "agent",
+      "required": false,
+      "policy": "bounded_code_list_100x100",
+      "baseline_schema_sha256": "74955804d1c61651a658782b5cee1f6f3ff3b030a8af04e571a4d1879bdb1347"
+    },
+    {
+      "method": "GET",
+      "path": "/api/campaigns/promotions-incentives",
+      "parameter": "promotion_key",
+      "required": false,
+      "policy": "bounded_text_120",
+      "baseline_schema_sha256": "2656c4d030ca78d1486512950e36a6e2967dbd939c2063e2dcced89b771366a9"
+    },
+    {
+      "method": "GET",
+      "path": "/api/campaigns/promotions-incentives",
+      "parameter": "view",
+      "required": false,
+      "policy": "finite_enum",
+      "baseline_schema_sha256": "1d993c4fb07ea7015b6c0f6c1b6061d0dbaf52757f556b3f9fe6278a7b426ebf"
+    },
+    {
+      "method": "GET",
+      "path": "/api/campaigns/promotions-incentives",
+      "parameter": "current_scope",
+      "required": false,
+      "policy": "boolean",
+      "baseline_schema_sha256": "3002e061c2c206ef94bdeac1d3fccfe633c07e700dd17c3344c81d5cd8bc37bf"
+    },
+    {
+      "method": "GET",
+      "path": "/api/campaigns/promotions-incentives",
+      "parameter": "include_closed_stores",
+      "required": false,
+      "policy": "boolean",
+      "baseline_schema_sha256": "349b117ef321f0e3efc56d157731a4916cd868c77ede6cbc0ed9823def3b384e"
+    },
+    {
+      "method": "GET",
+      "path": "/api/contests/active",
+      "parameter": "month",
+      "required": true,
+      "policy": "month_str",
+      "baseline_schema_sha256": "6d5ee7e0c9cafb1e6a0973782372a2138e0db31520203d9537451391d7b0048e"
+    },
+    {
+      "method": "GET",
+      "path": "/api/contests/active",
+      "parameter": "site_codes",
+      "required": false,
+      "policy": "bounded_code_list_100x100",
+      "baseline_schema_sha256": "2263e7c47e14a4d61a54ec1f4001608d38226782af039eae3b5eb6f96a43fac6"
+    },
+    {
+      "method": "GET",
+      "path": "/api/contests/active/all",
+      "parameter": "month",
+      "required": true,
+      "policy": "month_str",
+      "baseline_schema_sha256": "6d5ee7e0c9cafb1e6a0973782372a2138e0db31520203d9537451391d7b0048e"
+    },
+    {
+      "method": "GET",
+      "path": "/api/contests/active/all",
+      "parameter": "site_codes",
+      "required": false,
+      "policy": "bounded_code_list_100x100",
+      "baseline_schema_sha256": "2263e7c47e14a4d61a54ec1f4001608d38226782af039eae3b5eb6f96a43fac6"
+    },
+    {
+      "method": "GET",
+      "path": "/api/crm/alerts",
+      "parameter": "month",
+      "required": true,
+      "policy": "month_str",
+      "baseline_schema_sha256": "6d5ee7e0c9cafb1e6a0973782372a2138e0db31520203d9537451391d7b0048e"
+    },
+    {
+      "method": "GET",
+      "path": "/api/crm/scores",
+      "parameter": "month",
+      "required": true,
+      "policy": "month_str",
+      "baseline_schema_sha256": "6d5ee7e0c9cafb1e6a0973782372a2138e0db31520203d9537451391d7b0048e"
+    },
+    {
+      "method": "POST",
+      "path": "/api/crm/scores/recalculate",
+      "parameter": "month",
+      "required": true,
+      "policy": "month_str",
+      "baseline_schema_sha256": "6d5ee7e0c9cafb1e6a0973782372a2138e0db31520203d9537451391d7b0048e"
+    },
+    {
+      "method": "GET",
+      "path": "/api/dashboard/all",
+      "parameter": "month",
+      "required": true,
+      "policy": "month_str",
+      "baseline_schema_sha256": "6d5ee7e0c9cafb1e6a0973782372a2138e0db31520203d9537451391d7b0048e"
+    },
+    {
+      "method": "GET",
+      "path": "/api/dashboard/all",
+      "parameter": "firma",
+      "required": false,
+      "policy": "bounded_text_120",
+      "baseline_schema_sha256": "c2c259c167f0de88bf8379ea8c2430dfff5a7a72b611ea5865c34c2e8e4f3295"
+    },
+    {
+      "method": "GET",
+      "path": "/api/dashboard/all",
+      "parameter": "regional",
+      "required": false,
+      "policy": "bounded_text_120",
+      "baseline_schema_sha256": "6d2b60a603e3c54fa527bc0239ad596245412954c00892daf10d644b3343656d"
+    },
+    {
+      "method": "GET",
+      "path": "/api/dashboard/all",
+      "parameter": "asm",
+      "required": false,
+      "policy": "bounded_text_120",
+      "baseline_schema_sha256": "4c0ac1c424eb56bee3c849d30c814ca65c9fa5964748e1240f257791445bac97"
+    },
+    {
+      "method": "GET",
+      "path": "/api/dashboard/all",
+      "parameter": "site_code",
+      "required": false,
+      "policy": "bounded_code_list_100x100",
+      "baseline_schema_sha256": "93d57d28a159b0921ed6daa11cf783592e1ea3d7dc0cbf3c4a53c4f1bad7d276"
+    },
+    {
+      "method": "GET",
+      "path": "/api/dashboard/all",
+      "parameter": "agent",
+      "required": false,
+      "policy": "bounded_code_list_100x100",
+      "baseline_schema_sha256": "74955804d1c61651a658782b5cee1f6f3ff3b030a8af04e571a4d1879bdb1347"
+    },
+    {
+      "method": "GET",
+      "path": "/api/dashboard/all",
+      "parameter": "current_scope",
+      "required": false,
+      "policy": "boolean",
+      "baseline_schema_sha256": "3002e061c2c206ef94bdeac1d3fccfe633c07e700dd17c3344c81d5cd8bc37bf"
+    },
+    {
+      "method": "GET",
+      "path": "/api/dashboard/all",
+      "parameter": "include_closed_stores",
+      "required": false,
+      "policy": "boolean",
+      "baseline_schema_sha256": "349b117ef321f0e3efc56d157731a4916cd868c77ede6cbc0ed9823def3b384e"
+    },
+    {
+      "method": "GET",
+      "path": "/api/dashboard/daily",
+      "parameter": "month",
+      "required": true,
+      "policy": "month_str",
+      "baseline_schema_sha256": "6d5ee7e0c9cafb1e6a0973782372a2138e0db31520203d9537451391d7b0048e"
+    },
+    {
+      "method": "GET",
+      "path": "/api/dashboard/daily",
+      "parameter": "firma",
+      "required": false,
+      "policy": "bounded_text_120",
+      "baseline_schema_sha256": "c2c259c167f0de88bf8379ea8c2430dfff5a7a72b611ea5865c34c2e8e4f3295"
+    },
+    {
+      "method": "GET",
+      "path": "/api/dashboard/daily",
+      "parameter": "regional",
+      "required": false,
+      "policy": "bounded_text_120",
+      "baseline_schema_sha256": "6d2b60a603e3c54fa527bc0239ad596245412954c00892daf10d644b3343656d"
+    },
+    {
+      "method": "GET",
+      "path": "/api/dashboard/daily",
+      "parameter": "asm",
+      "required": false,
+      "policy": "bounded_text_120",
+      "baseline_schema_sha256": "4c0ac1c424eb56bee3c849d30c814ca65c9fa5964748e1240f257791445bac97"
+    },
+    {
+      "method": "GET",
+      "path": "/api/dashboard/daily",
+      "parameter": "site_code",
+      "required": false,
+      "policy": "bounded_code_list_100x100",
+      "baseline_schema_sha256": "93d57d28a159b0921ed6daa11cf783592e1ea3d7dc0cbf3c4a53c4f1bad7d276"
+    },
+    {
+      "method": "GET",
+      "path": "/api/dashboard/daily",
+      "parameter": "agent",
+      "required": false,
+      "policy": "bounded_code_list_100x100",
+      "baseline_schema_sha256": "74955804d1c61651a658782b5cee1f6f3ff3b030a8af04e571a4d1879bdb1347"
+    },
+    {
+      "method": "GET",
+      "path": "/api/dashboard/history",
+      "parameter": "month",
+      "required": true,
+      "policy": "month_str",
+      "baseline_schema_sha256": "6d5ee7e0c9cafb1e6a0973782372a2138e0db31520203d9537451391d7b0048e"
+    },
+    {
+      "method": "GET",
+      "path": "/api/dashboard/history",
+      "parameter": "months_back",
+      "required": false,
+      "policy": "bounded_month_window",
+      "baseline_schema_sha256": "350647d02ae7ff525dbb019c1e23165b2a8199d12a9879ebc71999fb9b4db03d"
+    },
+    {
+      "method": "GET",
+      "path": "/api/dashboard/history",
+      "parameter": "firma",
+      "required": false,
+      "policy": "bounded_text_120",
+      "baseline_schema_sha256": "c2c259c167f0de88bf8379ea8c2430dfff5a7a72b611ea5865c34c2e8e4f3295"
+    },
+    {
+      "method": "GET",
+      "path": "/api/dashboard/history",
+      "parameter": "regional",
+      "required": false,
+      "policy": "bounded_text_120",
+      "baseline_schema_sha256": "6d2b60a603e3c54fa527bc0239ad596245412954c00892daf10d644b3343656d"
+    },
+    {
+      "method": "GET",
+      "path": "/api/dashboard/history",
+      "parameter": "asm",
+      "required": false,
+      "policy": "bounded_text_120",
+      "baseline_schema_sha256": "4c0ac1c424eb56bee3c849d30c814ca65c9fa5964748e1240f257791445bac97"
+    },
+    {
+      "method": "GET",
+      "path": "/api/dashboard/history",
+      "parameter": "site_code",
+      "required": false,
+      "policy": "bounded_code_list_100x100",
+      "baseline_schema_sha256": "93d57d28a159b0921ed6daa11cf783592e1ea3d7dc0cbf3c4a53c4f1bad7d276"
+    },
+    {
+      "method": "GET",
+      "path": "/api/dashboard/history",
+      "parameter": "agent",
+      "required": false,
+      "policy": "bounded_code_list_100x100",
+      "baseline_schema_sha256": "74955804d1c61651a658782b5cee1f6f3ff3b030a8af04e571a4d1879bdb1347"
+    },
+    {
+      "method": "GET",
+      "path": "/api/dashboard/history",
+      "parameter": "current_scope",
+      "required": false,
+      "policy": "boolean",
+      "baseline_schema_sha256": "48a61f5c9eabe5f3ac81bfab833138aa59f5575b9f934c63d601e9ad91703fcd"
+    },
+    {
+      "method": "GET",
+      "path": "/api/dashboard/history",
+      "parameter": "include_closed_stores",
+      "required": false,
+      "policy": "boolean",
+      "baseline_schema_sha256": "349b117ef321f0e3efc56d157731a4916cd868c77ede6cbc0ed9823def3b384e"
+    },
+    {
+      "method": "GET",
+      "path": "/api/dashboard/history-year",
+      "parameter": "year",
+      "required": true,
+      "policy": "year_2018_2100",
+      "baseline_schema_sha256": "f820001414f6fd74ab36b6098869f1b95bb048f35b777154db8aa97fb107a4c8"
+    },
+    {
+      "method": "GET",
+      "path": "/api/dashboard/history-year",
+      "parameter": "firma",
+      "required": false,
+      "policy": "bounded_text_120",
+      "baseline_schema_sha256": "c2c259c167f0de88bf8379ea8c2430dfff5a7a72b611ea5865c34c2e8e4f3295"
+    },
+    {
+      "method": "GET",
+      "path": "/api/dashboard/history-year",
+      "parameter": "regional",
+      "required": false,
+      "policy": "bounded_text_120",
+      "baseline_schema_sha256": "6d2b60a603e3c54fa527bc0239ad596245412954c00892daf10d644b3343656d"
+    },
+    {
+      "method": "GET",
+      "path": "/api/dashboard/history-year",
+      "parameter": "asm",
+      "required": false,
+      "policy": "bounded_text_120",
+      "baseline_schema_sha256": "4c0ac1c424eb56bee3c849d30c814ca65c9fa5964748e1240f257791445bac97"
+    },
+    {
+      "method": "GET",
+      "path": "/api/dashboard/history-year",
+      "parameter": "site_code",
+      "required": false,
+      "policy": "bounded_code_list_100x100",
+      "baseline_schema_sha256": "93d57d28a159b0921ed6daa11cf783592e1ea3d7dc0cbf3c4a53c4f1bad7d276"
+    },
+    {
+      "method": "GET",
+      "path": "/api/dashboard/history-year",
+      "parameter": "agent",
+      "required": false,
+      "policy": "bounded_code_list_100x100",
+      "baseline_schema_sha256": "74955804d1c61651a658782b5cee1f6f3ff3b030a8af04e571a4d1879bdb1347"
+    },
+    {
+      "method": "GET",
+      "path": "/api/dashboard/history-year",
+      "parameter": "current_scope",
+      "required": false,
+      "policy": "boolean",
+      "baseline_schema_sha256": "48a61f5c9eabe5f3ac81bfab833138aa59f5575b9f934c63d601e9ad91703fcd"
+    },
+    {
+      "method": "GET",
+      "path": "/api/dashboard/history-year",
+      "parameter": "include_closed_stores",
+      "required": false,
+      "policy": "boolean",
+      "baseline_schema_sha256": "349b117ef321f0e3efc56d157731a4916cd868c77ede6cbc0ed9823def3b384e"
+    },
+    {
+      "method": "GET",
+      "path": "/api/dashboard/performance-detail",
+      "parameter": "month",
+      "required": true,
+      "policy": "month_str",
+      "baseline_schema_sha256": "6d5ee7e0c9cafb1e6a0973782372a2138e0db31520203d9537451391d7b0048e"
+    },
+    {
+      "method": "GET",
+      "path": "/api/dashboard/performance-detail",
+      "parameter": "level",
+      "required": true,
+      "policy": "finite_enum",
+      "baseline_schema_sha256": "d8ba8694760f8f4717b2fdeea7509376df66e901bd8c1928f87d21ff694d6482"
+    },
+    {
+      "method": "GET",
+      "path": "/api/dashboard/performance-detail",
+      "parameter": "key",
+      "required": true,
+      "policy": "bounded_text_120",
+      "baseline_schema_sha256": "7166d1eeb15094702b0924f3e2c69b6f0bbb694db434d9b44492ec82f48fdaa3"
+    },
+    {
+      "method": "GET",
+      "path": "/api/dashboard/performance-detail",
+      "parameter": "firma",
+      "required": false,
+      "policy": "bounded_text_120",
+      "baseline_schema_sha256": "c2c259c167f0de88bf8379ea8c2430dfff5a7a72b611ea5865c34c2e8e4f3295"
+    },
+    {
+      "method": "GET",
+      "path": "/api/dashboard/performance-detail",
+      "parameter": "regional",
+      "required": false,
+      "policy": "bounded_text_120",
+      "baseline_schema_sha256": "6d2b60a603e3c54fa527bc0239ad596245412954c00892daf10d644b3343656d"
+    },
+    {
+      "method": "GET",
+      "path": "/api/dashboard/performance-detail",
+      "parameter": "asm",
+      "required": false,
+      "policy": "bounded_text_120",
+      "baseline_schema_sha256": "4c0ac1c424eb56bee3c849d30c814ca65c9fa5964748e1240f257791445bac97"
+    },
+    {
+      "method": "GET",
+      "path": "/api/dashboard/performance-detail",
+      "parameter": "site_code",
+      "required": false,
+      "policy": "bounded_code_list_100x100",
+      "baseline_schema_sha256": "93d57d28a159b0921ed6daa11cf783592e1ea3d7dc0cbf3c4a53c4f1bad7d276"
+    },
+    {
+      "method": "GET",
+      "path": "/api/dashboard/performance-detail",
+      "parameter": "agent",
+      "required": false,
+      "policy": "bounded_code_list_100x100",
+      "baseline_schema_sha256": "74955804d1c61651a658782b5cee1f6f3ff3b030a8af04e571a4d1879bdb1347"
+    },
+    {
+      "method": "GET",
+      "path": "/api/dashboard/performance-detail",
+      "parameter": "current_scope",
+      "required": false,
+      "policy": "boolean",
+      "baseline_schema_sha256": "48a61f5c9eabe5f3ac81bfab833138aa59f5575b9f934c63d601e9ad91703fcd"
+    },
+    {
+      "method": "GET",
+      "path": "/api/dashboard/performance-detail",
+      "parameter": "include_closed_stores",
+      "required": false,
+      "policy": "boolean",
+      "baseline_schema_sha256": "349b117ef321f0e3efc56d157731a4916cd868c77ede6cbc0ed9823def3b384e"
+    },
+    {
+      "method": "GET",
+      "path": "/api/dashboard/premium-glass",
+      "parameter": "month",
+      "required": true,
+      "policy": "month_str",
+      "baseline_schema_sha256": "6d5ee7e0c9cafb1e6a0973782372a2138e0db31520203d9537451391d7b0048e"
+    },
+    {
+      "method": "GET",
+      "path": "/api/dashboard/premium-glass",
+      "parameter": "firma",
+      "required": false,
+      "policy": "bounded_text_120",
+      "baseline_schema_sha256": "c2c259c167f0de88bf8379ea8c2430dfff5a7a72b611ea5865c34c2e8e4f3295"
+    },
+    {
+      "method": "GET",
+      "path": "/api/dashboard/premium-glass",
+      "parameter": "regional",
+      "required": false,
+      "policy": "bounded_text_120",
+      "baseline_schema_sha256": "6d2b60a603e3c54fa527bc0239ad596245412954c00892daf10d644b3343656d"
+    },
+    {
+      "method": "GET",
+      "path": "/api/dashboard/premium-glass",
+      "parameter": "asm",
+      "required": false,
+      "policy": "bounded_text_120",
+      "baseline_schema_sha256": "4c0ac1c424eb56bee3c849d30c814ca65c9fa5964748e1240f257791445bac97"
+    },
+    {
+      "method": "GET",
+      "path": "/api/dashboard/premium-glass",
+      "parameter": "site_code",
+      "required": false,
+      "policy": "bounded_code_list_100x100",
+      "baseline_schema_sha256": "93d57d28a159b0921ed6daa11cf783592e1ea3d7dc0cbf3c4a53c4f1bad7d276"
+    },
+    {
+      "method": "GET",
+      "path": "/api/dashboard/premium-glass",
+      "parameter": "agent",
+      "required": false,
+      "policy": "bounded_code_list_100x100",
+      "baseline_schema_sha256": "74955804d1c61651a658782b5cee1f6f3ff3b030a8af04e571a4d1879bdb1347"
+    },
+    {
+      "method": "GET",
+      "path": "/api/dashboard/premium-glass",
+      "parameter": "surface",
+      "required": false,
+      "policy": "finite_enum",
+      "baseline_schema_sha256": "11bcdd7bccd0716b2d2e1b39ca239e82addf87164177c557e64ce6a7580c4318"
+    },
+    {
+      "method": "GET",
+      "path": "/api/dashboard/premium-glass",
+      "parameter": "current_scope",
+      "required": false,
+      "policy": "boolean",
+      "baseline_schema_sha256": "48a61f5c9eabe5f3ac81bfab833138aa59f5575b9f934c63d601e9ad91703fcd"
+    },
+    {
+      "method": "GET",
+      "path": "/api/dashboard/premium-glass",
+      "parameter": "include_closed_stores",
+      "required": false,
+      "policy": "boolean",
+      "baseline_schema_sha256": "349b117ef321f0e3efc56d157731a4916cd868c77ede6cbc0ed9823def3b384e"
+    },
+    {
+      "method": "GET",
+      "path": "/api/dashboard/special-cards",
+      "parameter": "month",
+      "required": true,
+      "policy": "month_str",
+      "baseline_schema_sha256": "6d5ee7e0c9cafb1e6a0973782372a2138e0db31520203d9537451391d7b0048e"
+    },
+    {
+      "method": "GET",
+      "path": "/api/dashboard/special-cards",
+      "parameter": "firma",
+      "required": false,
+      "policy": "bounded_text_120",
+      "baseline_schema_sha256": "c2c259c167f0de88bf8379ea8c2430dfff5a7a72b611ea5865c34c2e8e4f3295"
+    },
+    {
+      "method": "GET",
+      "path": "/api/dashboard/special-cards",
+      "parameter": "regional",
+      "required": false,
+      "policy": "bounded_text_120",
+      "baseline_schema_sha256": "6d2b60a603e3c54fa527bc0239ad596245412954c00892daf10d644b3343656d"
+    },
+    {
+      "method": "GET",
+      "path": "/api/dashboard/special-cards",
+      "parameter": "asm",
+      "required": false,
+      "policy": "bounded_text_120",
+      "baseline_schema_sha256": "4c0ac1c424eb56bee3c849d30c814ca65c9fa5964748e1240f257791445bac97"
+    },
+    {
+      "method": "GET",
+      "path": "/api/dashboard/special-cards",
+      "parameter": "site_code",
+      "required": false,
+      "policy": "bounded_code_list_100x100",
+      "baseline_schema_sha256": "93d57d28a159b0921ed6daa11cf783592e1ea3d7dc0cbf3c4a53c4f1bad7d276"
+    },
+    {
+      "method": "GET",
+      "path": "/api/dashboard/special-cards",
+      "parameter": "agent",
+      "required": false,
+      "policy": "bounded_code_list_100x100",
+      "baseline_schema_sha256": "74955804d1c61651a658782b5cee1f6f3ff3b030a8af04e571a4d1879bdb1347"
+    },
+    {
+      "method": "GET",
+      "path": "/api/dashboard/summary",
+      "parameter": "month",
+      "required": true,
+      "policy": "month_str",
+      "baseline_schema_sha256": "6d5ee7e0c9cafb1e6a0973782372a2138e0db31520203d9537451391d7b0048e"
+    },
+    {
+      "method": "GET",
+      "path": "/api/dashboard/summary",
+      "parameter": "firma",
+      "required": false,
+      "policy": "bounded_text_120",
+      "baseline_schema_sha256": "c2c259c167f0de88bf8379ea8c2430dfff5a7a72b611ea5865c34c2e8e4f3295"
+    },
+    {
+      "method": "GET",
+      "path": "/api/dashboard/summary",
+      "parameter": "regional",
+      "required": false,
+      "policy": "bounded_text_120",
+      "baseline_schema_sha256": "6d2b60a603e3c54fa527bc0239ad596245412954c00892daf10d644b3343656d"
+    },
+    {
+      "method": "GET",
+      "path": "/api/dashboard/summary",
+      "parameter": "asm",
+      "required": false,
+      "policy": "bounded_text_120",
+      "baseline_schema_sha256": "4c0ac1c424eb56bee3c849d30c814ca65c9fa5964748e1240f257791445bac97"
+    },
+    {
+      "method": "GET",
+      "path": "/api/dashboard/summary",
+      "parameter": "site_code",
+      "required": false,
+      "policy": "bounded_code_list_100x100",
+      "baseline_schema_sha256": "93d57d28a159b0921ed6daa11cf783592e1ea3d7dc0cbf3c4a53c4f1bad7d276"
+    },
+    {
+      "method": "GET",
+      "path": "/api/dashboard/summary",
+      "parameter": "agent",
+      "required": false,
+      "policy": "bounded_code_list_100x100",
+      "baseline_schema_sha256": "74955804d1c61651a658782b5cee1f6f3ff3b030a8af04e571a4d1879bdb1347"
+    },
+    {
+      "method": "GET",
+      "path": "/api/filters/options",
+      "parameter": "month",
+      "required": true,
+      "policy": "month_str",
+      "baseline_schema_sha256": "6d5ee7e0c9cafb1e6a0973782372a2138e0db31520203d9537451391d7b0048e"
+    },
+    {
+      "method": "GET",
+      "path": "/api/grile/overview",
+      "parameter": "month",
+      "required": false,
+      "policy": "month_str",
+      "baseline_schema_sha256": "9b22fb8b84329927fac2183cb6b5a277bb749d773abdd93dcb1824a7d42ac9da"
+    },
+    {
+      "method": "GET",
+      "path": "/api/grile/pilot-v2",
+      "parameter": "month",
+      "required": false,
+      "policy": "month_str",
+      "baseline_schema_sha256": "a17c6209e91a3b33f648815c35188bc0829e4b1391446318ffb466976d25a1a3"
+    },
+    {
+      "method": "POST",
+      "path": "/api/grile/run",
+      "parameter": "month",
+      "required": false,
+      "policy": "month_str",
+      "baseline_schema_sha256": "9b22fb8b84329927fac2183cb6b5a277bb749d773abdd93dcb1824a7d42ac9da"
+    },
+    {
+      "method": "GET",
+      "path": "/api/grile/run-status",
+      "parameter": "month",
+      "required": false,
+      "policy": "month_str",
+      "baseline_schema_sha256": "9b22fb8b84329927fac2183cb6b5a277bb749d773abdd93dcb1824a7d42ac9da"
+    },
+    {
+      "method": "POST",
+      "path": "/api/grile/stores/{site_code}/refresh",
+      "parameter": "month",
+      "required": false,
+      "policy": "month_str",
+      "baseline_schema_sha256": "9b22fb8b84329927fac2183cb6b5a277bb749d773abdd93dcb1824a7d42ac9da"
+    },
+    {
+      "method": "GET",
+      "path": "/api/hr/asm-performance",
+      "parameter": "month",
+      "required": true,
+      "policy": "month_str",
+      "baseline_schema_sha256": "6d5ee7e0c9cafb1e6a0973782372a2138e0db31520203d9537451391d7b0048e"
+    },
+    {
+      "method": "GET",
+      "path": "/api/hr/asm-performance",
+      "parameter": "regional",
+      "required": false,
+      "policy": "bounded_text_120",
+      "baseline_schema_sha256": "6d2b60a603e3c54fa527bc0239ad596245412954c00892daf10d644b3343656d"
+    },
+    {
+      "method": "GET",
+      "path": "/api/hr/asm-performance/{asm_name}/history",
+      "parameter": "months",
+      "required": false,
+      "policy": "bounded_integer_existing",
+      "baseline_schema_sha256": "23c1c8bd625981327114b60ed415fc11806191097b53ae7927b76b738fa673a4"
+    },
+    {
+      "method": "GET",
+      "path": "/api/hr/asm-salary/{asm_name}",
+      "parameter": "month",
+      "required": true,
+      "policy": "month_str",
+      "baseline_schema_sha256": "6d5ee7e0c9cafb1e6a0973782372a2138e0db31520203d9537451391d7b0048e"
+    },
+    {
+      "method": "GET",
+      "path": "/api/hr/leave-requests",
+      "parameter": "status",
+      "required": false,
+      "policy": "bounded_text_32",
+      "baseline_schema_sha256": "e91ddf220448c13569460663f21a228f20a3753d7f3a7ead80e09e4a7c5711a5"
+    },
+    {
+      "method": "GET",
+      "path": "/api/hr/leave-requests",
+      "parameter": "agent_name",
+      "required": false,
+      "policy": "bounded_text_120",
+      "baseline_schema_sha256": "eef180d7ee74a9fcdd9f16daf394079901ea97b59de5ac3f522d9522cbcd6ced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/hr/leave-requests",
+      "parameter": "limit",
+      "required": false,
+      "policy": "limit_1_100",
+      "baseline_schema_sha256": "7c38b214007c1a8e6ca55c913e1aeabb4835ce2b15a892d56e6888a7a3d6108e"
+    },
+    {
+      "method": "GET",
+      "path": "/api/hr/leave-requests",
+      "parameter": "offset",
+      "required": false,
+      "policy": "offset_0_100000",
+      "baseline_schema_sha256": "d8c0d7b5d1bf812b01e1a8a1928f83a3ed0e8af43bdb80dd2bb465ff30dc32da"
+    },
+    {
+      "method": "GET",
+      "path": "/api/hr/manager-overview",
+      "parameter": "month",
+      "required": true,
+      "policy": "month_str",
+      "baseline_schema_sha256": "6d5ee7e0c9cafb1e6a0973782372a2138e0db31520203d9537451391d7b0048e"
+    },
+    {
+      "method": "GET",
+      "path": "/api/store-pnl/annual",
+      "parameter": "company",
+      "required": false,
+      "policy": "bounded_text_120",
+      "baseline_schema_sha256": "ea68ffb1de4470850f41733632a9676233d6e307691dd40bdf692048b76bd2fc"
+    },
+    {
+      "method": "GET",
+      "path": "/api/store-pnl/annual",
+      "parameter": "site_code",
+      "required": false,
+      "policy": "bounded_code_64",
+      "baseline_schema_sha256": "635841ce7cc037eeb3912b70c22943d6c5eaf71216900adbf9525650c0bca681"
+    },
+    {
+      "method": "GET",
+      "path": "/api/store-pnl/annual",
+      "parameter": "site_company",
+      "required": false,
+      "policy": "bounded_text_120",
+      "baseline_schema_sha256": "e82310699ef85758f3ad9d8b48f9e46710f9061b24ed847ec77230ee0f08e689"
+    },
+    {
+      "method": "GET",
+      "path": "/api/store-pnl/annual",
+      "parameter": "regional",
+      "required": false,
+      "policy": "bounded_text_120",
+      "baseline_schema_sha256": "6d2b60a603e3c54fa527bc0239ad596245412954c00892daf10d644b3343656d"
+    },
+    {
+      "method": "GET",
+      "path": "/api/store-pnl/overview",
+      "parameter": "start_month",
+      "required": true,
+      "policy": "month_str",
+      "baseline_schema_sha256": "97d77b12339a80d82486c5a2d265c79030af8b77ca9358a03ea5d3987ea098cf"
+    },
+    {
+      "method": "GET",
+      "path": "/api/store-pnl/overview",
+      "parameter": "end_month",
+      "required": true,
+      "policy": "month_str",
+      "baseline_schema_sha256": "cc2ab1eb64bebb9283bcf0b5afc5530a22f2658b3ced57b18566d3977df3ed3f"
+    },
+    {
+      "method": "GET",
+      "path": "/api/store-pnl/overview",
+      "parameter": "company",
+      "required": false,
+      "policy": "bounded_text_120",
+      "baseline_schema_sha256": "ea68ffb1de4470850f41733632a9676233d6e307691dd40bdf692048b76bd2fc"
+    },
+    {
+      "method": "GET",
+      "path": "/api/store-pnl/overview",
+      "parameter": "site_code",
+      "required": false,
+      "policy": "bounded_code_64",
+      "baseline_schema_sha256": "635841ce7cc037eeb3912b70c22943d6c5eaf71216900adbf9525650c0bca681"
+    },
+    {
+      "method": "GET",
+      "path": "/api/store-pnl/overview",
+      "parameter": "site_company",
+      "required": false,
+      "policy": "bounded_text_120",
+      "baseline_schema_sha256": "e82310699ef85758f3ad9d8b48f9e46710f9061b24ed847ec77230ee0f08e689"
+    },
+    {
+      "method": "GET",
+      "path": "/api/store-pnl/overview",
+      "parameter": "regional",
+      "required": false,
+      "policy": "bounded_text_120",
+      "baseline_schema_sha256": "6d2b60a603e3c54fa527bc0239ad596245412954c00892daf10d644b3343656d"
+    },
+    {
+      "method": "GET",
+      "path": "/api/store-pnl/regions",
+      "parameter": "company",
+      "required": false,
+      "policy": "bounded_text_120",
+      "baseline_schema_sha256": "ea68ffb1de4470850f41733632a9676233d6e307691dd40bdf692048b76bd2fc"
+    },
+    {
+      "method": "GET",
+      "path": "/api/store-pnl/stores",
+      "parameter": "company",
+      "required": false,
+      "policy": "bounded_text_120",
+      "baseline_schema_sha256": "ea68ffb1de4470850f41733632a9676233d6e307691dd40bdf692048b76bd2fc"
+    },
+    {
+      "method": "GET",
+      "path": "/api/store-pnl/stores",
+      "parameter": "regional",
+      "required": false,
+      "policy": "bounded_text_120",
+      "baseline_schema_sha256": "6d2b60a603e3c54fa527bc0239ad596245412954c00892daf10d644b3343656d"
+    },
+    {
+      "method": "GET",
+      "path": "/api/tasks",
+      "parameter": "status",
+      "required": false,
+      "policy": "bounded_text_32",
+      "baseline_schema_sha256": "5bb3e71f3a1391cb835f86b6166ed92c3f83d4b5d2b38047da0472e7b8b6fe63"
+    },
+    {
+      "method": "GET",
+      "path": "/api/tasks",
+      "parameter": "assignee",
+      "required": false,
+      "policy": "bounded_text_120",
+      "baseline_schema_sha256": "91a748b99e0c424aad08a2bbe8d58ec09f1590a397bb38477a44388147b724d7"
+    },
+    {
+      "method": "GET",
+      "path": "/api/tasks",
+      "parameter": "site_code",
+      "required": false,
+      "policy": "bounded_code_64",
+      "baseline_schema_sha256": "d734319c854580a1a670e42f85fdf3babfcf94e0edab25a697bd3f1abe3d1fa7"
+    },
+    {
+      "method": "GET",
+      "path": "/api/tasks",
+      "parameter": "limit",
+      "required": false,
+      "policy": "limit_1_100",
+      "baseline_schema_sha256": "7c38b214007c1a8e6ca55c913e1aeabb4835ce2b15a892d56e6888a7a3d6108e"
+    },
+    {
+      "method": "GET",
+      "path": "/api/tasks",
+      "parameter": "offset",
+      "required": false,
+      "policy": "offset_0_100000",
+      "baseline_schema_sha256": "d8c0d7b5d1bf812b01e1a8a1928f83a3ed0e8af43bdb80dd2bb465ff30dc32da"
+    },
+    {
+      "method": "GET",
+      "path": "/api/visits-report",
+      "parameter": "month",
+      "required": true,
+      "policy": "month_str",
+      "baseline_schema_sha256": "6d5ee7e0c9cafb1e6a0973782372a2138e0db31520203d9537451391d7b0048e"
+    },
+    {
+      "method": "GET",
+      "path": "/api/visits-report",
+      "parameter": "firma",
+      "required": false,
+      "policy": "bounded_text_120",
+      "baseline_schema_sha256": "c2c259c167f0de88bf8379ea8c2430dfff5a7a72b611ea5865c34c2e8e4f3295"
+    },
+    {
+      "method": "GET",
+      "path": "/api/visits-report",
+      "parameter": "rm",
+      "required": false,
+      "policy": "bounded_text_120",
+      "baseline_schema_sha256": "a67a6b7a053c87e60c593c44ac6effe85c6200fb975722b433a9ac6f4b276094"
+    },
+    {
+      "method": "GET",
+      "path": "/api/visits-report",
+      "parameter": "asm",
+      "required": false,
+      "policy": "bounded_text_120",
+      "baseline_schema_sha256": "4c0ac1c424eb56bee3c849d30c814ca65c9fa5964748e1240f257791445bac97"
+    },
+    {
+      "method": "GET",
+      "path": "/api/visits-report",
+      "parameter": "magazin",
+      "required": false,
+      "policy": "bounded_code_list_100x100",
+      "baseline_schema_sha256": "a0298b772aa64292046c7d408001d0421b6c4666ec5f224576da85f4b6ab5a1d"
+    },
+    {
+      "method": "GET",
+      "path": "/api/visits-report/tree",
+      "parameter": "month",
+      "required": true,
+      "policy": "month_str",
+      "baseline_schema_sha256": "6d5ee7e0c9cafb1e6a0973782372a2138e0db31520203d9537451391d7b0048e"
+    },
+    {
+      "method": "GET",
+      "path": "/api/visits-report/tree",
+      "parameter": "firma",
+      "required": false,
+      "policy": "bounded_text_120",
+      "baseline_schema_sha256": "c2c259c167f0de88bf8379ea8c2430dfff5a7a72b611ea5865c34c2e8e4f3295"
+    },
+    {
+      "method": "GET",
+      "path": "/api/visits-report/tree",
+      "parameter": "rm",
+      "required": false,
+      "policy": "bounded_text_120",
+      "baseline_schema_sha256": "a67a6b7a053c87e60c593c44ac6effe85c6200fb975722b433a9ac6f4b276094"
+    },
+    {
+      "method": "GET",
+      "path": "/api/visits-report/tree",
+      "parameter": "asm",
+      "required": false,
+      "policy": "bounded_text_120",
+      "baseline_schema_sha256": "4c0ac1c424eb56bee3c849d30c814ca65c9fa5964748e1240f257791445bac97"
+    },
+    {
+      "method": "GET",
+      "path": "/api/visits-report/tree",
+      "parameter": "magazin",
+      "required": false,
+      "policy": "bounded_code_list_100x100",
+      "baseline_schema_sha256": "a0298b772aa64292046c7d408001d0421b6c4666ec5f224576da85f4b6ab5a1d"
+    },
+    {
+      "method": "GET",
+      "path": "/salarii/agents/history-by-retail-code",
+      "parameter": "agent_code",
+      "required": true,
+      "policy": "bounded_code_64",
+      "baseline_schema_sha256": "fe3a4b66029d8ff61e4b863b8494c3beb481562892e138f21e2a5ec3254e144a"
+    },
+    {
+      "method": "GET",
+      "path": "/salarii/agents/history-by-retail-code",
+      "parameter": "site_code",
+      "required": true,
+      "policy": "bounded_code_64",
+      "baseline_schema_sha256": "207a2d3e9a592e0c40874584680232fe46d3ccd228395d06bf9aae12baf2420f"
+    },
+    {
+      "method": "GET",
+      "path": "/salarii/agents/summary",
+      "parameter": "q",
+      "required": false,
+      "policy": "bounded_text_120",
+      "baseline_schema_sha256": "7e867aa64160f40beef8f99db5f76e02af419c21614113dcef463abfc1cdea68"
+    },
+    {
+      "method": "GET",
+      "path": "/salarii/agents/summary",
+      "parameter": "company_name",
+      "required": false,
+      "policy": "bounded_text_120",
+      "baseline_schema_sha256": "4a73df26a23fb498f4d70e1df92a76c67d7c83c7870f2ecae5c6f19b78e2366e"
+    },
+    {
+      "method": "GET",
+      "path": "/salarii/agents/summary",
+      "parameter": "site_code",
+      "required": false,
+      "policy": "bounded_code_list_100x100",
+      "baseline_schema_sha256": "93d57d28a159b0921ed6daa11cf783592e1ea3d7dc0cbf3c4a53c4f1bad7d276"
+    },
+    {
+      "method": "GET",
+      "path": "/salarii/agents/summary",
+      "parameter": "regional",
+      "required": false,
+      "policy": "bounded_text_120",
+      "baseline_schema_sha256": "6d2b60a603e3c54fa527bc0239ad596245412954c00892daf10d644b3343656d"
+    },
+    {
+      "method": "GET",
+      "path": "/salarii/agents/summary",
+      "parameter": "asm",
+      "required": false,
+      "policy": "bounded_text_120",
+      "baseline_schema_sha256": "4c0ac1c424eb56bee3c849d30c814ca65c9fa5964748e1240f257791445bac97"
+    },
+    {
+      "method": "GET",
+      "path": "/salarii/agents/summary",
+      "parameter": "year",
+      "required": false,
+      "policy": "year_2018_2100",
+      "baseline_schema_sha256": "c1fa550e40497dc0e0efc0e269c130c7de4909782ab5324d56c679f018113bb1"
+    },
+    {
+      "method": "GET",
+      "path": "/salarii/agents/summary",
+      "parameter": "month",
+      "required": false,
+      "policy": "month_1_12",
+      "baseline_schema_sha256": "3b4b167306cf0cce72c7b0f983bec1310202cfba84447dd43851465fa2379af5"
+    },
+    {
+      "method": "GET",
+      "path": "/salarii/agents/summary",
+      "parameter": "limit",
+      "required": false,
+      "policy": "limit_1_500",
+      "baseline_schema_sha256": "0f455113d99d327c077f5d2c7cabd7737dee465dded352f8e30aa7492d817594"
+    },
+    {
+      "method": "GET",
+      "path": "/salarii/agents/summary",
+      "parameter": "offset",
+      "required": false,
+      "policy": "offset_0_100000",
+      "baseline_schema_sha256": "3d2e1c0c61a31cc38671c5c950ae8c2922d532187d2d0239a213969e3fc6b911"
+    },
+    {
+      "method": "GET",
+      "path": "/salarii/evolution",
+      "parameter": "company_name",
+      "required": false,
+      "policy": "bounded_text_120",
+      "baseline_schema_sha256": "4a73df26a23fb498f4d70e1df92a76c67d7c83c7870f2ecae5c6f19b78e2366e"
+    },
+    {
+      "method": "GET",
+      "path": "/salarii/evolution",
+      "parameter": "site_code",
+      "required": false,
+      "policy": "bounded_code_list_100x100",
+      "baseline_schema_sha256": "93d57d28a159b0921ed6daa11cf783592e1ea3d7dc0cbf3c4a53c4f1bad7d276"
+    },
+    {
+      "method": "GET",
+      "path": "/salarii/evolution",
+      "parameter": "regional",
+      "required": false,
+      "policy": "bounded_text_120",
+      "baseline_schema_sha256": "6d2b60a603e3c54fa527bc0239ad596245412954c00892daf10d644b3343656d"
+    },
+    {
+      "method": "GET",
+      "path": "/salarii/evolution",
+      "parameter": "asm",
+      "required": false,
+      "policy": "bounded_text_120",
+      "baseline_schema_sha256": "4c0ac1c424eb56bee3c849d30c814ca65c9fa5964748e1240f257791445bac97"
+    },
+    {
+      "method": "GET",
+      "path": "/salarii/overview",
+      "parameter": "company_name",
+      "required": false,
+      "policy": "bounded_text_120",
+      "baseline_schema_sha256": "4a73df26a23fb498f4d70e1df92a76c67d7c83c7870f2ecae5c6f19b78e2366e"
+    },
+    {
+      "method": "GET",
+      "path": "/salarii/overview",
+      "parameter": "site_code",
+      "required": false,
+      "policy": "bounded_code_list_100x100",
+      "baseline_schema_sha256": "93d57d28a159b0921ed6daa11cf783592e1ea3d7dc0cbf3c4a53c4f1bad7d276"
+    },
+    {
+      "method": "GET",
+      "path": "/salarii/overview",
+      "parameter": "regional",
+      "required": false,
+      "policy": "bounded_text_120",
+      "baseline_schema_sha256": "6d2b60a603e3c54fa527bc0239ad596245412954c00892daf10d644b3343656d"
+    },
+    {
+      "method": "GET",
+      "path": "/salarii/overview",
+      "parameter": "asm",
+      "required": false,
+      "policy": "bounded_text_120",
+      "baseline_schema_sha256": "4c0ac1c424eb56bee3c849d30c814ca65c9fa5964748e1240f257791445bac97"
+    },
+    {
+      "method": "GET",
+      "path": "/salarii/records",
+      "parameter": "company_name",
+      "required": false,
+      "policy": "bounded_text_120",
+      "baseline_schema_sha256": "4a73df26a23fb498f4d70e1df92a76c67d7c83c7870f2ecae5c6f19b78e2366e"
+    },
+    {
+      "method": "GET",
+      "path": "/salarii/records",
+      "parameter": "year",
+      "required": false,
+      "policy": "year_2018_2100",
+      "baseline_schema_sha256": "c1fa550e40497dc0e0efc0e269c130c7de4909782ab5324d56c679f018113bb1"
+    },
+    {
+      "method": "GET",
+      "path": "/salarii/records",
+      "parameter": "month",
+      "required": false,
+      "policy": "month_1_12",
+      "baseline_schema_sha256": "3b4b167306cf0cce72c7b0f983bec1310202cfba84447dd43851465fa2379af5"
+    },
+    {
+      "method": "GET",
+      "path": "/salarii/records",
+      "parameter": "site_code",
+      "required": false,
+      "policy": "bounded_code_list_100x100",
+      "baseline_schema_sha256": "93d57d28a159b0921ed6daa11cf783592e1ea3d7dc0cbf3c4a53c4f1bad7d276"
+    },
+    {
+      "method": "GET",
+      "path": "/salarii/records",
+      "parameter": "limit",
+      "required": false,
+      "policy": "limit_1_2000",
+      "baseline_schema_sha256": "a3bb55438ea663948138e3f350546ab5c84aa905c9f9117f68e495c78c955fff"
+    },
+    {
+      "method": "GET",
+      "path": "/salarii/records",
+      "parameter": "offset",
+      "required": false,
+      "policy": "offset_0_100000",
+      "baseline_schema_sha256": "3d2e1c0c61a31cc38671c5c950ae8c2922d532187d2d0239a213969e3fc6b911"
+    },
+    {
+      "method": "GET",
+      "path": "/salarii/stores",
+      "parameter": "company_name",
+      "required": false,
+      "policy": "bounded_text_120",
+      "baseline_schema_sha256": "4a73df26a23fb498f4d70e1df92a76c67d7c83c7870f2ecae5c6f19b78e2366e"
+    },
+    {
+      "method": "GET",
+      "path": "/salarii/summary",
+      "parameter": "company_name",
+      "required": false,
+      "policy": "bounded_text_120",
+      "baseline_schema_sha256": "4a73df26a23fb498f4d70e1df92a76c67d7c83c7870f2ecae5c6f19b78e2366e"
+    },
+    {
+      "method": "GET",
+      "path": "/salarii/summary",
+      "parameter": "site_code",
+      "required": false,
+      "policy": "bounded_code_list_100x100",
+      "baseline_schema_sha256": "93d57d28a159b0921ed6daa11cf783592e1ea3d7dc0cbf3c4a53c4f1bad7d276"
+    },
+    {
+      "method": "GET",
+      "path": "/salarii/summary",
+      "parameter": "regional",
+      "required": false,
+      "policy": "bounded_text_120",
+      "baseline_schema_sha256": "6d2b60a603e3c54fa527bc0239ad596245412954c00892daf10d644b3343656d"
+    },
+    {
+      "method": "GET",
+      "path": "/salarii/summary",
+      "parameter": "asm",
+      "required": false,
+      "policy": "bounded_text_120",
+      "baseline_schema_sha256": "4c0ac1c424eb56bee3c849d30c814ca65c9fa5964748e1240f257791445bac97"
+    },
+    {
+      "method": "GET",
+      "path": "/salarii/summary",
+      "parameter": "year",
+      "required": false,
+      "policy": "year_2018_2100",
+      "baseline_schema_sha256": "c1fa550e40497dc0e0efc0e269c130c7de4909782ab5324d56c679f018113bb1"
+    },
+    {
+      "method": "GET",
+      "path": "/salarii/summary",
+      "parameter": "month",
+      "required": false,
+      "policy": "month_1_12",
+      "baseline_schema_sha256": "3b4b167306cf0cce72c7b0f983bec1310202cfba84447dd43851465fa2379af5"
+    },
+    {
+      "method": "GET",
+      "path": "/salarii/trend",
+      "parameter": "company_name",
+      "required": false,
+      "policy": "bounded_text_120",
+      "baseline_schema_sha256": "4a73df26a23fb498f4d70e1df92a76c67d7c83c7870f2ecae5c6f19b78e2366e"
+    },
+    {
+      "method": "GET",
+      "path": "/salarii/trend",
+      "parameter": "site_code",
+      "required": false,
+      "policy": "bounded_code_list_100x100",
+      "baseline_schema_sha256": "93d57d28a159b0921ed6daa11cf783592e1ea3d7dc0cbf3c4a53c4f1bad7d276"
+    },
+    {
+      "method": "GET",
+      "path": "/salarii/trend",
+      "parameter": "regional",
+      "required": false,
+      "policy": "bounded_text_120",
+      "baseline_schema_sha256": "6d2b60a603e3c54fa527bc0239ad596245412954c00892daf10d644b3343656d"
+    },
+    {
+      "method": "GET",
+      "path": "/salarii/trend",
+      "parameter": "asm",
+      "required": false,
+      "policy": "bounded_text_120",
+      "baseline_schema_sha256": "4c0ac1c424eb56bee3c849d30c814ca65c9fa5964748e1240f257791445bac97"
+    }
+  ]
+}

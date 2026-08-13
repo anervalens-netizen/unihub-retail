@@ -1,7 +1,9 @@
-#!/usr/bin/env bash
+#!/usr/bin/bash -p
 
 set -Eeuo pipefail
 umask 077
+unset BASH_ENV ENV CDPATH GLOBIGNORE PYTHONSTARTUP PYTHONINSPECT || true
+unset PYTHONHOME PYTHONPATH MYPYPATH MYPY_CONFIG_FILE
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 DEPLOY_SCRIPT="$SCRIPT_DIR/deploy-retail-artifact.sh"
@@ -26,11 +28,44 @@ git -C "$BUILDER" remote add origin "$REMOTE"
 mkdir -p "$BUILDER/backend" "$BUILDER/ops/systemd" "$BUILDER/ops/observability"
 cp "$SCRIPT_DIR/../package.json" "$BUILDER/package.json"
 cp "$SCRIPT_DIR/../package-lock.json" "$BUILDER/package-lock.json"
-cp "$SCRIPT_DIR/../backend/requirements.lock" "$BUILDER/backend/requirements.lock"
+WHEELHOUSE="$ROOT/wheelhouse"
+mkdir -p "$WHEELHOUSE"
+/usr/bin/python3.12 -I -S - "$WHEELHOUSE/demo_runtime-1.0-py3-none-any.whl" <<'PY'
+import base64
+import csv
+import hashlib
+import io
+from pathlib import Path
+import sys
+import zipfile
+
+target = Path(sys.argv[1])
+files = {
+    "demo_runtime.py": b"def main():\n    return 0\n",
+    "demo_runtime-1.0.dist-info/METADATA": b"Metadata-Version: 2.1\nName: demo-runtime\nVersion: 1.0\n",
+    "demo_runtime-1.0.dist-info/WHEEL": b"Wheel-Version: 1.0\nGenerator: unihub-test\nRoot-Is-Purelib: true\nTag: py3-none-any\n",
+    "demo_runtime-1.0.dist-info/entry_points.txt": b"[console_scripts]\ndemo-runtime=demo_runtime:main\n",
+}
+rows = []
+for name, payload in files.items():
+    digest = base64.urlsafe_b64encode(hashlib.sha256(payload).digest()).decode().rstrip("=")
+    rows.append([name, f"sha256={digest}", str(len(payload))])
+rows.append(["demo_runtime-1.0.dist-info/RECORD", "", ""])
+buffer = io.StringIO(newline="")
+csv.writer(buffer, lineterminator="\n").writerows(rows)
+files["demo_runtime-1.0.dist-info/RECORD"] = buffer.getvalue().encode()
+with zipfile.ZipFile(target, "w", compression=zipfile.ZIP_DEFLATED) as wheel:
+    for name, payload in files.items():
+        wheel.writestr(name, payload)
+PY
+WHEEL_SHA256="$(sha256sum "$WHEELHOUSE/demo_runtime-1.0-py3-none-any.whl" | awk '{print $1}')"
+printf 'demo-runtime==1.0 --hash=sha256:%s\n' "$WHEEL_SHA256" \
+  >"$BUILDER/backend/requirements.lock"
 printf 'print("old")\n' >"$BUILDER/backend/main.py"
-printf 'dist/\ndata/\nbackend/outputs/\n' >"$BUILDER/.gitignore"
+printf 'dist/\ndata/\nbackend/outputs/\nbackend/venv/\n' >"$BUILDER/.gitignore"
 cp "$SCRIPT_DIR/systemd/unihub-backend.service" "$BUILDER/ops/systemd/"
 cp "$SCRIPT_DIR/../unihub-worker.service" "$BUILDER/"
+cp "$DEPLOY_SCRIPT" "$BUILDER/ops/deploy-retail-artifact.sh"
 cp "$SCRIPT_DIR/systemd/unihub-import-worker.service" "$BUILDER/ops/systemd/"
 cp "$SCRIPT_DIR/systemd/unihub-retail-migrate.service" "$BUILDER/ops/systemd/"
 cp "$SCRIPT_DIR/provision-retail-service-identities.sh" "$BUILDER/ops/"
@@ -52,10 +87,32 @@ cp "$SCRIPT_DIR/systemd/unihub-legacy-worker.service" "$BUILDER/ops/systemd/"
 
 git clone --quiet "$REMOTE" "$LIVE"
 mkdir -p "$LIVE/dist"
+/usr/bin/python3.12 -I -m venv "$LIVE/backend/venv"
 printf 'old frontend\n' >"$LIVE/dist/index.html"
 chmod 0700 "$LIVE" "$LIVE/backend" "$LIVE/dist"
 chmod 0600 "$LIVE/backend/main.py" "$LIVE/dist/index.html"
 [[ "$(stat -c '%a' "$LIVE/backend/main.py")" == "600" ]]
+
+venv_identity_hash() {
+  /usr/bin/python3.12 -I -S - "$LIVE/backend/venv" <<'PY'
+import hashlib
+import json
+import pathlib
+import sys
+
+root = pathlib.Path(sys.argv[1])
+entries = []
+for path in sorted(root.rglob("*")):
+    relative = str(path.relative_to(root))
+    if path.is_symlink():
+        entries.append([relative, "symlink", path.readlink().as_posix()])
+    elif path.is_file():
+        entries.append([relative, "file", hashlib.sha256(path.read_bytes()).hexdigest()])
+print(hashlib.sha256(json.dumps(entries, separators=(",", ":")).encode()).hexdigest())
+PY
+}
+
+OLD_VENV_HASH="$(venv_identity_hash)"
 
 mkdir -p \
   "$ROOT/etc/systemd/system" \
@@ -99,7 +156,8 @@ build_release() {
   local output_dir="$2"
   (
     cd "$BUILDER"
-    "$BUILD_SCRIPT" "$source_sha" "$output_dir"
+    PYTHON_RUNTIME_WHEELHOUSE_PATH="$WHEELHOUSE" \
+      "$BUILD_SCRIPT" "$source_sha" "$output_dir"
   ) >/dev/null
 }
 
@@ -108,12 +166,18 @@ build_release "$NEW_SHA" "$RELEASE_DIR"
 ARTIFACT="$RELEASE_DIR/retail-release-${NEW_SHA}.tar.gz"
 [[ "$(<"$RELEASE_DIR/SOURCE_SHA")" == "$NEW_SHA" ]]
 (cd "$RELEASE_DIR" && sha256sum --check SHA256SUMS >/dev/null)
+for runtime_supply in \
+  PYTHON_RUNTIME_SUPPLY.json \
+  PYTHON_RUNTIME_REQUIREMENTS.lock \
+  PYTHON_RUNTIME_WHEELS.tar.gz; do
+  [[ -s "$RELEASE_DIR/$runtime_supply" && ! -L "$RELEASE_DIR/$runtime_supply" ]]
+done
 ARTIFACT_SHA256="$(sha256sum "$ARTIFACT" | awk '{print $1}')"
 
 run_deploy() {
   RETAIL_DEPLOY_TEST_MODE=1 \
   RETAIL_DEPLOY_TEST_ROOT="$ROOT" \
-    bash "$DEPLOY_SCRIPT" "$@"
+    /usr/bin/bash -p "$DEPLOY_SCRIPT" "$@"
 }
 
 approve_release() {
@@ -126,8 +190,55 @@ approve_release() {
   RETAIL_APPROVAL_TEST_APPROVER=test-approver \
   RETAIL_APPROVAL_TEST_NOW="$now" \
   RETAIL_APPROVAL_TEST_CONFIRM=APPROVE_RETAIL_PRODUCTION \
-    bash "$APPROVE_SCRIPT" "$run_id" "$source_sha" "$artifact_sha256"
+    /usr/bin/bash -p "$APPROVE_SCRIPT" "$run_id" "$source_sha" "$artifact_sha256"
 }
+
+# The one-time privileged bootstrap is independently recoverable and cannot be
+# invoked by the deploy runner identity itself.
+mkdir -p "$OPS/scripts"
+printf '#!/usr/bin/bash -p\nexit 7\n' >"$OPS/scripts/deploy-retail-artifact.sh"
+chmod 0755 "$OPS/scripts/deploy-retail-artifact.sh"
+BOOTSTRAP_OLD_SHA="$(sha256sum "$OPS/scripts/deploy-retail-artifact.sh" | awk '{print $1}')"
+run_deploy bootstrap-entrypoint "$NEW_SHA" "$ARTIFACT_SHA256" >/dev/null
+cmp -- "$DEPLOY_SCRIPT" "$OPS/scripts/deploy-retail-artifact.sh"
+BOOTSTRAP_NEW_SHA="$(sha256sum "$DEPLOY_SCRIPT" | awk '{print $1}')"
+[[ "$(find "$OPS/backups/retail-deploy-entrypoints" -maxdepth 1 -type f \
+  -name "*-${BOOTSTRAP_OLD_SHA}.sh" | wc -l)" -eq 1 ]]
+/usr/bin/python3.12 -I -S - \
+  "$OPS/release-evidence/deploy-entrypoint-bootstrap/${BOOTSTRAP_NEW_SHA}.json" \
+  "$BOOTSTRAP_NEW_SHA" "$BOOTSTRAP_OLD_SHA" "$NEW_SHA" "$ARTIFACT_SHA256" <<'PY'
+import json
+import pathlib
+import sys
+
+payload = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
+if (
+    payload.get("result") != "PASS"
+    or payload.get("new_sha256") != sys.argv[2]
+    or payload.get("old_sha256") != sys.argv[3]
+    or payload.get("mode") != "0755"
+    or payload.get("source_release_sha") != sys.argv[4]
+    or payload.get("source_artifact_sha256") != sys.argv[5]
+):
+    raise SystemExit("deploy entrypoint bootstrap evidence mismatch")
+PY
+BOOTSTRAP_EVIDENCE_SHA="$(sha256sum \
+  "$OPS/release-evidence/deploy-entrypoint-bootstrap/${BOOTSTRAP_NEW_SHA}.json" \
+  | awk '{print $1}')"
+run_deploy bootstrap-entrypoint "$NEW_SHA" "$ARTIFACT_SHA256" >/dev/null
+[[ "$(find "$OPS/backups/retail-deploy-entrypoints" -maxdepth 1 -type f | wc -l)" -eq 1 ]]
+[[ "$(sha256sum \
+  "$OPS/release-evidence/deploy-entrypoint-bootstrap/${BOOTSTRAP_NEW_SHA}.json" \
+  | awk '{print $1}')" == "$BOOTSTRAP_EVIDENCE_SHA" ]]
+set +e
+RETAIL_DEPLOY_TEST_MODE=1 \
+RETAIL_DEPLOY_TEST_ROOT="$ROOT" \
+SUDO_USER=unihub-deploy \
+  /usr/bin/bash -p "$DEPLOY_SCRIPT" \
+    bootstrap-entrypoint "$NEW_SHA" "$ARTIFACT_SHA256" >/dev/null 2>&1
+RUNNER_BOOTSTRAP_RC=$?
+set -e
+[[ "$RUNNER_BOOTSTRAP_RC" -ne 0 ]]
 
 runtime_state_hash() {
   (
@@ -147,7 +258,7 @@ RETAIL_APPROVAL_TEST_MODE=1 \
 RETAIL_APPROVAL_TEST_ROOT="$ROOT/approval-store" \
 RETAIL_APPROVAL_TEST_APPROVER=unihub-deploy \
 RETAIL_APPROVAL_TEST_CONFIRM=APPROVE_RETAIL_PRODUCTION \
-  bash "$APPROVE_SCRIPT" "$CI_RUN_ID" "$NEW_SHA" "$ARTIFACT_SHA256" >/dev/null 2>&1
+  /usr/bin/bash -p "$APPROVE_SCRIPT" "$CI_RUN_ID" "$NEW_SHA" "$ARTIFACT_SHA256" >/dev/null 2>&1
 RUNNER_APPROVAL_RC=$?
 set -e
 [[ "$RUNNER_APPROVAL_RC" -ne 0 ]]
@@ -186,6 +297,27 @@ mv -- "$CLAIMED_APPROVAL" "$ACTIVE_APPROVAL"
 
 run_deploy "$ARTIFACT" "$NEW_SHA" "$CI_RUN_ID" "$ARTIFACT_SHA256"
 [[ "$(git -C "$LIVE" rev-parse HEAD)" == "$NEW_SHA" ]]
+[[ -L "$LIVE/backend/venv/bin/python" \
+  && "$(readlink -- "$LIVE/backend/venv/bin/python")" == "python3.12" ]]
+[[ -L "$LIVE/backend/venv/bin/python3" \
+  && "$(readlink -- "$LIVE/backend/venv/bin/python3")" == "python3.12" ]]
+[[ -L "$LIVE/backend/venv/bin/python3.12" \
+  && "$(readlink -- "$LIVE/backend/venv/bin/python3.12")" == "/usr/bin/python3.12" ]]
+[[ "$(readlink -f "$LIVE/backend/venv/bin/python")" == "/usr/bin/python3.12" ]]
+[[ ! -e "$LIVE/backend/venv/bin/demo-runtime" \
+  && ! -L "$LIVE/backend/venv/bin/demo-runtime" ]]
+/usr/bin/python3.12 -I -S - "$LIVE/backend/venv" <<'PY'
+import csv
+import pathlib
+import sys
+
+venv = pathlib.Path(sys.argv[1])
+record = venv / "lib/python3.12/site-packages/demo_runtime-1.0.dist-info/RECORD"
+rows = {row[0]: row[1:] for row in csv.reader(record.read_text(encoding="utf-8").splitlines())}
+if "../../../bin/demo-runtime" in rows:
+    raise SystemExit("removed console script remains in installed RECORD")
+PY
+NEW_VENV_HASH="$(venv_identity_hash)"
 [[ "$(<"$LIVE/dist/index.html")" == "new frontend" ]]
 [[ "$(stat -c '%a' "$LIVE")" == "755" ]]
 [[ "$(stat -c '%a' "$LIVE/backend")" == "755" ]]
@@ -227,8 +359,10 @@ grep -Fxq 'PROMETHEUS_DOCKER_GATEWAY=172.23.0.1' "$OPS/prometheus/unihub-retail-
 grep -Fxq 'PROMETHEUS_DOCKER_SUBNET=172.23.0.0/16' "$OPS/prometheus/unihub-retail-network.env"
 grep -Fxq 'WORKER_METRICS_HOST=172.23.0.1' "$OPS/prometheus/unihub-retail-network.env"
 [[ "$(grep -Fc '172.23.0.1:' "$OPS/prometheus/scrape.d/unihub-retail.yml")" -eq 6 ]]
-! grep -Eq '__PROMETHEUS_DOCKER_GATEWAY__|0\.0\.0\.0|127\.0\.0\.1' \
-  "$OPS/prometheus/scrape.d/unihub-retail.yml"
+if grep -Eq '__PROMETHEUS_DOCKER_GATEWAY__|0\.0\.0\.0|127\.0\.0\.1' \
+  "$OPS/prometheus/scrape.d/unihub-retail.yml"; then
+  exit 1
+fi
 cmp "$SCRIPT_DIR/observability/retail-slo-rules.yml" \
   "$OPS/prometheus/rules/retail-slo-rules.yml"
 [[ "$(<"$LIVE/docs/AUDIT_TEHNIC_RETAIL_UNIHUB_REAUDIT_2026-07-15.md")" == "published audit" ]]
@@ -258,6 +392,25 @@ RETAIL_DEPLOY_TEST_WEB_FILE_USER="$(id -un)" \
 [[ "$(git -C "$LIVE" rev-parse HEAD)" == "$NEW_SHA" ]]
 [[ "$(find "$ROOT/approval-store" -maxdepth 1 -type f -name '*.consumed' | wc -l)" -eq 1 ]]
 [[ "$(find "$OPS/backups/retail-deploy" -mindepth 1 -maxdepth 1 -type d | wc -l)" -eq "$BACKUP_COUNT" ]]
+
+ln -sfn -- /usr/bin/false "$LIVE/backend/venv/bin/python3.12"
+set +e
+run_deploy "$ARTIFACT" "$NEW_SHA" "$CI_RUN_ID" "$ARTIFACT_SHA256" >/dev/null 2>&1
+REVERIFY_TAMPERED_INTERPRETER_RC=$?
+set -e
+[[ "$REVERIFY_TAMPERED_INTERPRETER_RC" -ne 0 ]]
+ln -sfn -- /usr/bin/python3.12 "$LIVE/backend/venv/bin/python3.12"
+[[ "$(venv_identity_hash)" == "$NEW_VENV_HASH" ]]
+
+printf '#!/bin/sh\nexit 0\n' >"$LIVE/backend/venv/bin/unsigned-runtime-tool"
+chmod 0755 "$LIVE/backend/venv/bin/unsigned-runtime-tool"
+set +e
+run_deploy "$ARTIFACT" "$NEW_SHA" "$CI_RUN_ID" "$ARTIFACT_SHA256" >/dev/null 2>&1
+REVERIFY_UNSIGNED_BIN_RC=$?
+set -e
+[[ "$REVERIFY_UNSIGNED_BIN_RC" -ne 0 ]]
+rm -- "$LIVE/backend/venv/bin/unsigned-runtime-tool"
+[[ "$(venv_identity_hash)" == "$NEW_VENV_HASH" ]]
 
 printf 'corrupted frontend\n' >"$LIVE/dist/index.html"
 set +e
@@ -307,17 +460,72 @@ SECOND_HANDLE="$(
   done
 )"
 [[ -n "$SECOND_HANDLE" && "$SECOND_HANDLE" != "$HANDLE" ]]
+NEWER_VENV_HASH="$(venv_identity_hash)"
+
+mv -- "$SECOND_HANDLE/venv-before.json" "$SECOND_HANDLE/venv-before.json.missing-test"
+set +e
+run_deploy rollback "$SECOND_HANDLE" >"$ROOT/rollback-missing-venv-evidence.log" 2>&1
+ROLLBACK_MISSING_VENV_EVIDENCE_RC=$?
+set -e
+[[ "$ROLLBACK_MISSING_VENV_EVIDENCE_RC" -ne 0 ]]
+[[ "$(git -C "$LIVE" rev-parse HEAD)" == "$NEWER_SHA" ]]
+[[ "$(venv_identity_hash)" == "$NEWER_VENV_HASH" ]]
+if grep -q 'TEST systemctl stop ' "$ROOT/rollback-missing-venv-evidence.log"; then
+  exit 1
+fi
+mv -- "$SECOND_HANDLE/venv-before.json.missing-test" "$SECOND_HANDLE/venv-before.json"
+
+mv -- "$SECOND_HANDLE/python-runtime-supply.old/PYTHON_RUNTIME_SUPPLY.json" \
+  "$SECOND_HANDLE/python-runtime-supply.old/PYTHON_RUNTIME_SUPPLY.json.missing-test"
+set +e
+run_deploy rollback "$SECOND_HANDLE" >"$ROOT/rollback-missing-managed-supply.log" 2>&1
+ROLLBACK_MISSING_MANAGED_SUPPLY_RC=$?
+set -e
+[[ "$ROLLBACK_MISSING_MANAGED_SUPPLY_RC" -ne 0 ]]
+[[ "$(git -C "$LIVE" rev-parse HEAD)" == "$NEWER_SHA" ]]
+[[ "$(venv_identity_hash)" == "$NEWER_VENV_HASH" ]]
+if grep -q 'TEST systemctl stop ' "$ROOT/rollback-missing-managed-supply.log"; then
+  exit 1
+fi
+mv -- "$SECOND_HANDLE/python-runtime-supply.old/PYTHON_RUNTIME_SUPPLY.json.missing-test" \
+  "$SECOND_HANDLE/python-runtime-supply.old/PYTHON_RUNTIME_SUPPLY.json"
 
 run_deploy rollback "$SECOND_HANDLE"
 [[ "$(git -C "$LIVE" rev-parse HEAD)" == "$NEW_SHA" ]]
+[[ "$(venv_identity_hash)" == "$NEW_VENV_HASH" ]]
 [[ "$(stat -c '%a' "$LIVE/backend/main.py")" == "644" ]]
 [[ "$(stat -c '%a' "$LIVE/dist/index.html")" == "640" ]]
 [[ "$(readlink -f "$ROOT/etc/systemd/system/unihub-backend.service")" == "$ROOT/runtime-releases/$NEW_SHA/systemd/unihub-backend.service" ]]
 [[ "$(<"$LIVE/docs/AUDIT_TEHNIC_RETAIL_UNIHUB_REAUDIT_2026-07-15.md")" == "published audit" ]]
 [[ "$(<"$LIVE/docs/PLAN_DEZVOLTARE_RETAIL_UNIHUB_URMATOAREA_VERSIUNE_2026-07-15.md")" == "published plan" ]]
 
+# Once a release is contract-managed, removing its signed runtime supply must
+# fail before any service stop or runtime switch; it may never degrade to the
+# one-time legacy-opaque baseline compatibility path.
+MISSING_SUPPLY_RUN_ID="$((CI_RUN_ID + 11))"
+approve_release "$MISSING_SUPPLY_RUN_ID" "$NEWER_SHA" "$NEWER_ARTIFACT_SHA256" >/dev/null
+mv -- "$ROOT/runtime-releases/$NEW_SHA/python-runtime-supply" \
+  "$ROOT/runtime-releases/$NEW_SHA/python-runtime-supply.missing-test"
+set +e
+RETAIL_DEPLOY_TEST_MODE=1 \
+RETAIL_DEPLOY_TEST_ROOT="$ROOT" \
+  /usr/bin/bash -p "$DEPLOY_SCRIPT" \
+    "$NEWER_ARTIFACT" "$NEWER_SHA" "$MISSING_SUPPLY_RUN_ID" "$NEWER_ARTIFACT_SHA256" \
+    >"$ROOT/missing-runtime-supply.log" 2>&1
+MISSING_RUNTIME_SUPPLY_RC=$?
+set -e
+[[ "$MISSING_RUNTIME_SUPPLY_RC" -ne 0 ]]
+[[ "$(git -C "$LIVE" rev-parse HEAD)" == "$NEW_SHA" ]]
+[[ "$(venv_identity_hash)" == "$NEW_VENV_HASH" ]]
+if grep -q 'TEST systemctl stop ' "$ROOT/missing-runtime-supply.log"; then
+  exit 1
+fi
+mv -- "$ROOT/runtime-releases/$NEW_SHA/python-runtime-supply.missing-test" \
+  "$ROOT/runtime-releases/$NEW_SHA/python-runtime-supply"
+
 run_deploy rollback "$HANDLE"
 [[ "$(git -C "$LIVE" rev-parse HEAD)" == "$OLD_SHA" ]]
+[[ "$(venv_identity_hash)" == "$OLD_VENV_HASH" ]]
 [[ "$(stat -c '%a' "$LIVE/backend/main.py")" == "644" ]]
 [[ "$(stat -c '%a' "$LIVE/dist/index.html")" == "640" ]]
 [[ ! -L "$ROOT/etc/systemd/system/unihub-backend.service" ]]
@@ -343,19 +551,39 @@ set -e
 [[ "$(git -C "$LIVE" rev-parse HEAD)" == "$OLD_SHA" ]]
 
 approve_release "$CI_RUN_ID" "$NEW_SHA" "$ARTIFACT_SHA256" >/dev/null
+FAILED_BEFORE_HEALTH="$(find "$ROOT/approval-store" -maxdepth 1 -type f -name '*.failed' | wc -l)"
 set +e
 RETAIL_DEPLOY_TEST_MODE=1 \
 RETAIL_DEPLOY_TEST_ROOT="$ROOT" \
 RETAIL_DEPLOY_TEST_FAIL_PHASE=health \
-  bash "$DEPLOY_SCRIPT" "$ARTIFACT" "$NEW_SHA" "$CI_RUN_ID" "$ARTIFACT_SHA256" >/dev/null 2>&1
+  /usr/bin/bash -p "$DEPLOY_SCRIPT" "$ARTIFACT" "$NEW_SHA" "$CI_RUN_ID" "$ARTIFACT_SHA256" >/dev/null 2>&1
 FAIL_RC=$?
 set -e
 [[ "$FAIL_RC" -ne 0 ]]
 [[ "$(git -C "$LIVE" rev-parse HEAD)" == "$OLD_SHA" ]]
 [[ "$(<"$LIVE/dist/index.html")" == "old frontend" ]]
 [[ ! -e "$LIVE/docs/AUDIT_TEHNIC_RETAIL_UNIHUB_REAUDIT_2026-07-15.md" ]]
-[[ "$(find "$ROOT/approval-store" -maxdepth 1 -type f -name '*.failed' | wc -l)" -eq 1 ]]
+[[ "$(find "$ROOT/approval-store" -maxdepth 1 -type f -name '*.failed' | wc -l)" \
+  -eq "$((FAILED_BEFORE_HEALTH + 1))" ]]
 [[ ! -e "$ROOT/node-exporter/textfile/unihub_retail_deploy.prom" ]]
+
+for VENV_FAIL_PHASE in venv_after_old_move venv_after_swap; do
+  approve_release "$CI_RUN_ID" "$NEW_SHA" "$ARTIFACT_SHA256" >/dev/null
+  FAILED_BEFORE_VENV="$(find "$ROOT/approval-store" -maxdepth 1 -type f -name '*.failed' | wc -l)"
+  set +e
+  RETAIL_DEPLOY_TEST_MODE=1 \
+  RETAIL_DEPLOY_TEST_ROOT="$ROOT" \
+  RETAIL_DEPLOY_TEST_FAIL_PHASE="$VENV_FAIL_PHASE" \
+    /usr/bin/bash -p "$DEPLOY_SCRIPT" \
+      "$ARTIFACT" "$NEW_SHA" "$CI_RUN_ID" "$ARTIFACT_SHA256" >/dev/null 2>&1
+  VENV_FAIL_RC=$?
+  set -e
+  [[ "$VENV_FAIL_RC" -ne 0 ]]
+  [[ "$(git -C "$LIVE" rev-parse HEAD)" == "$OLD_SHA" ]]
+  [[ "$(venv_identity_hash)" == "$OLD_VENV_HASH" ]]
+  [[ "$(find "$ROOT/approval-store" -maxdepth 1 -type f -name '*.failed' | wc -l)" \
+    -eq "$((FAILED_BEFORE_VENV + 1))" ]]
+done
 
 approve_release "$CI_RUN_ID" "$NEW_SHA" "$ARTIFACT_SHA256" >/dev/null
 FAILED_BEFORE_PROMETHEUS="$(find "$ROOT/approval-store" -maxdepth 1 -type f -name '*.failed' | wc -l)"
@@ -363,7 +591,7 @@ set +e
 RETAIL_DEPLOY_TEST_MODE=1 \
 RETAIL_DEPLOY_TEST_ROOT="$ROOT" \
 RETAIL_DEPLOY_TEST_FAIL_PHASE=prometheus \
-  bash "$DEPLOY_SCRIPT" "$ARTIFACT" "$NEW_SHA" "$CI_RUN_ID" "$ARTIFACT_SHA256" >/dev/null 2>&1
+  /usr/bin/bash -p "$DEPLOY_SCRIPT" "$ARTIFACT" "$NEW_SHA" "$CI_RUN_ID" "$ARTIFACT_SHA256" >/dev/null 2>&1
 PROMETHEUS_RC=$?
 set -e
 [[ "$PROMETHEUS_RC" -ne 0 ]]
@@ -381,7 +609,7 @@ set +e
 RETAIL_DEPLOY_TEST_MODE=1 \
 RETAIL_DEPLOY_TEST_ROOT="$ROOT" \
 RETAIL_DEPLOY_TEST_FAIL_PHASE=public_health \
-  bash "$DEPLOY_SCRIPT" "$ARTIFACT" "$NEW_SHA" "$CI_RUN_ID" "$ARTIFACT_SHA256" >/dev/null 2>&1
+  /usr/bin/bash -p "$DEPLOY_SCRIPT" "$ARTIFACT" "$NEW_SHA" "$CI_RUN_ID" "$ARTIFACT_SHA256" >/dev/null 2>&1
 PUBLIC_HEALTH_RC=$?
 set -e
 [[ "$PUBLIC_HEALTH_RC" -ne 0 ]]
@@ -406,7 +634,7 @@ set -e
 [[ "$(find "$ROOT/approval-store" -maxdepth 1 -type f -name '*.failed' | wc -l)" -eq "$((FAILED_BEFORE_TAMPER + 1))" ]]
 [[ "$(find "$ROOT/approval-store" -maxdepth 1 -type f -name '*.claimed.*' | wc -l)" -eq 0 ]]
 
-python3 - "$ROOT/unsafe.tar.gz" <<'PY'
+/usr/bin/python3.12 -I -S - "$ROOT/unsafe.tar.gz" <<'PY'
 import io
 import sys
 import tarfile
@@ -426,7 +654,7 @@ set -e
 [[ "$UNSAFE_RC" -ne 0 ]]
 [[ ! -e "$ROOT/escape" ]]
 
-python3 - "$ROOT/symlink.tar.gz" <<'PY'
+/usr/bin/python3.12 -I -S - "$ROOT/symlink.tar.gz" <<'PY'
 import sys
 import tarfile
 
@@ -489,7 +717,7 @@ set +e
 RETAIL_DEPLOY_TEST_MODE=1 \
 RETAIL_DEPLOY_TEST_ROOT="$ROOT" \
 RETAIL_DEPLOY_TEST_NOW=4000 \
-  bash "$DEPLOY_SCRIPT" "$ARTIFACT" "$NEW_SHA" "$((CI_RUN_ID + 2))" "$ARTIFACT_SHA256" >/dev/null 2>&1
+  /usr/bin/bash -p "$DEPLOY_SCRIPT" "$ARTIFACT" "$NEW_SHA" "$((CI_RUN_ID + 2))" "$ARTIFACT_SHA256" >/dev/null 2>&1
 EXPIRED_APPROVAL_RC=$?
 set -e
 [[ "$EXPIRED_APPROVAL_RC" -ne 0 ]]
@@ -530,7 +758,7 @@ set +e
 RETAIL_DEPLOY_TEST_MODE=1 \
 RETAIL_DEPLOY_TEST_ROOT="$ROOT" \
 RETAIL_DEPLOY_TEST_FAIL_PHASE=health \
-  bash "$DEPLOY_SCRIPT" "$MIGRATED_ARTIFACT" "$MIGRATED_SHA" "$MIGRATED_RUN_ID" "$MIGRATED_ARTIFACT_SHA256" \
+  /usr/bin/bash -p "$DEPLOY_SCRIPT" "$MIGRATED_ARTIFACT" "$MIGRATED_SHA" "$MIGRATED_RUN_ID" "$MIGRATED_ARTIFACT_SHA256" \
   >"$ROOT/migrated-initial-failure.log" 2>&1
 MIGRATED_INITIAL_RC=$?
 set -e
@@ -558,7 +786,7 @@ set +e
 RETAIL_DEPLOY_TEST_MODE=1 \
 RETAIL_DEPLOY_TEST_ROOT="$ROOT" \
 RETAIL_DEPLOY_TEST_FAIL_PHASE=source_permissions \
-  bash "$DEPLOY_SCRIPT" "$MIGRATED_ARTIFACT" "$MIGRATED_SHA" "$MIGRATED_RUN_ID" "$MIGRATED_ARTIFACT_SHA256" \
+  /usr/bin/bash -p "$DEPLOY_SCRIPT" "$MIGRATED_ARTIFACT" "$MIGRATED_SHA" "$MIGRATED_RUN_ID" "$MIGRATED_ARTIFACT_SHA256" \
   >"$ROOT/migrated-recovery-failure.log" 2>&1
 MIGRATED_RECOVERY_RC=$?
 set -e
@@ -570,7 +798,9 @@ grep -q '^STATE=recovery_required$' "$MIGRATED_HANDLE/release.env"
 grep -q 'TEST tracked source permission failure' "$ROOT/migrated-recovery-failure.log"
 grep -q 'forward recovery runtime remains stopped after an incomplete transition' "$ROOT/migrated-recovery-failure.log"
 [[ "$(grep -c 'TEST systemctl stop ' "$ROOT/migrated-recovery-failure.log")" -eq 2 ]]
-! grep -q 'TEST systemctl restart ' "$ROOT/migrated-recovery-failure.log"
+if grep -q 'TEST systemctl restart ' "$ROOT/migrated-recovery-failure.log"; then
+  exit 1
+fi
 grep -q 'release remains recovery_required and requires a fresh one-time approval' "$ROOT/migrated-recovery-failure.log"
 
 approve_release "$MIGRATED_RUN_ID" "$MIGRATED_SHA" "$MIGRATED_ARTIFACT_SHA256" >/dev/null

@@ -1,0 +1,3038 @@
+{
+  "acceptance_criteria": [
+    "AC-01",
+    "AC-02",
+    "AC-03",
+    "AC-04",
+    "AC-05",
+    "AC-06",
+    "AC-07",
+    "AC-08",
+    "AC-09",
+    "AC-10",
+    "AC-11",
+    "AC-12",
+    "AC-13",
+    "AC-14",
+    "AC-15",
+    "AC-16",
+    "AC-17",
+    "T-09A-L"
+  ],
+  "authorities": [
+    {
+      "git_mode": "100644",
+      "path": ".bandit-baseline.json",
+      "sha256": "9153d8f323474a9db0bc294044a08e020f2e4861472489123190bbfd84633740",
+      "source_snapshot": "release_b_integrated_preview",
+      "supports": [
+        "AC-16"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": ".coveragerc",
+      "sha256": "136191ccb3b6d1507b8e15c66053cc878cf0c1fec4931465cee3ed5bb44b3f4a",
+      "source_snapshot": "release_b_integrated_preview",
+      "supports": [
+        "AC-16"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": ".github/workflows/deploy.yml",
+      "sha256": "4d6f5a9971a6b5f7077215ca0c56c670b74d27dc50c732b2097f24c423819b23",
+      "supports": [
+        "AC-12",
+        "AC-16",
+        "AC-17",
+        "T-09A-L"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": ".secrets.baseline",
+      "sha256": "0a452b3fbf2914f07130f96935dbbf7042aef6c71931040a2cace529ad42ccc8",
+      "source_snapshot": "release_b_integrated_preview",
+      "supports": [
+        "AC-16"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": "backend/architecture_contract.json",
+      "sha256": "4824e5236189eca07cd28142dfb6b5bddfce737e03b6dae1d2d748344d573c8b",
+      "source_snapshot": "release_b_integrated_preview",
+      "supports": [
+        "AC-10",
+        "AC-16"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": "backend/db/migration_runner.py",
+      "sha256": "6f2994513eed80bf244a81cd1c4538825852bda6639087d51e3c99c10c89dddf",
+      "source_snapshot": "release_b_integrated_preview",
+      "supports": [
+        "AC-16"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": "backend/requirements-dev.lock",
+      "sha256": "e9275fa962a3a9357961a8696fff16febaa7ebd0b6f823a2031e298b95de126f",
+      "source_snapshot": "release_b_integrated_preview",
+      "supports": [
+        "AC-16"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": "backend/requirements.lock",
+      "sha256": "bdabff0b5e7f4931d386f1b95d92dd3c9499a716e5de7e65ba8935c62d2a213f",
+      "source_snapshot": "release_b_integrated_preview",
+      "supports": [
+        "AC-16"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": "backend/scripts/bootstrap_test_db.py",
+      "sha256": "e54e3e4f1953e39534e1f6f246fd7349cce97406af84bbfd765143bdae686d51",
+      "source_snapshot": "release_b_integrated_preview",
+      "supports": [
+        "AC-16"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": "backend/scripts/check_critical_coverage.py",
+      "sha256": "19f0b5b339baf351a38ba8e1d4d0f28b938e71407dd2837cc6febb8b2f9e3a3c",
+      "source_snapshot": "release_b_integrated_preview",
+      "supports": [
+        "AC-16"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": "backend/scripts/oidc_e2e_stub.py",
+      "sha256": "fdb544f4defef3083e7177ed889ad0e76d91cbe0d2d55216ee4cdcd288cd571c",
+      "source_snapshot": "release_b_integrated_preview",
+      "supports": [
+        "AC-16"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": "backend/scripts/outbox_slo_workload_engine.py",
+      "sha256": "4c287b202e9915e46e89a5baa6d77cf40b86ec23c2dd72e6855868d1fe6acc2c",
+      "supports": [
+        "AC-12"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": "backend/scripts/run_ai_forecast_backtest.py",
+      "sha256": "43f3207bc5be80a7a707411504bc899bc1a62818fadfd235c5d05f1b7ce3b005",
+      "source_snapshot": "release_b_integrated_preview",
+      "supports": [
+        "AC-03"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": "backend/scripts/run_import_overlap_gate.py",
+      "sha256": "554cb286d72203d50ee3f667538bb93c5180ce5fb5c00074a7ee733787b09375",
+      "supports": [
+        "AC-16"
+      ]
+    },
+    {
+      "git_mode": "100755",
+      "path": "backend/scripts/run_mixed_load_gate.py",
+      "sha256": "99f1628d524eab7cf6d402cbcb5813b62d62c75f8c5a0d55f883d75fd29ccfa4",
+      "source_snapshot": "release_b_integrated_preview",
+      "supports": [
+        "AC-16"
+      ]
+    },
+    {
+      "git_mode": "100755",
+      "path": "backend/scripts/run_outbox_slo_workload.py",
+      "sha256": "e406da158e47c97f7b5b502678a8e55ecf69e82b38144653ff3ccd1e92aa69ee",
+      "supports": [
+        "AC-12"
+      ]
+    },
+    {
+      "git_mode": "100755",
+      "path": "backend/scripts/run_retail_scale_profile.py",
+      "sha256": "2fedd8a8d341f8e09e653eb37db0f748ab1b001e7866451ecb2a635d7b959f37",
+      "supports": [
+        "AC-13"
+      ]
+    },
+    {
+      "git_mode": "100755",
+      "path": "backend/scripts/run_tests_isolated.sh",
+      "sha256": "e1ff5f41345038661d37daf34e1665ef4b504c212c8c3d527fa0f68e3b5b9100",
+      "supports": [
+        "AC-16"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": "backend/tests/conftest.py",
+      "sha256": "d8912b105cf4d30d84dc0407bb7d6c7a221c2d3d986c6d83270fd239694abb04",
+      "source_snapshot": "release_b_integrated_preview",
+      "supports": [
+        "AC-16"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": "backend/tests/test_ai_forecast_asof_cohort.py",
+      "sha256": "ed7f7eede2b251602314ae0c58c3d7c61988aa9b98349d90976386ae6d3c69a0",
+      "source_snapshot": "release_b_integrated_preview",
+      "supports": [
+        "AC-03"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": "backend/tests/test_ai_forecast_backtest.py",
+      "sha256": "faac4454d1a95bb6ff2e4f7cf9dc6dcb4768a74c9db4e9db7c71a44a3cf74371",
+      "source_snapshot": "release_b_integrated_preview",
+      "supports": [
+        "AC-03"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": "backend/tests/test_ai_forecast_governance.py",
+      "sha256": "9e81ecab88ec28d9b593f27b9ae1c4f6fa5d0eb46ebf769eb54db7e88ebcb51c",
+      "source_snapshot": "release_b_integrated_preview",
+      "supports": [
+        "AC-14"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": "backend/tests/test_ai_forecast_import_contract.py",
+      "sha256": "35c84a7a4210e56ef0c4a871132583a4fd7037a2dfe95e196264c12cbc23a426",
+      "source_snapshot": "release_b_integrated_preview",
+      "supports": [
+        "AC-02"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": "backend/tests/test_ai_forecast_response_contract.py",
+      "sha256": "61a58da00c5678387164750f56633c100afee9b92c87f7a658ca5b164bfcfd3c",
+      "source_snapshot": "release_b_integrated_preview",
+      "supports": [
+        "AC-02"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": "backend/tests/test_business_golden_contract.py",
+      "sha256": "79ba77c43069f137110104d6d7ec69b0621af2ba452d8e88c5c68525db76b790",
+      "source_snapshot": "release_b_integrated_preview",
+      "supports": [
+        "AC-07"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": "backend/tests/test_grile_monthly.py",
+      "sha256": "5ccbf79132bacf8f286bbd61db86c5b75d580862f92c9061299ae65f41511ba0",
+      "source_snapshot": "release_b_integrated_preview",
+      "supports": [
+        "AC-09",
+        "AC-10"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": "backend/tests/test_grile_monthly_operations.py",
+      "sha256": "4c95f166977ff1747b7a0b0e2db39467ce581e56a8b280b42c3f0a6c6a437139",
+      "source_snapshot": "release_b_integrated_preview",
+      "supports": [
+        "AC-09",
+        "AC-10"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": "backend/tests/test_grile_monthly_state.py",
+      "sha256": "965cd3958bd6dbbb854ca2f15a5b8358d26bfc304f7b85736c5b30338d5b6f64",
+      "source_snapshot": "release_b_integrated_preview",
+      "supports": [
+        "AC-09",
+        "AC-10"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": "backend/tests/test_grile_outbox_delivery.py",
+      "sha256": "936bb1be6b27aad3eb386f1ebdcc705a322b8250b54d371458edb25cf9db842e",
+      "supports": [
+        "AC-15"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": "backend/tests/test_grile_pilot_v2.py",
+      "sha256": "344de5f2e76794f313134944da5be120751de3cf07699b2eafe806b47d7c7f01",
+      "source_snapshot": "release_b_integrated_preview",
+      "supports": [
+        "AC-15"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": "backend/tests/test_grile_repository_contracts.py",
+      "sha256": "f2047a376b5d5aa4b1ede7b389d423619419d31fa04ed8adc5b11517277ad489",
+      "source_snapshot": "release_b_integrated_preview",
+      "supports": [
+        "AC-09"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": "backend/tests/test_grile_v2_contract.py",
+      "sha256": "ad03d8b6eba7092a41ab3925c67b94112092f1053ba94f00368e0c6d6de9d35b",
+      "source_snapshot": "release_b_integrated_preview",
+      "supports": [
+        "AC-15"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": "backend/tests/test_outbox_replay.py",
+      "sha256": "5865e24c73f2657eebe4edb497c22ace419acac810aeeecd24584a6ca4216820",
+      "source_snapshot": "outbox_acceptance_contract",
+      "supports": [
+        "AC-12"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": "backend/tests/test_outbox_worker_faults.py",
+      "sha256": "7a09de3b21de38bc0586a00411ad6b3514ab94479484cf7124bd9da6d9e13c4a",
+      "supports": [
+        "AC-12"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": "backend/tests/test_release_a_schema_069.py",
+      "sha256": "1bece1623276734dda28a51ace57bb5817616516538efdcb0563d98ecf2900f4",
+      "supports": [
+        "AC-12",
+        "T-09A-L"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": "backend/tests/test_release_contract_tooling_security.py",
+      "sha256": "23d2f31e1bbc3c4508315aa96952426351a85fa4b633c2d4082d4c892a51e760",
+      "supports": [
+        "AC-12",
+        "AC-16",
+        "T-09A-L"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": "backend/tests/test_target_allocator_exact.py",
+      "sha256": "4a20d629b9966ebcac56c3528d63d55e712d2b0c7872e05635d4182c625a5705",
+      "source_snapshot": "release_b_integrated_preview",
+      "supports": [
+        "AC-01"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": "backend/tests/test_target_allocator_properties.py",
+      "sha256": "3f183245a2028c2fd9a82b9c768dbdd5b14ac7e524e70a838e6a71e4744f0c83",
+      "source_snapshot": "release_b_integrated_preview",
+      "supports": [
+        "AC-01"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": "backend/tests/test_telemetry_privacy_contract.py",
+      "sha256": "dd0803b996b3071ba44643e5c36a6832ef7bfc0bb006decd784477cda4410645",
+      "source_snapshot": "release_b_integrated_preview",
+      "supports": [
+        "AC-04"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": "backend/tests/test_transactional_outbox.py",
+      "sha256": "8838d2d16f73740dfbf2bc6d7c88050ce0d4e313df4da83ba7daf7488d264309",
+      "supports": [
+        "AC-12"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": "e2e/frontend-lifecycle.spec.ts",
+      "sha256": "de245d9ef291ff3266e1524d7ec39a55f9088b21b9fd75478099c5d40bd2cb8d",
+      "source_snapshot": "release_b_integrated_preview",
+      "supports": [
+        "AC-08",
+        "AC-11",
+        "AC-16"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": "e2e/helpers.ts",
+      "sha256": "c0456fdf01ced7bc3088516488ad344c74d731d67c689bf746763a7581b8871c",
+      "source_snapshot": "release_b_integrated_preview",
+      "supports": [
+        "AC-08",
+        "AC-11",
+        "AC-16"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": "e2e/pwa-release-lifecycle.spec.ts",
+      "sha256": "a87622d61b5296c90a175b3037f29b49e20b246527f93d483a8250b93f0258d8",
+      "source_snapshot": "release_b_integrated_preview",
+      "supports": [
+        "AC-08",
+        "AC-11",
+        "AC-16"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": "e2e/real-auth-stack.spec.ts",
+      "sha256": "6fc167999d94373498b1377cc0de342dd3b97305b42c999ff5a9f751ab3c9d07",
+      "source_snapshot": "release_b_integrated_preview",
+      "supports": [
+        "AC-08",
+        "AC-11",
+        "AC-16"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": "eslint.config.js",
+      "sha256": "bbae3cbce19f77db44d0a6da5cde92d667a50e3806a1b59ab07baeb5c215d541",
+      "source_snapshot": "release_b_integrated_preview",
+      "supports": [
+        "AC-08",
+        "AC-11",
+        "AC-16"
+      ]
+    },
+    {
+      "git_mode": "100755",
+      "path": "ops/build-retail-release-artifact.sh",
+      "sha256": "16b6e6575fd30f602dfbbb67db28374c31bc83b6d740beed66e45c6bd439208c",
+      "supports": [
+        "AC-12",
+        "AC-16",
+        "AC-17",
+        "T-09A-L"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": "ops/config/retail-env.schema.json",
+      "sha256": "bf37444e78d4de057bd030ef42cafe1a4ecb09310e04e160648b0b3485071fa2",
+      "supports": [
+        "AC-16"
+      ]
+    },
+    {
+      "git_mode": "100755",
+      "path": "ops/deploy-retail-artifact.sh",
+      "sha256": "0328529bd4de2cdb7a0c46f0a45e9f0e37cb8047db451f416c72990d7f7734dc",
+      "supports": [
+        "AC-12",
+        "AC-16",
+        "AC-17",
+        "T-09A-L"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": "ops/observability/retail-slo-rules.test.yml",
+      "sha256": "36e1722cc3d006d90d38eda04ec84f32786f031bd3a7ae34d2bb880d6b5d00a5",
+      "source_snapshot": "release_b_integrated_preview",
+      "supports": [
+        "AC-16"
+      ]
+    },
+    {
+      "git_mode": "100755",
+      "path": "ops/test-deploy-retail-artifact.sh",
+      "sha256": "2b344f73b8dd499a697954a3a1f3adaf3a79fab74f38aa9e431fa2a28b2cb4d1",
+      "supports": [
+        "AC-16"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": "package-lock.json",
+      "sha256": "a92f3403b5070216f7809288efc75980f36a54c4a7d6d63bbe1fc2a4d76973e5",
+      "source_snapshot": "release_b_integrated_preview",
+      "supports": [
+        "AC-16"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": "package.json",
+      "sha256": "dc052dbea4ef80d687152664dcd768db5a3f1e6f682db541efc07827c1174879",
+      "source_snapshot": "release_b_integrated_preview",
+      "supports": [
+        "AC-16"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": "playwright.browser-smoke.config.ts",
+      "sha256": "8880a999cfe3378da1cefdda374ce5bb313597d97b3d4dd4290e23f0a8942c8d",
+      "source_snapshot": "release_b_integrated_preview",
+      "supports": [
+        "AC-08",
+        "AC-11",
+        "AC-16"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": "playwright.config.ts",
+      "sha256": "ffd8db6695a1f70d2ab70493f9f48b5e21ddf8e3f2a2b0aa2e1a35be51346249",
+      "source_snapshot": "release_b_integrated_preview",
+      "supports": [
+        "AC-08",
+        "AC-11",
+        "AC-16"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": "playwright.pwa-workbox.config.ts",
+      "sha256": "e261872ea0fd4f466602aa777d950302d0bc67b6f23581200d99733995b526ac",
+      "source_snapshot": "release_b_integrated_preview",
+      "supports": [
+        "AC-08",
+        "AC-11",
+        "AC-16"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": "playwright.real.config.ts",
+      "sha256": "d2de1935960f145db156da2934c45083dfea69d1c8ff0635d3d388f6dd4ea88a",
+      "source_snapshot": "release_b_integrated_preview",
+      "supports": [
+        "AC-08",
+        "AC-11",
+        "AC-16"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": "pytest.ini",
+      "sha256": "6650ce8d457e275c7e95cec210ddb22265fc36686111ba830adaa8559fc3c1df",
+      "source_snapshot": "release_b_integrated_preview",
+      "supports": [
+        "AC-16"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": "scripts/bundle-budget-baseline.json",
+      "sha256": "f1763859aebb447db15384b8a10f73308fd2f09798a82385a9470cdc6e786be3",
+      "source_snapshot": "release_b_integrated_preview",
+      "supports": [
+        "AC-16"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": "scripts/check_ai_forecast_governance.py",
+      "sha256": "85316342afc9f62baffe5cc2e8cf5f980fabeffb218e2ba25c1806ae3ec7da33",
+      "source_snapshot": "release_b_integrated_preview",
+      "supports": [
+        "AC-14"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": "scripts/check_backend_architecture.py",
+      "sha256": "bd68ccfd3a15405c62b647eecb0de61d6049e87e4c533c5ca2e415735e47f438",
+      "source_snapshot": "release_b_integrated_preview",
+      "supports": [
+        "AC-10"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": "scripts/check_bandit_waivers.py",
+      "sha256": "e2e51f79a75913d3c7aa1857c95a0e145226f98c0f86f607e97abd9205303741",
+      "source_snapshot": "release_b_integrated_preview",
+      "supports": [
+        "AC-16"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": "scripts/check_bundle_budget.mjs",
+      "sha256": "87156878c4405052dd4ccaa385c3315b32aeabca00358fc7c2aa23299301d3e9",
+      "source_snapshot": "release_b_integrated_preview",
+      "supports": [
+        "AC-16"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": "scripts/check_business_golden.py",
+      "sha256": "34af288038c58742d00ae15035cf30c3725e148bc2ad003d87f050883748149c",
+      "source_snapshot": "release_b_integrated_preview",
+      "supports": [
+        "AC-07"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": "scripts/check_changed_function_complexity.py",
+      "sha256": "febcff266892a6bb909d336d9c5c495bd983a31f56226385c70e55cf513f6948",
+      "source_snapshot": "release_b_integrated_preview",
+      "supports": [
+        "AC-16"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": "scripts/check_changed_line_coverage.py",
+      "sha256": "3f35f7bf578a0ac61bc88e6274381aa5465a05ba11bea1ba1a8f52b8fbebc5e0",
+      "source_snapshot": "release_b_integrated_preview",
+      "supports": [
+        "AC-16"
+      ]
+    },
+    {
+      "git_mode": "100755",
+      "path": "scripts/check_complexity_ratchet.py",
+      "sha256": "66124ff30c0969ad538afe1b679352d45f98a49f6207d4faf46d81937fbb34db",
+      "source_snapshot": "release_b_integrated_preview",
+      "supports": [
+        "AC-09",
+        "AC-10",
+        "AC-11"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": "scripts/check_dependency_policy.mjs",
+      "sha256": "d81afcdfc4a367ec3d3cca4335c980b1be5e19916dc34baef3619e55f09c272d",
+      "source_snapshot": "release_b_integrated_preview",
+      "supports": [
+        "AC-16"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": "scripts/check_docs_contract.py",
+      "sha256": "5a0e806ed5890688ba9e06c25cdfb06386e654041d00d4e73bf2a3ac9d9ed1e1",
+      "source_snapshot": "release_b_integrated_preview",
+      "supports": [
+        "AC-06"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": "scripts/check_env_contract.py",
+      "sha256": "28290f08b6291afc8146e6934b4ff7f0edb9068fd6f84ef80305ac0579399583",
+      "source_snapshot": "release_b_integrated_preview",
+      "supports": [
+        "AC-16"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": "scripts/check_frontend_critical_coverage.mjs",
+      "sha256": "b159c98791d253c100f0ce4fdcb26b76a44cbd5dcdae9b9d4b3e2a851197db26",
+      "source_snapshot": "release_b_integrated_preview",
+      "supports": [
+        "AC-08"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": "scripts/check_frontend_structure_contract.mjs",
+      "sha256": "855b7b049b4149e4431cca28a569bfdded9154e8d27161be4339e0edcd9e7865",
+      "source_snapshot": "release_b_integrated_preview",
+      "supports": [
+        "AC-11"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": "scripts/check_prometheus_contract.py",
+      "sha256": "d23ef54c9acbbb8a4a744457a2d19a24a192bc8edc5b7659ce74473354b9d037",
+      "source_snapshot": "release_b_integrated_preview",
+      "supports": [
+        "AC-16"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": "scripts/check_python_complexity_contract.py",
+      "sha256": "5fbd7b30d389510b979431bdf7a0de95240a9ae40f5e8deebd37bbdb44b684e3",
+      "source_snapshot": "release_b_integrated_preview",
+      "supports": [
+        "AC-10"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": "scripts/check_query_parameter_contract.py",
+      "sha256": "9c148d55ea1b32b3c8479040c425f8b23a5e09daa87a713e9db60cc75a737cdf",
+      "source_snapshot": "release_b_integrated_preview",
+      "supports": [
+        "AC-05"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": "scripts/check_release_a_candidate.py",
+      "sha256": "b745dab9a1b80c538f5ded3ed52c26d0f9dcf9fe4060bbab613eba7e6c0f6673",
+      "supports": [
+        "AC-12",
+        "AC-16",
+        "T-09A-L"
+      ]
+    },
+    {
+      "git_mode": "100755",
+      "path": "scripts/check_ts_function_complexity.cjs",
+      "sha256": "b4144ae5afcc8692d9894a35da2435b4d1402adace894a692758ede446561a96",
+      "source_snapshot": "release_b_integrated_preview",
+      "supports": [
+        "AC-11"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": "scripts/generate_retail_contract.py",
+      "sha256": "94fae67b1e9745b81a1420a2de4ab604e2d66dc2bf545cbd89112f56c749a547",
+      "source_snapshot": "release_b_integrated_preview",
+      "supports": [
+        "AC-16"
+      ]
+    },
+    {
+      "git_mode": "100755",
+      "path": "scripts/run_local_quality_gate.sh",
+      "sha256": "640f89475b8b049182be77cbc9ac9182d6b469de8162b1ced0827d69a0cf0945",
+      "supports": [
+        "AC-01",
+        "AC-02",
+        "AC-03",
+        "AC-04",
+        "AC-05",
+        "AC-06",
+        "AC-07",
+        "AC-08",
+        "AC-09",
+        "AC-10",
+        "AC-11",
+        "AC-12",
+        "AC-13",
+        "AC-14",
+        "AC-15",
+        "AC-16"
+      ]
+    },
+    {
+      "git_mode": "100755",
+      "path": "scripts/run_outbox_slo_gate.py",
+      "sha256": "873a3582064b3bb8f738cdc0092d7af11a03b9b757b8679123a2222958ff554c",
+      "supports": [
+        "AC-12"
+      ]
+    },
+    {
+      "git_mode": "100755",
+      "path": "scripts/run_pwa_release_lifecycle.sh",
+      "sha256": "9907d9fa78e041053e513d5349d3ddf6cee6f21780bec7424154bec3bc2255b6",
+      "source_snapshot": "release_b_integrated_preview",
+      "supports": [
+        "AC-16"
+      ]
+    },
+    {
+      "git_mode": "100755",
+      "path": "scripts/run_real_e2e.sh",
+      "sha256": "acc57a606855c21fd05b88e06ca6f70b762a49e7d70e26981852284bc68ba98f",
+      "supports": [
+        "AC-16"
+      ]
+    },
+    {
+      "git_mode": "100755",
+      "path": "scripts/run_release_a_schema_gate.sh",
+      "sha256": "83adab86d95e443ed49517bb632c64b8d6e0f4caf2a4bc18ce47330ceb4f8455",
+      "supports": [
+        "AC-12",
+        "T-09A-L"
+      ]
+    },
+    {
+      "git_mode": "100755",
+      "path": "scripts/run_retail_scale_gate.sh",
+      "sha256": "a331c8f24faece6c75d2f95d0c9d302c8d2b40066f48608ab09d599e2bcaac0c",
+      "supports": [
+        "AC-13"
+      ]
+    },
+    {
+      "git_mode": "100755",
+      "path": "scripts/run_shellcheck.sh",
+      "sha256": "9201e685cc5c9db868b6b6afe39e15543b7a8ec58d7281446262228a2ffc6178",
+      "source_snapshot": "release_b_integrated_preview",
+      "supports": [
+        "AC-16"
+      ]
+    },
+    {
+      "git_mode": "100755",
+      "path": "scripts/run_structural_characterization.sh",
+      "sha256": "7ec309cf6ec90b466e323bacee6b8a0da54cc22f622cc00ef81f52b32d0636a8",
+      "supports": [
+        "AC-10"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": "scripts/run_target_allocator_contract.py",
+      "sha256": "a4fb23eab3cc4f00b100120446d36497a72d22e26d3db9899c7fcea644ca1653",
+      "source_snapshot": "release_b_integrated_preview",
+      "supports": [
+        "AC-01"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": "scripts/run_targeted_mutation_tests.py",
+      "sha256": "6748a55357a60c2ef003f15e1b66eecdca44c5f1bc6d2b783856afe403a5bd83",
+      "source_snapshot": "release_b_integrated_preview",
+      "supports": [
+        "AC-16"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": "scripts/structural-characterization-baseline-v1.json",
+      "sha256": "e1e17f24eb56a0e0daa9083383b96999472070f821cf9ad771264688f7d67202",
+      "supports": [
+        "AC-10"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": "scripts/validate_release_sbom.py",
+      "sha256": "2cb0b7a41d9ea3ae9652ba7f7d78882a3c4cf9652f0230fb5ef73c1a2128511d",
+      "supports": [
+        "AC-16",
+        "AC-17"
+      ]
+    },
+    {
+      "git_mode": "100755",
+      "path": "scripts/verify_deployed_release.sh",
+      "sha256": "f392c44cba46d450c572e86c91906f766feec224e75a1376705b4a92a34d83a0",
+      "supports": [
+        "AC-17"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": "scripts/verify_frontend_rum_build.mjs",
+      "sha256": "30eed03e646cf10662cd4c6b98f57a25c62b205e2bed3bec38cd73b58ccc4e49",
+      "supports": [
+        "AC-16"
+      ]
+    },
+    {
+      "git_mode": "100755",
+      "path": "scripts/verify_promtool_cache.sh",
+      "sha256": "f7f24584ef5f85c2b7041e0b1f7a6a389c6998aae0db0b6b17704149c7fafb4d",
+      "supports": [
+        "AC-16"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": "scripts/verify_vendored_npm_packages.mjs",
+      "sha256": "bebbe90712ae521a1ab906b84af4a48d24d9df97776eec83df6c7d7ccbb1d225",
+      "source_snapshot": "release_b_integrated_preview",
+      "supports": [
+        "AC-16"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": "src/components/GrileMonthlyPanel.test.tsx",
+      "sha256": "c3dd4e593343e4f3b9af4d8b8974768a2339502056c8029c4451d8ff8354a169",
+      "source_snapshot": "release_b_integrated_preview",
+      "supports": [
+        "AC-08",
+        "AC-11",
+        "AC-16"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": "src/features/agent-evaluation/AgentEvaluationCritical.test.tsx",
+      "sha256": "5d3f0e8001c510634c1bea625fbed27f06bdb9273f60331b04f1c789e8a09c5f",
+      "source_snapshot": "release_b_integrated_preview",
+      "supports": [
+        "AC-08",
+        "AC-11",
+        "AC-16"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": "src/features/agents/AgentsCriticalViews.test.tsx",
+      "sha256": "324e6cc2782481c86858671f03201f23a32d7901b9244c94321ba5705de591ef",
+      "source_snapshot": "release_b_integrated_preview",
+      "supports": [
+        "AC-08",
+        "AC-11",
+        "AC-16"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": "src/features/ai-forecast/AiForecastViews.test.tsx",
+      "sha256": "ad6b86e8a221dcdb3216c431cced9f7119a0248ca4c3c764b72d35d665c9d61d",
+      "source_snapshot": "release_b_integrated_preview",
+      "supports": [
+        "AC-08",
+        "AC-11",
+        "AC-16"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": "src/features/campaigns/CampaignCriticalViews.test.tsx",
+      "sha256": "1575af40a570ec2af27fe39d0f93ecda2a3b5b2fc1f49c90e280d4f230aa2539",
+      "source_snapshot": "release_b_integrated_preview",
+      "supports": [
+        "AC-08",
+        "AC-11",
+        "AC-16"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": "src/features/dashboard/DashboardCriticalHooks.test.tsx",
+      "sha256": "8b7f9c0df8354792725943fd034e01bf711e914e640470fa3caf977dfa58eebb",
+      "source_snapshot": "release_b_integrated_preview",
+      "supports": [
+        "AC-08",
+        "AC-11",
+        "AC-16"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": "src/features/dashboard/DashboardCriticalViews.test.tsx",
+      "sha256": "bcdfc8ce7fc986a1d8b4432ca8c7043c6ee32e603188d1fd72f6b10f5a1b7ab5",
+      "source_snapshot": "release_b_integrated_preview",
+      "supports": [
+        "AC-08",
+        "AC-11",
+        "AC-16"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": "src/features/salary/SalaryCriticalViews.test.tsx",
+      "sha256": "45e79624b2b1808ca3752417d0643be948f1eed9863555171ff6b32ed8bc47af",
+      "source_snapshot": "release_b_integrated_preview",
+      "supports": [
+        "AC-08",
+        "AC-11",
+        "AC-16"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": "src/features/settings/exports/controls.test.tsx",
+      "sha256": "2389be7334caadbc48877c7df8898dcd4f7305d394c5a941a748afcee7b20159",
+      "source_snapshot": "release_b_integrated_preview",
+      "supports": [
+        "AC-08",
+        "AC-11",
+        "AC-16"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": "src/features/target-calculator/TargetCriticalViews.test.tsx",
+      "sha256": "9364f67b6e8a8e3cc407ac3defa1dd662aef76f2e7c6dca68b9567a0f55740a0",
+      "source_snapshot": "release_b_integrated_preview",
+      "supports": [
+        "AC-08",
+        "AC-11",
+        "AC-16"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": "src/features/visits/VisitsCritical.test.tsx",
+      "sha256": "6546928ad43e13281fc65affad6623599fce3a962d7c810c34e63b2be607f56f",
+      "source_snapshot": "release_b_integrated_preview",
+      "supports": [
+        "AC-08",
+        "AC-11",
+        "AC-16"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": "src/lib/pwaNavigation.ts",
+      "sha256": "67dc01c21dceb1a2283ab9bf6b466c1426a3b8170584331d351743338d5eb010",
+      "source_snapshot": "release_b_integrated_preview",
+      "supports": [
+        "AC-08",
+        "AC-11",
+        "AC-16"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": "src/test/PnlLayoutCritical.test.tsx",
+      "sha256": "954092699c38eaebf01ffc9e961b160348d32704e15cf7e0834fc91370a958e5",
+      "source_snapshot": "release_b_integrated_preview",
+      "supports": [
+        "AC-08",
+        "AC-11",
+        "AC-16"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": "src/test/frontendLifecycleContract.test.ts",
+      "sha256": "cae882c36930e86ca8241f1e50b6b5a5a1b7802e5b3111532418b9b40c68613d",
+      "source_snapshot": "release_b_integrated_preview",
+      "supports": [
+        "AC-08",
+        "AC-11",
+        "AC-16"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": "src/test/setup.ts",
+      "sha256": "0c4b7c7b6bb91b8450181e9cbd1b779473c242922266b34cc08234becf12d70d",
+      "source_snapshot": "release_b_integrated_preview",
+      "supports": [
+        "AC-08",
+        "AC-11",
+        "AC-16"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": "tsconfig.json",
+      "sha256": "55fb6d2ba58429c0bbfeb9787188f6d83f6625f84474612ff56ac95b10c4b5d6",
+      "source_snapshot": "release_b_integrated_preview",
+      "supports": [
+        "AC-08",
+        "AC-11",
+        "AC-16"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": "vite.config.ts",
+      "sha256": "156c745a7a49b369dd13b99930ee683f87ae6131a07a610e61e1b29912537495",
+      "source_snapshot": "release_b_integrated_preview",
+      "supports": [
+        "AC-08",
+        "AC-11",
+        "AC-16"
+      ]
+    },
+    {
+      "git_mode": "100644",
+      "path": "vitest.config.ts",
+      "sha256": "1896f3ffdd35c4d02d5c755fc98f156a7e37fae0408b28f939726c1bccaad05b",
+      "source_snapshot": "release_b_integrated_preview",
+      "supports": [
+        "AC-08",
+        "AC-11",
+        "AC-16"
+      ]
+    }
+  ],
+  "authority_sets": [
+    {
+      "entries": [
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/conftest.py",
+          "sha256": "d8912b105cf4d30d84dc0407bb7d6c7a221c2d3d986c6d83270fd239694abb04",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_agent_evaluation_scoring.py",
+          "sha256": "503574a69a61ac849a4c5711a14bcc40db0ddd2077e1799b440d48c7c3eb45f4",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_agents_coverage.py",
+          "sha256": "82acb161b4eacfdfde0efcac1295e07e5fc96cef2937e9c8a61440eab630e1b2",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_agents_service.py",
+          "sha256": "7e31a4ed3801d8cdba65b50dcbd86b0b26a6b75b309b41bb717c10d1a78396b7",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_ai_forecast_actual_coverage.py",
+          "sha256": "63535505d3108a4b80fbdb924561252399ee2607ed0789621afd87d69e784901",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_ai_forecast_asof_cohort.py",
+          "sha256": "ed7f7eede2b251602314ae0c58c3d7c61988aa9b98349d90976386ae6d3c69a0",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_ai_forecast_backtest.py",
+          "sha256": "faac4454d1a95bb6ff2e4f7cf9dc6dcb4768a74c9db4e9db7c71a44a3cf74371",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_ai_forecast_governance.py",
+          "sha256": "9e81ecab88ec28d9b593f27b9ae1c4f6fa5d0eb46ebf769eb54db7e88ebcb51c",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_ai_forecast_import_contract.py",
+          "sha256": "35c84a7a4210e56ef0c4a871132583a4fd7037a2dfe95e196264c12cbc23a426",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_ai_forecast_response_contract.py",
+          "sha256": "61a58da00c5678387164750f56633c100afee9b92c87f7a658ca5b164bfcfd3c",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_ai_forecast_xreg_features.py",
+          "sha256": "983ddccce86bee5a5415017423685d16d172f24712fbd669158975990baeaf57",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_asm_salary.py",
+          "sha256": "d070b1f2330a2c7e79d6b612973a70bb6ed726c0b7070ec19c9294c2a1158531",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_auth_oidc.py",
+          "sha256": "12d24b3d879fff7dee93cedee587f9093ac37f3a2841761a6c3f76e1c882acb7",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_business_golden_contract.py",
+          "sha256": "79ba77c43069f137110104d6d7ec69b0621af2ba452d8e88c5c68525db76b790",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_campaign_clauses.py",
+          "sha256": "b0098e10c950057abd93867156fc1fff541e72d7993147fed721c4103c986327",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_campaign_date_range.py",
+          "sha256": "ce5c9291bef7c107d55a0eed2555c9df5c2fcd7b75b261ca711e01ecf85d7a42",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_campaign_reporting_job_publication.py",
+          "sha256": "32d3e2017d25cf3424eaecb195ae165fb22ac4094b55fbb1119c6052bb8e130a"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_campaign_reporting_publication.py",
+          "sha256": "f5611165ff85571e8f0ca0ce50373dad15f97a9c9c3fcc8717a3a7cedab180fc",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_campaigns.py",
+          "sha256": "fd821c91a1c3e3d958e11aef9ad834a21ec802d7a9bf3fefd5ee7bfbe0a2b5ee",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_campaigns_architecture.py",
+          "sha256": "8472ba6e2ccab36b45ae101300391482b1524f05fbe726256c165d6041bbcc96",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_campaigns_deadline.py",
+          "sha256": "b7d97501ee693c870ddf363aa3b304533966a1a84a73c64958378d7151dcd6ab",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_campaigns_money.py",
+          "sha256": "301e36dfaebf1bf1e758e76f56b651d1695cb2bcfcab6538337f8d67c5f2d8e5",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_campaigns_promos.py",
+          "sha256": "c11da50e57960741fd3db6963ea18ddd4ece1998ab3b9ac5beef515286112f38",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_client_ip.py",
+          "sha256": "e2774078c3860100d06c92f4cc9cb7618d8168a10041f48d868f1e416c94d314",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_complexity_ratchet.py",
+          "sha256": "771fcbb031554f56dbbd4fd7c39f610ed508aa254776ef68ba6bb3e206c31bca",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_config.py",
+          "sha256": "eb9dd86f643e00626fe829a6b1111422f9e8fa82ae26d4496bc1af530529abd0",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_connection_timeouts.py",
+          "sha256": "6c89e17df812770323bcfc8339bd398eb54c1c4dbe27d53845887bd61c7604d2",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_contests.py",
+          "sha256": "fd07e589ecdcbcffe60901d0b9e27d07fda2c2318162e3db35961a7e920d69b3",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_critical_coverage.py",
+          "sha256": "f5c702d818453abfcc1b339cf94bfa7149c0d1d07aa6f76640a6e7b54f1271ad",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_crm.py",
+          "sha256": "7ea24c86a5b6d147f84a9c12ca921ba2c78988cb2a18ddeda517ae149cd9d6d9",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_dashboard.py",
+          "sha256": "b0a180b1d56dc40295682d47baee50b1ae8a9fd5ca43b17d91b924fd9ce07242",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_dashboard_deadline.py",
+          "sha256": "ade80f70af0ce25341098d8a0fadab4fe268cf1f511432c1f1e3419d445ac288",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_dashboard_queries.py",
+          "sha256": "0e6678b13da5f2d4b41978f1e83f0e5a28cac88234b3cf80d80cc98511ba708f",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_dashboard_scheduler.py",
+          "sha256": "9305fb9d5a6359a7fa66953aaa9a41aaecdd1a731bb8cf001f85d70f2ef0d8da",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_dashboard_service.py",
+          "sha256": "b27c75c3cdc10154153940a4acc08f9ab3924cbeff72147828608e69cc0fde0e",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_dashboard_specials.py",
+          "sha256": "229b79c0b40ab23ebb164d39591baa0a49c26d7877df75d038f9c9daf3b5b043",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_dashboard_specials_data.py",
+          "sha256": "9c9e63337411d7812dea48243b1d283b83eb4f99c3f201c18f0ed311b4e9ea73",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_dashboard_specials_extended.py",
+          "sha256": "8973c507620f3f2f62f1a6cdd065dc1d7f09bf6fa0f3ec20eebf44f3a9d0b480",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_dashboard_summary_integration.py",
+          "sha256": "ef2e890b3977182e3ae78cb11d0889c9339be1903e322e9cfafc3f5c4607f125",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_dashboard_utils.py",
+          "sha256": "212ce0f9ed5578286be0be2a38b2156c545d1c86404ddba1c7f9b0c0a5e95328",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_dashboard_utils_extended.py",
+          "sha256": "470b472091043a25fabcf7f50b4734eb310c64cd4ff0fea1e0fb8413919edbbe",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_database_authority.py",
+          "sha256": "6f45e53d114be80e82242ea254a0e660984ecd18aab1d8de71b9bbd6e6579123",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_database_safety.py",
+          "sha256": "2bcfd89cb4f7c5f67f86421c761e5d400301020f80362f40418aca73bd9afc58",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_db_error_handler.py",
+          "sha256": "e777bfc94b76c417e701be47276a3b5ee390e71ea676a2c5c9b83273d7a4a8d0",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_erp_reconciliation.py",
+          "sha256": "27e003b2ef911af3d6f2574a30eebb9432f1d3a3dfdd50ba9674abacb5ee109c",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_export_bounds.py",
+          "sha256": "922c75cef7afcd5ddfbf3d928a2bc64e3dc3723b80bbbb1ea3bf0e611ff356c7",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_export_operations.py",
+          "sha256": "74b0825d542ce549417348c455920f95d0fd135779caa78247f9411592b40376",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_export_process.py",
+          "sha256": "b57b7592cffd9f50623d3bfa82d45c3159534ee53f718ba17700f106965d59c7",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_exports_repository.py",
+          "sha256": "2f9b454775d3a2d4f25f3e47a725cf0df0c346a2e91d97ac786db0fb80d236b0",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_exports_service.py",
+          "sha256": "26bc260453d35e97db7a925ee7f1e3dece6b0ab53c30b2e132526a8dfe7ff84b",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_exports_service_edge_cases.py",
+          "sha256": "22b024d0e0684835b8f2dc0040969348bb1e1f1cf939db757cfb5e85b30e70a0",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_exports_split_boundaries.py",
+          "sha256": "15037d0b00dd6069c85b8cca3eb6d608b10edb53085e70f582c3f0efd427feff",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_filter_options_cache.py",
+          "sha256": "e102d6d3315e6202c8d883f1273dec90d80a2c78185bc3a6612eae8131384622",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_filters_and_visits.py",
+          "sha256": "3c04f15339532fcb117f602720e109166e5fd4782da7ebcc1457fdd43e4d1066",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_filters_extended.py",
+          "sha256": "cb91a4f97db4d78664f4dc36090314dc54f389f31e52399f1b4f8f0d48c9c9a8",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_fiscal_rules.py",
+          "sha256": "92a0180ef7a5f0f0c42e6e596c4942238ab266d864207ad9590f2ee330044ba9",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_forecast_and_misc.py",
+          "sha256": "d431ddcc6f2e94feba97d2879a33f81f0b7435b2b57a4ffc791358dbbce2ea51",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_grile_agent_targets.py",
+          "sha256": "9b9d364e25337ffc1eec2c85e59f7df5055a060ff8cc5717a869f793acdedc47",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_grile_importer_coverage.py",
+          "sha256": "6e01d90b78df83b9bdcef16e2357b6ce81bb7110b072bc120447e6c836086687",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_grile_memory_benchmark.py",
+          "sha256": "905260ec3fddbaa31185c597da20b1e9056fcd2f32fc6c56cc2ae91a98444ae8",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_grile_metrics.py",
+          "sha256": "f5dc0891cc642c5d69b78785822c562e1a37bb9a6e52893fb49089b97da9702e",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_grile_monthly.py",
+          "sha256": "5ccbf79132bacf8f286bbd61db86c5b75d580862f92c9061299ae65f41511ba0",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_grile_monthly_enqueue.py",
+          "sha256": "7aba0ef8be0970c0eedfc2b6750cfa7477b9e350052c592ca6ae6fa81d487a4e",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_grile_monthly_fail_closed_api.py",
+          "sha256": "32b66380278bc1a54f40ed66851a400484cddbdfa3624901e941172c7ce59462",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_grile_monthly_google.py",
+          "sha256": "5314537598ded9fce1c26d15191bd0e672b37728c65840f9a26686d6c9fdbd00",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_grile_monthly_operations.py",
+          "sha256": "4c95f166977ff1747b7a0b0e2db39467ce581e56a8b280b42c3f0a6c6a437139",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_grile_monthly_service.py",
+          "sha256": "23073c26da26a1d932235b8080a9abe6762cb44aeb26f988ca49c307d655052f",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_grile_monthly_state.py",
+          "sha256": "965cd3958bd6dbbb854ca2f15a5b8358d26bfc304f7b85736c5b30338d5b6f64",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_grile_observation_fencing.py",
+          "sha256": "e61d3e6ee410dc4b79ac89f498ebc2aa395e734931a0e2ef9637669b42ee1ab4",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_grile_outbox_delivery.py",
+          "sha256": "936bb1be6b27aad3eb386f1ebdcc705a322b8250b54d371458edb25cf9db842e"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_grile_pilot_v2.py",
+          "sha256": "344de5f2e76794f313134944da5be120751de3cf07699b2eafe806b47d7c7f01",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_grile_pilot_v2_sync.py",
+          "sha256": "d6393bb135bbafaa603d601e61f7fabb60d6d5dbc598ac0c9526064567f27f6d"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_grile_read_auth.py",
+          "sha256": "8dca8fe68f3573d00a38139533527e5ac76f914752697ebab229e6fbf1d78ff9",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_grile_repository_contracts.py",
+          "sha256": "f2047a376b5d5aa4b1ede7b389d423619419d31fa04ed8adc5b11517277ad489",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_grile_run_reservations.py",
+          "sha256": "0c9d0085da4eef0f299394280f78d3dc40ce74a1ec4d15bac7cccbe3d404f471",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_grile_service.py",
+          "sha256": "b3b0d93f239de729213d5b4ca8dfa7e9191c3862ac98440230388ee23eaf9748",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_grile_sheets.py",
+          "sha256": "e734dcd1c3de042b5d3aad0e68975d2971501fee6f7abfb8c26f15dfd2d4c628",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_grile_sheets_lifecycle.py",
+          "sha256": "a06f98ecd0b0e86f9fb9b03f61d9b55f8e78fb1d56a44ffab24e9fea18992ec1",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_grile_target_sync_api.py",
+          "sha256": "f6b8062ba13c82d305e028e58c694c12a28f69dea2543073f1502ff3cc8cdd5e",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_grile_target_sync_safety.py",
+          "sha256": "7cb61da0568dc0b6217ea53d7b45ad3b5f0e94f6730b5abc6a55725e794fa17a",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_grile_v2_contract.py",
+          "sha256": "ad03d8b6eba7092a41ab3925c67b94112092f1053ba94f00368e0c6d6de9d35b",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_grile_worker_lifecycle.py",
+          "sha256": "d13183628df3ff2d679f43c95a74c2b410ab31486edd952e3c514047a1d9805a",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_h01_salary_api_contract.py",
+          "sha256": "a1f9a46a2ea66b73bfc45571b853d52a436ca2514076362ffc8f63187441fb85",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_h01_salary_privacy.py",
+          "sha256": "1c9a40d3f64f0eefcb52d8f2e7c10e1994ccd0b506b463bdae93ea13ea8503ea",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_h01_salary_repository.py",
+          "sha256": "3bf0ff9ac4fa512268b31d6553e8256092e7d6a56f2c63ab96a6147d3678d251",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_h03_return_receipt_identity_integration.py",
+          "sha256": "79693ed3c7d5a5034e74f234b385e70446dbf911385dfcb5760ef569a1fce167",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_h12_spreadsheet_writers.py",
+          "sha256": "b21a3ace87b8f625af4ed11467df0285d632d6673cf225f5f4591d78996343c8",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_health.py",
+          "sha256": "4a75b8c4a43d581ea15d1d7a44950c3643e9f0fd4cd0f96da348ae5c44668e27",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_hr.py",
+          "sha256": "f5dd2e6d73e27bad5002503377f5a6a009eb787868d58c1674590f3eb229d9d1",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_http_surface_security.py",
+          "sha256": "9841f7ae8210ee3beb906513b6f9bebac1c167af67777dc01d5c3c7932ca350c",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_import_authority_m04.py",
+          "sha256": "4e4dbc188ad330af1bcf6f9d9458ea8749a5f75a516309fe7b56353583980b6c",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_import_historical.py",
+          "sha256": "34d5b9b62c8599178ac416cd7c67584580cefc91b9733f5d9739adae5645e4e1",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_import_master_data_safety.py",
+          "sha256": "7a0716a8c8ec56ff30aa8f8ad32533ed64b85b3eab889c0d44a8e51e494175ab",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_import_promo_actuals.py",
+          "sha256": "bbbc77bc96f50498060cc22b250f5499947c270691a57f598fea5776701f5ac9",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_import_reservations.py",
+          "sha256": "286adbbef97e4c10a32c991fca8f0993e0a0af5abfec8b4560c6559f44785ce8",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_import_service.py",
+          "sha256": "f34df9aec11852674cbb6de525fe35f1353931d352624e9a4033052a398d7625"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_importer.py",
+          "sha256": "05f29eaace7b4594cf97741c96334a7c94b50c60ba08f2756ce0f75c1ac18ac5",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_importer_orchestration.py",
+          "sha256": "5dbd657af7d815e43be276b883947797d520c85dff40e2a62db5569271700072",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_imports_coverage.py",
+          "sha256": "40b0749dc4857f403b7f2da969cb43c48776b1b29f702d4fcd7662fabb7eb442"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_insight_finance_v2_performance.py",
+          "sha256": "fa45c2d88d4721458354998dfcdaa717d8d0afdf991708af2c49b86496bbd5e0",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_insight_finance_v2_period_pushdown.py",
+          "sha256": "74d0448fb484a6f4d427c3ea5e5978202964c56c9c2c7fdc4794c87a67257326",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_insight_full_visibility_read_models.py",
+          "sha256": "cbe2d3ec2f774de1d7472f778b3658194e5ee5cf641860710d118632daf55fe0",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_insight_planning_promotion.py",
+          "sha256": "074a6616c5482ce0d003848bbab5679fa64cfa7edd90adab3974d35cdc2416a2",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_insight_reporting_read_models.py",
+          "sha256": "534ee7a190196feb66c7d53aedd480a4cdecc4f09b6bd5ee6b1ddea3f00874f9",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_logging_lifespan.py",
+          "sha256": "a70ee25c6e083ac8e664355bf27d6e0cb0d027fa4fd925b54a3dcc2625602d91",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_manager_overview.py",
+          "sha256": "41e2deb044aa23661ef91bd3f4fc3a687aef9690ebaebdba5136d9bb35d2951b",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_match_agent_codes_output.py",
+          "sha256": "14b473724bc512f8ca9f5323107cbcc8e283cf989f5529fc7a6316cddc0d3191",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_migration_runner_db.py",
+          "sha256": "744d5fe0c702f7ec7bc7b7d9d7d1fc45d5f4e4375bacc8f7c2758c67015b1f91"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_migrations.py",
+          "sha256": "52a8cb2939fb2487134e7b1ad38610ccca50955dbff5695aa2d28306eab70379",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_model_domain_compatibility.py",
+          "sha256": "8e8ed29bfb1fce9e786b3383ef6f1a50e869463ae32b4a563d869557ac098893",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_models.py",
+          "sha256": "316fcc0c2eecf3d577144446cb973c23ed50d568391be55ed52c1fe31a2cb27b",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_models_full.py",
+          "sha256": "ce1c16354f923d5d948e5c5e8ae799cd3000b265462475ee11e6d59a028f8511",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_more_services.py",
+          "sha256": "c9ddb8dec74f91203373b6328bd8c67f281bd8912f0f6d84a47f774eea7a3a55",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_oidc_settings.py",
+          "sha256": "0be17cb263593db181c1e42b142b8d57abf9d36cd48f4449f79a7018206bf2d6",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_oidc_verifier.py",
+          "sha256": "805da27a416daa5739ea9ccd8859c0f5639d8dcfc4c91bb65b6ec4a128ac2670",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_openapi_session_contract.py",
+          "sha256": "e872a30846e7d3744a73de2dddd593010c5df62bb61b5d4c5722c6ee3fd188a6",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_openapi_target_errors.py",
+          "sha256": "f9bb81e0770f7bb008f9cd705f9c5cf31447ffcfe15d1027d09b1368ae12372a",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_outbox_replay.py",
+          "sha256": "5865e24c73f2657eebe4edb497c22ace419acac810aeeecd24584a6ca4216820",
+          "source_snapshot": "outbox_acceptance_contract"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_outbox_worker_faults.py",
+          "sha256": "7a09de3b21de38bc0586a00411ad6b3514ab94479484cf7124bd9da6d9e13c4a"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_p14_availability.py",
+          "sha256": "ad32298474f76025efc06c7a0cf698c2bbf0ac06d136343a30224f1dc3a248a1",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_p1a_db_authority_postgres.py",
+          "sha256": "850ca88dfd6aef246b5cb8b823b51036162243d1898a5abdce35b320d05f7239",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_p3_backend_cleanup.py",
+          "sha256": "0b48778038b7174b44f9616784da13e392263f4651c72361a9e4d418565e010b",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_pg_stat_statements_report.py",
+          "sha256": "502b6a5b749e91fe79b3f170d720e0b396af017f9d1afab94fc05e377681cf01",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_premium_glass.py",
+          "sha256": "c8d13ad60c991ff48777cd2fe1f1d39ae2e1969003135a7a90b8ce9588abefbe",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_privileged_access.py",
+          "sha256": "7025a1176269d255fc227abf91c2ecb812a8052a87777f96a02045147e50de88",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_prometheus_topology.py",
+          "sha256": "5c1dae0651e8f1efbe1a5f9570a4712f87362a6c67fa1f2a5e42dd8c3ef2e396",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_promo_copurchase.py",
+          "sha256": "394b48bb8bddfff1af2034bc55d80c7638ef74a6477c706daf2a6c945310c220",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_promo_generation_migration.py",
+          "sha256": "d4f29148cb1d86c2fae83a91eca4f62966dbdd84de9fd8cb09f895c128832b61"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_promotion_evaluation.py",
+          "sha256": "8cd8af2cb87195e5cae6ab63d194aa11b6d3f974d6ae8c70ef1a7a8884670d34",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_public_month_contract.py",
+          "sha256": "93da4fdc10d30268a8db79086fd443d2a11aad0ae1d6e658454c6ff41456f04c",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_python_complexity_contract.py",
+          "sha256": "a6109bb56986ad669afe1ac0eb7bb2bc52b7423d845bdc06c7918e79a8ba54c0",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_rate_limit_settings.py",
+          "sha256": "07cb97a05fb36ae58ec366bb7eabfb5e7bf1d14e352169c9046751974ea5a4fc",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_rate_limit_store.py",
+          "sha256": "2c46b812aa69918cb5d9562fd6feced24578c39770ecd0f0c6dcd0987794604e",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_rate_limits.py",
+          "sha256": "e7d34d9d2f82471c0c8ed14fe63d367bde48a21cd3fe3264ebac669735da72e1",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_receipt_identity.py",
+          "sha256": "5e9a1127c18e14edc298ab193eef4482ae880abddb76e863fc5df6c89e7e39f2",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_release_a_schema_069.py",
+          "sha256": "1bece1623276734dda28a51ace57bb5817616516538efdcb0563d98ecf2900f4"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_release_contract_tooling_security.py",
+          "sha256": "23d2f31e1bbc3c4508315aa96952426351a85fa4b633c2d4082d4c892a51e760"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_release_coverage_closure.py",
+          "sha256": "d6b1159a6f6334d333cde7243780f4237111cb22a213ad3a249eb483d6805331",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_reporting_grile_historical_v2.py",
+          "sha256": "13229bcd4880c76b249ac172f8eede9b21e91f69e3693f3234e5becadf66389f",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_reporting_publication_v5.py",
+          "sha256": "007769737de772739c1326144f270e836d9461a8041ee82d5d16b11ededc8a6f",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_reporting_refresh.py",
+          "sha256": "963979fe1041d62d837763fa25158f0f7d40c4e583a9c0764457ccdd4b1c6d19",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_repository_hygiene.py",
+          "sha256": "2f7d1f355911d27261a4b2744026f3864175d64bccecec393e45def33c14b793",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_request_body_limits.py",
+          "sha256": "7cab7a2c91d80f7798fdbf4bc7e20aa6133cc4c822beb38c3f4d4ddca75eeb59",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_request_context.py",
+          "sha256": "7711f2ea64992aef3391868ffd256aac53a6966dfdd14e9fafe0697bb6fffe2d",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_retire_legacy_database_login.py",
+          "sha256": "a82308612f0aeef176a0f71b85a1a1d561d96d12b8bc4ed2dadbb9876f8d7283",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_runtime_database_role.py",
+          "sha256": "410a111617f154d8aff0e4ee1dd6d087eb03bb412fe5ecf383452c2b2b47ed69",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_salarii_filter.py",
+          "sha256": "e7e15a164f25cb86cead4f62ffce3a3d0ff5ffde621d76a0802c208cdf5ea433",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_salarii_repository.py",
+          "sha256": "aa74cc876863a56c662358301f566067535b9c9954e110dee2aa6b40507a5748",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_salarii_service.py",
+          "sha256": "0c4dccb57da7dbfd3089a40dfda049a2205bc12af25201b2a2a9c8ef0cb57b3d",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_salary_exports.py",
+          "sha256": "3a4fb4dba2ad476ef244b1345e591c2ce9021d2610e6a77fe3450ef46acb9a41",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_salary_identity.py",
+          "sha256": "5d82e0295297c27837ecc9f91e5354f31427d5d913aef3930c3048f4f9f65ffd",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_salary_import.py",
+          "sha256": "7f878128d16b891c3d3f447157f79dfbaa1cb1741c7cbc48b67e31d365b36910",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_salary_import_approval.py",
+          "sha256": "0958a263ab0dfa8e4605a8c23425d3df01f885030f90afd28cfda948b032aaa7",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_salary_permissions.py",
+          "sha256": "57612cb334aade179c21c398c6761daefdf5f553d5f497f66a90d9428754d282",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_salary_private_backfill.py",
+          "sha256": "eed9a9f898020d4614c09faeefbd908fdc0fc34dc1de678d396d842a91800fd5",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_sales_artifact_lifecycle.py",
+          "sha256": "5b4d31b9cd89b0c055149341273976bf3afdf0c81adf8dfb3c9fde1f4afb1ae8",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_sales_generation.py",
+          "sha256": "b5a6d8d6930efc3b77bbed064cb558633647c270838585d868c8486bf45ccfa1",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_sales_generation_stage_integrity.py",
+          "sha256": "c1cf826dc9abf66c7b8d8c46be78edb551dd9fff317eaf38cceb11992d91517a",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_sales_promotion_worker.py",
+          "sha256": "6b3b6ebdf2d72251c3190156a9bc88dc8b07693337af13aecda1352db52c6d99"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_schema_constraints.py",
+          "sha256": "b8a25c02f650c48fb95e0231564d755c95c4c09fe84a28b22aff0dc005ce6a02",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_services_coverage.py",
+          "sha256": "6da490e6402a44dba089a63623144adfdc96b2eead328b15c2eec64f8b9a1a3a",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_session_auth.py",
+          "sha256": "1ad71afda625dd24ca64342e1f67408b069f885b7f03a30af31aec3c653fd7b1",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_spreadsheet_safety.py",
+          "sha256": "333f18a24fe9956f1d2a5ac222f39cd12be1dd1fe9f212601742e0d5deab8237",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_store_activity_api.py",
+          "sha256": "9570da48333b6c63ca8bf0aca759ab684a827eae200f3c60448c2110f85a98e5",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_store_pnl_api.py",
+          "sha256": "92b209172daf12ab91578c39e6c3498ece50c78cdbbd29627c0eb2026388c47b",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_store_pnl_decimal.py",
+          "sha256": "a3a44fff3d892473c5bb34cdc181e912b789e25822490d2aba6c9b9d9766a4b3",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_store_pnl_estimation.py",
+          "sha256": "6fa785aa45a51ae786fbde8fcfb9afc13d4dcaf73ba400e2ef7113d76d55c705",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_store_pnl_generation_postgres.py",
+          "sha256": "fca477c27dd810d292361e77ed38fd26ac238c8dd01690061ad9a7856a467c85",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_store_pnl_import.py",
+          "sha256": "fe2e7b529ff75331ffb571ab297f54d697a54200c45901905e90de42b55908b9",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_store_pnl_mapping.py",
+          "sha256": "8026c0c3d7466d0e5fbae455f6bc3746b63ad348d7604f320d872f27e424bf2c",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_store_pnl_repository.py",
+          "sha256": "1b91dd79623e71b95920de9c6b4b2ff24187728783b87be959fc28275f7f62a1",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_store_pnl_shadow.py",
+          "sha256": "247f8fd537d37747579e3077098100f4eddb05aeec5d100a461b56a02474703a",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_store_targets_contract.py",
+          "sha256": "e1245dbf855036ec1188ae1a914c1aef4796781f29426dd5b9d864e8458fd64d",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_target_allocator_exact.py",
+          "sha256": "4a20d629b9966ebcac56c3528d63d55e712d2b0c7872e05635d4182c625a5705",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_target_allocator_properties.py",
+          "sha256": "3f183245a2028c2fd9a82b9c768dbdd5b14ac7e524e70a838e6a71e4744f0c83",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_target_calculator.py",
+          "sha256": "981a2b1ea75558f99f87066ef090c4b15bb32dadf30ae9b2b6806ef2e05f52bc",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_target_calculator_coverage.py",
+          "sha256": "17abe0661476cc7152f500bd42ef3f69dec674b6bcac4728a95e23c59702f22c",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_target_calculator_fiscal_rules.py",
+          "sha256": "da27985624be48e1eb3228fc0140de0e61cf5962d0b0029f9c1f7db1f0016c22",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_target_calculator_service.py",
+          "sha256": "954c0183e8871fdecac598f5eb92531bdb2f6fe3d7d9e446d6dd6e198fadebcc",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_target_rule_registry.py",
+          "sha256": "f1d61b67d5a631c76a7dceed8953286108688cf8fe3ecb9c53ae30fc8693b4aa",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_tasks.py",
+          "sha256": "ff02e25a6bcc93ec0dd99c0f78f73428a0d75bbc10850bc42ad2c4487ed87f9e",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_telemetry_privacy_contract.py",
+          "sha256": "dd0803b996b3071ba44643e5c36a6832ef7bfc0bb006decd784477cda4410645",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_transactional_outbox.py",
+          "sha256": "8838d2d16f73740dfbf2bc6d7c88050ce0d4e313df4da83ba7daf7488d264309"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_valkey_url.py",
+          "sha256": "192a575b33c9573a3a78321ffe974294b7745c635691db4603e4633ba61de39c",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_visits_postgres_read.py",
+          "sha256": "24108c85de9da6282fc12b316b3557c103c4d3b4eb33d52a3bba827652dafc1d",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_visits_sync.py",
+          "sha256": "64db85b2daa0848a09ce8b827dc664557cfa95a894266ecbb73a859eaab1e5a1",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "backend/tests/test_worker_config.py",
+          "sha256": "1b9f7c90f02892b6dd90a7b4ce9167e9fb3a79ace36fb6703dabfb9a5069f45c"
+        }
+      ],
+      "name": "backend_test_suite",
+      "supports": [
+        "AC-01",
+        "AC-02",
+        "AC-03",
+        "AC-04",
+        "AC-05",
+        "AC-07",
+        "AC-09",
+        "AC-10",
+        "AC-12",
+        "AC-14",
+        "AC-15",
+        "AC-16"
+      ]
+    },
+    {
+      "entries": [
+        {
+          "git_mode": "100644",
+          "path": "e2e/accessibility.spec.ts",
+          "sha256": "078c915bfc4717619a50f43e9615107816b41f85f9873fa58bc0c560a423deda",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "e2e/browser-keyboard-smoke.spec.ts",
+          "sha256": "1a2ee125db272edfc0e6ce2d10504367c04047264f343bbfdb5aa38adc872785",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "e2e/campaign-flow.spec.ts",
+          "sha256": "0144ac9c6476593d689f18101a2607ad924a7e6245238ef372a87c6b0666415e",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "e2e/desktop-wave2-responsive.spec.ts",
+          "sha256": "e16410f0c88ed6df4b94c3c28183269628baccba7ec5342a7dca9d143720eea8",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "e2e/desktop-wave3-responsive.spec.ts",
+          "sha256": "3d54e2d7585c9510dc36cb7aa381e886b54931f6a6f833948744c303e12e718f",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "e2e/excel-import.spec.ts",
+          "sha256": "cc223e1e3b7267c07280df88e55ecfac664dcd3b7f4383bc2edf224fdce2149b",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "e2e/fixtures.ts",
+          "sha256": "1a3fa03ea1dbc76a249ebf4b64aa29e69636ef8d01e8025cd341f50dc13b613b",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "e2e/frontend-lifecycle.spec.ts",
+          "sha256": "de245d9ef291ff3266e1524d7ec39a55f9088b21b9fd75478099c5d40bd2cb8d",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "e2e/helpers.ts",
+          "sha256": "c0456fdf01ced7bc3088516488ad344c74d731d67c689bf746763a7581b8871c",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "e2e/insight-deep-link.spec.ts",
+          "sha256": "9631d6ed87444e5bddc188454a219815e164107c1eb438fea503c0b135d64eac",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "e2e/login-dashboard.spec.ts",
+          "sha256": "2b4fea989fc9070209c5fbdd9e2da3b7a7829b582419125de4c6287082cf1540",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "e2e/mobile-responsive.spec.ts",
+          "sha256": "5e38eb9897a7856bfbd5fdad47fdf98b4778e64224c8813cd9014f7377f001c3",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "e2e/pwa-release-lifecycle.spec.ts",
+          "sha256": "a87622d61b5296c90a175b3037f29b49e20b246527f93d483a8250b93f0258d8",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "e2e/real-auth-stack.spec.ts",
+          "sha256": "6fc167999d94373498b1377cc0de342dd3b97305b42c999ff5a9f751ab3c9d07",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "e2e/store-management.spec.ts",
+          "sha256": "be4df20242698f5d15fafc5685fb1424cdf7800c968bd5fc570a9205a9494407",
+          "source_snapshot": "release_b_integrated_preview"
+        }
+      ],
+      "name": "e2e_test_suite",
+      "supports": [
+        "AC-08",
+        "AC-16"
+      ]
+    },
+    {
+      "entries": [
+        {
+          "git_mode": "100644",
+          "path": "src/App.test.tsx",
+          "sha256": "4e2c69b9702cd13b4a24d959b2e0d30cf2918f6917a0e128d92b9a7900454f1a",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "src/api/client.test.ts",
+          "sha256": "c2173482a07266b61b7896ad85d3a8100c6d02146d53d8ab12995265c4d2139c",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "src/api/exports.test.ts",
+          "sha256": "84f3cc1e2ece540e0fb0f0df288cf076226243004cb27c94497422ccf5b79b04",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "src/api/generated/client.test.ts",
+          "sha256": "c7ed950924b292b96f9f6ef3faec87d6b774bf9337b8bae89f20e73150f72e86",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "src/api/grile.test.ts",
+          "sha256": "0c7255432ac86595a68bbdb570574a10f0055951cd2fa65a19bfb65c43b4689b",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "src/api/salarii.test.ts",
+          "sha256": "3731abf73e7e65319865ca30fc3929d08bd4478c58eebe73e2d4a3d058de07ad",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "src/api/storePnl.test.ts",
+          "sha256": "8f52c39f663d925f18c162f781a189ed16fcc72ea39defe285faa3efa4ff19dd",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "src/auth/AuthContext.test.tsx",
+          "sha256": "34d15f1fa291831b4844ffe3877a12607c098e4a7702e784b8efb64eb42b1b88",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "src/auth/browserSession.test.ts",
+          "sha256": "fb043239f503fedb7026a7fd805d131a1cfb55d1d5c24007a593533c70e63ffa",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "src/auth/permissions.test.ts",
+          "sha256": "5791d9b953f6f74f2188239aa1c87bd42861ae28968d6bc00fa3ceac0c827bfd",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "src/auth/pnlAccess.test.ts",
+          "sha256": "a2280ff3b96b7a9f0bbbc8e04c57a34e73d1c629d0b6dfc530769bae87b4283f",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "src/auth/sessionBoundary.test.ts",
+          "sha256": "b0e72a21842427e06847a48ab0fea1696f897a052c4fd5562e3cdc77c4c83475",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "src/auth/usePnlCapability.test.ts",
+          "sha256": "f99e14e1ef5ab11fe0f514acb944cc62e8d4f0edcc5590b474df2741d0c2ea12",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "src/components/AgentEvaluationSubtab.test.ts",
+          "sha256": "52b70dd4857eb8a53abea38d6798169974eb489780b0fd0e24bc73d677ecb80e",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "src/components/AvailableMonthsStatus.test.tsx",
+          "sha256": "c6bf48685f61b47e021dc0cd56c4a2be34b3e679d3e5c9546eb39793052dd951",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "src/components/Campaigns.test.ts",
+          "sha256": "59c844378fe7646cdb78269bf7662fc8d3203757e822a0f4e924cf2cea78371a",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "src/components/Dashboard.test.ts",
+          "sha256": "cc9f62d33b4bab51317fb1e07994d633d44c277b8111c273dbe89585bae6710e",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "src/components/ErrorBoundary.test.ts",
+          "sha256": "7e7b4e05865609f6cf7180b4d5ea506accbfd35813b688a9079e6a75505ce4cb",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "src/components/GrileMonthlyPanel.test.tsx",
+          "sha256": "c3dd4e593343e4f3b9af4d8b8974768a2339502056c8029c4451d8ff8354a169",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "src/components/GrileSubtab.test.tsx",
+          "sha256": "8d816c8a84248831c6c99cf6ac94f2af1bca5f087434981e8018174bc4d76f4c",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "src/components/PnlSubtab.test.ts",
+          "sha256": "503cba36d7b9675c9dfb238de65ac0ec69b8ce18f3ec28d12202556a346a6e36",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "src/components/SeasonalityControl.test.tsx",
+          "sha256": "e6576913a27944066c12b15c6c7b72c465e92e4bf5ae4c71b21ff56c87387c56",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "src/components/Settings.test.tsx",
+          "sha256": "24acf52af2f7ea0b87e845036c7fa37d871aa4743aef410e0f24ff0db6039edf",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "src/components/common/SegmentedTabs.test.ts",
+          "sha256": "04cd8d50df9387a5351bf7cb461807e0624715580cc96c916a7b5d73822d143f",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "src/components/common/SideDrawer.test.ts",
+          "sha256": "b36455be0cf8a7f6564bd3744b0d68c1ddca0980b617c6a34c6d267467043e1f",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "src/components/dashboard/BreakdownTable.test.ts",
+          "sha256": "306c430399f7009a83d831442ddcc92d5f1a0360f985617ea30e3fcf05ab369b",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "src/components/dashboard/CurrentDashboard.test.ts",
+          "sha256": "a74758d646f2ae058a970b6155b25b8b0bfe1e7c54193e2e56a0c4924acaea72",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "src/components/dashboard/DashboardWidgets.test.ts",
+          "sha256": "2d45f538d3e1ab13909a05b737f125e4fdfad6bd1e9890df672348f79da8d4d9",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "src/components/dashboard/HistoryDashboard.test.ts",
+          "sha256": "e3498ea95f6f17d58da64bdec971fc8296114c9c4e91763448f739cd63ebb90e",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "src/features/agent-evaluation/AgentEvaluationCritical.test.tsx",
+          "sha256": "5d3f0e8001c510634c1bea625fbed27f06bdb9273f60331b04f1c789e8a09c5f",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "src/features/agents/AgentsCriticalViews.test.tsx",
+          "sha256": "324e6cc2782481c86858671f03201f23a32d7901b9244c94321ba5705de591ef",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "src/features/ai-forecast/AiForecastViews.test.tsx",
+          "sha256": "ad6b86e8a221dcdb3216c431cced9f7119a0248ca4c3c764b72d35d665c9d61d",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "src/features/ai-forecast/model.test.ts",
+          "sha256": "eb39fdffafd975857592113407d6e2260281f6ea89c6443a26198db34bfa005e",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "src/features/campaigns/CampaignCriticalViews.test.tsx",
+          "sha256": "1575af40a570ec2af27fe39d0f93ecda2a3b5b2fc1f49c90e280d4f230aa2539",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "src/features/campaigns/CampaignsPage.test.tsx",
+          "sha256": "93cae57470438fa68a9ac98f3ee9351483bb9c315483ff31b0d01d2bc6c27612",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "src/features/dashboard/DashboardCriticalHooks.test.tsx",
+          "sha256": "8b7f9c0df8354792725943fd034e01bf711e914e640470fa3caf977dfa58eebb",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "src/features/dashboard/DashboardCriticalViews.test.tsx",
+          "sha256": "bcdfc8ce7fc986a1d8b4432ca8c7043c6ee32e603188d1fd72f6b10f5a1b7ab5",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "src/features/dashboard/DashboardPage.test.tsx",
+          "sha256": "5e5947a13f6712874081b52e2c461ccfc03ae93b068e58fac6f9ed1b8fdd3191",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "src/features/salary/SalaryCriticalViews.test.tsx",
+          "sha256": "45e79624b2b1808ca3752417d0643be948f1eed9863555171ff6b32ed8bc47af",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "src/features/salary/SalaryExportControls.test.tsx",
+          "sha256": "870b15ef5e04e9d0b9fe33660ddb8573fe337e7285fb2ec2913b8cec36c56cf0",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "src/features/settings/exports/controls.test.tsx",
+          "sha256": "2389be7334caadbc48877c7df8898dcd4f7305d394c5a941a748afcee7b20159",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "src/features/settings/hooks/useSettingsExports.test.tsx",
+          "sha256": "68b6d10199821ea5d8f964215e0d981e733218a1f698f389965ba5422b9f12b3",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "src/features/settings/hooks/useSettingsImports.test.tsx",
+          "sha256": "933b42e74a05bd529f7c2f0f0a7652dd04d91a7d7bcf596dcf806cd6f4f9de63",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "src/features/target-calculator/TargetCalculatorPage.test.tsx",
+          "sha256": "96fdd28745a67196fd1a8b0ac0ff86e4af70fdce05c3c396b672e6e608316aa7",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "src/features/target-calculator/TargetCriticalViews.test.tsx",
+          "sha256": "9364f67b6e8a8e3cc407ac3defa1dd662aef76f2e7c6dca68b9567a0f55740a0",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "src/features/target-calculator/TargetWorkflow.test.tsx",
+          "sha256": "a8bc8ead2ed70ae260f0e8230cd7558ef1bb19c7877228d66bf793b41adfb130",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "src/features/target-calculator/calculations.test.ts",
+          "sha256": "0d95bdba3e6e151c11c1832782a61246bbad0fbd3c5a209ce13888468064b001",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "src/features/target-calculator/hooks/useTargetScenario.test.tsx",
+          "sha256": "b0fb4bed3e93406640d4842b7c5c7350a6576c2f26c276139db32cdd91d27fe4",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "src/features/visits/VisitsCritical.test.tsx",
+          "sha256": "6546928ad43e13281fc65affad6623599fce3a962d7c810c34e63b2be607f56f",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "src/hooks/useAvailableMonths.test.tsx",
+          "sha256": "980407d05f5b3dcb8a0468513679b1b7eeab9853b151d8354b8e9b1ab7ac1841",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "src/lib/currentMonth.test.ts",
+          "sha256": "d5a0880f2000c02d72a41f08ff4d1bfe1a2f4065f0caa4ef1a332d39ef75f9e2",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "src/lib/dates.test.ts",
+          "sha256": "39bfcf08e9acb0aa4b725ba0df90f5aad7a642d458db4617124c99b11e9b5422",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "src/lib/exportOperationPolling.test.ts",
+          "sha256": "a1c2e23f238d711ea4dc5e73e1d9cb762b919d199cc1d26722d9167cd1ac56a8",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "src/lib/filterQueries.test.ts",
+          "sha256": "4645bb66870f1fb549ad7ce14532dc57cea5def2ada2a23f97754e816c805b45",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "src/lib/filterValues.test.ts",
+          "sha256": "3acbeb154905e912631a25f56ef7abe46ad5c3e10d3844021b9104e7e8835df5",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "src/lib/formatters.test.ts",
+          "sha256": "22f76f425b6eece1e12e0fb43ce135dd1134c1b8d51493195d6bed12cdfcd094",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "src/lib/frontendMetrics.test.ts",
+          "sha256": "41a9b1a3c48cf05b9e96f2208d8c26a8a7ef7d67b034e95ef9a8d12ea214adf7",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "src/lib/importJobPolling.test.ts",
+          "sha256": "921e2d41ff82a44dd70913b1f427c5a67cc8ef684ca2b83890966c903b016cd3",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "src/lib/insightDeepLink.test.ts",
+          "sha256": "556afea3fa106bea92d91326629df2970b42f92a1cb797724e46d3875fa7ffb4",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "src/lib/navigationAccess.test.ts",
+          "sha256": "1d5a168d93805e4511bcf7e1bb26897974ee26162a195c6e25dd1ca8a0d9a622",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "src/lib/preloadRecovery.test.ts",
+          "sha256": "3664608f92d63f8a46b47c6cf0934926fb47833d71accad72d6d312bed377ca5",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "src/lib/pwaNavigation.test.ts",
+          "sha256": "b5e422b9cecd4172faf310d3338b1fd4f5f85ccc95ea15e87fb9f50c92b3dae4",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "src/lib/queryKeys.test.ts",
+          "sha256": "d2f0d9cc7efacdd86dbeebeaeae4e1e05502099e0fd4ed94a1cc3f521ed544fb",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "src/lib/tableExport.test.ts",
+          "sha256": "e2429e23d4029c4a3401764d89a439ecff0631a41fc912c39c35b14b966ace5c",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "src/lib/tabs.test.ts",
+          "sha256": "6fd5798c2f9a38e3afcc141d533b05dc0212d554cb84eba7167671e7700044af",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "src/lib/targetSeasonality.test.ts",
+          "sha256": "c4aff7c5f68f38fa26f1b18690540851951eb04ab9ae7f072fdaaf79f2af47e0",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "src/lib/telemetryPrivacy.test.ts",
+          "sha256": "63f5af05df0455f1d9464e90b33430e045f29e17ea88d8f110dbbb1f3ae9814e",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "src/lib/tsFunctionComplexityRatchet.test.ts",
+          "sha256": "4b4915bb22ee984caf32534a0bde155c06b813ee2dff16449fba856a34e247b1",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "src/lib/usePersistentState.test.ts",
+          "sha256": "0fca80b95ce8fde75702c8e770e99ca745c97b5b4eb0606b840f6f2c8b856048",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "src/lib/useSortable.test.ts",
+          "sha256": "851cea1a82e9fc14efc47533b357435850777075137ea406a5ec18998907e555",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "src/lib/viewCache.test.ts",
+          "sha256": "4138b383c3d276ddf5508075f1a0625006752699e056b1e00f2f8ff250fd9a37",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "src/lib/webVitals.test.ts",
+          "sha256": "c8fd2f9bb72766e7a68e3d58a74485fe6e38a5bbe9878608f4961f9f45e231ef",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "src/screenLoaders.test.ts",
+          "sha256": "2e51999d388bad6eb4bfac876257a973bdea4897a408555df4fbd42b3471ebc7",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "src/test/PnlLayoutCritical.test.tsx",
+          "sha256": "954092699c38eaebf01ffc9e961b160348d32704e15cf7e0834fc91370a958e5",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100644",
+          "path": "src/test/frontendLifecycleContract.test.ts",
+          "sha256": "cae882c36930e86ca8241f1e50b6b5a5a1b7802e5b3111532418b9b40c68613d",
+          "source_snapshot": "release_b_integrated_preview"
+        }
+      ],
+      "name": "frontend_test_suite",
+      "supports": [
+        "AC-08",
+        "AC-11",
+        "AC-16"
+      ]
+    },
+    {
+      "entries": [
+        {
+          "git_mode": "100755",
+          "path": "backend/scripts/run_tests_isolated.sh",
+          "sha256": "e1ff5f41345038661d37daf34e1665ef4b504c212c8c3d527fa0f68e3b5b9100"
+        },
+        {
+          "git_mode": "100755",
+          "path": "ops/approve-retail-release.sh",
+          "sha256": "c7723753553d7955678fcef5c7b24e494ec610c8144d67829f84b370d1f1cfcb",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100755",
+          "path": "ops/build-retail-release-artifact.sh",
+          "sha256": "16b6e6575fd30f602dfbbb67db28374c31bc83b6d740beed66e45c6bd439208c"
+        },
+        {
+          "git_mode": "100755",
+          "path": "ops/caddy/promote-retail-caddy.sh",
+          "sha256": "a51914573327d40f04233e538c6a7ea1864ceb90babd6f22bb48637d9d560077",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100755",
+          "path": "ops/deploy-retail-artifact.sh",
+          "sha256": "0328529bd4de2cdb7a0c46f0a45e9f0e37cb8047db451f416c72990d7f7734dc"
+        },
+        {
+          "git_mode": "100755",
+          "path": "ops/provision-retail-salary-export-database.sh",
+          "sha256": "efbfe86ad5409724ef2e2bd1242876e9e2e018f51d22fe829dcb44cf1f9a4b12",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100755",
+          "path": "ops/provision-retail-service-identities.sh",
+          "sha256": "6c73502b35a3a3ce890b945ee7f0266b3b2d47f5a74f0a916869eccf979d559a",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100755",
+          "path": "ops/test-deploy-retail-artifact.sh",
+          "sha256": "2b344f73b8dd499a697954a3a1f3adaf3a79fab74f38aa9e431fa2a28b2cb4d1"
+        },
+        {
+          "git_mode": "100755",
+          "path": "ops/verify-forensic-remediation-runtime.sh",
+          "sha256": "bb1fc676d3ec7202d26115bbf3ba8798bbc2e34c366799a9d54f0c79ec618c1e",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100755",
+          "path": "scripts/run_local_quality_gate.sh",
+          "sha256": "640f89475b8b049182be77cbc9ac9182d6b469de8162b1ced0827d69a0cf0945"
+        },
+        {
+          "git_mode": "100755",
+          "path": "scripts/run_pwa_release_lifecycle.sh",
+          "sha256": "9907d9fa78e041053e513d5349d3ddf6cee6f21780bec7424154bec3bc2255b6",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100755",
+          "path": "scripts/run_real_e2e.sh",
+          "sha256": "acc57a606855c21fd05b88e06ca6f70b762a49e7d70e26981852284bc68ba98f"
+        },
+        {
+          "git_mode": "100755",
+          "path": "scripts/run_release_a_schema_gate.sh",
+          "sha256": "83adab86d95e443ed49517bb632c64b8d6e0f4caf2a4bc18ce47330ceb4f8455"
+        },
+        {
+          "git_mode": "100755",
+          "path": "scripts/run_retail_scale_gate.sh",
+          "sha256": "a331c8f24faece6c75d2f95d0c9d302c8d2b40066f48608ab09d599e2bcaac0c"
+        },
+        {
+          "git_mode": "100755",
+          "path": "scripts/run_shellcheck.sh",
+          "sha256": "9201e685cc5c9db868b6b6afe39e15543b7a8ec58d7281446262228a2ffc6178",
+          "source_snapshot": "release_b_integrated_preview"
+        },
+        {
+          "git_mode": "100755",
+          "path": "scripts/run_structural_characterization.sh",
+          "sha256": "7ec309cf6ec90b466e323bacee6b8a0da54cc22f622cc00ef81f52b32d0636a8"
+        },
+        {
+          "git_mode": "100755",
+          "path": "scripts/verify_deployed_release.sh",
+          "sha256": "f392c44cba46d450c572e86c91906f766feec224e75a1376705b4a92a34d83a0"
+        },
+        {
+          "git_mode": "100755",
+          "path": "scripts/verify_promtool_cache.sh",
+          "sha256": "f7f24584ef5f85c2b7041e0b1f7a6a389c6998aae0db0b6b17704149c7fafb4d"
+        }
+      ],
+      "name": "shell_script_suite",
+      "supports": [
+        "AC-16"
+      ]
+    }
+  ],
+  "baseline_source_sha": "0be82b430e55b7414babf470abe3fc5404b6cdc9",
+  "release_a_authorities": [
+    ".github/workflows/deploy.yml",
+    "backend/scripts/outbox_slo_workload_engine.py",
+    "backend/scripts/run_import_overlap_gate.py",
+    "backend/scripts/run_outbox_slo_workload.py",
+    "backend/scripts/run_retail_scale_profile.py",
+    "backend/scripts/run_tests_isolated.sh",
+    "backend/tests/test_release_contract_tooling_security.py",
+    "ops/build-retail-release-artifact.sh",
+    "ops/config/retail-env.schema.json",
+    "ops/deploy-retail-artifact.sh",
+    "ops/test-deploy-retail-artifact.sh",
+    "scripts/check_release_a_candidate.py",
+    "scripts/run_local_quality_gate.sh",
+    "scripts/run_outbox_slo_gate.py",
+    "scripts/run_real_e2e.sh",
+    "scripts/run_release_a_schema_gate.sh",
+    "scripts/run_retail_scale_gate.sh",
+    "scripts/run_structural_characterization.sh",
+    "scripts/structural-characterization-baseline-v1.json",
+    "scripts/validate_release_sbom.py",
+    "scripts/verify_deployed_release.sh",
+    "scripts/verify_frontend_rum_build.mjs",
+    "scripts/verify_promtool_cache.sh"
+  ],
+  "required_paths": [
+    ".bandit-baseline.json",
+    ".coveragerc",
+    ".github/workflows/deploy.yml",
+    ".secrets.baseline",
+    "backend/architecture_contract.json",
+    "backend/db/migration_runner.py",
+    "backend/requirements-dev.lock",
+    "backend/requirements.lock",
+    "backend/scripts/bootstrap_test_db.py",
+    "backend/scripts/check_critical_coverage.py",
+    "backend/scripts/oidc_e2e_stub.py",
+    "backend/scripts/outbox_slo_workload_engine.py",
+    "backend/scripts/run_ai_forecast_backtest.py",
+    "backend/scripts/run_import_overlap_gate.py",
+    "backend/scripts/run_mixed_load_gate.py",
+    "backend/scripts/run_outbox_slo_workload.py",
+    "backend/scripts/run_retail_scale_profile.py",
+    "backend/scripts/run_tests_isolated.sh",
+    "backend/tests/conftest.py",
+    "backend/tests/test_ai_forecast_asof_cohort.py",
+    "backend/tests/test_ai_forecast_backtest.py",
+    "backend/tests/test_ai_forecast_governance.py",
+    "backend/tests/test_ai_forecast_import_contract.py",
+    "backend/tests/test_ai_forecast_response_contract.py",
+    "backend/tests/test_business_golden_contract.py",
+    "backend/tests/test_grile_monthly.py",
+    "backend/tests/test_grile_monthly_operations.py",
+    "backend/tests/test_grile_monthly_state.py",
+    "backend/tests/test_grile_outbox_delivery.py",
+    "backend/tests/test_grile_pilot_v2.py",
+    "backend/tests/test_grile_repository_contracts.py",
+    "backend/tests/test_grile_v2_contract.py",
+    "backend/tests/test_outbox_replay.py",
+    "backend/tests/test_outbox_worker_faults.py",
+    "backend/tests/test_release_a_schema_069.py",
+    "backend/tests/test_release_contract_tooling_security.py",
+    "backend/tests/test_target_allocator_exact.py",
+    "backend/tests/test_target_allocator_properties.py",
+    "backend/tests/test_telemetry_privacy_contract.py",
+    "backend/tests/test_transactional_outbox.py",
+    "e2e/frontend-lifecycle.spec.ts",
+    "e2e/helpers.ts",
+    "e2e/pwa-release-lifecycle.spec.ts",
+    "e2e/real-auth-stack.spec.ts",
+    "eslint.config.js",
+    "ops/build-retail-release-artifact.sh",
+    "ops/config/retail-env.schema.json",
+    "ops/deploy-retail-artifact.sh",
+    "ops/observability/retail-slo-rules.test.yml",
+    "ops/test-deploy-retail-artifact.sh",
+    "package-lock.json",
+    "package.json",
+    "playwright.browser-smoke.config.ts",
+    "playwright.config.ts",
+    "playwright.pwa-workbox.config.ts",
+    "playwright.real.config.ts",
+    "pytest.ini",
+    "scripts/bundle-budget-baseline.json",
+    "scripts/check_ai_forecast_governance.py",
+    "scripts/check_backend_architecture.py",
+    "scripts/check_bandit_waivers.py",
+    "scripts/check_bundle_budget.mjs",
+    "scripts/check_business_golden.py",
+    "scripts/check_changed_function_complexity.py",
+    "scripts/check_changed_line_coverage.py",
+    "scripts/check_complexity_ratchet.py",
+    "scripts/check_dependency_policy.mjs",
+    "scripts/check_docs_contract.py",
+    "scripts/check_env_contract.py",
+    "scripts/check_frontend_critical_coverage.mjs",
+    "scripts/check_frontend_structure_contract.mjs",
+    "scripts/check_prometheus_contract.py",
+    "scripts/check_python_complexity_contract.py",
+    "scripts/check_query_parameter_contract.py",
+    "scripts/check_release_a_candidate.py",
+    "scripts/check_ts_function_complexity.cjs",
+    "scripts/generate_retail_contract.py",
+    "scripts/run_local_quality_gate.sh",
+    "scripts/run_outbox_slo_gate.py",
+    "scripts/run_pwa_release_lifecycle.sh",
+    "scripts/run_real_e2e.sh",
+    "scripts/run_release_a_schema_gate.sh",
+    "scripts/run_retail_scale_gate.sh",
+    "scripts/run_shellcheck.sh",
+    "scripts/run_structural_characterization.sh",
+    "scripts/run_target_allocator_contract.py",
+    "scripts/run_targeted_mutation_tests.py",
+    "scripts/structural-characterization-baseline-v1.json",
+    "scripts/validate_release_sbom.py",
+    "scripts/verify_deployed_release.sh",
+    "scripts/verify_frontend_rum_build.mjs",
+    "scripts/verify_promtool_cache.sh",
+    "scripts/verify_vendored_npm_packages.mjs",
+    "src/components/GrileMonthlyPanel.test.tsx",
+    "src/features/agent-evaluation/AgentEvaluationCritical.test.tsx",
+    "src/features/agents/AgentsCriticalViews.test.tsx",
+    "src/features/ai-forecast/AiForecastViews.test.tsx",
+    "src/features/campaigns/CampaignCriticalViews.test.tsx",
+    "src/features/dashboard/DashboardCriticalHooks.test.tsx",
+    "src/features/dashboard/DashboardCriticalViews.test.tsx",
+    "src/features/salary/SalaryCriticalViews.test.tsx",
+    "src/features/settings/exports/controls.test.tsx",
+    "src/features/target-calculator/TargetCriticalViews.test.tsx",
+    "src/features/visits/VisitsCritical.test.tsx",
+    "src/lib/pwaNavigation.ts",
+    "src/test/PnlLayoutCritical.test.tsx",
+    "src/test/frontendLifecycleContract.test.ts",
+    "src/test/setup.ts",
+    "tsconfig.json",
+    "vite.config.ts",
+    "vitest.config.ts"
+  ],
+  "schema_version": 2,
+  "source_snapshots": {
+    "outbox_acceptance_contract": {
+      "commit": "ce61b725f0c83b3527bcd88e1b47a8e2c3795380",
+      "ref": "refs/tags/ur-close-20260812-outbox-contract-v1",
+      "tree": "ec1590144b44d47aa9d9d3603813870cae482293"
+    },
+    "release_b_integrated_preview": {
+      "commit": "c8031175abc035671bff04143cdc3eb0cb92303f",
+      "ref": "refs/tags/ur-close-20260812-preview-v4-content",
+      "tree": "c13556d3f647c1e1052b561af9d36bcfee887ca0"
+    },
+    "scale_authority": {
+      "commit": "e2daba1b45ff12852629889e48f01a9eb3a8a643",
+      "ref": "refs/tags/ur-close-20260812-scale-authority-v1",
+      "tree": "7cc64e58957e2bb9edb0fddc805d447e055ca22a"
+    }
+  }
+}
