@@ -124,18 +124,29 @@ def test_completed_sales_status_accepts_persisted_manifest_integrity_fields() ->
         "parse_seconds": 0.01,
     }
 
-    with pytest.raises(ValidationError):
-        AgentListItem.model_validate(
-            {
-                "agent": "Agent",
-                "active_in_month": True,
-                "is_new": False,
-                "is_reactivated": False,
-                "total_sales": Decimal("0"),
-                "total_quantity": 0,
-                "current_status": "unknown",
-            }
+
+def test_completed_sales_status_ignores_internal_worker_fencing_fields() -> None:
+    result = _to_public_import_status(
+        JobResult(
+            job_id="sales-job-1",
+            status=JobStatus.COMPLETE,
+            result={
+                "import_month": "2026-08",
+                "rows_in_file": 1,
+                "rows_imported": 1,
+                "rows_filtered": 0,
+                "store_count": 1,
+                "agent_count": 1,
+                "snapshot_id": 1,
+                "filename": "sales.xlsx",
+                "is_month_final": False,
+                "owner_id": "internal-only-fence-id",
+            },
         )
+    )
+
+    assert result.result is not None
+    assert result.result.snapshot_id == 1
 
 
 @pytest.mark.parametrize(

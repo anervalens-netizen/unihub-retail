@@ -156,14 +156,14 @@ def _to_public_import_status(result: JobResult) -> ImportJobStatus:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Job status unavailable",
-        )
+    )
     job_kind: Literal["sales", "promo_actuals", "erp_reconciliation"] = (
-        "promo_actuals"
-        if result.job_id.startswith("promo-actuals:")
-        else "erp_reconciliation"
-        if result.job_id.startswith("erp-reconciliation:")
+        "promo_actuals" if result.job_id.startswith("promo-actuals:")
+        else "erp_reconciliation" if result.job_id.startswith("erp-reconciliation:")
         else "sales"
     )
+    if result.result and job_kind == "sales":
+        result.result.pop("owner_id", None)
     payload = ImportResponse(**result.result) if result.result and job_kind == "sales" else None
     promo_payload = PromoActualImportResponse(**result.result) if result.result and job_kind == "promo_actuals" else None
     erp_payload = (
