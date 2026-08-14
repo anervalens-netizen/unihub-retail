@@ -60,6 +60,43 @@ def test_retain_is_content_addressed_durable_and_idempotent(
     ) == retained
 
 
+def test_retain_never_chmods_an_artifact_published_by_the_web_identity(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A shared-group rename must not chmod a file owned by the web user."""
+    monkeypatch.setenv("SALES_IMPORT_SPOOL_DIR", str(tmp_path))
+    source, digest = _artifact(tmp_path)
+    source.chmod(0o660)
+    original_chmod = Path.chmod
+    retained_chmod_attempts: list[Path] = []
+
+    def reject_cross_identity_chmod(
+        path: Path, mode: int, *, follow_symlinks: bool = True
+    ) -> None:
+        if path.parent.name == "retained":
+            retained_chmod_attempts.append(path)
+            raise PermissionError(errno.EPERM, "Operation not permitted", str(path))
+        original_chmod(path, mode, follow_symlinks=follow_symlinks)
+
+    monkeypatch.setattr(Path, "chmod", reject_cross_identity_chmod)
+    retained = jobs.retain_sales_import_spool_file(
+        source,
+        import_month="2099-08",
+        snapshot_id=7,
+        expected_digest=digest,
+        expected_bytes=12,
+    )
+    assert retained.stat().st_mode & 0o777 == 0o660
+    assert jobs.retain_sales_import_spool_file(
+        source,
+        import_month="2099-08",
+        snapshot_id=7,
+        expected_digest=digest,
+        expected_bytes=12,
+    ) == retained
+    assert retained_chmod_attempts == []
+
+
 def test_resolver_follows_an_atomic_move_to_the_canonical_retained_path(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

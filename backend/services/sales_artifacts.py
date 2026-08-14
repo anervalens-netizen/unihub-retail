@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import re
+import stat
 import time
 from hashlib import sha256
 from pathlib import Path
@@ -78,6 +79,50 @@ def _fsync_directory(path: Path) -> None:
         os.close(descriptor)
 
 
+def _ensure_shared_directory(path: Path, *, parent: Path | None = None) -> None:
+    path.mkdir(
+        parents=True,
+        exist_ok=True,
+        mode=_SHARED_SPOOL_DIRECTORY_CREATE_MODE,
+    )
+    metadata = path.stat(follow_symlinks=False)
+    mode = stat.S_IMODE(metadata.st_mode)
+    if mode & 0o777 != _SHARED_SPOOL_DIRECTORY_CREATE_MODE:
+        path.chmod((mode & 0o7000) | _SHARED_SPOOL_DIRECTORY_CREATE_MODE)
+        metadata = path.stat(follow_symlinks=False)
+    if not stat.S_ISDIR(metadata.st_mode) or stat.S_IMODE(metadata.st_mode) & 0o777 != 0o770:
+        raise SalesImportArtifactError("Sales import spool directory permissions are invalid")
+    if parent is not None and metadata.st_gid != parent.stat(follow_symlinks=False).st_gid:
+        raise SalesImportArtifactError("Sales import spool directory group is invalid")
+
+
+def _prepare_shared_artifact(path: Path, *, expected_gid: int) -> os.stat_result:
+    metadata = path.stat(follow_symlinks=False)
+    if not stat.S_ISREG(metadata.st_mode) or metadata.st_nlink != 1:
+        raise SalesImportArtifactError("Sales import artifact ownership is invalid")
+    if stat.S_IMODE(metadata.st_mode) != _SHARED_SPOOL_FILE_MODE:
+        path.chmod(_SHARED_SPOOL_FILE_MODE)
+        metadata = path.stat(follow_symlinks=False)
+    if (
+        stat.S_IMODE(metadata.st_mode) != _SHARED_SPOOL_FILE_MODE
+        or metadata.st_gid != expected_gid
+    ):
+        raise SalesImportArtifactError("Sales import artifact permissions are invalid")
+    return metadata
+
+
+def _verify_preserved_artifact(path: Path, expected: os.stat_result) -> None:
+    actual = path.stat(follow_symlinks=False)
+    if (
+        not stat.S_ISREG(actual.st_mode)
+        or actual.st_nlink != 1
+        or actual.st_uid != expected.st_uid
+        or actual.st_gid != expected.st_gid
+        or stat.S_IMODE(actual.st_mode) != _SHARED_SPOOL_FILE_MODE
+    ):
+        raise SalesImportArtifactError("Retained sales artifact ownership changed")
+
+
 def verify_sales_import_artifact(
     path: str | Path,
     expected_digest: str,
@@ -124,11 +169,7 @@ def stage_sales_import_spool_file(
     if namespace is not None and not _IMPORT_SPOOL_NAMESPACE.fullmatch(namespace):
         raise ValueError("Invalid import spool namespace")
     spool_dir = get_sales_import_spool_dir()
-    spool_dir.mkdir(
-        parents=True,
-        exist_ok=True,
-        mode=_SHARED_SPOOL_DIRECTORY_CREATE_MODE,
-    )
+    _ensure_shared_directory(spool_dir)
     artifact_stem = f"{digest}.{namespace}" if namespace is not None else digest
     destination = spool_dir / f"{artifact_stem}.upload"
     temporary = spool_dir / f".{artifact_stem}.{uuid4().hex}.tmp"
@@ -136,19 +177,19 @@ def stage_sales_import_spool_file(
         actual_digest, actual_size = _file_digest_and_size(destination)
         if actual_digest != digest or actual_size != len(content):
             raise SalesImportArtifactConflictError("Conflicting content-addressed sales source")
-        destination.chmod(_SHARED_SPOOL_FILE_MODE)
+        _prepare_shared_artifact(destination, expected_gid=spool_dir.stat().st_gid)
         _fsync_file(destination)
         _fsync_directory(spool_dir)
         return destination
     try:
         temporary.write_bytes(content)
-        temporary.chmod(_SHARED_SPOOL_FILE_MODE)
+        _prepare_shared_artifact(temporary, expected_gid=spool_dir.stat().st_gid)
         _fsync_file(temporary)
         actual_digest, actual_size = _file_digest_and_size(temporary)
         if actual_digest != digest or actual_size != len(content):
             raise SalesImportArtifactError("Staged sales source integrity check failed")
         temporary.replace(destination)
-        destination.chmod(_SHARED_SPOOL_FILE_MODE)
+        _prepare_shared_artifact(destination, expected_gid=spool_dir.stat().st_gid)
         _fsync_file(destination)
         _fsync_directory(spool_dir)
     finally:
@@ -175,17 +216,14 @@ def retain_sales_import_spool_file(
     if not _SALES_ARTIFACT_DIGEST.fullmatch(digest):
         raise ValueError("Invalid sales import artifact digest")
     retained_dir = spool_dir / "retained"
-    retained_dir.mkdir(
-        parents=True,
-        exist_ok=True,
-        mode=_SHARED_SPOOL_DIRECTORY_CREATE_MODE,
-    )
+    _ensure_shared_directory(retained_dir, parent=spool_dir)
+    retained_gid = retained_dir.stat(follow_symlinks=False).st_gid
     destination = _sales_spool_path(retained_dir / f"{digest}.source")
     if destination.exists():
         actual_digest, actual_size = _file_digest_and_size(destination)
         if actual_digest != digest or (expected_bytes is not None and actual_size != expected_bytes):
             raise SalesImportArtifactConflictError("Conflicting retained sales artifact")
-        destination.chmod(_SHARED_SPOOL_FILE_MODE)
+        _prepare_shared_artifact(destination, expected_gid=retained_gid)
         _fsync_file(destination)
         if candidate != destination and candidate.exists():
             candidate.unlink()
@@ -197,8 +235,9 @@ def retain_sales_import_spool_file(
     actual_digest, actual_size = _file_digest_and_size(candidate)
     if actual_digest != digest or (expected_bytes is not None and actual_size != expected_bytes):
         raise SalesImportArtifactError("Sales source integrity check failed before retain")
+    source_metadata = _prepare_shared_artifact(candidate, expected_gid=retained_gid)
     candidate.replace(destination)
-    destination.chmod(_SHARED_SPOOL_FILE_MODE)
+    _verify_preserved_artifact(destination, source_metadata)
     _fsync_file(destination)
     _fsync_directory(retained_dir)
     actual_digest, actual_size = _file_digest_and_size(destination)
