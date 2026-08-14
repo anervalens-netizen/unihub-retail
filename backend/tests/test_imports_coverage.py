@@ -499,201 +499,38 @@ async def test_promo_processing_rejects_noncanonical_parser_result(
 
 
 @pytest.mark.asyncio
-async def test_sales_import_recovers_exact_validated_generation_without_requeue(
+async def test_sales_import_requeues_exact_validated_generation_to_worker(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     repo = MagicMock()
-    repo.get_validated_sales_generation = AsyncMock(
-        return_value={
-            "id": 214,
-            "import_month": "2026-08",
-            "filename": "sales.xlsx",
-            "is_month_final": False,
-            "rows_in_file": 8171,
-            "rows_imported": 5674,
-            "coverage_report": {"stores_present_count": 77},
-            "generation_token": "58daa48f-ceb4-4963-88ab-441a46fedd64",
-            "manifest_sha256": "a" * 64,
-            "source_spool_path": "/tmp/sales-spool/source.upload",
-            "source_artifact_required": False,
-            "source_artifact_state": None,
-            "source_artifact_sha256": None,
-            "source_artifact_bytes": None,
-            "manifest": {
-                "generation_state": "validated",
-                "rows_filtered": 2497,
-                "store_count": 77,
-                "agent_count": 147,
-                "cutoff_date": "2026-08-04",
-                "receipt_count": 3870,
-                "site_day_count": 296,
-                "total_value": "100.00",
-                "total_quantity": 10,
-                "business_sha256": "b" * 64,
-                "anomalies": [],
-            },
-        }
-    )
-    enqueue = AsyncMock()
+    repo.get_validated_sales_generation = AsyncMock(return_value={"id": 214})
+    enqueue = AsyncMock(return_value=SimpleNamespace(job_id="sales-import:retry"))
     monkeypatch.setattr(imports_module, "enqueue_sales_import", enqueue)
-    stage_spool = MagicMock(return_value=Path("/tmp/sales-spool/source.upload"))
-    monkeypatch.setattr(imports_module, "stage_sales_import_spool_file", stage_spool)
-    svc = ImportsService(repo=repo, pool=cast(asyncpg.Pool, MagicMock()))
-
-    result = await svc.import_sales(
-        _upload(b"same sales bytes", "sales.xlsx"),
-        cutoff_date=date(2026, 8, 4),
-        requested_by_sub="owner:123",
-    )
-
-    assert result.status == "complete"
-    assert result.job_id == "sales-staged:214"
-    assert result.result is not None
-    assert result.result.generation_state == "validated"
-    assert result.result.snapshot_id == 214
-    assert result.result.rows_imported == 5674
-    repo.get_validated_sales_generation.assert_awaited_once_with(
-        source_sha256=hashlib.sha256(b"same sales bytes").hexdigest(),
-        cutoff_date=date(2026, 8, 4),
-    )
-    stage_spool.assert_called_once_with(
-        b"same sales bytes",
-        hashlib.sha256(b"same sales bytes").hexdigest(),
-    )
-    enqueue.assert_not_awaited()
-
-
-@pytest.mark.asyncio
-async def test_sales_import_recovers_from_retained_artifact_without_restaging(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    source_sha256 = hashlib.sha256(b"same sales bytes").hexdigest()
-    repo = MagicMock()
-    repo.get_validated_sales_generation = AsyncMock(
-        return_value={
-            "id": 214,
-            "import_month": "2026-08",
-            "filename": "sales.xlsx",
-            "is_month_final": False,
-            "rows_in_file": 1,
-            "rows_imported": 1,
-            "coverage_report": {},
-            "generation_token": "58daa48f-ceb4-4963-88ab-441a46fedd64",
-            "owner_id": "a8bc1c44-752f-43c7-b0b0-f99b95134a74",
-            "manifest_sha256": "a" * 64,
-            "source_spool_path": f"/tmp/sales-spool/retained/{source_sha256}.source",
-            "source_artifact_required": True,
-            "source_artifact_state": "artifact_retained",
-            "source_artifact_sha256": source_sha256,
-            "source_artifact_bytes": len(b"same sales bytes"),
-            "manifest": {"generation_state": "validated"},
-        }
-    )
-    verify = MagicMock(return_value=len(b"same sales bytes"))
-    stage = MagicMock()
-    monkeypatch.setattr(imports_module, "verify_sales_import_artifact", verify)
-    monkeypatch.setattr(imports_module, "stage_sales_import_spool_file", stage)
-
-    result = await ImportsService(
-        repo=repo,
-        pool=cast(asyncpg.Pool, MagicMock()),
-    ).import_sales(
-        _upload(b"same sales bytes", "sales.xlsx"),
-        cutoff_date=date(2026, 8, 4),
-        requested_by_sub="owner:123",
-    )
-
-    assert result.status == "complete"
-    verify.assert_called_once_with(
-        f"/tmp/sales-spool/retained/{source_sha256}.source",
-        source_sha256,
-        len(b"same sales bytes"),
-    )
-    stage.assert_not_called()
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("expected_retained_path", [False, True])
-async def test_sales_import_exact_retry_repairs_missing_retention_state(
-    monkeypatch: pytest.MonkeyPatch,
-    expected_retained_path: bool,
-) -> None:
-    content = b"same sales bytes"
-    source_sha256 = hashlib.sha256(content).hexdigest()
-    owner_id = "a8bc1c44-752f-43c7-b0b0-f99b95134a74"
-    token = "58daa48f-ceb4-4963-88ab-441a46fedd64"
-    repo = MagicMock()
-    repo.get_validated_sales_generation = AsyncMock(
-        return_value={
-            "id": 214,
-            "import_month": "2026-08",
-            "filename": "sales.xlsx",
-            "is_month_final": False,
-            "rows_in_file": 1,
-            "rows_imported": 1,
-            "coverage_report": {},
-            "generation_token": token,
-            "owner_id": owner_id,
-            "manifest_sha256": "a" * 64,
-            "source_spool_path": (
-                f"/tmp/sales-spool/retained/{source_sha256}.source"
-                if expected_retained_path
-                else f"/tmp/sales-spool/{source_sha256}.upload"
-            ),
-            "source_artifact_required": True,
-            "source_artifact_state": None,
-            "source_artifact_sha256": None,
-            "source_artifact_bytes": None,
-            "manifest": {"generation_state": "validated"},
-        }
-    )
-    spool_path = Path(f"/tmp/sales-spool/{source_sha256}.upload")
-    retained_path = Path(f"/tmp/sales-spool/retained/{source_sha256}.source")
     monkeypatch.setattr(
         imports_module,
-        "stage_sales_import_spool_file",
-        MagicMock(return_value=spool_path),
+        "get_job_status",
+        AsyncMock(return_value=JobResult(job_id="sales-import:retry", status=JobStatus.QUEUED)),
     )
-    monkeypatch.setattr(
-        imports_module,
-        "retain_sales_import_spool_file",
-        MagicMock(return_value=retained_path),
-    )
-    attach = AsyncMock()
-    mark = AsyncMock()
-    monkeypatch.setattr(imports_module, "attach_sales_generation_source", attach)
-    monkeypatch.setattr(imports_module, "mark_sales_generation_artifact_retained", mark)
-    connection = MagicMock()
     pool = MagicMock()
-    pool.acquire.return_value = _AsyncContext(connection)
 
     result = await ImportsService(
         repo=repo,
         pool=cast(asyncpg.Pool, pool),
     ).import_sales(
-        _upload(content, "sales.xlsx"),
+        _upload(b"same sales bytes", "sales.xlsx"),
         cutoff_date=date(2026, 8, 4),
         requested_by_sub="owner:123",
     )
 
-    assert result.status == "complete"
-    attach.assert_awaited_once_with(
-        connection,
-        snapshot_id=214,
-        generation_token=token,
-        owner_id=owner_id,
-        source_spool_path=str(spool_path),
-        source_sha256=source_sha256,
-        source_byte_size=len(content),
-    )
-    mark.assert_awaited_once_with(
-        connection,
-        snapshot_id=214,
-        generation_token=token,
-        owner_id=owner_id,
-        retained_path=str(retained_path),
-        source_sha256=source_sha256,
-        source_byte_size=len(content),
+    assert result.status == "queued"
+    assert result.job_id == "sales-import:retry"
+    repo.get_validated_sales_generation.assert_not_awaited()
+    pool.acquire.assert_not_called()
+    enqueue.assert_awaited_once_with(
+        b"same sales bytes",
+        filename="sales.xlsx",
+        cutoff_date="2026-08-04",
+        requested_by_sub="owner:123",
     )
 
 

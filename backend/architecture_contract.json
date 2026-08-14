@@ -41,7 +41,6 @@
       "services.grile_monthly",
       "services.grile_pilot_v2_sync",
       "services.hr",
-      "services.imports",
       "services.request_deadline",
       "services.sales_import_worker",
       "services.stores",
