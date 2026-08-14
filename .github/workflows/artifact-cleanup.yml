@@ -1,0 +1,46 @@
+name: Actions artifact cleanup
+
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  actions: write
+
+jobs:
+  cleanup-main-releases:
+    name: Keep only recent main release artifacts
+    runs-on: ubuntu-latest
+    steps:
+      - name: Remove older main release artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mapfile -t artifacts < <(
+            gh api --paginate \
+              -H "Accept: application/vnd.github+json" \
+              "repos/${REPOSITORY}/actions/artifacts?per_page=100" \
+              --jq '.artifacts[] | select(.name | startswith("retail-release-")) | [.id, .name, .created_at] | @tsv' \
+            | sort -k3,3r
+          )
+
+          keep=0
+          for row in "${artifacts[@]}"; do
+            IFS=$'\t' read -r artifact_id artifact_name created_at <<< "$row"
+            keep=$((keep + 1))
+
+            if (( keep <= 2 )); then
+              echo "KEEP   $artifact_name ($created_at)"
+              continue
+            fi
+
+            echo "DELETE $artifact_name ($created_at)"
+            gh api --method DELETE \
+              -H "Accept: application/vnd.github+json" \
+              "repos/${REPOSITORY}/actions/artifacts/${artifact_id}"
+          done
