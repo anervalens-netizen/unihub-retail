@@ -27,3 +27,31 @@ def reset_db_pool():
     _conn.pool = None
     yield
     _conn.pool = None
+
+
+@pytest.fixture(scope="function", autouse=True)
+def reset_outbox_table():
+    """Clear retail_outbox_events between DB tests so emit paths activated by
+    one test cannot leak into count/claim assertions of another test."""
+    yield
+    if os.environ.get("UNIHUB_TEST_DATABASE") != "1":
+        return
+    url = os.environ.get("DATABASE_URL")
+    if not url:
+        return
+    import asyncio
+
+    import asyncpg
+
+    async def _clean() -> None:
+        connection = await asyncpg.connect(url)
+        try:
+            await connection.execute(
+                "TRUNCATE TABLE retail_outbox_events, "
+                "ai_forecast_cohort_snapshots, ai_forecast_runs, "
+                "planning_forecast_heads RESTART IDENTITY CASCADE"
+            )
+        finally:
+            await connection.close()
+
+    asyncio.run(_clean())

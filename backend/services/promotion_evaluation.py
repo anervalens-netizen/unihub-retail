@@ -76,6 +76,142 @@ def scope_promotion_definition_to_interval(
     return scoped_definition
 
 
+def _promotion_item_codes(
+    products: dict[str, Any],
+    rule_type: str,
+) -> list[str]:
+    key = (
+        "discounted_codes"
+        if rule_type in {"same_model_screen_camera", "trigger_discounted"}
+        else "item_codes"
+    )
+    return list(products[key])
+
+
+def _promotion_common(
+    definition: dict[str, Any],
+    *,
+    month: str,
+    firma: FilterInput,
+    regional: FilterInput,
+    asm: FilterInput,
+    site_code: FilterInput,
+    agent: FilterInput,
+    current_scope: bool,
+    include_closed_stores: bool,
+) -> dict[str, Any]:
+    return {
+        "month": month,
+        "start_date": definition["start_date"],
+        "end_date": definition["end_date"],
+        "firma": firma,
+        "regional": regional,
+        "asm": asm,
+        "site_code": site_code,
+        "agent": agent,
+        "current_scope": current_scope,
+        "include_closed_stores": include_closed_stores,
+    }
+
+
+async def _evaluate_rule_result(
+    conn: Any,
+    *,
+    products: dict[str, Any],
+    rule_type: str,
+    item_codes: list[str],
+    discount_rate: Decimal,
+    common: dict[str, Any],
+) -> PromoCoPurchaseResult:
+    if rule_type == "same_model_screen_camera":
+        return await compute_promo_same_model_pair(
+            conn,
+            screen_code_models=products["trigger_code_models"],
+            camera_code_models=products["discounted_code_models"],
+            discount_rate=discount_rate,
+            **common,
+        )
+    if rule_type == "trigger_discounted":
+        return await compute_promo_trigger_discounted(
+            conn,
+            trigger_codes=products["trigger_codes"],
+            discounted_codes=products["discounted_codes"],
+            discount_rate=discount_rate,
+            **common,
+        )
+    return await compute_promo_copurchase(
+        conn,
+        item_codes=item_codes,
+        discount_rate=discount_rate,
+        **common,
+    )
+
+
+async def _actuals_with_tail(
+    conn: Any,
+    *,
+    actual_result: PromoCoPurchaseResult,
+    item_codes: list[str],
+    rule_type: str,
+    definition: dict[str, Any],
+    month: str,
+    firma: FilterInput,
+    regional: FilterInput,
+    asm: FilterInput,
+    site_code: FilterInput,
+    agent: FilterInput,
+    current_scope: bool,
+    include_closed_stores: bool,
+) -> PromotionEvaluation:
+    cutoff = promo_actuals_cutoff_date(definition)
+    if cutoff is None:
+        return PromotionEvaluation(
+            actual_result,
+            item_codes,
+            rule_type,
+            PromotionEvaluationStatus.COMPLETE,
+        )
+    tail_start = max(definition["start_date"], cutoff + timedelta(days=1))
+    if tail_start > definition["end_date"]:
+        return PromotionEvaluation(
+            actual_result,
+            item_codes,
+            rule_type,
+            PromotionEvaluationStatus.COMPLETE,
+        )
+    tail = await evaluate_promotion(
+        conn,
+        month=month,
+        definition={
+            **definition,
+            "start_date": tail_start,
+            "actuals_source_file": None,
+            "actuals_file": None,
+        },
+        firma=firma,
+        regional=regional,
+        asm=asm,
+        site_code=site_code,
+        agent=agent,
+        current_scope=current_scope,
+        include_closed_stores=include_closed_stores,
+    )
+    if not tail.is_complete or tail.result is None:
+        return PromotionEvaluation(
+            result=actual_result,
+            item_codes=item_codes,
+            rule_type=rule_type,
+            status=PromotionEvaluationStatus.PARTIAL,
+            warning="Calculul promo dupa cutoff este incomplet.",
+        )
+    return PromotionEvaluation(
+        result=merge_promo_results(actual_result, tail.result),
+        item_codes=item_codes,
+        rule_type=rule_type,
+        status=PromotionEvaluationStatus.COMPLETE,
+    )
+
+
 async def evaluate_promotion(
     conn: Any,
     *,
@@ -110,10 +246,7 @@ async def evaluate_promotion(
             warning="Definitia produselor promo nu poate fi validata.",
         )
 
-    if rule_type in {"same_model_screen_camera", "trigger_discounted"}:
-        item_codes = list(products["discounted_codes"])
-    else:
-        item_codes = list(products["item_codes"])
+    item_codes = _promotion_item_codes(products, rule_type)
 
     try:
         actual_result = await compute_promo_actuals_from_report(
@@ -140,25 +273,13 @@ async def evaluate_promotion(
         )
 
     if actual_result is not None:
-        cutoff_date = promo_actuals_cutoff_date(definition)
-        if cutoff_date is None:
-            return PromotionEvaluation(
-                actual_result, item_codes, rule_type, PromotionEvaluationStatus.COMPLETE
-            )
-        tail_start = max(definition["start_date"], cutoff_date + timedelta(days=1))
-        if tail_start > definition["end_date"]:
-            return PromotionEvaluation(
-                actual_result, item_codes, rule_type, PromotionEvaluationStatus.COMPLETE
-            )
-        tail = await evaluate_promotion(
+        return await _actuals_with_tail(
             conn,
+            actual_result=actual_result,
+            item_codes=item_codes,
+            rule_type=rule_type,
+            definition=definition,
             month=month,
-            definition={
-                **definition,
-                "start_date": tail_start,
-                "actuals_source_file": None,
-                "actuals_file": None,
-            },
             firma=firma,
             regional=regional,
             asm=asm,
@@ -167,56 +288,24 @@ async def evaluate_promotion(
             current_scope=current_scope,
             include_closed_stores=include_closed_stores,
         )
-        if not tail.is_complete or tail.result is None:
-            return PromotionEvaluation(
-                result=actual_result,
-                item_codes=item_codes,
-                rule_type=rule_type,
-                status=PromotionEvaluationStatus.PARTIAL,
-                warning="Calculul promo dupa cutoff este incomplet.",
-            )
-        return PromotionEvaluation(
-            result=merge_promo_results(actual_result, tail.result),
-            item_codes=item_codes,
-            rule_type=rule_type,
-            status=PromotionEvaluationStatus.COMPLETE,
-        )
-
-    common = {
-        "month": month,
-        "start_date": definition["start_date"],
-        "end_date": definition["end_date"],
-        "firma": firma,
-        "regional": regional,
-        "asm": asm,
-        "site_code": site_code,
-        "agent": agent,
-        "current_scope": current_scope,
-        "include_closed_stores": include_closed_stores,
-    }
-    if rule_type == "same_model_screen_camera":
-        result = await compute_promo_same_model_pair(
-            conn,
-            screen_code_models=products["trigger_code_models"],
-            camera_code_models=products["discounted_code_models"],
-            discount_rate=discount_rate,
-            **common,
-        )
-    elif rule_type == "trigger_discounted":
-        result = await compute_promo_trigger_discounted(
-            conn,
-            trigger_codes=products["trigger_codes"],
-            discounted_codes=products["discounted_codes"],
-            discount_rate=discount_rate,
-            **common,
-        )
-    else:
-        result = await compute_promo_copurchase(
-            conn,
-            item_codes=item_codes,
-            discount_rate=discount_rate,
-            **common,
-        )
+    result = await _evaluate_rule_result(
+        conn,
+        products=products,
+        rule_type=rule_type,
+        item_codes=item_codes,
+        discount_rate=discount_rate,
+        common=_promotion_common(
+            definition,
+            month=month,
+            firma=firma,
+            regional=regional,
+            asm=asm,
+            site_code=site_code,
+            agent=agent,
+            current_scope=current_scope,
+            include_closed_stores=include_closed_stores,
+        ),
+    )
     return PromotionEvaluation(
         result=result,
         item_codes=item_codes,

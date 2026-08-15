@@ -5,7 +5,7 @@ from datetime import date
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import ConfigDict, Field, field_validator, model_validator
-from schemas.common import StrictApiModel, MonthStr
+from schemas.common import BoundedText120, MonthStr, StrictApiModel
 
 from auth import AuthClaims
 from composition import build_hr_service
@@ -260,8 +260,8 @@ async def get_performance(
 
 @router.get("/asm-performance", response_model=list[HrAsmPerformanceItem])
 async def get_asm_perf(
-    month: MonthStr = Query(...),
-    regional: str | None = Query(None),
+    month: MonthStr,
+    regional: BoundedText120 | None = Query(None),
     svc: HrService = Depends(get_hr_service),
 ):
     return await svc.get_asm_performance(month, regional)
@@ -269,7 +269,7 @@ async def get_asm_perf(
 
 @router.get("/manager-overview", response_model=list[HrManagerOverviewItem])
 async def get_manager_overview(
-    month: MonthStr = Query(...),
+    month: MonthStr,
     svc: HrService = Depends(get_hr_service),
 ):
     """Overview operațional de portofoliu și sănătate a echipei per manager."""
@@ -288,7 +288,7 @@ async def get_asm_perf_history(
 @router.get("/asm-salary/{asm_name}", response_model=HrAsmSalaryBreakdown)
 async def get_asm_salary(
     asm_name: str,
-    month: MonthStr = Query(...),
+    month: MonthStr,
     svc: HrService = Depends(get_hr_service),
     claims: AuthClaims = Depends(require_salary_access),
 ):

@@ -1,16 +1,19 @@
 from __future__ import annotations
 
+import ast
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 import routers.filters
-import services.imports
-import services.grile_pilot_v2_runtime
 import services.retail_metrics
 import services.sales_generation_flow
 import worker
 from services.sales_generation import SalesGenerationConflictError
+
+
+ROOT = Path(__file__).resolve().parents[2]
 
 
 class _AsyncContext:
@@ -59,22 +62,8 @@ async def test_promotion_worker_claims_with_import_authority(
     monkeypatch.setattr(services.sales_generation_flow, "restore_sales_generation_claim", restore)
     clear_filters = MagicMock()
     update_metrics = AsyncMock()
-    trigger_grile = AsyncMock()
-    trigger_campaigns = AsyncMock()
-    trigger_pilot_v2 = AsyncMock()
     monkeypatch.setattr(routers.filters, "clear_filter_options_cache", clear_filters)
     monkeypatch.setattr(services.retail_metrics, "update_business_metrics", update_metrics)
-    monkeypatch.setattr(services.imports, "trigger_grile_check_after_import", trigger_grile)
-    monkeypatch.setattr(
-        services.imports,
-        "trigger_campaign_reporting_publication",
-        trigger_campaigns,
-    )
-    monkeypatch.setattr(
-        services.grile_pilot_v2_runtime,
-        "trigger_grile_pilot_v2_sync",
-        trigger_pilot_v2,
-    )
 
     result = await worker.promote_sales_background(
         {"db_pool": pool},
@@ -105,15 +94,26 @@ async def test_promotion_worker_claims_with_import_authority(
     assert result["generation_state"] == "promoted"
     assert result["snapshot_id"] == 214
     update_metrics.assert_awaited_once_with(pool)
-    trigger_grile.assert_awaited_once_with("2026-08", 214)
-    trigger_campaigns.assert_awaited_once_with(
-        "2026-08",
-        requested_by_sub="system:sales-promotion",
-        reason="sales_generation:214",
+
+
+def test_promotion_worker_has_only_transactional_outbox_post_commit_chain() -> None:
+    source = (ROOT / "backend/worker.py").read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    promote_worker = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.AsyncFunctionDef)
+        and node.name == "promote_sales_background"
     )
-    # Campaign publication owns the single ordered V2 trigger, after both
-    # sales and Campaigns projections are authoritative.
-    trigger_pilot_v2.assert_not_awaited()
+    names = {
+        node.func.id
+        for node in ast.walk(promote_worker)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+    }
+
+    assert "trigger_grile_check_after_import" not in names
+    assert "trigger_campaign_reporting_publication" not in names
+    assert "trigger_grile_pilot_v2_sync" not in names
 
 
 @pytest.mark.asyncio

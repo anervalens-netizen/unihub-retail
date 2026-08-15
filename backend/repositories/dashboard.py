@@ -7,24 +7,12 @@ from domain.reporting_sql import canonical_receipt_identity_sql
 from domain.reporting_sql import business_forecast_factor_ctes
 
 
-class DashboardRepository:
-    def __init__(self, pool: asyncpg.Pool):
-        self.pool = pool
-
-    async def fetch_summary(
-        self,
-        clauses: list[str],
-        params: list[Any],
-        cartela_clauses: list[str],
-        current_scope: bool = False,
-        *,
-        pool: Any | None = None,
-    ) -> asyncpg.Record | None:
-        active_pool = pool or self.pool
-        store_join = "JOIN stores s ON s.site_code = agg.site_code" if current_scope else ""
-        async with active_pool.acquire() as conn:
-            return await conn.fetchrow(
-                f"""
+def _summary_sql(
+    store_join: str,
+    clauses: list[str],
+    cartela_clauses: list[str],
+) -> str:
+    return f"""
                 WITH filtered_days AS (
                     SELECT agg.*
                     FROM reporting_agent_day agg
@@ -135,61 +123,17 @@ class DashboardRepository:
                 LEFT JOIN last_sale ls ON true
                 LEFT JOIN cartele_summary cs ON true
                 CROSS JOIN forecast_meta fm
-                """,
-                *params,
-            )
+                """
 
-    async def fetch_daily_sales(
-        self,
-        clauses: list[str],
-        params: list[Any],
-        current_scope: bool = False,
-        *,
-        pool: Any | None = None,
-    ) -> list[asyncpg.Record]:
-        active_pool = pool or self.pool
-        store_join = "JOIN stores s ON s.site_code = agg.site_code" if current_scope else ""
-        async with active_pool.acquire() as conn:
-            return await conn.fetch(
-                f"""
-                SELECT
-                    agg.sale_date,
-                    COALESCE(SUM(agg.total_sales), 0) AS total_sales,
-                    COALESCE(SUM(agg.total_quantity), 0)::INT AS total_quantity,
-                    COALESCE(SUM(agg.receipt_count), 0)::INT AS receipt_count
-                FROM reporting_agent_day agg
-                {store_join}
-                WHERE {" AND ".join(clauses)}
-                GROUP BY agg.sale_date
-                ORDER BY agg.sale_date ASC
-                """,
-                *params,
-            )
 
-    async def fetch_monthly_history(
-        self,
-        sales_clauses: list[str],
-        params: list[Any],
-        current_scope: bool = False,
-        *,
-        pool: Any | None = None,
-    ) -> list[asyncpg.Record]:
-        active_pool = pool or self.pool
-        store_join = "JOIN stores s ON s.site_code = agg.site_code" if current_scope else ""
-        return_receipt_identity = canonical_receipt_identity_sql("st")
-        target_store_clauses = [
-            clause.replace("agg.", "s.").replace("s.agent", "agg.agent")
-            for clause in sales_clauses
-            if ".agent" not in clause
-        ]
-        return_store_clauses = [
-            clause.replace("agg.", "st.") if "agent" in clause else clause.replace("agg.", "s.")
-            for clause in sales_clauses
-            if "import_month" not in clause
-        ]
-        async with active_pool.acquire() as conn:
-            return await conn.fetch(
-                f"""
+def _monthly_history_sql(
+    store_join: str,
+    sales_clauses: list[str],
+    target_store_clauses: list[str],
+    return_store_clauses: list[str],
+    return_receipt_identity: str,
+) -> str:
+    return f"""
                 WITH recent_months AS (
                     SELECT TO_CHAR(m, 'YYYY-MM') AS import_month
                     FROM GENERATE_SERIES(
@@ -289,7 +233,88 @@ class DashboardRepository:
                 LEFT JOIN target_summary ts ON ts.month = rm.import_month
                 LEFT JOIN return_summary rs ON rs.month = rm.import_month
                 ORDER BY rm.import_month ASC
+                """
+
+
+
+class DashboardRepository:
+    def __init__(self, pool: asyncpg.Pool):
+        self.pool = pool
+
+    async def fetch_summary(
+        self,
+        clauses: list[str],
+        params: list[Any],
+        cartela_clauses: list[str],
+        current_scope: bool = False,
+        *,
+        pool: Any | None = None,
+    ) -> asyncpg.Record | None:
+        active_pool = pool or self.pool
+        store_join = "JOIN stores s ON s.site_code = agg.site_code" if current_scope else ""
+        async with active_pool.acquire() as conn:
+            return await conn.fetchrow(
+                _summary_sql(store_join, clauses, cartela_clauses),
+                *params,
+            )
+
+    async def fetch_daily_sales(
+        self,
+        clauses: list[str],
+        params: list[Any],
+        current_scope: bool = False,
+        *,
+        pool: Any | None = None,
+    ) -> list[asyncpg.Record]:
+        active_pool = pool or self.pool
+        store_join = "JOIN stores s ON s.site_code = agg.site_code" if current_scope else ""
+        async with active_pool.acquire() as conn:
+            return await conn.fetch(
+                f"""
+                SELECT
+                    agg.sale_date,
+                    COALESCE(SUM(agg.total_sales), 0) AS total_sales,
+                    COALESCE(SUM(agg.total_quantity), 0)::INT AS total_quantity,
+                    COALESCE(SUM(agg.receipt_count), 0)::INT AS receipt_count
+                FROM reporting_agent_day agg
+                {store_join}
+                WHERE {" AND ".join(clauses)}
+                GROUP BY agg.sale_date
+                ORDER BY agg.sale_date ASC
                 """,
+                *params,
+            )
+
+    async def fetch_monthly_history(
+        self,
+        sales_clauses: list[str],
+        params: list[Any],
+        current_scope: bool = False,
+        *,
+        pool: Any | None = None,
+    ) -> list[asyncpg.Record]:
+        active_pool = pool or self.pool
+        store_join = "JOIN stores s ON s.site_code = agg.site_code" if current_scope else ""
+        return_receipt_identity = canonical_receipt_identity_sql("st")
+        target_store_clauses = [
+            clause.replace("agg.", "s.").replace("s.agent", "agg.agent")
+            for clause in sales_clauses
+            if ".agent" not in clause
+        ]
+        return_store_clauses = [
+            clause.replace("agg.", "st.") if "agent" in clause else clause.replace("agg.", "s.")
+            for clause in sales_clauses
+            if "import_month" not in clause
+        ]
+        async with active_pool.acquire() as conn:
+            return await conn.fetch(
+                _monthly_history_sql(
+                    store_join,
+                    sales_clauses,
+                    target_store_clauses,
+                    return_store_clauses,
+                    return_receipt_identity,
+                ),
                 *params,
             )
 

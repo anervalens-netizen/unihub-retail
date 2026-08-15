@@ -19,6 +19,7 @@ import {
 } from 'recharts';
 import type { CampaignsPromotionsResponse } from '../api/generated/runtime-types';
 import { formatCurrency, formatInt } from '../lib/formatters';
+import type { ExportColumn } from '../lib/tableExport';
 import { ExportTableButton } from './ExportTableButton';
 import { IncentiveQualificationSummary } from './IncentiveQualificationSummary';
 
@@ -110,6 +111,27 @@ function KpiCard({
   );
 }
 
+type IncentiveCategory = CampaignsPromotionsResponse['incentive_category_breakdown'][number];
+
+const CATEGORY_EXPORT_COLUMNS: ExportColumn<IncentiveCategory>[] = [
+  { header: 'Categorie', value: (row) => row.label },
+  { header: 'Cantitate calificata', value: (row) => row.qualified_qty, format: 'integer' },
+  { header: 'Cantitate totala', value: (row) => row.qty, format: 'integer' },
+  { header: 'Incentive calculat', value: (row) => row.value, format: 'currency' },
+  { header: 'Incentive total', value: (row) => row.potential, format: 'currency' },
+];
+
+function IncentiveKpis({ promoData }: { promoData: CampaignsPromotionsResponse | null }) {
+  return (
+    <div className="grid grid-cols-4 gap-3">
+      <KpiCard icon={<Tag size={16} />} label="Unități vândute" value={promoData ? formatInt(promoData.incentive_sold_qty) : '—'} tone="bg-indigo-50 text-indigo-600 dark:bg-indigo-950/50 dark:text-indigo-300" />
+      <KpiCard icon={<BadgePercent size={16} />} label="Eligibile după promo" value={promoData?.incentive_qty != null ? formatInt(promoData.incentive_qty) : '—'} tone="bg-emerald-50 text-emerald-600 dark:bg-emerald-950/50 dark:text-emerald-300" />
+      <KpiCard icon={<Building2 size={16} />} label="În magazine calificate" value={promoData?.incentive_qualified_qty != null ? formatInt(promoData.incentive_qualified_qty) : '—'} tone="bg-violet-50 text-violet-600 dark:bg-violet-950/50 dark:text-violet-300" />
+      <KpiCard icon={<Gift size={16} />} label="Incentive calculat" value={promoData?.incentive_value != null ? formatCurrency(promoData.incentive_value) : '—'} tone="bg-amber-50 text-amber-600 dark:bg-amber-950/50 dark:text-amber-300" />
+    </div>
+  );
+}
+
 export function IncentiveDesktopDashboard({
   promoData,
   month,
@@ -121,41 +143,10 @@ export function IncentiveDesktopDashboard({
   const categories = [...(promoData?.incentive_category_breakdown ?? [])]
     .sort((left, right) => right.qty - left.qty || left.label.localeCompare(right.label, 'ro'));
   const tiers = promoData?.incentive_categories ?? [];
-  const chartRows = categories.map((row) => ({
-    name: row.label,
-    Calificate: row.qualified_qty,
-    Total: row.qty,
-  }));
-
+  const chartRows = categories.map((row) => ({ name: row.label, Calificate: row.qualified_qty, Total: row.qty }));
   return (
     <div className="hidden space-y-3 lg:block">
-      <div className="grid grid-cols-4 gap-3">
-        <KpiCard
-          icon={<Tag size={16} />}
-          label="Unități vândute"
-          value={promoData ? formatInt(promoData.incentive_sold_qty) : '—'}
-          tone="bg-indigo-50 text-indigo-600 dark:bg-indigo-950/50 dark:text-indigo-300"
-        />
-        <KpiCard
-          icon={<BadgePercent size={16} />}
-          label="Eligibile după promo"
-          value={promoData?.incentive_qty != null ? formatInt(promoData.incentive_qty) : '—'}
-          tone="bg-emerald-50 text-emerald-600 dark:bg-emerald-950/50 dark:text-emerald-300"
-        />
-        <KpiCard
-          icon={<Building2 size={16} />}
-          label="În magazine calificate"
-          value={promoData?.incentive_qualified_qty != null ? formatInt(promoData.incentive_qualified_qty) : '—'}
-          tone="bg-violet-50 text-violet-600 dark:bg-violet-950/50 dark:text-violet-300"
-        />
-        <KpiCard
-          icon={<Gift size={16} />}
-          label="Incentive calculat"
-          value={promoData?.incentive_value != null ? formatCurrency(promoData.incentive_value) : '—'}
-          tone="bg-amber-50 text-amber-600 dark:bg-amber-950/50 dark:text-amber-300"
-        />
-      </div>
-
+      <IncentiveKpis promoData={promoData} />
       <div className="grid gap-3 lg:grid-cols-2 xl:grid-cols-12">
         <section className="min-w-0 rounded-2xl border border-slate-200/80 bg-white/90 p-4 shadow-sm lg:col-span-2 xl:col-span-6 dark:border-slate-800 dark:bg-slate-900/80">
           <div className="mb-2 flex items-start justify-between gap-3">
@@ -171,13 +162,7 @@ export function IncentiveDesktopDashboard({
                 filename={'focus-incentive-categorii-' + month}
                 sheetName="Categorii incentive"
                 rows={categories}
-                columns={[
-                  { header: 'Categorie', value: (row) => row.label },
-                  { header: 'Cantitate calificata', value: (row) => row.qualified_qty, format: 'integer' },
-                  { header: 'Cantitate totala', value: (row) => row.qty, format: 'integer' },
-                  { header: 'Incentive calculat', value: (row) => row.value, format: 'currency' },
-                  { header: 'Incentive total', value: (row) => row.potential, format: 'currency' },
-                ]}
+                columns={CATEGORY_EXPORT_COLUMNS}
               />
             )}
           </div>
@@ -201,7 +186,6 @@ export function IncentiveDesktopDashboard({
             </div>
           )}
         </section>
-
         <section className="min-w-0 rounded-2xl border border-indigo-100 bg-indigo-50/40 p-4 shadow-sm xl:col-span-4 dark:border-indigo-900/50 dark:bg-indigo-950/20">
           <div className="mb-3 flex items-center justify-between gap-2">
             <div className="flex items-center gap-2 text-indigo-700 dark:text-indigo-300">
@@ -229,9 +213,7 @@ export function IncentiveDesktopDashboard({
                     <div className="text-[9px] font-bold uppercase tracking-wide text-slate-400">Valoare / unitate eligibilă</div>
                     <div className="mt-0.5 text-[11px] font-black">{period.reward_values.map((value) => formatInt(value) + ' RON').join(' · ')}</div>
                   </div>
-                  <p className="mt-2 text-[10px] leading-relaxed text-slate-500 dark:text-slate-400">
-                    Se aplică valoarea produsului activă la data vânzării, după excluderea unităților promo. La 90–99,99% din target se acordă 50%; de la 100%, integral.
-                  </p>
+                  <p className="mt-2 text-[10px] leading-relaxed text-slate-500 dark:text-slate-400">Se aplică valoarea produsului activă la data vânzării, după excluderea unităților promo. La 90–99,99% din target se acordă 50%; de la 100%, integral.</p>
                 </div>
               </div>
             )) : (
@@ -242,7 +224,6 @@ export function IncentiveDesktopDashboard({
           </div>
           <IncentiveQualificationSummary promoData={promoData} className="mt-3" />
         </section>
-
         <aside className="min-w-0 rounded-2xl border border-slate-200/80 bg-slate-50/90 p-4 shadow-sm xl:col-span-2 dark:border-slate-800 dark:bg-slate-900/70">
           <div className="flex items-center gap-2 text-slate-700 dark:text-slate-200">
             <CalendarDays size={15} />

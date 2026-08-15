@@ -9,7 +9,11 @@ from pathlib import Path
 import pytest
 from openpyxl import Workbook
 
-from services.dashboard_specials import _generated_config_path, validate_special_cards_config
+from services.dashboard_specials import (
+    _generated_config_path,
+    _promotion_products_cache,
+    validate_special_cards_config,
+)
 from services.promo_copurchase import load_promo_actual_units
 import services.promo_generation_migration as migration_module
 from services.promo_generation_migration import (
@@ -27,6 +31,57 @@ def _workbook(site: str, code: str, quantity: int, *, sheet_name: str = "Accesor
     stream = BytesIO()
     workbook.save(stream)
     return stream.getvalue()
+
+
+def _rule_master_workbook() -> bytes:
+    workbook = Workbook()
+    trigger = workbook.active
+    trigger.title = "Produse trigger"
+    trigger.append(["Cod", "Denumire"])
+    trigger.append(["TRIGGER-1", "Produs trigger"])
+    discounted = workbook.create_sheet("Produse discount")
+    discounted.append(["Cod", "Denumire"])
+    discounted.append(["DISCOUNT-1", "Produs discount"])
+    stream = BytesIO()
+    workbook.save(stream)
+    return stream.getvalue()
+
+
+def _add_external_rule_master_to_v1(data_dir: Path, pointer_path: Path, tmp_path: Path) -> Path:
+    pointer = json.loads(pointer_path.read_text())
+    config_path = data_dir / "promo_generations" / pointer["config_file"]
+    config = json.loads(config_path.read_text())
+    external_rule_master = tmp_path / "private-rules" / "rule-master.xlsx"
+    external_rule_master.parent.mkdir()
+    external_rule_master.write_bytes(_rule_master_workbook())
+    config["promotions"].append(
+        {
+            "key": "external-rule",
+            "rule_type": "trigger_discounted",
+            "source_file": str(external_rule_master),
+            "trigger_sheet": "Produse trigger",
+            "discounted_sheet": "Produse discount",
+            "start_date": "2026-10-01",
+            "end_date": "2026-10-31",
+        }
+    )
+    config_bytes = (json.dumps(config, sort_keys=True, separators=(",", ":")) + "\n").encode()
+    config_path.write_bytes(config_bytes)
+    pointer["config_sha256"] = hashlib.sha256(config_bytes).hexdigest()
+    pointer["material_sha256"] = validate_special_cards_config(config)[1]
+    pointer_path.write_bytes(
+        (json.dumps(pointer, sort_keys=True, separators=(",", ":")) + "\n").encode()
+    )
+    return external_rule_master
+
+
+def _downgrade_pointer_to_pre_rule_manifest_v2(pointer_path: Path) -> None:
+    pointer = json.loads(pointer_path.read_text())
+    pointer.pop("rule_sources", None)
+    pointer.pop("rule_sources_sha256", None)
+    pointer_path.write_bytes(
+        (json.dumps(pointer, sort_keys=True, separators=(",", ":")) + "\n").encode()
+    )
 
 
 def _legacy_generation(tmp_path: Path, *, tamper_source: bool = False) -> tuple[Path, Path]:
@@ -219,3 +274,130 @@ def test_migration_rechecks_pointer_before_atomic_switch(
         migrate_legacy_promo_generation(data_dir=data_dir, apply=True)
 
     assert pointer_path.read_bytes() == b'{"generation_id":"changed"}\n'
+
+
+def test_migration_v1_owns_external_rule_master_in_first_atomic_switch(
+    tmp_path: Path,
+) -> None:
+    data_dir, pointer_path = _legacy_generation(tmp_path)
+    external_rule_master = _add_external_rule_master_to_v1(data_dir, pointer_path, tmp_path)
+    legacy_pointer = pointer_path.read_bytes()
+
+    migrated = migrate_legacy_promo_generation(data_dir=data_dir, apply=True)
+
+    assert migrated.status == "migrated"
+    assert pointer_path.read_bytes() != legacy_pointer
+    pointer = json.loads(pointer_path.read_text())
+    assert pointer["previous_generation_id"] == "1" * 32
+    assert len(pointer["rule_sources"]) == 1
+    config_path = _generated_config_path(data_dir)
+    assert config_path is not None
+    config = json.loads(config_path.read_text())
+    rule = next(item for item in config["promotions"] if item["key"] == "external-rule")
+    owned_source = Path(rule["source_file"])
+    assert owned_source.parent.resolve() == config_path.parent.resolve()
+    assert owned_source.is_file()
+    assert not owned_source.is_symlink()
+    assert rule["source_sha256"] == hashlib.sha256(owned_source.read_bytes()).hexdigest()
+
+    external_rule_master.unlink()
+    _promotion_products_cache.clear()
+    validate_special_cards_config(config)
+    pointer_after_migration = pointer_path.read_bytes()
+    retry = migrate_legacy_promo_generation(data_dir=data_dir, apply=True)
+    assert retry.status == "already_v2"
+    assert pointer_path.read_bytes() == pointer_after_migration
+
+
+def test_migration_v1_rule_ownership_fault_preserves_active_pointer(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    data_dir, pointer_path = _legacy_generation(tmp_path)
+    _add_external_rule_master_to_v1(data_dir, pointer_path, tmp_path)
+    pointer_before = pointer_path.read_bytes()
+    original_write = migration_module._write_durable_private_file
+
+    def fail_owned_rule(path: Path, content: bytes) -> None:
+        if path.name.startswith("promo_rule-"):
+            raise OSError("owned rule publication fault")
+        original_write(path, content)
+
+    monkeypatch.setattr(
+        migration_module,
+        "_write_durable_private_file",
+        fail_owned_rule,
+    )
+
+    with pytest.raises(OSError, match="owned rule publication fault"):
+        migrate_legacy_promo_generation(data_dir=data_dir, apply=True)
+
+    assert pointer_path.read_bytes() == pointer_before
+    assert not list((data_dir / "promo_generations").glob(".staging-*"))
+
+
+def test_migration_upgrades_active_unowned_v2_atomically_and_idempotently(
+    tmp_path: Path,
+) -> None:
+    data_dir, pointer_path = _legacy_generation(tmp_path)
+    migrate_legacy_promo_generation(data_dir=data_dir, apply=True)
+    external_rule_master = _add_external_rule_master_to_v1(
+        data_dir, pointer_path, tmp_path
+    )
+    _downgrade_pointer_to_pre_rule_manifest_v2(pointer_path)
+    unowned_pointer = pointer_path.read_bytes()
+    unowned_generation_id = json.loads(unowned_pointer)["generation_id"]
+
+    upgraded = migrate_legacy_promo_generation(data_dir=data_dir, apply=True)
+
+    assert upgraded.status == "migrated"
+    assert pointer_path.read_bytes() != unowned_pointer
+    pointer = json.loads(pointer_path.read_text())
+    assert pointer["previous_generation_id"] == unowned_generation_id
+    assert len(pointer["rule_sources"]) == 1
+    config_path = _generated_config_path(data_dir)
+    assert config_path is not None
+    config = json.loads(config_path.read_text())
+    rule = next(item for item in config["promotions"] if item["key"] == "external-rule")
+    owned_source = Path(rule["source_file"])
+    assert owned_source.parent.resolve() == config_path.parent.resolve()
+    assert owned_source.is_file() and not owned_source.is_symlink()
+    assert rule["source_sha256"] == hashlib.sha256(owned_source.read_bytes()).hexdigest()
+    external_rule_master.unlink()
+    _promotion_products_cache.clear()
+    validate_special_cards_config(config)
+    pointer_after_upgrade = pointer_path.read_bytes()
+    retry = migrate_legacy_promo_generation(data_dir=data_dir, apply=True)
+    assert retry.status == "already_v2"
+    assert pointer_path.read_bytes() == pointer_after_upgrade
+
+
+def test_migration_unowned_v2_upgrade_fault_preserves_active_pointer(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    data_dir, pointer_path = _legacy_generation(tmp_path)
+    migrate_legacy_promo_generation(data_dir=data_dir, apply=True)
+    _add_external_rule_master_to_v1(data_dir, pointer_path, tmp_path)
+    _downgrade_pointer_to_pre_rule_manifest_v2(pointer_path)
+    pointer_before = pointer_path.read_bytes()
+    original_write = migration_module._write_durable_private_file
+
+    def fail_successor_config(path: Path, content: bytes) -> None:
+        if path.name == "hub_specials.json" and path.parent.name.startswith(
+            ".staging-"
+        ):
+            raise OSError("successor publication fault")
+        original_write(path, content)
+
+    monkeypatch.setattr(
+        migration_module,
+        "_write_durable_private_file",
+        fail_successor_config,
+    )
+
+    with pytest.raises(OSError, match="successor publication fault"):
+        migrate_legacy_promo_generation(data_dir=data_dir, apply=True)
+
+    assert pointer_path.read_bytes() == pointer_before
+    assert not list((data_dir / "promo_generations").glob(".staging-*"))

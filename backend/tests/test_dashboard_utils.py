@@ -153,6 +153,8 @@ def test_generated_promo_config_rejects_tampered_actuals(tmp_path: Path) -> None
                 "sha256": hashlib.sha256(b"approved").hexdigest(),
             }
         ],
+        "rule_sources": [],
+        "rule_sources_sha256": '95b336f59c2f44fcc25c0dac223db88e4de5e2c0869d62974595ba7cb828171a',  # noqa: S105,S106 -- synthetic test fixture, not a credential  # pragma: allowlist secret  # pragma: allowlist secret
     }
     (generation_root / "current.json").write_text(
         json.dumps(pointer),

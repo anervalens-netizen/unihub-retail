@@ -8,6 +8,10 @@ import httpx
 from domain.http_endpoints import validated_http_endpoint
 
 
+class ForecastTimeoutError(RuntimeError):
+    """The only transport failure eligible for explicit seasonal fallback."""
+
+
 def post_forecast(
     api_url: str,
     api_key: str,
@@ -29,5 +33,7 @@ def post_forecast(
         raise RuntimeError(
             f"TimesFM HTTP {exc.response.status_code}: {exc.response.text}"
         ) from exc
+    except httpx.TimeoutException as exc:
+        raise ForecastTimeoutError("TimesFM API request timed out") from exc
     except httpx.HTTPError as exc:
         raise RuntimeError(f"TimesFM API request failed: {exc}") from exc

@@ -26,7 +26,26 @@ class ErpReconciliationRepository:
 
     async def fetch_reference(self, import_month: str, cutoff_date: date) -> dict[str, Any]:
         async with self.pool.acquire() as conn:
-            snapshot = await conn.fetchrow(
+            snapshot = await _fetch_snapshot(conn, import_month)
+            stores = await _fetch_stores(conn, import_month, cutoff_date)
+            agents = await _fetch_agents(conn, import_month, cutoff_date)
+            receipt_rows = await _fetch_receipts(conn, import_month, cutoff_date)
+            focus_rows = await _fetch_focus(conn, import_month, cutoff_date)
+            category_rows = await _fetch_categories(conn, import_month, cutoff_date)
+            retail_cutoff_date = await _fetch_cutoff(conn, import_month)
+        return {
+            "snapshot": snapshot,
+            "stores": stores,
+            "agents": agents,
+            "receipt_rows": receipt_rows,
+            "focus_rows": focus_rows,
+            "category_rows": category_rows,
+            "retail_cutoff_date": retail_cutoff_date,
+        }
+
+
+async def _fetch_snapshot(conn: asyncpg.Connection, import_month: str) -> asyncpg.Record | None:
+    return await conn.fetchrow(
                 """
                 SELECT id, import_month, filename, created_at
                 FROM import_snapshots
@@ -36,7 +55,14 @@ class ErpReconciliationRepository:
                 """,
                 import_month,
             )
-            stores = await conn.fetch(
+
+
+async def _fetch_stores(
+    conn: asyncpg.Connection,
+    import_month: str,
+    cutoff_date: date,
+) -> list[asyncpg.Record]:
+    return await conn.fetch(
                 """
                 SELECT
                     rad.site_code,
@@ -63,7 +89,14 @@ class ErpReconciliationRepository:
                 import_month,
                 cutoff_date,
             )
-            agents = await conn.fetch(
+
+
+async def _fetch_agents(
+    conn: asyncpg.Connection,
+    import_month: str,
+    cutoff_date: date,
+) -> list[asyncpg.Record]:
+    return await conn.fetch(
                 """
                 SELECT
                     rad.site_code,
@@ -86,7 +119,14 @@ class ErpReconciliationRepository:
                 import_month,
                 cutoff_date,
             )
-            receipt_rows = await conn.fetch(
+
+
+async def _fetch_receipts(
+    conn: asyncpg.Connection,
+    import_month: str,
+    cutoff_date: date,
+) -> list[asyncpg.Record]:
+    return await conn.fetch(
                 """
                 WITH receipts AS (
                     SELECT
@@ -117,7 +157,14 @@ class ErpReconciliationRepository:
                 import_month,
                 cutoff_date,
             )
-            focus_rows = await conn.fetch(
+
+
+async def _fetch_focus(
+    conn: asyncpg.Connection,
+    import_month: str,
+    cutoff_date: date,
+) -> list[asyncpg.Record]:
+    return await conn.fetch(
                 """
                 SELECT
                     COALESCE(
@@ -143,7 +190,14 @@ class ErpReconciliationRepository:
                 import_month,
                 cutoff_date,
             )
-            category_rows = await conn.fetch(
+
+
+async def _fetch_categories(
+    conn: asyncpg.Connection,
+    import_month: str,
+    cutoff_date: date,
+) -> list[asyncpg.Record]:
+    return await conn.fetch(
                 """
                 SELECT
                     st.category,
@@ -161,7 +215,10 @@ class ErpReconciliationRepository:
                 import_month,
                 cutoff_date,
             )
-            retail_cutoff_date = await conn.fetchval(
+
+
+async def _fetch_cutoff(conn: asyncpg.Connection, import_month: str) -> date | None:
+    return await conn.fetchval(
                 """
                 SELECT MAX(rad.sale_date)
                 FROM reporting_agent_day rad
@@ -172,12 +229,3 @@ class ErpReconciliationRepository:
                 """,
                 import_month,
             )
-        return {
-            "snapshot": snapshot,
-            "stores": stores,
-            "agents": agents,
-            "receipt_rows": receipt_rows,
-            "focus_rows": focus_rows,
-            "category_rows": category_rows,
-            "retail_cutoff_date": retail_cutoff_date,
-        }

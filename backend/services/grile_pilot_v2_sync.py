@@ -1,13 +1,13 @@
 """Authoritative Retail -> Google writer for the isolated Grile V2 pilot."""
 from __future__ import annotations
 import asyncio
+from contextlib import asynccontextmanager
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from decimal import Decimal
-import hashlib
 import logging
 from typing import Any, Iterable, Mapping
-from zoneinfo import ZoneInfo
 from services.forecast import get_forecast_factor
 from services.grile_monthly_google import GoogleSyncAdapter, call_with_backoff
 from services.grile_monthly_integrity import secure_write_json
@@ -16,22 +16,32 @@ from services.grile_pilot_v2 import (
     PILOT_V2_SNAPSHOT_SCHEMA_VERSION,
 )
 from services.grile_pilot_v2_registry import PILOT_V2_MONTH, PILOT_V2_SHEETS, PilotV2Sheet
+from services.grile_pilot_v2_runtime import (
+    _decimal,
+    _formula,
+    _google_value,
+    _rows,
+    _sales_source_revision,
+    _serial_day,
+    _serial_instant,
+    _source_head_lineage,
+)
 logger = logging.getLogger(__name__)
 _GOOGLE_TIMEOUT_SECONDS = 90.0
-_SHEETS_EPOCH = date(1899, 12, 30)
 _SUMMARY_SHEET_ID = 960600356
 _LISTS_SHEET_ID = 1137938031
 _DETAIL_SHEET_ID = 1874120601
 _DETAIL_FIRST_ROW_INDEX = 10
 _SALES_ROW_LIMIT = 4999
 _WRITER_SCHEMA_VERSION = 1
-_BUCHAREST_TZ = ZoneInfo("Europe/Bucharest")
 
 @dataclass(frozen=True)
 class PilotV2Source:
     month: str
     cutoff: date
+    sales_generation_hash: str
     sales_revision: int
+    source_revision: int
     campaign_revision: int
     forecast_factor: Decimal
     daily_rows: tuple[Mapping[str, Any], ...]
@@ -41,69 +51,41 @@ class PilotV2Source:
     incentive_rows: Mapping[tuple[str, str], Mapping[str, Any]]
 
 
-def _serial_day(value: date) -> int:
-    return (value - _SHEETS_EPOCH).days
-
-
-def _serial_instant(value: datetime) -> float:
-    local_value = value.astimezone(_BUCHAREST_TZ)
-    return (local_value.date() - _SHEETS_EPOCH).days + (
-        local_value.hour * 3600 + local_value.minute * 60 + local_value.second
-    ) / 86400
-
-
-def _decimal(value: Any) -> Decimal:
-    return Decimal(str(value or 0))
-
-
-def _sales_source_revision(
-    cutoff: date,
-    forecast_factor: Decimal,
-    *row_groups: Iterable[Mapping[str, Any]],
-) -> int:
-    """Return a Sheets-safe fingerprint of every non-Campaigns input."""
-
-    digest = hashlib.sha256()
-    for header_value in (cutoff, forecast_factor):
-        encoded = str(header_value).encode("utf-8")
-        digest.update(len(encoded).to_bytes(4, "big"))
-        digest.update(encoded)
-    for rows in row_groups:
-        for row in rows:
-            # asyncpg.Record iterates over values, unlike a normal Mapping.
-            # Use its explicit key view so dates and strings are never sorted
-            # against one another while producing the deterministic digest.
-            for key in sorted(row.keys()):
-                for cell_value in (key, row[key]):
-                    encoded = str(
-                        cell_value if cell_value is not None else ""
-                    ).encode("utf-8")
-                    digest.update(len(encoded).to_bytes(4, "big"))
-                    digest.update(encoded)
-    return int.from_bytes(digest.digest()[:6], "big")
-
-
-def _google_value(value: Any) -> dict[str, Any]:
-    if value is None:
-        return {}
-    if isinstance(value, bool):
-        return {"userEnteredValue": {"boolValue": value}}
-    if isinstance(value, date):
-        return {"userEnteredValue": {"numberValue": _serial_day(value)}}
-    if isinstance(value, (Decimal, int, float)):
-        return {"userEnteredValue": {"numberValue": float(value)}}
-    return {"userEnteredValue": {"stringValue": str(value)}}
-
-
 _RO_WEEKDAYS = ("Lun", "Mar", "Mie", "Joi", "Vin", "Sâm", "Dum")
 
 
-def _formula(value: str) -> dict[str, Any]:
-    return {"userEnteredValue": {"formulaValue": value}}
-
-
-def _rows(values: Iterable[Iterable[Any]]) -> list[dict[str, Any]]:
-    return [{"values": [_google_value(value) for value in row]} for row in values]
+@asynccontextmanager
+async def guard_sales_generation_lineage(
+    pool: Any,
+    *,
+    month: str,
+    generation_hash: str,
+    sales_revision: int,
+) -> AsyncIterator[str]:
+    """Fence campaign publication to one exact immutable sales head."""
+    async with pool.acquire() as conn, conn.transaction():
+        row = await conn.fetchrow(
+            """
+            SELECT snap.manifest_sha256 AS generation_hash, head.revision
+            FROM sales_generation_heads AS head
+            JOIN import_snapshots AS snap ON snap.id = head.snapshot_id
+            WHERE head.import_month = $1
+            FOR SHARE OF head
+            """,
+            month,
+        )
+        if row is None:
+            raise RuntimeError("Authoritative sales generation is unavailable")
+        current_hash = str(row["generation_hash"] or "")
+        current_revision = int(row["revision"] or 0)
+        if current_revision > sales_revision:
+            yield "superseded"
+            return
+        if current_revision < sales_revision:
+            raise RuntimeError("Requested sales generation is ahead of the head")
+        if current_hash != generation_hash:
+            raise RuntimeError("Sales generation hash differs at the same revision")
+        yield "current"
 
 
 async def load_pilot_v2_source(pool: Any, month: str) -> PilotV2Source:
@@ -112,38 +94,28 @@ async def load_pilot_v2_source(pool: Any, month: str) -> PilotV2Source:
     async with pool.acquire() as conn:
         async with conn.transaction(isolation="repeatable_read", readonly=True):
             cutoff_row = await conn.fetchrow(
-                """
-                SELECT cutoff_date
-                FROM reporting_sales_cutoff_v1
-                WHERE import_month = $1
-                """,
+                """SELECT cutoff_date FROM reporting_sales_cutoff_v1
+                   WHERE import_month = $1""",
+                month,
+            )
+            sales_head = await conn.fetchrow(
+                """SELECT generation_hash, revision FROM retail_outbox_events
+                   WHERE event_type = 'retail.sales_generation_promoted.v1'
+                     AND aggregate_type = 'sales_generation'
+                     AND aggregate_id = 'sales-' || $1
+                   ORDER BY aggregate_sequence DESC LIMIT 1""",
                 month,
             )
             campaign_head = await conn.fetchrow(
-                """
-                SELECT MIN(authority_head) AS authority_head,
+                """SELECT MIN(authority_head) AS authority_head,
                        COUNT(DISTINCT authority_head)::INT AS authority_count
                 FROM reporting_campaign_month_v3
-                WHERE period = $1
-                HAVING COUNT(*) > 0
-                """,
+                WHERE period = $1 HAVING COUNT(*) > 0""",
                 month,
             )
-            if cutoff_row is None or cutoff_row["cutoff_date"] is None:
-                raise RuntimeError("Authoritative sales cutoff is unavailable")
-            if campaign_head is None:
-                raise RuntimeError("Authoritative Campaigns projection is unavailable")
-            authority_head = str(campaign_head["authority_head"] or "")
-            if (
-                int(campaign_head["authority_count"] or 0) != 1
-                or not authority_head.startswith("campaign:")
-            ):
-                raise RuntimeError("Authoritative Campaigns revision is inconsistent")
-            try:
-                campaign_revision = int(authority_head.removeprefix("campaign:"))
-            except ValueError as exc:
-                raise RuntimeError("Authoritative Campaigns revision is invalid") from exc
-            cutoff = cutoff_row["cutoff_date"]
+            cutoff, sales_hash, sales_revision, campaign_revision = _source_head_lineage(
+                cutoff_row, sales_head, campaign_head
+            )
             daily_rows = await conn.fetch(
                 """
                 SELECT sale_date, site_code, agent, total_sales
@@ -194,21 +166,16 @@ async def load_pilot_v2_source(pool: Any, month: str) -> PilotV2Source:
                 """,
                 month,
             )
-            factor = Decimal(
-                str(await get_forecast_factor(conn, month, cutoff_date=cutoff))
-            )
-            sales_revision = _sales_source_revision(
-                cutoff,
-                factor,
-                daily_rows,
-                store_rows,
-                target_rows,
-                sim_rows,
+            factor = Decimal(str(await get_forecast_factor(conn, month, cutoff_date=cutoff)))
+            source_revision = _sales_source_revision(
+                cutoff, factor, daily_rows, store_rows, target_rows, sim_rows
             )
     return PilotV2Source(
         month=month,
         cutoff=cutoff,
+        sales_generation_hash=sales_hash,
         sales_revision=sales_revision,
+        source_revision=source_revision,
         campaign_revision=campaign_revision,
         forecast_factor=factor,
         daily_rows=tuple(dict(row) for row in daily_rows),
@@ -377,7 +344,9 @@ def _snapshot_payload(source: PilotV2Source) -> dict[str, Any]:
         "schema_version": PILOT_V2_SNAPSHOT_SCHEMA_VERSION,
         "month": source.month,
         "cutoff": source.cutoff.isoformat(),
+        "sales_generation_hash": source.sales_generation_hash,
         "sales_revision": source.sales_revision,
+        "source_revision": source.source_revision,
         "campaign_revision": source.campaign_revision,
         "stores": stores,
     }
@@ -505,45 +474,25 @@ def _batch_requests(source: PilotV2Source, sheet: PilotV2Sheet) -> list[dict[str
     base_config_rows, extended_config_rows = _config_rows(source, sheet, payload)
     return [
         _range_update(
-            sheet_id=_LISTS_SHEET_ID,
-            start_row=1,
-            end_row=5000,
-            start_column=0,
-            end_column=4,
-            rows=_rows(all_sales_rows),
+            sheet_id=_LISTS_SHEET_ID, start_row=1, end_row=5000,
+            start_column=0, end_column=4, rows=_rows(all_sales_rows),
         ),
         _range_update(
-            sheet_id=_LISTS_SHEET_ID,
-            start_row=1,
-            end_row=100,
-            start_column=6,
-            end_column=11,
-            rows=_rows(store_rows),
+            sheet_id=_LISTS_SHEET_ID, start_row=1, end_row=100,
+            start_column=6, end_column=11, rows=_rows(store_rows),
         ),
         _range_update(
-            sheet_id=_LISTS_SHEET_ID,
-            start_row=1,
-            end_row=11,
-            start_column=13,
-            end_column=15,
-            rows=base_config_rows,
+            sheet_id=_LISTS_SHEET_ID, start_row=1, end_row=11,
+            start_column=13, end_column=15, rows=base_config_rows,
         ),
         _range_update(
-            sheet_id=_LISTS_SHEET_ID,
-            start_row=13,
-            end_row=26,
-            start_column=13,
-            end_column=15,
-            rows=extended_config_rows,
+            sheet_id=_LISTS_SHEET_ID, start_row=13, end_row=26,
+            start_column=13, end_column=15, rows=extended_config_rows,
         ),
         _summary_update(payload, target),
         _range_update(
-            sheet_id=_DETAIL_SHEET_ID,
-            start_row=_DETAIL_FIRST_ROW_INDEX,
-            end_row=120,
-            start_column=0,
-            end_column=7,
-            rows=_rows(daily_detail),
+            sheet_id=_DETAIL_SHEET_ID, start_row=_DETAIL_FIRST_ROW_INDEX, end_row=120,
+            start_column=0, end_column=7, rows=_rows(daily_detail),
         ),
     ]
 
@@ -552,21 +501,50 @@ async def sync_pilot_v2_sheets(
     pool: Any,
     adapter: GoogleSyncAdapter,
     *,
+    generation_hash: str,
+    sales_revision: int,
+    campaign_revision: int,
+    contest_revision: int,
     month: str = PILOT_V2_MONTH,
     force: bool = False,
 ) -> dict[str, Any]:
     source = await load_pilot_v2_source(pool, month)
+    lineage = {
+        "sales_generation_hash": generation_hash,
+        "sales_generation_revision": sales_revision,
+        "campaign_revision": campaign_revision,
+        "contest_revision": contest_revision,
+    }
+    if source.sales_revision > sales_revision:
+        return {
+            "status": "superseded",
+            "month": month,
+            **lineage,
+            "current_sales_generation_hash": source.sales_generation_hash,
+            "current_sales_generation_revision": source.sales_revision,
+            "synced": [],
+            "skipped": [],
+            "failed": [],
+        }
+    if source.sales_revision < sales_revision:
+        raise RuntimeError("Requested Grile V2 sales generation is ahead of the head")
+    if source.sales_generation_hash != generation_hash:
+        raise RuntimeError("Grile V2 sales generation hash differs at the same revision")
+    if source.campaign_revision != campaign_revision:
+        raise RuntimeError("Grile V2 Campaigns lineage differs from the requested revision")
     synced: list[str] = []
     skipped: list[str] = []
     failed: list[str] = []
     for sheet in PILOT_V2_SHEETS:
         try:
-            sales_revision, campaign_revision, has_detail = await _read_sheet_state(adapter, sheet)
+            sheet_sales_revision, sheet_campaign_revision, has_detail = (
+                await _read_sheet_state(adapter, sheet)
+            )
             if (
                 not force
                 and has_detail
-                and sales_revision == source.sales_revision
-                and campaign_revision == source.campaign_revision
+                and sheet_sales_revision == source.sales_revision
+                and sheet_campaign_revision == source.campaign_revision
             ):
                 skipped.append(sheet.site_code)
                 continue
@@ -586,9 +564,11 @@ async def sync_pilot_v2_sheets(
             failed.append(sheet.site_code)
             logger.exception("Grile V2 sync failed site=%s", sheet.site_code)
     result = {
+        "status": "completed",
         "month": month,
+        **lineage,
         "sales_revision": source.sales_revision,
-        "campaign_revision": source.campaign_revision,
+        "source_revision": source.source_revision,
         "cutoff": source.cutoff.isoformat(),
         "synced": synced,
         "skipped": skipped,

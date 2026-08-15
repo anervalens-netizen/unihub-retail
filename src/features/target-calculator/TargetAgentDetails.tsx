@@ -53,6 +53,42 @@ function SummaryCard({ label, value, detail, emphasis, grouped = false }: {
   );
 }
 
+function TargetStoreChart({ detail, mode, onModeChange }: { detail: TargetStoreDetail; mode: StoreChartMode; onModeChange: (mode: StoreChartMode) => void }) {
+  const best = detail.best_month;
+  const percentageMetric = mode === 'bon2acc' ? 'bon2acc_pct' : 'focus_pct';
+  const percentageLabel = mode === 'bon2acc' ? 'Bon2Acc' : 'Focus/Acc';
+  const chartTitle = mode === 'sales' ? 'Vanzari vs target - 16 luni' : `${percentageLabel} - 16 luni`;
+  return (
+    <div className="rounded-2xl border border-slate-200 p-4 dark:border-slate-800">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <div><h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100">{chartTitle}</h3><p className="text-xs text-slate-500">{mode === 'sales' ? `Media: ${formatCurrency(detail.avg_sales_16m)}${best ? ` · Varf: ${monthLabel(best.month)} (${formatCurrency(best.total_sales)})` : ''}` : 'Evolutie procentuala pe aceleasi 16 luni'}</p></div>
+        <div className="flex flex-wrap gap-1.5">{STORE_CHART_MODES.map((item) => <button key={item.mode} type="button" onClick={() => onModeChange(item.mode)} className={`rounded-full px-3 py-1.5 text-[11px] font-semibold transition-colors ${mode === item.mode ? 'bg-indigo-600 text-white shadow-sm' : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700'}`}>{item.label}</button>)}</div>
+      </div>
+      <div className="h-64"><ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
+        <ComposedChart data={detail.history} margin={{ top: 8, right: 8, left: -12, bottom: 0 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="rgba(100,116,139,0.16)" /><XAxis dataKey="month" tick={{ fill: '#94a3b8', fontSize: 10 }} tickFormatter={monthLabel} />
+          {mode === 'sales' ? <><YAxis tick={{ fill: '#94a3b8', fontSize: 10 }} tickFormatter={(value) => `${Math.round(Number(value) / 1000)}k`} /><Tooltip formatter={(value: unknown) => formatCurrency(Number(value))} /><Legend /><Bar dataKey="total_sales" name="Vanzari" fill="#4f46e5" radius={[4, 4, 0, 0]} /><Line type="monotone" dataKey="target_value" name="Target" stroke="#f59e0b" strokeWidth={2} dot={false} /></> : <><YAxis tick={{ fill: '#94a3b8', fontSize: 10 }} tickFormatter={(value) => `${Number(value).toFixed(0)}%`} /><Tooltip formatter={(value: unknown) => formatPercent(Number(value))} /><Legend /><Line type="monotone" dataKey={percentageMetric} name={percentageLabel} stroke={mode === 'bon2acc' ? '#10b981' : '#8b5cf6'} strokeWidth={2.5} dot={{ r: 3 }} connectNulls /></>}
+        </ComposedChart>
+      </ResponsiveContainer></div>
+    </div>
+  );
+}
+
+function TargetStoreStats({ detail }: { detail: TargetStoreDetail }) {
+  const latest = detail.latest;
+  return (
+    <div className="grid gap-3 sm:grid-cols-2">
+      <div className="rounded-2xl border border-slate-200 p-4 dark:border-slate-800"><h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100">KPI ultima luna</h3><div className="mt-3 space-y-2 text-xs">
+        <KpiRow label="Cantitate" value={(latest?.total_quantity ?? 0).toLocaleString('ro-RO')} /><KpiRow label="Cartele" value={(latest?.cartele_qty ?? 0).toLocaleString('ro-RO')} /><KpiRow label="Bon2Acc" value={formatPercent(latest?.bon2acc_pct ?? null)} /><KpiRow label="Focus/Acc" value={formatPercent(latest?.focus_pct ?? null)} /><KpiRow label="Zile cu vanzari" value={`${latest?.working_days ?? 0}`} /><KpiRow label="Target calculat" value={formatCurrency(detail.proposed_target)} /><KpiRow label="Final manager" value={formatOptionalCurrency(detail.final_target)} />
+      </div></div>
+      <div className="rounded-2xl border border-slate-200 p-4 dark:border-slate-800"><h3 className="flex items-center gap-2 text-sm font-semibold text-slate-800 dark:text-slate-100"><Users size={15} /> Pondere agenti</h3><div className="mt-3 space-y-3">
+        {detail.agents.length === 0 && <p className="text-xs text-slate-500">Nu exista agenti activi in luna cohortei.</p>}
+        {detail.agents.slice(0, 8).map((agent) => <div key={agent.agent}><div className="mb-1 flex items-center justify-between gap-2 text-xs"><span className="font-medium text-slate-700 dark:text-slate-200">{agent.agent}</span><span className="font-semibold text-indigo-600 dark:text-indigo-300">{formatPercent(agent.sales_share_pct)}</span></div><progress className="target-agent-share" max={100} value={Math.min(Math.max(agent.sales_share_pct, 0), 100)}>{formatPercent(agent.sales_share_pct)}</progress><div className="mt-1 flex justify-between text-[10px] text-slate-400"><span>{formatCurrency(agent.total_sales)}</span><span>{agent.active_months_16}/16 luni active</span></div></div>)}
+      </div></div>
+    </div>
+  );
+}
+
 export function TargetAgentDetails({ scenarioId, siteCode, onClose }: {
   scenarioId: number;
   siteCode: string | null;
@@ -81,13 +117,6 @@ export function TargetAgentDetails({ scenarioId, siteCode, onClose }: {
   if (!siteCode) return null;
 
   const latest = detail?.latest;
-  const best = detail?.best_month;
-  const percentageMetric = chartMode === 'bon2acc' ? 'bon2acc_pct' : 'focus_pct';
-  const percentageLabel = chartMode === 'bon2acc' ? 'Bon2Acc' : 'Focus/Acc';
-  const chartTitle = chartMode === 'sales'
-    ? 'Vanzari vs target - 16 luni'
-    : `${percentageLabel} - 16 luni`;
-
   return (
     <div
       ref={overlayRef}
@@ -128,111 +157,8 @@ export function TargetAgentDetails({ scenarioId, siteCode, onClose }: {
                 <SummaryCard label="Agenti activi" value={`${latest?.active_agents ?? 0}`} detail={`${detail.agents.length} in lista`} />
               </div>
 
-              <div className="rounded-2xl border border-slate-200 p-4 dark:border-slate-800">
-                <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                  <div>
-                    <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100">{chartTitle}</h3>
-                    <p className="text-xs text-slate-500">
-                      {chartMode === 'sales'
-                        ? `Media: ${formatCurrency(detail.avg_sales_16m)}${best ? ` · Varf: ${monthLabel(best.month)} (${formatCurrency(best.total_sales)})` : ''}`
-                        : 'Evolutie procentuala pe aceleasi 16 luni'}
-                    </p>
-                  </div>
-                  <div className="flex flex-wrap gap-1.5">
-                    {STORE_CHART_MODES.map((item) => (
-                      <button
-                        key={item.mode}
-                        type="button"
-                        onClick={() => setChartMode(item.mode)}
-                        className={`rounded-full px-3 py-1.5 text-[11px] font-semibold transition-colors ${
-                          chartMode === item.mode
-                            ? 'bg-indigo-600 text-white shadow-sm'
-                            : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700'
-                        }`}
-                      >
-                        {item.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <div className="h-64">
-                  {chartMode === 'sales' ? (
-                    <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
-                      <ComposedChart data={detail.history} margin={{ top: 8, right: 8, left: -12, bottom: 0 }}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="rgba(100,116,139,0.16)" />
-                        <XAxis dataKey="month" tick={{ fill: '#94a3b8', fontSize: 10 }} tickFormatter={monthLabel} />
-                        <YAxis tick={{ fill: '#94a3b8', fontSize: 10 }} tickFormatter={(value) => `${Math.round(Number(value) / 1000)}k`} />
-                        <Tooltip formatter={(value: unknown) => formatCurrency(Number(value))} />
-                        <Legend />
-                        <Bar dataKey="total_sales" name="Vanzari" fill="#4f46e5" radius={[4, 4, 0, 0]} />
-                        <Line type="monotone" dataKey="target_value" name="Target" stroke="#f59e0b" strokeWidth={2} dot={false} />
-                      </ComposedChart>
-                    </ResponsiveContainer>
-                  ) : (
-                    <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
-                      <ComposedChart data={detail.history} margin={{ top: 8, right: 8, left: -12, bottom: 0 }}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="rgba(100,116,139,0.16)" />
-                        <XAxis dataKey="month" tick={{ fill: '#94a3b8', fontSize: 10 }} tickFormatter={monthLabel} />
-                        <YAxis tick={{ fill: '#94a3b8', fontSize: 10 }} tickFormatter={(value) => `${Number(value).toFixed(0)}%`} />
-                        <Tooltip formatter={(value: unknown) => formatPercent(Number(value))} />
-                        <Legend />
-                        <Line
-                          type="monotone"
-                          dataKey={percentageMetric}
-                          name={percentageLabel}
-                          stroke={chartMode === 'bon2acc' ? '#10b981' : '#8b5cf6'}
-                          strokeWidth={2.5}
-                          dot={{ r: 3 }}
-                          connectNulls
-                        />
-                      </ComposedChart>
-                    </ResponsiveContainer>
-                  )}
-                </div>
-              </div>
-
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div className="rounded-2xl border border-slate-200 p-4 dark:border-slate-800">
-                  <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100">KPI ultima luna</h3>
-                  <div className="mt-3 space-y-2 text-xs">
-                    <KpiRow label="Cantitate" value={(latest?.total_quantity ?? 0).toLocaleString('ro-RO')} />
-                    <KpiRow label="Cartele" value={(latest?.cartele_qty ?? 0).toLocaleString('ro-RO')} />
-                    <KpiRow label="Bon2Acc" value={formatPercent(latest?.bon2acc_pct ?? null)} />
-                    <KpiRow label="Focus/Acc" value={formatPercent(latest?.focus_pct ?? null)} />
-                    <KpiRow label="Zile cu vanzari" value={`${latest?.working_days ?? 0}`} />
-                    <KpiRow label="Target calculat" value={formatCurrency(detail.proposed_target)} />
-                    <KpiRow label="Final manager" value={formatOptionalCurrency(detail.final_target)} />
-                  </div>
-                </div>
-
-                <div className="rounded-2xl border border-slate-200 p-4 dark:border-slate-800">
-                  <h3 className="flex items-center gap-2 text-sm font-semibold text-slate-800 dark:text-slate-100">
-                    <Users size={15} /> Pondere agenti
-                  </h3>
-                  <div className="mt-3 space-y-3">
-                    {detail.agents.length === 0 && <p className="text-xs text-slate-500">Nu exista agenti activi in luna cohortei.</p>}
-                    {detail.agents.slice(0, 8).map((agent) => (
-                      <div key={agent.agent}>
-                        <div className="mb-1 flex items-center justify-between gap-2 text-xs">
-                          <span className="font-medium text-slate-700 dark:text-slate-200">{agent.agent}</span>
-                          <span className="font-semibold text-indigo-600 dark:text-indigo-300">{formatPercent(agent.sales_share_pct)}</span>
-                        </div>
-                        <progress
-                          className="target-agent-share"
-                          max={100}
-                          value={Math.min(Math.max(agent.sales_share_pct, 0), 100)}
-                        >
-                          {formatPercent(agent.sales_share_pct)}
-                        </progress>
-                        <div className="mt-1 flex justify-between text-[10px] text-slate-400">
-                          <span>{formatCurrency(agent.total_sales)}</span>
-                          <span>{agent.active_months_16}/16 luni active</span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
+              <TargetStoreChart detail={detail} mode={chartMode} onModeChange={setChartMode} />
+              <TargetStoreStats detail={detail} />
             </div>
           )}
         </div>
@@ -250,5 +176,4 @@ function KpiRow({ label, value }: { label: string; value: string }) {
     </div>
   );
 }
-
 

@@ -152,6 +152,15 @@ cel observat la începutul validării. Un writer stale primește conflict și nu
 înlocuiește generația bună. Runtime-ul reverifică hashurile configului și ale
 fiecărei surse înainte de utilizare.
 
+La prima migrare `v1 -> v2`, masterele surselor de reguli sunt materializate și
+incluse prin hash în aceeași operație CAS care publică generația. O generație
+`v2` activă, dar încă neowned, este preluată atomic o singură dată; orice fault
+păstrează pointerul anterior și închide operația fail-closed.
+
+Publicarea rezultatului promo este legată de hashul și revizia generației Sales
+care a produs-o. Lanțul de publicare pornește din evenimentul outbox al acelei
+generații; un rezultat fără lineage Sales exact nu poate deveni curent.
+
 Până la cutoff, sursa POS cumulativă corectează Promo și excluderea Incentive;
 după cutoff, regula pe bonuri acoperă numai coada perioadei. Dacă o sursă
 configurată lipsește sau nu corespunde hashului, pointerul rămâne nemodificat,
@@ -253,6 +262,10 @@ pointerului curent. Pentru rollback:
 3. înlocuiește atomic numai `current.json` cu pointerul precedent;
 4. verifică generation ID, Focus, exporturile și health; nu șterge generația
    respinsă, deoarece rămâne evidence de audit.
+5. upgrade-ul de ownership v1→v2 (`upgrade_promo_generation`) nu este inversat
+   de rollbackul de pointer; runtime-ul pre-v2 trebuie să rămână fail-closed pe
+   pointer v2, iar revenirea la runtime pre-v2 cere downgrade explicit, nu doar
+   refacerea pointerului.
 
 ## Autoritatea snapshotului sales
 

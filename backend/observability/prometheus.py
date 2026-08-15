@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from collections.abc import Mapping
 from typing import Any
 
 from prometheus_client import CollectorRegistry, REGISTRY, generate_latest, multiprocess
@@ -39,7 +40,7 @@ def mark_current_process_dead() -> None:
         multiprocess.mark_process_dead(os.getpid())
 
 
-def canonical_handler(scope: dict[str, Any]) -> str:
+def canonical_handler(scope: Mapping[str, Any]) -> str:
     route = scope.get("route")
     route_path = getattr(route, "path", None)
     if isinstance(route_path, str) and route_path:

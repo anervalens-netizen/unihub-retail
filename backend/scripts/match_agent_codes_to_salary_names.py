@@ -300,18 +300,203 @@ async def _load_data(reporting_month: str | None) -> tuple[str, int, list[Any], 
     return latest_reporting, latest_salary_key, agents, salary_latest, salary_history, salary_global_history
 
 
+def _salary_indexes(salary_latest, salary_history, salary_global_history):
+    latest_by_store: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    history_by_store: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for row in salary_latest:
+        latest_by_store[row["site_code"]].append(dict(row))
+    for row in salary_history:
+        history_by_store[row["site_code"]].append(dict(row))
+    person_ids_by_name: dict[str, set[str]] = defaultdict(set)
+    for row in [*salary_latest, *salary_history, *salary_global_history]:
+        person_id = row.get("person_id")
+        if person_id:
+            person_ids_by_name[_norm(row["full_name"])].add(str(person_id))
+    return latest_by_store, history_by_store, person_ids_by_name
+
+
+def _rank_store_candidates(
+    agent_code: str,
+    site_code: str,
+    latest_by_store: dict[str, list[dict[str, Any]]],
+    history_by_store: dict[str, list[dict[str, Any]]],
+) -> list[tuple[float, str, dict[str, Any], str]]:
+    candidates: list[tuple[float, str, dict[str, Any], str]] = []
+    for salary_row in latest_by_store.get(site_code, []):
+        score, reason = _score_code_name(agent_code, salary_row["full_name"])
+        candidates.append((score, reason, salary_row, "latest_salary"))
+    if not candidates or max(item[0] for item in candidates) < 75:
+        for salary_row in history_by_store.get(site_code, []):
+            score, reason = _score_code_name(agent_code, salary_row["full_name"])
+            candidates.append((score - 20, f"history: {reason}", salary_row, "salary_history"))
+    candidates.sort(key=lambda item: item[0], reverse=True)
+    return candidates
+
+
+def _automatic_match(
+    candidates: list[tuple[float, str, dict[str, Any], str]],
+) -> dict[str, Any]:
+    state: dict[str, Any] = {
+        "matched_name": "", "person_id": None, "salary_company": "",
+        "salary_locatie": "", "reason": "", "second_candidate": "",
+        "score": "", "score_gap": "", "status": "no_salary_candidate",
+        "confidence": "none", "match_source": "auto", "note": "",
+    }
+    best = candidates[0] if candidates else None
+    second = candidates[1] if len(candidates) > 1 else None
+    if best is None:
+        return state
+    salary_row = best[2]
+    gap = best[0] - (second[0] if second else -999)
+    status, confidence = _classify(best[0], gap)
+    state.update({
+        "matched_name": salary_row["full_name"],
+        "person_id": salary_row.get("person_id"),
+        "salary_company": salary_row.get("company_name", ""),
+        "salary_locatie": salary_row.get("locatie", ""),
+        "reason": best[1],
+        "second_candidate": (
+            f"{second[2]['full_name']} ({second[0]:.0f})" if second else ""
+        ),
+        "score": round(best[0], 1),
+        "score_gap": round(gap, 1),
+        "status": status,
+        "confidence": confidence,
+    })
+    return state
+
+
+def _apply_manual_match(
+    state: dict[str, Any],
+    override: dict[str, str | None] | None,
+    person_ids_by_name: dict[str, set[str]],
+) -> None:
+    if override is None:
+        return
+    manual_name = override.get("salary_full_name")
+    matched_name = str(manual_name) if manual_name else ""
+    manual_person_ids = person_ids_by_name.get(_norm(matched_name), set())
+    person_id = next(iter(manual_person_ids)) if len(manual_person_ids) == 1 else None
+    status = "matched" if manual_name and person_id else "review" if manual_name else "unknown"
+    state.update({
+        "matched_name": matched_name,
+        "person_id": person_id,
+        "salary_company": "",
+        "salary_locatie": "",
+        "reason": "manual override",
+        "second_candidate": "",
+        "score": "",
+        "score_gap": "",
+        "status": status,
+        "confidence": str(
+            override.get("confidence") or ("high" if manual_name else "unknown")
+        ),
+        "match_source": "manual",
+        "note": str(override.get("note") or ""),
+    })
+
+
+def _global_candidate(
+    agent_code: str,
+    status: str,
+    salary_global_history,
+) -> tuple[float, str, dict[str, Any]] | None:
+    candidates: list[tuple[float, str, dict[str, Any]]] = []
+    if status not in {"matched", "unknown"}:
+        for salary_row in salary_global_history:
+            score, reason = _score_code_name(agent_code, salary_row["full_name"])
+            if score >= 100:
+                candidates.append((score, reason, dict(salary_row)))
+        candidates.sort(key=lambda item: item[0], reverse=True)
+    return candidates[0] if candidates else None
+
+
+def _output_row(
+    agent_row: Any,
+    state: dict[str, Any],
+    global_best: tuple[float, str, dict[str, Any]] | None,
+) -> dict[str, Any]:
+    return {
+        "site_code": agent_row["site_code"],
+        "magazin": agent_row["current_locatie"],
+        "firma": agent_row["firma"],
+        "regional": agent_row["regional"],
+        "asm": agent_row["asm"],
+        "agent_code": agent_row["agent"],
+        "total_sales_latest_reporting": float(agent_row["total_sales"]),
+        "receipt_count": agent_row["receipt_count"],
+        "working_days": agent_row["working_days"],
+        "matched_name": state["matched_name"],
+        "person_id": state["person_id"],
+        "salary_company": state["salary_company"],
+        "salary_locatie": state["salary_locatie"],
+        "confidence": state["confidence"],
+        "status": state["status"],
+        "match_source": state["match_source"],
+        "score": state["score"],
+        "score_gap": state["score_gap"],
+        "reason": state["reason"],
+        "note": state["note"],
+        "second_candidate": state["second_candidate"],
+        "global_candidate_name": global_best[2]["full_name"] if global_best else "",
+        "global_candidate_site_code": global_best[2]["site_code"] if global_best else "",
+        "global_candidate_magazin": global_best[2]["current_locatie"] if global_best else "",
+        "global_candidate_score": round(global_best[0], 1) if global_best else "",
+        "global_candidate_last_salary_key": global_best[2]["last_salary_key"] if global_best else "",
+        "global_candidate_reason": global_best[1] if global_best else "",
+    }
+
+
+def _build_output_rows(agents, salary_latest, salary_history, salary_global_history):
+    latest_by_store, history_by_store, person_ids = _salary_indexes(
+        salary_latest, salary_history, salary_global_history
+    )
+    rows: list[dict[str, Any]] = []
+    for agent_row in agents:
+        site_code, agent_code = agent_row["site_code"], agent_row["agent"]
+        state = _automatic_match(
+            _rank_store_candidates(
+                agent_code, site_code, latest_by_store, history_by_store
+            )
+        )
+        _apply_manual_match(
+            state, MANUAL_OVERRIDES.get((site_code, agent_code)), person_ids
+        )
+        global_best = _global_candidate(
+            agent_code, state["status"], salary_global_history
+        )
+        rows.append(_output_row(agent_row, state, global_best))
+    return rows
+
+
+def _write_matches(path: Path, rows: list[dict[str, Any]]) -> None:
+    with _open_private_csv(path) as handle:
+        writer = csv.DictWriter(handle, fieldnames=list(rows[0].keys()))
+        writer.writeheader()
+        writer.writerows(
+            [{key: csv_cell_value(value) for key, value in row.items()} for row in rows]
+        )
+
+
+def _print_summary(latest_reporting: str, latest_salary_key: int, rows) -> None:
+    summary = Counter(f"{row['status']}:{row['confidence']}" for row in rows)
+    print(f"reporting_month={latest_reporting}")
+    print(f"salary_month={latest_salary_key // 100}-{latest_salary_key % 100:02d}")
+    print(f"agent_codes={len(rows)}")
+    print(f"stores={len({row['site_code'] for row in rows})}")
+    for key, value in sorted(summary.items()):
+        print(f"{key}={value}")
+
+
 async def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--reporting-month", help="Implicit: ultima luna din reporting_agent_month")
     parser.add_argument(
-        "--output",
-        type=Path,
-        default=DEFAULT_OUTPUT,
+        "--output", type=Path, default=DEFAULT_OUTPUT,
         help="Fisier CSV privat generat; implicit in backend/outputs",
     )
     parser.add_argument(
-        "--apply-db",
-        action="store_true",
+        "--apply-db", action="store_true",
         help="Upsert maparile confirmate si necunoscute in agent_salary_links.",
     )
     parser.add_argument(
@@ -319,160 +504,17 @@ async def main() -> None:
         help="Luna efectiva YYYY-MM; implicit luna de reporting selectata.",
     )
     args = parser.parse_args()
-
-    (
-        latest_reporting,
-        latest_salary_key,
-        agents,
-        salary_latest,
-        salary_history,
-        salary_global_history,
-    ) = await _load_data(args.reporting_month)
-
-    latest_by_store: dict[str, list[dict[str, Any]]] = defaultdict(list)
-    history_by_store: dict[str, list[dict[str, Any]]] = defaultdict(list)
-    for row in salary_latest:
-        latest_by_store[row["site_code"]].append(dict(row))
-    for row in salary_history:
-        history_by_store[row["site_code"]].append(dict(row))
-
-    person_ids_by_name: dict[str, set[str]] = defaultdict(set)
-    for row in [*salary_latest, *salary_history, *salary_global_history]:
-        person_id = row.get("person_id")
-        if person_id:
-            person_ids_by_name[_norm(row["full_name"])].add(str(person_id))
-
-    output_rows: list[dict[str, Any]] = []
-    for agent_row in agents:
-        site_code = agent_row["site_code"]
-        agent_code = agent_row["agent"]
-        manual_override = MANUAL_OVERRIDES.get((site_code, agent_code))
-        candidates: list[tuple[float, str, dict[str, Any], str]] = []
-
-        for salary_row in latest_by_store.get(site_code, []):
-            candidate_score, reason = _score_code_name(agent_code, salary_row["full_name"])
-            candidates.append((candidate_score, reason, salary_row, "latest_salary"))
-
-        if not candidates or max(item[0] for item in candidates) < 75:
-            for salary_row in history_by_store.get(site_code, []):
-                candidate_score, reason = _score_code_name(agent_code, salary_row["full_name"])
-                candidates.append((candidate_score - 20, f"history: {reason}", salary_row, "salary_history"))
-
-        candidates.sort(key=lambda item: item[0], reverse=True)
-        best = candidates[0] if candidates else None
-        second = candidates[1] if len(candidates) > 1 else None
-
-        matched_name = ""
-        matched_person_id: str | None = None
-        salary_company = ""
-        salary_locatie = ""
-        reason = ""
-        second_candidate = ""
-        match_score: float | str = ""
-        score_gap: float | str = ""
-        status = "no_salary_candidate"
-        confidence = "none"
-
-        if best:
-            match_score = round(best[0], 1)
-            reason = best[1]
-            salary_row = best[2]
-            matched_name = salary_row["full_name"]
-            matched_person_id = salary_row.get("person_id")
-            salary_company = salary_row.get("company_name", "")
-            salary_locatie = salary_row.get("locatie", "")
-            gap_value = best[0] - (second[0] if second else -999)
-            score_gap = round(gap_value, 1)
-            status, confidence = _classify(best[0], gap_value)
-            if second:
-                second_candidate = f"{second[2]['full_name']} ({second[0]:.0f})"
-
-        match_source = "auto"
-        note = ""
-        if manual_override is not None:
-            match_source = "manual"
-            note = str(manual_override.get("note") or "")
-            manual_name = manual_override.get("salary_full_name")
-            matched_name = str(manual_name) if manual_name else ""
-            manual_person_ids = person_ids_by_name.get(_norm(matched_name), set())
-            matched_person_id = (
-                next(iter(manual_person_ids))
-                if len(manual_person_ids) == 1
-                else None
-            )
-            salary_company = ""
-            salary_locatie = ""
-            status = (
-                "matched"
-                if manual_name and matched_person_id
-                else "review" if manual_name else "unknown"
-            )
-            confidence = str(manual_override.get("confidence") or ("high" if manual_name else "unknown"))
-            match_score = ""
-            score_gap = ""
-            reason = "manual override"
-            second_candidate = ""
-
-        global_candidates: list[tuple[float, str, dict[str, Any]]] = []
-        if status not in {"matched", "unknown"}:
-            for salary_row in salary_global_history:
-                global_score, global_reason = _score_code_name(agent_code, salary_row["full_name"])
-                if global_score >= 100:
-                    global_candidates.append((global_score, global_reason, dict(salary_row)))
-            global_candidates.sort(key=lambda item: item[0], reverse=True)
-        global_best = global_candidates[0] if global_candidates else None
-
-        output_rows.append(
-            {
-                "site_code": site_code,
-                "magazin": agent_row["current_locatie"],
-                "firma": agent_row["firma"],
-                "regional": agent_row["regional"],
-                "asm": agent_row["asm"],
-                "agent_code": agent_code,
-                "total_sales_latest_reporting": float(agent_row["total_sales"]),
-                "receipt_count": agent_row["receipt_count"],
-                "working_days": agent_row["working_days"],
-                "matched_name": matched_name,
-                "person_id": matched_person_id,
-                "salary_company": salary_company,
-                "salary_locatie": salary_locatie,
-                "confidence": confidence,
-                "status": status,
-                "match_source": match_source,
-                "score": match_score,
-                "score_gap": score_gap,
-                "reason": reason,
-                "note": note,
-                "second_candidate": second_candidate,
-                "global_candidate_name": global_best[2]["full_name"] if global_best else "",
-                "global_candidate_site_code": global_best[2]["site_code"] if global_best else "",
-                "global_candidate_magazin": global_best[2]["current_locatie"] if global_best else "",
-                "global_candidate_score": round(global_best[0], 1) if global_best else "",
-                "global_candidate_last_salary_key": global_best[2]["last_salary_key"] if global_best else "",
-                "global_candidate_reason": global_best[1] if global_best else "",
-            }
-        )
-
+    data = await _load_data(args.reporting_month)
+    latest_reporting, latest_salary_key, agents, latest, history, global_history = data
+    output_rows = _build_output_rows(agents, latest, history, global_history)
     output_path: Path = args.output.expanduser()
-    with _open_private_csv(output_path) as handle:
-        writer = csv.DictWriter(handle, fieldnames=list(output_rows[0].keys()))
-        writer.writeheader()
-        writer.writerows([{key: csv_cell_value(value) for key, value in row.items()} for row in output_rows])
-
+    _write_matches(output_path, output_rows)
     if args.apply_db:
         await _upsert_agent_salary_links(
             output_rows,
             effective_from_month=args.effective_from_month or latest_reporting,
         )
-
-    summary = Counter(f"{row['status']}:{row['confidence']}" for row in output_rows)
-    print(f"reporting_month={latest_reporting}")
-    print(f"salary_month={latest_salary_key // 100}-{latest_salary_key % 100:02d}")
-    print(f"agent_codes={len(output_rows)}")
-    print(f"stores={len({row['site_code'] for row in output_rows})}")
-    for key, value in sorted(summary.items()):
-        print(f"{key}={value}")
+    _print_summary(latest_reporting, latest_salary_key, output_rows)
     print(f"output={output_path}")
 
 

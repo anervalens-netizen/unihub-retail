@@ -11,6 +11,7 @@ import asyncpg
 
 import services.jobs as jobs
 import services.importer as importer
+import services.sales_import_recovery as sales_import_recovery
 import services.sales_artifacts as sales_artifacts
 import services.sales_generation_flow as sales_generation_flow
 import services.sales_import_worker as sales_import_worker
@@ -63,7 +64,11 @@ def test_retain_is_content_addressed_durable_and_idempotent(
 def test_retain_never_chmods_an_artifact_published_by_the_web_identity(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A shared-group rename must not chmod a file owned by the web user."""
+    """A rename keeps the web owner's mode; the import worker is not owner.
+
+    Production uses a shared group with mode 0660.  The import worker may move
+    and read the file, but Linux rejects chmod after the cross-identity rename.
+    """
     monkeypatch.setenv("SALES_IMPORT_SPOOL_DIR", str(tmp_path))
     source, digest = _artifact(tmp_path)
     source.chmod(0o660)
@@ -82,7 +87,7 @@ def test_retain_never_chmods_an_artifact_published_by_the_web_identity(
     retained = jobs.retain_sales_import_spool_file(
         source,
         import_month="2099-08",
-        snapshot_id=7,
+        snapshot_id=8,
         expected_digest=digest,
         expected_bytes=12,
     )
@@ -90,7 +95,7 @@ def test_retain_never_chmods_an_artifact_published_by_the_web_identity(
     assert jobs.retain_sales_import_spool_file(
         source,
         import_month="2099-08",
-        snapshot_id=7,
+        snapshot_id=8,
         expected_digest=digest,
         expected_bytes=12,
     ) == retained
@@ -652,7 +657,7 @@ async def test_retained_artifact_oserror_preserves_immutable_metadata(
                 str(retained_path),
             )
         monkeypatch.setattr(
-            importer,
+            sales_import_recovery,
             "retain_sales_import_spool_file",
             MagicMock(side_effect=OSError("transient filesystem failure")),
         )

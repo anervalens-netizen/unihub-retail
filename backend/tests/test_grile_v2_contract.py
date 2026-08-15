@@ -62,7 +62,7 @@ def test_provider_staleness_applies_only_to_current_month() -> None:
 
 def test_stale_provider_error_cannot_overtake_newer_success_projection() -> None:
     source = (
-        Path(__file__).resolve().parents[1] / "repositories" / "grile.py"
+        Path(__file__).resolve().parents[1] / "repositories" / "grile_persistence.py"
     ).read_text(encoding="utf-8")
     start = source.index("async def _apply_error_projection")
     projection = source[start:]

@@ -5,6 +5,9 @@ from typing import Any
 import asyncpg
 
 from repositories.export_report_query import build_report_rows_query
+from repositories.export_daily_comparison_query import (
+    build_daily_comparison_rows_query,
+)
 from retail_filters import distribution_location_clause
 
 
@@ -286,155 +289,15 @@ class ExportsRepository:
         include_campaign_metrics: bool = False,
         limit: int | None = None,
     ) -> list[asyncpg.Record]:
-        level_fields = {
-            "general": [],
-            "asms": [
-                ("asm", "s.asm"),
-            ],
-            "stores": [
-                ("site_code", "agg.site_code"),
-                ("locatie", "s.locatie"),
-                ("asm", "s.asm"),
-            ],
-            "agents": [
-                ("agent", "agg.agent"),
-                ("site_code", "agg.site_code"),
-                ("locatie", "s.locatie"),
-                ("asm", "s.asm"),
-            ],
-        }
-        if level not in level_fields:
-            raise ValueError(f"Unsupported comparison level: {level}")
-
-        params: list[Any] = [months]
-        clauses = [
-            "agg.import_month = ANY($1::TEXT[])",
-            distribution_location_clause("s"),
-        ]
-        if not include_closed_stores:
-            clauses.append("s.is_active = TRUE")
-
-        filter_columns = {
-            "firma": "s.firma",
-            "regional": "s.regional",
-            "asm": "s.asm",
-            "site_code": "agg.site_code",
-            "agent": "agg.agent",
-        }
-        for key, column in filter_columns.items():
-            values = [value for value in filters.get(key, []) if value]
-            if values:
-                params.append(values)
-                clauses.append(f"{column} = ANY(${len(params)}::TEXT[])")
-        if selected_days:
-            params.append(selected_days)
-            clauses.append(f"EXTRACT(DAY FROM agg.sale_date)::INT = ANY(${len(params)}::INT[])")
-
-        promo_months: list[str] = []
-        promo_codes: list[str] = []
-        for month, codes in sorted((campaign_codes_by_month or {}).items()):
-            for code in codes:
-                promo_months.append(month)
-                promo_codes.append(code)
-        params.extend([promo_months, promo_codes])
-        promo_months_param = len(params) - 1
-        promo_codes_param = len(params)
-        params.append(include_campaign_metrics)
-        campaign_metrics_param = len(params)
-        if limit is not None and limit < 1:
-            raise ValueError("Export row limit must be positive")
-        if limit is not None:
-            params.append(limit)
-            limit_clause = f" LIMIT ${len(params)}"
-        else:
-            limit_clause = ""
-
-        fields = level_fields[level]
-        field_select = ",\n                    ".join(f"{expr} AS {alias}" for alias, expr in fields)
-        field_group = ", ".join(expr for _, expr in fields)
-        select_prefix = f"{field_select}," if field_select else ""
-        group_prefix = f"{field_group}, " if field_group else ""
-        order_prefix = ", ".join(alias for alias, _ in fields)
-        order_clause = f"{order_prefix}, day_of_month, import_month" if order_prefix else "day_of_month, import_month"
-        campaign_field_select = f"{field_select}," if field_select else ""
-        campaign_group_prefix = f"{field_group}, " if field_group else ""
-        campaign_join = (
-            " AND ".join(f"campaign.{alias} IS NOT DISTINCT FROM base.{alias}" for alias, _ in fields)
-            or "true"
+        query, params = build_daily_comparison_rows_query(
+            level=level,
+            months=months,
+            filters=filters,
+            include_closed_stores=include_closed_stores,
+            campaign_codes_by_month=campaign_codes_by_month,
+            selected_days=selected_days,
+            include_campaign_metrics=include_campaign_metrics,
+            limit=limit,
         )
-        dimension_count_select = ", ".join(alias for alias, _ in fields) or "1"
-
         async with self.pool.acquire() as conn:
-            return await conn.fetch(
-                f"""
-                WITH base AS (
-                    SELECT
-                        {select_prefix}
-                        agg.import_month,
-                        EXTRACT(DAY FROM agg.sale_date)::INT AS day_of_month,
-                        COALESCE(SUM(agg.total_sales), 0) AS total_sales,
-                        COALESCE(SUM(agg.total_quantity), 0)::INT AS total_quantity,
-                        COALESCE(SUM(agg.receipt_count), 0)::INT AS total_receipts,
-                        COALESCE(SUM(agg.receipt_2plus_count), 0)::INT AS receipt_2plus_count,
-                        COALESCE(SUM(agg.focus_quantity), 0)::INT AS focus_quantity,
-                        COUNT(DISTINCT agg.site_code)::INT AS store_count,
-                        COUNT(DISTINCT agg.agent)::INT AS agent_count,
-                        COUNT(DISTINCT agg.sale_date)::INT AS working_days,
-                        0::NUMERIC AS target
-                    FROM reporting_agent_day agg
-                    JOIN stores s ON s.site_code = agg.site_code
-                    WHERE {" AND ".join(clauses)}
-                    GROUP BY {group_prefix}agg.import_month, day_of_month
-                ),
-                dimension_count AS (
-                    SELECT COUNT(*)::INT AS total_dimensions
-                    FROM (
-                        SELECT DISTINCT {dimension_count_select}
-                        FROM base
-                    ) dimensions
-                ),
-                promo_codes AS (
-                    SELECT import_month, item_code
-                    FROM UNNEST(${promo_months_param}::TEXT[], ${promo_codes_param}::TEXT[]) AS t(import_month, item_code)
-                ),
-                campaign AS (
-                    SELECT
-                        {campaign_field_select}
-                        agg.import_month,
-                        EXTRACT(DAY FROM agg.sale_date)::INT AS day_of_month,
-                        COALESCE(SUM(agg.total_sales) FILTER (WHERE ip.item_code IS NOT NULL), 0) AS incentive_sales,
-                        COALESCE(SUM(agg.net_quantity) FILTER (WHERE ip.item_code IS NOT NULL), 0)::INT AS incentive_quantity,
-                        COALESCE(SUM(agg.net_quantity * ip.reward_value) FILTER (WHERE ip.item_code IS NOT NULL), 0) AS incentive_bonus,
-                        COALESCE(SUM(agg.total_sales) FILTER (WHERE pc.item_code IS NOT NULL), 0) AS promo_sales,
-                        COALESCE(SUM(agg.net_quantity) FILTER (WHERE pc.item_code IS NOT NULL), 0)::INT AS promo_quantity
-                    FROM reporting_item_day agg
-                    JOIN stores s ON s.site_code = agg.site_code
-                    LEFT JOIN incentive_campaigns ic ON ic.month = agg.import_month
-                    LEFT JOIN incentive_products ip
-                      ON ip.campaign_id = ic.id
-                     AND ip.item_code = agg.item_code
-                     AND agg.sale_date BETWEEN ip.valid_from AND ip.valid_to
-                    LEFT JOIN promo_codes pc ON pc.import_month = agg.import_month AND pc.item_code = agg.item_code
-                    WHERE {" AND ".join(clauses)}
-                      AND ${campaign_metrics_param}::BOOLEAN
-                      AND (ip.item_code IS NOT NULL OR pc.item_code IS NOT NULL)
-                    GROUP BY {campaign_group_prefix}agg.import_month, day_of_month
-                )
-                SELECT
-                    base.*,
-                    COALESCE(campaign.incentive_sales, 0) AS incentive_sales,
-                    COALESCE(campaign.incentive_quantity, 0)::INT AS incentive_quantity,
-                    COALESCE(campaign.incentive_bonus, 0) AS incentive_bonus,
-                    COALESCE(campaign.promo_sales, 0) AS promo_sales,
-                    COALESCE(campaign.promo_quantity, 0)::INT AS promo_quantity,
-                    dimension_count.total_dimensions AS total_dimensions
-                FROM base
-                CROSS JOIN dimension_count
-                LEFT JOIN campaign
-                    ON {campaign_join}
-                    AND campaign.import_month = base.import_month
-                    AND campaign.day_of_month = base.day_of_month
-                ORDER BY {order_clause}{limit_clause}
-                """,
-                *params,
-            )
+            return await conn.fetch(query, *params)

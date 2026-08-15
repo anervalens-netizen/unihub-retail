@@ -157,6 +157,11 @@ def _box_allocations_at(
     }
 
 
+def _decimal_breakpoint_equal(left: Decimal, right: Decimal) -> bool:
+    """Ignore only division dust far below one cent, never a rounded cent gap."""
+    return abs(left - right) <= Decimal("1e-30")
+
+
 def _reconcile_box_residual(
     rows: list[dict[str, Any]],
     allocations: dict[int, Decimal],
@@ -186,9 +191,7 @@ def _solve_box_interval(
     active = [
         index
         for index in ordered
-        if rows[index]["floor_target"]
-        < midpoint * weights[index]
-        < rows[index]["cap_target"]
+        if rows[index]["floor_target"] < midpoint * weights[index] < rows[index]["cap_target"]
     ]
     if not active:
         return None
@@ -211,6 +214,90 @@ def _solve_box_interval(
     return _reconcile_box_residual(rows, allocations, active, target)
 
 
+def _prepare_breakpoints(
+    rows: list[dict[str, Any]],
+    ordered: list[int],
+    weights: dict[int, Decimal],
+) -> list[Decimal]:
+    with localcontext() as context:
+        context.prec = 60
+        return sorted(
+            {
+                bound / weights[index]
+                for index in ordered
+                for bound in (rows[index]["floor_target"], rows[index]["cap_target"])
+            }
+        )
+
+
+def _allocations_total(
+    rows: list[dict[str, Any]],
+    ordered: list[int],
+    weights: dict[int, Decimal],
+    point: Decimal,
+) -> tuple[Decimal, dict[int, Decimal]]:
+    with localcontext() as ctx:
+        ctx.prec = 60
+        allocations = _box_allocations_at(rows, ordered, weights, point)
+        total: Decimal = sum(
+            (Decimal(v) for v in allocations.values()), Decimal("0")
+        )
+    return total, allocations
+
+
+def _binary_search_breakpoint_index(
+    rows: list[dict[str, Any]],
+    ordered: list[int],
+    weights: dict[int, Decimal],
+    breakpoints: list[Decimal],
+    target: Decimal,
+    lower_index: int,
+    upper_index: int,
+) -> int:
+    while upper_index - lower_index > 1:
+        middle_index = (lower_index + upper_index) // 2
+        middle_total, _ = _allocations_total(
+            rows, ordered, weights, breakpoints[middle_index]
+        )
+        if _decimal_breakpoint_equal(target, middle_total):
+            return middle_index
+        if target > middle_total:
+            lower_index = middle_index
+        else:
+            upper_index = middle_index
+    return lower_index
+
+
+def _resolve_two_breakpoint_pair(
+    rows: list[dict[str, Any]],
+    ordered: list[int],
+    weights: dict[int, Decimal],
+    breakpoints: list[Decimal],
+    lower_index: int,
+    upper_index: int,
+    target: Decimal,
+    floor_total: Decimal,
+    cap_total: Decimal,
+) -> dict[int, Decimal] | None:
+    previous_point = breakpoints[lower_index]
+    point = breakpoints[upper_index]
+    previous_total, previous_allocations = _allocations_total(
+        rows, ordered, weights, previous_point
+    )
+    point_total, point_allocations = _allocations_total(
+        rows, ordered, weights, point
+    )
+    if _decimal_breakpoint_equal(target, previous_total):
+        return previous_allocations
+    if _decimal_breakpoint_equal(target, point_total):
+        return point_allocations
+    if _decimal_breakpoint_equal(point_total, previous_total):
+        raise TargetBudgetInfeasibleError(target, floor_total, cap_total)
+    return _solve_box_interval(
+        rows, ordered, weights, target, previous_point, point
+    )
+
+
 def _solve_positive_box(
     rows: list[dict[str, Any]],
     indices: list[int],
@@ -230,41 +317,34 @@ def _solve_positive_box(
 
     with localcontext() as context:
         context.prec = 60
-        breakpoints = sorted(
-            {
-                bound / weights[index]
-                for index in ordered
-                for bound in (rows[index]["floor_target"], rows[index]["cap_target"])
-            }
+        breakpoints = _prepare_breakpoints(rows, ordered, weights)
+        lower_index = 0
+        upper_index = len(breakpoints) - 1
+        lower_total, lower_allocations = _allocations_total(
+            rows, ordered, weights, breakpoints[lower_index]
         )
-
-        previous_point = breakpoints[0]
-        previous_total = sum(
-            _box_allocations_at(rows, ordered, weights, previous_point).values(),
-            Decimal("0"),
-        )
-        if target <= previous_total:
+        if _decimal_breakpoint_equal(target, lower_total):
+            return lower_allocations
+        if target < lower_total:
             return {index: rows[index]["floor_target"] for index in ordered}
 
-        for point in breakpoints[1:]:
-            point_allocations = _box_allocations_at(rows, ordered, weights, point)
-            point_total = sum(point_allocations.values(), Decimal("0"))
-            if target > point_total:
-                previous_point = point
-                previous_total = point_total
-                continue
-            if target == point_total:
-                return point_allocations
-            if point_total == previous_total:
-                raise TargetBudgetInfeasibleError(target, floor_total, cap_total)
-            allocations = _solve_box_interval(
-                rows, ordered, weights, target, previous_point, point
-            )
-            if allocations is None:
-                raise TargetBudgetInfeasibleError(target, floor_total, cap_total)
+        final_lower_index = _binary_search_breakpoint_index(
+            rows, ordered, weights, breakpoints, target, lower_index, upper_index
+        )
+        allocations = _resolve_two_breakpoint_pair(
+            rows,
+            ordered,
+            weights,
+            breakpoints,
+            final_lower_index,
+            final_lower_index + 1,
+            target,
+            floor_total,
+            cap_total,
+        )
+        if allocations is not None:
             return allocations
-
-    raise TargetBudgetInfeasibleError(target, floor_total, cap_total)
+        raise TargetBudgetInfeasibleError(target, floor_total, cap_total)
 
 
 def _solve_box_allocations(

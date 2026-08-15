@@ -183,6 +183,221 @@ class ExportPlanner:
         include_closed_stores = bool(request.get("include_closed_stores", False))
         return months, metrics, levels, filters, include_closed_stores, self._selected_days(request)
 
+    def _comparison_metric_columns(
+        self,
+        metric: str,
+        months: list[str],
+    ) -> list[dict[str, str]]:
+        definition = DAILY_EVOLUTION_METRICS[metric]
+        columns = [
+            {
+                "key": f"{month}:{metric}",
+                "label": f"{month} {definition.label}",
+                "type": definition.type,
+                "group": "Evolutie zilnica",
+            }
+            for month in months
+        ]
+        if len(months) != 2:
+            return columns
+        if definition.type == "percent":
+            columns.append(
+                {
+                    "key": f"delta_pp:{metric}",
+                    "label": (
+                        f"Delta pp {months[1]} vs {months[0]} {definition.label}"
+                    ),
+                    "type": "percent",
+                    "group": "Comparatie",
+                }
+            )
+            return columns
+        columns.extend(
+            [
+                {
+                    "key": f"delta:{metric}",
+                    "label": f"Delta {months[1]} vs {months[0]} {definition.label}",
+                    "type": definition.type,
+                    "group": "Comparatie",
+                },
+                {
+                    "key": f"delta_pct:{metric}",
+                    "label": f"Delta % {months[1]} vs {months[0]} {definition.label}",
+                    "type": "percent",
+                    "group": "Comparatie",
+                },
+            ]
+        )
+        return columns
+
+    def _comparison_columns(
+        self,
+        dimensions: list[str],
+        months: list[str],
+        metrics: list[str],
+    ) -> list[dict[str, str]]:
+        columns = [
+            self._column_payload(DIMENSIONS[dimension])
+            for dimension in dimensions
+        ]
+        columns.append(
+            {
+                "key": "day_of_month",
+                "label": "Zi",
+                "type": "integer",
+                "group": "Perioada",
+            }
+        )
+        for metric in metrics:
+            columns.extend(self._comparison_metric_columns(metric, months))
+        return columns
+
+    def _comparison_values(
+        self,
+        dimensions: list[str],
+        records: list[Any],
+    ) -> tuple[
+        dict[tuple[tuple[Any, ...], int, str], dict[str, Any]],
+        dict[tuple[Any, ...], dict[str, Any]],
+    ]:
+        values: dict[tuple[tuple[Any, ...], int, str], dict[str, Any]] = {}
+        dimension_labels: dict[tuple[Any, ...], dict[str, Any]] = {}
+        for record in records:
+            dim_key = tuple(record[dimension] for dimension in dimensions)
+            dimension_labels[dim_key] = {
+                dimension: record[dimension] for dimension in dimensions
+            }
+            day = int(record["day_of_month"] or 0)
+            if day <= 0:
+                continue
+            key = (dim_key, day, str(record["import_month"]))
+            values[key] = self._compute_metrics(record)
+        return values, dimension_labels
+
+    def _comparison_row_count(
+        self,
+        *,
+        level: str,
+        months: list[str],
+        selected_days: list[int] | None,
+        records: list[Any],
+        dimension_labels: dict[tuple[Any, ...], dict[str, Any]],
+    ) -> tuple[int, list[int], int]:
+        if level == "general" and not dimension_labels:
+            dimension_labels[()] = {}
+        max_day = self._max_days_for_months(months)
+        days = selected_days or list(range(1, max_day + 1))
+        total_dimensions = self._record_total_dimensions(records)
+        if total_dimensions is None:
+            total_dimensions = (
+                max(1, len(dimension_labels))
+                if level == "general"
+                else len(dimension_labels)
+            )
+        elif level == "general":
+            total_dimensions = max(1, total_dimensions)
+        return max_day, days, total_dimensions * len(days)
+
+    def _comparison_metric_values(
+        self,
+        row: dict[str, Any],
+        *,
+        dim_key: tuple[Any, ...],
+        day: int,
+        months: list[str],
+        metric: str,
+        values: dict[tuple[tuple[Any, ...], int, str], dict[str, Any]],
+    ) -> None:
+        month_values: list[Any] = []
+        for month in months:
+            value = values.get((dim_key, day, month), {}).get(metric)
+            month_values.append(value)
+            row[f"{month}:{metric}"] = self._json_value(value)
+        self._attach_comparison_delta(row, metric, months, month_values)
+
+    def _attach_comparison_delta(
+        self,
+        row: dict[str, Any],
+        metric: str,
+        months: list[str],
+        month_values: list[Any],
+    ) -> None:
+        if len(months) != 2:
+            return
+        left, right = month_values
+        definition = DAILY_EVOLUTION_METRICS[metric]
+        if left is None or right is None:
+            key = "delta_pp" if definition.type == "percent" else "delta"
+            row[f"{key}:{metric}"] = None
+            if definition.type != "percent":
+                row[f"delta_pct:{metric}"] = None
+            return
+        decimal_left = Decimal(str(left))
+        delta = Decimal(str(right)) - decimal_left
+        if definition.type == "percent":
+            row[f"delta_pp:{metric}"] = self._json_value(delta)
+            return
+        row[f"delta:{metric}"] = self._json_value(delta)
+        relative_delta = pct(delta, decimal_left) if decimal_left != 0 else None
+        row[f"delta_pct:{metric}"] = self._json_value(relative_delta)
+
+    def _comparison_row(
+        self,
+        *,
+        dimensions: list[str],
+        dim_key: tuple[Any, ...],
+        dim_values: dict[str, Any],
+        day: int,
+        months: list[str],
+        metrics: list[str],
+        values: dict[tuple[tuple[Any, ...], int, str], dict[str, Any]],
+    ) -> dict[str, Any]:
+        row = {dimension: dim_values.get(dimension) for dimension in dimensions}
+        row["day_of_month"] = day
+        for metric in metrics:
+            self._comparison_metric_values(
+                row,
+                dim_key=dim_key,
+                day=day,
+                months=months,
+                metric=metric,
+                values=values,
+            )
+        return row
+
+    def _comparison_rows(
+        self,
+        *,
+        dimensions: list[str],
+        dimension_labels: dict[tuple[Any, ...], dict[str, Any]],
+        days: list[int],
+        months: list[str],
+        metrics: list[str],
+        values: dict[tuple[tuple[Any, ...], int, str], dict[str, Any]],
+        row_limit: int | None,
+    ) -> list[dict[str, Any]]:
+        rows: list[dict[str, Any]] = []
+        order = sorted(
+            dimension_labels,
+            key=lambda item: tuple(str(value or "") for value in item),
+        )
+        for dim_key in order:
+            for day in days:
+                rows.append(
+                    self._comparison_row(
+                        dimensions=dimensions,
+                        dim_key=dim_key,
+                        dim_values=dimension_labels[dim_key],
+                        day=day,
+                        months=months,
+                        metrics=metrics,
+                        values=values,
+                    )
+                )
+                if row_limit is not None and len(rows) >= row_limit:
+                    return rows
+        return rows
+
     def _daily_comparison_table(
         self,
         *,
@@ -194,103 +409,29 @@ class ExportPlanner:
         row_limit: int | None = None,
     ) -> dict[str, Any]:
         dimensions = list(COMPARISON_LEVELS[level]["dimensions"])
-        columns: list[dict[str, str]] = [
-            self._column_payload(DIMENSIONS[dimension]) for dimension in dimensions
-        ]
-        columns.append({"key": "day_of_month", "label": "Zi", "type": "integer", "group": "Perioada"})
-
-        for metric in metrics:
-            definition = DAILY_EVOLUTION_METRICS[metric]
-            for month in months:
-                columns.append({
-                    "key": f"{month}:{metric}",
-                    "label": f"{month} {definition.label}",
-                    "type": definition.type,
-                    "group": "Evolutie zilnica",
-                })
-            if len(months) == 2:
-                if definition.type == "percent":
-                    columns.append({
-                        "key": f"delta_pp:{metric}",
-                        "label": f"Delta pp {months[1]} vs {months[0]} {definition.label}",
-                        "type": "percent",
-                        "group": "Comparatie",
-                    })
-                else:
-                    columns.append({
-                        "key": f"delta:{metric}",
-                        "label": f"Delta {months[1]} vs {months[0]} {definition.label}",
-                        "type": definition.type,
-                        "group": "Comparatie",
-                    })
-                    columns.append({
-                        "key": f"delta_pct:{metric}",
-                        "label": f"Delta % {months[1]} vs {months[0]} {definition.label}",
-                        "type": "percent",
-                        "group": "Comparatie",
-                    })
-
-        values: dict[tuple[tuple[Any, ...], int, str], dict[str, Any]] = {}
-        dimension_labels: dict[tuple[Any, ...], dict[str, Any]] = {}
-        for record in records:
-            dim_key = tuple(record[dimension] for dimension in dimensions)
-            dimension_labels[dim_key] = {dimension: record[dimension] for dimension in dimensions}
-            day = int(record["day_of_month"] or 0)
-            if day <= 0:
-                continue
-            values[(dim_key, day, str(record["import_month"]))] = self._compute_metrics(record)
-
-        if level == "general" and not dimension_labels:
-            dimension_labels[()] = {}
-        max_day = self._max_days_for_months(months)
-        days = selected_days or list(range(1, max_day + 1))
-        total_dimensions = self._record_total_dimensions(records)
-        if total_dimensions is None:
-            total_dimensions = max(1, len(dimension_labels)) if level == "general" else len(dimension_labels)
-        elif level == "general":
-            total_dimensions = max(1, total_dimensions)
-        total_rows = total_dimensions * len(days)
+        columns = self._comparison_columns(dimensions, months, metrics)
+        values, dimension_labels = self._comparison_values(dimensions, records)
+        max_day, days, total_rows = self._comparison_row_count(
+            level=level,
+            months=months,
+            selected_days=selected_days,
+            records=records,
+            dimension_labels=dimension_labels,
+        )
         self._validate_export_budget(
             min(total_rows, row_limit) if row_limit is not None else total_rows,
             len(columns),
             operation="Preview-ul comparatiei" if row_limit is not None else "Comparatia zilnica",
         )
-        rows: list[dict[str, Any]] = []
-
-        for dim_key in sorted(dimension_labels, key=lambda item: tuple(str(value or "") for value in item)):
-            dim_values = dimension_labels[dim_key]
-            for day in days:
-                row: dict[str, Any] = {dimension: dim_values.get(dimension) for dimension in dimensions}
-                row["day_of_month"] = day
-                for metric in metrics:
-                    month_values: list[Any] = []
-                    for month in months:
-                        value = values.get((dim_key, day, month), {}).get(metric)
-                        month_values.append(value)
-                        row[f"{month}:{metric}"] = self._json_value(value)
-                    if len(months) == 2:
-                        left, right = month_values
-                        if left is not None and right is not None:
-                            delta = Decimal(str(right)) - Decimal(str(left))
-                            if DAILY_EVOLUTION_METRICS[metric].type == "percent":
-                                row[f"delta_pp:{metric}"] = self._json_value(delta)
-                            else:
-                                row[f"delta:{metric}"] = self._json_value(delta)
-                                row[f"delta_pct:{metric}"] = self._json_value(
-                                    pct(delta, Decimal(str(left))) if Decimal(str(left)) != 0 else None
-                                )
-                        else:
-                            if DAILY_EVOLUTION_METRICS[metric].type == "percent":
-                                row[f"delta_pp:{metric}"] = None
-                            else:
-                                row[f"delta:{metric}"] = None
-                                row[f"delta_pct:{metric}"] = None
-                rows.append(row)
-                if row_limit is not None and len(rows) >= row_limit:
-                    break
-            if row_limit is not None and len(rows) >= row_limit:
-                break
-
+        rows = self._comparison_rows(
+            dimensions=dimensions,
+            dimension_labels=dimension_labels,
+            days=days,
+            months=months,
+            metrics=metrics,
+            values=values,
+            row_limit=row_limit,
+        )
         return {
             "columns": columns,
             "rows": [self._public_row(row, columns) for row in rows],

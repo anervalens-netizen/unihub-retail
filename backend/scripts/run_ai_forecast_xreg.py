@@ -20,7 +20,22 @@ if str(BACKEND_DIR) not in sys.path:
 
 import asyncpg
 from dotenv import load_dotenv
-from services.forecast_http import post_forecast
+from services.forecast_http import ForecastTimeoutError, post_forecast
+from services.ai_forecast_contract import (
+    CoverageMode,
+    ResponseProfile,
+    validate_forecast_request,
+    validate_forecast_response,
+)
+from services.ai_forecast_cohort import (
+    CohortAuthorityError,
+    CohortResolution,
+    authority_generation,
+    fetch_asof_evidence,
+    resolution_sha256,
+    resolve_asof_cohort,
+    source_month_cutoff,
+)
 from services.spreadsheet_safety import csv_cell_value
 
 
@@ -39,6 +54,16 @@ class StoreInfo:
     firma: str
     regional: str
     asm: str
+
+
+@dataclass(frozen=True)
+class HistoricalCohort:
+    source_month: str
+    stores: tuple[StoreInfo, ...]
+    resolution: CohortResolution
+    source_generation: str
+    source_generation_sha256: str
+    cohort_sha256: str
 
 
 def add_month(month: str, offset: int) -> str:
@@ -206,28 +231,73 @@ def pct(numerator: Decimal, denominator: Decimal) -> Decimal | None:
     return (numerator / denominator * Decimal("100")).quantize(Decimal("0.01"))
 
 
-async def fetch_active_stores(conn: asyncpg.Connection, *, excluded_site_codes: list[str]) -> list[StoreInfo]:
-    rows = await conn.fetch(
-        """
-        SELECT site_code, locatie, firma, regional, asm
-        FROM stores
-        WHERE is_active = true
-          AND locatie NOT ILIKE 'TR %'
-          AND NOT (site_code = ANY($1::TEXT[]))
-        ORDER BY regional, locatie, site_code
-        """,
-        excluded_site_codes,
+async def fetch_asof_stores(
+    conn: asyncpg.Connection,
+    *,
+    source_month: str,
+    excluded_site_codes: list[str],
+) -> HistoricalCohort:
+    """Resolve forecast stores only from historical, cutoff-bounded authority."""
+    cutoff_at = source_month_cutoff(source_month)
+    reporting, targets, events, assignments = await fetch_asof_evidence(
+        conn,
+        source_month=source_month,
+        cutoff_at=cutoff_at,
     )
-    return [
+    manually_excluded = set(excluded_site_codes)
+    transfer_sites = {
+        row.site_code
+        for row in reporting
+        if row.month == source_month and row.locatie.upper().startswith("TR ")
+    }
+    excluded = manually_excluded | transfer_sites
+    reporting = [row for row in reporting if row.site_code not in excluded]
+    targets = [row for row in targets if row.site_code not in excluded]
+    events = [row for row in events if row.site_code not in excluded]
+    assignments = [row for row in assignments if row.site_code not in excluded]
+    source_generation, source_generation_sha256 = authority_generation(
+        source_month=source_month,
+        reporting=reporting,
+        targets=targets,
+        activity_events=events,
+        org_assignments=assignments,
+    )
+    resolution = resolve_asof_cohort(
+        source_month=source_month,
+        cutoff_at=cutoff_at,
+        source_generation=source_generation,
+        reporting=reporting,
+        targets=targets,
+        activity_events=events,
+        org_assignments=assignments,
+    )
+    if resolution.decision != "READY":
+        blocked = ",".join(resolution.blocked_site_codes)
+        raise CohortAuthorityError(f"historical cohort BLOCKED for {source_month}: {blocked}")
+    locations = {
+        row.site_code: row.locatie
+        for row in reporting
+        if row.month == source_month and row.locatie.strip()
+    }
+    stores = tuple(
         StoreInfo(
-            site_code=row["site_code"],
-            locatie=row["locatie"],
-            firma=row["firma"],
-            regional=row["regional"],
-            asm=row["asm"],
+            site_code=row.site_code,
+            locatie=locations.get(row.site_code, row.site_code),
+            firma=row.firma or "",
+            regional=row.regional or "",
+            asm=row.asm or "",
         )
-        for row in rows
-    ]
+        for row in resolution.rows
+        if row.is_operating is True
+    )
+    return HistoricalCohort(
+        source_month=source_month,
+        stores=stores,
+        resolution=resolution,
+        source_generation=source_generation,
+        source_generation_sha256=source_generation_sha256,
+        cohort_sha256=resolution_sha256(resolution),
+    )
 
 
 async def fetch_monthly_sales(
@@ -285,6 +355,7 @@ def build_payload(
     min_context: int,
     metric: MetricName,
     feature_profile: FeatureProfile = "v1",
+    response_profile: ResponseProfile = "point_quantiles_v1",
 ) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, str]]]:
     full_history = month_range(history_start_month, source_month)
     base_year = int(history_start_month[:4])
@@ -353,17 +424,31 @@ def build_payload(
         "static_categorical_covariates": static_categorical,
         "xreg_mode": "xreg + timesfm",
         "feature_profile": feature_profile,
+        "response_profile": response_profile,
     }
     return payload, rows_meta, skipped
 
 
-def parse_predictions(response: dict[str, Any], *, metric: MetricName) -> dict[str, list[Decimal]]:
-    predictions: dict[str, list[Decimal]] = {}
-    for row in response.get("series", []):
-        values = row.get("point_forecast") or []
-        if values:
-            predictions[str(row["series_id"])] = [metric_value(value, metric) for value in values]
-    return predictions
+def parse_predictions(
+    response: dict[str, Any],
+    *,
+    request_payload: dict[str, Any],
+    metric: MetricName,
+    response_profile: ResponseProfile,
+    coverage_mode: CoverageMode,
+) -> dict[str, list[Decimal]]:
+    request_contract = validate_forecast_request(request_payload)
+    response_contract = validate_forecast_response(
+        response,
+        request=request_contract,
+        metric=metric,
+        response_profile=response_profile,
+        coverage_mode=coverage_mode,
+    )
+    return {
+        series_id: [point.point for point in points]
+        for series_id, points in response_contract.predictions.items()
+    }
 
 
 def build_result_rows(
@@ -531,201 +616,456 @@ def write_csv(path: Path, rows: list[dict[str, Any]], fieldnames: list[str]) -> 
             writer.writerow({key: csv_cell_value(row.get(key)) for key in fieldnames})
 
 
-async def run(args: argparse.Namespace) -> int:
-    load_dotenv(args.env_file)
-    database_url = os.environ.get("DATABASE_URL")
-    api_key = args.api_key or os.environ.get("TIMESFM_API_KEY")
-    if not database_url:
+async def load_historical_forecast_inputs(
+    conn: asyncpg.Connection,
+    *,
+    args: argparse.Namespace,
+    target_months: list[str],
+) -> tuple[dict[str, HistoricalCohort], dict[tuple[str, str], Decimal]]:
+    cohorts: dict[str, HistoricalCohort] = {}
+    if args.operational:
+        source_month = args.source_month or add_month(args.start_month, -1)
+        cohort = await fetch_asof_stores(
+            conn,
+            source_month=source_month,
+            excluded_site_codes=args.exclude_site_code,
+        )
+        cohorts = {target_month: cohort for target_month in target_months}
+    else:
+        for target_month in target_months:
+            cohorts[target_month] = await fetch_asof_stores(
+                conn,
+                source_month=add_month(target_month, -1),
+                excluded_site_codes=args.exclude_site_code,
+            )
+    site_codes = sorted(
+        {store.site_code for cohort in cohorts.values() for store in cohort.stores}
+    )
+    if not site_codes:
+        raise RuntimeError("Nu exista magazine confirmate in cohorta istorica.")
+    sales = await fetch_monthly_sales(
+        conn,
+        site_codes=site_codes,
+        start_month=args.history_start_month,
+        end_month=args.end_month,
+        metric=args.metric,
+    )
+    return cohorts, sales
+
+
+def _prepare_xreg_inputs(
+    args: argparse.Namespace,
+) -> tuple[list[str], Path, str]:
+    if not os.environ.get("DATABASE_URL"):
         raise RuntimeError("DATABASE_URL lipseste.")
+    api_key = args.api_key or os.environ.get("TIMESFM_API_KEY")
     if not api_key:
         raise RuntimeError("TIMESFM_API_KEY lipseste.")
-
     target_months = month_range(args.start_month, args.end_month)
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
+    return target_months, output_dir, api_key
 
-    conn = await asyncpg.connect(database_url)
-    all_rows: list[dict[str, Any]] = []
-    summary_rows: list[dict[str, Any]] = []
-    skipped_rows: list[dict[str, Any]] = []
+
+async def _post_xreg_forecast(
+    args: argparse.Namespace,
+    *,
+    api_key: str,
+    payload: dict[str, Any],
+) -> tuple[dict[str, Any], float]:
+    started = monotonic()
     try:
-        stores = await fetch_active_stores(conn, excluded_site_codes=args.exclude_site_code)
-        if not stores:
-            raise RuntimeError("Nu exista magazine active pentru forecast.")
-        site_codes = [store.site_code for store in stores]
-        sales = await fetch_monthly_sales(
-            conn,
-            site_codes=site_codes,
-            start_month=args.history_start_month,
-            end_month=args.end_month,
+        response = post_forecast(args.api_url, api_key, payload, args.timeout)
+    except ForecastTimeoutError:
+        if args.coverage_mode != "seasonal_fallback":
+            raise
+        response = {"series": []}
+    latency = monotonic() - started
+    return response, latency
+
+
+def _attach_latency_xreg(
+    rows: list[dict[str, Any]],
+    *,
+    latency: float,
+) -> list[dict[str, Any]]:
+    for row in rows:
+        row["latency_sec"] = round(latency, 3)
+    return rows
+
+
+async def _append_operational_fallback(
+    args: argparse.Namespace,
+    *,
+    result_rows: list[dict[str, Any]],
+    stores: list[Any],
+    sales: dict[tuple[str, str], Decimal],
+    source_month: str,
+    target_months: list[str],
+) -> list[dict[str, Any]]:
+    if args.coverage_mode != "seasonal_fallback":
+        return result_rows
+    predicted_sites = {row["site_code"] for row in result_rows}
+    known_values: dict[tuple[str, str], Decimal] = {}
+    for target_month in target_months:
+        fallback_rows = build_fallback_rows(
+            target_month=target_month,
+            stores=stores,
+            existing_site_codes=predicted_sites,
+            sales=sales,
             metric=args.metric,
+            known_values=known_values,
+            source_month=source_month,
+            max_reference_month=source_month,
+        )
+        for row in fallback_rows:
+            known_values[(row["site_code"], target_month)] = row["forecast_sales"]
+        result_rows.extend(fallback_rows)
+    return result_rows
+
+
+def _append_per_month_fallback(
+    args: argparse.Namespace,
+    *,
+    result_rows: list[dict[str, Any]],
+    stores: list[Any],
+    sales: dict[tuple[str, str], Decimal],
+    target_month: str,
+) -> list[dict[str, Any]]:
+    if args.coverage_mode != "seasonal_fallback":
+        return result_rows
+    predicted_sites = {row["site_code"] for row in result_rows}
+    result_rows.extend(
+        build_fallback_rows(
+            target_month=target_month,
+            stores=stores,
+            existing_site_codes=predicted_sites,
+            sales=sales,
+            metric=args.metric,
+            source_month=add_month(target_month, -1),
+            max_reference_month=add_month(target_month, -1),
+        )
+    )
+    return result_rows
+
+
+def _record_skipped(
+    skipped_rows: list[dict[str, Any]],
+    *,
+    skipped: list[dict[str, Any]],
+    target_months: list[str],
+) -> None:
+    for skipped_row in skipped:
+        skipped_rows.append({"target_month": ",".join(target_months), **skipped_row})
+
+
+def _record_per_month_skipped(
+    skipped_rows: list[dict[str, Any]],
+    *,
+    skipped: list[dict[str, Any]],
+    target_month: str,
+) -> None:
+    for skipped_row in skipped:
+        skipped_rows.append({"target_month": target_month, **skipped_row})
+
+
+def _record_operational_summary_rows(
+    args: argparse.Namespace,
+    *,
+    target_months: list[str],
+    result_rows: list[dict[str, Any]],
+    skipped: list[dict[str, Any]],
+    latency: float,
+    summary_rows: list[dict[str, Any]],
+) -> None:
+    for target_month in target_months:
+        month_rows = [row for row in result_rows if row["target_month"] == target_month]
+        summary = summarize_month(target_month, month_rows, len(skipped))
+        summary["metric"] = args.metric
+        summary["latency_sec"] = round(latency, 3)
+        summary_rows.append(summary)
+        print(
+            f"{target_month}: stores={summary['stores_forecasted']} "
+            f"model={summary['stores_model']} fallback={summary['stores_fallback']} "
+            f"actual={summary['actual_sales']} forecast={summary['forecast_sales']} "
+            f"bias={summary['bias_pct']}% wape={summary['wape_pct']}% latency={summary['latency_sec']}s"
         )
 
-        if args.operational:
-            source_month = args.source_month or add_month(args.start_month, -1)
-            payload, meta_rows, skipped = build_payload(
-                stores=stores,
-                sales=sales,
-                target_months=target_months,
-                source_month=source_month,
-                history_start_month=args.history_start_month,
-                min_context=args.min_context,
-                metric=args.metric,
-                feature_profile=args.feature_profile,
-            )
-            if not payload["inputs"]:
-                raise RuntimeError("Nicio serie eligibila pentru rularea operationala.")
-            started = monotonic()
-            response = post_forecast(args.api_url, api_key, payload, args.timeout)
-            latency = monotonic() - started
-            predictions = parse_predictions(response, metric=args.metric)
-            result_rows = build_result_rows(
-                target_months=target_months,
-                meta_rows=meta_rows,
-                actuals=sales,
-                predictions=predictions,
-                metric=args.metric,
-            )
-            predicted_sites = {row["site_code"] for row in result_rows}
-            if args.include_fallback:
-                known_values: dict[tuple[str, str], Decimal] = {}
-                for target_month in target_months:
-                    fallback_rows = build_fallback_rows(
-                        target_month=target_month,
-                        stores=stores,
-                        existing_site_codes=predicted_sites,
-                        sales=sales,
-                        metric=args.metric,
-                        known_values=known_values,
-                        source_month=source_month,
-                        max_reference_month=source_month,
-                    )
-                    for row in fallback_rows:
-                        known_values[(row["site_code"], target_month)] = row["forecast_sales"]
-                    result_rows.extend(fallback_rows)
-            all_rows.extend(result_rows)
-            for skipped_row in skipped:
-                skipped_rows.append({"target_month": ",".join(target_months), **skipped_row})
-            for target_month in target_months:
-                month_rows = [row for row in result_rows if row["target_month"] == target_month]
-                summary = summarize_month(target_month, month_rows, len(skipped))
-                summary["metric"] = args.metric
-                summary["latency_sec"] = round(latency, 3)
-                summary_rows.append(summary)
-                print(
-                    f"{target_month}: stores={summary['stores_forecasted']} "
-                    f"model={summary['stores_model']} fallback={summary['stores_fallback']} "
-                    f"actual={summary['actual_sales']} forecast={summary['forecast_sales']} "
-                    f"bias={summary['bias_pct']}% wape={summary['wape_pct']}% latency={summary['latency_sec']}s"
-                )
-        else:
-            for target_month in target_months:
-                payload, meta_rows, skipped = build_payload(
-                    stores=stores,
-                    sales=sales,
-                    target_months=[target_month],
-                    source_month=add_month(target_month, -1),
-                    history_start_month=args.history_start_month,
-                    min_context=args.min_context,
-                    metric=args.metric,
-                    feature_profile=args.feature_profile,
-                )
-                if not payload["inputs"]:
-                    raise RuntimeError(f"Nicio serie eligibila pentru {target_month}.")
-                started = monotonic()
-                response = post_forecast(args.api_url, api_key, payload, args.timeout)
-                latency = monotonic() - started
-                predictions = parse_predictions(response, metric=args.metric)
-                result_rows = build_result_rows(
-                    target_months=[target_month],
-                    meta_rows=meta_rows,
-                    actuals=sales,
-                    predictions=predictions,
-                    metric=args.metric,
-                )
-                predicted_sites = {row["site_code"] for row in result_rows}
-                if args.include_fallback:
-                    result_rows.extend(
-                        build_fallback_rows(
-                            target_month=target_month,
-                            stores=stores,
-                            existing_site_codes=predicted_sites,
-                            sales=sales,
-                            metric=args.metric,
-                            source_month=add_month(target_month, -1),
-                            max_reference_month=add_month(target_month, -1),
-                        )
-                    )
-                all_rows.extend(result_rows)
-                for skipped_row in skipped:
-                    skipped_rows.append({"target_month": target_month, **skipped_row})
-                summary = summarize_month(target_month, result_rows, len(skipped))
-                summary["metric"] = args.metric
-                summary["latency_sec"] = round(latency, 3)
-                summary_rows.append(summary)
-                print(
-                    f"{target_month}: stores={summary['stores_forecasted']} "
-                    f"model={summary['stores_model']} fallback={summary['stores_fallback']} "
-                    f"actual={summary['actual_sales']} forecast={summary['forecast_sales']} "
-                    f"bias={summary['bias_pct']}% wape={summary['wape_pct']}% latency={summary['latency_sec']}s"
-                )
-    finally:
-        await conn.close()
 
+def _record_per_month_summary_row(
+    args: argparse.Namespace,
+    *,
+    target_month: str,
+    result_rows: list[dict[str, Any]],
+    skipped: list[dict[str, Any]],
+    latency: float,
+    summary_rows: list[dict[str, Any]],
+) -> None:
+    summary = summarize_month(target_month, result_rows, len(skipped))
+    summary["metric"] = args.metric
+    summary["latency_sec"] = round(latency, 3)
+    summary_rows.append(summary)
+    print(
+        f"{target_month}: stores={summary['stores_forecasted']} "
+        f"model={summary['stores_model']} fallback={summary['stores_fallback']} "
+        f"actual={summary['actual_sales']} forecast={summary['forecast_sales']} "
+        f"bias={summary['bias_pct']}% wape={summary['wape_pct']}% latency={summary['latency_sec']}s"
+    )
+
+
+async def _run_operational_pipeline(
+    args: argparse.Namespace,
+    *,
+    conn: asyncpg.Connection,
+    target_months: list[str],
+    cohorts: dict[str, HistoricalCohort],
+    sales: dict[tuple[str, str], Decimal],
+    api_key: str,
+    all_rows: list[dict[str, Any]],
+    summary_rows: list[dict[str, Any]],
+    skipped_rows: list[dict[str, Any]],
+) -> None:
+    cohort = cohorts[target_months[0]]
+    stores = list(cohort.stores)
+    source_month = cohort.source_month
+    payload, meta_rows, skipped = build_payload(
+        stores=stores,
+        sales=sales,
+        target_months=target_months,
+        source_month=source_month,
+        history_start_month=args.history_start_month,
+        min_context=args.min_context,
+        metric=args.metric,
+        feature_profile=args.feature_profile,
+        response_profile=args.response_profile,
+    )
+    if not payload["inputs"]:
+        raise RuntimeError("Nicio serie eligibila pentru rularea operationala.")
+    response, latency = await _post_xreg_forecast(args, api_key=api_key, payload=payload)
+    predictions = parse_predictions(
+        response,
+        request_payload=payload,
+        metric=args.metric,
+        response_profile=args.response_profile,
+        coverage_mode=args.coverage_mode,
+    )
+    result_rows = build_result_rows(
+        target_months=target_months,
+        meta_rows=meta_rows,
+        actuals=sales,
+        predictions=predictions,
+        metric=args.metric,
+    )
+    result_rows = _attach_latency_xreg(result_rows, latency=latency)
+    result_rows = await _append_operational_fallback(
+        args,
+        result_rows=result_rows,
+        stores=stores,
+        sales=sales,
+        source_month=source_month,
+        target_months=target_months,
+    )
+    all_rows.extend(result_rows)
+    _record_skipped(skipped_rows, skipped=skipped, target_months=target_months)
+    _record_operational_summary_rows(
+        args,
+        target_months=target_months,
+        result_rows=result_rows,
+        skipped=skipped,
+        latency=latency,
+        summary_rows=summary_rows,
+    )
+
+
+async def _run_per_month_pipeline(
+    args: argparse.Namespace,
+    *,
+    conn: asyncpg.Connection,
+    target_months: list[str],
+    cohorts: dict[str, HistoricalCohort],
+    sales: dict[tuple[str, str], Decimal],
+    api_key: str,
+    all_rows: list[dict[str, Any]],
+    summary_rows: list[dict[str, Any]],
+    skipped_rows: list[dict[str, Any]],
+) -> None:
+    for target_month in target_months:
+        cohort = cohorts[target_month]
+        stores = list(cohort.stores)
+        payload, meta_rows, skipped = build_payload(
+            stores=stores,
+            sales=sales,
+            target_months=[target_month],
+            source_month=add_month(target_month, -1),
+            history_start_month=args.history_start_month,
+            min_context=args.min_context,
+            metric=args.metric,
+            feature_profile=args.feature_profile,
+            response_profile=args.response_profile,
+        )
+        if not payload["inputs"]:
+            raise RuntimeError(f"Nicio serie eligibila pentru {target_month}.")
+        response, latency = await _post_xreg_forecast(args, api_key=api_key, payload=payload)
+        predictions = parse_predictions(
+            response,
+            request_payload=payload,
+            metric=args.metric,
+            response_profile=args.response_profile,
+            coverage_mode=args.coverage_mode,
+        )
+        result_rows = build_result_rows(
+            target_months=[target_month],
+            meta_rows=meta_rows,
+            actuals=sales,
+            predictions=predictions,
+            metric=args.metric,
+        )
+        result_rows = _attach_latency_xreg(result_rows, latency=latency)
+        result_rows = _append_per_month_fallback(
+            args,
+            result_rows=result_rows,
+            stores=stores,
+            sales=sales,
+            target_month=target_month,
+        )
+        all_rows.extend(result_rows)
+        _record_per_month_skipped(skipped_rows, skipped=skipped, target_month=target_month)
+        _record_per_month_summary_row(
+            args,
+            target_month=target_month,
+            result_rows=result_rows,
+            skipped=skipped,
+            latency=latency,
+            summary_rows=summary_rows,
+        )
+
+
+async def _execute_xreg_pipelines(
+    args: argparse.Namespace,
+    *,
+    conn: asyncpg.Connection,
+    target_months: list[str],
+    cohorts: dict[str, HistoricalCohort],
+    sales: dict[tuple[str, str], Decimal],
+    api_key: str,
+    all_rows: list[dict[str, Any]],
+    summary_rows: list[dict[str, Any]],
+    skipped_rows: list[dict[str, Any]],
+) -> None:
+    if args.operational:
+        await _run_operational_pipeline(
+            args,
+            conn=conn,
+            target_months=target_months,
+            cohorts=cohorts,
+            sales=sales,
+            api_key=api_key,
+            all_rows=all_rows,
+            summary_rows=summary_rows,
+            skipped_rows=skipped_rows,
+        )
+        return
+    await _run_per_month_pipeline(
+        args,
+        conn=conn,
+        target_months=target_months,
+        cohorts=cohorts,
+        sales=sales,
+        api_key=api_key,
+        all_rows=all_rows,
+        summary_rows=summary_rows,
+        skipped_rows=skipped_rows,
+    )
+
+
+def _xreg_output_suffix(args: argparse.Namespace) -> str:
     profile_prefix = "" if args.feature_profile == "v1" else f"{args.feature_profile}_"
-    suffix = f"{args.metric}_{profile_prefix}{args.start_month}_to_{args.end_month}"
+    return f"{args.metric}_{profile_prefix}{args.start_month}_to_{args.end_month}"
+
+
+_XREG_SUMMARY_FIELDS: list[str] = [
+    "metric",
+    "target_month",
+    "stores_forecasted",
+    "stores_model",
+    "stores_fallback",
+    "stores_model_skipped",
+    "actual_sales",
+    "forecast_sales",
+    "error_sales",
+    "bias_pct",
+    "wape_pct",
+    "latency_sec",
+]
+
+
+_XREG_STORE_FIELDS: list[str] = [
+    "metric",
+    "target_month",
+    "source_month",
+    "site_code",
+    "locatie",
+    "firma",
+    "regional",
+    "asm",
+    "first_input_month",
+    "context_months",
+    "method",
+    "actual_sales",
+    "forecast_sales",
+    "error_sales",
+    "abs_error_sales",
+    "error_pct",
+    "abs_error_pct",
+]
+
+
+_XREG_SKIPPED_FIELDS: list[str] = [
+    "target_month",
+    "site_code",
+    "reason",
+    "context_months",
+]
+
+
+def _write_xreg_csvs(
+    args: argparse.Namespace,
+    *,
+    output_dir: Path,
+    suffix: str,
+    summary_rows: list[dict[str, Any]],
+    all_rows: list[dict[str, Any]],
+    skipped_rows: list[dict[str, Any]],
+) -> None:
     write_csv(
         output_dir / f"xreg_backtest_summary_{suffix}.csv",
         summary_rows,
-        [
-            "metric",
-            "target_month",
-            "stores_forecasted",
-            "stores_model",
-            "stores_fallback",
-            "stores_model_skipped",
-            "actual_sales",
-            "forecast_sales",
-            "error_sales",
-            "bias_pct",
-            "wape_pct",
-            "latency_sec",
-        ],
+        _XREG_SUMMARY_FIELDS,
     )
     write_csv(
         output_dir / f"xreg_backtest_store_{suffix}.csv",
         all_rows,
-        [
-            "metric",
-            "target_month",
-            "source_month",
-            "site_code",
-            "locatie",
-            "firma",
-            "regional",
-            "asm",
-            "first_input_month",
-            "context_months",
-            "method",
-            "actual_sales",
-            "forecast_sales",
-            "error_sales",
-            "abs_error_sales",
-            "error_pct",
-            "abs_error_pct",
-        ],
+        _XREG_STORE_FIELDS,
     )
     if skipped_rows:
         write_csv(
             output_dir / f"xreg_backtest_skipped_{suffix}.csv",
             skipped_rows,
-            ["target_month", "site_code", "reason", "context_months"],
+            _XREG_SKIPPED_FIELDS,
         )
 
+
+def _build_xreg_overall(
+    args: argparse.Namespace,
+    *,
+    target_months: list[str],
+    all_rows: list[dict[str, Any]],
+    cohorts: dict[str, HistoricalCohort],
+) -> dict[str, Any]:
     overall_actual = sum((row["actual_sales"] for row in all_rows), Decimal("0"))
     overall_forecast = sum((row["forecast_sales"] for row in all_rows), Decimal("0"))
     overall_abs_error = sum((row["abs_error_sales"] for row in all_rows), Decimal("0"))
-    overall = {
+    return {
         "metric": args.metric,
         "feature_profile": args.feature_profile,
         "start_month": args.start_month,
@@ -736,7 +1076,63 @@ async def run(args: argparse.Namespace) -> int:
         "forecast_sales": str(overall_forecast),
         "bias_pct": str(pct(overall_forecast - overall_actual, overall_actual)),
         "wape_pct": str(pct(overall_abs_error, overall_actual)),
+        "cohorts": {
+            target_month: {
+                "source_month": cohort.source_month,
+                "source_generation": cohort.source_generation,
+                "source_generation_sha256": cohort.source_generation_sha256,
+                "cohort_sha256": cohort.cohort_sha256,
+                "store_count": len(cohort.stores),
+            }
+            for target_month, cohort in sorted(cohorts.items())
+        },
     }
+
+
+async def run(args: argparse.Namespace) -> int:
+    load_dotenv(args.env_file)
+    target_months, output_dir, api_key = _prepare_xreg_inputs(args)
+
+    conn = await asyncpg.connect(os.environ.get("DATABASE_URL", ""))
+    all_rows: list[dict[str, Any]] = []
+    summary_rows: list[dict[str, Any]] = []
+    skipped_rows: list[dict[str, Any]] = []
+    cohorts: dict[str, HistoricalCohort] = {}
+    try:
+        cohorts, sales = await load_historical_forecast_inputs(
+            conn,
+            args=args,
+            target_months=target_months,
+        )
+        await _execute_xreg_pipelines(
+            args,
+            conn=conn,
+            target_months=target_months,
+            cohorts=cohorts,
+            sales=sales,
+            api_key=api_key,
+            all_rows=all_rows,
+            summary_rows=summary_rows,
+            skipped_rows=skipped_rows,
+        )
+    finally:
+        await conn.close()
+
+    suffix = _xreg_output_suffix(args)
+    _write_xreg_csvs(
+        args,
+        output_dir=output_dir,
+        suffix=suffix,
+        summary_rows=summary_rows,
+        all_rows=all_rows,
+        skipped_rows=skipped_rows,
+    )
+    overall = _build_xreg_overall(
+        args,
+        target_months=target_months,
+        all_rows=all_rows,
+        cohorts=cohorts,
+    )
     (output_dir / f"xreg_backtest_overall_{suffix}.json").write_text(
         json.dumps(overall, indent=2),
         encoding="utf-8",
@@ -763,6 +1159,16 @@ def main() -> None:
     )
     parser.add_argument("--history-start-month", default="2018-01")
     parser.add_argument("--feature-profile", choices=["v1", "v2", "v3"], default="v1")
+    parser.add_argument(
+        "--response-profile",
+        choices=["point_only_v1", "point_quantiles_v1"],
+        default="point_quantiles_v1",
+    )
+    parser.add_argument(
+        "--coverage-mode",
+        choices=["fail_closed", "seasonal_fallback"],
+        default="fail_closed",
+    )
     parser.add_argument("--api-url", default=DEFAULT_API_URL)
     parser.add_argument("--api-key", default=None)
     parser.add_argument("--env-file", default="/opt/Mobiup/unihub-retail/.env")
@@ -775,8 +1181,6 @@ def main() -> None:
         default=DEFAULT_EXCLUDED_SITE_CODES.copy(),
         help="Exclude un magazin din rularea forecast. Implicit exclude magazinele inchise in iunie 2026.",
     )
-    parser.add_argument("--no-fallback", action="store_false", dest="include_fallback")
-    parser.set_defaults(include_fallback=True)
     args = parser.parse_args()
     raise SystemExit(asyncio.run(run(args)))
 

@@ -8,19 +8,9 @@ import {
 } from "../../api/dashboard";
 import type { DashboardQuery } from "../../api/dashboard";
 import type {
-  AgentStat,
-  AsmStat,
-  BrandMixItem,
-  CategoryMixItem,
-  DailySalesPoint,
-  DashboardAllResponse,
-  DashboardSummary,
-  MonthlyHistoryPoint,
-  PeriodComparisonPayload,
-  ReceiptBucketItem,
-  RegionalStat,
-  StoreStat,
-  YearHistoryPoint,
+  AgentStat, AsmStat, BrandMixItem, CategoryMixItem, DailySalesPoint, DashboardAllResponse,
+  DashboardSummary, MonthlyHistoryPoint, PeriodComparisonPayload, ReceiptBucketItem,
+  RegionalStat, StoreStat, YearHistoryPoint,
 } from "../../api/generated/runtime-types";
 import {
   buildCurrentDashboardQuery,
@@ -87,6 +77,59 @@ export function shouldPrefetchDashboardHistory(): boolean {
   );
 }
 
+function useDashboardQueryParams({
+  currentMonth, filters, historyMonth, selectedHistoryMonths,
+  includeClosedStores, historyYearFilter,
+}: Omit<UseDashboardDataParams, "activeSection" | "aggregateDetails">) {
+  const buildQuery = useCallback((month: string) => buildScopedMonthQuery(month, filters), [filters]);
+  const buildHistoryQuery = useCallback((month: string) => ({
+    ...buildQuery(month), current_scope: true, include_closed_stores: includeClosedStores,
+  }), [buildQuery, includeClosedStores]);
+  const currentQueryParams = useMemo(() => buildCurrentDashboardQuery(currentMonth, filters), [currentMonth, filters]);
+  const historyQueryParams = useMemo(() => ({ ...buildHistoryQuery(historyMonth), months_back: 12 }), [buildHistoryQuery, historyMonth]);
+  const historyDetailQueries = useMemo(() => selectedHistoryMonths.map((month) => buildHistoryQuery(month)), [buildHistoryQuery, selectedHistoryMonths]);
+  const historyDetailQueryParams = useMemo(() => ({ selected_months: selectedHistoryMonths, queries: historyDetailQueries }), [historyDetailQueries, selectedHistoryMonths]);
+  const currentHistoryQueryParams = useMemo(() => ({ ...buildHistoryQuery(currentMonth), months_back: 14 }), [buildHistoryQuery, currentMonth]);
+  const yearHistoryQueryParams = useMemo<(Omit<DashboardQuery, "month"> & { year: number }) | null>(() => {
+    if (historyYearFilter === null) return null;
+    const { month: _month, ...filterParams } = buildHistoryQuery(currentMonth);
+    return { ...filterParams, year: historyYearFilter };
+  }, [buildHistoryQuery, currentMonth, historyYearFilter]);
+  return {
+    currentQueryParams, historyQueryParams, historyDetailQueries,
+    historyDetailQueryParams, currentHistoryQueryParams, yearHistoryQueryParams,
+  };
+}
+
+function useDashboardHistoryPrefetch(
+  hasCurrentData: boolean,
+  historyMonth: string,
+  historyQueryParams: DashboardQuery,
+) {
+  const queryClient = useQueryClient();
+  useEffect(() => {
+    if (!hasCurrentData || !shouldPrefetchDashboardHistory()) return;
+    void queryClient.prefetchQuery({
+      queryKey: queryKeys.dashboard.history(historyMonth, historyQueryParams),
+      queryFn: ({ signal }) => getDashboardHistory(historyQueryParams, signal),
+      staleTime: DASHBOARD_STALE_MS,
+    });
+  }, [hasCurrentData, historyMonth, historyQueryParams, queryClient]);
+}
+
+function getHistoryError(
+  active: boolean,
+  historyQuery: { isError: boolean; data?: unknown; error: Error | null },
+  detailQuery: { isError: boolean; data?: unknown; error: Error | null },
+  loading: boolean,
+  historyCount: number,
+) {
+  if (!active) return null;
+  if (historyQuery.isError && !historyQuery.data) return historyQuery.error?.message || "Istoricul nu a putut fi incarcat.";
+  if (detailQuery.isError && !detailQuery.data) return detailQuery.error?.message || "Istoricul nu a putut fi incarcat.";
+  return !loading && historyCount === 0 ? "Nu exista date istorice pentru filtrarea curenta." : null;
+}
+
 export function useDashboardData({
   currentMonth,
   filters,
@@ -97,49 +140,13 @@ export function useDashboardData({
   historyYearFilter,
   aggregateDetails,
 }: UseDashboardDataParams) {
-  const queryClient = useQueryClient();
-  const buildQuery = useCallback(
-    (month: string) => buildScopedMonthQuery(month, filters),
-    [filters],
-  );
-  const buildHistoryQuery = useCallback(
-    (month: string) => ({
-      ...buildQuery(month),
-      current_scope: true,
-      include_closed_stores: includeClosedStores,
-    }),
-    [buildQuery, includeClosedStores],
-  );
-  const currentQueryParams = useMemo(
-    () => buildCurrentDashboardQuery(currentMonth, filters),
-    [currentMonth, filters],
-  );
-  const historyQueryParams = useMemo(
-    () => ({ ...buildHistoryQuery(historyMonth), months_back: 12 }),
-    [buildHistoryQuery, historyMonth],
-  );
-  const historyDetailQueries = useMemo(
-    () => selectedHistoryMonths.map((month) => buildHistoryQuery(month)),
-    [buildHistoryQuery, selectedHistoryMonths],
-  );
-  const historyDetailQueryParams = useMemo(
-    () => ({
-      selected_months: selectedHistoryMonths,
-      queries: historyDetailQueries,
-    }),
-    [historyDetailQueries, selectedHistoryMonths],
-  );
-  const currentHistoryQueryParams = useMemo(
-    () => ({ ...buildHistoryQuery(currentMonth), months_back: 14 }),
-    [buildHistoryQuery, currentMonth],
-  );
-  const yearHistoryQueryParams = useMemo<
-    (Omit<DashboardQuery, "month"> & { year: number }) | null
-  >(() => {
-    if (historyYearFilter === null) return null;
-    const { month: _month, ...filterParams } = buildHistoryQuery(currentMonth);
-    return { ...filterParams, year: historyYearFilter };
-  }, [buildHistoryQuery, currentMonth, historyYearFilter]);
+  const {
+    currentQueryParams, historyQueryParams, historyDetailQueries,
+    historyDetailQueryParams, currentHistoryQueryParams, yearHistoryQueryParams,
+  } = useDashboardQueryParams({
+    currentMonth, filters, historyMonth, selectedHistoryMonths,
+    includeClosedStores, historyYearFilter,
+  });
 
   const currentQuery = useQuery({
     queryKey: queryKeys.dashboard.current(currentMonth, currentQueryParams),
@@ -201,14 +208,7 @@ export function useDashboardData({
     void historyDetailQuery.refetch();
   }, [historyDetailQuery, historyQuery]);
 
-  useEffect(() => {
-    if (!currentQuery.data || !shouldPrefetchDashboardHistory()) return;
-    void queryClient.prefetchQuery({
-      queryKey: queryKeys.dashboard.history(historyMonth, historyQueryParams),
-      queryFn: ({ signal }) => getDashboardHistory(historyQueryParams, signal),
-      staleTime: DASHBOARD_STALE_MS,
-    });
-  }, [currentQuery.data, historyMonth, historyQueryParams, queryClient]);
+  useDashboardHistoryPrefetch(Boolean(currentQuery.data), historyMonth, historyQueryParams);
 
   return {
     summary,
@@ -218,32 +218,22 @@ export function useDashboardData({
     dailyLastYear: currentQuery.data?.daily_last_year ?? EMPTY_DAILY_SALES,
     periodComparison: currentQuery.data?.period_comparison ?? null,
     categoryMix: currentQuery.data?.category_mix ?? EMPTY_CATEGORY_MIX,
-    receiptBucketMix:
-      currentQuery.data?.receipt_bucket_mix ?? EMPTY_RECEIPT_BUCKETS,
-    focusSubcategoryMix:
-      currentQuery.data?.focus_subcategory_mix ?? EMPTY_CATEGORY_MIX,
+    receiptBucketMix: currentQuery.data?.receipt_bucket_mix ?? EMPTY_RECEIPT_BUCKETS,
+    focusSubcategoryMix: currentQuery.data?.focus_subcategory_mix ?? EMPTY_CATEGORY_MIX,
     brandMix: currentQuery.data?.brand_mix ?? EMPTY_BRAND_MIX,
     regionals: currentQuery.data?.regionals ?? EMPTY_REGIONAL_STATS,
     currentHistory: currentHistoryQuery.data?.history ?? EMPTY_HISTORY,
-    currentHistoryLoading:
-      currentHistoryQuery.isPending && activeSection === "history",
+    currentHistoryLoading: currentHistoryQuery.isPending && activeSection === "history",
     yearHistory: yearHistoryQuery.data?.points ?? EMPTY_YEAR_HISTORY,
-    yearHistoryLoading:
-      yearHistoryQuery.isPending &&
-      activeSection === "history" &&
-      historyYearFilter !== null,
+    yearHistoryLoading: yearHistoryQuery.isPending && activeSection === "history" && historyYearFilter !== null,
     history,
     historySummary: historyDetailQuery.data?.summary ?? null,
-    historyReceiptBucketMix:
-      historyDetailQuery.data?.receiptBucketMix ?? EMPTY_RECEIPT_BUCKETS,
-    historyFocusSubcategoryMix:
-      historyDetailQuery.data?.focusSubcategoryMix ?? EMPTY_CATEGORY_MIX,
+    historyReceiptBucketMix: historyDetailQuery.data?.receiptBucketMix ?? EMPTY_RECEIPT_BUCKETS,
+    historyFocusSubcategoryMix: historyDetailQuery.data?.focusSubcategoryMix ?? EMPTY_CATEGORY_MIX,
     historyDailySales: historyDetailQuery.data?.dailySales ?? EMPTY_DAILY_SALES,
-    historyCategoryMix:
-      historyDetailQuery.data?.categoryMix ?? EMPTY_CATEGORY_MIX,
+    historyCategoryMix: historyDetailQuery.data?.categoryMix ?? EMPTY_CATEGORY_MIX,
     historyBrandMix: historyDetailQuery.data?.brandMix ?? EMPTY_BRAND_MIX,
-    historyRegionals:
-      historyDetailQuery.data?.regionals ?? EMPTY_REGIONAL_STATS,
+    historyRegionals: historyDetailQuery.data?.regionals ?? EMPTY_REGIONAL_STATS,
     historyStores: historyDetailQuery.data?.stores ?? EMPTY_STORE_STATS,
     historyAgents: historyDetailQuery.data?.agents ?? EMPTY_AGENT_STATS,
     loading: currentQuery.isPending,
@@ -252,17 +242,7 @@ export function useDashboardData({
         ? currentQuery.error.message || "Eroare la incarcarea lunii in curs"
         : null,
     historyLoading,
-    historyError:
-      activeSection === "history"
-        ? historyQuery.isError && !historyQuery.data
-          ? historyQuery.error.message || "Istoricul nu a putut fi incarcat."
-          : historyDetailQuery.isError && !historyDetailQuery.data
-            ? historyDetailQuery.error.message ||
-              "Istoricul nu a putut fi incarcat."
-            : !historyLoading && history.length === 0
-              ? "Nu exista date istorice pentru filtrarea curenta."
-              : null
-        : null,
+    historyError: getHistoryError(activeSection === "history", historyQuery, historyDetailQuery, historyLoading, history.length),
     refetchCurrentData,
     refetchHistoryData,
   };

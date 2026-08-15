@@ -88,7 +88,7 @@ function isSessionExpired(error: unknown): boolean {
   return error instanceof ApiError && (error.status === 401 || error.status === 403);
 }
 
-function shouldRetry(error: unknown, failureCount: number): boolean {
+function shouldRetry(failureCount: number, error: unknown): boolean {
   if (failureCount >= 2 || isSessionExpired(error)) return false;
   return true;
 }

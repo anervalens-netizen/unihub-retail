@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from decimal import Decimal
-from typing import Literal
+from typing import Any, Literal
 
 from fastapi import HTTPException, status
 
@@ -105,6 +106,176 @@ def _validated_performance_key(
     return normalized
 
 
+@dataclass(slots=True)
+class _PerformanceSelection:
+    title: str
+    subtitle: str | None = None
+    firma: str | None = None
+    regional: str | None = None
+    site_code: FilterInput = None
+    agent: str | None = None
+    peer_rows: list[PerformancePeerRow] | None = None
+    agent_stats: AgentStats | None = None
+
+
+async def _load_regional_selection(
+    conn: object,
+    *,
+    month: str,
+    key: str,
+    firma: str | None,
+    current_scope: bool,
+    include_closed_stores: bool,
+) -> _PerformanceSelection:
+    rows = await _fetch_regional_stats(
+        conn,
+        month=month,
+        firma=firma,
+        regional=None,
+        asm=None,
+        site_code=None,
+        agent=None,
+        current_scope=current_scope,
+        include_closed_stores=include_closed_stores,
+    )
+    peers = [RegionalStats(**public_stats_row(row)) for row in rows]
+    if not any(row.regional == key for row in peers):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="RM-ul nu are date in luna selectata.",
+        )
+    return _PerformanceSelection(
+        title=key,
+        firma=firma,
+        regional=key,
+        peer_rows=regional_peer_rows(peers, key),
+    )
+
+
+async def _load_store_selection(
+    conn: object,
+    *,
+    month: str,
+    key: str,
+    current_scope: bool,
+    include_closed_stores: bool,
+) -> _PerformanceSelection:
+    rows = await _fetch_store_stats_rows(
+        conn,
+        month=month,
+        firma=None,
+        regional=None,
+        asm=None,
+        site_code=key,
+        agent=None,
+        current_scope=current_scope,
+        include_closed_stores=True,
+    )
+    selected = StoreStats(**dict(rows[0])) if rows else None
+    if selected is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Magazinul nu are date in luna selectata.",
+        )
+    peer_source = await _fetch_store_stats_rows(
+        conn,
+        month=month,
+        firma=selected.firma,
+        regional=selected.regional,
+        asm=None,
+        site_code=None,
+        agent=None,
+        current_scope=current_scope,
+        include_closed_stores=include_closed_stores,
+    )
+    return _PerformanceSelection(
+        title=selected.locatie,
+        subtitle=f"{selected.site_code} · {selected.firma} · {selected.regional}",
+        site_code=key,
+        peer_rows=store_peer_rows(
+            [StoreStats(**dict(row)) for row in peer_source], key
+        ),
+    )
+
+
+async def _load_agent_selection(
+    conn: object,
+    *,
+    month: str,
+    key: str,
+    site_code: FilterInput,
+    current_scope: bool,
+    include_closed_stores: bool,
+) -> _PerformanceSelection:
+    rows = await _fetch_agent_stats_rows(
+        conn,
+        month=month,
+        firma=None,
+        regional=None,
+        asm=None,
+        site_code=site_code,
+        agent=key,
+        current_scope=current_scope,
+        include_closed_stores=True,
+    )
+    selected = AgentStats(**dict(rows[0])) if rows else None
+    if selected is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Agentul nu are date in luna selectata.",
+        )
+    peer_source = await _fetch_agent_stats_rows(
+        conn,
+        month=month,
+        firma=None,
+        regional=None,
+        asm=None,
+        site_code=selected.site_code,
+        agent=None,
+        current_scope=current_scope,
+        include_closed_stores=include_closed_stores,
+    )
+    return _PerformanceSelection(
+        title=selected.agent,
+        subtitle=f"{selected.locatie} · {selected.firma}",
+        site_code=selected.site_code,
+        agent=key,
+        agent_stats=selected,
+        peer_rows=agent_peer_rows(
+            [AgentStats(**dict(row)) for row in peer_source],
+            selected.agent,
+            selected.site_code,
+        ),
+    )
+
+
+async def _select_performance_entity(
+    conn: object,
+    *,
+    month: str,
+    level: Literal["regional", "store", "agent"],
+    key: str,
+    firma: str | None,
+    site_code: FilterInput,
+    current_scope: bool,
+    include_closed_stores: bool,
+) -> _PerformanceSelection:
+    common: dict[str, Any] = {
+        "conn": conn,
+        "month": month,
+        "key": key,
+        "current_scope": current_scope,
+        "include_closed_stores": include_closed_stores,
+    }
+    if level == "regional":
+        return await _load_regional_selection(firma=firma, **common)
+    if level == "store":
+        return await _load_store_selection(**common)
+    if level == "agent":
+        return await _load_agent_selection(site_code=site_code, **common)
+    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Nivel invalid.")
+
+
 async def load_performance_detail(
     service: DashboardServicePort,
     month: str,
@@ -122,112 +293,30 @@ async def load_performance_detail(
 ) -> PerformanceDetailResponse:
     del regional, asm, agent
     key = _validated_performance_key(level, key)
-
-    effective_firma = normalize_filter(firma)
-    effective_regional: str | None = None
-    effective_site_code: FilterInput = None
-    effective_agent: str | None = None
-    title = key
-    subtitle: str | None = None
-    peer_rows: list[PerformancePeerRow] = []
     context_summary: DashboardSummary | None = None
-    selected_agent_stats: AgentStats | None = None
 
     async with service._pool_for(deadline).acquire() as conn:
-        if level == "regional":
-            effective_regional = key
-            regional_rows = await _fetch_regional_stats(
-                conn,
-                month=month,
-                firma=effective_firma,
-                regional=None,
-                asm=None,
-                site_code=None,
-                agent=None,
-                current_scope=current_scope,
-                include_closed_stores=include_closed_stores,
-            )
-            peers = [RegionalStats(**public_stats_row(row)) for row in regional_rows]
-            selected = next((row for row in peers if row.regional == key), None)
-            if selected is None:
-                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="RM-ul nu are date in luna selectata.")
-            peer_rows = regional_peer_rows(peers, key)
-        elif level == "store":
-            effective_site_code = key
-            store_rows = await _fetch_store_stats_rows(
-                conn,
-                month=month,
-                firma=None,
-                regional=None,
-                asm=None,
-                site_code=key,
-                agent=None,
-                current_scope=current_scope,
-                include_closed_stores=True,
-            )
-            stores = [StoreStats(**dict(row)) for row in store_rows]
-            selected_store = stores[0] if stores else None
-            if selected_store is None:
-                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Magazinul nu are date in luna selectata.")
-            title = selected_store.locatie
-            subtitle = f"{selected_store.site_code} · {selected_store.firma} · {selected_store.regional}"
-            peer_source = await _fetch_store_stats_rows(
-                conn,
-                month=month,
-                firma=selected_store.firma,
-                regional=selected_store.regional,
-                asm=None,
-                site_code=None,
-                agent=None,
-                current_scope=current_scope,
-                include_closed_stores=include_closed_stores,
-            )
-            peer_rows = store_peer_rows([StoreStats(**dict(row)) for row in peer_source], key)
-        elif level == "agent":
-            effective_site_code = site_code
-            effective_agent = key
-            agent_rows = await _fetch_agent_stats_rows(
-                conn,
-                month=month,
-                firma=None,
-                regional=None,
-                asm=None,
-                site_code=effective_site_code,
-                agent=key,
-                current_scope=current_scope,
-                include_closed_stores=True,
-            )
-            agents = [AgentStats(**dict(row)) for row in agent_rows]
-            selected_agent = agents[0] if agents else None
-            if selected_agent is None:
-                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Agentul nu are date in luna selectata.")
-            selected_agent_stats = selected_agent
-            effective_site_code = selected_agent.site_code
-            title = selected_agent.agent
-            subtitle = f"{selected_agent.locatie} · {selected_agent.firma}"
-            peer_source = await _fetch_agent_stats_rows(
-                conn,
-                month=month,
-                firma=None,
-                regional=None,
-                asm=None,
-                site_code=selected_agent.site_code,
-                agent=None,
-                current_scope=current_scope,
-                include_closed_stores=include_closed_stores,
-            )
-            peer_rows = agent_peer_rows([AgentStats(**dict(row)) for row in peer_source], selected_agent.agent, selected_agent.site_code)
-        else:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Nivel invalid.")
+        selection = await _select_performance_entity(
+            conn,
+            month=month,
+            level=level,
+            key=key,
+            firma=normalize_filter(firma),
+            site_code=site_code,
+            current_scope=current_scope,
+            include_closed_stores=include_closed_stores,
+        )
+
+    peer_rows = selection.peer_rows or []
 
     summary, history_response, daily = await _gather_cancel_on_error(
         service.get_summary(
             month,
-            effective_firma if level == "regional" else None,
-            effective_regional,
+            selection.firma if level == "regional" else None,
+            selection.regional,
             None,
-            effective_site_code,
-            effective_agent,
+            selection.site_code,
+            selection.agent,
             current_scope=current_scope,
             include_closed_stores=include_closed_stores,
             deadline=deadline,
@@ -235,22 +324,22 @@ async def load_performance_detail(
         service.get_monthly_history(
             month,
             14,
-            effective_firma if level == "regional" else None,
-            effective_regional,
+            selection.firma if level == "regional" else None,
+            selection.regional,
             None,
-            effective_site_code,
-            effective_agent,
+            selection.site_code,
+            selection.agent,
             current_scope=current_scope,
             include_closed_stores=include_closed_stores,
             deadline=deadline,
         ),
         service.get_daily_sales(
             month,
-            effective_firma if level == "regional" else None,
-            effective_regional,
+            selection.firma if level == "regional" else None,
+            selection.regional,
             None,
-            effective_site_code,
-            effective_agent,
+            selection.site_code,
+            selection.agent,
             current_scope=current_scope,
             include_closed_stores=include_closed_stores,
             deadline=deadline,
@@ -258,14 +347,14 @@ async def load_performance_detail(
         task_name="dashboard:performance-detail",
     )
 
-    if level == "agent" and effective_site_code and selected_agent_stats is not None:
-        summary = apply_agent_target_summary(summary, selected_agent_stats)
+    if level == "agent" and selection.site_code and selection.agent_stats is not None:
+        summary = apply_agent_target_summary(summary, selection.agent_stats)
         context_summary = await service.get_summary(
             month,
             None,
             None,
             None,
-            effective_site_code,
+            selection.site_code,
             None,
             current_scope=current_scope,
             include_closed_stores=include_closed_stores,
@@ -281,8 +370,8 @@ async def load_performance_detail(
     return PerformanceDetailResponse(
         level=level,
         key=key,
-        title=title,
-        subtitle=subtitle,
+        title=selection.title,
+        subtitle=selection.subtitle,
         month=month,
         summary=summary,
         history=history_response.history,
@@ -327,12 +416,26 @@ def performance_signals(
 ) -> tuple[list[str], list[str]]:
     strengths: list[str] = []
     risks: list[str] = []
+    _append_target_signal(summary, strengths, risks)
+    _append_bon2acc_signal(summary, strengths, risks)
+    _append_focus_signal(summary, strengths, risks)
+    _append_trend_signal(summary, history, level, strengths, risks)
+    return strengths[:3], risks[:3]
+
+
+def _append_target_signal(
+    summary: DashboardSummary, strengths: list[str], risks: list[str]
+) -> None:
     target_pct = summary.forecast_target_progress_pct or summary.target_progress_pct
     if target_pct is not None and target_pct >= 100:
         strengths.append("Ritmul proiectat acopera targetul lunii.")
     elif target_pct is not None and target_pct < 85:
         risks.append("Ritmul proiectat este sub 85% din target.")
 
+
+def _append_bon2acc_signal(
+    summary: DashboardSummary, strengths: list[str], risks: list[str]
+) -> None:
     if summary.proc_bon2acc is not None and summary.proc_bon2acc > 35:
         strengths.append("Bon2Acc este foarte bine, peste 35%.")
     elif summary.proc_bon2acc is not None and summary.proc_bon2acc < 20:
@@ -340,11 +443,23 @@ def performance_signals(
     elif summary.proc_bon2acc is not None and summary.proc_bon2acc < 30:
         risks.append("Bon2Acc este scazut, sub 30%.")
 
+
+def _append_focus_signal(
+    summary: DashboardSummary, strengths: list[str], risks: list[str]
+) -> None:
     if summary.prc_focus_acc_qty is not None and summary.prc_focus_acc_qty > 8:
         strengths.append("Focus-ul este bun, peste 8%.")
     elif summary.prc_focus_acc_qty is not None and summary.prc_focus_acc_qty < 6:
         risks.append("Focus-ul este scazut, sub 6%.")
 
+
+def _append_trend_signal(
+    summary: DashboardSummary,
+    history: list[MonthlyHistoryPoint],
+    level: Literal["regional", "store", "agent"],
+    strengths: list[str],
+    risks: list[str],
+) -> None:
     previous = [point for point in history if point.month < summary.month and point.total_sales > 0][-3:]
     if previous:
         avg_previous = sum((point.total_sales for point in previous), Decimal(0)) / Decimal(len(previous))
@@ -356,8 +471,6 @@ def performance_signals(
                 strengths.append(f"{entity_label.capitalize()} este peste media ultimelor 3 luni.")
             elif delta_pct <= -10:
                 risks.append(f"{entity_label.capitalize()} este sub media ultimelor 3 luni.")
-
-    return strengths[:3], risks[:3]
 
 def performance_note(
     summary: DashboardSummary,

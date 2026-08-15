@@ -223,7 +223,6 @@ function ManagerCard({ row, month }: { row: ManagerOverview; month: string }) {
   const staffedStores = row.active_stores - row.stores_without_agents;
   const staffingCoverage = row.active_stores > 0 ? staffedStores / row.active_stores * 100 : null;
   const regionalLabel = row.regional && row.regional !== row.manager ? row.regional : null;
-
   return (
     <article className="overflow-hidden rounded-2xl border border-slate-200 bg-slate-50/70 lg:hidden dark:border-slate-700 dark:bg-slate-800/40">
       <button
@@ -259,7 +258,6 @@ function ManagerCard({ row, month }: { row: ManagerOverview; month: string }) {
           </div>
         </div>
       </button>
-
       <div className="border-t border-slate-200 px-4 py-3 dark:border-slate-700">
         <div className="grid grid-cols-2 gap-2">
           <PortfolioStat icon={<Store className="h-3.5 w-3.5" />} label="Magazine" value={NUMBER.format(row.active_stores)} hint={`${staffedStores} cu agenți raportați`} />
@@ -279,7 +277,6 @@ function ManagerCard({ row, month }: { row: ManagerOverview; month: string }) {
             valueClassName={staffingCoverage !== null && staffingCoverage < 100 ? 'text-amber-600 dark:text-amber-400' : undefined}
           />
         </div>
-
         {open && <div className="mt-3 grid gap-x-5 gap-y-3 rounded-xl bg-white px-3 py-3 sm:grid-cols-2 dark:bg-slate-900/60">
           <HealthMetric
             icon={<Users className="h-3.5 w-3.5" />}
@@ -310,7 +307,6 @@ function ManagerCard({ row, month }: { row: ManagerOverview; month: string }) {
             tone={metricTone(row.checklist_score, 95, 85)}
           />
         </div>}
-
         <div className="mt-2 flex items-start gap-1.5 text-[11px] text-slate-500 dark:text-slate-400">
           {health.tone === 'emerald'
             ? <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-emerald-500" />
@@ -318,7 +314,6 @@ function ManagerCard({ row, month }: { row: ManagerOverview; month: string }) {
           <span>{health.detail}</span>
         </div>
       </div>
-
       {open && (
         <div className="space-y-3 border-t border-slate-200 bg-white px-4 py-4 dark:border-slate-700 dark:bg-slate-900">
           {SALARY_GRILA_MANAGERS.has(row.manager) && (

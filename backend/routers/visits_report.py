@@ -12,7 +12,7 @@ from models import (
     VisitTreeResponse,
 )
 from composition import build_visits_service
-from schemas.common import MonthStr
+from schemas.common import BoundedListItem100, BoundedText120, MonthStr
 from services.visits_report import VisitsReportService
 
 router = APIRouter(prefix="/api/visits-report", tags=["visits-report"])
@@ -22,11 +22,11 @@ get_visits_service = build_visits_service
 
 @router.get("", response_model=VisitReportResponse)
 async def get_visits_report(
-    month: MonthStr = Query(...),
-    firma: str | None = None,
-    rm: str | None = None,
-    asm: str | None = None,
-    magazin: list[str] | None = Query(None),
+    month: MonthStr,
+    firma: BoundedText120 | None = None,
+    rm: BoundedText120 | None = None,
+    asm: BoundedText120 | None = None,
+    magazin: list[BoundedListItem100] | None = Query(None, max_length=100),
     svc: VisitsReportService = Depends(get_visits_service),
 ) -> VisitReportResponse:
     return await svc.get_visits_report(month, firma, rm, asm, magazin)
@@ -34,11 +34,11 @@ async def get_visits_report(
 
 @router.get("/tree", response_model=VisitTreeResponse)
 async def get_visits_tree(
-    month: MonthStr = Query(...),
-    firma: str | None = None,
-    rm: str | None = None,
-    asm: str | None = None,
-    magazin: list[str] | None = Query(None),
+    month: MonthStr,
+    firma: BoundedText120 | None = None,
+    rm: BoundedText120 | None = None,
+    asm: BoundedText120 | None = None,
+    magazin: list[BoundedListItem100] | None = Query(None, max_length=100),
     svc: VisitsReportService = Depends(get_visits_service),
 ) -> VisitTreeResponse:
     return await svc.get_visits_tree(firma, rm, asm, magazin, month)

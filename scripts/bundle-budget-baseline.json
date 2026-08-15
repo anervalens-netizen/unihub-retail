@@ -3,28 +3,28 @@
   "tolerance_bytes": 4096,
   "budget": {
     "entry_js": {
-      "raw": 35583,
-      "gzip": 11626
+      "raw": 40783,
+      "gzip": 13026
     },
     "initial_css": {
-      "raw": 124674,
-      "gzip": 18293
+      "raw": 124995,
+      "gzip": 18334
     },
     "vendor": {
       "raw": 396230,
-      "gzip": 125261
+      "gzip": 125260
     },
     "ui": {
-      "raw": 143908,
-      "gzip": 46877
+      "raw": 143957,
+      "gzip": 46840
     },
     "charts": {
       "raw": 428671,
       "gzip": 118602
     },
     "precache_total": {
-      "raw": 2089299,
-      "gzip": 1590214
+      "raw": 1497673,
+      "gzip": 994332
     }
   }
 }

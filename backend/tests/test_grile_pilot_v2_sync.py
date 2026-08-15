@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import date, datetime, timezone
 from decimal import Decimal
 from pathlib import Path
-from typing import Any
+from typing import Any, TypedDict
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -19,9 +19,27 @@ from services.grile_pilot_v2_sync import (
     _serial_instant,
     _snapshot_payload,
     _store_source,
+    guard_sales_generation_lineage,
     load_pilot_v2_source,
     sync_pilot_v2_sheets,
 )
+
+
+GENERATION_HASH = "a" * 64
+NEXT_GENERATION_HASH = "b" * 64
+class _Lineage(TypedDict):
+    generation_hash: str
+    sales_revision: int
+    campaign_revision: int
+    contest_revision: int
+
+
+LINEAGE: _Lineage = {
+    "generation_hash": GENERATION_HASH,
+    "sales_revision": 9,
+    "campaign_revision": 11,
+    "contest_revision": 7,
+}
 
 
 class _AsyncpgRecordLike(dict[str, Any]):
@@ -46,7 +64,9 @@ def _source() -> PilotV2Source:
     return PilotV2Source(
         month="2026-08",
         cutoff=date(2026, 8, 11),
+        sales_generation_hash=GENERATION_HASH,
         sales_revision=9,
+        source_revision=19,
         campaign_revision=11,
         forecast_factor=Decimal("2"),
         daily_rows=(
@@ -159,6 +179,9 @@ def test_snapshot_payload_uses_the_same_authoritative_source_as_google(
     assert payload["schema_version"] == 1
     assert payload["month"] == "2026-08"
     assert payload["cutoff"] == "2026-08-11"
+    assert payload["sales_generation_hash"] == GENERATION_HASH
+    assert payload["sales_revision"] == 9
+    assert payload["source_revision"] == 19
     assert payload["stores"] == {
         "SITE": {"target": "3100", "realized": "150", "forecast": "300"}
     }
@@ -218,6 +241,7 @@ async def test_load_source_uses_one_repeatable_read_snapshot(
     connection.fetchrow = AsyncMock(
         side_effect=[
             {"cutoff_date": date(2026, 8, 11)},
+            {"generation_hash": GENERATION_HASH, "revision": 9},
             {"authority_head": "campaign:11", "authority_count": 1},
         ]
     )
@@ -261,8 +285,12 @@ async def test_load_source_uses_one_repeatable_read_snapshot(
 
     source = await load_pilot_v2_source(pool, "2026-08")
 
-    assert source.cutoff == date(2026, 8, 11)
-    assert 0 < source.sales_revision < 2**48
+    assert (source.cutoff, source.sales_generation_hash, source.sales_revision) == (
+        date(2026, 8, 11),
+        GENERATION_HASH,
+        9,
+    )
+    assert 0 < source.source_revision < 2**48
     assert source.campaign_revision == 11
     assert source.forecast_factor == Decimal("2")
     assert source.targets == {"SITE": Decimal("3100")}
@@ -279,8 +307,15 @@ async def test_load_source_uses_one_repeatable_read_snapshot(
     )
     queries = [str(call.args[0]) for call in connection.fetchrow.await_args_list]
     queries.extend(str(call.args[0]) for call in connection.fetch.await_args_list)
-    assert any("reporting_sales_cutoff_v1" in query for query in queries)
-    assert any("reporting_campaign_month_v3" in query for query in queries)
+    joined_queries = "\n".join(queries)
+    assert all(
+        relation in joined_queries
+        for relation in (
+            "reporting_sales_cutoff_v1",
+            "retail_outbox_events",
+            "reporting_campaign_month_v3",
+        )
+    )
     assert all("sales_generation_heads" not in query for query in queries)
     assert all("campaign_reporting_rows" not in query for query in queries)
 
@@ -302,6 +337,10 @@ def test_grile_worker_receives_only_required_reporting_reads() -> None:
     assert "TO unihub_operations" in migration
     assert "sales_generation_heads" not in migration
     assert "campaign_reporting_rows" not in migration
+    outbox_migration = Path(
+        "db/migrations/069_ai_cohort_and_transactional_outbox.sql"
+    ).read_text()
+    assert "GRANT SELECT ON TABLE retail_outbox_events TO unihub_operations" in outbox_migration
 
 
 def test_grile_worker_can_execute_only_required_forecast_digest() -> None:
@@ -326,6 +365,57 @@ async def test_load_source_rejects_non_pilot_month() -> None:
 
 
 @pytest.mark.asyncio
+async def test_campaign_lineage_guard_locks_and_classifies_exact_or_superseded() -> None:
+    connection = MagicMock()
+    connection.transaction.return_value = _AsyncContext(None)
+    connection.fetchrow = AsyncMock(
+        side_effect=[
+            {"generation_hash": GENERATION_HASH, "revision": 9},
+            {"generation_hash": NEXT_GENERATION_HASH, "revision": 10},
+        ]
+    )
+    pool = MagicMock()
+    pool.acquire.return_value = _AsyncContext(connection)
+
+    async with guard_sales_generation_lineage(
+        pool,
+        month="2026-08",
+        generation_hash=GENERATION_HASH,
+        sales_revision=9,
+    ) as exact_status:
+        assert exact_status == "current"
+    async with guard_sales_generation_lineage(
+        pool,
+        month="2026-08",
+        generation_hash=GENERATION_HASH,
+        sales_revision=9,
+    ) as delayed_status:
+        assert delayed_status == "superseded"
+
+    assert all("FOR SHARE OF head" in call.args[0] for call in connection.fetchrow.await_args_list)
+
+
+@pytest.mark.asyncio
+async def test_campaign_lineage_guard_rejects_same_revision_hash_mismatch() -> None:
+    connection = MagicMock()
+    connection.transaction.return_value = _AsyncContext(None)
+    connection.fetchrow = AsyncMock(
+        return_value={"generation_hash": NEXT_GENERATION_HASH, "revision": 9}
+    )
+    pool = MagicMock()
+    pool.acquire.return_value = _AsyncContext(connection)
+
+    with pytest.raises(RuntimeError, match="hash differs"):
+        async with guard_sales_generation_lineage(
+            pool,
+            month="2026-08",
+            generation_hash=GENERATION_HASH,
+            sales_revision=9,
+        ):
+            pytest.fail("mismatched lineage entered the publication fence")
+
+
+@pytest.mark.asyncio
 async def test_sync_skips_current_sheet_and_updates_stale_sheet(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -343,8 +433,13 @@ async def test_sync_skips_current_sheet_and_updates_stale_sheet(
     monkeypatch.setattr(sync_module, "call_with_backoff", write)
     monkeypatch.setattr(sync_module, "write_pilot_v2_snapshot", snapshot)
 
-    result = await sync_pilot_v2_sheets(MagicMock(), MagicMock())
+    result = await sync_pilot_v2_sheets(MagicMock(), MagicMock(), **LINEAGE)
 
+    assert result["status"] == "completed"
+    assert result["sales_generation_hash"] == GENERATION_HASH
+    assert result["sales_generation_revision"] == 9
+    assert result["campaign_revision"] == 11
+    assert result["contest_revision"] == 7
     assert result["synced"] == ["SITE"]
     assert result["skipped"] == ["SITE"]
     assert result["failed"] == []
@@ -377,6 +472,98 @@ async def test_sync_reports_provider_failure_without_hiding_it(
     monkeypatch.setattr(sync_module, "write_pilot_v2_snapshot", snapshot)
 
     with pytest.raises(RuntimeError, match="sync incomplete: SITE"):
-        await sync_pilot_v2_sheets(MagicMock(), MagicMock())
+        await sync_pilot_v2_sheets(MagicMock(), MagicMock(), **LINEAGE)
 
     snapshot.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_delayed_generation_is_superseded_before_google_or_snapshot(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = PilotV2Source(
+        **{
+            **_source().__dict__,
+            "sales_generation_hash": NEXT_GENERATION_HASH,
+            "sales_revision": 10,
+        }
+    )
+    read_state = AsyncMock()
+    google_write = AsyncMock()
+    snapshot = AsyncMock()
+    monkeypatch.setattr(sync_module, "load_pilot_v2_source", AsyncMock(return_value=source))
+    monkeypatch.setattr(sync_module, "_read_sheet_state", read_state)
+    monkeypatch.setattr(sync_module, "call_with_backoff", google_write)
+    monkeypatch.setattr(sync_module, "write_pilot_v2_snapshot", snapshot)
+
+    result = await sync_pilot_v2_sheets(MagicMock(), MagicMock(), **LINEAGE)
+
+    assert result == {
+        "status": "superseded",
+        "month": "2026-08",
+        "sales_generation_hash": GENERATION_HASH,
+        "sales_generation_revision": 9,
+        "campaign_revision": 11,
+        "contest_revision": 7,
+        "current_sales_generation_hash": NEXT_GENERATION_HASH,
+        "current_sales_generation_revision": 10,
+        "synced": [],
+        "skipped": [],
+        "failed": [],
+    }
+    read_state.assert_not_awaited()
+    google_write.assert_not_awaited()
+    snapshot.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_same_revision_hash_mismatch_fails_before_side_effect(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    read_state = AsyncMock()
+    google_write = AsyncMock()
+    snapshot = AsyncMock()
+    monkeypatch.setattr(
+        sync_module,
+        "load_pilot_v2_source",
+        AsyncMock(
+            return_value=PilotV2Source(
+                **{**_source().__dict__, "sales_generation_hash": NEXT_GENERATION_HASH}
+            )
+        ),
+    )
+    monkeypatch.setattr(sync_module, "_read_sheet_state", read_state)
+    monkeypatch.setattr(sync_module, "call_with_backoff", google_write)
+    monkeypatch.setattr(sync_module, "write_pilot_v2_snapshot", snapshot)
+
+    with pytest.raises(RuntimeError, match="hash differs"):
+        await sync_pilot_v2_sheets(MagicMock(), MagicMock(), **LINEAGE)
+
+    read_state.assert_not_awaited()
+    google_write.assert_not_awaited()
+    snapshot.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_exact_retry_is_marker_stable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(sync_module, "PILOT_V2_SHEETS", (_sheet(),))
+    monkeypatch.setattr(sync_module, "load_pilot_v2_source", AsyncMock(return_value=_source()))
+    monkeypatch.setattr(
+        sync_module,
+        "_read_sheet_state",
+        AsyncMock(side_effect=[(8, 10, True), (9, 11, True)]),
+    )
+    google_write = AsyncMock(return_value={})
+    snapshot = AsyncMock()
+    monkeypatch.setattr(sync_module, "call_with_backoff", google_write)
+    monkeypatch.setattr(sync_module, "write_pilot_v2_snapshot", snapshot)
+
+    first = await sync_pilot_v2_sheets(MagicMock(), MagicMock(), **LINEAGE)
+    second = await sync_pilot_v2_sheets(MagicMock(), MagicMock(), **LINEAGE)
+
+    assert first["synced"] == ["SITE"]
+    assert second["skipped"] == ["SITE"]
+    assert google_write.await_count == 1
+    assert snapshot.await_count == 2

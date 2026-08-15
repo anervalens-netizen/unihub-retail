@@ -2614,6 +2614,32 @@ run_migrations() {
   fi
 }
 
+upgrade_promo_generation() {
+  if [[ "$TEST_MODE" == "1" ]]; then
+    log "TEST promo generation ownership upgrade"
+    return
+  fi
+  local script="$LIVE_ROOT/backend/scripts/migrate_promo_generation_v1_to_v2.py"
+  local python="$LIVE_ROOT/backend/venv/bin/python"
+  [[ -f "$script" && ! -L "$script" && -x "$python" ]] \
+    || die "promo generation migration runtime is unavailable"
+  local -a command=(
+    /usr/bin/env -i
+    PATH=/usr/bin:/bin
+    PYTHONNOUSERSITE=1
+    PYTHONSAFEPATH=1
+    PYTHONDONTWRITEBYTECODE=1
+    "$python" -B -I "$script"
+    --data-dir "$LIVE_ROOT/data"
+  )
+  sudo --non-interactive -u "$IMPORT_FILE_USER" -- "${command[@]}" --apply
+  local result
+  result="$(sudo --non-interactive -u "$IMPORT_FILE_USER" -- "${command[@]}")"
+  [[ "$result" == promo-v1-v2:\ status=already_v2* ]] \
+    || die "promo generation ownership verification failed"
+  log "promo generation ownership verified"
+}
+
 verify_local_health() {
   if [[ "$TEST_MODE" == "1" ]]; then
     if [[ "$TEST_FAIL_PHASE" == "health" && ! -e "$TEST_ROOT/.health-failure-consumed" ]]; then
@@ -2854,6 +2880,7 @@ deploy_release() {
   write_release_manifest "$backup_dir" "$old_sha" "$expected_sha" "switched"
   migrations_may_have_applied=1
   run_migrations
+  upgrade_promo_generation
   start_runtime
   verify_local_health
   reload_prometheus

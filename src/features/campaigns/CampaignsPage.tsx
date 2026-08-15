@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Sparkles } from "lucide-react";
 import { IncentiveDesktopHeader } from "../../components/IncentiveDesktopDashboard";
 import type { AppFilters } from "../../lib/appFilters";
@@ -38,6 +38,47 @@ const SECTION_TABS: SegmentedTabOption<CampaignSection>[] = [
   { value: "focus", label: "Focus" },
 ];
 
+type CampaignData = ReturnType<typeof useCampaignsData>;
+
+function campaignLoadingLabel(section: CampaignSection): string {
+  if (section === "promo") return "Se incarca promotia...";
+  if (section === "incentive") return "Se incarca incentive-ul...";
+  if (section === "premium") return "Se incarca analiza foliilor premium...";
+  return "Se incarca datele de focus...";
+}
+
+function CampaignContent({ activeSection, data, months }: { activeSection: CampaignSection; data: CampaignData; months: string[] }) {
+  const selectedContest = data.contests.find((contest) => contest.key === data.selectedContestKey) ?? data.contests[0] ?? null;
+  if (activeSection === "concurs") {
+    if (data.contestLoading) return <LoadingCard label="Se incarca concursul..." />;
+    if (data.contestError) return <ErrorCard message={data.contestError} onRetry={() => void data.refetchContests()} />;
+    return <ContestSection contests={data.contests} selectedContest={selectedContest} month={data.promoMonth} months={months} currentMonth={data.latestMonth} onMonthChange={data.setPromoMonth} onSelect={data.setSelectedContestKey} />;
+  }
+  if (data.loading) return <LoadingCard label={campaignLoadingLabel(activeSection)} />;
+  if (data.currentError) return <ErrorCard message={data.currentError} onRetry={() => void data.refetchCurrent()} />;
+  if (activeSection === "promo") {
+    return <PromoSection data={data.promoData} month={data.promoMonth} months={months} currentMonth={data.latestMonth} selectedPromotionKey={data.selectedPromotionKey} onMonthChange={data.setPromoMonth} onPromotionChange={data.setSelectedPromotionKey} />;
+  }
+  if (activeSection === "incentive") {
+    return <IncentiveSection data={data.promoData} month={data.promoMonth} months={months} currentMonth={data.latestMonth} onMonthChange={data.setPromoMonth} />;
+  }
+  if (activeSection === "premium") {
+    return <><PremiumMonthSelector month={data.promoMonth} months={months} currentMonth={data.latestMonth} onChange={data.setPromoMonth} /><PremiumGlassFocusSection analysis={data.premiumGlass} surfaceMode={data.premiumSurfaceMode} onSurfaceModeChange={data.setPremiumSurfaceMode} /></>;
+  }
+  return <FocusSection snapshot={data.snapshot} history={data.focusHistory} historyMonth={data.historyMonth} month={data.promoMonth} months={months} currentMonth={data.latestMonth} loading={data.historyLoading} error={data.historyError} onHistoryMonthChange={data.setHistoryMonth} onMonthChange={data.setPromoMonth} onRetry={() => void data.refetchHistory()} />;
+}
+
+function CampaignDesktopHeader({ activeSection, data, months }: { activeSection: CampaignSection; data: CampaignData; months: string[] }) {
+  if (activeSection !== "incentive" && activeSection !== "promo") return null;
+  const promo = activeSection === "promo";
+  return (
+    <IncentiveDesktopHeader
+      promoData={data.promoData} months={months} value={data.promoMonth} onChange={data.setPromoMonth} currentMonth={data.latestMonth}
+      {...(promo ? { sectionLabel: "Promo", title: data.promoData?.promo_title || "Promo", description: data.promoData?.promo_description || "Mecanismul promo activ și performanța curentă." } : {})}
+    />
+  );
+}
+
 export function CampaignsPage({
   currentMonth,
   months,
@@ -55,119 +96,12 @@ export function CampaignsPage({
     activeSection,
     onFilterMonthChange,
   });
-  const selectedContest = useMemo(
-    () =>
-      data.contests.find(
-        (contest) => contest.key === data.selectedContestKey,
-      ) ??
-      data.contests[0] ??
-      null,
-    [data.contests, data.selectedContestKey],
-  );
-
   useEffect(() => {
     setActiveSection(preferredSection);
   }, [preferredSection]);
   useEffect(() => {
     onSectionChange(activeSection);
   }, [activeSection, onSectionChange]);
-
-  const loadingLabel =
-    activeSection === "promo"
-      ? "Se incarca promotia..."
-      : activeSection === "incentive"
-        ? "Se incarca incentive-ul..."
-        : activeSection === "premium"
-          ? "Se incarca analiza foliilor premium..."
-          : "Se incarca datele de focus...";
-  let content: React.ReactNode;
-  if (activeSection === "concurs")
-    content = data.contestLoading ? (
-      <LoadingCard label="Se incarca concursul..." />
-    ) : data.contestError ? (
-      <ErrorCard
-        message={data.contestError}
-        onRetry={() => {
-          void data.refetchContests();
-        }}
-      />
-    ) : (
-      <ContestSection
-        contests={data.contests}
-        selectedContest={selectedContest}
-        month={data.promoMonth}
-        months={months}
-        currentMonth={data.latestMonth}
-        onMonthChange={data.setPromoMonth}
-        onSelect={data.setSelectedContestKey}
-      />
-    );
-  else if (data.loading) content = <LoadingCard label={loadingLabel} />;
-  else if (data.currentError)
-    content = (
-      <ErrorCard
-        message={data.currentError}
-        onRetry={() => {
-          void data.refetchCurrent();
-        }}
-      />
-    );
-  else if (activeSection === "promo")
-    content = (
-      <PromoSection
-        data={data.promoData}
-        month={data.promoMonth}
-        months={months}
-        currentMonth={data.latestMonth}
-        selectedPromotionKey={data.selectedPromotionKey}
-        onMonthChange={data.setPromoMonth}
-        onPromotionChange={data.setSelectedPromotionKey}
-      />
-    );
-  else if (activeSection === "incentive")
-    content = (
-      <IncentiveSection
-        data={data.promoData}
-        month={data.promoMonth}
-        months={months}
-        currentMonth={data.latestMonth}
-        onMonthChange={data.setPromoMonth}
-      />
-    );
-  else if (activeSection === "premium")
-    content = (
-      <>
-        <PremiumMonthSelector
-          month={data.promoMonth}
-          months={months}
-          currentMonth={data.latestMonth}
-          onChange={data.setPromoMonth}
-        />
-        <PremiumGlassFocusSection
-          analysis={data.premiumGlass}
-          surfaceMode={data.premiumSurfaceMode}
-          onSurfaceModeChange={data.setPremiumSurfaceMode}
-        />
-      </>
-    );
-  else
-    content = (
-      <FocusSection
-        snapshot={data.snapshot}
-        history={data.focusHistory}
-        historyMonth={data.historyMonth}
-        month={data.promoMonth}
-        months={months}
-        currentMonth={data.latestMonth}
-        loading={data.historyLoading}
-        error={data.historyError}
-        onHistoryMonthChange={data.setHistoryMonth}
-        onMonthChange={data.setPromoMonth}
-        onRetry={() => {
-          void data.refetchHistory();
-        }}
-      />
-    );
 
   return (
     <div className="mx-auto max-w-6xl space-y-3 p-3 pb-24 pt-2 lg:max-w-none lg:px-6 lg:pb-6 lg:pt-4">
@@ -188,31 +122,8 @@ export function CampaignsPage({
         value={activeSection}
         onChange={setActiveSection}
       />
-      {activeSection === "incentive" && (
-        <IncentiveDesktopHeader
-          promoData={data.promoData}
-          months={months}
-          value={data.promoMonth}
-          onChange={data.setPromoMonth}
-          currentMonth={data.latestMonth}
-        />
-      )}
-      {activeSection === "promo" && (
-        <IncentiveDesktopHeader
-          promoData={data.promoData}
-          months={months}
-          value={data.promoMonth}
-          onChange={data.setPromoMonth}
-          currentMonth={data.latestMonth}
-          sectionLabel="Promo"
-          title={data.promoData?.promo_title || "Promo"}
-          description={
-            data.promoData?.promo_description ||
-            "Mecanismul promo activ și performanța curentă."
-          }
-        />
-      )}
-      {content}
+      <CampaignDesktopHeader activeSection={activeSection} data={data} months={months} />
+      <CampaignContent activeSection={activeSection} data={data} months={months} />
     </div>
   );
 }

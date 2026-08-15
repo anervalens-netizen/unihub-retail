@@ -21,6 +21,41 @@ import {
 import { formatCurrency, formatInt, formatPercent } from "../../lib/formatters";
 import { CampaignMonthBar } from "./CampaignControls";
 
+interface FocusSectionProps {
+  snapshot: CampaignSnapshot;
+  history: FocusHistoryPoint[];
+  historyMonth: string;
+  month: string;
+  months: string[];
+  currentMonth: string;
+  loading: boolean;
+  error: string;
+  onHistoryMonthChange: (month: string) => void;
+  onMonthChange: (month: string) => void;
+  onRetry: () => void;
+}
+
+function FocusOverview({ snapshot, month }: Pick<FocusSectionProps, "snapshot" | "month">) {
+  const leader = snapshot.products[0];
+  const headline = leader
+    ? `${leader.item_name} conduce ${month} cu ${formatInt(leader.qty_total)} bucati si ${formatCurrency(leader.sales_total)}.`
+    : `Nu exista inca focus products vandute in ${month} pentru filtrarea selectata.`;
+  return (
+    <>
+      <div className="glass rounded-4xl border border-amber-100 bg-linear-to-br from-amber-50 via-white to-white p-4 dark:border-amber-900/30 dark:from-amber-950/20 dark:via-slate-900 dark:to-slate-900">
+        <div className="mb-3 flex items-center gap-2 text-amber-600 dark:text-amber-400"><Sparkles size={16} /><span className="text-[11px] font-bold uppercase tracking-[0.22em]">Focus Products</span></div>
+        <div className="text-lg font-black">Indicator permanent de performanta</div><p className="mt-2 text-xs text-slate-600 dark:text-slate-300">{headline}</p>
+      </div>
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <FocusStat icon={Tag} label="Vanzari focus" value={formatCurrency(snapshot.overview.total_focus_sales)} accent="amber" />
+        <FocusStat icon={PackageSearch} label="Cantitate focus" value={formatInt(snapshot.overview.total_focus_qty)} accent="indigo" />
+        <FocusStat icon={Sparkles} label="Share focus" value={formatPercent(snapshot.overview.focus_share_pct)} accent="emerald" />
+        <FocusStat icon={Building2} label="Magazine active" value={formatInt(snapshot.overview.active_focus_stores)} accent="rose" />
+      </div>
+    </>
+  );
+}
+
 export function FocusSection({
   snapshot,
   history,
@@ -33,19 +68,7 @@ export function FocusSection({
   onHistoryMonthChange,
   onMonthChange,
   onRetry,
-}: {
-  snapshot: CampaignSnapshot;
-  history: FocusHistoryPoint[];
-  historyMonth: string;
-  month: string;
-  months: string[];
-  currentMonth: string;
-  loading: boolean;
-  error: string;
-  onHistoryMonthChange: (month: string) => void;
-  onMonthChange: (month: string) => void;
-  onRetry: () => void;
-}) {
+}: FocusSectionProps) {
   const selectedPoint = useMemo(
     () =>
       history.find((item) => item.month === historyMonth) ??
@@ -63,12 +86,6 @@ export function FocusSection({
       })),
     [history],
   );
-  const headline = useMemo(() => {
-    const leader = snapshot.products[0];
-    return leader
-      ? `${leader.item_name} conduce ${month} cu ${formatInt(leader.qty_total)} bucati si ${formatCurrency(leader.sales_total)}.`
-      : `Nu exista inca focus products vandute in ${month} pentru filtrarea selectata.`;
-  }, [snapshot.products, month]);
   return (
     <>
       <CampaignMonthBar
@@ -79,46 +96,7 @@ export function FocusSection({
         onChange={onMonthChange}
         currentMonth={currentMonth}
       />
-      <div className="glass rounded-4xl border border-amber-100 bg-linear-to-br from-amber-50 via-white to-white p-4 dark:border-amber-900/30 dark:from-amber-950/20 dark:via-slate-900 dark:to-slate-900">
-        <div className="mb-3 flex items-center gap-2 text-amber-600 dark:text-amber-400">
-          <Sparkles size={16} />
-          <span className="text-[11px] font-bold uppercase tracking-[0.22em]">
-            Focus Products
-          </span>
-        </div>
-        <div className="text-lg font-black">
-          Indicator permanent de performanta
-        </div>
-        <p className="mt-2 text-xs text-slate-600 dark:text-slate-300">
-          {headline}
-        </p>
-      </div>
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <FocusStat
-          icon={Tag}
-          label="Vanzari focus"
-          value={formatCurrency(snapshot.overview.total_focus_sales)}
-          accent="amber"
-        />
-        <FocusStat
-          icon={PackageSearch}
-          label="Cantitate focus"
-          value={formatInt(snapshot.overview.total_focus_qty)}
-          accent="indigo"
-        />
-        <FocusStat
-          icon={Sparkles}
-          label="Share focus"
-          value={formatPercent(snapshot.overview.focus_share_pct)}
-          accent="emerald"
-        />
-        <FocusStat
-          icon={Building2}
-          label="Magazine active"
-          value={formatInt(snapshot.overview.active_focus_stores)}
-          accent="rose"
-        />
-      </div>
+      <FocusOverview snapshot={snapshot} month={month} />
       <div className="glass rounded-3xl p-4">
         <div className="mb-3 flex items-center justify-between gap-3">
           <div>

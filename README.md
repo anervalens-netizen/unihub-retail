@@ -1,8 +1,9 @@
 # UniHub Retail
 
-**Release curent:** `v2.1.0` — contracte, limite și rutarea dovezilor în
-[`docs/releases/v2.1.0.md`](docs/releases/v2.1.0.md). Tagurile istorice
-`v2.0.0` și `v2.0.1` rămân nemodificate.
+**Release semantic curent:** `v2.1.0`, rezolvat prin pointerul canonic
+[`docs/releases/current.json`](docs/releases/current.json); pointerul trimite la
+dovada exactă `SOURCE_SHA` / artefact / digest, fără un SHA viitor
+self-referențial. Tagurile istorice `v2.0.0` și `v2.0.1` rămân nemodificate.
 
 UniHub Retail este aplicația centrală pentru vânzări retail, targete, campanii,
 salarii, P&L, raportarea vizitelor și interfața activă Grile.

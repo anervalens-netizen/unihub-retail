@@ -14,6 +14,9 @@ from openpyxl import load_workbook
 
 import services.export_complex_worker as child_renderer
 import services.exports.service as service_module
+from repositories.export_daily_comparison_query import (
+    build_daily_comparison_rows_query,
+)
 from services.export_xlsx_formatting import days_filename_suffix
 from services.exports import ExportValidationError, ExportsService
 
@@ -52,6 +55,41 @@ def daily_metrics_request() -> dict[str, Any]:
         "daily_metrics": ["total_sales", "proc_bon2acc"],
         "selected_days": [1],
     }
+
+
+def test_daily_comparison_query_boundary_preserves_scope_and_campaign_order() -> None:
+    query, params = build_daily_comparison_rows_query(
+        level="stores",
+        months=["2026-05", "2026-06"],
+        filters={
+            "firma": ["Mobiup"],
+            "regional": ["RM 1"],
+            "agent": ["Agent 1"],
+        },
+        include_closed_stores=False,
+        campaign_codes_by_month={"2026-06": ["P1", "P2"]},
+        selected_days=[1, 9],
+        include_campaign_metrics=True,
+        limit=25,
+    )
+
+    assert params == [
+        ["2026-05", "2026-06"],
+        ["Mobiup"],
+        ["RM 1"],
+        ["Agent 1"],
+        [1, 9],
+        ["2026-06", "2026-06"],
+        ["P1", "P2"],
+        True,
+        25,
+    ]
+    assert "agg.site_code AS site_code" in query
+    assert "campaign.site_code IS NOT DISTINCT FROM base.site_code" in query
+    assert "s.is_active = TRUE" in query
+    assert "UNNEST($6::TEXT[], $7::TEXT[])" in query
+    assert "AND $8::BOOLEAN" in query
+    assert query.rstrip().endswith("LIMIT $9")
 
 
 def test_complex_request_boundary_accepts_only_supported_durable_shapes() -> None:
@@ -190,6 +228,49 @@ async def test_complex_artifact_adoption_rejects_worker_and_attestation_failures
             cells=1,
         )
     assert not tampered.exists()
+
+
+@pytest.mark.asyncio
+async def test_complex_renderer_rejects_unknown_renderer_name() -> None:
+    service = ExportsService(cast(Any, None))
+
+    with pytest.raises(ExportValidationError, match="siguranta"):
+        await service._run_complex_renderer(
+            cast(Any, "nightly_metrics"),
+            {"filename": "report.xlsx"},
+            cells=1,
+        )
+
+
+@pytest.mark.asyncio
+async def test_complex_artifact_adoption_rejects_path_outside_operation_directory(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    service = ExportsService(cast(Any, None))
+
+    operation_directory = tmp_path / "unihub-export-operation-outside"
+    operation_directory.mkdir()
+    outside_file = tmp_path / "outside.xlsx"
+    outside_file.write_bytes(b"payload")
+
+    async def outside_result(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+        return {
+            "path": str(outside_file),
+            "size": outside_file.stat().st_size,
+            "sha256": "0" * 64,
+            "peak_rss": 1,
+            "filename": "report.xlsx",
+            "operation_directory": str(operation_directory),
+        }
+
+    monkeypatch.setattr(service_module, "run_export_renderer_process", outside_result)
+    with pytest.raises(ExportValidationError, match="invalida"):
+        await service._run_complex_renderer(
+            "daily_metrics",
+            {"filename": "report.xlsx"},
+            cells=1,
+        )
 
 
 @pytest.mark.asyncio

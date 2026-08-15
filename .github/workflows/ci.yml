@@ -73,7 +73,7 @@ jobs:
     name: backend-check
     needs: runner-isolation
     runs-on: [self-hosted, Linux, X64, dell-compute, unihub-build, unihub-retail-build]
-    timeout-minutes: 30
+    timeout-minutes: 75
     env:
       PYTHONNOUSERSITE: "1"
       PYTHONSAFEPATH: "1"

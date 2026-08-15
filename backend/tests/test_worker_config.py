@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+from contextlib import asynccontextmanager
 from types import SimpleNamespace
+from typing import TypedDict
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -22,6 +24,22 @@ import services.grile_pilot_v2_sync
 import services.grile_pilot_v2_runtime
 import repositories.grile
 import worker
+
+
+GENERATION_HASH = "a" * 64
+class _GrileLineage(TypedDict):
+    generation_hash: str
+    sales_revision: int
+    campaign_revision: int
+    contest_revision: int
+
+
+GRILE_LINEAGE: _GrileLineage = {
+    "generation_hash": GENERATION_HASH,
+    "sales_revision": 9,
+    "campaign_revision": 11,
+    "contest_revision": 5,
+}
 
 
 @pytest.mark.asyncio
@@ -254,6 +272,11 @@ async def test_operations_worker_only_starts_visits_refresh(
     monkeypatch.setattr("services.grile_monthly.reconcile_monthly_operations", monthly_reconcile)
     visits_refresh = AsyncMock(return_value=4)
     monkeypatch.setattr(worker, "_refresh_visits_snapshot_once", visits_refresh)
+    start_outbox_dispatcher = MagicMock()
+    monkeypatch.setattr(
+        "services.outbox_worker.start_outbox_dispatcher",
+        start_outbox_dispatcher,
+    )
     export_cleanup = AsyncMock()
     monkeypatch.setattr(services.export_operations, "cleanup_export_operations", export_cleanup)
     orphan_sweep = AsyncMock()
@@ -278,6 +301,7 @@ async def test_operations_worker_only_starts_visits_refresh(
     reconcile.assert_not_awaited()
     monthly_reconcile.assert_not_awaited()
     visits_refresh.assert_awaited_once_with(pool)
+    start_outbox_dispatcher.assert_called_once_with(ctx)
     export_cleanup.assert_not_awaited()
     orphan_sweep.assert_not_awaited()
     run_reconcile.assert_not_awaited()
@@ -319,12 +343,6 @@ async def test_grile_worker_reconciles_only_expired_leases(
         "services.grile_monthly.reconcile_monthly_operations",
         monthly_reconcile,
     )
-    pilot_sync = AsyncMock(return_value={"synced": [], "skipped": []})
-    monkeypatch.setattr(
-        services.grile_pilot_v2_runtime,
-        "sync_grile_pilot_v2_once",
-        pilot_sync,
-    )
     ctx: dict = {}
 
     await worker._startup_runtime(ctx, worker_role=worker_role)
@@ -336,8 +354,8 @@ async def test_grile_worker_reconciles_only_expired_leases(
     tasks = [
         ctx["grile_monthly_reconcile_task"],
         ctx["grile_run_reconcile_task"],
-        ctx["grile_pilot_v2_sync_task"],
     ]
+    assert "grile_pilot_v2_sync_task" not in ctx
     for task in tasks:
         task.cancel()
     await asyncio.gather(*tasks, return_exceptions=True)
@@ -403,35 +421,21 @@ async def test_grile_v2_sync_once_uses_shared_lock(
     result = await services.grile_pilot_v2_runtime.sync_grile_pilot_v2_once(
         ctx,
         trigger="test",
+        **GRILE_LINEAGE,
     )
 
     assert result == {"synced": ["SITE"], "skipped": []}
     assert isinstance(ctx["grile_pilot_v2_sync_lock"], asyncio.Lock)
-    sync.assert_awaited_once_with(pool, adapter)
+    sync.assert_awaited_once_with(pool, adapter, **GRILE_LINEAGE)
 
 
 @pytest.mark.asyncio
-async def test_grile_v2_startup_recovery_retains_last_good_on_failure(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    stop = asyncio.Event()
+async def test_grile_v2_startup_recovery_is_outbox_only() -> None:
+    ctx: dict = {}
 
-    async def fail_once(_ctx: dict, *, trigger: str) -> None:
-        assert trigger == "startup-recovery"
-        stop.set()
-        raise RuntimeError("Google unavailable")
+    services.grile_pilot_v2_runtime.start_grile_pilot_v2_sync(ctx)
 
-    monkeypatch.setattr(
-        services.grile_pilot_v2_runtime,
-        "sync_grile_pilot_v2_once",
-        fail_once,
-    )
-
-    await services.grile_pilot_v2_runtime.run_grile_pilot_v2_sync_loop(
-        {"grile_pilot_v2_sync_stop": stop}
-    )
-
-    assert stop.is_set()
+    assert "grile_pilot_v2_sync_task" not in ctx
 
 
 @pytest.mark.asyncio
@@ -453,15 +457,21 @@ async def test_grile_v2_background_validates_month_and_request_context(
         {},
         "2026-08",
         "manual",
+        GENERATION_HASH,
+        9,
+        11,
+        5,
         "request-id",
     )
 
     assert result == {"synced": ["SITE"]}
-    sync.assert_awaited_once_with({}, trigger="manual")
+    sync.assert_awaited_once_with({}, trigger="manual", **GRILE_LINEAGE)
     bind.assert_called_once_with("request-id")
     reset.assert_called_once_with("token")
     with pytest.raises(ValueError, match="August 2026"):
-        await worker.grile_pilot_v2_sync_background({}, "2026-09", "manual")
+        await worker.grile_pilot_v2_sync_background(
+            {}, "2026-09", "manual", GENERATION_HASH, 9, 11, 5
+        )
 
 
 @pytest.mark.asyncio
@@ -496,11 +506,24 @@ async def test_campaign_publication_triggers_grile_v2_projection(
         "ContestReportingPublisher",
         lambda _pool: SimpleNamespace(publish_month=publish_contest),
     )
-    trigger = AsyncMock()
+    job_id = f"grile-pilot-v2:2026-08:{GENERATION_HASH}:9"
+    enqueue = AsyncMock(return_value=SimpleNamespace(job_id=job_id))
     monkeypatch.setattr(
         services.grile_pilot_v2_runtime,
-        "trigger_grile_pilot_v2_sync",
-        trigger,
+        "enqueue_grile_pilot_v2_sync",
+        enqueue,
+    )
+
+    @asynccontextmanager
+    async def exact_guard(_pool, *, month, generation_hash, sales_revision):
+        assert month == "2026-08"
+        assert generation_hash == GENERATION_HASH
+        assert sales_revision == 9
+        yield "current", object()
+
+    monkeypatch.setattr(
+        "services.campaign_reporting_worker.guard_sales_generation_lineage_bound",
+        exact_guard,
     )
     pool = object()
 
@@ -509,10 +532,15 @@ async def test_campaign_publication_triggers_grile_v2_projection(
         "2026-08",
         "system:test",
         "sales_generation:7",
+        GENERATION_HASH,
+        9,
     )
 
     assert result["promotion"]["revision"] == 11
     assert result["contest"]["revision"] == 5
+    assert result["sales_generation_hash"] == GENERATION_HASH
+    assert result["sales_generation_revision"] == 9
+    assert result["grile_v2_job_id"] == job_id
     publish_promotion.assert_awaited_once_with(
         "2026-08",
         requested_by_sub="system:test",
@@ -523,10 +551,67 @@ async def test_campaign_publication_triggers_grile_v2_projection(
         requested_by_sub="system:test",
         reason="sales_generation:7",
     )
-    trigger.assert_awaited_once_with(
-        "2026-08",
-        trigger="campaign_reporting:11",
+    enqueue.assert_awaited_once_with(
+        month="2026-08",
+        trigger=f"sales_outbox:{GENERATION_HASH}:9",
+        generation_hash=GENERATION_HASH,
+        sales_revision=9,
+        campaign_revision=11,
+        contest_revision=5,
     )
+
+
+@pytest.mark.asyncio
+async def test_delayed_campaign_generation_is_noop_before_publication(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    publish_promotion = AsyncMock()
+    publish_contest = AsyncMock()
+    enqueue = AsyncMock()
+    monkeypatch.setattr(
+        services.campaign_reporting,
+        "CampaignReportingPublisher",
+        lambda _pool: SimpleNamespace(publish_month=publish_promotion),
+    )
+    monkeypatch.setattr(
+        services.contest_reporting,
+        "ContestReportingPublisher",
+        lambda _pool: SimpleNamespace(publish_month=publish_contest),
+    )
+    monkeypatch.setattr(
+        services.grile_pilot_v2_runtime, "enqueue_grile_pilot_v2_sync", enqueue
+    )
+
+    @asynccontextmanager
+    async def superseded_guard(_pool, **_lineage):
+        yield "superseded", object()
+
+    monkeypatch.setattr(
+        "services.campaign_reporting_worker.guard_sales_generation_lineage_bound",
+        superseded_guard,
+    )
+
+    result = await worker.publish_campaign_reporting_background(
+        {"db_pool": object()},
+        "2026-08",
+        "system:test",
+        "sales_generation:7",
+        GENERATION_HASH,
+        9,
+    )
+
+    assert result == {
+        "status": "superseded",
+        "period": "2026-08",
+        "sales_generation_hash": GENERATION_HASH,
+        "sales_generation_revision": 9,
+        "promotion": None,
+        "contest": None,
+        "grile_v2_job_id": None,
+    }
+    publish_promotion.assert_not_awaited()
+    publish_contest.assert_not_awaited()
+    enqueue.assert_not_awaited()
 
 
 @pytest.mark.asyncio

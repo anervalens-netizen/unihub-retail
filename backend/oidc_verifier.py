@@ -168,6 +168,78 @@ class OIDCVerifier:
         _age.set(0)
         return cache
 
+    def _key_after_concurrent_refresh(
+        self,
+        *,
+        kid: str,
+        cache: JWKSCache | None,
+        now: float,
+        observed_attempt: int,
+        observed_generation: int,
+    ) -> jwt.PyJWK | None:
+        if self.refresh_attempt_serial != observed_attempt:
+            if cache and kid in cache.keys and now - cache.fetched_at < self.settings.cache_ttl_seconds:
+                _cache_use.labels("fresh").inc()
+                return cache.keys[kid]
+            if self.last_refresh_outcome == "success":
+                raise _invalid()
+            if cache:
+                _age.set(max(now - cache.fetched_at, 0))
+                if kid in cache.keys and now - cache.fetched_at <= self.settings.max_stale_seconds:
+                    _cache_use.labels("stale").inc()
+                    return cache.keys[kid]
+            raise _unavailable()
+        if cache and cache.generation != observed_generation:
+            if kid in cache.keys:
+                _cache_use.labels("fresh").inc()
+                return cache.keys[kid]
+            raise _invalid()
+        return None
+
+    def _cached_key_before_fetch(
+        self,
+        *,
+        kid: str,
+        cache: JWKSCache | None,
+        now: float,
+        unknown: bool,
+    ) -> jwt.PyJWK | None:
+        if cache and now - cache.fetched_at < self.settings.cache_ttl_seconds and kid in cache.keys:
+            _cache_use.labels("fresh").inc()
+            return cache.keys[kid]
+        stale_key = cache.keys.get(kid) if cache else None
+        if self._failure_retry_active(now):
+            if stale_key is not None and cache is not None and now - cache.fetched_at <= self.settings.max_stale_seconds:
+                _cache_use.labels("stale").inc()
+                return stale_key
+            raise _unavailable()
+        if (
+            unknown
+            and self.last_unknown_refresh_completed_at is not None
+            and now - self.last_unknown_refresh_completed_at
+            < self.settings.unknown_kid_refresh_cooldown_seconds
+        ):
+            raise _invalid() if self.last_refresh_outcome == "success" else _unavailable()
+        return None
+
+    async def _refreshed_key(self, kid: str, *, unknown: bool) -> jwt.PyJWK:
+        try:
+            cache = await self._fetch()
+        except HTTPException:
+            now = self.clock()
+            if self.cache:
+                _age.set(max(now - self.cache.fetched_at, 0))
+            if self.cache and kid in self.cache.keys and now - self.cache.fetched_at <= self.settings.max_stale_seconds:
+                _cache_use.labels("stale").inc()
+                return self.cache.keys[kid]
+            raise
+        finally:
+            if unknown:
+                self.last_unknown_refresh_completed_at = self.clock()
+        if kid not in cache.keys:
+            raise _invalid()
+        return cache.keys[kid]
+
     async def signing_key(self, header: dict) -> jwt.PyJWK:
         if header.get("alg") != "RS256" or not _safe_text(header.get("kid")):
             raise _invalid()
@@ -190,50 +262,21 @@ class OIDCVerifier:
         async with self.lock:
             cache = self.cache
             now = self.clock()
-            if self.refresh_attempt_serial != observed_attempt:
-                if cache and kid in cache.keys and now - cache.fetched_at < self.settings.cache_ttl_seconds:
-                    _cache_use.labels("fresh").inc()
-                    return cache.keys[kid]
-                if self.last_refresh_outcome == "success":
-                    raise _invalid()
-                if cache:
-                    _age.set(max(now - cache.fetched_at, 0))
-                    if kid in cache.keys and now - cache.fetched_at <= self.settings.max_stale_seconds:
-                        _cache_use.labels("stale").inc()
-                        return cache.keys[kid]
-                raise _unavailable()
-            if cache and cache.generation != observed_generation:
-                if kid in cache.keys:
-                    _cache_use.labels("fresh").inc()
-                    return cache.keys[kid]
-                raise _invalid()
-            if cache and now - cache.fetched_at < self.settings.cache_ttl_seconds and kid in cache.keys:
-                _cache_use.labels("fresh").inc()
-                return cache.keys[kid]
-            stale_key = cache.keys.get(kid) if cache else None
-            if self._failure_retry_active(now):
-                if stale_key is not None and cache is not None and now - cache.fetched_at <= self.settings.max_stale_seconds:
-                    _cache_use.labels("stale").inc()
-                    return stale_key
-                raise _unavailable()
-            if unknown and self.last_unknown_refresh_completed_at is not None and now - self.last_unknown_refresh_completed_at < self.settings.unknown_kid_refresh_cooldown_seconds:
-                raise _invalid() if self.last_refresh_outcome == "success" else _unavailable()
-            try:
-                cache = await self._fetch()
-            except HTTPException:
-                now = self.clock()
-                if self.cache:
-                    _age.set(max(now - self.cache.fetched_at, 0))
-                if self.cache and kid in self.cache.keys and now - self.cache.fetched_at <= self.settings.max_stale_seconds:
-                    _cache_use.labels("stale").inc()
-                    return self.cache.keys[kid]
-                raise
-            finally:
-                if unknown:
-                    self.last_unknown_refresh_completed_at = self.clock()
-            if kid not in cache.keys:
-                raise _invalid()
-            return cache.keys[kid]
+            concurrent_key = self._key_after_concurrent_refresh(
+                kid=kid,
+                cache=cache,
+                now=now,
+                observed_attempt=observed_attempt,
+                observed_generation=observed_generation,
+            )
+            if concurrent_key is not None:
+                return concurrent_key
+            cached_key = self._cached_key_before_fetch(
+                kid=kid, cache=cache, now=now, unknown=unknown
+            )
+            if cached_key is not None:
+                return cached_key
+            return await self._refreshed_key(kid, unknown=unknown)
 
 
 _verifier: OIDCVerifier | None = None

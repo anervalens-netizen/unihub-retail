@@ -2,7 +2,7 @@ import { defineConfig, devices } from '@playwright/test';
 
 export default defineConfig({
   testDir: './e2e',
-  testMatch: ['login-dashboard.spec.ts', 'browser-keyboard-smoke.spec.ts'],
+  testMatch: 'frontend-lifecycle.spec.ts',
   fullyParallel: false,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
@@ -17,11 +17,24 @@ export default defineConfig({
     screenshot: 'only-on-failure',
   },
   projects: [
-    { name: 'firefox', use: { ...devices['Desktop Firefox'] } },
-    { name: 'webkit', use: { ...devices['Desktop Safari'] } },
+    {
+      name: 'chromium',
+      grep: /\.(?:allowed|denied|401_redirect_once|403_safe|409_retry|keyboard|mobile)$/,
+      use: { ...devices['Desktop Chrome'] },
+    },
+    {
+      name: 'firefox',
+      grep: /\.(?:success|401_redirect_once|keyboard)$/,
+      use: { ...devices['Desktop Firefox'] },
+    },
+    {
+      name: 'webkit',
+      grep: /\.(?:success|401_redirect_once|keyboard)$/,
+      use: { ...devices['Desktop Safari'] },
+    },
   ],
   webServer: {
-    command: 'npx vite preview --port 3334 --host 127.0.0.1',
+    command: 'node_modules/.bin/vite preview --port 3334 --host 127.0.0.1',
     url: 'http://127.0.0.1:3334',
     reuseExistingServer: false,
     timeout: 30_000,

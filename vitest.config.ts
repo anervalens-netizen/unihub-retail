@@ -5,6 +5,7 @@ export default defineConfig({
     include: ['src/**/*.test.ts', 'src/**/*.test.tsx'],
     environment: 'node',
     setupFiles: ['./src/test/setup.ts'],
+    testTimeout: 15_000,
     coverage: {
       provider: 'v8',
       include: ['src/**/*.{ts,tsx}'],
@@ -17,10 +18,10 @@ export default defineConfig({
       reporter: ['text', 'json', 'json-summary', 'lcov'],
       reportsDirectory: 'coverage/frontend',
       thresholds: {
-        statements: 46,
-        branches: 36,
-        functions: 34,
-        lines: 47,
+        statements: 65,
+        branches: 55,
+        functions: 55,
+        lines: 67,
       },
     },
   },

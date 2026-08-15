@@ -44,6 +44,20 @@ Unhandled application exceptions are explicitly counted as 5xx before they
 reach FastAPI's outer exception handler. Health, readiness, liveness and metrics
 traffic are excluded from the request SLI so probes cannot dilute real errors.
 
+## Outbox delivery contract
+
+`retail.sales_generation_promoted.v1` is the sole active application producer.
+The P&L, salary, Planning and Grile event types remain protected fixture-only
+vocabularies with receipt-only consumers; application services, workers and
+database triggers do not produce them.
+
+Claims use a 60-second lease renewed every 20 seconds. Receipt, retry, failure
+and completion clocks are recorded at their actual transition, and lease loss
+fences the stale worker. An event for an older Sales generation completes as an
+auditable superseded no-op: it creates no downstream effect, dead letter or
+head-of-line blockage. Grile delivery accepts only the exact Sales generation
+hash and revision returned by its generation-bound job.
+
 ## Versioned operations files
 
 - `ops/observability/retail-slo-rules.yml`: recording and alert rules;
