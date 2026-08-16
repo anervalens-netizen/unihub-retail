@@ -1,0 +1,81 @@
+{
+  "version": 2,
+  "description": "Minimal high-risk paths manifest for A3 governance v2. Deterministic matching only: exact (changed_path == entry) or prefix (entry ends with '/' and changed_path.startswith(entry)). No glob, no fnmatch, no '**'.",
+  "match_rules": {
+    "exact": "changed_path == entry",
+    "prefix": "entry ends with '/' AND changed_path.startswith(entry)"
+  },
+  "categories": {
+    "auth-identity": {
+      "description": "Production auth/OIDC, session, permissions, privileged access, receipt/private identity. Operational scripts included. No tests.",
+      "paths": [
+        "backend/auth.py",
+        "backend/oidc_settings.py",
+        "backend/oidc_verifier.py",
+        "backend/session_auth.py",
+        "backend/session_runtime_helpers.py",
+        "backend/session_settings.py",
+        "backend/permissions.py",
+        "backend/privileged_access.py",
+        "backend/services/receipt_identity.py",
+        "backend/scripts/oidc_e2e_stub.py",
+        "backend/scripts/reconcile_return_receipt_identity.sql"
+      ]
+    },
+    "migrations-db-authority": {
+      "description": "Catches FUTURE migrations via directory prefix. Migration runner authority included. Generic DB plumbing excluded.",
+      "paths": [
+        "backend/db/migrations/",
+        "backend/db/migration_runner.py"
+      ]
+    },
+    "deploy-release-ci": {
+      "description": "Delivery/control plane only: workflows, governance, the checker itself, deployment/release/rollback/provisioning, production systemd/Caddy/env-schema. No routine README, Dependabot, generic observability.",
+      "paths": [
+        ".github/workflows/",
+        ".github/governance/",
+        "scripts/check_high_risk_pr_governance.py",
+        "ops/approve-retail-release.sh",
+        "ops/build-retail-release-artifact.sh",
+        "ops/deploy-retail-artifact.sh",
+        "ops/test-deploy-retail-artifact.sh",
+        "ops/provision-retail-service-identities.sh",
+        "ops/provision-retail-salary-export-database.sh",
+        "ops/caddy/",
+        "ops/config/retail-env.schema.json",
+        "ops/systemd/"
+      ]
+    },
+    "salary-private-identity": {
+      "description": "Production salary/private-identity implementation. No tests. Old salary migrations are governed by migrations-db-authority (no duplication).",
+      "paths": [
+        "backend/salary_identity.py",
+        "backend/salary_import_approval.py",
+        "backend/salary_import_persistence.py",
+        "backend/services/asm_salary.py",
+        "backend/services/salary_exports.py",
+        "backend/services/salarii.py",
+        "backend/repositories/salarii.py",
+        "backend/repositories/salarii_detail.py",
+        "backend/repositories/salarii_scope.py",
+        "backend/repositories/salarii_summary.py",
+        "backend/routers/salarii.py",
+        "backend/schemas/salarii.py",
+        "backend/scripts/backfill_salary_private_identities.py",
+        "backend/scripts/import_salary_records.py",
+        "backend/scripts/match_agent_codes_to_salary_names.py",
+        "backend/scripts/reconcile_salary_person_ids.py"
+      ]
+    },
+    "target-calculator": {
+      "description": "Target calculator authority: backend service (prefix), repository, router, frontend API, frontend features (prefix). No tests.",
+      "paths": [
+        "backend/services/target_calculator/",
+        "backend/repositories/target_calculator.py",
+        "backend/routers/target_calculator.py",
+        "src/api/targetCalculator.ts",
+        "src/features/target-calculator/"
+      ]
+    }
+  }
+}

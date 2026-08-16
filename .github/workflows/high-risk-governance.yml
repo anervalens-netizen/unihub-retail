@@ -1,0 +1,37 @@
+name: high-risk-governance
+
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize, edited, ready_for_review]
+    branches: [main]
+
+# Read-only permissions; no third-party actions beyond the existing pinned checkout;
+# no PR-head checkout; no code execution from PR.
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: high-risk-governance-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Validate high-risk PR governance
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout base branch ONLY (trusted code, never PR head)
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          persist-credentials: false
+
+      - name: Run high-risk governance checker (trusted base-branch code)
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_EVENT_PATH: ${{ github.event_path }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          python3 scripts/check_high_risk_pr_governance.py --repo-root "$GITHUB_WORKSPACE"
