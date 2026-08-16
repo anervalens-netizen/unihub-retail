@@ -1,0 +1,162 @@
+name: main-push-policy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: 'Commit SHA to validate (exactly 40 lowercase hex chars; full SHA only — short SHAs rejected). Required for manual historical checks.'
+        required: false
+        default: ''
+        type: string
+
+# Read-only permissions; no third-party actions; no checkout; no repo code.
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: main-push-policy
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    name: Validate main update
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Resolve target SHA
+        id: resolve
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "push" ]; then
+            sha="${{ github.event.after }}"
+          else
+            sha="${{ inputs.sha }}"
+          fi
+          if [ -z "$sha" ]; then
+            echo "::error title=MAIN PUSH POLICY VIOLATION::No SHA provided (workflow_dispatch requires the 'sha' input)."
+            echo "::error::SHA=<unset>"
+            exit 2
+          fi
+          if ! printf '%s' "$sha" | grep -Eq '^[0-9a-f]{40}$'; then
+            echo "::error title=MAIN PUSH POLICY VIOLATION::Invalid SHA '$sha' (expected exactly 40 lowercase hex chars)."
+            echo "::error::SHA=$sha"
+            exit 2
+          fi
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "Target SHA: $sha  (event=$EVENT_NAME)"
+
+      - name: Fetch commit metadata
+        id: commit
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          SHA: ${{ steps.resolve.outputs.sha }}
+        run: |
+          set -euo pipefail
+          sha="$SHA"
+          api="$GITHUB_API_URL/repos/${{ github.repository }}/commits/$sha"
+          echo "GET $api"
+          http_code=$(curl -sS -o /tmp/commit.json -w '%{http_code}' \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "$api")
+          echo "-> HTTP $http_code"
+          if [ "$http_code" != "200" ]; then
+            echo "::error title=MAIN PUSH POLICY VIOLATION::Commit API returned HTTP $http_code for SHA=$sha."
+            echo "::error::SHA=$sha"
+            cat /tmp/commit.json 2>/dev/null || true
+            exit 1
+          fi
+          jq -C '{sha, parents: [.parents[] | .sha], parent_count: (.parents | length)}' /tmp/commit.json
+          parent_count=$(jq '.parents | length' /tmp/commit.json)
+          first_parent=$(jq -r '.parents[0].sha // ""' /tmp/commit.json)
+          echo "parent_count=$parent_count" >> "$GITHUB_OUTPUT"
+          echo "first_parent=$first_parent" >> "$GITHUB_OUTPUT"
+
+      - name: Enforce policy
+        id: enforce
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_BEFORE: ${{ github.event.before }}
+          EVENT_FORCED: ${{ github.event.forced }}
+          SHA: ${{ steps.resolve.outputs.sha }}
+          PARENT_COUNT: ${{ steps.commit.outputs.parent_count }}
+          FIRST_PARENT: ${{ steps.commit.outputs.first_parent }}
+        run: |
+          set -euo pipefail
+          sha="$SHA"
+
+          # (1) Push event: reject forced pushes
+          if [ "$EVENT_NAME" = "push" ]; then
+            forced="$(printf '%s' "${EVENT_FORCED:-}" | tr '[:upper:]' '[:lower:]')"
+            if [ "$forced" = "true" ]; then
+              echo "::error title=MAIN PUSH POLICY VIOLATION::forced push to main is not allowed (github.event.forced=true)."
+              echo "::error::SHA=$sha"
+              exit 1
+            fi
+            if [ -z "${EVENT_BEFORE:-}" ] || [ "${EVENT_BEFORE:-}" = "0000000000000000000000000000000000000000" ]; then
+              echo "::error title=MAIN PUSH POLICY VIOLATION::missing or zero github.event.before — branch creation/deletion cannot be validated by this policy."
+              echo "::error::SHA=$sha"
+              exit 1
+            fi
+          fi
+
+          # (2) Parent count policy:
+          #   push               -> exactly 2 (no-ff merge commit; real push is NOT relaxed to 1)
+          #   workflow_dispatch  -> {1,2}      (allow historical squash-merge PRs)
+          if [ "$EVENT_NAME" = "push" ]; then
+            if [ "${PARENT_COUNT:-0}" != "2" ]; then
+              echo "::error title=MAIN PUSH POLICY VIOLATION::commit has ${PARENT_COUNT:-0} parent(s); push event requires exactly 2 (no-ff merge commit)."
+              echo "::error::SHA=$sha"
+              exit 1
+            fi
+          else
+            if [ "${PARENT_COUNT:-0}" != "1" ] && [ "${PARENT_COUNT:-0}" != "2" ]; then
+              echo "::error title=MAIN PUSH POLICY VIOLATION::commit has ${PARENT_COUNT:-0} parent(s); workflow_dispatch requires parent_count in {1,2} (squash or merge commit)."
+              echo "::error::SHA=$sha"
+              exit 1
+            fi
+          fi
+
+          # (3) Push event: first parent must equal github.event.before
+          if [ "$EVENT_NAME" = "push" ]; then
+            if [ "${FIRST_PARENT:-}" != "${EVENT_BEFORE:-}" ]; then
+              echo "::error title=MAIN PUSH POLICY VIOLATION::first parent (${FIRST_PARENT:-}) != github.event.before (${EVENT_BEFORE:-}); commit is not a PR merge of the previous main tip."
+              echo "::error::SHA=$sha"
+              exit 1
+            fi
+          fi
+
+          # (4) PR lookup: >=1 merged PR with base=main and merge_commit_sha=sha
+          api="$GITHUB_API_URL/repos/${{ github.repository }}/commits/$sha/pulls?per_page=100"
+          echo "GET $api"
+          http_code=$(curl -sS -o /tmp/pulls.json -w '%{http_code}' \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "$api")
+          echo "-> HTTP $http_code"
+          if [ "$http_code" != "200" ]; then
+            echo "::error title=MAIN PUSH POLICY VIOLATION::PR API returned HTTP $http_code for SHA=$sha."
+            echo "::error::SHA=$sha"
+            cat /tmp/pulls.json 2>/dev/null || true
+            exit 1
+          fi
+          jq -C 'map({number, state, merged_at, base: .base.ref, head: .head.ref, merge_commit_sha})' /tmp/pulls.json
+          match_count=$(jq --arg sha "$sha" --arg base main \
+            '[.[] | select((.merged_at != null) and (.base.ref == $base) and (.merge_commit_sha == $sha))] | length' \
+            /tmp/pulls.json)
+          echo "match_count=$match_count"
+          if [ "$match_count" -lt 1 ]; then
+            echo "::error title=MAIN PUSH POLICY VIOLATION::no merged PR found for SHA=$sha with base=main and merge_commit_sha == sha (matched=$match_count of $(jq length /tmp/pulls.json) returned)."
+            echo "::error::SHA=$sha"
+            exit 1
+          fi
+
+          echo "OK: SHA=$sha passes main-push-policy (matched PR count=$match_count, parents=$PARENT_COUNT)."
