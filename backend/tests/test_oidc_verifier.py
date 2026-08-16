@@ -235,6 +235,20 @@ async def test_runtime_readiness_distinguishes_disabled_absent_and_failed_jwks(
         await oidc_verifier.verify_oidc_runtime_ready()
 
 
+@pytest.mark.anyio
+async def test_runtime_readiness_allows_provider_response_inside_probe_budget(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def handler(_: httpx.Request) -> httpx.Response:
+        await asyncio.sleep(0.6)
+        return httpx.Response(200, content=_jwks())
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        verifier = OIDCVerifier(_settings(fetch_timeout_seconds=2.0), client)
+        monkeypatch.setattr(oidc_verifier, "_verifier", verifier)
+        await oidc_verifier.verify_oidc_runtime_ready()
+
+
 @pytest.mark.parametrize("value,valid", [("A", True), ("", False), ("has space", False), ("x" * 257, False), (1, False), (None, False)])
 def test_safe_text_contract(value: object, valid: bool) -> None:
     assert _safe_text(value) is valid
