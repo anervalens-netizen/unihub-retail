@@ -16,7 +16,8 @@ from prometheus_client import Counter, Gauge
 from oidc_settings import OIDCVerifierSettings, load_oidc_verifier_settings
 
 _MAX_BODY = 256 * 1024
-_READINESS_REFRESH_TIMEOUT_SECONDS = 0.5
+# Leave headroom for PostgreSQL and Valkey inside the outer two-second probe.
+_READINESS_REFRESH_TIMEOUT_SECONDS = 1.5
 _refresh = Counter("jwks_refresh_total", "JWKS refreshes.", ("outcome",))
 _cache_use = Counter("jwks_cache_use_total", "JWKS cache use.", ("state",))
 _unknown = Counter("jwks_unknown_kid_total", "Unknown JWKS key IDs.")
