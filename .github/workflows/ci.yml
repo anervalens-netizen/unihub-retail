@@ -375,7 +375,42 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+      - name: Classifier targeted test
+        working-directory: .
+        run: backend/venv/bin/python -I -m pytest -q backend/tests/test_high_risk_category_touched.py
+
       - name: Exact-SHA deploy and rollback sandbox
+        if: github.event_name == 'pull_request'
+        working-directory: .
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          GITHUB_WORKSPACE: ${{ github.workspace }}
+        run: |
+          set +e
+          backend/venv/bin/python -I \
+              "$GITHUB_WORKSPACE/scripts/is_high_risk_category_touched.py" \
+              --category deploy-release-ci \
+              --base-sha "$PR_BASE_SHA" \
+              --repo-root "$GITHUB_WORKSPACE"
+          classifier_rc=$?
+          set -e
+          case "$classifier_rc" in
+            0)
+              echo "::group::Exact-SHA deploy and rollback sandbox"
+              ops/test-deploy-retail-artifact.sh
+              echo "::endgroup::"
+              ;;
+            10)
+              echo "deploy-release-ci + sandbox-direct inputs not touched; sandbox SKIPPED on PR"
+              ;;
+            *)
+              echo "::error::sandbox classifier failed with exit $classifier_rc; PR-FAST FAILED for safety"
+              exit 1
+              ;;
+          esac
+
+      - name: Exact-SHA deploy and rollback sandbox (FULL only)
+        if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
         working-directory: .
         run: ops/test-deploy-retail-artifact.sh
 
@@ -441,6 +476,91 @@ jobs:
           "$RETAIL_NODE" "$RETAIL_NPM_CLI" run lint
 
       - name: Frontend unit tests without coverage (vitest run)
+        if: github.event_name == 'pull_request'
+        working-directory: .
+        env:
+          RETAIL_NODE: /opt/codex-desktop/resources/node-runtime/bin/node
+          RETAIL_NPM_CLI: /opt/codex-desktop/resources/node-runtime/lib/node_modules/npm/bin/npm-cli.js
+          PATH: /opt/codex-desktop/resources/node-runtime/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          GITHUB_WORKSPACE: ${{ github.workspace }}
+        run: |
+          set +e
+          MERGE_BASE="$(git -C "$GITHUB_WORKSPACE" merge-base "$PR_BASE_SHA" HEAD 2>/tmp/pr-fast-merge-base.err)"
+          merge_rc=$?
+          set -e
+          if [ "$merge_rc" -ne 0 ] || [ -z "$MERGE_BASE" ]; then
+            cat /tmp/pr-fast-merge-base.err >&2 || true
+            echo "::error::unable to resolve PR merge base for vitest classification"
+            exit 1
+          fi
+          set +e
+          DIFF_FILES="$(git -C "$GITHUB_WORKSPACE" diff --name-only --no-renames \
+              "$MERGE_BASE"..HEAD 2>/tmp/pr-fast-vitest-diff.err)"
+          diff_rc=$?
+          set -e
+          if [ "$diff_rc" -ne 0 ]; then
+            cat /tmp/pr-fast-vitest-diff.err >&2 || true
+            echo "::error::unable to classify changed files for vitest"
+            exit 1
+          fi
+          FORCE_FULL_EXACT=(
+              "package.json"
+              "package-lock.json"
+              "vitest.config.ts"
+              "vite.config.ts"
+              "tsconfig.json"
+          )
+          FORCE_FULL_PREFIX=(
+              "src/test/"
+              "vendor/npm/"
+          )
+          FORCE_FULL_PATTERN=(
+              "tsconfig.*.json"
+          )
+          force_full=0
+          matched=""
+          while IFS= read -r f; do
+            [[ -z "$f" ]] && continue
+            for path in "${FORCE_FULL_EXACT[@]}"; do
+              if [[ "$f" == "$path" ]]; then
+                force_full=1
+                matched="$f (exact)"
+                break
+              fi
+            done
+            [[ "$force_full" -eq 1 ]] && break
+            for prefix in "${FORCE_FULL_PREFIX[@]}"; do
+              if [[ "$f" == "$prefix"* ]]; then
+                force_full=1
+                matched="$f (prefix $prefix)"
+                break
+              fi
+            done
+            [[ "$force_full" -eq 1 ]] && break
+            for pattern in "${FORCE_FULL_PATTERN[@]}"; do
+              case "$f" in
+                $pattern)
+                  force_full=1
+                  matched="$f (pattern $pattern)"
+                  ;;
+              esac
+              [[ "$force_full" -eq 1 ]] && break
+            done
+            [[ "$force_full" -eq 1 ]] && break
+          done <<< "$DIFF_FILES"
+          if [[ "$force_full" -eq 1 ]]; then
+            echo "test infrastructure changed ($matched); running FULL vitest"
+            "$RETAIL_NODE" "$RETAIL_NPM_CLI" run test
+          else
+            echo "no test infrastructure change; running AFFECTED vitest"
+            "$RETAIL_NODE" "$RETAIL_NPM_CLI" run test -- \
+              --changed="$MERGE_BASE" \
+              --passWithNoTests
+          fi
+
+      - name: Frontend unit tests without coverage (vitest run) (FULL only)
+        if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
         working-directory: .
         env:
           RETAIL_NODE: /opt/codex-desktop/resources/node-runtime/bin/node
