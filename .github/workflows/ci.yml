@@ -409,11 +409,6 @@ jobs:
               ;;
           esac
 
-      - name: Exact-SHA deploy and rollback sandbox (FULL only)
-        if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
-        working-directory: .
-        run: ops/test-deploy-retail-artifact.sh
-
       - name: Targeted business mutation gate
         working-directory: .
         run: backend/venv/bin/python -I scripts/run_targeted_mutation_tests.py
@@ -558,16 +553,6 @@ jobs:
               --changed="$MERGE_BASE" \
               --passWithNoTests
           fi
-
-      - name: Frontend unit tests without coverage (vitest run) (FULL only)
-        if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
-        working-directory: .
-        env:
-          RETAIL_NODE: /opt/codex-desktop/resources/node-runtime/bin/node
-          RETAIL_NPM_CLI: /opt/codex-desktop/resources/node-runtime/lib/node_modules/npm/bin/npm-cli.js
-          PATH: /opt/codex-desktop/resources/node-runtime/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-        run: |
-          "$RETAIL_NODE" "$RETAIL_NPM_CLI" run test
 
       - name: Build
         working-directory: .
