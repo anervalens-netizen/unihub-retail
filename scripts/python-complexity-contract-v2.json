@@ -1,0 +1,373 @@
+{
+  "version": 2,
+  "algorithm": "python_complexity_proxy_v1",
+  "baseline_source_sha": "76a71d9bcf339385712ae1207824624af603a12f",
+  "history": {
+    "v1": {
+      "version": 1,
+      "baseline_source_sha": "0be82b430e55b7414babf470abe3fc5404b6cdc9",
+      "baseline_metrics": {
+        "production_functions": 2149,
+        "complexity_proxy_gte_20": 83,
+        "complexity_proxy_gte_30": 28,
+        "maximum_complexity_proxy": 62,
+        "wp11_gte_20": 22
+      },
+      "release_b_gates": {
+        "complexity_proxy_gte_20_maximum": 54,
+        "complexity_proxy_gte_30_maximum": 0,
+        "maximum_complexity_proxy": 29,
+        "new_function_complexity_proxy_maximum": 19,
+        "wp11_locked_entries_maximum": 19,
+        "locked_entry_rule": "Every baseline entry marked wp11_mandatory_below_20 must be absent or <=19; every entry marked mandatory_below_30 must be absent or <=29. Renames are new functions and do not evade the total/new-function gates."
+      },
+      "entry_count": 83
+    }
+  },
+  "release_b_gates": {
+    "complexity_proxy_gte_20_maximum": 33,
+    "complexity_proxy_gte_30_maximum": 3,
+    "maximum_complexity_proxy": 62,
+    "new_function_complexity_proxy_maximum": 19,
+    "wp11_locked_entries_maximum": 0,
+    "mandatory_locked_gte_30_maximum": 3
+  },
+  "locked_entry_rule": "Renames are new functions and do not evade the total/new-function gates. Per-function ceilings pin current gte_20 identities at their exact-main complexity; subsequent regressions must fail.",
+  "entries": [
+    {
+      "path": "backend/services/target_calculator/export.py",
+      "function": "build_target_excel",
+      "start_line": 135,
+      "end_line": 430,
+      "line_count": 296,
+      "current_complexity": 62,
+      "ceiling": 62
+    },
+    {
+      "path": "backend/services/target_calculator/profitability.py",
+      "function": "populate_profitability",
+      "start_line": 195,
+      "end_line": 329,
+      "line_count": 135,
+      "current_complexity": 49,
+      "ceiling": 49
+    },
+    {
+      "path": "backend/services/target_calculator/export.py",
+      "function": "manager_allocation_analysis",
+      "start_line": 27,
+      "end_line": 132,
+      "line_count": 106,
+      "current_complexity": 32,
+      "ceiling": 32
+    },
+    {
+      "path": "backend/services/target_calculator/serialization.py",
+      "function": "regional_summary",
+      "start_line": 85,
+      "end_line": 177,
+      "line_count": 93,
+      "current_complexity": 28,
+      "ceiling": 28
+    },
+    {
+      "path": "backend/services/spreadsheet_safety.py",
+      "function": "validate_spreadsheet_upload",
+      "start_line": 223,
+      "end_line": 303,
+      "line_count": 81,
+      "current_complexity": 27,
+      "ceiling": 27
+    },
+    {
+      "path": "backend/scripts/import_incentive_campaign.py",
+      "function": "main",
+      "start_line": 104,
+      "end_line": 221,
+      "line_count": 118,
+      "current_complexity": 26,
+      "ceiling": 26
+    },
+    {
+      "path": "backend/scripts/run_import_overlap_gate.py",
+      "function": "main",
+      "start_line": 169,
+      "end_line": 283,
+      "line_count": 115,
+      "current_complexity": 26,
+      "ceiling": 26
+    },
+    {
+      "path": "backend/auth.py",
+      "function": "verify_oidc_token",
+      "start_line": 58,
+      "end_line": 85,
+      "line_count": 28,
+      "current_complexity": 25,
+      "ceiling": 25
+    },
+    {
+      "path": "backend/services/grile_monthly_integrity.py",
+      "function": "validate_verified_manifest",
+      "start_line": 157,
+      "end_line": 198,
+      "line_count": 42,
+      "current_complexity": 25,
+      "ceiling": 25
+    },
+    {
+      "path": "backend/services/hr.py",
+      "function": "HrService.get_manager_overview",
+      "start_line": 121,
+      "end_line": 172,
+      "line_count": 52,
+      "current_complexity": 25,
+      "ceiling": 25
+    },
+    {
+      "path": "backend/db/migration_runner.py",
+      "function": "run_migrations",
+      "start_line": 209,
+      "end_line": 314,
+      "line_count": 106,
+      "current_complexity": 24,
+      "ceiling": 24
+    },
+    {
+      "path": "backend/logging_config.py",
+      "function": "DBErrorHandler.detach",
+      "start_line": 646,
+      "end_line": 718,
+      "line_count": 73,
+      "current_complexity": 23,
+      "ceiling": 23
+    },
+    {
+      "path": "backend/oidc_settings.py",
+      "function": "_parse",
+      "start_line": 139,
+      "end_line": 152,
+      "line_count": 14,
+      "current_complexity": 23,
+      "ceiling": 23
+    },
+    {
+      "path": "backend/oidc_settings.py",
+      "function": "_url",
+      "start_line": 26,
+      "end_line": 47,
+      "line_count": 22,
+      "current_complexity": 23,
+      "ceiling": 23
+    },
+    {
+      "path": "backend/scripts/check_pg_workload_regression.py",
+      "function": "compare_snapshots",
+      "start_line": 96,
+      "end_line": 204,
+      "line_count": 109,
+      "current_complexity": 23,
+      "ceiling": 23
+    },
+    {
+      "path": "backend/services/erp_reconciliation.py",
+      "function": "_parse_erp_report_impl",
+      "start_line": 170,
+      "end_line": 265,
+      "line_count": 96,
+      "current_complexity": 23,
+      "ceiling": 23
+    },
+    {
+      "path": "backend/client_ip.py",
+      "function": "resolve_client_ip",
+      "start_line": 30,
+      "end_line": 62,
+      "line_count": 33,
+      "current_complexity": 22,
+      "ceiling": 22
+    },
+    {
+      "path": "backend/logging_config.py",
+      "function": "DBErrorHandler.emit",
+      "start_line": 526,
+      "end_line": 580,
+      "line_count": 55,
+      "current_complexity": 22,
+      "ceiling": 22
+    },
+    {
+      "path": "backend/config.py",
+      "function": "_normalized_cors_origin",
+      "start_line": 59,
+      "end_line": 86,
+      "line_count": 28,
+      "current_complexity": 21,
+      "ceiling": 21
+    },
+    {
+      "path": "backend/db/connection.py",
+      "function": "verify_database_connection_authority",
+      "start_line": 99,
+      "end_line": 197,
+      "line_count": 99,
+      "current_complexity": 21,
+      "ceiling": 21
+    },
+    {
+      "path": "backend/salary_import_approval.py",
+      "function": "scan_runtime_salary_surfaces",
+      "start_line": 500,
+      "end_line": 543,
+      "line_count": 44,
+      "current_complexity": 21,
+      "ceiling": 21
+    },
+    {
+      "path": "backend/scripts/import_historical_monthly_sales.py",
+      "function": "load_source_files",
+      "start_line": 123,
+      "end_line": 199,
+      "line_count": 77,
+      "current_complexity": 21,
+      "ceiling": 21
+    },
+    {
+      "path": "backend/services/export_process.py",
+      "function": "run_export_renderer_process",
+      "start_line": 140,
+      "end_line": 253,
+      "line_count": 114,
+      "current_complexity": 21,
+      "ceiling": 21
+    },
+    {
+      "path": "backend/services/target_calculator/export.py",
+      "function": "manager_allocation_analysis.<locals>.build",
+      "start_line": 42,
+      "end_line": 100,
+      "line_count": 59,
+      "current_complexity": 21,
+      "ceiling": 21
+    },
+    {
+      "path": "backend/oidc_verifier.py",
+      "function": "OIDCVerifier.ensure_ready",
+      "start_line": 81,
+      "end_line": 132,
+      "line_count": 52,
+      "current_complexity": 20,
+      "ceiling": 20
+    },
+    {
+      "path": "backend/repositories/export_report_query.py",
+      "function": "_scope_parameters",
+      "start_line": 27,
+      "end_line": 95,
+      "line_count": 69,
+      "current_complexity": 20,
+      "ceiling": 20
+    },
+    {
+      "path": "backend/scripts/import_incentive_campaign.py",
+      "function": "load_excel",
+      "start_line": 48,
+      "end_line": 101,
+      "line_count": 54,
+      "current_complexity": 20,
+      "ceiling": 20
+    },
+    {
+      "path": "backend/services/agents.py",
+      "function": "AgentsService.get_agents_overview",
+      "start_line": 45,
+      "end_line": 156,
+      "line_count": 112,
+      "current_complexity": 20,
+      "ceiling": 20
+    },
+    {
+      "path": "backend/services/export_operations.py",
+      "function": "persist_export_artifact",
+      "start_line": 163,
+      "end_line": 222,
+      "line_count": 60,
+      "current_complexity": 20,
+      "ceiling": 20
+    },
+    {
+      "path": "backend/services/grile.py",
+      "function": "_run_claimed_grile_check",
+      "start_line": 287,
+      "end_line": 398,
+      "line_count": 112,
+      "current_complexity": 20,
+      "ceiling": 20
+    },
+    {
+      "path": "backend/services/jobs.py",
+      "function": "_enqueue_spooled_import_job",
+      "start_line": 298,
+      "end_line": 380,
+      "line_count": 83,
+      "current_complexity": 20,
+      "ceiling": 20
+    },
+    {
+      "path": "backend/services/legacy_xls.py",
+      "function": "parse_legacy_xls",
+      "start_line": 136,
+      "end_line": 194,
+      "line_count": 59,
+      "current_complexity": 20,
+      "ceiling": 20
+    },
+    {
+      "path": "backend/worker.py",
+      "function": "promote_sales_background",
+      "start_line": 208,
+      "end_line": 309,
+      "line_count": 102,
+      "current_complexity": 20,
+      "ceiling": 20
+    }
+  ],
+  "remediation_entries": [
+    {
+      "path": "backend/services/target_calculator/export.py",
+      "function": "build_target_excel",
+      "current_complexity": 62,
+      "target_complexity": 29
+    },
+    {
+      "path": "backend/services/target_calculator/profitability.py",
+      "function": "populate_profitability",
+      "current_complexity": 49,
+      "target_complexity": 29
+    },
+    {
+      "path": "backend/services/target_calculator/export.py",
+      "function": "manager_allocation_analysis",
+      "current_complexity": 32,
+      "target_complexity": 29
+    }
+  ],
+  "future_target": {
+    "complexity_proxy_gte_20_target": 33,
+    "complexity_proxy_gte_30_target": 0,
+    "maximum_complexity_proxy_target": 29,
+    "no_new_function_above_19": true,
+    "note": "informational only; current blocking ratchet remains authoritative"
+  },
+  "transition_rules": {
+    "aggregate_gte_20_cannot_increase": true,
+    "aggregate_gte_30_cannot_increase": true,
+    "maximum_complexity_cannot_increase": true,
+    "new_function_threshold_cannot_loosen": true,
+    "per_function_ceiling_cannot_increase": true,
+    "history_is_append_only": true,
+    "locked_entry_may_disappear_only_if_current_below_20": true,
+    "no_candidate_identity_laundering": true
+  },
+  "contract_payload_sha256": "d3d505e1f581d2e316865389abebf8342dc45bba6719afadcb2ced404322ee3a"
+}
