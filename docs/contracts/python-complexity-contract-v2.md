@@ -4,6 +4,13 @@ This document describes the Python AST-complexity contract v2 introduced
 by PR-B1. It is the authoritative source for the metric algorithm, the
 contract shape, the ratchet semantics, and the relation to other gates.
 
+PR-B1 ships one final semantic correction pass: the new-function
+threshold is **derived from the contract** (no hardcoded `>= 20`), the
+metric algorithm itself is **pinned by a structured descriptor** (not
+only by the name string), the v2 boundary is **immutable at 19**, and
+the legacy WP11 fields are **removed from active v2** (they remain in
+the v1 history only).
+
 ## What `complexity_proxy` means
 
 `complexity_proxy` is the per-function score produced by
@@ -27,8 +34,7 @@ typically computed over the entire module. `complexity_proxy` differs:
   `ExceptHandler`) instead of McCabe's branch operators;
 - it walks nested function and class bodies with `ast.walk`, so a
   nested `if` contributes to the outer function's score. This is
-  preserved intentionally; do not silently "fix" it in a future
-  revision.
+  preserved intentionally; do not silently "fix" it in a future revision.
 
 ## Exact algorithm
 
@@ -47,6 +53,32 @@ Any change to this set, the algorithm, or the walk semantics is a
 breaking change for the contract and requires bumping the contract
 version and re-baselining the entries.
 
+## Algorithm pinning (PR-B1 final semantic correction)
+
+L1 exposes an immutable algorithm descriptor:
+
+| Symbol              | Value                                          |
+|---------------------|------------------------------------------------|
+| `ALGORITHM_NAME`    | `"python_complexity_proxy_v1"`                 |
+| `ALGORITHM_VERSION` | `"1"`                                           |
+| `algorithm_spec()`  | `{"initial_score": 1, "counted_nodes": [...], "bool_op": "max(1,len(values)-1)", "walk": "ast.walk_including_nested_bodies"}` |
+
+Each v2 contract records the same values in `algorithm` plus the
+SHA-256 of the L1 file as `implementation_sha256`. The runtime
+checker:
+
+1. computes the SHA-256 of `scripts/_python_complexity.py` and
+   requires equality with `contract.algorithm.implementation_sha256`.
+2. compares every field in `contract.algorithm` against the runtime
+   L1's exposed descriptor. Any mismatch is a FAIL.
+3. in a v2 -> v2 transition, requires the candidate's algorithm
+   descriptor to be **exactly equal** to the previous descriptor.
+
+This means the algorithm itself cannot be silently weakened by editing
+`scripts/_python_complexity.py` while keeping the contract name — the
+next contract will fail to validate, and the only legitimate path is
+to introduce a new contract version (v3) and rebaseline.
+
 ## Current baseline (exact-main 76a71d9b)
 
 Measured against the production tree at
@@ -55,12 +87,12 @@ Measured against the production tree at
 | Metric                     | Value |
 |----------------------------|-------|
 | production_functions       | 2935  |
-| complexity_proxy >=20      | 33    |
-| complexity_proxy >=30      | 3     |
+| complexity_proxy > 19      | 33    |
+| complexity_proxy >= 30     | 3     |
 | maximum_complexity_proxy   | 62    |
-| new_function_gte_20        | 0     |
+| new_function above 19      | 0     |
 
-The three current `>=30` hotspots are tracked as remediation entries:
+The three current `>= 30` hotspots are tracked as remediation entries:
 
 | Path                                                              | Function                       | current | target |
 |-------------------------------------------------------------------|--------------------------------|---------|--------|
@@ -74,16 +106,26 @@ The three current `>=30` hotspots are tracked as remediation entries:
 
 | Limit                                            | Value | Meaning                                          |
 |--------------------------------------------------|-------|--------------------------------------------------|
-| `complexity_proxy_gte_20_maximum`                | 33    | total functions with cp >= 20 may not exceed 33  |
+| `complexity_proxy_gte_20_maximum`                | 33    | total functions with cp > 19 may not exceed 33   |
 | `complexity_proxy_gte_30_maximum`                | 3     | total functions with cp >= 30 may not exceed 3   |
 | `maximum_complexity_proxy`                       | 62    | the largest single function cp may not exceed 62 |
-| `new_function_complexity_proxy_maximum`         | 19    | a function not in `entries` may not reach cp >= 20 |
-| `wp11_locked_entries_maximum`                    | 0     | WP-11 mandatory-below-20 entries may not be >= 20 |
-| `mandatory_locked_gte_30_maximum`                | 3     | mandatory-below-30 entries that still exist >= 30 |
+| `new_function_complexity_proxy_maximum`         | 19    | a function not in `entries` may not exceed cp 19 (i.e., may not reach cp >= 20) |
 
-Per-function ceilings in `entries[]` pin each current `>=20` identity
+The new-function threshold is **pinned at 19** for v2. Both values
+above 19 (would loosen) and below 19 (would tighten) are rejected by
+the v2 -> v2 transition validator. Changing the boundary requires
+v3 / rebaseline.
+
+Per-function ceilings in `entries[]` pin each current `> 19` identity
 at its exact-main complexity. A regression of any entry above its
 ceiling is a FAIL.
+
+The v2 contract deliberately omits the legacy v1 fields
+`wp11_locked_entries_maximum` and `mandatory_locked_gte_30_maximum`.
+Their existence was historical-only; v2 entries do not carry the v1
+flags that defined those concepts, and the active v2 checker does not
+compute them. They remain in the `history.v1` block for evidentiary
+purposes only.
 
 ## Future target
 
@@ -108,7 +150,7 @@ results, mapped to exit codes:
 | Result              | rc | | When |
 |---------------------|----|-|------|
 | `PASS`              | 0  | | All checks pass and current code matches or equals the contract baseline. |
-| `FAIL`              | 1  | | Any safety/policy violation: contract integrity, schema, aggregate limit exceeded, locked entry exceeded, monotonic transition rejection, or invalid contract. |
+| `FAIL`              | 1  | | Any safety/policy violation: contract integrity, schema, aggregate limit exceeded, locked entry exceeded, monotonic transition rejection, algorithm descriptor mismatch, or invalid contract. |
 | `RATCHET_REQUIRED`  | 2  | | Current code is strictly better than the recorded contract AND the contract has not been tightened to capture the improvement. |
 
 Precedence:
@@ -132,14 +174,18 @@ A self-hash is necessary but not sufficient. A future PR must not be
 able to:
 
 - raise an aggregate ceiling (`gte_20_maximum`, `gte_30_maximum`,
-  `maximum_complexity_proxy`, `mandatory_locked_gte_30_maximum`,
-  `wp11_locked_entries_maximum`);
-- raise the new-function threshold (must stay <= 19);
+  `maximum_complexity_proxy`);
+- change the new-function threshold (must stay pinned at 19 in v2 -
+  both `19 -> 20` and `19 -> 18` are rejected);
 - raise a per-function ceiling;
 - rewrite or remove a historical record;
-- remove a locked entry while the function still exists and is >= 20;
-- introduce a new entry whose function is currently >= 20 but was
-  not in the previous >= 20 locked set (candidate-identity laundering).
+- remove a locked entry while the function still exists and is >
+  new_function_threshold;
+- introduce a new entry whose function is currently >
+  new_function_threshold but was not in the previous locked set
+  (candidate-identity laundering);
+- modify the algorithm descriptor (counted nodes, bool_op, walk,
+  initial_score, name, implementation_sha256) in a v2 -> v2 transition.
 
 The `--previous-contract <path>` flag activates a pure, testable
 monotonic transition check that enforces these rules. PR-B1 does not
@@ -147,9 +193,43 @@ wire it into CI; PR-B3 will pass the PR-base / FIRST_PARENT contract
 as `--previous-contract`.
 
 Tightening is always allowed: lower aggregate ceilings, lower
-per-function ceilings, a lower new-function threshold, and removal of
-a locked entry whose function has dropped below 20 (an improvement)
-all PASS the validator.
+per-function ceilings, and removal of a locked entry whose function
+has dropped below the new-function threshold (an improvement) all PASS
+the validator.
+
+## Evidence artifact
+
+The checker writes a single JSON artifact via `--evidence <path>`. The
+artifact contains:
+
+- `source_sha` — current `git rev-parse HEAD`;
+- `event_name` — logical event name (e.g., `pull_request`);
+- `algorithm` — the full descriptor block (name, implementation
+  SHA-256, initial_score, counted_nodes, bool_op, walk);
+- `algorithm_runtime_match` — `true` iff the runtime L1 matches the
+  contract;
+- `contract_payload_sha256` — SHA-256 of the contract payload;
+- `contract_source_sha` — the exact-main SHA pinned by the contract;
+- `contract_version` — `2`;
+- `previous_contract_payload_sha256` — SHA-256 of the previous
+  contract when supplied, otherwise `null`;
+- `candidate_contract_payload_sha256` — same as the contract payload
+  SHA-256 when not in a transition; PR-B3 will introduce a separate
+  `comparison_base_sha` field once the comparison source is wired
+  against PR base / FIRST_PARENT;
+- `metrics` — production functions, complexity_proxy counts, max;
+- `blocking_baseline` — recording the v2 gates at evaluation time;
+- `entries_count` — number of locked entries in the contract;
+- `violations` — schema/integrity/policy failures;
+- `entry_violations` — per-function lock violations;
+- `transition_violations` — monotonic transition failures
+  (only when `--previous-contract` is supplied);
+- `ratchet_candidate` — improvements that have not yet been tightened
+  into the contract.
+
+The `comparison_base_sha` field is **not yet present** in the
+artifact: PR-B1 does not wire the comparison source. PR-B3 will add
+it when the gate is wired against the PR base / FIRST_PARENT.
 
 ## v1 historical preservation
 
@@ -157,7 +237,11 @@ all PASS the validator.
 PR-B1 does not edit it. The v2 contract records v1 history in its
 `history.v1` block (version, baseline source SHA, baseline metrics,
 release_b_gates, entry count) so a future PR can refer to the
-pre-v2 state without reaching for the v1 file.
+pre-v2 state without reaching for the v1 file. The historical v1
+`release_b_gates` retain their legacy WP11 fields
+(`wp11_locked_entries_maximum: 19`) as evidence of the strategic
+intent at the time v1 was authored; those fields are intentionally
+absent from active v2.
 
 The v1 contract's `release_b_gates` reflect the strategic intent at
 the time it was authored (`gte_30_maximum: 0`, `maximum_complexity: 29`,
@@ -173,9 +257,8 @@ PR-B2 will replace
 inline scoring with calls into the same L1 module, and add the
 `--no-renames` rename escape fix and the strict-improvement rule for
 existing touched functions. It will not change the threshold for
-new functions in PR-B1; that alignment (`--maximum 20` -> effective
-`--maximum 19` for new functions, with strict-improvement for
-existing touched >= 20) is scheduled for PR-B2.
+new functions in PR-B1; that alignment (new-function maximum stays
+at 19) is already enforced by the v2 contract.
 
 PR-B2 will also use the L1 transition validator for the changed-line
 gate.
@@ -200,6 +283,6 @@ backend/venv/bin/python -I scripts/check_python_complexity_contract.py \
 
 Expected on exact main: `PASS`, rc 0. The evidence file is the
 single artifact documented in PR-B1; it carries the L1 module
-SHA-256, the contract payload SHA-256, the production metrics, the
-limits, the violation list, and (if applicable) the
-RATCHET_REQUIRED delta list.
+SHA-256, the algorithm descriptor, the contract payload SHA-256, the
+production metrics, the limits, the violation list, and (if
+applicable) the RATCHET_REQUIRED delta list.

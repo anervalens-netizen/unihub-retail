@@ -181,6 +181,22 @@ def test_counted_nodes_constant_has_13_types(l1):
     assert set(l1.COUNTED_NODES) == expected
 
 
+def test_algorithm_descriptor_exposed(l1):
+    """L1 must expose ALGORITHM_NAME, ALGORITHM_VERSION, and
+    algorithm_spec() so the contract can pin the metric algorithm."""
+    assert l1.ALGORITHM_NAME == "python_complexity_proxy_v1"
+    assert isinstance(l1.ALGORITHM_VERSION, str) and l1.ALGORITHM_VERSION
+    spec = l1.algorithm_spec()
+    assert spec["initial_score"] == 1
+    assert list(spec["counted_nodes"]) == list(l1.COUNTED_NODES)
+    assert spec["bool_op"] == "max(1,len(values)-1)"
+    assert spec["walk"] == "ast.walk_including_nested_bodies"
+    # Mutating the returned dict must not affect subsequent calls.
+    spec["counted_nodes"].append("MUTATED")
+    spec2 = l1.algorithm_spec()
+    assert spec2["counted_nodes"][-1] != "MUTATED"
+
+
 def test_score_zero_input_rejected(l1):
     with pytest.raises(TypeError):
         l1.score(None)

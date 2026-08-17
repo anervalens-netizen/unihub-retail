@@ -44,8 +44,26 @@ from __future__ import annotations
 import ast
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, Iterator
+from typing import Any, Iterable, Iterator
 
+
+# ---------------------------------------------------------------------------
+# Immutable algorithm descriptor (PR-B1 final semantic correction)
+# ---------------------------------------------------------------------------
+#
+# The contract pins the metric algorithm itself, not only the thresholds.
+# A future PR must not be able to:
+#   - rename the algorithm;
+#   - add/remove/reorder a counted node type;
+#   - change the BoolOp rule;
+#   - change the walk semantics;
+#   - change the initial score.
+# Any change here requires a new contract version and an explicit
+# rebaseline; the v2 contract forbids a change in v2 -> v2 transitions
+# (see docs/contracts/python-complexity-contract-v2.md).
+
+ALGORITHM_NAME: str = "python_complexity_proxy_v1"
+ALGORITHM_VERSION: str = "1"
 
 # Node type names whose presence increments the score by exactly 1.
 # The list matches the literal set used in scripts/check_python_complexity_contract.py
@@ -69,6 +87,31 @@ COUNTED_NODES: tuple[str, ...] = (
     "Match",
     "ExceptHandler",
 )
+
+# Walk semantics: ast.walk descends into nested function/class bodies by
+# design. This is preserved. The descriptor string is intentionally short
+# and human-readable; the runtime validator only checks string equality.
+_WALK_DESCRIPTOR: str = "ast.walk_including_nested_bodies"
+
+# BoolOp rule: contributes max(1, len(values) - 1). If you ever change
+# this rule, rename the algorithm and bump the contract version.
+_BOOLOP_DESCRIPTOR: str = "max(1,len(values)-1)"
+
+
+def algorithm_spec() -> dict[str, Any]:
+    """Return the immutable algorithm descriptor as a plain dict.
+
+    The contract stores these fields verbatim in
+    ``contract.algorithm`` (sans ``implementation_sha256``); the runtime
+    checker compares this dict to the contract fields. Returning a fresh
+    dict per call avoids accidental mutation of the module-level constant.
+    """
+    return {
+        "initial_score": 1,
+        "counted_nodes": list(COUNTED_NODES),
+        "bool_op": _BOOLOP_DESCRIPTOR,
+        "walk": _WALK_DESCRIPTOR,
+    }
 
 
 @dataclass(frozen=True, slots=True)
@@ -193,9 +236,12 @@ def collect_metrics(root: Path) -> list[FunctionMetric]:
 
 
 __all__ = [
+    "ALGORITHM_NAME",
+    "ALGORITHM_VERSION",
     "COUNTED_NODES",
     "EXCLUDED_PARTS",
     "FunctionMetric",
+    "algorithm_spec",
     "collect_metrics",
     "function_metrics",
     "iter_python_files",
