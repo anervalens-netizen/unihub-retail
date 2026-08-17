@@ -1,48 +1,128 @@
 #!/usr/bin/env python3
-"""Verify the frozen Python AST-complexity contract without rewriting it."""
+"""Verify the monotonic Python AST-complexity contract v2.
+
+PR-B1 introduces:
+  - import of the shared metric from scripts/_python_complexity.py via
+    importlib.util.spec_from_file_location (works under `python -I`,
+    independent of cwd, no sys.path pollution, exact trusted sibling path);
+  - PASS / FAIL / RATCHET_REQUIRED semantics with rc 0/1/2;
+  - an optional --previous-contract <path> flag that activates a
+    pure, testable monotonic transition validator covering every rule
+    the reviewer enumerated (aggregate ceilings, per-function ceilings,
+    new-function threshold pinned at 19, history append-only,
+    locked-entry survival, candidate-identity laundering, and
+    algorithm descriptor exact-equality).
+
+PR-B1 final semantic correction (this revision):
+
+  - The new-function threshold is derived from the contract
+    (``new_function_complexity_proxy_maximum``); the evaluator does
+    not hardcode ``>= 20``. The v2 contract pins this value at 19.
+  - The contract algorithm is pinned via a structured descriptor
+    (``algorithm.name``, ``implementation_sha256``, ``initial_score``,
+    ``counted_nodes``, ``bool_op``, ``walk``). The runtime computes the
+    SHA-256 of the L1 file and rejects any mismatch. The v2 -> v2
+    transition validator requires the candidate algorithm descriptor
+    to be exactly equal to the previous one.
+  - The v2 transition validator rejects both ``19 -> 20`` (loosen) and
+    ``19 -> 18`` (would require rebaseline). The v2 boundary is
+    immutable at 19.
+  - Schema validation fails closed on duplicate locked identities,
+    malformed entries (missing path/function/ceiling/current_complexity)
+    and duplicate remediation identities.
+  - The legacy WP11 fields (``wp11_locked_entries_maximum`` and
+    ``mandatory_locked_gte_30_maximum``) are removed from the active
+    v2 contract. They remain in the historical v1 history block only.
+
+Failures fall into three categories:
+  FAIL (rc 1)              any safety/policy violation
+  RATCHET_REQUIRED (rc 2)  current code strictly better than contract
+                           but contract has not been tightened
+  PASS (rc 0)              all checks pass
+
+PR-B1 keeps the --evidence <path> argument and writes a single JSON
+artifact there for downstream consumption. The artifact follows the
+schema described in docs/contracts/python-complexity-contract-v2.md.
+
+This script does NOT auto-edit the contract file. Contract changes
+must be explicit Git changes.
+"""
 from __future__ import annotations
 
 import argparse
-import ast
-from dataclasses import asdict, dataclass
 import hashlib
+import importlib.util
 import json
-from pathlib import Path
 import subprocess
-from typing import Iterable, Iterator
+import sys
+from dataclasses import asdict
+from pathlib import Path
+from typing import Any
 
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_CONTRACT = Path(__file__).with_name("python-complexity-contract-v1.json")
-EXCLUDED_PARTS = {"tests", "venv", ".venv", "__pycache__"}
-COUNTED_NODES = (
-    ast.If,
-    ast.For,
-    ast.AsyncFor,
-    ast.While,
-    ast.Try,
-    ast.TryStar,
-    ast.With,
-    ast.AsyncWith,
-    ast.IfExp,
-    ast.Assert,
-    ast.comprehension,
-    ast.Match,
-    ast.ExceptHandler,
-)
+L1_PATH = Path(__file__).with_name("_python_complexity.py")
+DEFAULT_CONTRACT = Path(__file__).with_name("python-complexity-contract-v2.json")
+_L1_MODNAME = "_unihub_python_complexity_l1"
+
+# v2 invariant: the new-function threshold is pinned at 19. Any change
+# requires a contract version bump and an explicit rebaseline.
+V2_NEW_FUNCTION_THRESHOLD: int = 19
 
 
-@dataclass(frozen=True, slots=True)
-class FunctionMetric:
-    path: str
-    function: str
-    start_line: int
-    end_line: int
-    line_count: int
-    complexity_proxy: int
+# ---------------------------------------------------------------------------
+# L1 loading
+# ---------------------------------------------------------------------------
 
 
-def canonical_sha256(value: object) -> str:
+class L1LoadError(RuntimeError):
+    """Raised when L1 cannot be loaded. The check fails closed."""
+
+
+def _load_l1() -> Any:
+    """Load scripts/_python_complexity.py via importlib.
+
+    Uses Path(__file__).with_name(...) so the trusted sibling is
+    resolved regardless of cwd. The module is registered under a fixed
+    private name in sys.modules before exec_module so dataclasses can
+    resolve its module metadata. On any loader exception the temporary
+    entry is removed and the exception is re-raised.
+    """
+    if not L1_PATH.is_file():
+        raise L1LoadError(f"L1 module not found at {L1_PATH}")
+    spec = importlib.util.spec_from_file_location(_L1_MODNAME, str(L1_PATH))
+    if spec is None or spec.loader is None:
+        raise L1LoadError(f"could not build import spec for {L1_PATH}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[_L1_MODNAME] = module
+    try:
+        spec.loader.exec_module(module)
+    except BaseException:
+        sys.modules.pop(_L1_MODNAME, None)
+        raise
+    required = {
+        "ALGORITHM_NAME",
+        "ALGORITHM_VERSION",
+        "COUNTED_NODES",
+        "FunctionMetric",
+        "algorithm_spec",
+        "collect_metrics",
+        "function_metrics",
+        "score",
+    }
+    missing = required - set(dir(module))
+    if missing:
+        sys.modules.pop(_L1_MODNAME, None)
+        raise L1LoadError(f"L1 missing required names: {sorted(missing)}")
+    return module
+
+
+# ---------------------------------------------------------------------------
+# Hashing
+# ---------------------------------------------------------------------------
+
+
+def _canonical_sha256(value: Any) -> str:
     payload = json.dumps(
         value,
         ensure_ascii=False,
@@ -52,174 +132,720 @@ def canonical_sha256(value: object) -> str:
     return hashlib.sha256(payload).hexdigest()
 
 
-def _complexity(node: ast.AST) -> int:
-    score = 1
-    for child in ast.walk(node):
-        if isinstance(child, COUNTED_NODES):
-            score += 1
-        elif isinstance(child, ast.BoolOp):
-            score += max(1, len(child.values) - 1)
-    return score
-
-
-def _function_metrics(path: Path, root: Path) -> list[FunctionMetric]:
-    relative = path.relative_to(root).as_posix()
-    tree = ast.parse(path.read_text(encoding="utf-8"), filename=relative)
-    result: list[FunctionMetric] = []
-
-    def visit(body: Iterable[ast.stmt], prefix: tuple[str, ...] = ()) -> None:
-        for node in body:
-            if isinstance(node, ast.ClassDef):
-                visit(node.body, (*prefix, node.name))
-                continue
-            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                continue
-            function = ".".join((*prefix, node.name))
-            end_line = node.end_lineno or node.lineno
-            result.append(
-                FunctionMetric(
-                    path=relative,
-                    function=function,
-                    start_line=node.lineno,
-                    end_line=end_line,
-                    line_count=end_line - node.lineno + 1,
-                    complexity_proxy=_complexity(node),
-                )
-            )
-            visit(node.body, (*prefix, node.name, "<locals>"))
-
-    visit(tree.body)
-    return result
-
-
-def iter_python_files(root: Path) -> Iterator[Path]:
-    backend = root / "backend"
-    for path in sorted(backend.rglob("*.py")):
-        relative = path.relative_to(root)
-        if path.is_file() and not any(part in EXCLUDED_PARTS for part in relative.parts):
-            yield path
-
-
-def collect_metrics(root: Path) -> list[FunctionMetric]:
-    return [
-        metric
-        for path in iter_python_files(root)
-        for metric in _function_metrics(path, root)
-    ]
-
-
-def _contract_payload(contract: dict[str, object]) -> dict[str, object]:
-    return {key: value for key, value in contract.items() if key != "contract_payload_sha256"}
-
-
 def _git_sha(root: Path) -> str | None:
     result = subprocess.run(
         ["git", "rev-parse", "HEAD"],
-        cwd=root,
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.DEVNULL,
+        cwd=root, text=True,
+        stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
     )
     return result.stdout.strip() if result.returncode == 0 else None
 
 
-def evaluate(root: Path, contract: dict[str, object]) -> dict[str, object]:
-    expected_payload_sha = str(contract.get("contract_payload_sha256") or "")
-    actual_payload_sha = canonical_sha256(_contract_payload(contract))
-    violations: list[str] = []
-    if not expected_payload_sha or actual_payload_sha != expected_payload_sha:
-        violations.append("contract payload digest mismatch")
+def _contract_payload(contract: dict) -> dict:
+    return {k: v for k, v in contract.items() if k != "contract_payload_sha256"}
 
-    metrics = collect_metrics(root)
-    by_identity = {(item.path, item.function): item for item in metrics}
-    entries = contract.get("entries")
-    gates = contract.get("release_b_gates")
-    if not isinstance(entries, list) or not isinstance(gates, dict):
-        raise ValueError("Invalid Python complexity contract structure")
-    locked = {
-        (str(entry["path"]), str(entry["function"])): entry
-        for entry in entries
-        if isinstance(entry, dict)
+
+# ---------------------------------------------------------------------------
+# Algorithm pinning (PR-B1 final semantic correction)
+# ---------------------------------------------------------------------------
+
+
+def _l1_file_sha256() -> str:
+    """SHA-256 of the L1 file bytes, exactly as on disk."""
+    return hashlib.sha256(L1_PATH.read_bytes()).hexdigest()
+
+
+def _runtime_algorithm_descriptor(l1: Any) -> dict:
+    """Collect the runtime algorithm descriptor from L1.
+
+    Returns the data the contract must mirror. The dict is intentionally
+    plain (json-friendly) so a deep equality check is trivial.
+    """
+    spec = l1.algorithm_spec()
+    return {
+        "name": str(l1.ALGORITHM_NAME),
+        "implementation_sha256": _l1_file_sha256(),
+        "initial_score": int(spec["initial_score"]),
+        "counted_nodes": list(spec["counted_nodes"]),
+        "bool_op": str(spec["bool_op"]),
+        "walk": str(spec["walk"]),
     }
-    at_least_20 = [item for item in metrics if item.complexity_proxy >= 20]
-    at_least_30 = [item for item in metrics if item.complexity_proxy >= 30]
-    new_at_least_20 = [
-        item for item in at_least_20 if (item.path, item.function) not in locked
-    ]
-    wp11_violations = [
-        item
-        for identity, entry in locked.items()
-        if bool(entry.get("wp11_mandatory_below_20"))
-        and (item := by_identity.get(identity)) is not None
-        and item.complexity_proxy >= 20
-    ]
-    mandatory_30_violations = [
-        item
-        for identity, entry in locked.items()
-        if bool(entry.get("mandatory_below_30"))
-        and (item := by_identity.get(identity)) is not None
-        and item.complexity_proxy >= 30
-    ]
-    maximum = max((item.complexity_proxy for item in metrics), default=0)
-    limits = {
-        "complexity_proxy_gte_20": int(gates["complexity_proxy_gte_20_maximum"]),
-        "complexity_proxy_gte_30": int(gates["complexity_proxy_gte_30_maximum"]),
-        "maximum_complexity_proxy": int(gates["maximum_complexity_proxy"]),
-        "new_function_complexity_proxy": int(gates["new_function_complexity_proxy_maximum"]),
-        "wp11_locked_entries": int(gates["wp11_locked_entries_maximum"]),
-    }
-    if len(at_least_20) > limits["complexity_proxy_gte_20"]:
-        violations.append(
-            f"complexity_proxy >=20 count {len(at_least_20)} > {limits['complexity_proxy_gte_20']}"
+
+
+def _validate_algorithm_pin(contract: dict, l1: Any) -> list:
+    """Pure validation: contract.algorithm must match the L1 module.
+
+    Returns a list of human-readable violation strings. Empty list means
+    the algorithm is pinned correctly.
+    """
+    out: list = []
+    algo = contract.get("algorithm")
+    if not isinstance(algo, dict):
+        return ["algorithm descriptor must be an object"]
+
+    expected = _runtime_algorithm_descriptor(l1)
+
+    # Required fields must be present.
+    for field in (
+        "name",
+        "implementation_sha256",
+        "initial_score",
+        "counted_nodes",
+        "bool_op",
+        "walk",
+    ):
+        if field not in algo:
+            out.append(f"algorithm.{field} missing")
+
+    if out:
+        return out
+
+    # Field-by-field equality:
+    if str(algo["name"]) != expected["name"]:
+        out.append(
+            f"algorithm.name mismatch (expected {expected['name']!r}, got {algo['name']!r})"
         )
-    if len(at_least_30) > limits["complexity_proxy_gte_30"]:
+    if str(algo["implementation_sha256"]) != expected["implementation_sha256"]:
+        out.append(
+            "algorithm.implementation_sha256 mismatch with runtime L1"
+            f" (expected {expected['implementation_sha256']}, got {algo['implementation_sha256']})"
+        )
+    if int(algo["initial_score"]) != expected["initial_score"]:
+        out.append(
+            f"algorithm.initial_score mismatch (expected {expected['initial_score']}, got {algo['initial_score']})"
+        )
+    if list(algo["counted_nodes"]) != expected["counted_nodes"]:
+        out.append(
+            f"algorithm.counted_nodes mismatch (expected {expected['counted_nodes']}, got {algo['counted_nodes']})"
+        )
+    if str(algo["bool_op"]) != expected["bool_op"]:
+        out.append(
+            f"algorithm.bool_op mismatch (expected {expected['bool_op']!r}, got {algo['bool_op']!r})"
+        )
+    if str(algo["walk"]) != expected["walk"]:
+        out.append(
+            f"algorithm.walk mismatch (expected {expected['walk']!r}, got {algo['walk']!r})"
+        )
+    return out
+
+
+def _algorithm_descriptor_equal(a: dict, b: dict) -> bool:
+    """Deep equality for the algorithm descriptor block.
+
+    Used by the v2 -> v2 transition validator. Both inputs are pulled
+    from the contract, so they are already JSON-serializable.
+    """
+    if not isinstance(a, dict) or not isinstance(b, dict):
+        return False
+    return _canonical_sha256(a) == _canonical_sha256(b)
+
+
+# ---------------------------------------------------------------------------
+# Schema / structural validation (fail-closed)
+# ---------------------------------------------------------------------------
+
+
+def _validate_schema(contract: dict, *, check_threshold: bool = True) -> list:
+    """Pure validation: the contract must be a well-formed v2 contract.
+
+    Returns a list of human-readable violation strings. Empty list means
+    the contract is structurally valid.
+
+    Strictly rejects:
+      - unsupported version
+      - duplicate locked identities (path, function)
+      - malformed entries missing path/function/ceiling/current_complexity
+      - duplicate remediation identities (path, function)
+      - the legacy WP11 fields in active v2 release_b_gates
+      - new_function_complexity_proxy_maximum != 19 (only when
+        ``check_threshold`` is True, i.e., for initial contracts).
+
+    The threshold check is opt-in so the v2 -> v2 transition validator
+    can produce the more specific "new-function threshold N is not pinned
+    at 19" message when a previous contract is provided.
+    """
+    out: list = []
+
+    if contract.get("version") != 2:
+        out.append(f"unsupported contract version: {contract.get('version')!r}")
+
+    gates = contract.get("release_b_gates")
+    if not isinstance(gates, dict):
+        out.append("release_b_gates must be a dict")
+    else:
+        # Required v2 limits.
+        for required in (
+            "complexity_proxy_gte_20_maximum",
+            "complexity_proxy_gte_30_maximum",
+            "maximum_complexity_proxy",
+            "new_function_complexity_proxy_maximum",
+        ):
+            if required not in gates:
+                out.append(f"release_b_gates.{required} missing")
+
+        # PR-B1 final semantic correction: active v2 must NOT carry the
+        # legacy WP11 fields. They are historical-only.
+        for legacy in ("wp11_locked_entries_maximum", "mandatory_locked_gte_30_maximum"):
+            if legacy in gates:
+                out.append(
+                    f"release_b_gates.{legacy} is a legacy v1 field and must not appear in active v2"
+                )
+
+        # The v2 boundary is pinned at 19. Any other initial value is
+        # rejected to keep the contract unambiguous. Skipped for v2 ->
+        # v2 transitions so the transition validator can produce its
+        # specific "not pinned at 19" message.
+        if check_threshold and "new_function_complexity_proxy_maximum" in gates:
+            try:
+                nft = int(gates["new_function_complexity_proxy_maximum"])
+            except (TypeError, ValueError):
+                out.append("release_b_gates.new_function_complexity_proxy_maximum must be an integer")
+            else:
+                if nft != V2_NEW_FUNCTION_THRESHOLD:
+                    out.append(
+                        f"release_b_gates.new_function_complexity_proxy_maximum must be {V2_NEW_FUNCTION_THRESHOLD}"
+                        f" (got {nft})"
+                    )
+
+    entries = contract.get("entries")
+    if not isinstance(entries, list):
+        out.append("entries must be a list")
+    else:
+        seen_locked: set = set()
+        for idx, entry in enumerate(entries):
+            if not isinstance(entry, dict):
+                out.append(f"entries[{idx}] must be an object")
+                continue
+            path = entry.get("path")
+            function = entry.get("function")
+            if not isinstance(path, str) or not path:
+                out.append(f"entries[{idx}].path missing or empty")
+                continue
+            if not isinstance(function, str) or not function:
+                out.append(f"entries[{idx}].function missing or empty")
+                continue
+            if not ("ceiling" in entry or "current_complexity" in entry):
+                out.append(
+                    f"entries[{idx}] ({path}::{function}) missing ceiling/current_complexity"
+                )
+                continue
+            identity = (path, function)
+            if identity in seen_locked:
+                out.append(
+                    f"duplicate locked entry identity: {path}::{function}"
+                )
+            seen_locked.add(identity)
+
+    remediation_entries = contract.get("remediation_entries")
+    if remediation_entries is not None:
+        if not isinstance(remediation_entries, list):
+            out.append("remediation_entries must be a list when present")
+        else:
+            seen_remediation: set = set()
+            for idx, entry in enumerate(remediation_entries):
+                if not isinstance(entry, dict):
+                    out.append(f"remediation_entries[{idx}] must be an object")
+                    continue
+                path = entry.get("path")
+                function = entry.get("function")
+                if not isinstance(path, str) or not path:
+                    out.append(f"remediation_entries[{idx}].path missing or empty")
+                    continue
+                if not isinstance(function, str) or not function:
+                    out.append(f"remediation_entries[{idx}].function missing or empty")
+                    continue
+                identity = (path, function)
+                if identity in seen_remediation:
+                    out.append(
+                        f"duplicate remediation entry identity: {path}::{function}"
+                    )
+                seen_remediation.add(identity)
+
+    return out
+
+
+# ---------------------------------------------------------------------------
+# Per-function metric collection using L1
+# ---------------------------------------------------------------------------
+
+
+def _collect_metrics(root: Path, l1: Any) -> list:
+    return list(l1.collect_metrics(root))
+
+
+def _entries_by_identity(entries: list) -> dict:
+    return {
+        (str(e["path"]), str(e["function"])): e
+        for e in entries
+        if isinstance(e, dict) and "path" in e and "function" in e
+    }
+
+
+# ---------------------------------------------------------------------------
+# Transition validator (PR-B1 final semantic correction)
+# ---------------------------------------------------------------------------
+
+
+def _validate_transition(
+    candidate: dict,
+    previous: dict,
+    current_metrics: list,
+) -> list:
+    """Pure, testable monotonic transition validator.
+
+    Rules (per reviewer enumeration):
+      A.  aggregate blocking ceilings cannot increase
+          (gte_20_maximum, gte_30_maximum, maximum_complexity_proxy).
+      B.  new-function threshold must stay pinned at 19 in v2.
+          Both 19 -> 20 and 19 -> 18 are rejected.
+      C.  per-function ceiling cannot increase.
+      D.  history is append-only (cannot remove or overwrite records).
+      E.  algorithm descriptor must be exactly equal across v2 -> v2.
+      F.  locked identity cannot disappear merely to legitimize current
+          complexity. A previously locked function that still exists in
+          the current tree and is still >= new_function_threshold+1 cannot
+          be silently removed.
+      G.  candidate contract contents cannot redefine history. Adding a
+          new entry whose (path, function) is not in the previous locked
+          set AND that function is currently > new_function_threshold is
+          treated as a laundering attempt and rejected.
+      H.  a previously locked function may disappear from active entries
+          only if the current measurement proves it has been deleted or
+          has dropped below the new-function threshold. That is
+          improvement.
+
+    Returns a list of human-readable violation strings. Empty list means
+    the transition is monotonic.
+    """
+    out: list = []
+    cand_gates = candidate.get("release_b_gates", {}) or {}
+    prev_gates = previous.get("release_b_gates", {}) or {}
+
+    # Rule A: aggregate ceilings cannot increase (active v2 keys only).
+    for key in (
+        "complexity_proxy_gte_20_maximum",
+        "complexity_proxy_gte_30_maximum",
+        "maximum_complexity_proxy",
+    ):
+        if key in prev_gates and key in cand_gates:
+            prev_v = int(prev_gates[key])
+            cand_v = int(cand_gates[key])
+            if cand_v > prev_v:
+                out.append(
+                    f"aggregate ceiling {key} {cand_v} > previous {prev_v}"
+                )
+
+    # Rule B: v2 boundary is pinned at 19. Both directions are rejected.
+    prev_nf = prev_gates.get("new_function_complexity_proxy_maximum")
+    cand_nf = cand_gates.get("new_function_complexity_proxy_maximum")
+    if prev_nf is not None and cand_nf is not None:
+        prev_nf_i = int(prev_nf)
+        cand_nf_i = int(cand_nf)
+        if cand_nf_i != V2_NEW_FUNCTION_THRESHOLD:
+            out.append(
+                f"new-function threshold {cand_nf_i} is not pinned at {V2_NEW_FUNCTION_THRESHOLD}"
+            )
+        elif cand_nf_i != prev_nf_i:
+            out.append(
+                f"new-function threshold {cand_nf_i} != previous {prev_nf_i}"
+            )
+
+    cand_entries = _entries_by_identity(candidate.get("entries", []) or [])
+    prev_entries = _entries_by_identity(previous.get("entries", []) or [])
+
+    # Rule C: per-function ceiling cannot increase.
+    for identity, prev_entry in prev_entries.items():
+        cand_entry = cand_entries.get(identity)
+        if cand_entry is None:
+            continue  # covered by Rule F
+        prev_ceil = int(prev_entry.get("ceiling", prev_entry.get("current_complexity", 0)))
+        cand_ceil = int(cand_entry.get("ceiling", cand_entry.get("current_complexity", 0)))
+        if cand_ceil > prev_ceil:
+            out.append(
+                f"per-function ceiling {identity[0]}::{identity[1]} {cand_ceil} > previous {prev_ceil}"
+            )
+
+    # Rule D: history append-only.
+    prev_history = previous.get("history", {}) or {}
+    cand_history = candidate.get("history", {}) or {}
+    prev_history_keys = set(prev_history.keys())
+    cand_history_keys = set(cand_history.keys())
+    removed = prev_history_keys - cand_history_keys
+    for k in removed:
+        out.append(f"history record {k!r} removed")
+    for k in prev_history_keys & cand_history_keys:
+        if prev_history[k] != cand_history[k]:
+            out.append(f"history record {k!r} overwritten")
+
+    # Rule E: algorithm descriptor must be exactly equal.
+    cand_algo = candidate.get("algorithm")
+    prev_algo = previous.get("algorithm")
+    if not _algorithm_descriptor_equal(cand_algo, prev_algo):
+        out.append("algorithm descriptor changed between v2 contracts")
+
+    # Rule F: locked identity disappearance while still > new_function_threshold.
+    new_function_threshold = int(cand_gates.get(
+        "new_function_complexity_proxy_maximum", V2_NEW_FUNCTION_THRESHOLD
+    ))
+    by_identity = {(m.path, m.function): m for m in current_metrics}
+    for identity, prev_entry in prev_entries.items():
+        if identity in cand_entries:
+            continue
+        cur = by_identity.get(identity)
+        if cur is None:
+            continue  # function was deleted from the tree; allowed.
+        if cur.complexity_proxy > new_function_threshold:
+            out.append(
+                f"locked entry {identity[0]}::{identity[1]} removed"
+                f" but current complexity {cur.complexity_proxy} > new_function_threshold {new_function_threshold}"
+            )
+
+    # Rule G: candidate identity laundering.
+    prev_identities = set(prev_entries.keys())
+    for identity, cand_entry in cand_entries.items():
+        if identity in prev_identities:
+            continue
+        cur = by_identity.get(identity)
+        if cur is None:
+            continue
+        if cur.complexity_proxy > new_function_threshold:
+            out.append(
+                f"candidate identity laundering: new entry"
+                f" {identity[0]}::{identity[1]} covers function currently"
+                f" at complexity {cur.complexity_proxy} but was not in the"
+                f" previous locked set"
+            )
+
+    return out
+
+
+# ---------------------------------------------------------------------------
+# Evaluation
+# ---------------------------------------------------------------------------
+
+
+def _result(
+    *,
+    status: str,
+    source_sha,
+    contract_sha: str,
+    candidate_sha,
+    previous_sha,
+    event_name: str,
+    metrics_summary: dict,
+    limits: dict,
+    violations: list,
+    ratchet_deltas: list,
+    transition_violations: list,
+    new_gte_threshold: list,
+    entry_violations: list,
+    entries_count: int,
+    gte_threshold_count: int,
+    gte_30_count: int,
+    maximum_complexity: int,
+    l1_module_sha256: str,
+    algorithm_runtime_match: bool,
+    contract_version,
+    contract_source_sha,
+    production_functions: int,
+    algorithm_descriptor: dict,
+) -> dict:
+    return {
+        "schema": "unihub.python_complexity_contract_v2/v1",
+        "result": status,
+        "source_sha": source_sha,
+        "event_name": event_name,
+        "algorithm": {
+            "name": algorithm_descriptor.get("name"),
+            "implementation_sha256": algorithm_descriptor.get("implementation_sha256"),
+            "initial_score": algorithm_descriptor.get("initial_score"),
+            "counted_nodes": list(algorithm_descriptor.get("counted_nodes", [])),
+            "bool_op": algorithm_descriptor.get("bool_op"),
+            "walk": algorithm_descriptor.get("walk"),
+        },
+        "algorithm_runtime_match": algorithm_runtime_match,
+        "contract_payload_sha256": contract_sha,
+        "contract_source_sha": contract_source_sha,
+        "contract_version": contract_version,
+        "previous_contract_payload_sha256": previous_sha,
+        "candidate_contract_payload_sha256": candidate_sha,
+        "metrics": {
+            "production_functions": production_functions,
+            "complexity_proxy_gte_threshold": gte_threshold_count,
+            "complexity_proxy_gte_30": gte_30_count,
+            "maximum_complexity_proxy": maximum_complexity,
+            "new_function_above_threshold": len(new_gte_threshold),
+        },
+        "blocking_baseline": limits,
+        "entries_count": entries_count,
+        "violations": violations,
+        "ratchet_candidate": ratchet_deltas,
+        "transition_violations": transition_violations,
+        "entry_violations": entry_violations,
+        "metrics_summary": metrics_summary,
+    }
+
+
+def evaluate(
+    root: Path,
+    contract: dict,
+    l1: Any,
+    *,
+    previous_contract=None,
+    event_name: str = "unknown",
+) -> dict:
+    """Evaluate the contract against the production tree at ``root``."""
+    actual_sha = _canonical_sha256(_contract_payload(contract))
+    violations: list = []
+    ratchet_deltas: list = []
+    transition_violations: list = []
+    entry_violations: list = []
+    new_gte_threshold: list = []
+
+    runtime_descriptor = _runtime_algorithm_descriptor(l1)
+    algorithm_runtime_match = True  # populated below
+
+    # 1. Schema validation (fail closed on structural problems).
+    # The threshold check is skipped when a previous contract is
+    # supplied so the transition validator owns the threshold rule.
+    violations.extend(_validate_schema(contract, check_threshold=(previous_contract is None)))
+
+    # 2. Algorithm pin (runtime L1 vs contract). Mismatch is a FAIL.
+    if not violations:
+        algo_violations = _validate_algorithm_pin(contract, l1)
+        if algo_violations:
+            violations.extend(algo_violations)
+            algorithm_runtime_match = False
+        else:
+            algorithm_runtime_match = True
+
+    # 3. Contract payload digest (only when structure is otherwise valid).
+    if not violations:
+        expected_sha = str(contract.get("contract_payload_sha256") or "")
+        if not expected_sha:
+            violations.append("contract payload digest missing")
+        elif actual_sha != expected_sha:
+            violations.append(
+                f"contract payload digest mismatch (expected {expected_sha}, got {actual_sha})"
+            )
+
+    if violations:
+        return _result(
+            status="FAIL",
+            source_sha=_git_sha(root),
+            contract_sha=actual_sha,
+            candidate_sha=actual_sha,
+            previous_sha=(
+                _canonical_sha256(_contract_payload(previous_contract))
+                if previous_contract is not None
+                else None
+            ),
+            event_name=event_name,
+            metrics_summary={},
+            limits={},
+            violations=violations,
+            ratchet_deltas=[],
+            transition_violations=[],
+            new_gte_threshold=[],
+            entry_violations=[],
+            entries_count=0,
+            gte_threshold_count=0,
+            gte_30_count=0,
+            maximum_complexity=0,
+            l1_module_sha256=runtime_descriptor["implementation_sha256"],
+            algorithm_runtime_match=algorithm_runtime_match,
+            contract_version=contract.get("version"),
+            contract_source_sha=str(contract.get("baseline_source_sha") or "") or None,
+            production_functions=0,
+            algorithm_descriptor=runtime_descriptor,
+        )
+
+    metrics = _collect_metrics(root, l1)
+    by_identity = {(m.path, m.function): m for m in metrics}
+    entries_dict = _entries_by_identity(contract.get("entries", []) or [])
+    gates = contract["release_b_gates"]
+    new_function_threshold = int(gates["new_function_complexity_proxy_maximum"])
+    gte_threshold = [m for m in metrics if m.complexity_proxy > new_function_threshold]
+    gte_30 = [m for m in metrics if m.complexity_proxy >= 30]
+    new_gte_threshold = [m for m in gte_threshold if (m.path, m.function) not in entries_dict]
+    maximum = max((m.complexity_proxy for m in metrics), default=0)
+
+    limits = {
+        "complexity_proxy_gte_20_maximum": int(gates["complexity_proxy_gte_20_maximum"]),
+        "complexity_proxy_gte_30_maximum": int(gates["complexity_proxy_gte_30_maximum"]),
+        "maximum_complexity_proxy": int(gates["maximum_complexity_proxy"]),
+        "new_function_complexity_proxy_maximum": new_function_threshold,
+    }
+
+    # 4. Aggregate / per-function checks (FAIL).
+    if len(gte_threshold) > limits["complexity_proxy_gte_20_maximum"]:
         violations.append(
-            f"complexity_proxy >=30 count {len(at_least_30)} > {limits['complexity_proxy_gte_30']}"
+            f"complexity_proxy > {new_function_threshold} count {len(gte_threshold)}"
+            f" > {limits['complexity_proxy_gte_20_maximum']}"
+        )
+    if len(gte_30) > limits["complexity_proxy_gte_30_maximum"]:
+        violations.append(
+            f"complexity_proxy >=30 count {len(gte_30)} > {limits['complexity_proxy_gte_30_maximum']}"
         )
     if maximum > limits["maximum_complexity_proxy"]:
         violations.append(
             f"maximum complexity_proxy {maximum} > {limits['maximum_complexity_proxy']}"
         )
-    violations.extend(
-        f"new function {item.path}::{item.function} complexity_proxy "
-        f"{item.complexity_proxy} > {limits['new_function_complexity_proxy']}"
-        for item in new_at_least_20
-    )
-    violations.extend(
-        f"WP-11 entry {item.path}::{item.function} complexity_proxy "
-        f"{item.complexity_proxy} > {limits['wp11_locked_entries']}"
-        for item in wp11_violations
-    )
-    violations.extend(
-        f"mandatory entry {item.path}::{item.function} complexity_proxy "
-        f"{item.complexity_proxy} >=30"
-        for item in mandatory_30_violations
-    )
-    return {
-        "result": "PASS" if not violations else "FAIL",
-        "source_sha": _git_sha(root),
-        "contract_payload_sha256": actual_payload_sha,
-        "expected_contract_payload_sha256": expected_payload_sha,
-        "metrics": {
+
+    for identity, entry in entries_dict.items():
+        m = by_identity.get(identity)
+        if m is None:
+            continue
+        ceiling = int(entry.get("ceiling", entry.get("current_complexity", 0)))
+        if m.complexity_proxy > ceiling:
+            entry_violations.append(
+                f"locked entry {identity[0]}::{identity[1]} complexity {m.complexity_proxy} > ceiling {ceiling}"
+            )
+
+    for m in new_gte_threshold:
+        violations.append(
+            f"new function {m.path}::{m.function} complexity_proxy {m.complexity_proxy}"
+            f" > new_function_complexity_proxy_maximum {new_function_threshold} not in locked entries"
+        )
+
+    # 5. Monotonic transition validation if --previous-contract.
+    if previous_contract is not None:
+        transition_violations = _validate_transition(contract, previous_contract, metrics)
+
+    if violations or entry_violations or transition_violations:
+        return _result(
+            status="FAIL",
+            source_sha=_git_sha(root),
+            contract_sha=actual_sha,
+            candidate_sha=actual_sha,
+            previous_sha=(
+                _canonical_sha256(_contract_payload(previous_contract))
+                if previous_contract is not None
+                else None
+            ),
+            event_name=event_name,
+            metrics_summary={
+                "production_functions": len(metrics),
+                "gte_threshold": len(gte_threshold),
+                "gte_30": len(gte_30),
+                "maximum": maximum,
+            },
+            limits=limits,
+            violations=violations,
+            ratchet_deltas=[],
+            transition_violations=transition_violations,
+            new_gte_threshold=[asdict(m) for m in new_gte_threshold],
+            entry_violations=entry_violations,
+            entries_count=len(entries_dict),
+            gte_threshold_count=len(gte_threshold),
+            gte_30_count=len(gte_30),
+            maximum_complexity=maximum,
+            l1_module_sha256=runtime_descriptor["implementation_sha256"],
+            algorithm_runtime_match=algorithm_runtime_match,
+            contract_version=contract.get("version"),
+            contract_source_sha=str(contract.get("baseline_source_sha") or "") or None,
+            production_functions=len(metrics),
+            algorithm_descriptor=runtime_descriptor,
+        )
+
+    # 6. RATCHET_REQUIRED (rc 2): code is strictly better than contract.
+    if len(gte_threshold) < limits["complexity_proxy_gte_20_maximum"]:
+        ratchet_deltas.append(
+            f"gte_threshold {len(gte_threshold)} < baseline {limits['complexity_proxy_gte_20_maximum']}"
+        )
+    if len(gte_30) < limits["complexity_proxy_gte_30_maximum"]:
+        ratchet_deltas.append(
+            f"gte_30 {len(gte_30)} < baseline {limits['complexity_proxy_gte_30_maximum']}"
+        )
+    if maximum < limits["maximum_complexity_proxy"]:
+        ratchet_deltas.append(
+            f"max {maximum} < baseline {limits['maximum_complexity_proxy']}"
+        )
+
+    for identity, entry in entries_dict.items():
+        m = by_identity.get(identity)
+        if m is None:
+            continue
+        ceiling = int(entry.get("ceiling", entry.get("current_complexity", 0)))
+        if m.complexity_proxy < ceiling:
+            ratchet_deltas.append(
+                f"{identity[0]}::{identity[1]} {m.complexity_proxy} < ceiling {ceiling}"
+            )
+
+    if ratchet_deltas:
+        return _result(
+            status="RATCHET_REQUIRED",
+            source_sha=_git_sha(root),
+            contract_sha=actual_sha,
+            candidate_sha=actual_sha,
+            previous_sha=(
+                _canonical_sha256(_contract_payload(previous_contract))
+                if previous_contract is not None
+                else None
+            ),
+            event_name=event_name,
+            metrics_summary={
+                "production_functions": len(metrics),
+                "gte_threshold": len(gte_threshold),
+                "gte_30": len(gte_30),
+                "maximum": maximum,
+            },
+            limits=limits,
+            violations=[],
+            ratchet_deltas=ratchet_deltas,
+            transition_violations=[],
+            new_gte_threshold=[],
+            entry_violations=[],
+            entries_count=len(entries_dict),
+            gte_threshold_count=len(gte_threshold),
+            gte_30_count=len(gte_30),
+            maximum_complexity=maximum,
+            l1_module_sha256=runtime_descriptor["implementation_sha256"],
+            algorithm_runtime_match=algorithm_runtime_match,
+            contract_version=contract.get("version"),
+            contract_source_sha=str(contract.get("baseline_source_sha") or "") or None,
+            production_functions=len(metrics),
+            algorithm_descriptor=runtime_descriptor,
+        )
+
+    # 7. PASS (rc 0).
+    return _result(
+        status="PASS",
+        source_sha=_git_sha(root),
+        contract_sha=actual_sha,
+        candidate_sha=actual_sha,
+        previous_sha=(
+            _canonical_sha256(_contract_payload(previous_contract))
+            if previous_contract is not None
+            else None
+        ),
+        event_name=event_name,
+        metrics_summary={
             "production_functions": len(metrics),
-            "complexity_proxy_gte_20": len(at_least_20),
-            "complexity_proxy_gte_30": len(at_least_30),
-            "maximum_complexity_proxy": maximum,
-            "new_function_gte_20": len(new_at_least_20),
-            "wp11_locked_gte_20": len(wp11_violations),
-            "mandatory_locked_gte_30": len(mandatory_30_violations),
+            "gte_threshold": len(gte_threshold),
+            "gte_30": len(gte_30),
+            "maximum": maximum,
         },
-        "limits": limits,
-        "gte_20_entries": [asdict(item) for item in at_least_20],
-        "gte_30_entries": [asdict(item) for item in at_least_30],
-        "new_gte_20_entries": [asdict(item) for item in new_at_least_20],
-        "wp11_violations": [asdict(item) for item in wp11_violations],
-        "mandatory_30_violations": [asdict(item) for item in mandatory_30_violations],
-        "violations": violations,
-    }
+        limits=limits,
+        violations=[],
+        ratchet_deltas=[],
+        transition_violations=[],
+        new_gte_threshold=[],
+        entry_violations=[],
+        entries_count=len(entries_dict),
+        gte_threshold_count=len(gte_threshold),
+        gte_30_count=len(gte_30),
+        maximum_complexity=maximum,
+        l1_module_sha256=runtime_descriptor["implementation_sha256"],
+        algorithm_runtime_match=algorithm_runtime_match,
+        contract_version=contract.get("version"),
+        contract_source_sha=str(contract.get("baseline_source_sha") or "") or None,
+        production_functions=len(metrics),
+        algorithm_descriptor=runtime_descriptor,
+    )
 
 
-def _write_evidence(path: Path, evidence: dict[str, object]) -> None:
+def _write_evidence(path: Path, evidence: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         json.dumps(evidence, indent=2, ensure_ascii=False, sort_keys=True) + "\n",
@@ -232,23 +858,76 @@ def main() -> int:
     parser.add_argument("--root", type=Path, default=ROOT)
     parser.add_argument("--contract", type=Path, default=DEFAULT_CONTRACT)
     parser.add_argument("--evidence", type=Path, required=True)
+    parser.add_argument(
+        "--previous-contract",
+        type=Path,
+        default=None,
+        help="Optional path to the previous contract for monotonic transition validation. "
+             "PR-B1 does not wire this into CI; PR-B3 will.",
+    )
+    parser.add_argument(
+        "--event-name",
+        default="unknown",
+        help="Logical event name to record in the evidence (e.g., pull_request, workflow_dispatch).",
+    )
     args = parser.parse_args()
+
+    try:
+        l1 = _load_l1()
+    except (L1LoadError, FileNotFoundError, ImportError) as exc:
+        print(f"FAIL: cannot load L1 metric module: {exc}")
+        return 1
+
     contract = json.loads(args.contract.read_text(encoding="utf-8"))
-    evidence = evaluate(args.root.resolve(), contract)
+    previous_contract = (
+        json.loads(args.previous_contract.read_text(encoding="utf-8"))
+        if args.previous_contract is not None
+        else None
+    )
+
+    try:
+        evidence = evaluate(
+            args.root.resolve(),
+            contract,
+            l1,
+            previous_contract=previous_contract,
+            event_name=args.event_name,
+        )
+    except (KeyError, ValueError, TypeError) as exc:
+        fallback = {
+            "schema": "unihub.python_complexity_contract_v2/v1",
+            "result": "FAIL",
+            "violations": [f"evaluator raised: {type(exc).__name__}: {exc}"],
+        }
+        _write_evidence(args.evidence, fallback)
+        return 1
+
     _write_evidence(args.evidence, evidence)
-    metrics = evidence["metrics"]
-    assert isinstance(metrics, dict)
+    status = evidence["result"]
+    summary = evidence["metrics_summary"]
     print(
-        f"Python complexity contract {evidence['result']}: "
-        f">=20 {metrics['complexity_proxy_gte_20']}, "
-        f">=30 {metrics['complexity_proxy_gte_30']}, "
-        f"max {metrics['maximum_complexity_proxy']}, "
-        f"new>=20 {metrics['new_function_gte_20']}, "
-        f"WP11>=20 {metrics['wp11_locked_gte_20']}"
+        f"Python complexity contract {status}: "
+        f"production={summary.get('production_functions', 0)}, "
+        f">threshold {summary.get('gte_threshold', 0)}, "
+        f">=30 {summary.get('gte_30', 0)}, "
+        f"max {summary.get('maximum', 0)}"
     )
     for violation in evidence["violations"]:
         print(f"- {violation}")
-    return 0 if evidence["result"] == "PASS" else 1
+    for violation in evidence["entry_violations"]:
+        print(f"- {violation}")
+    for violation in evidence["transition_violations"]:
+        print(f"- {violation}")
+    for delta in evidence["ratchet_candidate"]:
+        print(f"~ ratchet: {delta}")
+
+    if status == "PASS":
+        return 0
+    if status == "FAIL":
+        return 1
+    if status == "RATCHET_REQUIRED":
+        return 2
+    return 1
 
 
 if __name__ == "__main__":
