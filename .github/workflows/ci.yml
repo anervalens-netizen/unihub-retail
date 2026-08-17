@@ -158,6 +158,7 @@ jobs:
               ':(exclude)docs/contracts/query-parameter-policy-v1.json' \
               ':(exclude)scripts/frontend-critical-coverage.json' \
               ':(exclude)scripts/python-complexity-contract-v1.json' \
+              ':(exclude)scripts/python-complexity-contract-v2.json' \
               ':(exclude)scripts/verify_promtool_cache.sh' \
               ':(exclude)backend/scripts/run_tests_isolated.sh' \
               ':(exclude)backend/scripts/run_outbox_slo_workload.py' \
@@ -187,6 +188,7 @@ jobs:
             docs/contracts/query-parameter-policy-v1.json \
             scripts/frontend-critical-coverage.json \
             scripts/python-complexity-contract-v1.json \
+            scripts/python-complexity-contract-v2.json \
             scripts/verify_promtool_cache.sh \
             backend/scripts/run_tests_isolated.sh \
             backend/scripts/run_outbox_slo_workload.py \
@@ -708,6 +710,7 @@ jobs:
               ':(exclude)docs/contracts/query-parameter-policy-v1.json' \
               ':(exclude)scripts/frontend-critical-coverage.json' \
               ':(exclude)scripts/python-complexity-contract-v1.json' \
+              ':(exclude)scripts/python-complexity-contract-v2.json' \
               ':(exclude)scripts/verify_promtool_cache.sh' \
               ':(exclude)backend/scripts/run_tests_isolated.sh' \
               ':(exclude)backend/scripts/run_outbox_slo_workload.py' \
@@ -737,6 +740,7 @@ jobs:
             docs/contracts/query-parameter-policy-v1.json \
             scripts/frontend-critical-coverage.json \
             scripts/python-complexity-contract-v1.json \
+            scripts/python-complexity-contract-v2.json \
             scripts/verify_promtool_cache.sh \
             backend/scripts/run_tests_isolated.sh \
             backend/scripts/run_outbox_slo_workload.py \
