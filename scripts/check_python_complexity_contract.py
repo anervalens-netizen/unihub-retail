@@ -255,8 +255,10 @@ def _validate_schema(contract: dict, *, check_threshold: bool = True) -> list:
     Reused by `_validate_previous_contract_integrity` for the previous
     (trusted-base) contract so the structural authority lives in one
     place. For the previous contract, callers pass
-    ``check_threshold=False`` so the threshold rule is enforced by the
-    transition validator (Rule B), not here.
+    ``check_threshold=True`` so the v2 threshold invariant is enforced
+    on the trusted-base contract too; the transition validator (Rule B)
+    additionally cross-checks the threshold against the previous value
+    when the candidate is also validated.
 
     Strictly rejects:
       - unsupported version
