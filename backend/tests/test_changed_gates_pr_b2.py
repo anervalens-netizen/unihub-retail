@@ -939,3 +939,247 @@ class TestBaseSyntaxFailClosed:
         assert bad.returncode == 1, bad.stdout + bad.stderr
         assert "base source has invalid Python syntax" in bad.stdout
         assert "broken.py" in bad.stdout
+
+
+# =============================================================================
+# FINAL PARSER HARDENING — strict real-integer backend lines, duplicate
+# normalized paths, LCOV SF/DA strictness, root-relative SF resolution.
+# These tests pin the reviewer-required fail-closed invariants.
+# =============================================================================
+
+
+def _seed_changed_backend(repo):
+    """Seed a backend change and return the base commit."""
+    _write(repo, "backend/mod.py", "def f():\n    return 1\n")
+    _commit(repo, "seed")
+    _write(
+        repo,
+        "backend/mod.py",
+        "def f():\n    if x:\n        return 1\n    return 2\n",
+    )
+    _commit(repo, "change")
+    return _git(repo, "rev-parse", "HEAD~1").strip()
+
+
+def _seed_changed_frontend(repo):
+    """Seed a frontend change and return the base commit."""
+    _write(repo, "src/app.ts", "export const x = 1;\n")
+    _commit(repo, "seed")
+    _write(
+        repo,
+        "src/app.ts",
+        "export const x = 1;\nexport const y = 2;\n",
+    )
+    _commit(repo, "change")
+    return _git(repo, "rev-parse", "HEAD~1").strip()
+
+
+class TestParserHardeningFinal:
+    """Final hardening: backend real-integer lines, duplicate normalized
+    paths, LCOV duplicate SF/DA, DA bounds, root-relative SF paths."""
+
+    # ----- Backend: line numbers must be REAL positive integers ------------
+
+    def test_backend_string_line_number_fails(self, tmp_path):
+        repo = _new_repo(tmp_path)
+        base = _seed_changed_backend(repo)
+        cov = _write_raw_json(repo, {"files": {"backend/mod.py": {
+            "executed_lines": ["3"],
+            "missing_lines": [],
+        }}})
+        bad = _run_gate(
+            COV_SCRIPT, repo, "--base", base, "--backend-json", str(cov),
+        )
+        assert bad.returncode == 1, bad.stdout + bad.stderr
+        assert "executed_lines" in bad.stdout
+        assert "positive JSON integer" in bad.stdout
+
+    def test_backend_float_line_number_fails(self, tmp_path):
+        repo = _new_repo(tmp_path)
+        base = _seed_changed_backend(repo)
+        cov = _write_raw_json(repo, {"files": {"backend/mod.py": {
+            "executed_lines": [3.0],
+            "missing_lines": [],
+        }}})
+        bad = _run_gate(
+            COV_SCRIPT, repo, "--base", base, "--backend-json", str(cov),
+        )
+        assert bad.returncode == 1, bad.stdout + bad.stderr
+        assert "executed_lines" in bad.stdout
+        assert "positive JSON integer" in bad.stdout
+
+    def test_backend_bool_line_number_fails(self, tmp_path):
+        """bool is a subclass of int, so isinstance(entry, int) alone is not
+        enough: type(entry) is int must be required."""
+        repo = _new_repo(tmp_path)
+        base = _seed_changed_backend(repo)
+        cov = _write_raw_json(repo, {"files": {"backend/mod.py": {
+            "executed_lines": [True],
+            "missing_lines": [],
+        }}})
+        bad = _run_gate(
+            COV_SCRIPT, repo, "--base", base, "--backend-json", str(cov),
+        )
+        assert bad.returncode == 1, bad.stdout + bad.stderr
+        assert "executed_lines" in bad.stdout
+        assert "positive JSON integer" in bad.stdout
+
+    @pytest.mark.parametrize("bad_line", [0, -1])
+    def test_backend_non_positive_line_number_fails(self, tmp_path, bad_line):
+        repo = _new_repo(tmp_path)
+        base = _seed_changed_backend(repo)
+        cov = _write_raw_json(repo, {"files": {"backend/mod.py": {
+            "executed_lines": [bad_line],
+            "missing_lines": [],
+        }}})
+        bad = _run_gate(
+            COV_SCRIPT, repo, "--base", base, "--backend-json", str(cov),
+        )
+        assert bad.returncode == 1, bad.stdout + bad.stderr
+        assert "executed_lines" in bad.stdout
+        assert "positive JSON integer" in bad.stdout
+
+    # ----- Backend: ambiguous records fail ---------------------------------
+
+    def test_backend_duplicate_normalized_path_fails(self, tmp_path):
+        """foo.py and backend/foo.py both normalize to backend/foo.py; the
+        second record must FAIL instead of silently overwriting the first."""
+        repo = _new_repo(tmp_path)
+        base = _seed_changed_backend(repo)
+        cov = _write_raw_json(repo, {"files": {
+            "foo.py": {"executed_lines": [1], "missing_lines": []},
+            "backend/foo.py": {"executed_lines": [1], "missing_lines": []},
+        }})
+        bad = _run_gate(
+            COV_SCRIPT, repo, "--base", base, "--backend-json", str(cov),
+        )
+        assert bad.returncode == 1, bad.stdout + bad.stderr
+        assert "duplicate normalized coverage path" in bad.stdout
+
+    def test_backend_line_in_both_executed_and_missing_fails(self, tmp_path):
+        repo = _new_repo(tmp_path)
+        base = _seed_changed_backend(repo)
+        cov = _write_raw_json(repo, {"files": {"backend/mod.py": {
+            "executed_lines": [3],
+            "missing_lines": [3],
+        }}})
+        bad = _run_gate(
+            COV_SCRIPT, repo, "--base", base, "--backend-json", str(cov),
+        )
+        assert bad.returncode == 1, bad.stdout + bad.stderr
+        assert "both" in bad.stdout and "missing_lines" in bad.stdout
+
+    # ----- LCOV: duplicate SF must fail closed -----------------------------
+
+    def test_lcov_duplicate_normalized_sf_fails(self, tmp_path):
+        """Two SF records for the same normalized source (absolute form then
+        root-relative form) must FAIL closed, not silently keep the first."""
+        repo = _new_repo(tmp_path)
+        base = _seed_changed_frontend(repo)
+        lcov = _write_raw_lcov(
+            repo,
+            "TN:\n"
+            + "SF:" + str(repo / "src/app.ts") + "\n"
+            + "DA:1,1\n"
+            + "end_of_record\n"
+            + "SF:src/app.ts\n"
+            + "DA:2,1\n"
+            + "end_of_record\n",
+        )
+        bad = _run_gate(
+            COV_SCRIPT, repo, "--base", base, "--frontend-lcov", str(lcov),
+        )
+        assert bad.returncode == 1, bad.stdout + bad.stderr
+        assert "duplicate normalized SF path" in bad.stdout
+
+    # ----- LCOV: DA strictness ---------------------------------------------
+
+    def test_lcov_duplicate_da_line_fails(self, tmp_path):
+        repo = _new_repo(tmp_path)
+        base = _seed_changed_frontend(repo)
+        lcov = _write_raw_lcov(
+            repo,
+            "TN:\n"
+            + "SF:" + str(repo / "src/app.ts") + "\n"
+            + "DA:1,1\n"
+            + "DA:1,2\n"
+            + "end_of_record\n",
+        )
+        bad = _run_gate(
+            COV_SCRIPT, repo, "--base", base, "--frontend-lcov", str(lcov),
+        )
+        assert bad.returncode == 1, bad.stdout + bad.stderr
+        assert "duplicate DA" in bad.stdout
+
+    def test_lcov_da_line_zero_fails(self, tmp_path):
+        repo = _new_repo(tmp_path)
+        base = _seed_changed_frontend(repo)
+        lcov = _write_raw_lcov(
+            repo,
+            "TN:\n"
+            + "SF:" + str(repo / "src/app.ts") + "\n"
+            + "DA:0,1\n"
+            + "end_of_record\n",
+        )
+        bad = _run_gate(
+            COV_SCRIPT, repo, "--base", base, "--frontend-lcov", str(lcov),
+        )
+        assert bad.returncode == 1, bad.stdout + bad.stderr
+        assert "must be >= 1" in bad.stdout
+
+    def test_lcov_negative_hit_count_fails(self, tmp_path):
+        repo = _new_repo(tmp_path)
+        base = _seed_changed_frontend(repo)
+        lcov = _write_raw_lcov(
+            repo,
+            "TN:\n"
+            + "SF:" + str(repo / "src/app.ts") + "\n"
+            + "DA:2,-1\n"
+            + "end_of_record\n",
+        )
+        bad = _run_gate(
+            COV_SCRIPT, repo, "--base", base, "--frontend-lcov", str(lcov),
+        )
+        assert bad.returncode == 1, bad.stdout + bad.stderr
+        assert "must be >= 0" in bad.stdout
+
+    # ----- LCOV: root-relative SF resolution -------------------------------
+
+    def test_lcov_relative_sf_resolves_relative_to_root(self, tmp_path):
+        """SF:src/app.ts with cwd != temp repo must resolve relative to
+        --root (the temp repo), not the caller's working directory, and the
+        gate must evaluate the changed file correctly."""
+        repo = _new_repo(tmp_path)
+        base = _seed_changed_frontend(repo)
+        lcov = _write_raw_lcov(
+            repo,
+            "TN:\n"
+            + "SF:src/app.ts\n"
+            + "DA:1,1\n"
+            + "DA:2,1\n"
+            + "end_of_record\n",
+        )
+        ok = _run_gate(
+            COV_SCRIPT, repo, "--base", base, "--frontend-lcov", str(lcov),
+        )
+        assert ok.returncode == 0, ok.stdout + ok.stderr
+
+    def test_lcov_outside_root_sf_not_rewritten(self, tmp_path):
+        """An outside-root relative SF (../src/app.ts) must NOT be rewritten
+        into a plausible repo path; the eligible changed file stays absent
+        from coverage and the gate fails closed."""
+        repo = _new_repo(tmp_path)
+        base = _seed_changed_frontend(repo)
+        lcov = _write_raw_lcov(
+            repo,
+            "TN:\n"
+            + "SF:../src/app.ts\n"
+            + "DA:1,1\n"
+            + "DA:2,1\n"
+            + "end_of_record\n",
+        )
+        bad = _run_gate(
+            COV_SCRIPT, repo, "--base", base, "--frontend-lcov", str(lcov),
+        )
+        assert bad.returncode == 1, bad.stdout + bad.stderr
+        assert "absent" in bad.stdout.lower()

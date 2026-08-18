@@ -19,8 +19,10 @@ PR-B2 implementation contract:
   * Malformed coverage records FAIL:
       Backend JSON: each file record must carry the expected shape
       (executed_lines / missing_lines keys); empty payload is rejected.
-      LCOV: SF must have at least one DA; DAs must parse; structurally
-      broken records (no end_of_record, etc.) are rejected.
+      LCOV: SF records may validly contain zero DA entries; malformed DA
+      and structurally ambiguous records (nested/unterminated SF,
+      duplicate normalized SF or duplicate DA lines, invalid DA line
+      numbers or hit counts) fail closed.
 
   * Comments / non-instrumented lines:
       A valid coverage record with NO intersection between changed
@@ -182,8 +184,12 @@ def _load_python_coverage(path, root):
     `executed_lines` AND `missing_lines`, and both values MUST be lists.
     Empty lists are valid (a file with no executable/instrumented lines).
     Null, string, dict, or other types are rejected so we can distinguish
-    a malformed record from a legitimate empty one. Each list element is
-    validated as an integer-like value.
+    a malformed record from a legitimate empty one. Each list element
+    MUST be a real JSON integer (``type(entry) is int``, so bool/str/float
+    are rejected) with value >= 1. A normalized path that collides with
+    an earlier record (e.g. ``foo.py`` vs ``backend/foo.py``) is rejected,
+    and a line appearing in BOTH lists makes the record ambiguous and is
+    rejected.
     """
     raw = path.read_text(encoding="utf-8")
     try:
@@ -222,23 +228,33 @@ def _load_python_coverage(path, root):
             )
         covered_lines: set[int] = set()
         for entry in executed:
-            try:
-                covered_lines.add(int(entry))
-            except (TypeError, ValueError) as exc:
+            if type(entry) is not int or entry < 1:
                 raise CoverageParseError(
-                    f"file record for {raw_name!r} executed_lines entry {entry!r} is not an integer"
-                ) from exc
+                    f"file record for {raw_name!r} executed_lines entry {entry!r} "
+                    "is not a positive JSON integer (type(entry) is int, >= 1)"
+                )
+            covered_lines.add(entry)
         missing_lines: set[int] = set()
         for entry in missing:
-            try:
-                missing_lines.add(int(entry))
-            except (TypeError, ValueError) as exc:
+            if type(entry) is not int or entry < 1:
                 raise CoverageParseError(
-                    f"file record for {raw_name!r} missing_lines entry {entry!r} is not an integer"
-                ) from exc
+                    f"file record for {raw_name!r} missing_lines entry {entry!r} "
+                    "is not a positive JSON integer (type(entry) is int, >= 1)"
+                )
+            missing_lines.add(entry)
         name = str(raw_name).replace("\\", "/")
         if not name.startswith("backend/"):
             name = f"backend/{name}"
+        if name in result:
+            raise CoverageParseError(
+                f"duplicate normalized coverage path {name!r} (from {raw_name!r})"
+            )
+        overlap = covered_lines & missing_lines
+        if overlap:
+            raise CoverageParseError(
+                f"file record for {raw_name!r} has line(s) in both "
+                f"executed_lines and missing_lines: {sorted(overlap)}"
+            )
         record: dict[int, bool] = {}
         for line in covered_lines | missing_lines:
             record[line] = line in covered_lines
@@ -246,12 +262,38 @@ def _load_python_coverage(path, root):
     return result
 
 
+def _normalize_sf_path(raw, root):
+    """Normalize an LCOV SF path deterministically relative to root.
+
+    Absolute paths resolve and become repo-relative when they live under
+    root. Relative paths are interpreted relative to root, NEVER relative
+    to the caller's current working directory. Paths that resolve outside
+    root keep their resolved absolute form, so they can never be rewritten
+    (via a broad ``lstrip("./")`` or similar) into a plausible repo source.
+    """
+    candidate = Path(raw)
+    if candidate.is_absolute():
+        resolved = candidate.resolve()
+    else:
+        resolved = (root / candidate).resolve()
+    try:
+        return resolved.relative_to(root).as_posix()
+    except ValueError:
+        return resolved.as_posix()
+
+
 def _load_frontend_coverage(path, root):
     """Parse an LCOV file; return {repo_relative_path: {line: bool_hit}}.
 
     Strict-but-proportionate validation:
-      - SF path must be non-empty.
-      - DA must parse; non-integer number or hits are rejected.
+      - SF path must be non-empty and normalized deterministically
+        relative to ``root`` (relative SF paths are root-relative, never
+        cwd-relative; outside-root paths are kept as non-matching
+        absolute keys instead of being rewritten into repo paths).
+      - A normalized SF path may appear at most once: duplicate
+        normalized SF records FAIL closed (no silent first/last-wins).
+      - DA must parse; line number >= 1, hit count >= 0, and a line may
+        not repeat within one SF record.
       - A new SF cannot appear before the previous record closes.
       - Every SF must terminate with `end_of_record`.
       - Records with zero DA lines (LF:0 / LH:0 / no DA) ARE valid
@@ -273,14 +315,13 @@ def _load_frontend_coverage(path, root):
             raw = line[3:].strip()
             if not raw:
                 raise CoverageParseError("SF record has empty path")
-            try:
-                resolved = Path(raw).resolve()
-                rel = resolved.relative_to(root).as_posix()
-            except (OSError, ValueError):
-                rel = raw.lstrip("./")
-            current_path = rel
+            current_path = _normalize_sf_path(raw, root)
+            if current_path in result:
+                raise CoverageParseError(
+                    f"duplicate normalized SF path {current_path!r} (from {raw!r})"
+                )
             current_record = {}
-            result.setdefault(current_path, current_record)
+            result[current_path] = current_record
             open_records += 1
             continue
         if current_record is None:
@@ -300,6 +341,18 @@ def _load_frontend_coverage(path, root):
                 raise CoverageParseError(
                     f"malformed DA number/hits in {current_path!r}: {raw_line!r}"
                 ) from exc
+            if number < 1:
+                raise CoverageParseError(
+                    f"DA line number must be >= 1 in {current_path!r}: {raw_line!r}"
+                )
+            if hits < 0:
+                raise CoverageParseError(
+                    f"DA hit count must be >= 0 in {current_path!r}: {raw_line!r}"
+                )
+            if number in current_record:
+                raise CoverageParseError(
+                    f"duplicate DA for line {number} in {current_path!r}"
+                )
             current_record[number] = hits > 0
             continue
         if line == "end_of_record":
