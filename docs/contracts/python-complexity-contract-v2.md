@@ -188,9 +188,15 @@ able to:
   initial_score, name, implementation_sha256) in a v2 -> v2 transition.
 
 The `--previous-contract <path>` flag activates a pure, testable
-monotonic transition check that enforces these rules. PR-B1 does not
-wire it into CI; PR-B3 will pass the PR-base / FIRST_PARENT contract
-as `--previous-contract`.
+monotonic transition check that enforces these rules. PR-B3 wires it
+into CI on both `pull_request` (PR base SHA) and `workflow_dispatch`
+exact-main (FIRST_PARENT of `github.sha`).
+
+The `--comparison-base-sha <40 lowercase hex>` flag is REQUIRED when
+`--previous-contract` is supplied, and is forbidden without it. The
+value is the trusted SHA from which the previous contract bytes were
+materialized (`git show "$BASE:scripts/python-complexity-contract-v2.json"`).
+The CLI rejects non-hex, non-40-char, or uppercase inputs with rc 1.
 
 Tightening is always allowed: lower aggregate ceilings, lower
 per-function ceilings, and removal of a locked entry whose function
@@ -214,22 +220,26 @@ artifact contains:
 - `previous_contract_payload_sha256` — SHA-256 of the previous
   contract when supplied, otherwise `null`;
 - `candidate_contract_payload_sha256` — same as the contract payload
-  SHA-256 when not in a transition; PR-B3 will introduce a separate
-  `comparison_base_sha` field once the comparison source is wired
-  against PR base / FIRST_PARENT;
+  SHA-256 when not in a transition;
+- `comparison_base_sha` — the trusted SHA from which `previous_contract`
+  was fetched (PR base or FIRST_PARENT). `null` when no previous
+  contract was supplied;
 - `metrics` — production functions, complexity_proxy counts, max;
 - `blocking_baseline` — recording the v2 gates at evaluation time;
 - `entries_count` — number of locked entries in the contract;
-- `violations` — schema/integrity/policy failures;
+- `violations` — schema/integrity/policy failures (now also includes
+  previous-contract base-integrity violations: schema failures and
+  self-hash mismatches);
 - `entry_violations` — per-function lock violations;
 - `transition_violations` — monotonic transition failures
   (only when `--previous-contract` is supplied);
 - `ratchet_candidate` — improvements that have not yet been tightened
   into the contract.
 
-The `comparison_base_sha` field is **not yet present** in the
-artifact: PR-B1 does not wire the comparison source. PR-B3 will add
-it when the gate is wired against the PR base / FIRST_PARENT.
+The `comparison_base_sha` field is emitted whenever `--comparison-base-sha`
+is supplied (which is required whenever `--previous-contract` is supplied).
+Its value is the trusted source SHA; it is **not** a second digest and
+must not be confused with `previous_contract_payload_sha256`.
 
 ## v1 historical preservation
 
@@ -250,18 +260,119 @@ contract's `release_b_gates` reflect what exact main actually
 achieves, so that v2 PASSES against current main and ratchets
 forward only by explicit tightening.
 
+## Authority hierarchy
+
+PR-B3 documents the three-tier complexity authority. The three scripts
+remain in the repository; only their role is clarified.
+
+| Tier | Script | Role | CI surface |
+|------|--------|------|------------|
+| 1. Authoritative full-tree AST invariant | `scripts/check_python_complexity_contract.py` | The contract itself: aggregate ceilings, per-function ceilings, new-function threshold (pinned at 19), transition rules A–H, algorithm pinning | **Real CI gate** on both PR (`pull_request`) and exact-main (`workflow_dispatch` + `refs/heads/main`). Wired with `--previous-contract` + `--comparison-base-sha` so the v2 → v2 transition rules run. |
+| 2. Incremental PR precheck | `scripts/check_changed_function_complexity.py` | Per-PR changed-function hotspots (consumes `scripts/_python_complexity.py`) | PR-fast + exact-main on. PR-B2 already migrated this gate to the shared L1 module so the AST metric implementation lives in exactly one file. |
+| 3. Size/length control | `scripts/check_complexity_ratchet.py` | File and function line-of-code (LOC), not control-flow complexity | pr-fast + exact-main on. Kept as a complementary domain; not replaced. |
+
+PR-B2 already consumed the L1 module into the changed-function gate.
+That is the reconciliation of overlapping AST authority; PR-B3 makes
+the three tiers explicit in this document.
+
+All seven files
+(`scripts/check_python_complexity_contract.py`,
+`scripts/_python_complexity.py`,
+`scripts/python-complexity-contract-v2.json`,
+`scripts/check_changed_function_complexity.py`,
+`scripts/check_changed_line_coverage.py`,
+`scripts/check_complexity_ratchet.py`,
+`scripts/complexity-ratchet.json`)
+are listed under the `deploy-release-ci` category in
+`.github/governance/high-risk-paths.json` (PR-B3 addition). PRs that
+edit any of them trigger the existing A3 trusted-base governance
+review. This is **not** cryptographic tamper protection; it is the
+current operating model of sole-owner / trusted same-repo PRs made
+explicit.
+
+## Tracker closure status after PR-B3
+
+PR-B3 closes (when its exact-main CI is green on the new wiring):
+
+- **B1** — v2 contract gate is now a real blocking CI authority on both
+  PR and exact-main.
+- **B2** — three-tier authority is documented and the only overlapping
+  AST implementations share L1.
+- **B4** — `test-results/closure/<sha>/release-b/python-complexity-contract-v2.json`
+  is uploaded on both PR and exact-main (14-day retention).
+
+PR-B3 does **not** close:
+
+- **B3** — backend changed-line coverage on PR remains blocked by the
+  absence of a trustworthy <15-minute test selection. PR-B3 restores
+  the **promotion-path** half (workflow_dispatch exact-main now runs
+  the gate) but the **PR lane** for backend is still a separate task.
+- **E2** — unchanged-line diff coverage on PR remains open for the
+  same reason.
+
+## Previous-contract integrity (PR-B3)
+
+When `--previous-contract` is supplied, the evaluator first runs
+`_validate_previous_contract_integrity(previous)` BEFORE the
+transition validator. The helper reuses `_validate_schema(...)` with
+`check_threshold=True` for structural authority (the rules live in one
+place; no duplication) so the v2 threshold invariant is enforced on the
+trusted-base contract too. The helper additionally checks that the
+self-hash is present and matches the payload:
+
+- `contract_payload_sha256` is present and matches
+  `_canonical_sha256(_contract_payload(previous))`.
+
+The v2 threshold invariant (`new_function_complexity_proxy_maximum`
+must equal 19) is enforced on **both** the candidate (initial contracts)
+and the previous contract (every transition). A previous contract with
+an off-threshold value is rejected as a base-integrity failure BEFORE
+any transition rule runs.
+
+The helper does **not** validate the previous contract's algorithm
+descriptor against the **current** runtime L1. That responsibility
+belongs to the candidate's `algorithm_runtime_match` (current runtime
+pin) and to transition Rule E (candidate.algorithm == previous.algorithm).
+Validating the previous against the current L1 would make a future L1
+bump — which is intended to fail Rule E and force a v3 contract —
+impossible to detect cleanly.
+
 ## Relation to PR-B2 (incremental gate)
 
-PR-B2 will replace
+PR-B2 already replaced
 [`scripts/check_changed_function_complexity.py`](../../scripts/check_changed_function_complexity.py)'s
-inline scoring with calls into the same L1 module, and add the
-`--no-renames` rename escape fix and the strict-improvement rule for
-existing touched functions. It will not change the threshold for
-new functions in PR-B1; that alignment (new-function maximum stays
-at 19) is already enforced by the v2 contract.
+inline scoring with calls into the same L1 module
+[`scripts/_python_complexity.py`](../../scripts/_python_complexity.py)
+and added the `--no-renames` rename-escape fix and the
+strict-improvement rule for existing touched functions. PR-B2 did not
+change the threshold for new functions in PR-B1; that alignment
+(new-function maximum stays at 19) is already enforced by the v2
+contract above.
 
-PR-B2 will also use the L1 transition validator for the changed-line
-gate.
+PR-B2 also added the `scripts/check_changed_line_coverage.py`
+gate as a separate coverage-domain gate with its own active-coverage-lane
+semantics, fail-closed missing/malformed report rules, and `--no-renames`
+rename safety. **This coverage gate does NOT consume the Python
+complexity L1 implementation.** It is a coverage-domain gate, not an
+AST-domain gate, and it has its own parser (coverage.py JSON / LCOV).
+The single-source-of-truth AST algorithm remains
+`scripts/_python_complexity.py`, consumed only by the contract
+checker (tier 1) and by the changed-function precheck (tier 2).
+
+In the authority hierarchy above:
+
+- The authoritative full-tree AST invariant remains
+  `scripts/check_python_complexity_contract.py` with the v2 contract
+  threshold pinned at 19.
+- The incremental per-PR precheck remains
+  `scripts/check_changed_function_complexity.py`, now consuming the
+  shared L1 module and using its CURRENT `--maximum 20` semantics.
+- `scripts/check_changed_line_coverage.py` remains a separate
+  coverage-domain gate that does not participate in the complexity
+  authority hierarchy.
+
+No threshold, no algorithm, and no policy is altered by this
+clarification; it merely describes the post-PR-B2 state accurately.
 
 ## Relation to the size/length ratchet
 
@@ -275,14 +386,29 @@ own implementation. PR-B1 does not promote LOC to a strict blocker.
 
 ## Running locally
 
+Without previous contract (PR-B1 behavior):
+
 ```bash
 backend/venv/bin/python -I scripts/check_python_complexity_contract.py \
   --contract scripts/python-complexity-contract-v2.json \
   --evidence /tmp/python-complexity-contract-v2.json
 ```
 
+With previous contract (PR-B3 wired path; both flags required together):
+
+```bash
+PREV="$(mktemp)"
+git show "$COMPARISON_BASE_SHA:scripts/python-complexity-contract-v2.json" >"$PREV"
+backend/venv/bin/python -I scripts/check_python_complexity_contract.py \
+  --contract scripts/python-complexity-contract-v2.json \
+  --previous-contract "$PREV" \
+  --comparison-base-sha "$COMPARISON_BASE_SHA" \
+  --event-name pull_request \
+  --evidence /tmp/python-complexity-contract-v2.json
+```
+
 Expected on exact main: `PASS`, rc 0. The evidence file is the
 single artifact documented in PR-B1; it carries the L1 module
 SHA-256, the algorithm descriptor, the contract payload SHA-256, the
-production metrics, the limits, the violation list, and (if
-applicable) the RATCHET_REQUIRED delta list.
+comparison base SHA, the production metrics, the limits, the violation
+list, and (if applicable) the RATCHET_REQUIRED delta list.

@@ -53,6 +53,7 @@ import argparse
 import hashlib
 import importlib.util
 import json
+import re
 import subprocess
 import sys
 from dataclasses import asdict
@@ -251,6 +252,14 @@ def _validate_schema(contract: dict, *, check_threshold: bool = True) -> list:
     Returns a list of human-readable violation strings. Empty list means
     the contract is structurally valid.
 
+    Reused by `_validate_previous_contract_integrity` for the previous
+    (trusted-base) contract so the structural authority lives in one
+    place. For the previous contract, callers pass
+    ``check_threshold=True`` so the v2 threshold invariant is enforced
+    on the trusted-base contract too; the transition validator (Rule B)
+    additionally cross-checks the threshold against the previous value
+    when the candidate is also validated.
+
     Strictly rejects:
       - unsupported version
       - duplicate locked identities (path, function)
@@ -379,6 +388,89 @@ def _entries_by_identity(entries: list) -> dict:
         for e in entries
         if isinstance(e, dict) and "path" in e and "function" in e
     }
+
+
+# ---------------------------------------------------------------------------
+# Previous-contract integrity validation (PR-B3)
+# ---------------------------------------------------------------------------
+#
+# The previous (trusted-base) contract is read from a fixed base SHA. It
+# is the input to the v2 -> v2 transition validator and a tampering
+# vector for a malicious PR. Before any transition rule runs, the
+# previous contract must prove it is a well-formed v2 contract whose
+# self-hash matches the embedded digest.
+#
+# Implementation rule: reuse `_validate_schema` for structural
+# authority (do NOT duplicate schema semantics). The threshold check
+# is enabled (check_threshold=True) so a previous contract with an
+# invalid v2 threshold is rejected as a base-integrity failure
+# BEFORE the transition validator runs; the trusted previous must
+# itself be a valid v2 contract. Algorithm pin against the *current*
+# runtime L1 is intentionally NOT checked here; the candidate's
+# `algorithm_runtime_match` validates against the current runtime, and
+# transition Rule E enforces candidate.algorithm == previous.algorithm.
+# Validating the previous contract's algorithm against the current L1
+# would make a future L1 bump (which is meant to fail Rule E and force
+# a v3 contract) impossible to detect cleanly.
+
+
+def _validate_previous_contract_integrity(previous: Any) -> list:
+    """Pure validation: previous contract must be a well-formed v2 contract
+    with a matching self-hash.
+
+    Returns a list of human-readable violation strings. Empty list means
+    the previous contract is structurally valid (including the v2
+    threshold invariant) and self-consistent.
+
+    Structural rules are delegated to ``_validate_schema`` with
+    ``check_threshold=True`` so a previous contract that violates the
+    v2 threshold invariant fails base integrity before any transition
+    rule runs. The self-hash rule is local because no other component
+    needs it.
+    """
+    out: list = []
+    if not isinstance(previous, dict):
+        out.append("previous contract must be a JSON object")
+        return out
+
+    out.extend(_validate_schema(previous, check_threshold=True))
+
+    expected = previous.get("contract_payload_sha256")
+    if not isinstance(expected, str) or not expected:
+        out.append("previous contract payload digest missing")
+    else:
+        actual = _canonical_sha256(_contract_payload(previous))
+        if actual != expected:
+            out.append(
+                "previous contract payload digest mismatch "
+                f"(expected {expected}, got {actual})"
+            )
+
+    return out
+
+
+_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
+
+
+def _validate_comparison_base_sha(value: Any) -> tuple[str | None, str | None]:
+    """Validate the comparison-base-sha CLI value.
+
+    Returns ``(sha, None)`` on a clean 40-char lowercase hex input, or
+    ``(None, error)`` otherwise. ``sha`` is the normalized value (which
+    is the input string because the regex constrains shape) and
+    ``error`` is a human-readable violation string.
+    """
+    if value is None:
+        return None, "comparison-base-sha must not be empty"
+    if not isinstance(value, str):
+        return None, (
+            f"comparison-base-sha must be a string (got {type(value).__name__})"
+        )
+    if not _SHA_RE.match(value):
+        return None, (
+            f"comparison-base-sha must match ^[0-9a-f]{{40}}$ (got {value!r})"
+        )
+    return value, None
 
 
 # ---------------------------------------------------------------------------
@@ -549,6 +641,7 @@ def _result(
     contract_source_sha,
     production_functions: int,
     algorithm_descriptor: dict,
+    comparison_base_sha: str | None,
 ) -> dict:
     return {
         "schema": "unihub.python_complexity_contract_v2/v1",
@@ -569,6 +662,7 @@ def _result(
         "contract_version": contract_version,
         "previous_contract_payload_sha256": previous_sha,
         "candidate_contract_payload_sha256": candidate_sha,
+        "comparison_base_sha": comparison_base_sha,
         "metrics": {
             "production_functions": production_functions,
             "complexity_proxy_gte_threshold": gte_threshold_count,
@@ -592,6 +686,7 @@ def evaluate(
     l1: Any,
     *,
     previous_contract=None,
+    comparison_base_sha: str | None = None,
     event_name: str = "unknown",
 ) -> dict:
     """Evaluate the contract against the production tree at ``root``."""
@@ -601,6 +696,12 @@ def evaluate(
     transition_violations: list = []
     entry_violations: list = []
     new_gte_threshold: list = []
+
+    # 0. Previous-contract integrity (fail closed before anything else).
+    # Reuses _validate_schema for structural authority so the rules live
+    # in one place. Runs only when a previous contract was supplied.
+    if previous_contract is not None:
+        violations.extend(_validate_previous_contract_integrity(previous_contract))
 
     runtime_descriptor = _runtime_algorithm_descriptor(l1)
     algorithm_runtime_match = True  # populated below
@@ -658,6 +759,7 @@ def evaluate(
             contract_source_sha=str(contract.get("baseline_source_sha") or "") or None,
             production_functions=0,
             algorithm_descriptor=runtime_descriptor,
+            comparison_base_sha=comparison_base_sha,
         )
 
     metrics = _collect_metrics(root, l1)
@@ -746,6 +848,7 @@ def evaluate(
             contract_source_sha=str(contract.get("baseline_source_sha") or "") or None,
             production_functions=len(metrics),
             algorithm_descriptor=runtime_descriptor,
+            comparison_base_sha=comparison_base_sha,
         )
 
     # 6. RATCHET_REQUIRED (rc 2): code is strictly better than contract.
@@ -806,6 +909,7 @@ def evaluate(
             contract_source_sha=str(contract.get("baseline_source_sha") or "") or None,
             production_functions=len(metrics),
             algorithm_descriptor=runtime_descriptor,
+            comparison_base_sha=comparison_base_sha,
         )
 
     # 7. PASS (rc 0).
@@ -842,6 +946,7 @@ def evaluate(
         contract_source_sha=str(contract.get("baseline_source_sha") or "") or None,
         production_functions=len(metrics),
         algorithm_descriptor=runtime_descriptor,
+        comparison_base_sha=comparison_base_sha,
     )
 
 
@@ -863,7 +968,14 @@ def main() -> int:
         type=Path,
         default=None,
         help="Optional path to the previous contract for monotonic transition validation. "
-             "PR-B1 does not wire this into CI; PR-B3 will.",
+             "When supplied, --comparison-base-sha is required.",
+    )
+    parser.add_argument(
+        "--comparison-base-sha",
+        default=None,
+        help="Trusted SHA (40 lowercase hex chars) from which the previous "
+             "contract was fetched. Required when --previous-contract is "
+             "supplied; not meaningful without it.",
     )
     parser.add_argument(
         "--event-name",
@@ -872,18 +984,61 @@ def main() -> int:
     )
     args = parser.parse_args()
 
+    # --- CLI-level coupling invariant (fail closed up front) -----------
+    previous_supplied = args.previous_contract is not None
+    comparison_supplied = args.comparison_base_sha is not None
+
+    if previous_supplied and not comparison_supplied:
+        print(
+            "FAIL: --comparison-base-sha is required when --previous-contract is supplied"
+        )
+        return 1
+    if comparison_supplied and not previous_supplied:
+        print(
+            "FAIL: --comparison-base-sha is only meaningful with --previous-contract"
+        )
+        return 1
+
+    comparison_base_sha: str | None = None
+    if comparison_supplied:
+        comparison_base_sha, validation_error = _validate_comparison_base_sha(
+            args.comparison_base_sha
+        )
+        if validation_error is not None:
+            print(f"FAIL: {validation_error}")
+            return 1
+
+    # --- L1 + input-file reads (hardened: clean rc 1, no traceback) ----
+
     try:
         l1 = _load_l1()
     except (L1LoadError, FileNotFoundError, ImportError) as exc:
         print(f"FAIL: cannot load L1 metric module: {exc}")
         return 1
 
-    contract = json.loads(args.contract.read_text(encoding="utf-8"))
-    previous_contract = (
-        json.loads(args.previous_contract.read_text(encoding="utf-8"))
-        if args.previous_contract is not None
-        else None
-    )
+    try:
+        contract_text = args.contract.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        print(f"FAIL: cannot read candidate contract {args.contract}: {exc}")
+        return 1
+    try:
+        contract = json.loads(contract_text)
+    except json.JSONDecodeError as exc:
+        print(f"FAIL: candidate contract is not valid JSON: {exc}")
+        return 1
+
+    previous_contract = None
+    if previous_supplied:
+        try:
+            previous_text = args.previous_contract.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError) as exc:
+            print(f"FAIL: cannot read previous contract {args.previous_contract}: {exc}")
+            return 1
+        try:
+            previous_contract = json.loads(previous_text)
+        except json.JSONDecodeError as exc:
+            print(f"FAIL: previous contract is not valid JSON: {exc}")
+            return 1
 
     try:
         evidence = evaluate(
@@ -891,12 +1046,15 @@ def main() -> int:
             contract,
             l1,
             previous_contract=previous_contract,
+            comparison_base_sha=comparison_base_sha,
             event_name=args.event_name,
         )
     except (KeyError, ValueError, TypeError) as exc:
         fallback = {
             "schema": "unihub.python_complexity_contract_v2/v1",
             "result": "FAIL",
+            "comparison_base_sha": comparison_base_sha,
+            "event_name": args.event_name,
             "violations": [f"evaluator raised: {type(exc).__name__}: {exc}"],
         }
         _write_evidence(args.evidence, fallback)

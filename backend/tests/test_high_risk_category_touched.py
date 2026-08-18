@@ -323,3 +323,31 @@ def test_empty_base_sha_is_error(tmp_repo):
     cp = _classifier(tmp_repo, base_sha="")
     assert cp.returncode == 20
 
+
+# ---------------------------------------------------------------------------
+# PR-B3: complexity / ratchet authority files classify as deploy-release-ci
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "authority_path",
+    [
+        "scripts/check_python_complexity_contract.py",
+        "scripts/python-complexity-contract-v2.json",
+        "scripts/_python_complexity.py",
+        "scripts/check_changed_function_complexity.py",
+        "scripts/check_changed_line_coverage.py",
+        "scripts/check_complexity_ratchet.py",
+        "scripts/complexity-ratchet.json",
+    ],
+)
+def test_authority_paths_classify_as_deploy_release_ci(tmp_repo, authority_path):
+    """Each complexity / ratchet authority file, when modified in a PR,
+    must trigger the deploy-release-ci classifier (rc 0 TOUCHED)."""
+    _commit(tmp_repo, {authority_path: "# authority change"}, msg=f"touch {authority_path}")
+    cp = _classifier(tmp_repo)
+    assert cp.returncode == 0, (
+        f"{authority_path}: classifier did not classify as deploy-release-ci. "
+        f"rc={cp.returncode} stdout={cp.stdout!r} stderr={cp.stderr!r}"
+    )
+
