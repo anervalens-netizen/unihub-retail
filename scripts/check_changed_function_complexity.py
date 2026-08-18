@@ -227,14 +227,20 @@ def _evaluate_file(l1, base, path, changed, maximum, root=ROOT):
     previous_text = base_source(base, path, root)
     previous_metrics = {}
     if previous_text is not None:
+        # The previous version exists. If L1 cannot parse it, that is a
+        # base integrity failure: we MUST NOT silently treat it as
+        # "no previous" because that would let a complex current function
+        # escape evaluation. Fail the file clearly instead.
         try:
             previous_metrics = {
                 m.function: m
                 for m in _read_function_metrics(l1, previous_text, path)
             }
-        except SyntaxError:
-            # Previous version had invalid syntax; treat as "no previous".
-            previous_metrics = {}
+        except SyntaxError as exc:
+            violations.append(
+                f"{path}: base source has invalid Python syntax at line {exc.lineno}: {exc.msg}"
+            )
+            return violations, seen
 
     for metric in current_metrics:
         if not changed.intersection(range(metric.start_line, metric.end_line + 1)):

@@ -671,3 +671,271 @@ class TestChangedLineCoverage:
         )
         assert bad.returncode == 1, bad.stdout + bad.stderr
         assert "new_app.ts" in bad.stdout
+
+
+# =============================================================================
+# PR-B2 CORRECTION PASS — zero-line semantics, strict backend schema, base
+# syntax fail-closed. These tests pin the reviewer-required invariants.
+# =============================================================================
+
+
+def _write_raw_json(repo, payload):
+    """Write an arbitrary coverage.py JSON payload to a temp file."""
+    path = repo / "_raw.json"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    return path
+
+
+def _write_raw_lcov(repo, text):
+    """Write an arbitrary LCOV text blob to a temp file."""
+    path = repo / "_raw.lcov"
+    path.write_text(text, encoding="utf-8")
+    return path
+
+
+class TestZeroLineAndStrictSchema:
+    """PR-B2 correction: zero executable lines, strict schema, base syntax."""
+
+    # ----- A. Backend valid empty record, comments-only change --------------
+
+    def test_backend_valid_empty_record_with_comments_only_passes(
+        self, tmp_path
+    ):
+        """Backend eligible file represented by a structurally valid record
+        with executed_lines=[] and missing_lines=[] must PASS when the
+        change contains only comments/non-executable source. The gate
+        MUST NOT conflate an empty record with a malformed one.
+        """
+        repo = _new_repo(tmp_path)
+        _write(
+            repo,
+            "backend/mod.py",
+            "def f():\n    return 1\n",
+        )
+        _commit(repo, "seed")
+        # Add a comment-only change inside the function body. The diff
+        # touches lines INSIDE the function, but no executable lines
+        # appear in the coverage record.
+        _write(
+            repo,
+            "backend/mod.py",
+            "def f():\n    # explanatory comment\n    return 1\n",
+        )
+        _commit(repo, "comments only")
+        base = _git(repo, "rev-parse", "HEAD~1").strip()
+        # Coverage record: structurally valid, both keys present, both
+        # lists empty.
+        cov = _write_raw_json(
+            repo,
+            {"files": {"backend/mod.py": {
+                "executed_lines": [],
+                "missing_lines": [],
+            }}},
+        )
+        ok = _run_gate(
+            COV_SCRIPT, repo, "--base", base, "--backend-json", str(cov),
+        )
+        assert ok.returncode == 0, ok.stdout + ok.stderr
+
+    # ----- B. Frontend valid zero-line record ------------------------------
+
+    def test_frontend_lf0_lh0_no_da_passes_with_comments_only(
+        self, tmp_path
+    ):
+        """Frontend eligible .ts file represented by a structurally valid
+        LCOV record with LF:0/LH:0/no DA must PASS when changed lines
+        contain no instrumented executable lines.
+        """
+        repo = _new_repo(tmp_path)
+        _write(repo, "src/app.ts", "export const x = 1;\n")
+        _commit(repo, "seed")
+        _write(
+            repo,
+            "src/app.ts",
+            "// explanatory comment\nexport const x = 1;\n",
+        )
+        _commit(repo, "comments only")
+        base = _git(repo, "rev-parse", "HEAD~1").strip()
+        # LCOV record with LF:0/LH:0/no DA.
+        lcov = _write_raw_lcov(
+            repo,
+            "TN:\n"
+            + "SF:" + str(repo / "src/app.ts") + "\n"
+            + "LF:0\n"
+            + "LH:0\n"
+            + "end_of_record\n",
+        )
+        ok = _run_gate(
+            COV_SCRIPT, repo, "--base", base, "--frontend-lcov", str(lcov),
+        )
+        assert ok.returncode == 0, ok.stdout + ok.stderr
+
+    # ----- C. .d.ts LF:0/LH:0/no DA must not poison the report ------------
+
+    def test_dts_zero_line_record_does_not_poison_report(self, tmp_path):
+        """A real zero-line LCOV record for src/types.d.ts combined with
+        a .d.ts change must PASS. The parser must accept the zero-line
+        record; eligibility logic then excludes the .d.ts from
+        evaluation.
+        """
+        repo = _new_repo(tmp_path)
+        _write(repo, "src/types.d.ts", "export const x: number;\n")
+        _commit(repo, "seed")
+        _write(
+            repo,
+            "src/types.d.ts",
+            "export const x: number;\nexport const y: number;\n",
+        )
+        _commit(repo, "add .d.ts")
+        base = _git(repo, "rev-parse", "HEAD~1").strip()
+        lcov = _write_raw_lcov(
+            repo,
+            "TN:\n"
+            + "SF:" + str(repo / "src/types.d.ts") + "\n"
+            + "LF:0\n"
+            + "LH:0\n"
+            + "end_of_record\n",
+        )
+        ok = _run_gate(
+            COV_SCRIPT, repo, "--base", base, "--frontend-lcov", str(lcov),
+        )
+        assert ok.returncode == 0, ok.stdout + ok.stderr
+
+    # ----- D. executed_lines missing --------------------------------------
+
+    def test_backend_executed_lines_missing_fails(self, tmp_path):
+        repo = _new_repo(tmp_path)
+        _write(repo, "backend/mod.py", "def f():\n    return 1\n")
+        _commit(repo, "seed")
+        _write(
+            repo,
+            "backend/mod.py",
+            "def f():\n    if x:\n        return 1\n    return 2\n",
+        )
+        _commit(repo, "change")
+        base = _git(repo, "rev-parse", "HEAD~1").strip()
+        # executed_lines is absent entirely.
+        cov = _write_raw_json(
+            repo,
+            {"files": {"backend/mod.py": {"missing_lines": [3]}}},
+        )
+        bad = _run_gate(
+            COV_SCRIPT, repo, "--base", base, "--backend-json", str(cov),
+        )
+        assert bad.returncode == 1, bad.stdout + bad.stderr
+        assert "executed_lines" in bad.stdout
+
+    # ----- E. missing_lines missing ----------------------------------------
+
+    def test_backend_missing_lines_missing_fails(self, tmp_path):
+        repo = _new_repo(tmp_path)
+        _write(repo, "backend/mod.py", "def f():\n    return 1\n")
+        _commit(repo, "seed")
+        _write(
+            repo,
+            "backend/mod.py",
+            "def f():\n    if x:\n        return 1\n    return 2\n",
+        )
+        _commit(repo, "change")
+        base = _git(repo, "rev-parse", "HEAD~1").strip()
+        # missing_lines is absent entirely.
+        cov = _write_raw_json(
+            repo,
+            {"files": {"backend/mod.py": {"executed_lines": [3]}}},
+        )
+        bad = _run_gate(
+            COV_SCRIPT, repo, "--base", base, "--backend-json", str(cov),
+        )
+        assert bad.returncode == 1, bad.stdout + bad.stderr
+        assert "missing_lines" in bad.stdout
+
+    # ----- F. executed_lines = null -----------------------------------------
+
+    def test_backend_executed_lines_null_fails(self, tmp_path):
+        repo = _new_repo(tmp_path)
+        _write(repo, "backend/mod.py", "def f():\n    return 1\n")
+        _commit(repo, "seed")
+        _write(
+            repo,
+            "backend/mod.py",
+            "def f():\n    if x:\n        return 1\n    return 2\n",
+        )
+        _commit(repo, "change")
+        base = _git(repo, "rev-parse", "HEAD~1").strip()
+        # executed_lines is JSON null (not a list).
+        cov = _write_raw_json(
+            repo,
+            {"files": {"backend/mod.py": {
+                "executed_lines": None,
+                "missing_lines": [],
+            }}},
+        )
+        bad = _run_gate(
+            COV_SCRIPT, repo, "--base", base, "--backend-json", str(cov),
+        )
+        assert bad.returncode == 1, bad.stdout + bad.stderr
+        assert "executed_lines" in bad.stdout
+        assert "not a list" in bad.stdout.lower() or "list" in bad.stdout.lower()
+
+    # ----- G. missing_lines = "" --------------------------------------------
+
+    def test_backend_missing_lines_string_fails(self, tmp_path):
+        repo = _new_repo(tmp_path)
+        _write(repo, "backend/mod.py", "def f():\n    return 1\n")
+        _commit(repo, "seed")
+        _write(
+            repo,
+            "backend/mod.py",
+            "def f():\n    if x:\n        return 1\n    return 2\n",
+        )
+        _commit(repo, "change")
+        base = _git(repo, "rev-parse", "HEAD~1").strip()
+        # missing_lines is a string (not a list).
+        cov = _write_raw_json(
+            repo,
+            {"files": {"backend/mod.py": {
+                "executed_lines": [],
+                "missing_lines": "",
+            }}},
+        )
+        bad = _run_gate(
+            COV_SCRIPT, repo, "--base", base, "--backend-json", str(cov),
+        )
+        assert bad.returncode == 1, bad.stdout + bad.stderr
+        assert "missing_lines" in bad.stdout
+        assert "not a list" in bad.stdout.lower() or "list" in bad.stdout.lower()
+
+
+class TestBaseSyntaxFailClosed:
+    """PR-B2 correction: invalid base source syntax must FAIL the file
+    rather than silently treat it as a fresh addition.
+    """
+
+    def test_base_source_with_invalid_python_syntax_fails_closed(
+        self, tmp_path
+    ):
+        repo = _new_repo(tmp_path)
+        # Base file: deliberately malformed Python (unclosed bracket on
+        # the def line so the syntax error is reachable as a parse error).
+        _write(
+            repo,
+            "backend/broken.py",
+            "def f(x:\n    return 1\n",
+        )
+        _commit(repo, "seed broken")
+        # Current file: syntactically valid Python with a >maximum function
+        # so the gate would otherwise try to evaluate it.
+        _write(
+            repo,
+            "backend/broken.py",
+            "def f(x):\n" + "    if x:\n        return 1\n" * 21
+            + "    return -1\n",
+        )
+        _commit(repo, "fix and worsen")
+        base = _git(repo, "rev-parse", "HEAD~1").strip()
+        bad = _run_gate(
+            FN_SCRIPT, repo, "--base", base, "--maximum", "20",
+        )
+        assert bad.returncode == 1, bad.stdout + bad.stderr
+        assert "base source has invalid Python syntax" in bad.stdout
+        assert "broken.py" in bad.stdout

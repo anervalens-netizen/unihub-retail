@@ -178,9 +178,12 @@ class CoverageParseError(ValueError):
 def _load_python_coverage(path, root):
     """Parse coverage.py JSON; return {repo_relative_path: {line: bool_hit}}.
 
-    Validates that each file record carries the expected shape so we
-    can distinguish a legitimate empty record from a malformed/missing
-    one. Each file must have executed_lines and/or missing_lines.
+    Strict-shape validation: each file record MUST carry both
+    `executed_lines` AND `missing_lines`, and both values MUST be lists.
+    Empty lists are valid (a file with no executable/instrumented lines).
+    Null, string, dict, or other types are rejected so we can distinguish
+    a malformed record from a legitimate empty one. Each list element is
+    validated as an integer-like value.
     """
     raw = path.read_text(encoding="utf-8")
     try:
@@ -199,22 +202,44 @@ def _load_python_coverage(path, root):
             raise CoverageParseError(
                 f"file record for {raw_name!r} is not an object"
             )
-        if "executed_lines" not in details and "missing_lines" not in details:
+        if "executed_lines" not in details:
             raise CoverageParseError(
-                f"file record for {raw_name!r} has no executed_lines/missing_lines"
+                f"file record for {raw_name!r} is missing executed_lines"
             )
-        executed = details.get("executed_lines") or []
-        missing = details.get("missing_lines") or []
-        if not isinstance(executed, list) or not isinstance(missing, list):
+        if "missing_lines" not in details:
             raise CoverageParseError(
-                f"file record for {raw_name!r} executed_lines/missing_lines are not lists"
+                f"file record for {raw_name!r} is missing missing_lines"
             )
+        executed = details["executed_lines"]
+        missing = details["missing_lines"]
+        if not isinstance(executed, list):
+            raise CoverageParseError(
+                f"file record for {raw_name!r} executed_lines is not a list"
+            )
+        if not isinstance(missing, list):
+            raise CoverageParseError(
+                f"file record for {raw_name!r} missing_lines is not a list"
+            )
+        covered_lines: set[int] = set()
+        for entry in executed:
+            try:
+                covered_lines.add(int(entry))
+            except (TypeError, ValueError) as exc:
+                raise CoverageParseError(
+                    f"file record for {raw_name!r} executed_lines entry {entry!r} is not an integer"
+                ) from exc
+        missing_lines: set[int] = set()
+        for entry in missing:
+            try:
+                missing_lines.add(int(entry))
+            except (TypeError, ValueError) as exc:
+                raise CoverageParseError(
+                    f"file record for {raw_name!r} missing_lines entry {entry!r} is not an integer"
+                ) from exc
         name = str(raw_name).replace("\\", "/")
         if not name.startswith("backend/"):
             name = f"backend/{name}"
-        covered_lines = {int(line) for line in executed}
-        missing_lines = {int(line) for line in missing}
-        record = {}
+        record: dict[int, bool] = {}
         for line in covered_lines | missing_lines:
             record[line] = line in covered_lines
         result[name] = record
@@ -224,17 +249,30 @@ def _load_python_coverage(path, root):
 def _load_frontend_coverage(path, root):
     """Parse an LCOV file; return {repo_relative_path: {line: bool_hit}}.
 
-    Validates: SF must have at least one DA; DA must parse; structurally
-    broken records (no end_of_record) are rejected.
+    Strict-but-proportionate validation:
+      - SF path must be non-empty.
+      - DA must parse; non-integer number or hits are rejected.
+      - A new SF cannot appear before the previous record closes.
+      - Every SF must terminate with `end_of_record`.
+      - Records with zero DA lines (LF:0 / LH:0 / no DA) ARE valid
+        when they represent a source file with no executable/instrumented
+        lines. They are stored as empty dicts and handled by eligibility
+        logic.
     """
-    result = {}
-    current_path = None
-    current_record = None
+    result: dict[str, dict[int, bool]] = {}
+    current_path: str | None = None
+    current_record: dict[int, bool] | None = None
     open_records = 0
     for raw_line in path.read_text(encoding="utf-8").splitlines():
         line = raw_line.strip()
         if line.startswith("SF:"):
-            raw = line[3:]
+            if current_record is not None:
+                raise CoverageParseError(
+                    "nested SF: new record before previous end_of_record"
+                )
+            raw = line[3:].strip()
+            if not raw:
+                raise CoverageParseError("SF record has empty path")
             try:
                 resolved = Path(raw).resolve()
                 rel = resolved.relative_to(root).as_posix()
@@ -246,6 +284,7 @@ def _load_frontend_coverage(path, root):
             open_records += 1
             continue
         if current_record is None:
+            # Lines outside any SF (TN:, VER:, comments, etc.) are ignored.
             continue
         if line.startswith("DA:"):
             payload = line[3:]
@@ -264,10 +303,6 @@ def _load_frontend_coverage(path, root):
             current_record[number] = hits > 0
             continue
         if line == "end_of_record":
-            if not current_record:
-                raise CoverageParseError(
-                    f"empty/incomplete record for {current_path!r}"
-                )
             current_record = None
             current_path = None
             open_records -= 1
@@ -358,7 +393,11 @@ def evaluate(
             )
             continue
         record = cov[name]
-        if not isinstance(record, dict) or not record:
+        # Parser already validated record is a dict. A record may be
+        # legitimately empty (zero executable/instrumented lines); that
+        # means no changed executable lines and the file PASSes by
+        # contributing nothing to the percentage.
+        if not isinstance(record, dict):
             failures.append(
                 f"{name}: malformed active coverage record"
             )
