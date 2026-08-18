@@ -131,14 +131,22 @@ def _minimal_contract(
     history=None,
     entries=None,
 ) -> dict:
-    """Build a minimal v2 contract that survives schema validation."""
-    return {
+    """Build a minimal v2 contract that survives schema validation.
+
+    PR-B3: the previous-contract integrity validator requires a
+    ``contract_payload_sha256`` that matches the canonical SHA-256 of the
+    payload. This helper recomputes the digest so every returned contract
+    is a faithful prior contract — callers can still mutate and re-hash
+    via ``_rehash`` afterwards.
+    """
+    contract = {
         "version": 2,
         "algorithm": algorithm if algorithm is not None else _baseline_algorithm(l1),
         "release_b_gates": gates if gates is not None else _baseline_gates(),
         "history": history if history is not None else _baseline_history(),
         "entries": entries if entries is not None else [],
     }
+    return _rehash(contract)
 
 
 # ---------------------------------------------------------------------------
@@ -841,6 +849,7 @@ def test_case_30_changed_counted_nodes_in_transition_fails(
     previous["algorithm"]["counted_nodes"] = list(
         previous["algorithm"]["counted_nodes"]
     ) + ["Extra"]
+    _rehash(previous)
     candidate = copy.deepcopy(real_v2_contract)
     _rehash(candidate)
     result = check.evaluate(
@@ -862,6 +871,7 @@ def test_case_31_changed_impl_sha_in_transition_fails(
 ):
     previous = copy.deepcopy(real_v2_contract)
     previous["algorithm"]["implementation_sha256"] = "a" * 64
+    _rehash(previous)
     candidate = copy.deepcopy(real_v2_contract)
     _rehash(candidate)
     result = check.evaluate(
@@ -884,6 +894,7 @@ def test_case_32_altered_algorithm_descriptor_in_transition_fails(
     """Tampering with bool_op in a v2 -> v2 transition must FAIL."""
     previous = copy.deepcopy(real_v2_contract)
     previous["algorithm"]["bool_op"] = "max(1,len(values)-1)_TAMPERED"
+    _rehash(previous)
     candidate = copy.deepcopy(real_v2_contract)
     _rehash(candidate)
     result = check.evaluate(
@@ -1109,3 +1120,496 @@ def test_cli_ratchet_returns_rc_2():
         timeout=120,
     )
     assert proc.returncode == 2, f"stdout={proc.stdout}\nstderr={proc.stderr}"
+
+
+# ===========================================================================
+# PR-B3: comparison-base-sha coupling invariant
+# ===========================================================================
+
+
+def _cli_run(check_args, *, event_name="pull_request"):
+    """Helper: run the CLI with a standard layout, return CompletedProcess."""
+    import subprocess
+
+    cmd = [
+        str(PR_B1_WORKTREE / "backend" / "venv" / "bin" / "python"),
+        "-I",
+        str(CHECK_PATH),
+        "--root",
+        str(PR_B1_WORKTREE),
+        "--contract",
+        str(CONTRACT_PATH),
+        "--evidence",
+        "/tmp/_pr_b3_evidence.json",
+        "--event-name",
+        event_name,
+    ]
+    cmd.extend(check_args)
+    return subprocess.run(
+        cmd, capture_output=True, text=True, timeout=120
+    )
+
+
+def test_cli_comparison_base_sha_required_with_previous():
+    """--previous-contract without --comparison-base-sha must FAIL rc 1."""
+    import subprocess
+
+    proc = subprocess.run(
+        [
+            str(PR_B1_WORKTREE / "backend" / "venv" / "bin" / "python"),
+            "-I",
+            str(CHECK_PATH),
+            "--root",
+            str(PR_B1_WORKTREE),
+            "--contract",
+            str(CONTRACT_PATH),
+            "--previous-contract",
+            str(CONTRACT_PATH),
+            "--evidence",
+            "/tmp/_pr_b3_evidence.json",
+        ],
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    assert proc.returncode == 1, f"stdout={proc.stdout}\nstderr={proc.stderr}"
+    assert "comparison_base_sha" in proc.stdout or "comparison-base-sha" in proc.stdout
+
+
+def test_cli_comparison_base_sha_forbidden_without_previous():
+    """--comparison-base-sha without --previous-contract must FAIL rc 1."""
+    import subprocess
+
+    proc = subprocess.run(
+        [
+            str(PR_B1_WORKTREE / "backend" / "venv" / "bin" / "python"),
+            "-I",
+            str(CHECK_PATH),
+            "--root",
+            str(PR_B1_WORKTREE),
+            "--contract",
+            str(CONTRACT_PATH),
+            "--comparison-base-sha",
+            "0" * 40,
+            "--evidence",
+            "/tmp/_pr_b3_evidence.json",
+        ],
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    assert proc.returncode == 1, f"stdout={proc.stdout}\nstderr={proc.stderr}"
+    assert "comparison_base_sha" in proc.stdout or "comparison-base-sha" in proc.stdout
+
+
+def test_cli_invalid_comparison_base_sha_format():
+    """Non-canonical hex must FAIL rc 1 with a clear message."""
+    import subprocess
+
+    for bad in ("not-hex", "ZZ" + "0" * 38, "0" * 39, "0" * 41, "0" * 40 + "x"):
+        proc = subprocess.run(
+            [
+                str(PR_B1_WORKTREE / "backend" / "venv" / "bin" / "python"),
+                "-I",
+                str(CHECK_PATH),
+                "--root",
+                str(PR_B1_WORKTREE),
+                "--contract",
+                str(CONTRACT_PATH),
+                "--previous-contract",
+                str(CONTRACT_PATH),
+                "--comparison-base-sha",
+                bad,
+                "--evidence",
+                "/tmp/_pr_b3_evidence.json",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        assert proc.returncode == 1, (
+            f"sha={bad!r}: rc={proc.returncode} "
+            f"stdout={proc.stdout!r}\nstderr={proc.stderr!r}"
+        )
+
+
+def test_cli_valid_comparison_base_sha_passes(tmp_path):
+    """Valid 40-char lowercase hex succeeds with --previous-contract."""
+    proc = _cli_run(
+        [
+            "--previous-contract",
+            str(CONTRACT_PATH),
+            "--comparison-base-sha",
+            "0" * 40,
+        ]
+    )
+    assert proc.returncode == 0, f"stdout={proc.stdout}\nstderr={proc.stderr}"
+    evidence = json.loads(Path("/tmp/_pr_b3_evidence.json").read_text())
+    assert evidence["comparison_base_sha"] == "0" * 40
+
+
+# ===========================================================================
+# PR-B3: previous-contract integrity (re-uses _validate_schema)
+# ===========================================================================
+
+
+def test_previous_contract_validate_schema_failure(check, l1, real_v2_contract):
+    """If the previous contract fails structural validation, FAIL with a
+    clear violation in `violations` (not in `transition_violations`)."""
+    import tempfile
+    from pathlib import Path
+
+    with tempfile.TemporaryDirectory() as td:
+        backend = Path(td) / "backend"
+        backend.mkdir()
+        bad = copy.deepcopy(real_v2_contract)
+        # Drop a required release_b_gates key -> _validate_schema fails.
+        del bad["release_b_gates"]["complexity_proxy_gte_30_maximum"]
+        _rehash(bad)
+        result = check.evaluate(
+            Path(td), real_v2_contract, l1, previous_contract=bad
+        )
+        assert result["result"] == "FAIL"
+        assert any(
+            "release_b_gates.complexity_proxy_gte_30_maximum missing" in v
+            for v in result["violations"]
+        )
+
+
+def test_previous_contract_duplicate_locked_identity(check, l1, real_v2_contract):
+    """Duplicate locked identities in the previous contract -> FAIL."""
+    import tempfile
+    from pathlib import Path
+
+    with tempfile.TemporaryDirectory() as td:
+        backend = Path(td) / "backend"
+        backend.mkdir()
+        bad = copy.deepcopy(real_v2_contract)
+        first = bad["entries"][0]
+        bad["entries"].append(copy.deepcopy(first))
+        _rehash(bad)
+        result = check.evaluate(
+            Path(td), real_v2_contract, l1, previous_contract=bad
+        )
+        assert result["result"] == "FAIL"
+        assert any(
+            "duplicate locked entry identity" in v for v in result["violations"]
+        )
+
+
+def test_previous_contract_malformed_remediation_entry(
+    check, l1, real_v2_contract
+):
+    """Malformed remediation_entries in the previous contract -> FAIL."""
+    import tempfile
+    from pathlib import Path
+
+    with tempfile.TemporaryDirectory() as td:
+        backend = Path(td) / "backend"
+        backend.mkdir()
+        bad = copy.deepcopy(real_v2_contract)
+        # Inject a remediation entry with missing function field.
+        bad.setdefault("remediation_entries", []).append(
+            {"path": "backend/x.py", "current_complexity": 5}
+        )
+        _rehash(bad)
+        result = check.evaluate(
+            Path(td), real_v2_contract, l1, previous_contract=bad
+        )
+        assert result["result"] == "FAIL"
+        assert any(
+            "remediation_entries" in v and "function" in v
+            for v in result["violations"]
+        )
+
+
+def test_previous_contract_self_hash_mismatch(check, l1, real_v2_contract):
+    """Self-hash mismatch on the previous contract -> FAIL before transition."""
+    import tempfile
+    from pathlib import Path
+
+    with tempfile.TemporaryDirectory() as td:
+        backend = Path(td) / "backend"
+        backend.mkdir()
+        bad = copy.deepcopy(real_v2_contract)
+        # Mutate payload without rehashing -> digest mismatch.
+        bad["baseline_source_sha"] = "f" * 40
+        result = check.evaluate(
+            Path(td), real_v2_contract, l1, previous_contract=bad
+        )
+        assert result["result"] == "FAIL"
+        assert any(
+            "previous contract payload digest mismatch" in v
+            for v in result["violations"]
+        )
+
+
+def test_previous_contract_invalid_v2_threshold_fails_base_integrity(
+    check, l1, real_v2_contract
+):
+    """A previous contract with an invalid v2 threshold must FAIL base
+    integrity BEFORE the transition validator runs.
+
+    The helper calls `_validate_schema(previous, check_threshold=True)`,
+    so the v2 threshold invariant (must be 19) is enforced on the
+    trusted-base contract too. The transition validator is never
+    consulted when base integrity fails.
+    """
+    import tempfile
+    from pathlib import Path
+
+    with tempfile.TemporaryDirectory() as td:
+        backend = Path(td) / "backend"
+        backend.mkdir()
+        bad = copy.deepcopy(real_v2_contract)
+        # Drift the v2 threshold off 19 -> _validate_schema rejects.
+        bad["release_b_gates"]["new_function_complexity_proxy_maximum"] = 17
+        _rehash(bad)
+        result = check.evaluate(
+            Path(td), real_v2_contract, l1, previous_contract=bad
+        )
+        assert result["result"] == "FAIL"
+        # The base-integrity violation must appear in `violations` (not in
+        # `transition_violations`).
+        assert any(
+            "must be 19" in v for v in result["violations"]
+        ), f"expected base-integrity threshold violation, got {result['violations']}"
+        # The transition validator must NOT have run: `transition_violations`
+        # must be empty.
+        assert result["transition_violations"] == []
+
+
+def test_previous_contract_valid_v2_threshold_passes_base_integrity(
+    check, l1, real_v2_contract
+):
+    """A previous contract whose v2 threshold is correctly pinned at 19
+    must NOT trip base integrity (PASS or RATCHET_REQUIRED is acceptable;
+    the point is no FAIL from base integrity)."""
+    good = copy.deepcopy(real_v2_contract)
+    assert (
+        good["release_b_gates"]["new_function_complexity_proxy_maximum"] == 19
+    )
+    _rehash(good)
+    result = check.evaluate(
+        PR_B1_WORKTREE, good, l1, previous_contract=good
+    )
+    assert result["result"] in ("PASS", "RATCHET_REQUIRED"), (
+        f"unexpected result {result['result']!r}: {result['violations']}"
+    )
+    assert all(
+        "previous contract" not in v for v in result["violations"]
+    ), f"unexpected base-integrity violations: {result['violations']}"
+
+
+def test_previous_contract_valid_schema_and_hash(check, l1, real_v2_contract):
+    """Well-formed previous with valid digest does NOT trip base integrity."""
+    # Use the real production tree so the candidate contract actually matches
+    # the codebase. With an empty tmp_path backend, the gate would
+    # RATCHET_REQUIRED because the contract ceilings exceed measured
+    # metrics; the point of this test is that previous-integrity did not
+    # inject a FAIL before the transition validator ran.
+    good = copy.deepcopy(real_v2_contract)
+    _rehash(good)
+    result = check.evaluate(
+        PR_B1_WORKTREE, good, l1, previous_contract=good
+    )
+    assert result["result"] in ("PASS", "RATCHET_REQUIRED"), (
+        f"unexpected result {result['result']!r}: "
+        f"violations={result['violations']}"
+    )
+    # The previous-integrity violations MUST be absent.
+    assert all(
+        "previous contract" not in v for v in result["violations"]
+    ), f"unexpected base-integrity violations: {result['violations']}"
+
+
+def test_transition_still_enforced_when_previous_valid(
+    check, l1, real_v2_contract
+):
+    """A valid previous contract does not mask candidate transition failures."""
+    import tempfile
+    from pathlib import Path
+
+    with tempfile.TemporaryDirectory() as td:
+        backend = Path(td) / "backend"
+        backend.mkdir()
+        previous = copy.deepcopy(real_v2_contract)
+        _rehash(previous)
+        candidate = copy.deepcopy(real_v2_contract)
+        # Raise an aggregate ceiling to trigger transition Rule A.
+        candidate["release_b_gates"]["complexity_proxy_gte_20_maximum"] = (
+            previous["release_b_gates"]["complexity_proxy_gte_20_maximum"] + 1
+        )
+        _rehash(candidate)
+        result = check.evaluate(
+            Path(td), candidate, l1, previous_contract=previous
+        )
+        assert result["result"] == "FAIL"
+        assert any(
+            "complexity_proxy_gte_20_maximum" in v
+            for v in result["transition_violations"]
+        )
+
+
+def test_evidence_contains_comparison_base_sha(check, l1, real_v2_contract):
+    """evidence['comparison_base_sha'] equals the input when supplied."""
+    import tempfile
+    from pathlib import Path
+
+    with tempfile.TemporaryDirectory() as td:
+        backend = Path(td) / "backend"
+        backend.mkdir()
+        previous = copy.deepcopy(real_v2_contract)
+        _rehash(previous)
+        sha = "abc1234" + "0" * 32
+        result = check.evaluate(
+            Path(td),
+            real_v2_contract,
+            l1,
+            previous_contract=previous,
+            comparison_base_sha=sha,
+        )
+        assert result["comparison_base_sha"] == sha
+
+
+def test_evidence_comparison_base_sha_null_without_previous(check, l1):
+    """No previous contract -> comparison_base_sha is null in evidence."""
+    import tempfile
+    from pathlib import Path
+
+    with tempfile.TemporaryDirectory() as td:
+        backend = Path(td) / "backend"
+        backend.mkdir()
+        result = check.evaluate(Path(td), json.loads(CONTRACT_PATH.read_text()), l1)
+        assert result["comparison_base_sha"] is None
+
+
+def test_evaluate_without_previous_preserves_no_previous_behavior(check, l1):
+    """No-previous path keeps PR-B1 semantics intact."""
+    # Use the real production tree; the candidate contract matches it.
+    result = check.evaluate(
+        PR_B1_WORKTREE, json.loads(CONTRACT_PATH.read_text()), l1
+    )
+    assert result["result"] in ("PASS", "RATCHET_REQUIRED"), (
+        f"unexpected result {result['result']!r}"
+    )
+    assert result["previous_contract_payload_sha256"] is None
+    assert result["comparison_base_sha"] is None
+
+
+# ===========================================================================
+# PR-B3: hardened input-file reads (clean rc 1, no traceback)
+# ===========================================================================
+
+
+def test_cli_candidate_missing_file_cleanc_rc1(tmp_path):
+    """Missing --contract file must produce rc 1 with a clear message, no
+    Python traceback."""
+    import subprocess
+
+    proc = subprocess.run(
+        [
+            str(PR_B1_WORKTREE / "backend" / "venv" / "bin" / "python"),
+            "-I",
+            str(CHECK_PATH),
+            "--root",
+            str(PR_B1_WORKTREE),
+            "--contract",
+            str(tmp_path / "does_not_exist.json"),
+            "--evidence",
+            str(tmp_path / "evidence.json"),
+        ],
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    assert proc.returncode == 1, f"stdout={proc.stdout}\nstderr={proc.stderr}"
+    assert "Traceback" not in proc.stderr
+    assert "FAIL:" in proc.stdout
+
+
+def test_cli_candidate_malformed_json_cleanc_rc1(tmp_path):
+    """Malformed candidate JSON must produce rc 1 without a traceback."""
+    import subprocess
+
+    bad = tmp_path / "bad.json"
+    bad.write_text("{ this is not json")
+    proc = subprocess.run(
+        [
+            str(PR_B1_WORKTREE / "backend" / "venv" / "bin" / "python"),
+            "-I",
+            str(CHECK_PATH),
+            "--root",
+            str(PR_B1_WORKTREE),
+            "--contract",
+            str(bad),
+            "--evidence",
+            str(tmp_path / "evidence.json"),
+        ],
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    assert proc.returncode == 1, f"stdout={proc.stdout}\nstderr={proc.stderr}"
+    assert "Traceback" not in proc.stderr
+    assert "not valid JSON" in proc.stdout
+
+
+def test_cli_previous_missing_file_cleanc_rc1(tmp_path):
+    """Missing --previous-contract file must produce rc 1 without a traceback."""
+    import subprocess
+
+    proc = subprocess.run(
+        [
+            str(PR_B1_WORKTREE / "backend" / "venv" / "bin" / "python"),
+            "-I",
+            str(CHECK_PATH),
+            "--root",
+            str(PR_B1_WORKTREE),
+            "--contract",
+            str(CONTRACT_PATH),
+            "--previous-contract",
+            str(tmp_path / "missing_prev.json"),
+            "--comparison-base-sha",
+            "0" * 40,
+            "--evidence",
+            str(tmp_path / "evidence.json"),
+        ],
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    assert proc.returncode == 1, f"stdout={proc.stdout}\nstderr={proc.stderr}"
+    assert "Traceback" not in proc.stderr
+    assert "FAIL:" in proc.stdout
+
+
+def test_cli_previous_malformed_json_cleanc_rc1(tmp_path):
+    """Malformed --previous-contract JSON must produce rc 1 without a traceback."""
+    import subprocess
+
+    bad = tmp_path / "bad_prev.json"
+    bad.write_text("not-json-at-all")
+    proc = subprocess.run(
+        [
+            str(PR_B1_WORKTREE / "backend" / "venv" / "bin" / "python"),
+            "-I",
+            str(CHECK_PATH),
+            "--root",
+            str(PR_B1_WORKTREE),
+            "--contract",
+            str(CONTRACT_PATH),
+            "--previous-contract",
+            str(bad),
+            "--comparison-base-sha",
+            "0" * 40,
+            "--evidence",
+            str(tmp_path / "evidence.json"),
+        ],
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    assert proc.returncode == 1, f"stdout={proc.stdout}\nstderr={proc.stderr}"
+    assert "Traceback" not in proc.stderr
+    assert "not valid JSON" in proc.stdout

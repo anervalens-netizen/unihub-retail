@@ -472,7 +472,7 @@ jobs:
         run: |
           "$RETAIL_NODE" "$RETAIL_NPM_CLI" run lint
 
-      - name: Frontend unit tests without coverage (vitest run)
+      - name: Frontend unit tests with coverage (vitest run)
         if: github.event_name == 'pull_request'
         working-directory: .
         env:
@@ -547,14 +547,36 @@ jobs:
             [[ "$force_full" -eq 1 ]] && break
           done <<< "$DIFF_FILES"
           if [[ "$force_full" -eq 1 ]]; then
-            echo "test infrastructure changed ($matched); running FULL vitest"
-            "$RETAIL_NODE" "$RETAIL_NPM_CLI" run test
+            echo "test infrastructure changed ($matched); running FULL vitest with coverage"
+            "$RETAIL_NODE" "$RETAIL_NPM_CLI" run test:coverage
           else
-            echo "no test infrastructure change; running AFFECTED vitest"
-            "$RETAIL_NODE" "$RETAIL_NPM_CLI" run test -- \
+            echo "no test infrastructure change; running AFFECTED vitest with coverage"
+            "$RETAIL_NODE" "$RETAIL_NPM_CLI" run test:coverage -- \
               --changed="$MERGE_BASE" \
               --passWithNoTests
           fi
+
+      - name: Frontend changed-line coverage gate
+        if: github.event_name == 'pull_request'
+        working-directory: .
+        env:
+          RETAIL_NODE: /opt/codex-desktop/resources/node-runtime/bin/node
+          RETAIL_NPM_CLI: /opt/codex-desktop/resources/node-runtime/lib/node_modules/npm/bin/npm-cli.js
+          PATH: /opt/codex-desktop/resources/node-runtime/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          GITHUB_WORKSPACE: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          MERGE_BASE="$(git -C "$GITHUB_WORKSPACE" merge-base "$PR_BASE_SHA" HEAD)"
+          git fetch --no-tags --depth=1 origin "$MERGE_BASE"
+          if [[ ! -s coverage/frontend/lcov.info ]]; then
+            echo "::error::expected coverage/frontend/lcov.info from previous vitest step; missing or empty"
+            exit 1
+          fi
+          /usr/bin/python3.12 -I -S scripts/check_changed_line_coverage.py \
+            --base "$MERGE_BASE" \
+            --frontend-lcov coverage/frontend/lcov.info \
+            --minimum 80
 
       - name: Build
         working-directory: .
@@ -812,19 +834,104 @@ jobs:
             81925c0995b5c1427b5d538e6a90ca2fdc4daffb786b09af749beaf7369d4e90
           "$node_base" scripts/check_dependency_policy.mjs
 
+      - name: Resolve exact-main comparison base
+        if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+        working-directory: .
+        env:
+          GITHUB_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          FIRST_PARENT="$(git rev-parse "${GITHUB_SHA}^1")"
+          if ! printf '%s' "$FIRST_PARENT" | grep -Eq '^[0-9a-f]{40}$'; then
+            echo "::error::exact-main FIRST_PARENT is not a 40-char hex SHA: $FIRST_PARENT"
+            exit 1
+          fi
+          git fetch --no-tags --depth=1 origin "$FIRST_PARENT"
+          {
+            echo "EXACT_MAIN_FIRST_PARENT=$FIRST_PARENT"
+          } >> "$GITHUB_ENV"
+
       - name: Python complexity ratchet
         working-directory: .
         run: backend/venv/bin/python -I scripts/check_complexity_ratchet.py
 
-      - name: Changed-function complexity gate
+      - name: Changed-function complexity gate (exact-main)
+        if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+        working-directory: .
+        env:
+          EXACT_MAIN_FIRST_PARENT: ${{ env.EXACT_MAIN_FIRST_PARENT }}
+        run: |
+          test -n "$EXACT_MAIN_FIRST_PARENT"
+          printf '%s' "$EXACT_MAIN_FIRST_PARENT" | grep -Eq '^[0-9a-f]{40}$'
+          backend/venv/bin/python -I scripts/check_changed_function_complexity.py \
+            --base "$EXACT_MAIN_FIRST_PARENT" --maximum 20
+
+      - name: v2 complexity contract gate (PR)
         if: github.event_name == 'pull_request'
         working-directory: .
         env:
-          COMPLEXITY_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          GITHUB_SHA: ${{ github.sha }}
         run: |
-          git fetch --no-tags --depth=1 origin "$COMPLEXITY_BASE_SHA"
-          backend/venv/bin/python -I scripts/check_changed_function_complexity.py \
-            --base "$COMPLEXITY_BASE_SHA" --maximum 20
+          set -euo pipefail
+          git fetch --no-tags --depth=1 origin "$PR_BASE_SHA"
+          PREVIOUS="$(mktemp -t release-b-prev-XXXXXX.json)"
+          if ! git show "$PR_BASE_SHA:scripts/python-complexity-contract-v2.json" >"$PREVIOUS" 2>/tmp/release-b-prev.err; then
+            cat /tmp/release-b-prev.err >&2 || true
+            echo "::error::previous v2 contract unavailable at $PR_BASE_SHA (PR base must already contain v2)"
+            exit 1
+          fi
+          mkdir -p "test-results/closure/$GITHUB_SHA/release-b"
+          backend/venv/bin/python -I scripts/check_python_complexity_contract.py \
+            --root . \
+            --contract scripts/python-complexity-contract-v2.json \
+            --previous-contract "$PREVIOUS" \
+            --comparison-base-sha "$PR_BASE_SHA" \
+            --event-name pull_request \
+            --evidence "test-results/closure/$GITHUB_SHA/release-b/python-complexity-contract-v2.json"
+
+      - name: v2 complexity contract gate (exact-main)
+        if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+        working-directory: .
+        env:
+          EXACT_MAIN_FIRST_PARENT: ${{ env.EXACT_MAIN_FIRST_PARENT }}
+          GITHUB_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          test -n "$EXACT_MAIN_FIRST_PARENT"
+          printf '%s' "$EXACT_MAIN_FIRST_PARENT" | grep -Eq '^[0-9a-f]{40}$'
+          PREVIOUS="$(mktemp -t release-b-prev-XXXXXX.json)"
+          if ! git show "$EXACT_MAIN_FIRST_PARENT:scripts/python-complexity-contract-v2.json" >"$PREVIOUS" 2>/tmp/release-b-prev.err; then
+            cat /tmp/release-b-prev.err >&2 || true
+            echo "::error::previous v2 contract unavailable at $EXACT_MAIN_FIRST_PARENT (FIRST_PARENT must already contain v2)"
+            exit 1
+          fi
+          mkdir -p "test-results/closure/$GITHUB_SHA/release-b"
+          backend/venv/bin/python -I scripts/check_python_complexity_contract.py \
+            --root . \
+            --contract scripts/python-complexity-contract-v2.json \
+            --previous-contract "$PREVIOUS" \
+            --comparison-base-sha "$EXACT_MAIN_FIRST_PARENT" \
+            --event-name workflow_dispatch \
+            --evidence "test-results/closure/$GITHUB_SHA/release-b/python-complexity-contract-v2.json"
+
+      - name: Upload Release-B complexity contract trace (PR)
+        if: github.event_name == 'pull_request' && success()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: retail-pr-b-complexity-${{ github.sha }}
+          path: test-results/closure/${{ github.sha }}/release-b/
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload Release-B complexity contract evidence (exact-main)
+        if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && success()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: retail-release-b-complexity-${{ github.sha }}
+          path: test-results/closure/${{ github.sha }}/release-b/
+          if-no-files-found: error
+          retention-days: 14
 
       - name: Backend architecture boundaries
         working-directory: .
@@ -968,14 +1075,15 @@ jobs:
         working-directory: .
         run: backend/venv/bin/python -I scripts/run_targeted_mutation_tests.py
 
-      - name: Backend changed-line coverage gate
-        if: github.event_name == 'pull_request'
+      - name: Backend changed-line coverage gate (exact-main)
+        if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
         env:
-          COVERAGE_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          EXACT_MAIN_FIRST_PARENT: ${{ env.EXACT_MAIN_FIRST_PARENT }}
         run: |
-          git fetch --no-tags --depth=1 origin "$COVERAGE_BASE_SHA"
+          test -n "$EXACT_MAIN_FIRST_PARENT"
+          printf '%s' "$EXACT_MAIN_FIRST_PARENT" | grep -Eq '^[0-9a-f]{40}$'
           venv/bin/python -I ../scripts/check_changed_line_coverage.py \
-            --base "$COVERAGE_BASE_SHA" \
+            --base "$EXACT_MAIN_FIRST_PARENT" \
             --backend-json global-coverage.json \
             --minimum 80
 
@@ -1019,6 +1127,22 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0
           fetch-tags: true
+
+      - name: Resolve exact-main comparison base
+        working-directory: .
+        env:
+          GITHUB_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          FIRST_PARENT="$(git rev-parse "${GITHUB_SHA}^1")"
+          if ! printf '%s' "$FIRST_PARENT" | grep -Eq '^[0-9a-f]{40}$'; then
+            echo "::error::exact-main FIRST_PARENT is not a 40-char hex SHA: $FIRST_PARENT"
+            exit 1
+          fi
+          git fetch --no-tags --depth=1 origin "$FIRST_PARENT"
+          {
+            echo "EXACT_MAIN_FIRST_PARENT=$FIRST_PARENT"
+          } >> "$GITHUB_ENV"
 
       - name: Verify pinned Node.js and npm
         run: |
@@ -1068,14 +1192,15 @@ jobs:
         run: |
           "$RETAIL_NODE" "$RETAIL_NPM_CLI" run test:coverage
 
-      - name: Changed-line coverage gate
-        if: github.event_name == 'pull_request'
+      - name: Changed-line coverage gate (exact-main)
+        if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
         env:
-          COVERAGE_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          EXACT_MAIN_FIRST_PARENT: ${{ env.EXACT_MAIN_FIRST_PARENT }}
         run: |
-          git fetch --no-tags --depth=1 origin "$COVERAGE_BASE_SHA"
+          test -n "$EXACT_MAIN_FIRST_PARENT"
+          printf '%s' "$EXACT_MAIN_FIRST_PARENT" | grep -Eq '^[0-9a-f]{40}$'
           /usr/bin/python3.12 -I -S scripts/check_changed_line_coverage.py \
-            --base "$COVERAGE_BASE_SHA" \
+            --base "$EXACT_MAIN_FIRST_PARENT" \
             --frontend-lcov coverage/frontend/lcov.info \
             --minimum 80
 
@@ -1184,6 +1309,22 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0
           fetch-tags: true
+
+      - name: Resolve exact-main comparison base
+        working-directory: .
+        env:
+          GITHUB_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          FIRST_PARENT="$(git rev-parse "${GITHUB_SHA}^1")"
+          if ! printf '%s' "$FIRST_PARENT" | grep -Eq '^[0-9a-f]{40}$'; then
+            echo "::error::exact-main FIRST_PARENT is not a 40-char hex SHA: $FIRST_PARENT"
+            exit 1
+          fi
+          git fetch --no-tags --depth=1 origin "$FIRST_PARENT"
+          {
+            echo "EXACT_MAIN_FIRST_PARENT=$FIRST_PARENT"
+          } >> "$GITHUB_ENV"
 
       - name: Verify pinned Node.js and npm
         run: |
