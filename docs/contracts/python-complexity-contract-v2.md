@@ -275,7 +275,7 @@ PR-B2 already consumed the L1 module into the changed-function gate.
 That is the reconciliation of overlapping AST authority; PR-B3 makes
 the three tiers explicit in this document.
 
-All six files
+All seven files
 (`scripts/check_python_complexity_contract.py`,
 `scripts/_python_complexity.py`,
 `scripts/python-complexity-contract-v2.json`,
@@ -339,16 +339,40 @@ impossible to detect cleanly.
 
 ## Relation to PR-B2 (incremental gate)
 
-PR-B2 will replace
+PR-B2 already replaced
 [`scripts/check_changed_function_complexity.py`](../../scripts/check_changed_function_complexity.py)'s
-inline scoring with calls into the same L1 module, and add the
-`--no-renames` rename escape fix and the strict-improvement rule for
-existing touched functions. It will not change the threshold for
-new functions in PR-B1; that alignment (new-function maximum stays
-at 19) is already enforced by the v2 contract.
+inline scoring with calls into the same L1 module
+[`scripts/_python_complexity.py`](../../scripts/_python_complexity.py)
+and added the `--no-renames` rename-escape fix and the
+strict-improvement rule for existing touched functions. PR-B2 did not
+change the threshold for new functions in PR-B1; that alignment
+(new-function maximum stays at 19) is already enforced by the v2
+contract above.
 
-PR-B2 will also use the L1 transition validator for the changed-line
-gate.
+PR-B2 also added the `scripts/check_changed_line_coverage.py`
+gate as a separate coverage-domain gate with its own active-coverage-lane
+semantics, fail-closed missing/malformed report rules, and `--no-renames`
+rename safety. **This coverage gate does NOT consume the Python
+complexity L1 implementation.** It is a coverage-domain gate, not an
+AST-domain gate, and it has its own parser (coverage.py JSON / LCOV).
+The single-source-of-truth AST algorithm remains
+`scripts/_python_complexity.py`, consumed only by the contract
+checker (tier 1) and by the changed-function precheck (tier 2).
+
+In the authority hierarchy above:
+
+- The authoritative full-tree AST invariant remains
+  `scripts/check_python_complexity_contract.py` with the v2 contract
+  threshold pinned at 19.
+- The incremental per-PR precheck remains
+  `scripts/check_changed_function_complexity.py`, now consuming the
+  shared L1 module and using its CURRENT `--maximum 20` semantics.
+- `scripts/check_changed_line_coverage.py` remains a separate
+  coverage-domain gate that does not participate in the complexity
+  authority hierarchy.
+
+No threshold, no algorithm, and no policy is altered by this
+clarification; it merely describes the post-PR-B2 state accurately.
 
 ## Relation to the size/length ratchet
 
