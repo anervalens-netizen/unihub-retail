@@ -4,9 +4,9 @@
 This script is the PRODUCTION slice of the B3/E2 selector proof. It decides
 which backend pytest test nodes must run for a pull request, given:
 
-  * the exact repository state (`--root`, default: script's parent),
-  * the base commit (`--base`),
-  * the optional `HEAD` tree (default: working tree).
+  * the exact repository state (--root, default: script's parent),
+  * the base commit reference (--base, resolved to a full SHA),
+  * the current HEAD at --root (resolved to a full SHA).
 
 It is intentionally self-contained: there is no cache, no testmon, no
 previous-run state, no filename-only authority, no network. It reuses
@@ -20,9 +20,10 @@ Four-state contract:
     ESCALATION_REQUIRED         -> exit 2
     ERROR                       -> exit 3
 
-The selector writes canonical JSON to stdout (one object, schema_version=1).
-Human summaries, when needed, go to stderr only. Future CI consumers MUST
-parse the JSON, never the human text.
+The selector writes canonical JSON to stdout (one object, schema_version=1)
+with the resolved base_sha AND head_sha as full 40-character SHAs (never
+short SHAs or branch names). Human summaries, when needed, go to stderr
+only. Future CI consumers MUST parse the JSON, never the human text.
 
 Residual risks documented here (do NOT claim they are solved):
   * F.1  Dynamic-loading code in UNCHANGED files (e.g. importlib.import_module
@@ -34,8 +35,10 @@ Residual risks documented here (do NOT claim they are solved):
         in the composition root would explode the reverse closure; this is
         documented as a coding-rule boundary, not enforced by this script.
 
-This is the B3a slice only. Wiring `pr-fast` and the future `PR-DEEP`
-workflow happens in PR-B3b in a separate, additive change.
+This is the B3a slice only. PR-B3b will wire `pr-fast` and the future
+`PR-DEEP` workflow in a separate, additive change. PR-B3b is responsible
+for checkout-ing the exact intended HEAD before invoking this script; the
+selector itself does NOT take a working-tree argument.
 """
 from __future__ import annotations
 
@@ -73,8 +76,6 @@ EXIT_ERROR = 3
 
 BACKEND_ROOT_NAME = "backend"
 BACKEND_TREE_SUBDIRS_TO_SKIP = ("/venv/", "/__pycache__/", "/scripts/", "/tests/")
-PROD_SUBDIRS_TO_COLLECT = ("services", "routers", "repositories", "schemas",
-                           "grile", "domain", "observability", "db")
 
 
 # ---------------------------------------------------------------------------
@@ -105,6 +106,13 @@ def _load_pr_b2_gate():
 
 @dataclasses.dataclass
 class SelectedTest:
+    """A runnable test that exists at HEAD and can be executed by pytest.
+
+    `file` is the authoritative repo-relative path the CI caller will pass
+    to pytest. `node_id` is informational/stably-named; consumers MUST
+    NOT assume it is a valid pytest selector unless they explicitly
+    opt into dotted-node collection (we currently do not).
+    """
     node_id: str
     file: str
     reasons: list
@@ -135,7 +143,10 @@ class EscalationReason:
 class SelectionResult:
     state: str
     base: str
+    head: str
     eligible_changed: list = dataclasses.field(default_factory=list)
+    changed_tests: list = dataclasses.field(default_factory=list)
+    deleted_production: list = dataclasses.field(default_factory=list)
     impacted_production: list = dataclasses.field(default_factory=list)
     selected_tests: list = dataclasses.field(default_factory=list)
     selection_count: int = 0
@@ -149,11 +160,10 @@ class SelectionResult:
             "schema_version": SCHEMA_VERSION,
             "state": self.state,
             "base_sha": self.base,
+            "head_sha": self.head,
             "eligible_changed": list(self.eligible_changed),
-            "changed_tests": [
-                t.file for t in self.selected_tests
-                if any("self_change" in r for r in t.reasons)
-            ],
+            "changed_tests": list(self.changed_tests),
+            "deleted_production": list(self.deleted_production),
             "impacted_production": list(self.impacted_production),
             "selected_tests": [t.to_dict() for t in self.selected_tests],
             "selection_count": self.selection_count,
@@ -201,10 +211,8 @@ def _file_to_module(rel_path: str) -> str | None:
         return None
     rel = rel_path[len(BACKEND_ROOT_NAME) + 1:]
     parts = rel.split("/")
-    # Drop __pycache__ / venv / scripts / tests as a defense in depth
     if any(p in ("__pycache__", "venv", "scripts", "tests") for p in parts):
         return None
-    # Drop __init__ suffix; keep package namespace
     if parts[-1] == "__init__.py":
         parts = parts[:-1]
     elif parts[-1].endswith(".py"):
@@ -216,16 +224,35 @@ def _file_to_module(rel_path: str) -> str | None:
     return ".".join(parts)
 
 
-def _module_candidates(module: str) -> list:
-    """Repo-relative file paths that could correspond to a dotted module.
+def _test_module(rel_path: str) -> str | None:
+    """Map a backend/tests/* path to its dotted pytest-style module name.
 
-    e.g. 'services.foo' -> ['backend/services/foo.py', 'backend/services/foo/__init__.py']
+    backend/tests/test_asm_salary.py        -> 'tests.test_asm_salary'
+    backend/tests/grile/test_x.py           -> 'tests.grile.test_x'
+    backend/tests/__init__.py               -> 'tests'
     """
-    dotted = module.replace(".", "/")
-    return [
-        f"{BACKEND_ROOT_NAME}/{dotted}.py",
-        f"{BACKEND_ROOT_NAME}/{dotted}/__init__.py",
-    ]
+    if not rel_path.startswith(BACKEND_ROOT_NAME + "/tests/"):
+        return None
+    if not rel_path.endswith(".py"):
+        return None
+    rel = rel_path[len(BACKEND_ROOT_NAME) + 1:]
+    parts = rel.split("/")
+    if any(p == "__pycache__" for p in parts):
+        return None
+    if parts[-1] == "__init__.py":
+        parts = parts[:-1]
+    elif parts[-1].endswith(".py"):
+        parts[-1] = parts[-1][:-3]
+    else:
+        return None
+    if not parts:
+        return None
+    return ".".join(parts)
+
+
+def _is_package_init(rel_path: str) -> bool:
+    """True iff `rel_path` is a `__init__.py` (i.e. a package initializer)."""
+    return rel_path.endswith("/__init__.py")
 
 
 def collect_python_files(root: Path) -> dict:
@@ -249,32 +276,6 @@ def collect_python_files(root: Path) -> dict:
             continue
         file_to_module.setdefault(mod, rel)
     return file_to_module
-
-
-def _test_module(rel_path: str) -> str | None:
-    """Map a backend/tests/* path to its pytest node id.
-
-    backend/tests/test_asm_salary.py        -> 'tests.test_asm_salary'
-    backend/tests/grile/test_x.py           -> 'tests.grile.test_x'
-    backend/tests/__init__.py               -> 'tests'
-    """
-    if not rel_path.startswith(BACKEND_ROOT_NAME + "/tests/"):
-        return None
-    if not rel_path.endswith(".py"):
-        return None
-    rel = rel_path[len(BACKEND_ROOT_NAME) + 1:]
-    parts = rel.split("/")
-    if any(p == "__pycache__" for p in parts):
-        return None
-    if parts[-1] == "__init__.py":
-        parts = parts[:-1]
-    elif parts[-1].endswith(".py"):
-        parts[-1] = parts[-1][:-3]
-    else:
-        return None
-    if not parts:
-        return None
-    return ".".join(parts)
 
 
 def collect_test_files(root: Path) -> dict:
@@ -302,15 +303,6 @@ def collect_test_files(root: Path) -> dict:
 # ---------------------------------------------------------------------------
 
 
-def _snippet(node: ast.AST) -> str:
-    """Best-effort source snippet for diagnostics. Safe on unparseable nodes."""
-    try:
-        text = ast.unparse(node)
-    except Exception:
-        return "<unparseable>"
-    return text.splitlines()[0][:120]
-
-
 def _is_dynamic_call(node: ast.Call) -> bool:
     """Return True if the AST Call node looks like a dynamic loader.
 
@@ -322,8 +314,6 @@ def _is_dynamic_call(node: ast.Call) -> bool:
     func = node.func
     if isinstance(func, ast.Attribute):
         if func.attr == "import_module":
-            # importlib.import_module OR <x>.import_module (we trust the
-            # latter only when <x> is the literal name 'importlib').
             value = func.value
             if isinstance(value, ast.Name) and value.id == "importlib":
                 return True
@@ -340,111 +330,156 @@ def _is_dynamic_call(node: ast.Call) -> bool:
     return False
 
 
-def _resolve_relative_unsafe(level: int, module: str | None,
-                             current_parts: list) -> tuple:
+def _current_relative_parts(rel_path: str, current_module: str) -> list:
+    """Return the parts list used by relative-import resolution.
+
+    For a normal module file (e.g. backend/a/b/c.py -> current_module 'a.b.c')
+    the parts are the dotted module split on '.': ['a', 'b', 'c'].
+
+    For a PACKAGE INITIALIZER file (e.g. backend/a/b/__init__.py -> current_module
+    'a.b'), Python's __name__ is still 'a.b' but the file conceptually
+    occupies the deepest position of the package. We extend the parts with
+    a sentinel so that level-1 relatives resolve to the package itself,
+    matching Python's actual import semantics for a package init file.
+    Without this sentinel, level-1 in a/b/__init__.py would resolve to
+    `a` (the parent of package a.b), which silently misroutes edge cases
+    like facade re-exports from package init files.
+    """
+    parts = current_module.split(".") if current_module else []
+    if _is_package_init(rel_path):
+        # Match Python: __init__.py is one logical level deeper than its
+        # dotted package name; level-1 relatives resolve to the package
+        # itself, not to its parent.
+        if not parts or parts[-1] != "__init__":
+            parts = parts + ["__init__"]
+    return parts
+
+
+def _resolve_relative(level: int, module: str | None,
+                      current_parts: list) -> tuple:
     """Resolve a relative import to a dotted module name.
 
     Returns (resolved_module_or_None, safe_bool).
-    `safe_bool == False` means the resolver could not safely determine a
-    unique in-tree target. Callers MUST treat unsafe results as
-    ESCALATION_REQUIRED (or ERROR, depending on the surrounding invariant).
+    safe_bool == False means the resolver could not safely determine a
+    unique in-tree target. Callers MUST treat unsafe results as a
+    dynamic-import trust violation (ESCALATION_REQUIRED).
 
     Semantics (validated corrected from the prototype):
-        level 1, current = a.b.c -> parent (a.b) ; module X -> a.b.X
-        level 2, current = a.b.c -> parent (a)   ; module X -> a.X
-        level >= len(current_parts): beyond-root  -> (None, False)
-        level < 1: not a relative import          -> (None, False)
+        level 1, current = a.b.c       -> drop c, base = a.b
+        level 2, current = a.b.c       -> drop c,b, base = a
+        level 3, current = a.b.c       -> beyond root -> (None, False)
+        level == len(parts)            -> beyond root -> (None, False)
+        level >  len(parts)            -> beyond root -> (None, False)
+        level < 1                      -> (None, False)
     """
     if level < 1:
         return None, False
     if level >= len(current_parts):
         return None, False
     base = current_parts[: len(current_parts) - level]
+    if not base:
+        # `from . import x` at a top-level package init: base is empty;
+        # the resolved name is the alias name (no parent prefix).
+        if module:
+            return module, True
+        return None, False
     if module:
         return ".".join(base + [module]), True
     return ".".join(base), True
 
 
-def _is_known_import(name: str, module_to_files: dict) -> bool:
-    """Decide if an imported name maps to a known module in this tree.
+def _all_known_prefixes(dotted: str, known: set) -> list:
+    """Return [dotted, dotted[:-1], dotted[:-2], ..., first-segment] for
+    every prefix that exists in `known`. Order: longest first.
 
-    Imports starting with 'services.', 'routers.', etc. are local if the
-    corresponding file exists. We do NOT absolutize: the backend tree uses
-    its parent on sys.path (see backend/tests/conftest.py), so a bare
-    'foo' could be an installed package or a backend sibling. We treat
-    'foo' as known only if there is a backend file for it AND it is not
-    also a stdlib / common third-party name (the latter is impossible to
-    decide deterministically without an importer; the gate's
-    eligibility is the safer authority).
+    Used to record the full import chain so that Python's package
+    __init__.py execution order is preserved in the static graph.
     """
-    return name in module_to_files
+    out: list = []
+    cur = dotted
+    while cur:
+        if cur in known and cur not in out:
+            out.append(cur)
+        if "." not in cur:
+            break
+        cur = cur.rsplit(".", 1)[0]
+    return out
 
 
 def parse_imports(source: str, current_module: str,
+                  rel_path: str,
                   module_to_files: dict) -> tuple:
     """Return (set of known imported backend module names, has_dynamic_import).
 
+    `rel_path` is needed so we can apply correct Python relative-import
+    semantics for `__init__.py` package initializer files vs. normal
+    module files.
+
     Modules outside the backend tree (e.g. fastapi, asyncpg) are ignored.
     Only imports that resolve to a file in our tree (forward-graph edges)
-    are returned. Star imports (`from x import *`) are preserved as a
-    single edge to x and flagged via has_star_import.
+    are returned.
+
+    For `import x.y.z` style imports, we record the full dotted name plus
+    every known ancestor prefix so package __init__.py execution order
+    is honored.
     """
     tree = ast.parse(source)
     known: set = set()
     has_dynamic_import = False
-    has_star_import = False
-    current_parts = current_module.split(".") if current_module else []
+    current_parts = _current_relative_parts(rel_path, current_module)
+
+    def add_dotted(dotted: str) -> None:
+        if not dotted:
+            return
+        # Record full dotted name + every known ancestor prefix.
+        for prefix in _all_known_prefixes(dotted, module_to_files):
+            known.add(prefix)
 
     def visit(node: ast.AST) -> None:
-        nonlocal has_dynamic_import, has_star_import
+        nonlocal has_dynamic_import
         if isinstance(node, ast.Import):
             for alias in node.names:
-                top = alias.name.split(".")[0]
-                if _is_known_import(top, module_to_files):
-                    known.add(top)
+                # Normal `import x.y.z` (with optional `as` alias).
+                # The dotted module name is what Python imports; the
+                # `asname` is irrelevant for graph construction.
+                add_dotted(alias.name)
             return
         if isinstance(node, ast.ImportFrom):
             level = node.level or 0
             if level > 0:
-                resolved, safe = _resolve_relative_unsafe(
+                resolved, safe = _resolve_relative(
                     level, node.module, current_parts,
                 )
                 if not safe:
-                    # Mark as dynamic so the caller escalates; we treat a
-                    # relative beyond-root or unsafe as dynamic for the
-                    # purposes of trust.
                     has_dynamic_import = True
                     return
-                target = resolved
+                target_pkg = resolved
             else:
-                target = node.module
-            if not target:
-                # `from . import X` style with no module name is treated as
-                # a package import — the resolved name is the parent
-                # package (see _resolve_relative_unsafe, module=None).
-                if level > 0:
-                    for child in current_parts:
-                        pass  # already resolved
+                target_pkg = node.module
+            if not target_pkg and not node.names:
                 return
-            # Walk the alias list; only add names that resolve in-tree.
-            top = target.split(".")[0]
-            if not _is_known_import(top, module_to_files):
-                # Module not in our tree — ignore; treat whole stmt as
-                # external.
-                return
+            # Walk alias list. For `from X import a, b` we record X plus
+            # any X.a / X.b submodules that exist in our tree (so facade
+            # re-exports propagate).
             for alias in node.names:
                 if alias.name == "*":
-                    has_star_import = True
-                    known.add(target)
+                    # Star import — record the target package itself.
+                    if target_pkg:
+                        add_dotted(target_pkg)
                     continue
-                # A 'from x.y import z' edge is x.y; if z is a submodule
-                # that also exists in our tree, we add x.y.z too (so
-                # facades re-exporting from submodules still propagate).
-                edge = f"{target}.{alias.name}"
-                if _is_known_import(edge, module_to_files):
-                    known.add(edge)
+                if target_pkg:
+                    # `from X.Y import Z` -> edge X.Y + edge X.Y.Z if Z is
+                    # itself an in-tree submodule.
+                    add_dotted(target_pkg)
+                    if alias.name != "*":
+                        # `from . import X` style (level>0, no module):
+                        # alias.name is the submodule to import.
+                        edge = f"{target_pkg}.{alias.name}"
+                        add_dotted(edge)
                 else:
-                    known.add(target)
+                    # `from . import X` style with module=None:
+                    # target is the alias name itself (no parent prefix).
+                    add_dotted(alias.name)
             return
         if isinstance(node, ast.Call) and _is_dynamic_call(node):
             has_dynamic_import = True
@@ -453,7 +488,7 @@ def parse_imports(source: str, current_module: str,
             visit(child)
 
     visit(tree)
-    return known, has_dynamic_import, has_star_import
+    return known, has_dynamic_import
 
 
 # ---------------------------------------------------------------------------
@@ -465,26 +500,22 @@ def build_graph(root: Path) -> tuple:
     """Build the forward static-import graph over the backend production tree.
 
     Returns (file_to_module, prod_forward_edges, test_file_to_module,
-             dynamic_files, star_files).
+             dynamic_files).
       * file_to_module: {module: rel_path} for production files
       * prod_forward_edges: {module: set(imported_modules)} for production
       * test_file_to_module: {test_module: rel_path} for backend/tests/*
       * dynamic_files: set(rel_path) of files that contain dynamic loaders
-      * star_files: set(rel_path) of files that contain star imports
 
     Test files are indexed separately and are NOT part of the production
     reverse-closure graph; they are consumers of production modules only.
     """
     file_to_module = collect_python_files(root)
     test_file_to_module = collect_test_files(root)
-    # The combined module -> file map used by parse_imports so that test
-    # imports of prod modules (and vice-versa) both resolve.
     combined = dict(file_to_module)
     combined.update(test_file_to_module)
 
     forward: dict = {m: set() for m in file_to_module}
     dynamic_files: set = set()
-    star_files: set = set()
 
     for module, rel in file_to_module.items():
         try:
@@ -492,38 +523,31 @@ def build_graph(root: Path) -> tuple:
         except OSError:
             continue
         try:
-            edges, has_dyn, has_star = parse_imports(
-                source, module, combined,
+            edges, has_dyn = parse_imports(
+                source, module, rel, combined,
             )
         except SyntaxError:
-            # Unparseable production file -> escalate (not the gate's job).
             dynamic_files.add(rel)
             continue
         forward[module].update(edges)
         if has_dyn:
             dynamic_files.add(rel)
-        if has_star:
-            star_files.add(rel)
 
-    # Also scan test files for dynamic loaders so dynamic detection is
-    # complete (the gate caller can then decide per policy).
     for test_module, rel in test_file_to_module.items():
         try:
             source = (root / rel).read_text(encoding="utf-8", errors="replace")
         except OSError:
             continue
         try:
-            _, has_dyn, has_star = parse_imports(
-                source, test_module, combined,
+            _, has_dyn = parse_imports(
+                source, test_module, rel, combined,
             )
         except SyntaxError:
             continue
         if has_dyn:
             dynamic_files.add(rel)
-        if has_star:
-            star_files.add(rel)
 
-    return file_to_module, forward, test_file_to_module, dynamic_files, star_files
+    return file_to_module, forward, test_file_to_module, dynamic_files
 
 
 def reverse_prod_graph(forward: dict) -> dict:
@@ -552,119 +576,7 @@ def reverse_closure(starts: Iterable[str], reverse: dict) -> set:
 
 
 # ---------------------------------------------------------------------------
-# Changed-path classification (escalation surface)
-# ---------------------------------------------------------------------------
-
-EXACT_ESCALATION_PATHS = frozenset({
-    "backend/conftest.py",
-    "backend/tests/conftest.py",
-    "requirements.txt",
-    "requirements.lock",
-    "backend/requirements.txt",
-    "backend/requirements.lock",
-    "backend/requirements-dev.txt",
-    "backend/requirements-dev.lock",
-    "backend/architecture_contract.json",
-})
-
-_PREFIX_ESCALATION_PATTERNS = (
-    re.compile(r"^backend/tests/conftest\..+\.py$"),
-    re.compile(r"^backend/.+/conftest\.py$"),
-    re.compile(r"^conftest\.py$"),
-    re.compile(r"^backend/venv/.*"),
-    re.compile(r"^scripts/prototype_b3e2_selector/"),
-    re.compile(r"^scripts/pr_fast_select_tests\.py$"),
-    re.compile(r"^scripts/check_changed_function_complexity\.py$"),
-    re.compile(r"^scripts/check_changed_line_coverage\.py$"),
-    re.compile(r"^scripts/_python_complexity\.py$"),
-    re.compile(r"^scripts/check_complexity_ratchet\.py$"),
-    re.compile(r"^scripts/python-complexity-contract-v2\.json$"),
-    re.compile(r"^scripts/complexity-ratchet\.json$"),
-    re.compile(r"^scripts/frontend-critical-coverage\.json$"),
-    re.compile(r"^scripts/structural-characterization-baseline-v1\.json$"),
-    re.compile(r"^scripts/target-mutation-contract-v2\.json$"),
-    re.compile(r"^ops/systemd/"),
-    re.compile(r"^ops/caddy/"),
-    re.compile(r"^\.github/workflows/"),
-    re.compile(r"^\.github/governance/"),
-    re.compile(r"^\.github/dependabot\.yml$"),
-)
-
-_CONFTEST_DETAIL = "pytest conftest affects every test"
-_DEPENDENCY_DETAIL = "dependency change can invalidate the import graph"
-_ARCHITECTURE_DETAIL = "architecture contract rewires service/repo classification"
-_GATE_DETAIL = "this script is the changed-line gate itself"
-_WIRING_DETAIL = "wiring/composition root invalidates the static graph"
-_SELECTOR_DETAIL = "change invalidates the selector under test"
-_VENV_DETAIL = "venv must never be in the diff"
-
-
-def _classify_path(rel_path: str) -> EscalationReason | None:
-    if rel_path in EXACT_ESCALATION_PATHS:
-        name = Path(rel_path).name
-        if name == "conftest.py" or name.startswith("conftest"):
-            return EscalationReason("conftest", rel_path, _CONFTEST_DETAIL)
-        if name.startswith("requirements") or "/requirements" in rel_path:
-            return EscalationReason("dependency_definition", rel_path, _DEPENDENCY_DETAIL)
-        if name == "architecture_contract.json":
-            return EscalationReason("architecture_contract", rel_path, _ARCHITECTURE_DETAIL)
-    base = os.path.basename(rel_path)
-    if base == "conftest.py":
-        return EscalationReason("conftest", rel_path, _CONFTEST_DETAIL)
-    if rel_path.startswith("scripts/check_"):
-        return EscalationReason("gate_authority", rel_path, _GATE_DETAIL)
-    if base == "_python_complexity.py":
-        return EscalationReason("gate_authority", rel_path, _GATE_DETAIL)
-    if rel_path.startswith("backend/") and rel_path.endswith("/composition.py"):
-        return EscalationReason("wiring_root", rel_path, _WIRING_DETAIL)
-    if rel_path == "scripts/pr_fast_select_tests.py":
-        return EscalationReason("selector_self", rel_path, _SELECTOR_DETAIL)
-    if rel_path.startswith("scripts/prototype_b3e2_selector/"):
-        return EscalationReason("selector_self", rel_path, _SELECTOR_DETAIL)
-    if rel_path.startswith("backend/venv/"):
-        return EscalationReason("venv", rel_path, _VENV_DETAIL)
-    for pattern in _PREFIX_ESCALATION_PATTERNS:
-        if pattern.match(rel_path):
-            if pattern.pattern.startswith("^backend/tests/conftest"):
-                return EscalationReason("conftest", rel_path, _CONFTEST_DETAIL)
-            if pattern.pattern.startswith("^backend/.+/conftest"):
-                return EscalationReason("conftest", rel_path, _CONFTEST_DETAIL)
-            if pattern.pattern.startswith("^conftest"):
-                return EscalationReason("conftest", rel_path, _CONFTEST_DETAIL)
-            if pattern.pattern.startswith("^backend/venv"):
-                return EscalationReason("venv", rel_path, _VENV_DETAIL)
-            if pattern.pattern.startswith("^scripts/pr_fast"):
-                return EscalationReason("selector_self", rel_path, _SELECTOR_DETAIL)
-            if "check_" in pattern.pattern:
-                return EscalationReason("gate_authority", rel_path, _GATE_DETAIL)
-            if "_python_complexity" in pattern.pattern:
-                return EscalationReason("gate_authority", rel_path, _GATE_DETAIL)
-            if "complexity-contract" in pattern.pattern or "complexity-ratchet" in pattern.pattern:
-                return EscalationReason("gate_authority", rel_path, _GATE_DETAIL)
-            if ".github/workflows" in pattern.pattern or ".github/governance" in pattern.pattern:
-                return EscalationReason("wiring_root", rel_path, _WIRING_DETAIL)
-            if "dependabot" in pattern.pattern:
-                return EscalationReason("dependency_definition", rel_path, _DEPENDENCY_DETAIL)
-            if "ops/systemd" in pattern.pattern or "ops/caddy" in pattern.pattern:
-                return EscalationReason("wiring_root", rel_path, _WIRING_DETAIL)
-    return None
-
-
-def classify_changed_paths(paths: Iterable[str]) -> list:
-    seen: set = set()
-    out: list = []
-    for p in paths:
-        if p in seen:
-            continue
-        seen.add(p)
-        reason = _classify_path(p)
-        if reason is not None:
-            out.append(reason)
-    return out
-
-
-# ---------------------------------------------------------------------------
-# Diff / eligibility helpers (reuse gate authority)
+# Diff helpers
 # ---------------------------------------------------------------------------
 
 
@@ -680,18 +592,47 @@ def _all_changed_paths(base: str, root: Path) -> list:
 
 
 def _all_deleted_paths(base: str, root: Path) -> list:
-    """Return all D (deleted) paths between base and HEAD."""
+    """Return all D paths deleted between base and HEAD.
+
+    Uses --no-renames so a pure rename (R100) becomes DELETE old +
+    ADD new, and the deleted production path appears here.
+    """
     output = subprocess.check_output(
-        ["git", "diff", "--name-only", "--diff-filter=D", base, "--"],
+        ["git", "diff", "--name-only", "--diff-filter=D", "--no-renames",
+         base, "--"],
         cwd=root,
         text=True,
     )
     return [line for line in output.splitlines() if line]
 
 
-def _validate_base(base: str, root: Path) -> None:
+def _resolve_full_sha(ref: str, root: Path) -> str:
+    """Resolve a git ref (branch/tag/SHA) to a full 40-character SHA.
+
+    Raises subprocess.CalledProcessError if the ref cannot be resolved.
+    """
+    result = subprocess.run(
+        ["git", "rev-parse", "--verify", ref],
+        cwd=root,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return result.stdout.strip()
+
+
+def _head_full_sha(root: Path) -> str:
+    """Resolve HEAD to a full 40-character SHA.
+
+    Raises subprocess.CalledProcessError if HEAD cannot be resolved.
+    """
+    return _resolve_full_sha("HEAD", root)
+
+
+def _validate_base(base_full: str, root: Path) -> None:
+    """Re-verify that the resolved full base is a valid commit object."""
     subprocess.run(
-        ["git", "rev-parse", "--verify", f"{base}^{{" + "commit" + "}}"],
+        ["git", "rev-parse", "--verify", f"{base_full}^{{commit}}"],
         cwd=root,
         check=True,
         stdout=subprocess.PIPE,
@@ -700,16 +641,147 @@ def _validate_base(base: str, root: Path) -> None:
     )
 
 
-def _module_to_path(module: str, file_to_module: dict) -> str | None:
-    return file_to_module.get(module)
+# ---------------------------------------------------------------------------
+# Changed-path classification (escalation surface)
+# ---------------------------------------------------------------------------
+
+EXACT_ESCALATION_PATHS = frozenset({
+    "backend/conftest.py",
+    "backend/tests/conftest.py",
+    "requirements.txt",
+    "requirements.lock",
+    "backend/requirements.txt",
+    "backend/requirements.lock",
+    "backend/requirements-dev.txt",
+    "backend/requirements-dev.lock",
+    "backend/architecture_contract.json",
+    "scripts/check_changed_line_coverage.py",
+    "scripts/check_changed_function_complexity.py",
+    "scripts/_python_complexity.py",
+    "scripts/check_python_complexity_contract.py",
+    "scripts/python-complexity-contract-v2.json",
+    "scripts/python-complexity-contract-v1.json",
+    "scripts/complexity-ratchet.json",
+    "scripts/frontend-critical-coverage.json",
+    "scripts/structural-characterization-baseline-v1.json",
+    "scripts/target-mutation-contract-v2.json",
+    "scripts/check_complexity_ratchet.py",
+    "scripts/pr_fast_select_tests.py",
+    "scripts/check_high_risk_pr_governance.py",
+    "scripts/is_high_risk_category_touched.py",
+})
+
+_PREFIX_ESCALATION_PATTERNS = (
+    (re.compile(r"^backend/tests/conftest\..+\.py$"), "conftest",
+     "pytest conftest affects every test"),
+    (re.compile(r"^backend/.+/conftest\.py$"), "conftest",
+     "pytest conftest affects every test"),
+    (re.compile(r"^conftest\.py$"), "conftest",
+     "pytest conftest affects every test"),
+    (re.compile(r"^backend/venv/.*"), "venv", "venv must never be in the diff"),
+    (re.compile(r"^scripts/prototype_b3e2_selector/"), "selector_self",
+     "change invalidates the selector under test"),
+    (re.compile(r"^scripts/check_high_risk_pr_governance\.py$"),
+     "gate_authority", "this script is the A3 governance checker"),
+    (re.compile(r"^scripts/is_high_risk_category_touched\.py$"),
+     "gate_authority", "this script is the A3 governance helper"),
+    (re.compile(r"^scripts/check_complexity_ratchet\.py$"),
+     "gate_authority",
+     "complexity ratchet is part of gate authority"),
+    (re.compile(r"^scripts/python-complexity-contract"),
+     "gate_authority",
+     "complexity contract config is part of gate authority"),
+    (re.compile(r"^scripts/complexity-ratchet\.json$"),
+     "gate_authority",
+     "complexity ratchet baseline is part of gate authority"),
+    (re.compile(r"^scripts/frontend-critical-coverage\.json$"),
+     "gate_authority",
+     "frontend critical coverage baseline is part of gate authority"),
+    (re.compile(r"^scripts/structural-characterization-baseline-v1\.json$"),
+     "gate_authority",
+     "structural characterization baseline is part of gate authority"),
+    (re.compile(r"^scripts/target-mutation-contract-v2\.json$"),
+     "gate_authority",
+     "target mutation contract is part of gate authority"),
+    (re.compile(r"^ops/systemd/"), "wiring_root",
+     "systemd / deployment wiring invalidates the static graph"),
+    (re.compile(r"^ops/caddy/"), "wiring_root",
+     "caddy / deployment wiring invalidates the static graph"),
+    (re.compile(r"^\.github/workflows/"), "wiring_root",
+     "runner workflow changes invalidate CI topology trust"),
+    (re.compile(r"^\.github/governance/"), "wiring_root",
+     "governance manifest changes invalidate A3 classification"),
+    (re.compile(r"^\.github/dependabot\.yml$"), "dependency_definition",
+     "dependency change can invalidate the import graph"),
+    (re.compile(r"^requirements.*\.txt$"), "dependency_definition",
+     "dependency change can invalidate the import graph"),
+    (re.compile(r"^requirements.*\.lock$"), "dependency_definition",
+     "dependency change can invalidate the import graph"),
+    (re.compile(r"^backend/requirements.*\.txt$"), "dependency_definition",
+     "dependency change can invalidate the import graph"),
+    (re.compile(r"^backend/requirements.*\.lock$"), "dependency_definition",
+     "dependency change can invalidate the import graph"),
+    (re.compile(r"^backend/.+/composition\.py$"), "wiring_root",
+     "wiring/composition root invalidates the static graph"),
+    (re.compile(r"^backend/composition\.py$"), "wiring_root",
+     "wiring/composition root invalidates the static graph"),
+)
 
 
-def _head_sha(root: Path) -> str:
-    return subprocess.check_output(
-        ["git", "rev-parse", "HEAD"],
-        cwd=root,
-        text=True,
-    ).strip()
+def _classify_path(rel_path: str) -> EscalationReason | None:
+    """Return an EscalationReason if the path is a trust surface, else None.
+
+    The same category applies whether the diff is A/M (added/modified) or
+    D (deleted): a deletion of a trust surface invalidates selection
+    just as surely as a change to it.
+    """
+    if rel_path in EXACT_ESCALATION_PATHS:
+        name = Path(rel_path).name
+        if name == "conftest.py" or name.startswith("conftest"):
+            return EscalationReason("conftest", rel_path,
+                                   "pytest conftest affects every test")
+        if name.startswith("requirements"):
+            return EscalationReason("dependency_definition", rel_path,
+                                   "dependency change can invalidate the import graph")
+        if name == "architecture_contract.json":
+            return EscalationReason("architecture_contract", rel_path,
+                                   "architecture contract rewires service/repo classification")
+        if rel_path == "scripts/pr_fast_select_tests.py":
+            return EscalationReason("selector_self", rel_path,
+                                   "change invalidates the selector under test")
+        # Everything else in EXACT_ESCALATION_PATHS is gate/contract
+        # authority; the selector's reverse closure cannot be trusted
+        # when these move.
+        return EscalationReason("gate_authority", rel_path,
+                               "this script is part of the changed-line / "
+                               "complexity gate authority")
+    base_name = os.path.basename(rel_path)
+    if base_name == "conftest.py":
+        return EscalationReason("conftest", rel_path,
+                               "pytest conftest affects every test")
+    for pattern, category, detail in _PREFIX_ESCALATION_PATTERNS:
+        if pattern.match(rel_path):
+            return EscalationReason(category, rel_path, detail)
+    return None
+
+
+def classify_changed_paths(paths: Iterable[str]) -> list:
+    """Return EscalationReasons for every trust-surface path in `paths`.
+
+    Operates over the COMPLETE diff (additions + modifications + deletions),
+    not AM only. A deletion of a gate/selector/wiring/governance path is
+    just as much a trust violation as a change to it.
+    """
+    seen: set = set()
+    out: list = []
+    for p in paths:
+        if p in seen:
+            continue
+        seen.add(p)
+        reason = _classify_path(p)
+        if reason is not None:
+            out.append(reason)
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -717,62 +789,116 @@ def _head_sha(root: Path) -> str:
 # ---------------------------------------------------------------------------
 
 
-def select_tests(base: str, root: Path, head_tree: str | None = None) -> SelectionResult:
+def _emit_error(errors: list, state: str, msg: str) -> SelectionResult:
+    """Return an ERROR-typed SelectionResult with deterministic identity.
+
+    base and head are filled with empty strings because identity could
+    not be resolved; the `errors` list carries the diagnostic detail.
+    """
+    errors.append(msg)
+    result = SelectionResult(state=STATE_ERROR, base="", head="")
+    result.errors.extend(errors)
+    return result
+
+
+def select_tests(base: str, root: Path) -> SelectionResult:
     """Compute the deterministic SelectionResult for `base`..HEAD at `root`."""
-    result = SelectionResult(state=STATE_ERROR, base=base)
-
+    # ----- Resolve both SHAs through git -----------------------------
+    # base may arrive as a short SHA, branch name, tag, or full SHA.
+    # HEAD is resolved as a separate step. Both must be full 40-char SHAs
+    # in the canonical JSON.
     try:
-        _validate_base(base, root)
-    except subprocess.CalledProcessError as exc:
-        result.errors.append(f"invalid base {base!r}: git rev-parse failed (rc={exc.returncode})")
-        result.state = STATE_ERROR
-        return result
+        base_full = _resolve_full_sha(base, root)
+    except subprocess.CalledProcessError:
+        return _emit_error([], STATE_ERROR,
+                           f"invalid base {base!r}: git rev-parse failed")
+    try:
+        head_full = _head_full_sha(root)
+    except subprocess.CalledProcessError:
+        return _emit_error([], STATE_ERROR,
+                           "HEAD cannot be resolved")
+    try:
+        _validate_base(base_full, root)
+    except subprocess.CalledProcessError:
+        return _emit_error([], STATE_ERROR,
+                           f"base {base_full!r} is not a valid commit object")
 
+    result = SelectionResult(state=STATE_ERROR, base=base_full, head=head_full)
+
+    # ----- Load PR-B2 gate authority via importlib ------------------
     try:
         gate = _load_pr_b2_gate()
     except Exception as exc:
         result.errors.append(f"failed to load PR-B2 gate: {exc}")
-        result.state = STATE_ERROR
         return result
 
+    # ----- Collect the COMPLETE diff (additions + modifications + deletions)
     try:
-        all_added = _all_changed_paths(base, root)
-        all_deleted = _all_deleted_paths(base, root)
+        all_added = _all_changed_paths(base_full, root)
+        all_deleted = _all_deleted_paths(base_full, root)
     except subprocess.CalledProcessError as exc:
         result.errors.append(f"git diff failed (rc={exc.returncode})")
-        result.state = STATE_ERROR
         return result
 
-    # Build the static graph over the CURRENT working tree.
+    # ----- Build the static graph over the CURRENT working tree -----
     try:
-        file_to_module, forward, test_file_to_module, dynamic_files, star_files = (
+        file_to_module, forward, test_file_to_module, dynamic_files = (
             build_graph(root)
         )
     except FileNotFoundError as exc:
         result.errors.append(str(exc))
-        result.state = STATE_ERROR
         return result
 
-    # Escalation surfaces from the diff (static, minimal, justified).
-    static_escalations = classify_changed_paths(all_added)
+    # ----- Trust-surface classification over the COMPLETE diff ----
+    # A change OR a deletion of a gate/selector/wiring/governance path
+    # invalidates selection trust. We classify both AM and D.
+    surface_paths = list(all_added) + list(all_deleted)
+    static_escalations = classify_changed_paths(surface_paths)
+
+    # ----- Deleted-test surface (must fail closed) ----
     deleted_test_paths = [
         p for p in all_deleted
         if p.startswith("backend/tests/") and p.endswith(".py")
     ]
 
-    # Test-only changes: handle BEFORE prod-eligibility so docs/frontend-only
-    # diffs classify cleanly as NO_ELIGIBLE_BACKEND_CHANGE.
+    # ----- Deleted-eligible-production surface (must fail closed) ----
+    # A deleted production module disappears from the current graph;
+    # therefore the reverse-closure cannot prove coverage of consumers.
+    deleted_eligible_production_paths = sorted({
+        p for p in all_deleted if gate.is_eligible_backend(p)
+    })
+    result.deleted_production = deleted_eligible_production_paths
+
+    # ----- Test-only diffs (changed test files in AM) ----
     changed_test_paths = [
         p for p in all_added
         if p.startswith("backend/tests/") and p.endswith(".py")
         and not p.endswith("/conftest.py")
         and not p.endswith("/__init__.py")
     ]
+    # CORRECTION 8: changed_tests is the authoritative diff-derived
+    # list of changed test paths (added + deleted). Populate it
+    # BEFORE any escalation short-circuit so the contract holds even
+    # when we ESCALATE_REQUIRED on a deleted test.
+    result.changed_tests = sorted(set(changed_test_paths) | set(deleted_test_paths))
     is_test_only_diff = bool(changed_test_paths) and not any(
         gate.is_eligible_backend(p) for p in all_added
     )
 
-    if deleted_test_paths and not static_escalations:
+    # ----- Escalation ordering (most specific first) ----
+    # 1. Static trust-surface changes (gates, wiring, governance,
+    #    selector, dependencies) — applies to both AM and D.
+    if static_escalations:
+        for r in static_escalations:
+            result.escalation_reasons.append(r)
+        result.notes.append(
+            "trust surface changed (added/modified/deleted); caller must run FULL"
+        )
+        result.state = STATE_ESCALATION
+        return result
+
+    # 2. Deleted backend test files — must fail closed.
+    if deleted_test_paths:
         for p in deleted_test_paths:
             result.escalation_reasons.append(EscalationReason(
                 category="deleted_test",
@@ -785,16 +911,23 @@ def select_tests(base: str, root: Path, head_tree: str | None = None) -> Selecti
         result.state = STATE_ESCALATION
         return result
 
-    if static_escalations:
-        for r in static_escalations:
-            result.escalation_reasons.append(r)
+    # 3. Deleted eligible backend production files — must fail closed.
+    if deleted_eligible_production_paths:
+        for p in deleted_eligible_production_paths:
+            result.escalation_reasons.append(EscalationReason(
+                category="deleted_production",
+                path=p,
+                detail="eligible backend production file removed in diff; "
+                        "current-tree graph no longer contains the node",
+            ))
         result.notes.append(
-            "untrusted surface(s) changed; caller must run FULL"
+            "deleted eligible backend production file(s); cannot safely prove "
+            "coverage of affected tests"
         )
         result.state = STATE_ESCALATION
         return result
 
-    # Dynamic import census on CHANGED files.
+    # 4. Dynamic-import census on CHANGED files (only matters for AM).
     changed_dynamic: list = []
     for rel in all_added:
         if rel in dynamic_files:
@@ -817,17 +950,27 @@ def select_tests(base: str, root: Path, head_tree: str | None = None) -> Selecti
     })
     result.eligible_changed = eligible_changed
 
+    # ----- changed_tests: explicit from diff (AM + D test paths) ----
+    # The previous implementation reconstructed changed_tests indirectly
+    # from selected-test reasons. The CORRECTION is to populate it
+    # explicitly from the diff so deleted test paths are visible even
+    # though they are no longer runnable.
+    result.changed_tests = sorted(set(changed_test_paths) | set(deleted_test_paths))
+
     if not eligible_changed and not changed_test_paths:
+        # docs-only / frontend-only diff: NO_ELIGIBLE_BACKEND_CHANGE.
+        # Note: deleted-eligible-production was already handled above as
+        # ESCALATION_REQUIRED.
         result.notes.append("no eligible backend production files changed")
         result.state = STATE_NO_ELIGIBLE
         return result
 
-    # Test-only PR semantics: modified/added tests are SELECTED for self.
+    # ----- Test-only diff semantics: SELECTED for self_change ----
     if is_test_only_diff:
         selected: list = []
         for rel in sorted(changed_test_paths):
-            mod = _test_module(rel)  # backend/tests/test_x.py -> tests.test_x
-            node_id = _node_id_for_test_module(mod) if mod else rel
+            mod = _test_module(rel)
+            node_id = _test_module_id(mod) if mod else rel
             selected.append(SelectedTest(
                 node_id=node_id,
                 file=rel,
@@ -839,7 +982,7 @@ def select_tests(base: str, root: Path, head_tree: str | None = None) -> Selecti
         result.notes.append("test-only diff; selecting every changed test")
         return result
 
-    # Build the reverse closure from eligible production modules.
+    # ----- Reverse-closure over eligible production -----
     starts: set = set()
     for rel in eligible_changed:
         mod = _file_to_module(rel)
@@ -847,48 +990,39 @@ def select_tests(base: str, root: Path, head_tree: str | None = None) -> Selecti
             starts.add(mod)
     if not starts:
         result.errors.append("eligible_changed is non-empty but no module mapping")
-        result.state = STATE_ERROR
         return result
 
     reverse = reverse_prod_graph(forward)
-    # Reverse closure: every transitive importer of any changed module.
     impacted = reverse_closure(starts, reverse)
-    # Forward expansion at depth 1: every module the changed module directly
-    # imports (re-exports / facade pattern). When a facade changes, its
-    # submodules' tests must run because the facade re-exports from them.
-    # We do NOT recurse beyond depth 1 because that would over-select.
+    # Depth-1 forward expansion for facade re-exports.
     for s_mod in list(starts):
         for fwd in forward.get(s_mod, ()):
             impacted.add(fwd)
-    # impacted is in module-name space; map back to file paths.
     impacted_paths: list = []
     for mod in sorted(impacted):
-        path = _module_to_path(mod, file_to_module)
+        path = file_to_module.get(mod)
         if path is not None:
             impacted_paths.append(path)
     result.impacted_production = impacted_paths
 
-    # Collect tests that import any impacted module.
+    # ----- Collect runnable tests that import any impacted module -----
     selected_tests: list = []
     seen_node_ids: set = set()
     combined_map = dict(file_to_module)
     combined_map.update(test_file_to_module)
     for test_module, rel in test_file_to_module.items():
-        # Tests import prod modules from backend/ root; parse their imports.
         try:
             source = (root / rel).read_text(encoding="utf-8", errors="replace")
         except OSError:
             continue
         try:
-            edges, _, _ = parse_imports(source, test_module, combined_map)
+            edges, _ = parse_imports(source, test_module, rel, combined_map)
         except SyntaxError:
-            # Malformed test file: skip rather than escalate; tests can be
-            # invalid for transient reasons and pytest will surface them.
             continue
         hit = edges & impacted
         if not hit:
             continue
-        node_id = _node_id_for_test_module(test_module)
+        node_id = _test_module_id(test_module)
         if node_id in seen_node_ids:
             continue
         seen_node_ids.add(node_id)
@@ -905,16 +1039,13 @@ def select_tests(base: str, root: Path, head_tree: str | None = None) -> Selecti
             reasons=reasons,
         ))
 
-    # Self-change reason for any test file that is also in all_added.
-    for rel in sorted(all_added):
-        if not (rel.startswith("backend/tests/") and rel.endswith(".py")):
+    # ----- self_change reason for any test file in AM ----
+    for rel in sorted(changed_test_paths):
+        mod = _test_module(rel)
+        if mod is None:
             continue
-        test_module = _test_module(rel)
-        if test_module is None:
-            continue
-        node_id = _node_id_for_test_module(test_module)
+        node_id = _test_module_id(mod)
         if node_id in seen_node_ids:
-            # Already selected via reverse closure — annotate the reason.
             for t in selected_tests:
                 if t.node_id == node_id:
                     if "self_change: test file modified in diff" not in t.reasons:
@@ -932,8 +1063,6 @@ def select_tests(base: str, root: Path, head_tree: str | None = None) -> Selecti
     result.selection_count = len(selected_tests)
 
     if not selected_tests:
-        # Empty selection on eligible production change is unsafe: the gate
-        # caller cannot prove we covered anything.
         result.escalation_reasons.append(EscalationReason(
             category="empty_selection",
             path=",".join(eligible_changed) if eligible_changed else "<no eligible>",
@@ -954,16 +1083,14 @@ def select_tests(base: str, root: Path, head_tree: str | None = None) -> Selecti
     return result
 
 
-# ---------------------------------------------------------------------------
-# Test module node-id helper
-# ---------------------------------------------------------------------------
+def _test_module_id(module: str) -> str:
+    """Return a stable, dotted-style identifier for a backend test module.
 
-
-def _node_id_for_test_module(module: str) -> str:
-    """Return a pytest node id for a backend test file by module name."""
-    if not module:
-        return ""
-    return module  # pytest collects backend.tests.X from conftest sys.path
+    This identifier is informational; consumers MUST treat `file` as
+    the authoritative pytest path and MUST NOT assume `node_id` is a
+    valid pytest CLI selector.
+    """
+    return module
 
 
 # ---------------------------------------------------------------------------
@@ -981,12 +1108,19 @@ def _resolve_root(root_arg: str | None) -> Path:
     return root
 
 
+def _emit(payload: dict, exit_code: int) -> int:
+    sys.stdout.write(json.dumps(payload, indent=2, sort_keys=False))
+    sys.stdout.write("\n")
+    return exit_code
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(
         description="PR-B3a deterministic backend PR test selector."
     )
     parser.add_argument("--base", required=True,
-                        help="Base commit SHA (or ref) to diff against.")
+                        help="Base commit ref (SHA / branch / tag); "
+                             "resolved to a full 40-char SHA.")
     parser.add_argument(
         "--root", default=None,
         help="Path to the git working tree root. Defaults to script's parent.",
@@ -1003,12 +1137,14 @@ def main(argv=None) -> int:
         result = select_tests(args.base, root)
     except Exception as exc:  # noqa: BLE001 - last-resort fail-closed
         print(f"pr_fast_select_tests: unhandled error: {exc}", file=sys.stderr)
-        sys.stdout.write(json.dumps({
+        return _emit({
             "schema_version": SCHEMA_VERSION,
             "state": STATE_ERROR,
-            "base_sha": args.base,
+            "base_sha": "",
+            "head_sha": "",
             "eligible_changed": [],
             "changed_tests": [],
+            "deleted_production": [],
             "impacted_production": [],
             "selected_tests": [],
             "selection_count": 0,
@@ -1016,26 +1152,22 @@ def main(argv=None) -> int:
             "errors": [f"unhandled: {exc}"],
             "diagnostics": [],
             "notes": [],
-        }, indent=2, sort_keys=False))
-        sys.stdout.write("\n")
-        return EXIT_ERROR
+        }, EXIT_ERROR)
 
     payload = result.to_dict()
-    sys.stdout.write(json.dumps(payload, indent=2, sort_keys=False))
-    sys.stdout.write("\n")
+    rc = _emit(payload, exit_code_for(result.state))
 
-    # Brief human summary on stderr (CI consumers MUST parse stdout JSON).
     summary = (
         f"pr_fast_select_tests: state={result.state} "
-        f"base={result.base} eligible={len(result.eligible_changed)} "
+        f"base={result.base[:12]} head={result.head[:12]} "
+        f"eligible={len(result.eligible_changed)} "
         f"impacted={len(result.impacted_production)} "
         f"selected={result.selection_count} "
         f"escalations={len(result.escalation_reasons)} "
         f"errors={len(result.errors)}"
     )
     print(summary, file=sys.stderr)
-
-    return exit_code_for(result.state)
+    return rc
 
 
 if __name__ == "__main__":
