@@ -9,8 +9,8 @@ state.
 CLI:
 
     pr_b3b_decide_policy.py \\
-        <selector.json> <expected_head_sha> <expected_base_sha> \\
-        <merge_base_sha> <selector_rc> <repo> <github_token>
+        <selector.json> <expected_head_sha> <expected_base_sha> <merge_base_sha> \\
+        <selector_rc> <repo> <github_token>
 
 Output:
     machine-readable JSON to stdout, with fields:
@@ -20,34 +20,50 @@ Output:
       policy_state         success | pending | failure
       reason               short machine-readable reason string
       head_sha             exact expected PR HEAD SHA
-      base_sha             exact expected PR BASE SHA
-      merge_base_sha       exact computed MERGE_BASE
+      base_sha             current PR BASE SHA, used for certification
+                           binding (status description comparison)
+      merge_base_sha       selector comparison base (may differ from
+                           base_sha when main advances without a rebase)
       decision_timestamp   ISO-8601 UTC timestamp of the decision
 
-Policy table:
+Identity contract (DEFECT 3 — separation of PR_BASE vs MERGE_BASE):
 
-  NO_ELIGIBLE_BACKEND_CHANGE | SELECTED                 -> success
-  ESCALATION_REQUIRED + valid current-base PR-DEEP success -> success
-  ESCALATION_REQUIRED without valid cert                  -> pending
-  ERROR / identity mismatch / malformed result            -> failure
+  - selector.head_sha MUST equal expected_head_sha exactly.
+  - selector.base_sha MUST equal merge_base_sha exactly (NOT the
+    current PR BASE SHA). The trusted selector is invoked with
+    --base=MERGE_BASE, so its base_sha is MERGE_BASE.
+  - selector.schema_version MUST equal 1.
+
+State/rc consistency (DEFECT 2 — enforced BEFORE any policy decision):
+
+  - selector.state MUST be one of:
+      NO_ELIGIBLE_BACKEND_CHANGE / SELECTED          -> rc 0
+      ESCALATION_REQUIRED                            -> rc 2
+      ERROR                                          -> rc 3
+  - selector_rc MUST match the table exactly.
+  - unknown state OR mismatched rc -> policy_state = failure.
+
+Latest-status-wins (DEFECT 5):
+
+  - The LATEST status for the exact HEAD is authoritative.
+  - An older matching success for the same HEAD but a different
+    base SHA is STALE and MUST NOT count.
+  - An older success MUST NOT override a newer pending / failure.
 
 A previous PR-DEEP certification is accepted only when ALL hold:
+   - the LATEST relevant status for the exact HEAD is a success
    - context == retail/pr-deep
    - state   == success
    - sha     == exact current PR HEAD
    - description EXACTLY == "PASS base=<40-char expected_base_sha>"
-
-A success for the same HEAD but a different (older) base SHA is
-STALE and MUST NOT count. Base advancement invalidates previous
-PR-DEEP certification even if HEAD did not move.
+   - the latest would be selected by sorting on
+     `updated_at` / `created_at` (descending).
 """
 from __future__ import annotations
 
 import datetime
 import json
-import os
 import re
-import subprocess
 import sys
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
@@ -55,6 +71,14 @@ from urllib.request import Request, urlopen
 
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 PR_DEEP_CONTEXT = "retail/pr-deep"
+
+SCHEMA_VERSION_SUPPORTED = 1
+SELECTOR_RC_FOR_STATE = {
+    "NO_ELIGIBLE_BACKEND_CHANGE": 0,
+    "SELECTED": 0,
+    "ESCALATION_REQUIRED": 2,
+    "ERROR": 3,
+}
 
 
 def _emit_error(msg: str) -> None:
@@ -109,25 +133,79 @@ def _fetch_existing_statuses(repo: str, sha: str, token: str) -> list:
     return statuses
 
 
-def _find_pr_deep_success(statuses: list, head_sha: str, base_sha: str) -> bool:
-    """Return True iff a same-head, current-base, success status exists.
+def _status_timestamp(s: dict) -> str:
+    """Return the most authoritative timestamp string for a status.
+    GitHub returns ``updated_at`` (preferred) or ``created_at`` (fallback).
+    Sorting on these strings is stable because both are ISO-8601.
+    """
+    return s.get("updated_at") or s.get("created_at") or ""
 
-    The status description must EXACTLY equal
-    ``"PASS base=<40-char expected_base_sha>"`` so an older cert for
-    the same HEAD but a different base SHA is rejected.
+
+def _latest_status_for(statuses: list, head_sha: str, base_sha: str) -> dict | None:
+    """Pick the LATEST status matching the exact head_sha + base_sha.
+
+    Deterministic: we sort by ``updated_at`` / ``created_at`` (descending)
+    and return the first one whose context, state, sha, and description
+    match the current base. The raw API list is already in reverse
+    chronological order, but we do NOT rely on that ordering; we sort
+    ourselves to be deterministic.
     """
     expected_desc = f"PASS base={base_sha}"
-    for s in statuses:
-        if s.get("context") != PR_DEEP_CONTEXT:
-            continue
-        if s.get("state") != "success":
-            continue
-        if s.get("sha") != head_sha:
-            continue
-        if s.get("description") != expected_desc:
-            continue
-        return True
-    return False
+    candidates = [
+        s for s in statuses
+        if s.get("context") == PR_DEEP_CONTEXT
+        and s.get("sha") == head_sha
+        and s.get("description") == expected_desc
+    ]
+    if not candidates:
+        return None
+    candidates.sort(key=_status_timestamp, reverse=True)
+    return candidates[0]
+
+
+def _latest_any_status_for(statuses: list, head_sha: str) -> dict | None:
+    """Pick the LATEST status for the exact head_sha (any state).
+    Used to ensure a newer pending / failure overrides an older
+    success."""
+    candidates = [
+        s for s in statuses
+        if s.get("context") == PR_DEEP_CONTEXT
+        and s.get("sha") == head_sha
+    ]
+    if not candidates:
+        return None
+    candidates.sort(key=_status_timestamp, reverse=True)
+    return candidates[0]
+
+
+def _build_decision(
+    *,
+    selector_state,
+    selector_rc,
+    policy_state,
+    expected_head,
+    expected_base,
+    merge_base,
+    reason: str,
+) -> dict:
+    return {
+        "selector_state": selector_state,
+        "selector_rc": selector_rc,
+        "policy_state": policy_state,
+        "reason": reason,
+        "head_sha": expected_head,
+        "base_sha": expected_base,
+        "merge_base_sha": merge_base,
+        "decision_timestamp": (
+            datetime.datetime.now(datetime.timezone.utc).isoformat()
+        ),
+    }
+
+
+def _emit_decision(decision: dict) -> int:
+    json.dump(decision, sys.stdout)
+    sys.stdout.write("\n")
+    return 0
 
 
 def main(argv: list) -> int:
@@ -158,80 +236,197 @@ def main(argv: list) -> int:
         _emit_error(f"selector_rc is not an integer: {rc_arg!r}")
         return 1
 
-    decision = {
-        "selector_state": None,
-        "selector_rc": selector_rc,
-        "policy_state": "failure",
-        "reason": "uninitialized",
-        "head_sha": expected_head,
-        "base_sha": expected_base,
-        "merge_base_sha": merge_base,
-        "decision_timestamp": (
-            datetime.datetime.now(datetime.timezone.utc).isoformat()
-        ),
-    }
-
+    # ---------- 1. Load selector JSON ----------
     try:
         payload = _load_selector(payload_path)
     except ValueError as exc:
-        decision["reason"] = f"selector JSON malformed: {exc}"
-        json.dump(decision, sys.stdout)
-        sys.stdout.write("\n")
-        return 0
+        return _emit_decision(_build_decision(
+            selector_state=None,
+            selector_rc=selector_rc,
+            policy_state="failure",
+            expected_head=expected_head,
+            expected_base=expected_base,
+            merge_base=merge_base,
+            reason=f"selector JSON malformed: {exc}",
+        ))
 
-    # Identity checks
-    if payload.get("head_sha") != expected_head:
-        decision["reason"] = (
-            f"selector head_sha {payload.get('head_sha')!r} "
-            f"!= expected {expected_head!r}"
-        )
-        json.dump(decision, sys.stdout)
-        sys.stdout.write("\n")
-        return 0
-    if payload.get("base_sha") != expected_base:
-        decision["reason"] = (
-            f"selector base_sha {payload.get('base_sha')!r} "
-            f"!= expected {expected_base!r}"
-        )
-        json.dump(decision, sys.stdout)
-        sys.stdout.write("\n")
-        return 0
+    # ---------- 2. schema_version ----------
+    schema_version = payload.get("schema_version")
+    if schema_version != SCHEMA_VERSION_SUPPORTED:
+        return _emit_decision(_build_decision(
+            selector_state=payload.get("state"),
+            selector_rc=selector_rc,
+            policy_state="failure",
+            expected_head=expected_head,
+            expected_base=expected_base,
+            merge_base=merge_base,
+            reason=(
+                f"selector schema_version {schema_version!r} is not "
+                f"supported (expected {SCHEMA_VERSION_SUPPORTED})"
+            ),
+        ))
+
+    # ---------- 3. Identity: head matches PR HEAD ----------
+    actual_head = payload.get("head_sha")
+    if not _check_sha(actual_head, "selector head_sha"):
+        return _emit_decision(_build_decision(
+            selector_state=payload.get("state"),
+            selector_rc=selector_rc,
+            policy_state="failure",
+            expected_head=expected_head,
+            expected_base=expected_base,
+            merge_base=merge_base,
+            reason="selector head_sha is not a 40-char hex SHA",
+        ))
+    if actual_head != expected_head:
+        return _emit_decision(_build_decision(
+            selector_state=payload.get("state"),
+            selector_rc=selector_rc,
+            policy_state="failure",
+            expected_head=expected_head,
+            expected_base=expected_base,
+            merge_base=merge_base,
+            reason=(
+                f"selector head_sha {actual_head!r} != "
+                f"expected {expected_head!r}"
+            ),
+        ))
+
+    # ---------- 4. Identity: base matches MERGE_BASE ----------
+    actual_base = payload.get("base_sha")
+    if not _check_sha(actual_base, "selector base_sha"):
+        return _emit_decision(_build_decision(
+            selector_state=payload.get("state"),
+            selector_rc=selector_rc,
+            policy_state="failure",
+            expected_head=expected_head,
+            expected_base=expected_base,
+            merge_base=merge_base,
+            reason="selector base_sha is not a 40-char hex SHA",
+        ))
+    if actual_base != merge_base:
+        return _emit_decision(_build_decision(
+            selector_state=payload.get("state"),
+            selector_rc=selector_rc,
+            policy_state="failure",
+            expected_head=expected_head,
+            expected_base=expected_base,
+            merge_base=merge_base,
+            reason=(
+                f"selector base_sha {actual_base!r} != "
+                f"MERGE_BASE {merge_base!r} (selector was invoked with "
+                f"--base=MERGE_BASE, not --base=PR_BASE_SHA)"
+            ),
+        ))
 
     state = payload.get("state")
-    decision["selector_state"] = state
 
+    # ---------- 5. State/rc consistency (DEFECT 2) ----------
+    if state not in SELECTOR_RC_FOR_STATE:
+        return _emit_decision(_build_decision(
+            selector_state=state,
+            selector_rc=selector_rc,
+            policy_state="failure",
+            expected_head=expected_head,
+            expected_base=expected_base,
+            merge_base=merge_base,
+            reason=f"selector state {state!r} is not a known canonical state",
+        ))
+    expected_rc = SELECTOR_RC_FOR_STATE[state]
+    if selector_rc != expected_rc:
+        return _emit_decision(_build_decision(
+            selector_state=state,
+            selector_rc=selector_rc,
+            policy_state="failure",
+            expected_head=expected_head,
+            expected_base=expected_base,
+            merge_base=merge_base,
+            reason=(
+                f"selector state {state!r} is inconsistent with "
+                f"selector_rc {selector_rc} (expected {expected_rc})"
+            ),
+        ))
+
+    # ---------- 6. Policy table (DEFECT 5) ----------
     if state == "NO_ELIGIBLE_BACKEND_CHANGE" or state == "SELECTED":
-        decision["policy_state"] = "success"
-        decision["reason"] = f"selector state {state}; PR-DEEP not required"
-        json.dump(decision, sys.stdout)
-        sys.stdout.write("\n")
-        return 0
+        return _emit_decision(_build_decision(
+            selector_state=state,
+            selector_rc=selector_rc,
+            policy_state="success",
+            expected_head=expected_head,
+            expected_base=expected_base,
+            merge_base=merge_base,
+            reason=f"selector state {state}; PR-DEEP not required",
+        ))
 
     if state == "ESCALATION_REQUIRED":
         statuses = _fetch_existing_statuses(repo, expected_head, token)
-        if _find_pr_deep_success(statuses, expected_head, expected_base):
-            decision["policy_state"] = "success"
-            decision["reason"] = (
-                "PR-DEEP already certified for exact head "
-                f"{expected_head[:12]} and exact base {expected_base[:12]}"
-            )
-            json.dump(decision, sys.stdout)
-            sys.stdout.write("\n")
-            return 0
-        decision["policy_state"] = "pending"
-        decision["reason"] = (
-            "PR-DEEP certification required for exact head "
-            f"{expected_head[:12]} and exact base {expected_base[:12]}"
+        # Deterministic: the LATEST status for the exact HEAD is
+        # authoritative. An older matching success for the same HEAD
+        # but a different base SHA is STALE and does NOT count; an
+        # older success for the same base must NOT override a newer
+        # pending / failure.
+        latest = _latest_any_status_for(statuses, expected_head)
+        if latest is not None:
+            latest_state = latest.get("state")
+            if latest_state in ("pending", "failure"):
+                return _emit_decision(_build_decision(
+                    selector_state=state,
+                    selector_rc=selector_rc,
+                    policy_state="pending",
+                    expected_head=expected_head,
+                    expected_base=expected_base,
+                    merge_base=merge_base,
+                    reason=(
+                        f"latest retail/pr-deep status for head "
+                        f"{expected_head[:12]} is {latest_state!r}; "
+                        "an older success cannot override it"
+                    ),
+                ))
+        # The latest status is a success (or no status exists).
+        # Accept it ONLY if it matches the current head + current base
+        # (PASS base=<current_base>).
+        matching = _latest_status_for(
+            statuses, expected_head, expected_base,
         )
-        json.dump(decision, sys.stdout)
-        sys.stdout.write("\n")
-        return 0
+        if matching is not None:
+            return _emit_decision(_build_decision(
+                selector_state=state,
+                selector_rc=selector_rc,
+                policy_state="success",
+                expected_head=expected_head,
+                expected_base=expected_base,
+                merge_base=merge_base,
+                reason=(
+                    "PR-DEEP already certified for exact head "
+                    f"{expected_head[:12]} and exact base "
+                    f"{expected_base[:12]}"
+                ),
+            ))
+        return _emit_decision(_build_decision(
+            selector_state=state,
+            selector_rc=selector_rc,
+            policy_state="pending",
+            expected_head=expected_head,
+            expected_base=expected_base,
+            merge_base=merge_base,
+            reason=(
+                "PR-DEEP certification required for exact head "
+                f"{expected_head[:12]} and exact base {expected_base[:12]}"
+            ),
+        ))
 
-    decision["policy_state"] = "failure"
-    decision["reason"] = f"selector state {state!r} is not a known canonical state"
-    json.dump(decision, sys.stdout)
-    sys.stdout.write("\n")
-    return 0
+    # Should be unreachable (state/rc consistency above covers all
+    # known canonical states). Treat as failure.
+    return _emit_decision(_build_decision(
+        selector_state=state,
+        selector_rc=selector_rc,
+        policy_state="failure",
+        expected_head=expected_head,
+        expected_base=expected_base,
+        merge_base=merge_base,
+        reason=f"selector state {state!r} is not a known canonical state",
+    ))
 
 
 if __name__ == "__main__":

@@ -248,8 +248,11 @@ jobs:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -euo pipefail
-          DESCRIPTION="RUNNING base=${BASE_SHA}"
-          BODY="$(/usr/bin/python3.12 -c 'import json, os; print(json.dumps({"state": "pending", "description": os.environ["DESCRIPTION"], "context": "retail/pr-deep", "target_url": os.environ["RUN_URL"]}))')"
+          # Build the JSON body entirely from explicit argv. Do NOT
+          # rely on unexported shell locals (DESCRIPTION etc.) — pass
+          # BASE_SHA + RUN_URL as argv and let the inline Python
+          # script construct the description string itself.
+          BODY="$(/usr/bin/python3.12 -c 'import json, sys; print(json.dumps({"state": "pending", "description": "RUNNING base=" + sys.argv[1], "context": "retail/pr-deep", "target_url": sys.argv[2]}))' "${BASE_SHA}" "${RUN_URL}")"
           curl --silent --show-error --noproxy '*' --max-time 10 --fail \
             -X POST \
             -H "Authorization: token ${GH_TOKEN}" \
@@ -434,14 +437,17 @@ jobs:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -euo pipefail
-          BODY="$(/usr/bin/python3.12 -c 'import json, os; print(json.dumps({"state": "success", "description": "PASS base=" + os.environ["BASE_SHA"], "context": "retail/pr-deep", "target_url": os.environ["RUN_URL"]}))')"
+          # Build the JSON body from explicit argv (BASE_SHA, RUN_URL)
+          # so the publication step does not depend on unexported
+          # shell locals.
+          BODY="$(/usr/bin/python3.12 -c 'import json, sys; print(json.dumps({"state": "success", "description": "PASS base=" + sys.argv[1], "context": "retail/pr-deep", "target_url": sys.argv[2]}))' "${BASE_SHA}" "${RUN_URL}")"
           curl --silent --show-error --noproxy '*' --max-time 10 --fail \
             -X POST \
             -H "Authorization: token ${GH_TOKEN}" \
             -H "Accept: application/vnd.github+json" \
             "https://api.github.com/repos/${REPO}/statuses/${HEAD_SHA}" \
             -d "$BODY"
-          BODY2="$(/usr/bin/python3.12 -c 'import json, os; print(json.dumps({"state": "success", "description": "PASS base=" + os.environ["BASE_SHA"], "context": "retail/pr-deep-policy", "target_url": os.environ["RUN_URL"]}))')"
+          BODY2="$(/usr/bin/python3.12 -c 'import json, sys; print(json.dumps({"state": "success", "description": "PASS base=" + sys.argv[1], "context": "retail/pr-deep-policy", "target_url": sys.argv[2]}))' "${BASE_SHA}" "${RUN_URL}")"
           curl --silent --show-error --noproxy '*' --max-time 10 --fail \
             -X POST \
             -H "Authorization: token ${GH_TOKEN}" \
@@ -461,7 +467,10 @@ jobs:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -euo pipefail
-          BODY="$(/usr/bin/python3.12 -c 'import json, os; print(json.dumps({"state": "failure", "description": "FAIL base=" + os.environ["BASE_SHA"], "context": "retail/pr-deep", "target_url": os.environ["RUN_URL"]}))')"
+          # Build the JSON body from explicit argv (BASE_SHA, RUN_URL)
+          # so the cleanup step does not depend on unexported shell
+          # locals.
+          BODY="$(/usr/bin/python3.12 -c 'import json, sys; print(json.dumps({"state": "failure", "description": "FAIL base=" + sys.argv[1], "context": "retail/pr-deep", "target_url": sys.argv[2]}))' "${BASE_SHA}" "${RUN_URL}")"
           curl --silent --show-error --noproxy '*' --max-time 10 --fail \
             -X POST \
             -H "Authorization: token ${GH_TOKEN}" \

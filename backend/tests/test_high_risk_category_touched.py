@@ -363,6 +363,9 @@ def test_authority_paths_classify_as_deploy_release_ci(tmp_repo, authority_path)
     [
         "scripts/pr_fast_select_tests.py",
         "scripts/pr_b3b_selected_paths_validator.py",
+        "scripts/pr_b3b_decide_policy.py",
+        "scripts/pr_b3b_publish_policy_status.py",
+        "scripts/pr_b3b_compose_certification.py",
         ".coveragerc",
         "backend/scripts/run_tests_isolated.sh",
         "backend/scripts/bootstrap_test_db.py",
@@ -372,10 +375,12 @@ def test_authority_paths_classify_as_deploy_release_ci(tmp_repo, authority_path)
 )
 def test_selector_and_test_infra_paths_classify_as_deploy_release_ci(
         tmp_repo, selector_or_coverage_path):
-    """PR-B3b part 2: the B3/E2 selector, its selected-paths validator
-    helper, and the documented coverage / test-infrastructure trust
-    surfaces must classify as deploy-release-ci so the A3 trusted
-    `pull_request_target` workflow sees them as control-plane changes.
+    """PR-B3b part 2: the B3/E2 selector, the three certification
+    helpers (decide / publish / compose), the selected-paths
+    validator, and the documented coverage / test-infrastructure
+    trust surfaces must classify as deploy-release-ci so the A3
+    trusted `pull_request_target` workflow sees them as control-plane
+    changes.
     """
     _commit(
         tmp_repo,

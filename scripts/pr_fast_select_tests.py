@@ -742,6 +742,23 @@ EXACT_ESCALATION_PATHS = frozenset({
     # files the candidate PR actually exercises. Therefore it is itself
     # control-plane authority.
     "scripts/pr_b3b_selected_paths_validator.py",
+    # PR-B3b policy decision helper. Decides whether the current
+    # PR-DEEP certification is sufficient for the exact HEAD + current
+    # BASE combination. A modification could downgrade a valid
+    # matching certification back to pending, so it is control-plane
+    # authority.
+    "scripts/pr_b3b_decide_policy.py",
+    # PR-B3b status publisher. Builds the canonical commit-status
+    # JSON body from the policy decision JSON. A modification could
+    # re-derive state from selector state and silently downgrade a
+    # pending/success status, so it is control-plane authority.
+    "scripts/pr_b3b_publish_policy_status.py",
+    # PR-B3b certification composer. Assembles the FAIL-CLOSED
+    # certification evidence JSON for pr-deep.yml. A modification could
+    # weaken the JUnit / coverage parsing so a successful certification
+    # gets emitted for an actually-failed run, so it is control-plane
+    # authority.
+    "scripts/pr_b3b_compose_certification.py",
 })
 
 _PREFIX_ESCALATION_PATTERNS = (

@@ -99,14 +99,11 @@ jobs:
       # Explicitly fetch the exact same-repo PR HEAD SHA so
       # availability does NOT depend on incidental fetch behavior
       # from prior steps.
-      - name: Fetch exact PR HEAD
-        env:
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        run: |
-          set -euo pipefail
-          git fetch --no-tags --depth=1 origin "$HEAD_SHA"
-
-      # Checkout the EXACT PR BASE SHA only — never the PR HEAD.
+      #
+      # IMPORTANT: this runs AFTER actions/checkout (BASE) has made
+      # the repo a real git repo. We do NOT attempt `git fetch` before
+      # checkout because on a fresh GitHub-hosted runner there is no
+      # repo yet and the fetch would fail.
       - name: Checkout exact PR BASE SHA (trusted)
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
@@ -114,6 +111,24 @@ jobs:
           fetch-depth: 0
           fetch-tags: true
           persist-credentials: false
+
+      # After checkout the repo is a real git repo (BASE is fetched
+      # with full history). The BASE SHA is always reachable from
+      # itself; the same-repo PR HEAD SHA may or may not be reachable
+      # from BASE without an explicit fetch. We verify via
+      # `git cat-file -e` and fail CLOSED if the exact HEAD object is
+      # not present.
+      - name: Verify exact PR HEAD commit object is available
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          if git cat-file -e "${HEAD_SHA}^{commit}" 2>/dev/null; then
+            echo "PR HEAD ${HEAD_SHA} is present in the BASE checkout (reachable from base)."
+          else
+            echo "::error::PR HEAD ${HEAD_SHA} is NOT present in the BASE checkout; cannot safely build a candidate worktree."
+            exit 1
+          fi
 
       - name: Prepare isolated candidate worktree at PR HEAD (data only)
         env:

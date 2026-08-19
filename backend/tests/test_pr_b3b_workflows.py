@@ -11,6 +11,12 @@ future refactors cannot silently:
   * move pr-fast beyond its <15-minute budget,
   * hide the FULL backend inside pr-fast.
 
+The tests also cover the FINAL PRE-REVIEW correction pass (DEFECTS
+1–6): checkout-before-fetch order, state/rc consistency, PR_BASE
+vs MERGE_BASE separation, pending status JSON without unexported
+DESCRIPTION, latest-status-wins, and B3b helper control-plane
+classification.
+
 The tests operate on the production files directly so they fail closed
 if any of the production invariants drift.
 """
@@ -813,7 +819,7 @@ def test_decide_policy_selector_state_no_eligible_is_success():
     payload = json.dumps({
         "schema_version": 1,
         "head_sha": _HEAD,
-        "base_sha": _BASE,
+        "base_sha": _HEAD,  # selector.base_sha = MERGE_BASE (third argv)
         "state": "NO_ELIGIBLE_BACKEND_CHANGE",
         "selection_count": 0,
         "selected_tests": [],
@@ -834,7 +840,7 @@ def test_decide_policy_selector_state_selected_is_success():
     payload = json.dumps({
         "schema_version": 1,
         "head_sha": _HEAD,
-        "base_sha": _BASE,
+        "base_sha": _HEAD,  # selector.base_sha = MERGE_BASE
         "state": "SELECTED",
         "selection_count": 1,
         "selected_tests": [],
@@ -856,7 +862,7 @@ def test_decide_policy_escalation_without_cert_is_pending():
     payload = json.dumps({
         "schema_version": 1,
         "head_sha": _HEAD,
-        "base_sha": _BASE,
+        "base_sha": _HEAD,  # selector.base_sha = MERGE_BASE
         "state": "ESCALATION_REQUIRED",
         "selection_count": 0,
         "selected_tests": [],
@@ -876,7 +882,7 @@ def test_decide_policy_unknown_state_is_failure():
     payload = json.dumps({
         "schema_version": 1,
         "head_sha": _HEAD,
-        "base_sha": _BASE,
+        "base_sha": _HEAD,  # selector.base_sha = MERGE_BASE
         "state": "WAT",
         "selection_count": 0,
         "selected_tests": [],
@@ -919,7 +925,9 @@ def test_decide_policy_rejects_head_sha_mismatch():
 # ---------------------------------------------------------------------------
 
 
-def _decide_policy_with_statuses(statuses, *, state="ESCALATION_REQUIRED"):
+def _decide_policy_with_statuses(
+    statuses, *, state="ESCALATION_REQUIRED", merge_base=None,
+):
     """Import decide_policy into the test process and run main() with a
     monkeypatched ``_fetch_existing_statuses``. This avoids the
     subprocess limitation of monkeypatching in a child process.
@@ -941,6 +949,10 @@ def _decide_policy_with_statuses(statuses, *, state="ESCALATION_REQUIRED"):
     mod._fetch_existing_statuses = fake_fetch
     try:
         # Build a temporary selector.json on disk so main() can read it.
+        # For these tests we keep selector.base_sha = merge_base (the
+        # trusted selector was invoked with --base=MERGE_BASE).
+        if merge_base is None:
+            merge_base = _BASE
         import tempfile
         with tempfile.NamedTemporaryFile(
             "w", suffix=".json", delete=False
@@ -948,7 +960,7 @@ def _decide_policy_with_statuses(statuses, *, state="ESCALATION_REQUIRED"):
             json.dump({
                 "schema_version": 1,
                 "head_sha": _HEAD,
-                "base_sha": _BASE,
+                "base_sha": merge_base,
                 "state": state,
                 "selection_count": 0,
                 "selected_tests": [],
@@ -964,7 +976,7 @@ def _decide_policy_with_statuses(statuses, *, state="ESCALATION_REQUIRED"):
         try:
             ret = mod.main([
                 "pr_b3b_decide_policy.py",
-                path, _HEAD, _BASE, _HEAD, rc_arg,
+                path, _HEAD, _BASE, merge_base, rc_arg,
                 "anervalens-netizen/unihub-retail", "faketoken",
             ])
         finally:
@@ -1185,14 +1197,25 @@ def test_pr_deep_failure_cleanup_requires_preflight_ok():
 def test_pr_deep_descriptions_carry_base_identity():
     """PENDING / SUCCESS / FAILURE descriptions must each carry
     ``base=<40-char expected_base_sha>`` so pre-merge inspection is
-    unambiguous."""
+    unambiguous.
+
+    The description is built from explicit argv (BASE_SHA passed as
+    ``sys.argv[1]`` to the inline Python helper) so the workflow does
+    NOT depend on unexported shell locals.
+    """
     text = PR_DEEP_YML.read_text(encoding="utf-8")
-    assert '"RUNNING base=" + os.environ["BASE_SHA"]' in text \
-        or '"RUNNING base=${BASE_SHA}"' in text
-    assert '"PASS base=" + os.environ["BASE_SHA"]' in text \
-        or '"PASS base=${BASE_SHA}"' in text
-    assert '"FAIL base=" + os.environ["BASE_SHA"]' in text \
-        or '"FAIL base=${BASE_SHA}"' in text
+    # PENDING: argv-built
+    assert '"RUNNING base=" + sys.argv[1]' in text, (
+        "PENDING step must build the description from explicit argv"
+    )
+    # SUCCESS: argv-built
+    assert '"PASS base=" + sys.argv[1]' in text, (
+        "SUCCESS step must build the description from explicit argv"
+    )
+    # FAILURE: argv-built
+    assert '"FAIL base=" + sys.argv[1]' in text, (
+        "FAILURE cleanup must build the description from explicit argv"
+    )
 
 
 def test_pr_deep_runs_compose_certification_via_helper():
@@ -1390,3 +1413,502 @@ def test_validator_in_a3_deploy_release_ci_paths():
     data = json.loads(HIGH_RISK_JSON.read_text(encoding="utf-8"))
     paths = data["categories"]["deploy-release-ci"]["paths"]
     assert "scripts/pr_b3b_selected_paths_validator.py" in paths
+
+
+# ---------------------------------------------------------------------------
+# Final-pre-review DEFECT 1: pr-deep-policy checkout-before-fetch order
+# ---------------------------------------------------------------------------
+
+
+def test_pr_deep_policy_checkout_before_git_fetch():
+    """pr-deep-policy.yml must perform actions/checkout (BASE) BEFORE
+    any raw `git fetch ... HEAD_SHA` (or any other command that
+    requires a Git repository to exist).
+    """
+    text = PR_DEEP_POLICY_YML.read_text(encoding="utf-8")
+    # Strip YAML comments first so explanatory comments that mention
+    # `git fetch` etc. do not get counted as real commands.
+    def _strip_comments(yaml_text: str) -> str:
+        out = []
+        for line in yaml_text.splitlines():
+            stripped = line.lstrip()
+            if stripped.startswith("#"):
+                continue
+            out.append(line)
+        return "\n".join(out)
+    active_text = _strip_comments(text)
+    checkout_idx = active_text.find("actions/checkout@")
+    other_git_idx_candidates = []
+    for needle in ("git fetch", "git worktree", "git cat-file", "git merge-base"):
+        idx = active_text.find(needle)
+        if idx != -1:
+            other_git_idx_candidates.append((needle, idx))
+    assert checkout_idx != -1, "actions/checkout step not found"
+    assert other_git_idx_candidates, (
+        "no other git commands found in pr-deep-policy.yml"
+    )
+    for needle, idx in other_git_idx_candidates:
+        assert checkout_idx < idx, (
+            f"actions/checkout (idx {checkout_idx}) must come BEFORE "
+            f"`{needle}` (idx {idx}) in pr-deep-policy.yml"
+        )
+
+
+def test_pr_deep_policy_verifies_head_commit_object_after_checkout():
+    """pr-deep-policy.yml must verify the exact PR HEAD commit object
+    is available BEFORE creating the candidate worktree, and must
+    FAIL CLOSED otherwise (no silent retry, no extra fetch that could
+    leak credentials)."""
+    text = PR_DEEP_POLICY_YML.read_text(encoding="utf-8")
+    assert "git cat-file -e \"${HEAD_SHA}^{commit}\"" in text or \
+        "git cat-file -e \"${HEAD_SHA}{commit}\"" in text or \
+        "git cat-file -e ${HEAD_SHA}^commit" in text or \
+        'git cat-file -e "${HEAD_SHA}^{commit}"' in text, (
+        "pr-deep-policy.yml must verify the exact PR HEAD commit "
+        "object via `git cat-file -e` after checkout"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Final-pre-review DEFECT 2: state/rc consistency
+# ---------------------------------------------------------------------------
+
+
+def test_decide_policy_state_rc_table_enforced():
+    """Negative tests proving the exact state/rc table is enforced
+    BEFORE any success/pending decision:
+      NO_ELIGIBLE / SELECTED -> rc 0
+      ESCALATION_REQUIRED      -> rc 2
+      ERROR                    -> rc 3
+    Any unknown state or mismatched rc -> policy_state = failure.
+    """
+    import importlib.util
+    import sys as _sys
+    spec = importlib.util.spec_from_file_location(
+        "pr_b3b_decide_policy_table_test", DECIDE_POLICY)
+    assert spec is not None and spec.loader is not None
+    mod = importlib.util.module_from_spec(spec)
+    _sys.modules[spec.name] = mod
+    spec.loader.exec_module(mod)
+
+    for state, rc, expected in [
+        ("NO_ELIGIBLE_BACKEND_CHANGE", 2, "failure"),
+        ("NO_ELIGIBLE_BACKEND_CHANGE", 3, "failure"),
+        ("SELECTED", 2, "failure"),
+        ("SELECTED", 3, "failure"),
+        ("ESCALATION_REQUIRED", 0, "failure"),
+        ("ESCALATION_REQUIRED", 3, "failure"),
+        ("ERROR", 0, "failure"),
+        ("ERROR", 2, "failure"),
+        ("UNKNOWN_STATE", 0, "failure"),
+        ("UNKNOWN_STATE", 2, "failure"),
+    ]:
+        import io
+        import json as _json
+        import tempfile
+        with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as f:
+            _json.dump({
+                "schema_version": 1,
+                "head_sha": _HEAD,
+                "base_sha": _HEAD,  # MERGE_BASE == HEAD for the test
+                "state": state,
+                "selection_count": 0,
+                "selected_tests": [],
+            }, f)
+            path = f.name
+        buf = io.StringIO()
+        real_stdout = _sys.stdout
+        _sys.stdout = buf
+        try:
+            ret = mod.main([
+                "pr_b3b_decide_policy.py",
+                path, _HEAD, _HEAD, _HEAD, str(rc),
+                "anervalens-netizen/unihub-retail", "",
+            ])
+        finally:
+            _sys.stdout = real_stdout
+        assert ret == 0
+        decision = _json.loads(buf.getvalue())
+        assert decision["policy_state"] == expected, (
+            f"state={state!r} rc={rc}: expected policy_state={expected!r}, "
+            f"got {decision['policy_state']!r}"
+        )
+
+
+def test_decide_policy_rejects_wrong_schema_version():
+    import importlib.util
+    import io
+    import json as _json
+    import sys as _sys
+    import tempfile
+    spec = importlib.util.spec_from_file_location(
+        "pr_b3b_decide_policy_sv_test", DECIDE_POLICY)
+    mod = importlib.util.module_from_spec(spec)
+    _sys.modules[spec.name] = mod
+    spec.loader.exec_module(mod)
+    with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as f:
+        _json.dump({
+            "schema_version": 99,
+            "head_sha": _HEAD,
+            "base_sha": _HEAD,
+            "state": "SELECTED",
+            "selection_count": 0,
+            "selected_tests": [],
+        }, f)
+        path = f.name
+    buf = io.StringIO()
+    real_stdout = _sys.stdout
+    _sys.stdout = buf
+    try:
+        mod.main([
+            "pr_b3b_decide_policy.py",
+            path, _HEAD, _HEAD, _HEAD, "0",
+            "anervalens-netizen/unihub-retail", "",
+        ])
+    finally:
+        _sys.stdout = real_stdout
+    decision = _json.loads(buf.getvalue())
+    assert decision["policy_state"] == "failure"
+    assert "schema_version" in decision["reason"]
+
+
+# ---------------------------------------------------------------------------
+# Final-pre-review DEFECT 3: PR_BASE != MERGE_BASE identity
+# ---------------------------------------------------------------------------
+
+
+def test_decide_policy_accepts_pr_base_neq_merge_base():
+    """PR_BASE_SHA != MERGE_BASE but selector.base_sha == MERGE_BASE
+    must be accepted (selector was invoked with --base=MERGE_BASE)."""
+    import importlib.util
+    import io
+    import json as _json
+    import sys as _sys
+    import tempfile
+    spec = importlib.util.spec_from_file_location(
+        "pr_b3b_decide_policy_id_test", DECIDE_POLICY)
+    mod = importlib.util.module_from_spec(spec)
+    _sys.modules[spec.name] = mod
+    spec.loader.exec_module(mod)
+
+    other_base = "0" + ("1234567890" * 4)[:39]
+    with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as f:
+        _json.dump({
+            "schema_version": 1,
+            "head_sha": _HEAD,
+            "base_sha": other_base,  # selector.base_sha = MERGE_BASE
+            "state": "NO_ELIGIBLE_BACKEND_CHANGE",
+            "selection_count": 0,
+            "selected_tests": [],
+        }, f)
+        path = f.name
+    buf = io.StringIO()
+    real_stdout = _sys.stdout
+    _sys.stdout = buf
+    try:
+        mod.main([
+            "pr_b3b_decide_policy.py",
+            path, _HEAD, _BASE, other_base, "0",
+            "anervalens-netizen/unihub-retail", "",
+        ])
+    finally:
+        _sys.stdout = real_stdout
+    decision = _json.loads(buf.getvalue())
+    assert decision["policy_state"] == "success", decision
+    assert decision["base_sha"] == _BASE
+    assert decision["merge_base_sha"] == other_base
+
+
+def test_decide_policy_rejects_selector_base_eq_pr_base_when_merge_differs():
+    """If selector.base_sha == PR_BASE_SHA while MERGE_BASE differs,
+    the policy MUST fail (selector was NOT invoked with the merge
+    base)."""
+    import importlib.util
+    import io
+    import json as _json
+    import sys as _sys
+    import tempfile
+    spec = importlib.util.spec_from_file_location(
+        "pr_b3b_decide_policy_id2_test", DECIDE_POLICY)
+    mod = importlib.util.module_from_spec(spec)
+    _sys.modules[spec.name] = mod
+    spec.loader.exec_module(mod)
+
+    other_merge = "1" + ("1234567890" * 4)[:39]
+    with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as f:
+        _json.dump({
+            "schema_version": 1,
+            "head_sha": _HEAD,
+            "base_sha": _BASE,  # selector.base_sha == PR_BASE_SHA
+            "state": "NO_ELIGIBLE_BACKEND_CHANGE",
+            "selection_count": 0,
+            "selected_tests": [],
+        }, f)
+        path = f.name
+    buf = io.StringIO()
+    real_stdout = _sys.stdout
+    _sys.stdout = buf
+    try:
+        mod.main([
+            "pr_b3b_decide_policy.py",
+            path, _HEAD, _BASE, other_merge, "0",
+            "anervalens-netizen/unihub-retail", "",
+        ])
+    finally:
+        _sys.stdout = real_stdout
+    decision = _json.loads(buf.getvalue())
+    assert decision["policy_state"] == "failure"
+    assert "MERGE_BASE" in decision["reason"]
+
+
+# ---------------------------------------------------------------------------
+# Final-pre-review DEFECT 4: pending status JSON does not require
+# unexported DESCRIPTION env var
+# ---------------------------------------------------------------------------
+
+
+def test_pr_deep_pending_publication_does_not_depend_on_unexported_description():
+    """The pending publication step in pr-deep.yml MUST NOT depend on
+    a DESCRIPTION env var (which is only a shell local and is not
+    exported). It must construct the description string from explicit
+    argv."""
+    text = PR_DEEP_YML.read_text(encoding="utf-8")
+    # Find the "Set retail/pr-deep = pending" step.
+    import re
+    m = re.search(
+        r"Set retail/pr-deep = pending \(RUNNING base=\.\.\.\).*?(?=\n      - name:|\Z)",
+        text,
+        re.DOTALL,
+    )
+    assert m, "could not find pending publication step"
+    block = m.group(0)
+    assert 'os.environ["DESCRIPTION"]' not in block, (
+        "pending step must not depend on unexported DESCRIPTION env var"
+    )
+    assert 'os.environ[\'DESCRIPTION\']' not in block
+    # The description must be built in the Python helper from explicit
+    # argv (BASE_SHA + RUN_URL).
+    assert "RUNNING base=" in block
+    assert "BASE_SHA" in block or "argv" in block
+
+
+def test_pr_deep_pending_publication_step_constructs_description_exact():
+    """The pending step description MUST exactly equal
+    'RUNNING base=<40-char base SHA>'."""
+    import re
+    text = PR_DEEP_YML.read_text(encoding="utf-8")
+    m = re.search(
+        r"Set retail/pr-deep = pending \(RUNNING base=\.\.\.\).*?(?=\n      - name:|\Z)",
+        text,
+        re.DOTALL,
+    )
+    assert m
+    block = m.group(0)
+    # Look for the exact literal the Python helper must build.
+    assert '"RUNNING base=" + sys.argv[1]' in block or \
+        "'RUNNING base=' + sys.argv[1]" in block, (
+        "pending step must construct the description via argv (no env)"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Final-pre-review DEFECT 5: latest-status-wins
+# ---------------------------------------------------------------------------
+
+
+def test_decide_policy_latest_failure_overrides_old_success():
+    """A: old success, newer failure, same head/base -> pending.
+    The newer failure must NOT be overridden by the older success."""
+    import importlib.util
+    import sys as _sys
+    spec = importlib.util.spec_from_file_location(
+        "pr_b3b_decide_policy_latest1", DECIDE_POLICY)
+    mod = importlib.util.module_from_spec(spec)
+    _sys.modules[spec.name] = mod
+    spec.loader.exec_module(mod)
+
+    statuses = [
+        {
+            "context": "retail/pr-deep",
+            "state": "failure",
+            "sha": _HEAD,
+            "description": f"FAIL base={_BASE}",
+            "created_at": "2026-08-19T11:00:00Z",
+            "updated_at": "2026-08-19T11:30:00Z",
+        },
+        {
+            "context": "retail/pr-deep",
+            "state": "success",
+            "sha": _HEAD,
+            "description": f"PASS base={_BASE}",
+            "created_at": "2026-08-19T10:00:00Z",
+            "updated_at": "2026-08-19T10:30:00Z",
+        },
+    ]
+    decision = _decide_policy_with_statuses(statuses)
+    assert decision["policy_state"] == "pending", decision
+
+def test_decide_policy_latest_pending_overrides_old_success():
+    """B: old success, newer pending, same head/base -> pending."""
+    statuses = [
+        {
+            "context": "retail/pr-deep",
+            "state": "pending",
+            "sha": _HEAD,
+            "description": f"RUNNING base={_BASE}",
+            "created_at": "2026-08-19T11:00:00Z",
+            "updated_at": "2026-08-19T11:30:00Z",
+        },
+        {
+            "context": "retail/pr-deep",
+            "state": "success",
+            "sha": _HEAD,
+            "description": f"PASS base={_BASE}",
+            "created_at": "2026-08-19T10:00:00Z",
+            "updated_at": "2026-08-19T10:30:00Z",
+        },
+    ]
+    decision = _decide_policy_with_statuses(statuses)
+    assert decision["policy_state"] == "pending"
+
+def test_decide_policy_newer_success_overrides_old_failure():
+    """C: old failure, newer success, same head/base -> success."""
+    statuses = [
+        {
+            "context": "retail/pr-deep",
+            "state": "success",
+            "sha": _HEAD,
+            "description": f"PASS base={_BASE}",
+            "created_at": "2026-08-19T11:00:00Z",
+            "updated_at": "2026-08-19T11:30:00Z",
+        },
+        {
+            "context": "retail/pr-deep",
+            "state": "failure",
+            "sha": _HEAD,
+            "description": f"FAIL base={_BASE}",
+            "created_at": "2026-08-19T10:00:00Z",
+            "updated_at": "2026-08-19T10:30:00Z",
+        },
+    ]
+    decision = _decide_policy_with_statuses(statuses)
+    assert decision["policy_state"] == "success"
+
+def test_decide_policy_old_base_success_does_not_certify_current_base():
+    """D: success for current head but old base -> pending."""
+    stale_base = "8" + ("1234567890" * 4)[:39]
+    statuses = [
+        {
+            "context": "retail/pr-deep",
+            "state": "success",
+            "sha": _HEAD,
+            "description": f"PASS base={stale_base}",
+            "created_at": "2026-08-19T11:00:00Z",
+            "updated_at": "2026-08-19T11:30:00Z",
+        },
+    ]
+    decision = _decide_policy_with_statuses(statuses)
+    assert decision["policy_state"] == "pending"
+
+def test_decide_policy_matching_cert_is_success():
+    """E: current matching success -> success."""
+    statuses = [
+        {
+            "context": "retail/pr-deep",
+            "state": "success",
+            "sha": _HEAD,
+            "description": f"PASS base={_BASE}",
+            "created_at": "2026-08-19T11:00:00Z",
+            "updated_at": "2026-08-19T11:30:00Z",
+        },
+    ]
+    decision = _decide_policy_with_statuses(statuses)
+    assert decision["policy_state"] == "success"
+
+def test_decide_policy_unsorted_list_still_picks_latest():
+    """The latest-wins implementation must NOT rely on the list being
+    in reverse-chronological order. Pass statuses in REVERSE order and
+    verify the policy still picks the correct one."""
+    statuses = [
+        {
+            "context": "retail/pr-deep",
+            "state": "success",
+            "sha": _HEAD,
+            "description": f"PASS base={_BASE}",
+            "created_at": "2026-08-19T11:00:00Z",
+            "updated_at": "2026-08-19T11:30:00Z",
+        },
+        {
+            "context": "retail/pr-deep",
+            "state": "failure",
+            "sha": _HEAD,
+            "description": f"FAIL base={_BASE}",
+            "created_at": "2026-08-19T10:00:00Z",
+            "updated_at": "2026-08-19T10:30:00Z",
+        },
+    ]
+    decision = _decide_policy_with_statuses(list(reversed(statuses)))
+    # The success is the newer status; it must be picked as the
+    # matching cert even though the list is unsorted.
+    assert decision["policy_state"] == "success"
+
+
+# ---------------------------------------------------------------------------
+# Final-pre-review DEFECT 6: all four B3b helpers are control-plane
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "helper_path",
+    [
+        "scripts/pr_fast_select_tests.py",
+        "scripts/pr_b3b_selected_paths_validator.py",
+        "scripts/pr_b3b_decide_policy.py",
+        "scripts/pr_b3b_publish_policy_status.py",
+        "scripts/pr_b3b_compose_certification.py",
+    ],
+)
+def test_helper_classified_in_selector_trust_surfaces(helper_path):
+    """Each B3b helper MUST be in the selector's
+    EXACT_ESCALATION_PATHS so a modification or deletion escalates
+    BEFORE the gate is loaded. The classifier maps
+    ``scripts/pr_fast_select_tests.py`` to ``selector_self`` and the
+    other helpers to ``gate_authority``; we accept either because
+    both are control-plane escalation reasons.
+    """
+    import importlib.util
+    import sys as _sys
+    spec = importlib.util.spec_from_file_location(
+        f"pr_fast_select_tests_helper_{helper_path.replace('/', '_').replace('.', '_')}",
+        SELECTOR)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    _sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    reason = module._classify_path(helper_path)
+    assert reason is not None, (
+        f"{helper_path}: classifier did not produce an EscalationReason"
+    )
+    assert reason.category in ("gate_authority", "selector_self"), (
+        f"{helper_path}: expected gate_authority or selector_self, "
+        f"got {reason.category!r}"
+    )
+    assert reason.path == helper_path
+
+
+@pytest.mark.parametrize(
+    "helper_path",
+    [
+        "scripts/pr_fast_select_tests.py",
+        "scripts/pr_b3b_selected_paths_validator.py",
+        "scripts/pr_b3b_decide_policy.py",
+        "scripts/pr_b3b_publish_policy_status.py",
+        "scripts/pr_b3b_compose_certification.py",
+    ],
+)
+def test_helper_in_a3_deploy_release_ci_paths(helper_path):
+    data = json.loads(HIGH_RISK_JSON.read_text(encoding="utf-8"))
+    paths = data["categories"]["deploy-release-ci"]["paths"]
+    assert helper_path in paths, (
+        f"{helper_path} must be in deploy-release-ci A3 manifest paths"
+    )
