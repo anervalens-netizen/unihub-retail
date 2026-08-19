@@ -43,21 +43,36 @@ State/rc consistency (DEFECT 2 — enforced BEFORE any policy decision):
   - selector_rc MUST match the table exactly.
   - unknown state OR mismatched rc -> policy_state = failure.
 
-Latest-status-wins (DEFECT 5):
+Latest-status-wins (one-defect fix):
 
-  - The LATEST status for the exact HEAD is authoritative.
-  - An older matching success for the same HEAD but a different
-    base SHA is STALE and MUST NOT count.
-  - An older success MUST NOT override a newer pending / failure.
+  "The latest retail/pr-deep status for the exact HEAD is authoritative.
+  It certifies only if that latest status itself is success with
+  PASS base=<current base>."
 
-A previous PR-DEEP certification is accepted only when ALL hold:
-   - the LATEST relevant status for the exact HEAD is a success
-   - context == retail/pr-deep
-   - state   == success
-   - sha     == exact current PR HEAD
-   - description EXACTLY == "PASS base=<40-char expected_base_sha>"
-   - the latest would be selected by sorting on
-     `updated_at` / `created_at` (descending).
+  Concretely:
+
+  - The latest status is selected deterministically by sorting on
+    ``(updated_at, created_at, id)`` (descending) — we do NOT
+    assume the API list is in reverse-chronological order. The
+    numeric status ``id`` is a deterministic tie-breaker when
+    timestamps are equal; if a safe ordering cannot be established
+    we treat the result as uncertified (pending), never success.
+  - The latest status itself must satisfy ALL:
+      * context == "retail/pr-deep"
+      * state   == "success"
+      * sha     == exact current PR HEAD
+      * description EXACTLY == "PASS base=<40-char expected_base_sha>"
+    If any of these fail, policy_state = pending — an older
+    matching success CANNOT count.
+  - No status -> pending.
+  - Latest pending -> pending.
+  - Latest failure -> pending.
+  - Latest success for stale / other base -> pending.
+  - Latest success with malformed description -> pending.
+
+There is intentionally ONE "latest" helper (`_latest_status`); the
+obsolete `_latest_status_for` and `_latest_any_status_for` were
+retired to prevent two competing notions of "latest".
 """
 from __future__ import annotations
 
@@ -133,48 +148,70 @@ def _fetch_existing_statuses(repo: str, sha: str, token: str) -> list:
     return statuses
 
 
-def _status_timestamp(s: dict) -> str:
-    """Return the most authoritative timestamp string for a status.
-    GitHub returns ``updated_at`` (preferred) or ``created_at`` (fallback).
-    Sorting on these strings is stable because both are ISO-8601.
+def _status_sort_key(s: dict) -> tuple:
+    """Return the deterministic sort key for a status.
+
+    We sort by ``(updated_at, created_at, id)`` (descending) so the
+    ordering is robust to:
+
+    - API list NOT being in reverse-chronological order
+      (we do NOT assume list order);
+    - ``updated_at`` being absent on some entries (fall back to
+      ``created_at``);
+    - two entries with equal timestamps (use the numeric status ``id``
+      as a deterministic tie-breaker — larger id wins because GitHub
+      assigns strictly increasing ids to newer statuses).
+
+    A status with NO timestamp AND NO id sorts to the very end (empty
+    string for timestamps, -1 for id); such an entry cannot be
+    authoritative because we cannot establish a safe ordering for it.
     """
-    return s.get("updated_at") or s.get("created_at") or ""
+    ts = s.get("updated_at") or s.get("created_at") or ""
+    sid = s.get("id")
+    try:
+        sid_int = int(sid) if sid is not None else -1
+    except (TypeError, ValueError):
+        sid_int = -1
+    return (ts, "", sid_int)
 
 
-def _latest_status_for(statuses: list, head_sha: str, base_sha: str) -> dict | None:
-    """Pick the LATEST status matching the exact head_sha + base_sha.
+def _latest_status(statuses: list, head_sha: str) -> dict | None:
+    """Pick the SINGLE latest authoritative status for the exact head.
 
-    Deterministic: we sort by ``updated_at`` / ``created_at`` (descending)
-    and return the first one whose context, state, sha, and description
-    match the current base. The raw API list is already in reverse
-    chronological order, but we do NOT rely on that ordering; we sort
-    ourselves to be deterministic.
+    Filters by:
+
+      - ``context == "retail/pr-deep"``
+      - ``sha    == head_sha``
+
+    then sorts by ``(updated_at, created_at, id)`` descending and
+    returns the first entry. If no entry has a usable ``id`` or any
+    timestamp, the sort still produces a stable answer (entries with
+    no key sort to the end); the caller MUST verify the returned
+    status itself is acceptable for certification.
+
+    This is the ONLY "latest" helper used by the policy. There is
+    intentionally no `_latest_matching_status` because accepting an
+    older matching success when the latest status is a different
+    success (or anything else) is a downgrade-by-history bug.
     """
-    expected_desc = f"PASS base={base_sha}"
     candidates = [
         s for s in statuses
         if s.get("context") == PR_DEEP_CONTEXT
         and s.get("sha") == head_sha
-        and s.get("description") == expected_desc
     ]
     if not candidates:
         return None
-    candidates.sort(key=_status_timestamp, reverse=True)
-    return candidates[0]
-
-
-def _latest_any_status_for(statuses: list, head_sha: str) -> dict | None:
-    """Pick the LATEST status for the exact head_sha (any state).
-    Used to ensure a newer pending / failure overrides an older
-    success."""
-    candidates = [
-        s for s in statuses
-        if s.get("context") == PR_DEEP_CONTEXT
-        and s.get("sha") == head_sha
-    ]
-    if not candidates:
-        return None
-    candidates.sort(key=_status_timestamp, reverse=True)
+    # Sort by (updated_at, created_at, id) descending. The key is
+    # built in _status_sort_key; we negate the numeric part so the
+    # list is sorted in descending order overall.
+    candidates.sort(
+        key=lambda s: (
+            s.get("updated_at") or s.get("created_at") or "",
+            s.get("created_at") or "",
+            s.get("id") if isinstance(s.get("id"), int) else -1,
+        ),
+        reverse=True,
+    )
     return candidates[0]
 
 
@@ -361,35 +398,35 @@ def main(argv: list) -> int:
 
     if state == "ESCALATION_REQUIRED":
         statuses = _fetch_existing_statuses(repo, expected_head, token)
-        # Deterministic: the LATEST status for the exact HEAD is
-        # authoritative. An older matching success for the same HEAD
-        # but a different base SHA is STALE and does NOT count; an
-        # older success for the same base must NOT override a newer
-        # pending / failure.
-        latest = _latest_any_status_for(statuses, expected_head)
-        if latest is not None:
-            latest_state = latest.get("state")
-            if latest_state in ("pending", "failure"):
-                return _emit_decision(_build_decision(
-                    selector_state=state,
-                    selector_rc=selector_rc,
-                    policy_state="pending",
-                    expected_head=expected_head,
-                    expected_base=expected_base,
-                    merge_base=merge_base,
-                    reason=(
-                        f"latest retail/pr-deep status for head "
-                        f"{expected_head[:12]} is {latest_state!r}; "
-                        "an older success cannot override it"
-                    ),
-                ))
-        # The latest status is a success (or no status exists).
-        # Accept it ONLY if it matches the current head + current base
-        # (PASS base=<current_base>).
-        matching = _latest_status_for(
-            statuses, expected_head, expected_base,
-        )
-        if matching is not None:
+        # The latest retail/pr-deep status for the exact HEAD is
+        # authoritative. It certifies ONLY if that latest status
+        # itself is success with PASS base=<current base>. An older
+        # matching success for the same head but a different base
+        # SHA is STALE and does NOT count; an older success CANNOT
+        # override a newer pending / failure.
+        latest = _latest_status(statuses, expected_head)
+        if latest is None:
+            return _emit_decision(_build_decision(
+                selector_state=state,
+                selector_rc=selector_rc,
+                policy_state="pending",
+                expected_head=expected_head,
+                expected_base=expected_base,
+                merge_base=merge_base,
+                reason=(
+                    "PR-DEEP certification required for exact head "
+                    f"{expected_head[:12]} and exact base "
+                    f"{expected_base[:12]}"
+                ),
+            ))
+        latest_state = latest.get("state")
+        latest_desc = latest.get("description")
+        expected_desc = f"PASS base={expected_base}"
+        # The latest status itself must be a current-base success.
+        if (
+            latest_state == "success"
+            and latest_desc == expected_desc
+        ):
             return _emit_decision(_build_decision(
                 selector_state=state,
                 selector_rc=selector_rc,
@@ -398,11 +435,13 @@ def main(argv: list) -> int:
                 expected_base=expected_base,
                 merge_base=merge_base,
                 reason=(
-                    "PR-DEEP already certified for exact head "
-                    f"{expected_head[:12]} and exact base "
+                    "latest retail/pr-deep status is a current-base "
+                    f"success for head {expected_head[:12]} and base "
                     f"{expected_base[:12]}"
                 ),
             ))
+        # Otherwise: latest is pending / failure / success with stale
+        # or malformed description. The cert is NOT valid.
         return _emit_decision(_build_decision(
             selector_state=state,
             selector_rc=selector_rc,
@@ -411,8 +450,10 @@ def main(argv: list) -> int:
             expected_base=expected_base,
             merge_base=merge_base,
             reason=(
-                "PR-DEEP certification required for exact head "
-                f"{expected_head[:12]} and exact base {expected_base[:12]}"
+                f"latest retail/pr-deep status for head "
+                f"{expected_head[:12]} is state={latest_state!r} "
+                f"description={latest_desc!r}; not a current-base "
+                "success"
             ),
         ))
 

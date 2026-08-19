@@ -1912,3 +1912,170 @@ def test_helper_in_a3_deploy_release_ci_paths(helper_path):
     assert helper_path in paths, (
         f"{helper_path} must be in deploy-release-ci A3 manifest paths"
     )
+
+
+# ---------------------------------------------------------------------------
+# Status-authority one-defect fix
+# ---------------------------------------------------------------------------
+#
+# "The latest retail/pr-deep status for the exact HEAD is authoritative.
+# It certifies only if that latest status itself is success with
+# PASS base=<current base>."
+#
+# The 7 cases below would have FAILED on head 207a98ac because the
+# previous implementation did:
+#   1. find the latest ANY status for the head
+#   2. if it was pending/failure -> pending
+#   3. OTHERWISE scan history for the latest matching PASS base=<current>
+# Step 3 fell back to an OLDER matching success even when the
+# authoritative latest status was a different success (stale or other
+# base). The new policy uses a single latest-status lookup.
+
+
+def _status(
+    state: str, *, sha: str, description: str,
+    updated_at: str, id: int, context: str = "retail/pr-deep",
+) -> dict:
+    return {
+        "context": context,
+        "state": state,
+        "sha": sha,
+        "description": description,
+        "updated_at": updated_at,
+        "created_at": updated_at,
+        "id": id,
+    }
+
+
+def test_latest_status_1_older_success_current_newer_success_stale():
+    """1. older success PASS base=CURRENT
+    newer success PASS base=STALE  =>  pending.
+    The newer stale-base success is authoritative; it must not certify."""
+    statuses = [
+        _status("success", sha=_HEAD,
+                description=f"PASS base={_BASE}",
+                updated_at="2026-08-19T10:00:00Z", id=1001),
+        _status("success", sha=_HEAD,
+                description="PASS base=8" + "1234567890" * 4 + "123",
+                updated_at="2026-08-19T11:00:00Z", id=1002),
+    ]
+    decision = _decide_policy_with_statuses(statuses)
+    assert decision["policy_state"] == "pending", decision
+
+
+def test_latest_status_2_older_success_current_newer_malformed():
+    """2. older success PASS base=CURRENT
+    newer success with malformed description  =>  pending."""
+    statuses = [
+        _status("success", sha=_HEAD,
+                description=f"PASS base={_BASE}",
+                updated_at="2026-08-19T10:00:00Z", id=1001),
+        _status("success", sha=_HEAD,
+                description="malformed",
+                updated_at="2026-08-19T11:00:00Z", id=1002),
+    ]
+    decision = _decide_policy_with_statuses(statuses)
+    assert decision["policy_state"] == "pending", decision
+
+
+def test_latest_status_3_older_failure_newer_success_current():
+    """3. older failure
+    newer success PASS base=CURRENT  =>  success."""
+    statuses = [
+        _status("failure", sha=_HEAD,
+                description=f"FAIL base={_BASE}",
+                updated_at="2026-08-19T10:00:00Z", id=1001),
+        _status("success", sha=_HEAD,
+                description=f"PASS base={_BASE}",
+                updated_at="2026-08-19T11:00:00Z", id=1002),
+    ]
+    decision = _decide_policy_with_statuses(statuses)
+    assert decision["policy_state"] == "success", decision
+
+
+def test_latest_status_4_older_success_current_newer_pending():
+    """4. older success PASS base=CURRENT
+    newer pending  =>  pending."""
+    statuses = [
+        _status("success", sha=_HEAD,
+                description=f"PASS base={_BASE}",
+                updated_at="2026-08-19T10:00:00Z", id=1001),
+        _status("pending", sha=_HEAD,
+                description=f"RUNNING base={_BASE}",
+                updated_at="2026-08-19T11:00:00Z", id=1002),
+    ]
+    decision = _decide_policy_with_statuses(statuses)
+    assert decision["policy_state"] == "pending", decision
+
+
+def test_latest_status_5_older_success_current_newer_failure():
+    """5. older success PASS base=CURRENT
+    newer failure  =>  pending."""
+    statuses = [
+        _status("success", sha=_HEAD,
+                description=f"PASS base={_BASE}",
+                updated_at="2026-08-19T10:00:00Z", id=1001),
+        _status("failure", sha=_HEAD,
+                description=f"FAIL base={_BASE}",
+                updated_at="2026-08-19T11:00:00Z", id=1002),
+    ]
+    decision = _decide_policy_with_statuses(statuses)
+    assert decision["policy_state"] == "pending", decision
+
+
+def test_latest_status_6_unsorted_api_order_same_result():
+    """6. the same cases in UNSORTED API order produce the same
+    policy result. The decision is independent of the raw API
+    list order (we sort deterministically by
+    updated_at / created_at / id)."""
+    # Reverse the order of case (1): newer stale-base success first.
+    statuses_unsorted = [
+        _status("success", sha=_HEAD,
+                description="PASS base=8" + "1234567890" * 4 + "123",
+                updated_at="2026-08-19T11:00:00Z", id=1002),
+        _status("success", sha=_HEAD,
+                description=f"PASS base={_BASE}",
+                updated_at="2026-08-19T10:00:00Z", id=1001),
+    ]
+    decision = _decide_policy_with_statuses(statuses_unsorted)
+    assert decision["policy_state"] == "pending", decision
+
+
+def test_latest_status_7_id_tiebreak_higher_id_wins():
+    """7. equal timestamps, the higher numeric status id must be
+    authoritative (larger id = newer on GitHub)."""
+    same_ts = "2026-08-19T10:00:00Z"
+    statuses = [
+        _status("success", sha=_HEAD,
+                description=f"PASS base={_BASE}",
+                updated_at=same_ts, id=42),
+        _status("success", sha=_HEAD,
+                description="PASS base=8" + "1234567890" * 4 + "123",
+                updated_at=same_ts, id=43),
+    ]
+    decision = _decide_policy_with_statuses(statuses)
+    # The higher id (43) is the authoritative latest. Its description
+    # is stale, so policy is pending.
+    assert decision["policy_state"] == "pending", decision
+
+
+def test_latest_status_helper_obsolete_helper_removed():
+    """The simplification must retire the obsolete
+    `_latest_status_for` and `_latest_any_status_for` helpers so
+    there are not two competing notions of "latest"."""
+    import importlib.util
+    import sys as _sys
+    spec = importlib.util.spec_from_file_location(
+        "pr_b3b_decide_policy_obsolete_test", DECIDE_POLICY)
+    mod = importlib.util.module_from_spec(spec)
+    _sys.modules[spec.name] = mod
+    spec.loader.exec_module(mod)
+    assert not hasattr(mod, "_latest_status_for"), (
+        "obsolete _latest_status_for must be retired"
+    )
+    assert not hasattr(mod, "_latest_any_status_for"), (
+        "obsolete _latest_any_status_for must be retired"
+    )
+    assert hasattr(mod, "_latest_status"), (
+        "_latest_status (the single latest helper) must exist"
+    )
