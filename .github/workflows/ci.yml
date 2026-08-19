@@ -710,10 +710,16 @@ jobs:
 
           # Validate identities in selector JSON. The validator lives in
           # scripts/pr_b3b_selected_paths_validator.py and is unit-tested
-          # by backend/tests/test_pr_b3b_workflows.py (no inline heredoc).
+          # by backend/tests/test_pr_b3b_workflows.py. Hardened CLI:
+          #   <selector.json> <expected_head_sha> <expected_base_sha>
+          #   <selector_rc> <output-paths-file>
+          # Validates schema_version, identity (head/base), canonical
+          # state, state/rc consistency, selection_count, and per-file
+          # security rules. Fails closed on any mismatch (rc 2).
           VALIDATOR_OUTPUT="$EVIDENCE_DIR/_selected_paths_validator.txt"
           /usr/bin/python3.12 -I scripts/pr_b3b_selected_paths_validator.py \
-            "$SELECTOR_JSON" "$PR_HEAD_SHA" "$VALIDATOR_OUTPUT"
+            "$SELECTOR_JSON" "$PR_HEAD_SHA" "$MERGE_BASE" "$selector_rc" \
+            "$VALIDATOR_OUTPUT"
 
           STATE="$(python3 -c 'import json; print(json.load(open("'"$SELECTOR_JSON"'"))["state"])')"
           SELECTION_COUNT="$(python3 -c 'import json; print(json.load(open("'"$SELECTOR_JSON"'"))["selection_count"])')"
@@ -747,7 +753,8 @@ jobs:
               # Validator helper script (no inline heredoc — see
               # backend/tests/test_pr_b3b_workflows.py for unit tests).
               /usr/bin/python3.12 -I scripts/pr_b3b_selected_paths_validator.py \
-                "$SELECTOR_JSON" "$PR_HEAD_SHA" "$SELECTED_PATHS_FILE"
+                "$SELECTOR_JSON" "$PR_HEAD_SHA" "$MERGE_BASE" "$selector_rc" \
+                "$SELECTED_PATHS_FILE"
               # Convert repo-relative backend/tests/foo.py to
               # backend-working-directory tests/foo.py because
               # backend/scripts/run_tests_isolated.sh `cd`s into backend/.

@@ -53,6 +53,7 @@
         "ops/config/retail-env.schema.json",
         "ops/systemd/",
         "scripts/pr_fast_select_tests.py",
+        "scripts/pr_b3b_selected_paths_validator.py",
         ".coveragerc",
         "backend/scripts/run_tests_isolated.sh",
         "backend/scripts/bootstrap_test_db.py",

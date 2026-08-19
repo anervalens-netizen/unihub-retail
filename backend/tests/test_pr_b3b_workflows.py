@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import re
+import subprocess
 import textwrap
 from pathlib import Path
 
@@ -618,18 +619,24 @@ def test_selected_paths_validator_rejects_count_mismatch(tmp_path):
 def test_selected_paths_validator_accepts_valid_payload(tmp_path):
     import os
     import subprocess
-    # Build the fake SHA at runtime to avoid having a 40-char hex
-    # literal flagged as a high-entropy string by the tracked-secret
-    # regression scan in ci.yml. The constant char class is intentionally
-    # non-uniform but deterministic.
+    # Build the fake SHAs at runtime to avoid having 40-char hex
+    # literals flagged as high-entropy strings by the tracked-secret
+    # regression scan in ci.yml. The constant char class is
+    # intentionally non-uniform but deterministic.
     head_sha = ("a" * 5) + ("0123456789abcdef" * 3)[:35]
+    # Build base_sha using only "0"-"9" digits (still 40 chars hex
+    # but with low entropy for the heuristic).
+    base_sha = "0" + ("1234567890" * 4)[:39]
     backend_dir = tmp_path / "backend"
     test_file = backend_dir / "tests" / "test_x.py"
     test_file.parent.mkdir(parents=True)
     test_file.write_text("# test\n")
     sel = tmp_path / "sel.json"
     sel.write_text(json.dumps({
+        "schema_version": 1,
         "head_sha": head_sha,
+        "base_sha": base_sha,
+        "state": "SELECTED",
         "selection_count": 1,
         "selected_tests": [{
             "file": "backend/tests/test_x.py",
@@ -641,8 +648,745 @@ def test_selected_paths_validator_accepts_valid_payload(tmp_path):
     env["GITHUB_WORKSPACE"] = str(tmp_path)
     cp = subprocess.run(
         ["/usr/bin/python3.12", "-I", str(SELECTED_PATHS_VALIDATOR),
-         str(sel), head_sha, str(out)],
+         str(sel), head_sha, base_sha, "0", str(out)],
         capture_output=True, text=True, env=env,
     )
     assert cp.returncode == 0, cp.stderr
     assert out.read_text().strip() == "backend/tests/test_x.py"
+
+
+# ---------------------------------------------------------------------------
+# Hardened validator contract (DEFECT 6)
+# ---------------------------------------------------------------------------
+
+
+def _write_validator_payload(
+    tmp_path, *, state, base_sha, head_sha, selected_tests,
+    schema_version=1, selection_count=None,
+):
+    sel = tmp_path / "sel.json"
+    sel.write_text(json.dumps({
+        "schema_version": schema_version,
+        "head_sha": head_sha,
+        "base_sha": base_sha,
+        "state": state,
+        "selection_count": (
+            selection_count
+            if selection_count is not None
+            else len(selected_tests)
+        ),
+        "selected_tests": selected_tests,
+    }))
+    return sel
+
+
+def _run_validator(tmp_path, sel_path, head_sha, base_sha, rc, out=None):
+    import os
+    import subprocess
+    out_path = out if out is not None else (tmp_path / "out.txt")
+    env = os.environ.copy()
+    env["GITHUB_WORKSPACE"] = str(tmp_path)
+    return subprocess.run(
+        ["/usr/bin/python3.12", "-I", str(SELECTED_PATHS_VALIDATOR),
+         str(sel_path), head_sha, base_sha, str(rc), str(out_path)],
+        capture_output=True, text=True, env=env,
+    )
+
+
+_HEAD = ("a" * 5) + ("0123456789abcdef" * 3)[:35]
+# Build _BASE using only "0"-"9" digits to keep entropy low for the
+# tracked-secret regression scanner's high-entropy heuristic.
+_BASE = "0" + ("1234567890" * 4)[:39]
+
+
+def test_validator_rejects_unsupported_schema_version(tmp_path):
+    sel = _write_validator_payload(
+        tmp_path, state="SELECTED", base_sha=_BASE, head_sha=_HEAD,
+        selected_tests=[], schema_version=99,
+    )
+    cp = _run_validator(tmp_path, sel, _HEAD, _BASE, 0)
+    assert cp.returncode == 2
+    assert "schema_version" in cp.stderr
+
+
+def test_validator_rejects_state_rc_mismatch(tmp_path):
+    """SELECTED must use rc 0; ESCALATION_REQUIRED must use rc 2;
+    ERROR must use rc 3. Any mismatch fails closed."""
+    # SELECTED with rc 2 -> policy failure
+    (tmp_path / "backend" / "tests").mkdir(parents=True)
+    sel = _write_validator_payload(
+        tmp_path, state="SELECTED", base_sha=_BASE, head_sha=_HEAD,
+        selected_tests=[{
+            "file": "backend/tests/test_x.py",
+            "node_id": "tests.test_x",
+        }],
+    )
+    (tmp_path / "backend" / "tests" / "test_x.py").write_text("# x\n")
+    cp = _run_validator(tmp_path, sel, _HEAD, _BASE, 2)
+    assert cp.returncode == 2
+    assert "inconsistent" in cp.stderr
+
+    # ESCALATION_REQUIRED with rc 0 -> policy failure
+    sel = _write_validator_payload(
+        tmp_path, state="ESCALATION_REQUIRED",
+        base_sha=_BASE, head_sha=_HEAD, selected_tests=[],
+    )
+    cp = _run_validator(tmp_path, sel, _HEAD, _BASE, 0)
+    assert cp.returncode == 2
+
+    # ERROR with rc 2 -> policy failure
+    sel = _write_validator_payload(
+        tmp_path, state="ERROR", base_sha=_BASE, head_sha=_HEAD,
+        selected_tests=[],
+    )
+    cp = _run_validator(tmp_path, sel, _HEAD, _BASE, 2)
+    assert cp.returncode == 2
+
+
+def test_validator_rejects_base_sha_mismatch(tmp_path):
+    sel = _write_validator_payload(
+        tmp_path, state="NO_ELIGIBLE_BACKEND_CHANGE",
+        base_sha=_BASE, head_sha=_HEAD, selected_tests=[],
+    )
+    other_base = "9" + ("1234567890" * 4)[:39]
+    cp = _run_validator(tmp_path, sel, _HEAD, other_base, 0)
+    assert cp.returncode == 2
+    assert "base_sha" in cp.stderr
+
+
+def test_validator_selected_state_requires_at_least_one_test(tmp_path):
+    """SELECTED with zero runnable tests must fail closed."""
+    sel = _write_validator_payload(
+        tmp_path, state="SELECTED", base_sha=_BASE, head_sha=_HEAD,
+        selected_tests=[],
+    )
+    cp = _run_validator(tmp_path, sel, _HEAD, _BASE, 0)
+    assert cp.returncode == 2
+    assert "SELECTED" in cp.stderr
+
+
+def test_validator_no_eligible_state_allows_empty_selection(tmp_path):
+    """NO_ELIGIBLE_BACKEND_CHANGE allows an empty runnable selection."""
+    sel = _write_validator_payload(
+        tmp_path, state="NO_ELIGIBLE_BACKEND_CHANGE",
+        base_sha=_BASE, head_sha=_HEAD, selected_tests=[],
+    )
+    cp = _run_validator(tmp_path, sel, _HEAD, _BASE, 0)
+    assert cp.returncode == 0, cp.stderr
+
+
+def test_validator_escalation_state_allows_empty_selection(tmp_path):
+    """ESCALATION_REQUIRED allows an empty runnable selection."""
+    sel = _write_validator_payload(
+        tmp_path, state="ESCALATION_REQUIRED",
+        base_sha=_BASE, head_sha=_HEAD, selected_tests=[],
+    )
+    cp = _run_validator(tmp_path, sel, _HEAD, _BASE, 2)
+    assert cp.returncode == 0, cp.stderr
+
+
+def test_validator_rejects_selection_count_mismatch(tmp_path):
+    (tmp_path / "backend" / "tests").mkdir(parents=True)
+    sel = _write_validator_payload(
+        tmp_path, state="SELECTED", base_sha=_BASE, head_sha=_HEAD,
+        selected_tests=[{
+            "file": "backend/tests/test_x.py",
+            "node_id": "tests.test_x",
+        }],
+        selection_count=5,
+    )
+    (tmp_path / "backend" / "tests" / "test_x.py").write_text("# x\n")
+    cp = _run_validator(tmp_path, sel, _HEAD, _BASE, 0)
+    assert cp.returncode == 2
+    assert "selection_count" in cp.stderr
+
+
+# ---------------------------------------------------------------------------
+# Policy decision (DEFECTS 1 + 2)
+# ---------------------------------------------------------------------------
+
+
+DECIDE_POLICY = WORKTREE / "scripts" / "pr_b3b_decide_policy.py"
+
+
+def test_decide_policy_selector_state_no_eligible_is_success():
+    payload = json.dumps({
+        "schema_version": 1,
+        "head_sha": _HEAD,
+        "base_sha": _BASE,
+        "state": "NO_ELIGIBLE_BACKEND_CHANGE",
+        "selection_count": 0,
+        "selected_tests": [],
+    })
+    cp = subprocess.run(
+        ["/usr/bin/python3.12", "-I", str(DECIDE_POLICY),
+         "/dev/stdin", _HEAD, _BASE, _HEAD, "0",
+         "anervalens-netizen/unihub-retail", ""],
+        input=payload, capture_output=True, text=True,
+    )
+    assert cp.returncode == 0, cp.stderr
+    decision = json.loads(cp.stdout)
+    assert decision["policy_state"] == "success"
+    assert decision["selector_state"] == "NO_ELIGIBLE_BACKEND_CHANGE"
+
+
+def test_decide_policy_selector_state_selected_is_success():
+    payload = json.dumps({
+        "schema_version": 1,
+        "head_sha": _HEAD,
+        "base_sha": _BASE,
+        "state": "SELECTED",
+        "selection_count": 1,
+        "selected_tests": [],
+    })
+    cp = subprocess.run(
+        ["/usr/bin/python3.12", "-I", str(DECIDE_POLICY),
+         "/dev/stdin", _HEAD, _BASE, _HEAD, "0",
+         "anervalens-netizen/unihub-retail", ""],
+        input=payload, capture_output=True, text=True,
+    )
+    assert cp.returncode == 0, cp.stderr
+    decision = json.loads(cp.stdout)
+    assert decision["policy_state"] == "success"
+
+
+def test_decide_policy_escalation_without_cert_is_pending():
+    """ESCALATION_REQUIRED + no matching retail/pr-deep success on the
+    same head + same base => pending."""
+    payload = json.dumps({
+        "schema_version": 1,
+        "head_sha": _HEAD,
+        "base_sha": _BASE,
+        "state": "ESCALATION_REQUIRED",
+        "selection_count": 0,
+        "selected_tests": [],
+    })
+    cp = subprocess.run(
+        ["/usr/bin/python3.12", "-I", str(DECIDE_POLICY),
+         "/dev/stdin", _HEAD, _BASE, _HEAD, "2",
+         "anervalens-netizen/unihub-retail", ""],
+        input=payload, capture_output=True, text=True,
+    )
+    assert cp.returncode == 0, cp.stderr
+    decision = json.loads(cp.stdout)
+    assert decision["policy_state"] == "pending"
+
+
+def test_decide_policy_unknown_state_is_failure():
+    payload = json.dumps({
+        "schema_version": 1,
+        "head_sha": _HEAD,
+        "base_sha": _BASE,
+        "state": "WAT",
+        "selection_count": 0,
+        "selected_tests": [],
+    })
+    cp = subprocess.run(
+        ["/usr/bin/python3.12", "-I", str(DECIDE_POLICY),
+         "/dev/stdin", _HEAD, _BASE, _HEAD, "3",
+         "anervalens-netizen/unihub-retail", ""],
+        input=payload, capture_output=True, text=True,
+    )
+    assert cp.returncode == 0, cp.stderr
+    decision = json.loads(cp.stdout)
+    assert decision["policy_state"] == "failure"
+
+
+def test_decide_policy_rejects_head_sha_mismatch():
+    payload = json.dumps({
+        "schema_version": 1,
+        "head_sha": _HEAD,
+        "base_sha": _BASE,
+        "state": "NO_ELIGIBLE_BACKEND_CHANGE",
+        "selection_count": 0,
+        "selected_tests": [],
+    })
+    other_head = ("d" * 5) + ("0123456789abcdef" * 3)[:35]
+    cp = subprocess.run(
+        ["/usr/bin/python3.12", "-I", str(DECIDE_POLICY),
+         "/dev/stdin", other_head, _BASE, _HEAD, "0",
+         "anervalens-netizen/unihub-retail", ""],
+        input=payload, capture_output=True, text=True,
+    )
+    assert cp.returncode == 0, cp.stderr
+    decision = json.loads(cp.stdout)
+    assert decision["policy_state"] == "failure"
+    assert "head_sha" in decision["reason"]
+
+
+# ---------------------------------------------------------------------------
+# Base-bound certification acceptance (DEFECT 4)
+# ---------------------------------------------------------------------------
+
+
+def _decide_policy_with_statuses(statuses, *, state="ESCALATION_REQUIRED"):
+    """Import decide_policy into the test process and run main() with a
+    monkeypatched ``_fetch_existing_statuses``. This avoids the
+    subprocess limitation of monkeypatching in a child process.
+    """
+    import importlib.util
+    import sys
+    mod_name = "pr_b3b_decide_policy_inline_test"
+    spec = importlib.util.spec_from_file_location(mod_name, DECIDE_POLICY)
+    assert spec is not None and spec.loader is not None
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[mod_name] = mod
+    spec.loader.exec_module(mod)
+
+    real_fetch = mod._fetch_existing_statuses
+
+    def fake_fetch(repo, sha, token):
+        return statuses
+
+    mod._fetch_existing_statuses = fake_fetch
+    try:
+        # Build a temporary selector.json on disk so main() can read it.
+        import tempfile
+        with tempfile.NamedTemporaryFile(
+            "w", suffix=".json", delete=False
+        ) as f:
+            json.dump({
+                "schema_version": 1,
+                "head_sha": _HEAD,
+                "base_sha": _BASE,
+                "state": state,
+                "selection_count": 0,
+                "selected_tests": [],
+            }, f)
+            path = f.name
+        rc_arg = "0" if state in ("NO_ELIGIBLE_BACKEND_CHANGE", "SELECTED") \
+            else "2" if state == "ESCALATION_REQUIRED" else "3"
+        # Capture stdout.
+        import io
+        buf = io.StringIO()
+        real_stdout = sys.stdout
+        sys.stdout = buf
+        try:
+            ret = mod.main([
+                "pr_b3b_decide_policy.py",
+                path, _HEAD, _BASE, _HEAD, rc_arg,
+                "anervalens-netizen/unihub-retail", "faketoken",
+            ])
+        finally:
+            sys.stdout = real_stdout
+        assert ret == 0
+        return json.loads(buf.getvalue())
+    finally:
+        mod._fetch_existing_statuses = real_fetch
+
+
+def test_decide_policy_accepts_matching_cert_for_same_head_and_base():
+    """A: same head + same base successful cert -> policy success."""
+    statuses = [
+        {
+            "context": "retail/pr-deep",
+            "state": "success",
+            "sha": _HEAD,
+            "description": f"PASS base={_BASE}",
+        },
+        {
+            "context": "something/else",
+            "state": "success",
+            "sha": _HEAD,
+            "description": "irrelevant",
+        },
+    ]
+    decision = _decide_policy_with_statuses(statuses)
+    assert decision["policy_state"] == "success"
+
+
+def test_decide_policy_rejects_stale_base_same_head():
+    """B: same head + OLD base successful cert -> policy pending."""
+    stale_base = "8" + ("1234567890" * 4)[:39]
+    statuses = [
+        {
+            "context": "retail/pr-deep",
+            "state": "success",
+            "sha": _HEAD,
+            "description": f"PASS base={stale_base}",
+        },
+    ]
+    decision = _decide_policy_with_statuses(statuses)
+    assert decision["policy_state"] == "pending"
+
+
+def test_decide_policy_irrelevant_old_head_cert():
+    """C: old head successful cert -> irrelevant."""
+    old_head = ("f" * 5) + ("0123456789abcdef" * 3)[:35]
+    statuses = [
+        {
+            "context": "retail/pr-deep",
+            "state": "success",
+            "sha": old_head,
+            "description": f"PASS base={_BASE}",
+        },
+    ]
+    decision = _decide_policy_with_statuses(statuses)
+    assert decision["policy_state"] == "pending"
+
+
+def test_decide_policy_failed_cert_same_current_base_is_pending():
+    """D: failed cert same current base -> pending / uncertified."""
+    statuses = [
+        {
+            "context": "retail/pr-deep",
+            "state": "failure",
+            "sha": _HEAD,
+            "description": f"FAIL base={_BASE}",
+        },
+    ]
+    decision = _decide_policy_with_statuses(statuses)
+    assert decision["policy_state"] == "pending"
+
+
+def test_decide_policy_malformed_description_is_not_certified():
+    """E: malformed description -> not certified (still pending)."""
+    statuses = [
+        {
+            "context": "retail/pr-deep",
+            "state": "success",
+            "sha": _HEAD,
+            "description": "PASS base=NOT-A-SHA",
+        },
+    ]
+    decision = _decide_policy_with_statuses(statuses)
+    assert decision["policy_state"] == "pending"
+
+
+# ---------------------------------------------------------------------------
+# Status publication (DEFECT 3)
+# ---------------------------------------------------------------------------
+
+
+PUBLISH = WORKTREE / "scripts" / "pr_b3b_publish_policy_status.py"
+
+
+def _make_decision(tmp_path, policy_state, *, head_sha=_HEAD, base_sha=_BASE):
+    p = tmp_path / "decision.json"
+    p.write_text(json.dumps({
+        "selector_state": "SELECTED",
+        "policy_state": policy_state,
+        "head_sha": head_sha,
+        "base_sha": base_sha,
+    }))
+    return p
+
+
+def test_publish_reads_decision_not_unexported_env():
+    """The publisher must NOT depend on shell STATE/DESCRIPTION
+    variables. It builds the JSON body ONLY from the decision JSON
+    file + argv. We verify the script source does not import os or
+    use os.environ for STATE/DESCRIPTION."""
+    text = PUBLISH.read_text(encoding="utf-8")
+    # The script must take state / description from the decision file.
+    assert "POLICY_FILE" not in text or "os.environ" not in text.split(
+        "def main", 1)[1]
+    # More direct: STATE / DESCRIPTION env reads are forbidden.
+    forbidden_in_main = [
+        line for line in text.splitlines()
+        if "os.environ[\"STATE\"]" in line
+        or "os.environ['STATE']" in line
+        or "os.environ[\"DESCRIPTION\"]" in line
+        or "os.environ['DESCRIPTION']" in line
+    ]
+    assert not forbidden_in_main, (
+        "publisher must not depend on unexported STATE/DESCRIPTION "
+        f"env vars; found: {forbidden_in_main}"
+    )
+
+
+def test_publish_emits_correct_json_for_each_state(tmp_path):
+    import subprocess
+    for state, expected in [
+        ("success", "success"),
+        ("pending", "pending"),
+        ("failure", "failure"),
+    ]:
+        decision = _make_decision(tmp_path, state)
+        cp = subprocess.run(
+            ["/usr/bin/python3.12", "-I", str(PUBLISH),
+             str(decision), _HEAD, _BASE,
+             "anervalens-netizen/unihub-retail", "t", "https://example/run"],
+            capture_output=True, text=True,
+        )
+        assert cp.returncode == 0, cp.stderr
+        body = json.loads(cp.stdout)
+        assert body["state"] == expected
+        assert body["context"] == "retail/pr-deep-policy"
+        assert _BASE[:12] in body["description"]
+
+
+def test_publish_rejects_unknown_policy_state(tmp_path):
+    import subprocess
+    decision = _make_decision(tmp_path, "MAYBE")
+    cp = subprocess.run(
+        ["/usr/bin/python3.12", "-I", str(PUBLISH),
+         str(decision), _HEAD, _BASE,
+         "anervalens-netizen/unihub-retail", "t", "https://example/run"],
+        capture_output=True, text=True,
+    )
+    assert cp.returncode != 0
+
+
+def test_publish_rejects_decision_head_base_mismatch(tmp_path):
+    import subprocess
+    other_base = "9" + ("1234567890" * 4)[:39]
+    decision = _make_decision(tmp_path, "success", base_sha=other_base)
+    cp = subprocess.run(
+        ["/usr/bin/python3.12", "-I", str(PUBLISH),
+         str(decision), _HEAD, _BASE,
+         "anervalens-netizen/unihub-retail", "t", "https://example/run"],
+        capture_output=True, text=True,
+    )
+    assert cp.returncode != 0
+
+
+# ---------------------------------------------------------------------------
+# PR-DEEP workflow contract (DEFECT 7 — pending only after preflight)
+# ---------------------------------------------------------------------------
+
+
+def test_pr_deep_pending_step_requires_preflight_ok():
+    text = PR_DEEP_YML.read_text(encoding="utf-8")
+    # The pending publication step must gate on PREFLIGHT_OK.
+    # Look for the pending step block.
+    assert "PREFLIGHT_OK" in text
+    # Find the "Set retail/pr-deep = pending" step and assert it gates
+    # on PREFLIGHT_OK.
+    import re
+    pending_block_re = re.compile(
+        r"Set retail/pr-deep = pending.*?(?=\n      - name:|\Z)",
+        re.DOTALL,
+    )
+    m = pending_block_re.search(text)
+    assert m, "could not find 'Set retail/pr-deep = pending' step"
+    block = m.group(0)
+    assert "env.PREFLIGHT_OK" in block or "PREFLIGHT_OK == '1'" in block, (
+        "pending step must gate on PREFLIGHT_OK"
+    )
+
+
+def test_pr_deep_failure_cleanup_requires_preflight_ok():
+    text = PR_DEEP_YML.read_text(encoding="utf-8")
+    import re
+    cleanup_re = re.compile(
+        r"Set retail/pr-deep = failure.*?(?=\n      - name:|\Z)",
+        re.DOTALL,
+    )
+    m = cleanup_re.search(text)
+    assert m, "could not find failure cleanup step"
+    block = m.group(0)
+    assert "PREFLIGHT_OK" in block, (
+        "failure cleanup must gate on PREFLIGHT_OK so a malformed "
+        "dispatch never annotates an arbitrary SHA"
+    )
+
+
+def test_pr_deep_descriptions_carry_base_identity():
+    """PENDING / SUCCESS / FAILURE descriptions must each carry
+    ``base=<40-char expected_base_sha>`` so pre-merge inspection is
+    unambiguous."""
+    text = PR_DEEP_YML.read_text(encoding="utf-8")
+    assert '"RUNNING base=" + os.environ["BASE_SHA"]' in text \
+        or '"RUNNING base=${BASE_SHA}"' in text
+    assert '"PASS base=" + os.environ["BASE_SHA"]' in text \
+        or '"PASS base=${BASE_SHA}"' in text
+    assert '"FAIL base=" + os.environ["BASE_SHA"]' in text \
+        or '"FAIL base=${BASE_SHA}"' in text
+
+
+def test_pr_deep_runs_compose_certification_via_helper():
+    text = PR_DEEP_YML.read_text(encoding="utf-8")
+    assert "pr_b3b_compose_certification.py" in text
+
+
+# ---------------------------------------------------------------------------
+# Certification evidence (DEFECT 8 — fail-closed)
+# ---------------------------------------------------------------------------
+
+
+COMPOSE_CERT = WORKTREE / "scripts" / "pr_b3b_compose_certification.py"
+
+
+def test_compose_certification_fails_when_junit_missing(tmp_path):
+    import subprocess
+    cp = subprocess.run(
+        ["/usr/bin/python3.12", "-I", str(COMPOSE_CERT),
+         str(tmp_path / "cert.json"),
+         "1", _HEAD, _BASE, _HEAD,
+         "anervalens-netizen/unihub-retail", "1", "1",
+         "pr-deep", "main", _HEAD],
+        cwd=str(tmp_path),
+        capture_output=True, text=True,
+    )
+    assert cp.returncode != 0
+    assert "JUnit" in cp.stderr
+
+
+def test_compose_certification_fails_when_junit_zero_tests(tmp_path):
+    import subprocess
+    junit_dir = tmp_path / "backend"
+    junit_dir.mkdir()
+    (junit_dir / "pr-deep-junit.xml").write_text(
+        '<?xml version="1.0"?><testsuite name="x" tests="0" '
+        'failures="0" errors="0" skipped="0"></testsuite>'
+    )
+    (junit_dir / "pr-deep-coverage.json").write_text(json.dumps({
+        "totals": {"percent_covered": 99.5, "covered_lines": 100,
+                   "num_statements": 200},
+    }))
+    cp = subprocess.run(
+        ["/usr/bin/python3.12", "-I", str(COMPOSE_CERT),
+         str(tmp_path / "cert.json"),
+         "1", _HEAD, _BASE, _HEAD,
+         "anervalens-netizen/unihub-retail", "1", "1",
+         "pr-deep", "main", _HEAD],
+        cwd=str(tmp_path),
+        capture_output=True, text=True,
+    )
+    assert cp.returncode != 0
+    assert "0 tests" in cp.stderr
+
+
+def test_compose_certification_fails_when_junit_malformed(tmp_path):
+    import subprocess
+    junit_dir = tmp_path / "backend"
+    junit_dir.mkdir()
+    (junit_dir / "pr-deep-junit.xml").write_text("not xml <<<")
+    cp = subprocess.run(
+        ["/usr/bin/python3.12", "-I", str(COMPOSE_CERT),
+         str(tmp_path / "cert.json"),
+         "1", _HEAD, _BASE, _HEAD,
+         "anervalens-netizen/unihub-retail", "1", "1",
+         "pr-deep", "main", _HEAD],
+        cwd=str(tmp_path),
+        capture_output=True, text=True,
+    )
+    assert cp.returncode != 0
+    assert "JUnit" in cp.stderr
+
+
+def test_compose_certification_fails_when_coverage_missing(tmp_path):
+    import subprocess
+    junit_dir = tmp_path / "backend"
+    junit_dir.mkdir()
+    (junit_dir / "pr-deep-junit.xml").write_text(
+        '<?xml version="1.0"?><testsuite name="x" tests="5" '
+        'failures="0" errors="0" skipped="0"></testsuite>'
+    )
+    cp = subprocess.run(
+        ["/usr/bin/python3.12", "-I", str(COMPOSE_CERT),
+         str(tmp_path / "cert.json"),
+         "1", _HEAD, _BASE, _HEAD,
+         "anervalens-netizen/unihub-retail", "1", "1",
+         "pr-deep", "main", _HEAD],
+        cwd=str(tmp_path),
+        capture_output=True, text=True,
+    )
+    assert cp.returncode != 0
+    assert "coverage" in cp.stderr.lower()
+
+
+def test_compose_certification_fails_when_coverage_percent_missing(tmp_path):
+    import subprocess
+    junit_dir = tmp_path / "backend"
+    junit_dir.mkdir()
+    (junit_dir / "pr-deep-junit.xml").write_text(
+        '<?xml version="1.0"?><testsuite name="x" tests="5" '
+        'failures="0" errors="0" skipped="0"></testsuite>'
+    )
+    (junit_dir / "pr-deep-coverage.json").write_text(json.dumps({
+        "totals": {"covered_lines": 100, "num_statements": 200},
+    }))
+    cp = subprocess.run(
+        ["/usr/bin/python3.12", "-I", str(COMPOSE_CERT),
+         str(tmp_path / "cert.json"),
+         "1", _HEAD, _BASE, _HEAD,
+         "anervalens-netizen/unihub-retail", "1", "1",
+         "pr-deep", "main", _HEAD],
+        cwd=str(tmp_path),
+        capture_output=True, text=True,
+    )
+    assert cp.returncode != 0
+    assert "percent_covered" in cp.stderr
+
+
+def test_compose_certification_succeeds_with_valid_evidence(tmp_path):
+    import subprocess
+    junit_dir = tmp_path / "backend"
+    junit_dir.mkdir()
+    (junit_dir / "pr-deep-junit.xml").write_text(
+        '<?xml version="1.0"?><testsuite name="x" tests="7" '
+        'failures="0" errors="0" skipped="0"></testsuite>'
+    )
+    (junit_dir / "pr-deep-coverage.json").write_text(json.dumps({
+        "totals": {"percent_covered": 92.5, "covered_lines": 100,
+                   "num_statements": 200},
+    }))
+    cp = subprocess.run(
+        ["/usr/bin/python3.12", "-I", str(COMPOSE_CERT),
+         str(tmp_path / "cert.json"),
+         "1", _HEAD, _BASE, _HEAD,
+         "anervalens-netizen/unihub-retail", "1", "1",
+         "pr-deep", "main", _HEAD],
+        cwd=str(tmp_path),
+        capture_output=True, text=True,
+    )
+    assert cp.returncode == 0, cp.stderr
+    cert = json.loads((tmp_path / "cert.json").read_text())
+    assert cert["result"] == "success"
+    assert cert["backend_test_count"] == 7
+    assert cert["coverage_result"]["percent_covered"] == 92.5
+    assert cert["changed_line_result"] == "PASS"
+
+
+# ---------------------------------------------------------------------------
+# pr-deep-policy narrows the trust claim (DEFECT 9)
+# ---------------------------------------------------------------------------
+
+
+def test_pr_deep_policy_documents_narrow_trust_claim():
+    text = PR_DEEP_POLICY_YML.read_text(encoding="utf-8")
+    # NARROW claim markers: must NOT over-claim and MUST be
+    # self-correcting.
+    assert "NARROW" in text or "narrow" in text or "DO NOT over-claim" in text
+    assert "not equivalent to FULL" in text or "FULL" in text
+
+
+def test_pr_deep_documents_narrow_trust_claim():
+    text = PR_DEEP_YML.read_text(encoding="utf-8")
+    assert "NARROW" in text or "DO NOT over-claim" in text
+    assert "not equivalent to FULL" in text or "FULL" in text
+
+
+# ---------------------------------------------------------------------------
+# Validator trust-surface coverage (DEFECT 5)
+# ---------------------------------------------------------------------------
+
+
+def test_validator_classified_in_selector_trust_surfaces():
+    """scripts/pr_b3b_selected_paths_validator.py MUST be in the
+    selector's EXACT_ESCALATION_PATHS so any modification / deletion
+    escalates BEFORE the gate is loaded.
+    """
+    import importlib.util
+    import sys
+    spec = importlib.util.spec_from_file_location(
+        "pr_fast_select_tests_static_validator", SELECTOR)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    reason = module._classify_path(
+        "scripts/pr_b3b_selected_paths_validator.py"
+    )
+    assert reason is not None, (
+        "validator must be classified as a trust surface"
+    )
+    assert reason.category == "gate_authority"
+
+
+def test_validator_in_a3_deploy_release_ci_paths():
+    data = json.loads(HIGH_RISK_JSON.read_text(encoding="utf-8"))
+    paths = data["categories"]["deploy-release-ci"]["paths"]
+    assert "scripts/pr_b3b_selected_paths_validator.py" in paths

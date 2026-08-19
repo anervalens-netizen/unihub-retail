@@ -736,6 +736,12 @@ EXACT_ESCALATION_PATHS = frozenset({
     ".coveragerc",
     "backend/scripts/run_tests_isolated.sh",
     "backend/scripts/bootstrap_test_db.py",
+    # PR-B3b pr-fast selected-paths validator helper. The validator is
+    # the only point in the pr-fast pipeline that converts the trusted
+    # selector JSON into a pytest argv; modifying it would change which
+    # files the candidate PR actually exercises. Therefore it is itself
+    # control-plane authority.
+    "scripts/pr_b3b_selected_paths_validator.py",
 })
 
 _PREFIX_ESCALATION_PATTERNS = (

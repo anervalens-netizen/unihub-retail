@@ -362,6 +362,7 @@ def test_authority_paths_classify_as_deploy_release_ci(tmp_repo, authority_path)
     "selector_or_coverage_path",
     [
         "scripts/pr_fast_select_tests.py",
+        "scripts/pr_b3b_selected_paths_validator.py",
         ".coveragerc",
         "backend/scripts/run_tests_isolated.sh",
         "backend/scripts/bootstrap_test_db.py",
@@ -371,10 +372,11 @@ def test_authority_paths_classify_as_deploy_release_ci(tmp_repo, authority_path)
 )
 def test_selector_and_test_infra_paths_classify_as_deploy_release_ci(
         tmp_repo, selector_or_coverage_path):
-    """PR-B3b part 2: the B3/E2 selector and the documented coverage /
-    test-infrastructure trust surfaces must classify as
-    deploy-release-ci so the A3 trusted `pull_request_target` workflow
-    sees them as control-plane changes."""
+    """PR-B3b part 2: the B3/E2 selector, its selected-paths validator
+    helper, and the documented coverage / test-infrastructure trust
+    surfaces must classify as deploy-release-ci so the A3 trusted
+    `pull_request_target` workflow sees them as control-plane changes.
+    """
     _commit(
         tmp_repo,
         {selector_or_coverage_path: "# b3b authority change"},
