@@ -30,7 +30,7 @@
       ]
     },
     "deploy-release-ci": {
-      "description": "Delivery/control plane only: workflows, governance, the checker itself, deployment/release/rollback/provisioning, production systemd/Caddy/env-schema. No routine README, Dependabot, generic observability.",
+      "description": "Delivery/control plane only: workflows, governance, the checker itself, deployment/release/rollback/provisioning, production systemd/Caddy/env-schema, plus the B3/E2 selector/control-plane trust surface (PR-B3a selector, PR-B3b coverage + isolated-test runner + bootstrap-test-DB, backend test authority conftest). No routine README, Dependabot, generic observability.",
       "paths": [
         ".github/workflows/",
         ".github/governance/",
@@ -51,7 +51,13 @@
         "ops/provision-retail-salary-export-database.sh",
         "ops/caddy/",
         "ops/config/retail-env.schema.json",
-        "ops/systemd/"
+        "ops/systemd/",
+        "scripts/pr_fast_select_tests.py",
+        ".coveragerc",
+        "backend/scripts/run_tests_isolated.sh",
+        "backend/scripts/bootstrap_test_db.py",
+        "backend/conftest.py",
+        "backend/tests/conftest.py"
       ]
     },
     "salary-private-identity": {

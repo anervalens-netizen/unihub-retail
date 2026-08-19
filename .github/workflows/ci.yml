@@ -644,6 +644,164 @@ jobs:
           path: backend/mypy-report.txt
           if-no-files-found: warn
           retention-days: 3
+
+      # ----------------------------------------------------------------
+      # PR-B3b: pr-fast backend affected coverage
+      #
+      # Bootstrap rule (security-critical):
+      #   The candidate PR checkout is NEVER used as the selector
+      #   authority. The selector script is extracted from the exact
+      #   PR BASE SHA into a trusted temporary location and executed
+      #   with --root=<pr_head_workspace> so the base-version
+      #   classification logic is what decides SELECTED / ESCALATION.
+      #   This makes a candidate modification to the selector itself
+      #   unable to self-certify: it goes through the BASE selector
+      #   first, which classifies it as ESCALATION_REQUIRED before
+      #   any test would run.
+      #
+      # State handling is documented in PR-B3b spec PART 3.
+      # ----------------------------------------------------------------
+      - name: PR-B3b backend affected coverage (trusted-base selector)
+        if: github.event_name == 'pull_request'
+        working-directory: .
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          GITHUB_WORKSPACE: ${{ github.workspace }}
+          RUNNER_TEMP: ${{ runner.temp }}
+        run: |
+          set -euo pipefail
+
+          # ----- Identity validation -----
+          printf '%s' "$PR_BASE_SHA" | grep -Eq '^[0-9a-f]{40}$' \
+            || { echo "::error::PR_BASE_SHA is not a 40-char hex SHA"; exit 1; }
+          printf '%s' "$PR_HEAD_SHA" | grep -Eq '^[0-9a-f]{40}$' \
+            || { echo "::error::PR_HEAD_SHA is not a 40-char hex SHA"; exit 1; }
+          git fetch --no-tags --depth=1 origin "$PR_BASE_SHA"
+
+          MERGE_BASE="$(git -C "$GITHUB_WORKSPACE" merge-base \
+              "$PR_BASE_SHA" "$PR_HEAD_SHA")"
+          printf '%s' "$MERGE_BASE" | grep -Eq '^[0-9a-f]{40}$' \
+            || { echo "::error::MERGE_BASE is not a 40-char hex SHA"; exit 1; }
+
+          # ----- Extract TRUSTED selector from PR_BASE_SHA -----
+          TRUSTED_SELECTOR_DIR="$(mktemp -d -t retail-trusted-pr-b3b-XXXXXX)"
+          trap 'rm -rf "$TRUSTED_SELECTOR_DIR"' EXIT
+          if ! git show "$PR_BASE_SHA:scripts/pr_fast_select_tests.py" \
+              > "$TRUSTED_SELECTOR_DIR/trusted-pr-fast-select-tests.py"; then
+            echo "::error::cannot extract trusted selector from $PR_BASE_SHA"
+            exit 1
+          fi
+          test -s "$TRUSTED_SELECTOR_DIR/trusted-pr-fast-select-tests.py"
+
+          # ----- Run trusted selector against the candidate checkout -----
+          EVIDENCE_DIR="$GITHUB_WORKSPACE/test-results/pr-b3b/$PR_HEAD_SHA"
+          mkdir -p "$EVIDENCE_DIR"
+
+          set +e
+          SELECTOR_JSON="$EVIDENCE_DIR/selector.json"
+          backend/venv/bin/python -I \
+            "$TRUSTED_SELECTOR_DIR/trusted-pr-fast-select-tests.py" \
+            --root "$GITHUB_WORKSPACE" \
+            --base "$MERGE_BASE" \
+            > "$SELECTOR_JSON" 2>"$EVIDENCE_DIR/selector.stderr"
+          selector_rc=$?
+          set -e
+
+          # Validate identities in selector JSON. The validator lives in
+          # scripts/pr_b3b_selected_paths_validator.py and is unit-tested
+          # by backend/tests/test_pr_b3b_workflows.py (no inline heredoc).
+          VALIDATOR_OUTPUT="$EVIDENCE_DIR/_selected_paths_validator.txt"
+          /usr/bin/python3.12 -I scripts/pr_b3b_selected_paths_validator.py \
+            "$SELECTOR_JSON" "$PR_HEAD_SHA" "$VALIDATOR_OUTPUT"
+
+          STATE="$(python3 -c 'import json; print(json.load(open("'"$SELECTOR_JSON"'"))["state"])')"
+          SELECTION_COUNT="$(python3 -c 'import json; print(json.load(open("'"$SELECTOR_JSON"'"))["selection_count"])')"
+
+          echo "PR-B3b selector: state=$STATE selection_count=$SELECTION_COUNT rc=$selector_rc"
+
+          case "$STATE" in
+            NO_ELIGIBLE_BACKEND_CHANGE)
+              # No eligible backend change: do NOT start Postgres/Valkey.
+              # Emit a valid minimal empty coverage JSON and run the
+              # authoritative changed-line gate to prove pass-by-vacuity.
+              EMPTY_JSON="$EVIDENCE_DIR/empty-coverage.json"
+              printf '{"files": {}}\n' > "$EMPTY_JSON"
+              backend/venv/bin/python -I scripts/check_changed_line_coverage.py \
+                --base "$MERGE_BASE" \
+                --backend-json "$EMPTY_JSON" \
+                --minimum 80
+              echo "PR-B3b backend-affected: NO_ELIGIBLE — changed-line gate exercised with empty JSON"
+              ;;
+            SELECTED)
+              # Selective pytest against the EXISTING isolated-test
+              # infrastructure, so DB-dependent selected tests have a
+              # real PostgreSQL + Valkey.
+              # Security/validation: parse selected_tests[].file, reject
+              # any path that is not a string starting with
+              # `backend/tests/`, that contains traversal, that is not
+              # an existing regular file at PR HEAD, that is deleted,
+              # that is duplicated, or whose count disagrees with the
+              # parsed list.
+              SELECTED_PATHS_FILE="$EVIDENCE_DIR/selected-paths.txt"
+              # Validator helper script (no inline heredoc — see
+              # backend/tests/test_pr_b3b_workflows.py for unit tests).
+              /usr/bin/python3.12 -I scripts/pr_b3b_selected_paths_validator.py \
+                "$SELECTOR_JSON" "$PR_HEAD_SHA" "$SELECTED_PATHS_FILE"
+              # Convert repo-relative backend/tests/foo.py to
+              # backend-working-directory tests/foo.py because
+              # backend/scripts/run_tests_isolated.sh `cd`s into backend/.
+              SELECTED_BARE="$EVIDENCE_DIR/selected-bare.txt"
+              sed 's|^backend/||' "$SELECTED_PATHS_FILE" > "$SELECTED_BARE"
+              # Build the pytest argv. We DO NOT pass --cov-fail-under=80
+              # on the selective lane; the changed-line gate enforces the
+              # 80% floor against the produced coverage JSON.
+              mapfile -d $'\n' -t BARE_PATHS < "$SELECTED_BARE"
+              cd "$GITHUB_WORKSPACE/backend"
+              set +e
+              ../backend/scripts/run_tests_isolated.sh \
+                  "${BARE_PATHS[@]}" \
+                  --tb=short \
+                  --cov=. \
+                  --cov-config=../.coveragerc \
+                  --cov-report=json:"$EVIDENCE_DIR/pr-affected-coverage.json" \
+                  > "$EVIDENCE_DIR/selected-pytest.log" 2>&1
+              pytest_rc=$?
+              set -e
+              cd "$GITHUB_WORKSPACE"
+              if [ "$pytest_rc" -ne 0 ]; then
+                  echo "::error::PR-B3b selective pytest failed (rc=$pytest_rc); see selected-pytest.log"
+                  exit "$pytest_rc"
+              fi
+              # Authoritative gate.
+              backend/venv/bin/python -I scripts/check_changed_line_coverage.py \
+                --base "$MERGE_BASE" \
+                --backend-json "$EVIDENCE_DIR/pr-affected-coverage.json" \
+                --minimum 80
+              echo "PR-B3b backend-affected: SELECTED — selective pytest + changed-line gate passed"
+              ;;
+            ESCALATION_REQUIRED)
+              echo "::warning::PR-B3b backend-affected: ESCALATION_REQUIRED — PR-DEEP exact-head certification required"
+              ;;
+            ERROR)
+              echo "::error::PR-B3b backend-affected selector returned ERROR"
+              exit 1
+              ;;
+            *)
+              echo "::error::PR-B3b backend-affected selector returned unknown state: $STATE"
+              exit 1
+              ;;
+          esac
+
+      - name: Upload PR-B3b backend-affected evidence
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: retail-pr-backend-affected-${{ github.event.pull_request.head.sha }}
+          path: test-results/pr-b3b/${{ github.event.pull_request.head.sha }}/
+          if-no-files-found: error
+          retention-days: 14
+
   backend-check:
     name: backend-check
     if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'

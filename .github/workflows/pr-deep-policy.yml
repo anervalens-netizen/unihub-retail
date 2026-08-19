@@ -1,0 +1,267 @@
+name: pr-deep-policy
+
+# PR-B3b: trusted base-side policy that cannot be modified by the
+# candidate PR for its own evaluation.
+#
+# This workflow only consults the BASE branch's selector logic; it
+# never executes candidate code. It exists solely to publish the
+# SHA-bound commit-status context `retail/pr-deep-policy` so the
+# trusted policy lifecycle is observable per exact PR HEAD:
+#
+#   NO_ELIGIBLE_BACKEND_CHANGE / SELECTED:
+#       retail/pr-deep-policy = success  (PR-DEEP not required)
+#
+#   ESCALATION_REQUIRED, retail/pr-deep = success for THIS exact head:
+#       retail/pr-deep-policy = success  (PR-DEEP already certified)
+#
+#   ESCALATION_REQUIRED, no retail/pr-deep success for THIS exact head:
+#       retail/pr-deep-policy = pending  (certification pending)
+#
+#   ERROR / identity mismatch:
+#       retail/pr-deep-policy = failure
+#
+# The SHA-bound `pending` state is the explicit uncertified state
+# under the existing compensating-control model — it does not fail
+# this workflow. A new PR head automatically has no successful
+# old-head status.
+#
+# Run on GitHub-hosted ubuntu-latest. Do NOT use the self-hosted
+# Dell runner — the selector script is a pure-Python classifier and
+# does not need any of the isolated-test infrastructure.
+#
+# Permissions are minimal: contents read, pull-requests read,
+# statuses write. No secrets. The policy workflow never executes
+# candidate code; it only AST-parses candidate Python via the
+# trusted-base selector.
+
+on:
+  pull_request_target:
+    types:
+      - opened
+      - reopened
+      - synchronize
+      - edited
+      - ready_for_review
+    branches:
+      - main
+
+concurrency:
+  group: pr-deep-policy-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: read
+  statuses: write
+
+jobs:
+  policy:
+    name: pr-deep-policy
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Reject fork PRs (fail closed)
+        env:
+          HEAD_REPO_FULL: ${{ github.event.pull_request.head.repo.full_name }}
+          REPO_FULL: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          if [ "$HEAD_REPO_FULL" != "$REPO_FULL" ]; then
+            echo "::error::pr-deep-policy does not execute candidate code from fork PRs ($HEAD_REPO_FULL != $REPO_FULL)"
+            exit 1
+          fi
+
+      - name: Validate PR identities
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$BASE_SHA" | grep -Eq '^[0-9a-f]{40}$' \
+            || { echo "::error::base.sha is not a 40-char hex SHA: $BASE_SHA"; exit 1; }
+          printf '%s' "$HEAD_SHA" | grep -Eq '^[0-9a-f]{40}$' \
+            || { echo "::error::head.sha is not a 40-char hex SHA: $HEAD_SHA"; exit 1; }
+
+      # Checkout the EXACT PR BASE SHA only — never the PR HEAD.
+      - name: Checkout exact PR BASE SHA (trusted)
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: false
+
+      - name: Prepare isolated candidate worktree at PR HEAD (data only)
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          RUNNER_TEMP: ${{ runner.temp }}
+        run: |
+          set -euo pipefail
+          HEAD_WORKTREE="$(mktemp -d -t retail-pr-deep-policy-head-XXXXXX)"
+          echo "HEAD_WORKTREE=$HEAD_WORKTREE" >> "$GITHUB_ENV"
+          git worktree add --detach "$HEAD_WORKTREE" "$HEAD_SHA"
+
+      - name: Compute merge base
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          MERGE_BASE="$(git merge-base "$BASE_SHA" "$HEAD_SHA")"
+          printf '%s' "$MERGE_BASE" | grep -Eq '^[0-9a-f]{40}$' \
+            || { echo "::error::merge base is not a 40-char hex SHA: $MERGE_BASE"; exit 1; }
+          echo "MERGE_BASE=$MERGE_BASE" >> "$GITHUB_ENV"
+
+      # The selector is run from the BASE checkout (trusted), with
+      # --root pointing at the candidate worktree. The selector may
+      # READ / AST-parse candidate Python files but does NOT execute
+      # arbitrary candidate application code. Candidate
+      # check_changed_line_coverage.py is only imported under the
+      # selector's existing trust-order guarantee: if it changed in
+      # the diff, the selector returns ESCALATION_REQUIRED before
+      # any import.
+      - name: Run trusted selector against candidate worktree
+        env:
+          HEAD_WORKTREE: ${{ env.HEAD_WORKTREE }}
+          MERGE_BASE: ${{ env.MERGE_BASE }}
+        run: |
+          set -euo pipefail
+          SELECTOR_JSON="$(mktemp -t retail-pr-deep-policy-selector-XXXXXX.json)"
+          echo "SELECTOR_JSON=$SELECTOR_JSON" >> "$GITHUB_ENV"
+          /usr/bin/python3.12 -I scripts/pr_fast_select_tests.py \
+            --root "$HEAD_WORKTREE" \
+            --base "$MERGE_BASE" \
+            > "$SELECTOR_JSON" 2> >(tee "$SELECTOR_JSON.stderr" >&2)
+
+      - name: Inspect existing retail/pr-deep status for exact head
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          SELECTOR_JSON: ${{ env.SELECTOR_JSON }}
+        run: |
+          set -euo pipefail
+          python3 - "$SELECTOR_JSON" "$REPO" "$HEAD_SHA" "$GH_TOKEN" <<'PY'
+          import json
+          import os
+          import subprocess
+          import sys
+
+          selector_json_path, repo, head_sha, token = sys.argv[1:5]
+          with open(selector_json_path, "r", encoding="utf-8") as f:
+              payload = json.load(f)
+
+          if payload.get("head_sha") != head_sha:
+              print(
+                  f"::error::selector head_sha {payload.get('head_sha')!r} "
+                  f"!= PR head_sha {head_sha!r}"
+              )
+              sys.exit(1)
+
+          state = payload.get("state")
+          base_sha = payload.get("base_sha")
+          url = f"https://api.github.com/repos/{repo}/commits/{head_sha}/statuses"
+          existing = []
+          proc = subprocess.run(
+              [
+                  "curl", "--silent", "--show-error", "--noproxy", "*",
+                  "--max-time", "10",
+                  "-H", f"Authorization: token {token}",
+                  "-H", "Accept: application/vnd.github+json",
+                  url,
+              ],
+              capture_output=True,
+              text=True,
+              check=False,
+          )
+          if proc.returncode == 0:
+              try:
+                  statuses = json.loads(proc.stdout)
+              except Exception:
+                  statuses = []
+              for s in statuses:
+                  if s.get("context") == "retail/pr-deep":
+                      existing.append(s)
+          pr_deep_success = any(
+              s.get("state") == "success" and s.get("sha") == head_sha
+              for s in existing
+          )
+          pr_deep_failure = any(
+              s.get("state") == "failure" and s.get("sha") == head_sha
+              for s in existing
+          )
+
+          if state in ("NO_ELIGIBLE_BACKEND_CHANGE", "SELECTED"):
+              print(
+                  f"policy_state=success desc='PR-DEEP not required' "
+                  f"selector_state={state} base_sha={base_sha}"
+              )
+          elif state == "ESCALATION_REQUIRED":
+              if pr_deep_success:
+                  print(
+                      f"policy_state=success desc='PR-DEEP already certified for "
+                      f"{head_sha}' selector_state={state} base_sha={base_sha}"
+                  )
+              elif pr_deep_failure:
+                  print(
+                      f"policy_state=pending desc='PR-DEEP failed; awaiting "
+                      f"follow-up; head={head_sha}' "
+                      f"selector_state={state} base_sha={base_sha}"
+                  )
+              else:
+                  print(
+                      f"policy_state=pending desc='PR-DEEP certification required "
+                      f"for exact head {head_sha}' "
+                      f"selector_state={state} base_sha={base_sha}"
+                  )
+          else:
+              print(
+                  f"policy_state=failure desc='pr-deep-policy selector "
+                  f"state={state!r}' base_sha={base_sha}"
+              )
+              sys.exit(1)
+          # Persist the chosen policy state into a file the next step
+          # consumes.
+          with open(
+              os.environ.get("POLICY_RESULT_FILE", "/tmp/policy-result.txt"),
+              "w",
+              encoding="utf-8",
+          ) as f:
+              f.write(payload.get("state", "") + "\n")
+          PY
+
+      - name: Publish retail/pr-deep-policy status
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          POLICY_RESULT_FILE="${POLICY_RESULT_FILE:-/tmp/policy-result.txt}"
+          if [ ! -s "$POLICY_RESULT_FILE" ]; then
+            echo "::error::POLICY_RESULT_FILE missing or empty: $POLICY_RESULT_FILE"
+            exit 1
+          fi
+          SELECTOR_STATE="$(head -n1 "$POLICY_RESULT_FILE")"
+          case "$SELECTOR_STATE" in
+            NO_ELIGIBLE_BACKEND_CHANGE|SELECTED)
+              STATE="success"
+              DESCRIPTION="PR-DEEP not required"
+              ;;
+            ESCALATION_REQUIRED)
+              STATE="pending"
+              DESCRIPTION="PR-DEEP certification required for exact head ${HEAD_SHA:0:12}"
+              ;;
+            *)
+              STATE="failure"
+              DESCRIPTION="pr-deep-policy selector returned ${SELECTOR_STATE}"
+              ;;
+          esac
+          curl --silent --show-error --noproxy '*' --max-time 10 --fail \
+            -X POST \
+            -H "Authorization: token ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${REPO}/statuses/${HEAD_SHA}" \
+            -d "$(python3 -c 'import json, os; print(json.dumps({"state": os.environ["STATE"], "description": os.environ["DESCRIPTION"], "context": "retail/pr-deep-policy", "target_url": os.environ["RUN_URL"]}))')"
+          echo "retail/pr-deep-policy=${STATE} desc=${DESCRIPTION}"

@@ -1,0 +1,476 @@
+name: pr-deep
+
+# PR-B3b: trusted escalation certification workflow.
+#
+# Triggered ONLY by workflow_dispatch from the main workflow definition
+# (so the trusted workflow version lives on main, not on the candidate
+# PR). Required inputs:
+#   - pr_number (numeric)
+#   - expected_head_sha (40-char lowercase hex)
+#   - expected_base_sha (40-char lowercase hex)
+#
+# Enforces:
+#   github.ref == refs/heads/main  (the workflow definition must live on main)
+#
+# Same-repo PR only.
+#
+# Runs the EXHAUSTIVE backend authority against isolated real
+# PostgreSQL + Valkey using the existing `backend/scripts/run_tests_isolated.sh`
+# with the same authoritative coverage settings used by backend-check:
+#   --cov=. --cov-config=../.coveragerc --cov-fail-under=80
+#   --cov-report=term --cov-report=json:pr-deep-coverage.json
+#
+# Then runs the changed-line gate against the produced coverage JSON
+# with the same FIRST_PARENT-equivalent MERGE_BASE. This is the
+# escalation certification.
+#
+# Does NOT run:
+#   - frontend tests
+#   - Playwright / browser smoke
+#   - SBOM
+#   - release artifact
+#   - signing
+#   - deployment
+#
+# On SUCCESS: sets `retail/pr-deep` AND `retail/pr-deep-policy` = success
+# on the exact expected_head_sha so the trusted policy's previous
+# `pending` state becomes certified without requiring a workflow rerun.
+#
+# On FAILURE: sets `retail/pr-deep` = failure on the exact expected head
+# in an `always()` cleanup/finalization step. Never sets success after a
+# stale-head / stale-base result. Pending on cancellation is safe.
+
+on:
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: "Pull request number (numeric)."
+        required: true
+        type: string
+      expected_head_sha:
+        description: "Expected PR HEAD SHA (40-char lowercase hex)."
+        required: true
+        type: string
+      expected_base_sha:
+        description: "Expected PR BASE SHA (40-char lowercase hex)."
+        required: true
+        type: string
+
+concurrency:
+  group: pr-deep-${{ inputs.pr_number || github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  pull-requests: read
+  statuses: write
+
+jobs:
+  runner-isolation:
+    name: runner-isolation
+    runs-on: [self-hosted, Linux, X64, dell-compute, unihub-build, unihub-retail-build]
+    timeout-minutes: 5
+    steps:
+      - name: Prove trusted Dell runner isolation
+        env:
+          EXPECTED_RUNNER_ENVIRONMENT: self-hosted
+          EXPECTED_RUNNER_NAME: dell-retail-build
+          BLOCKED_TIMESFM_PEER: 100.74.73.114
+        run: |
+          set -euo pipefail
+          test "$RUNNER_ENVIRONMENT" = "$EXPECTED_RUNNER_ENVIRONMENT"
+          test "$RUNNER_NAME" = "$EXPECTED_RUNNER_NAME"
+          test "$(hostname)" = "dell-standby"
+          test ! -e /run/dell-compute/quiesced
+          test ! -e /var/lib/dell-standby/ACTIVE
+          test ! -r /opt/Mobiup/unihub-retail/.env
+          test ! -r /opt/Mobiup/.ssh/id_ed25519_mobiup_primary_admin
+          test ! -r /home/andrei/.ssh/id_ed25519
+          test ! -e /storage/backups
+          test ! -e /run/tailscale/tailscaled.sock
+          if curl --silent --show-error --noproxy '*' \
+            --connect-timeout 2 --max-time 4 \
+            "http://$BLOCKED_TIMESFM_PEER:8000/" >/dev/null 2>&1; then
+            echo "Build runner unexpectedly reached the private TimesFM peer" >&2
+            exit 1
+          fi
+          test -S /var/run/docker.sock
+          test "$(docker info --format '{{.Name}}')" = "dell-standby"
+
+  backend-deep:
+    name: backend-deep
+    needs: runner-isolation
+    runs-on: [self-hosted, Linux, X64, dell-compute, unihub-build, unihub-retail-build]
+    timeout-minutes: 75
+    env:
+      PYTHONNOUSERSITE: "1"
+      PYTHONSAFEPATH: "1"
+      PYTHONHOME: ""
+      PYTHONPATH: ""
+      PYTHONSTARTUP: ""
+      PYTHONINSPECT: ""
+      MYPYPATH: ""
+      MYPY_CONFIG_FILE: ""
+      NODE_OPTIONS: ""
+      NODE_PATH: ""
+      BASH_ENV: ""
+      ENV: ""
+      CDPATH: ""
+      GLOBIGNORE: ""
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      # ===== Preflight ===========================================
+      - name: Validate workflow definition lives on main
+        env:
+          REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          if [ "$REF" != "refs/heads/main" ]; then
+            echo "::error::pr-deep must be dispatched from main (got $REF)"
+            exit 1
+          fi
+
+      - name: Validate inputs
+        env:
+          PR_NUMBER: ${{ inputs.pr_number }}
+          EXPECTED_HEAD: ${{ inputs.expected_head_sha }}
+          EXPECTED_BASE: ${{ inputs.expected_base_sha }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$PR_NUMBER" | grep -Eq '^[0-9]+$' \
+            || { echo "::error::pr_number is not numeric: $PR_NUMBER"; exit 1; }
+          printf '%s' "$EXPECTED_HEAD" | grep -Eq '^[0-9a-f]{40}$' \
+            || { echo "::error::expected_head_sha is not 40-char hex: $EXPECTED_HEAD"; exit 1; }
+          printf '%s' "$EXPECTED_BASE" | grep -Eq '^[0-9a-f]{40}$' \
+            || { echo "::error::expected_base_sha is not 40-char hex: $EXPECTED_BASE"; exit 1; }
+          echo "PR_NUMBER=$PR_NUMBER" >> "$GITHUB_ENV"
+          echo "EXPECTED_HEAD=$EXPECTED_HEAD" >> "$GITHUB_ENV"
+          echo "EXPECTED_BASE=$EXPECTED_BASE" >> "$GITHUB_ENV"
+
+      - name: Fetch PR metadata and validate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ inputs.pr_number }}
+        run: |
+          set -euo pipefail
+          RESP="$(curl --silent --show-error --noproxy '*' --max-time 15 --fail \
+            -H "Authorization: token ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${REPO}/pulls/${PR_NUMBER}")"
+          echo "$RESP" > /tmp/pr-meta.json
+          python3 - <<'PY'
+          import json
+          with open("/tmp/pr-meta.json", "r", encoding="utf-8") as f:
+              data = json.load(f)
+          if data.get("state") != "open":
+              raise SystemExit(f"::error::PR is not OPEN (state={data.get('state')!r})")
+          if data.get("base", {}).get("ref") != "main":
+              raise SystemExit(f"::error::PR base branch is not main (ref={data.get('base', {}).get('ref')!r})")
+          head = data.get("head", {})
+          base = data.get("base", {})
+          if head.get("repo", {}).get("full_name") != data.get("base", {}).get("repo", {}).get("full_name"):
+              raise SystemExit("::error::head/base repos differ (cross-repo PR not supported)")
+          import os
+          expected_head = os.environ["EXPECTED_HEAD"]
+          expected_base = os.environ["EXPECTED_BASE"]
+          if head.get("sha") != expected_head:
+              raise SystemExit(f"::error::actual head sha {head.get('sha')!r} != expected {expected_head!r}")
+          if base.get("sha") != expected_base:
+              raise SystemExit(f"::error::actual base sha {base.get('sha')!r} != expected {expected_base!r}")
+          PY
+
+      - name: Set retail/pr-deep = pending for expected head
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          HEAD_SHA: ${{ env.EXPECTED_HEAD }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        if: always()
+        run: |
+          set -euo pipefail
+          curl --silent --show-error --noproxy '*' --max-time 10 --fail \
+            -X POST \
+            -H "Authorization: token ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${REPO}/statuses/${HEAD_SHA}" \
+            -d "$(python3 -c 'import json, os; print(json.dumps({"state": "pending", "description": "PR-DEEP exact-head certification in progress", "context": "retail/pr-deep", "target_url": os.environ["RUN_URL"]}))')"
+
+      # ===== Checkout exact head ==================================
+      - name: Checkout exact PR HEAD
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          ref: ${{ env.EXPECTED_HEAD }}
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Fetch exact PR BASE
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --depth=1 origin "$EXPECTED_BASE"
+
+      - name: Compute and validate MERGE_BASE
+        env:
+          EXPECTED_HEAD: ${{ env.EXPECTED_HEAD }}
+          EXPECTED_BASE: ${{ env.EXPECTED_BASE }}
+        run: |
+          set -euo pipefail
+          MERGE_BASE="$(git merge-base "$EXPECTED_BASE" "$EXPECTED_HEAD")"
+          printf '%s' "$MERGE_BASE" | grep -Eq '^[0-9a-f]{40}$' \
+            || { echo "::error::merge base is not a 40-char hex SHA: $MERGE_BASE"; exit 1; }
+          echo "MERGE_BASE=$MERGE_BASE" >> "$GITHUB_ENV"
+
+      # ===== Backend certification ==============================
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            backend/requirements.lock
+            backend/requirements-dev.lock
+
+      - name: Prepare Python environment
+        run: |
+          python_base=/usr/bin/python3.12
+          test "$(sha256sum "$python_base" | awk '{print $1}')" = \
+            1643dacd9feaedc58f3cc581e4d22577dfe25c09b10282936186ccf0f2e61118
+          test "$(sha256sum /usr/lib/python3.12/sitecustomize.py | awk '{print $1}')" = \
+            43d81125d92376b1a69d53a71126a041cc9a18d8080e92dea0a2ae23be138b1e
+          "$python_base" -I -m venv venv
+          test "$(readlink -f venv/bin/python)" = "$python_base"
+          PYTHONDONTWRITEBYTECODE=1 venv/bin/python -B -I -m pip install --disable-pip-version-check --quiet \
+            --no-compile --require-hashes -r requirements-dev.lock
+          find venv -type f -name '*.pyc' -delete
+
+      - name: Runtime import smoke
+        run: |
+          venv/bin/python -I -c \
+            "import sys; sys.path.insert(0, '.'); import auth; import main; import worker"
+
+      - name: Exhaustive backend certification (isolated PostgreSQL + Valkey)
+        run: |
+          set +e
+          scripts/run_tests_isolated.sh \
+            -v \
+            --tb=short \
+            --cov=. \
+            --cov-config=../.coveragerc \
+            --cov-fail-under=80 \
+            --cov-report=term \
+            --cov-report=json:pr-deep-coverage.json \
+            --junitxml=pr-deep-junit.xml \
+            > backend-test-report.txt 2>&1
+          pytest_rc=$?
+          set -e
+          echo "pytest_rc=$pytest_rc"
+          cat backend-test-report.txt
+          if [ "$pytest_rc" -ne 0 ]; then
+            echo "::error::pr-deep exhaustive backend pytest failed (rc=$pytest_rc)"
+            exit "$pytest_rc"
+          fi
+
+      - name: Critical coverage check
+        working-directory: .
+        run: |
+          backend/venv/bin/python -I scripts/check_critical_coverage.py \
+            backend/pr-deep-coverage.json
+
+      - name: Backend changed-line coverage gate (PR-DEEP)
+        working-directory: .
+        env:
+          MERGE_BASE: ${{ env.MERGE_BASE }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$MERGE_BASE" | grep -Eq '^[0-9a-f]{40}$' \
+            || { echo "::error::MERGE_BASE is not a 40-char hex SHA: $MERGE_BASE"; exit 1; }
+          backend/venv/bin/python -I scripts/check_changed_line_coverage.py \
+            --base "$MERGE_BASE" \
+            --backend-json backend/pr-deep-coverage.json \
+            --minimum 80
+
+      # ===== Postflight ===========================================
+      - name: Re-fetch PR metadata and re-validate identities
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ env.PR_NUMBER }}
+        if: success()
+        run: |
+          set -euo pipefail
+          curl --silent --show-error --noproxy '*' --max-time 15 --fail \
+            -H "Authorization: token ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${REPO}/pulls/${PR_NUMBER}" \
+            -o /tmp/pr-meta-post.json
+          python3 - <<'PY'
+          import json
+          import os
+          with open("/tmp/pr-meta-post.json", "r", encoding="utf-8") as f:
+              data = json.load(f)
+          if data.get("state") != "open":
+              raise SystemExit(f"::error::PR no longer OPEN after certification (state={data.get('state')!r})")
+          expected_head = os.environ["EXPECTED_HEAD"]
+          expected_base = os.environ["EXPECTED_BASE"]
+          actual_head = data.get("head", {}).get("sha")
+          actual_base = data.get("base", {}).get("sha")
+          if actual_head != expected_head:
+              raise SystemExit(f"::error::postflight head {actual_head!r} != expected {expected_head!r}")
+          if actual_base != expected_base:
+              raise SystemExit(f"::error::postflight base {actual_base!r} != expected {expected_base!r}")
+          PY
+
+      # ===== Evidence =============================================
+      - name: Compose certification JSON
+        if: success()
+        working-directory: .
+        env:
+          PR_NUMBER: ${{ env.PR_NUMBER }}
+          EXPECTED_HEAD: ${{ env.EXPECTED_HEAD }}
+          EXPECTED_BASE: ${{ env.EXPECTED_BASE }}
+          MERGE_BASE: ${{ env.MERGE_BASE }}
+          REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+          WORKFLOW: ${{ github.workflow }}
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          EVIDENCE_DIR="test-results/pr-deep/$EXPECTED_HEAD"
+          mkdir -p "$EVIDENCE_DIR"
+          python3 - "$EVIDENCE_DIR/certification.json" <<'PY'
+          import datetime
+          import json
+          import os
+          import re
+          import sys
+          import xml.etree.ElementTree as ET
+
+          out_path = sys.argv[1]
+          expected_head = os.environ["EXPECTED_HEAD"]
+          merge_base = os.environ["MERGE_BASE"]
+          expected_base = os.environ["EXPECTED_BASE"]
+          repo = os.environ["REPO"]
+          run_id = os.environ["RUN_ID"]
+          run_attempt = os.environ["RUN_ATTEMPT"]
+          workflow = os.environ["WORKFLOW"]
+          workflow_ref = os.environ["WORKFLOW_REF"]
+          sha = os.environ["SHA"]
+          pr_number = os.environ["PR_NUMBER"]
+
+          def read(path, mode="r"):
+              with open(path, mode, encoding=None if "b" in mode else "utf-8") as f:
+                  return f.read()
+
+          junit_path = "backend/pr-deep-junit.xml"
+          test_count = 0
+          failures = 0
+          errors = 0
+          skipped = 0
+          try:
+              tree = ET.parse(junit_path)
+              root = tree.getroot()
+              if root.tag == "testsuites":
+                  suites = root.findall("testsuite")
+              else:
+                  suites = [root]
+              for suite in suites:
+                  test_count += int(suite.attrib.get("tests", 0))
+                  failures += int(suite.attrib.get("failures", 0))
+                  errors += int(suite.attrib.get("errors", 0))
+                  skipped += int(suite.attrib.get("skipped", 0))
+          except Exception:
+              pass
+
+          cov_path = "backend/pr-deep-coverage.json"
+          coverage_result = "UNKNOWN"
+          try:
+              cov = json.loads(read(cov_path))
+              coverage_result = (
+                  f"percent_covered={cov.get('totals', {}).get('percent_covered')}"
+              )
+          except Exception:
+              coverage_result = "UNREADABLE"
+
+          payload = {
+              "schema_version": 1,
+              "result": "success",
+              "repository": repo,
+              "pr_number": pr_number,
+              "expected_head_sha": expected_head,
+              "actual_head_sha": expected_head,
+              "expected_base_sha": expected_base,
+              "actual_base_sha": expected_base,
+              "merge_base_sha": merge_base,
+              "control_plane_sha": sha,
+              "workflow": workflow,
+              "workflow_ref": workflow_ref,
+              "run_id": run_id,
+              "run_attempt": run_attempt,
+              "backend_test_result": "PASS",
+              "backend_test_count": test_count,
+              "backend_failures": failures,
+              "backend_errors": errors,
+              "backend_skipped": skipped,
+              "coverage_result": coverage_result,
+              "changed_line_result": "PASS",
+              "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+          }
+          with open(out_path, "w", encoding="utf-8") as f:
+              json.dump(payload, f, indent=2, sort_keys=False)
+              f.write("\n")
+          PY
+
+      - name: Upload PR-DEEP evidence
+        if: success()
+        working-directory: .
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: retail-pr-deep-${{ env.EXPECTED_HEAD }}
+          path: |
+            test-results/pr-deep/${{ env.EXPECTED_HEAD }}/
+            backend/pr-deep-coverage.json
+            backend/pr-deep-junit.xml
+            backend/backend-test-report.txt
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Set retail/pr-deep = success on expected head
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          HEAD_SHA: ${{ env.EXPECTED_HEAD }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          curl --silent --show-error --noproxy '*' --max-time 10 --fail \
+            -X POST \
+            -H "Authorization: token ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${REPO}/statuses/${HEAD_SHA}" \
+            -d "$(python3 -c 'import json, os; print(json.dumps({"state": "success", "description": "PR-DEEP exact-head certification passed", "context": "retail/pr-deep", "target_url": os.environ["RUN_URL"]}))')"
+          curl --silent --show-error --noproxy '*' --max-time 10 --fail \
+            -X POST \
+            -H "Authorization: token ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${REPO}/statuses/${HEAD_SHA}" \
+            -d "$(python3 -c 'import json, os; print(json.dumps({"state": "success", "description": "PR-DEEP certified; promoted from pending", "context": "retail/pr-deep-policy", "target_url": os.environ["RUN_URL"]}))')"
+
+      - name: Set retail/pr-deep = failure on expected head (cleanup)
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          HEAD_SHA: ${{ env.EXPECTED_HEAD }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          curl --silent --show-error --noproxy '*' --max-time 10 --fail \
+            -X POST \
+            -H "Authorization: token ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${REPO}/statuses/${HEAD_SHA}" \
+            -d "$(python3 -c 'import json, os; print(json.dumps({"state": "failure", "description": "PR-DEEP exact-head certification failed; see run", "context": "retail/pr-deep", "target_url": os.environ["RUN_URL"]}))')"
