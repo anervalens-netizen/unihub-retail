@@ -1706,3 +1706,113 @@ class TestTrustOrderingSelectorSelfChange:
             "selector imported the candidate gate before classifying "
             "its own change as selector_self"
         )
+
+
+# ---------------------------------------------------------------------------
+# PR-B3b: coverage / test-infrastructure trust surfaces
+# ---------------------------------------------------------------------------
+#
+# Adding/removing/modifying any of these files can change coverage
+# semantics, isolated-test execution, or test-DB provisioning without
+# touching application logic. The selector MUST treat them as
+# trust-invalidating surfaces (gate_authority) so affected-test /
+# affected-coverage reasoning is never silently undermined.
+#
+# We do NOT extend EXACT_ESCALATION_PATHS speculatively to the entire
+# backend/scripts/ subtree (that would be an over-broad false positive),
+# only to files that actually affect test selection, collection, or
+# measurement.
+
+
+class TestTrustOrderingCoverageAndTestInfraSurfaces:
+    """PR-B3b part 1: coverage / test-infrastructure trust surfaces.
+
+    Each test asserts that a change (or deletion) of one of the
+    documented coverage / isolated-test / bootstrap-DB files is
+    classified as gate_authority BEFORE the gate is imported, and the
+    selector returns ESCALATION_REQUIRED (rc 2, never rc 0 / rc 3).
+    """
+
+    @pytest.mark.parametrize(
+        "trust_path",
+        [
+            ".coveragerc",
+            "backend/scripts/run_tests_isolated.sh",
+            "backend/scripts/bootstrap_test_db.py",
+        ],
+    )
+    def test_change_to_test_infra_surface_escalates(
+            self, tmp_path, trust_path):
+        repo = _new_repo(tmp_path)
+        _seed_gate(repo, _GATE_BODY_HEALTHY)
+        _make_backend_skeleton(repo)
+        # Make sure the trust surface exists at base so the diff is a
+        # clean A/M (not an add).
+        path = repo / trust_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("# original\n", encoding="utf-8")
+        base = _commit(repo, "seed")
+        path.write_text("# modified for test\n", encoding="utf-8")
+        _commit(repo, "modify test infra")
+
+        rc, payload, _ = _run_selector(repo, base)
+        assert rc == 2, payload
+        assert payload["state"] == "ESCALATION_REQUIRED"
+        cats = [r["category"] for r in payload["escalation_reasons"]]
+        assert "gate_authority" in cats
+        reasons_paths = [r["path"] for r in payload["escalation_reasons"]]
+        assert trust_path in reasons_paths
+
+    @pytest.mark.parametrize(
+        "trust_path",
+        [
+            ".coveragerc",
+            "backend/scripts/run_tests_isolated.sh",
+            "backend/scripts/bootstrap_test_db.py",
+        ],
+    )
+    def test_deletion_of_test_infra_surface_escalates(
+            self, tmp_path, trust_path):
+        repo = _new_repo(tmp_path)
+        _seed_gate(repo, _GATE_BODY_HEALTHY)
+        _make_backend_skeleton(repo)
+        path = repo / trust_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("# original\n", encoding="utf-8")
+        base = _commit(repo, "seed")
+        path.unlink()
+        _commit(repo, "delete test infra")
+
+        rc, payload, _ = _run_selector(repo, base)
+        assert rc == 2, payload
+        assert payload["state"] == "ESCALATION_REQUIRED"
+        cats = [r["category"] for r in payload["escalation_reasons"]]
+        assert "gate_authority" in cats
+        reasons_paths = [r["path"] for r in payload["escalation_reasons"]]
+        assert trust_path in reasons_paths
+
+    def test_unrelated_backend_script_is_not_escalated(self, tmp_path):
+        """PR-B3b must NOT over-escalate to the whole backend/scripts/
+        subtree. An ordinary operational script under backend/scripts/
+        that does NOT control test / coverage / DB provisioning must
+        remain on the ordinary reverse-closure path (or NO_ELIGIBLE if
+        no eligible backend changed)."""
+        repo = _new_repo(tmp_path)
+        _seed_gate(repo, _GATE_BODY_HEALTHY)
+        _make_backend_skeleton(repo)
+        # An operational script that is NOT in our curated list.
+        path = repo / "backend" / "scripts" / "ordinary_operational.py"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("# original\n", encoding="utf-8")
+        base = _commit(repo, "seed")
+        path.write_text("# modified\n", encoding="utf-8")
+        _commit(repo, "modify operational")
+
+        rc, payload, _ = _run_selector(repo, base)
+        # Must NOT escalate on this path; we expect NO_ELIGIBLE because
+        # no eligible backend production module changed. The script
+        # under backend/scripts/ is skipped by _file_to_module.
+        assert rc == 0, payload
+        assert payload["state"] == "NO_ELIGIBLE_BACKEND_CHANGE"
+        cats = [r["category"] for r in payload["escalation_reasons"]]
+        assert "gate_authority" not in cats

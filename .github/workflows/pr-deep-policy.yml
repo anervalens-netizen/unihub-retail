@@ -1,0 +1,248 @@
+name: pr-deep-policy
+
+# PR-B3b: trusted base-side policy that cannot be modified by the
+# candidate PR for its own evaluation.
+#
+# This workflow only consults the BASE branch's selector logic; it
+# never executes candidate code. It exists solely to publish the
+# SHA-bound commit-status context `retail/pr-deep-policy` so the
+# trusted policy lifecycle is observable per exact PR HEAD + BASE.
+#
+# Narrow, accurate claim (DO NOT over-claim):
+#
+#   - The trusted BASE selector/policy decides whether escalation
+#     against the candidate diff is required. The selector itself
+#     NEVER executes arbitrary candidate application code; it
+#     READs / AST-parses candidate Python.
+#   - PR-DEEP (separate workflow_dispatch) provides exhaustive
+#     exact-head backend certification when the selector escalates.
+#   - Control-plane changes (governance, workflows, selector, gate,
+#     coverage, isolated-test runner) additionally remain subject
+#     to A3 high-risk governance, adversarial review and the
+#     post-merge exact-main FULL checkpoint.
+#   - Selector + affected backend coverage is NOT equivalent to
+#     FULL. FULL on exact main remains the independent
+#     release-authority.
+#
+# Base-bound certification:
+#
+#   A previous PR-DEEP certification is accepted only when:
+#     * status context == retail/pr-deep
+#     * status state   == success
+#     * status sha     == exact current PR HEAD
+#     * status description matches exactly
+#       "PASS base=<40-char expected_base_sha>"
+#
+#   A success for the same HEAD but a different (older) base SHA is
+#   STALE and does NOT count. Base advancement invalidates previous
+#   PR-DEEP certification even if HEAD did not move.
+#
+#   The policy's own retail/pr-deep-policy description carries the
+#   current base identity so pre-merge inspection is unambiguous.
+#
+# Run on GitHub-hosted ubuntu-latest. Do NOT use the self-hosted
+# Dell runner — the selector script is a pure-Python classifier
+# and does not need any of the isolated-test infrastructure.
+#
+# Permissions are minimal: contents read, pull-requests read,
+# statuses write. No secrets. The policy workflow never executes
+# candidate code.
+
+on:
+  pull_request_target:
+    types:
+      - opened
+      - reopened
+      - synchronize
+      - edited
+      - ready_for_review
+    branches:
+      - main
+
+concurrency:
+  group: pr-deep-policy-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: read
+  statuses: write
+
+jobs:
+  policy:
+    name: pr-deep-policy
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Reject fork PRs (fail closed)
+        env:
+          HEAD_REPO_FULL: ${{ github.event.pull_request.head.repo.full_name }}
+          REPO_FULL: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          if [ "$HEAD_REPO_FULL" != "$REPO_FULL" ]; then
+            echo "::error::pr-deep-policy does not execute candidate code from fork PRs ($HEAD_REPO_FULL != $REPO_FULL)"
+            exit 1
+          fi
+
+      - name: Validate PR identities
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$BASE_SHA" | grep -Eq '^[0-9a-f]{40}$' \
+            || { echo "::error::base.sha is not a 40-char hex SHA: $BASE_SHA"; exit 1; }
+          printf '%s' "$HEAD_SHA" | grep -Eq '^[0-9a-f]{40}$' \
+            || { echo "::error::head.sha is not a 40-char hex SHA: $HEAD_SHA"; exit 1; }
+
+      # Trusted BASE checkout. The BASE SHA is reachable from itself
+      # via fetch-depth:0. We do NOT perform an explicit authenticated
+      # post-checkout fetch for the PR HEAD here: the BASE refclone
+      # already brings the full same-repo history (fetch-depth:0,
+      # fetch-tags:true), so HEAD will be reachable iff it is a same-
+      # repo commit. The exact-object check below is fail-closed.
+      - name: Checkout exact PR BASE SHA (trusted)
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: false
+
+      # Fail-closed object-presence check. The BASE refclone with
+      # fetch-depth:0 already pulled every same-repo ref. If the
+      # exact PR HEAD object is not present, this is a same-repo
+      # availability problem and the policy workflow FAILS CLOSED —
+      # it does NOT silently re-enable credentialed fetches.
+      - name: Verify exact PR HEAD commit object is available
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          if git cat-file -e "${HEAD_SHA}^{commit}" 2>/dev/null; then
+            echo "PR HEAD ${HEAD_SHA} is present in the BASE checkout (reachable from base)."
+          else
+            echo "::error::PR HEAD ${HEAD_SHA} is NOT present in the BASE checkout; cannot safely build a candidate worktree."
+            exit 1
+          fi
+
+      - name: Prepare isolated candidate worktree at PR HEAD (data only)
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          HEAD_WORKTREE="$(mktemp -d -t retail-pr-deep-policy-head-XXXXXX)"
+          echo "HEAD_WORKTREE=$HEAD_WORKTREE" >> "$GITHUB_ENV"
+          git worktree add --detach "$HEAD_WORKTREE" "$HEAD_SHA"
+
+      - name: Compute merge base
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          MERGE_BASE="$(git merge-base "$BASE_SHA" "$HEAD_SHA")"
+          printf '%s' "$MERGE_BASE" | grep -Eq '^[0-9a-f]{40}$' \
+            || { echo "::error::merge base is not a 40-char hex SHA: $MERGE_BASE"; exit 1; }
+          echo "MERGE_BASE=$MERGE_BASE" >> "$GITHUB_ENV"
+
+      # The selector is run from the BASE checkout (trusted), with
+      # --root pointing at the candidate worktree. The selector may
+      # READ / AST-parse candidate Python files but does NOT execute
+      # arbitrary candidate application code. Candidate
+      # check_changed_line_coverage.py is only imported under the
+      # selector's existing trust-order guarantee: if it changed in
+      # the diff, the selector returns ESCALATION_REQUIRED before
+      # any import.
+      #
+      # IMPORTANT: ESCALATION_REQUIRED is a legitimate exit code (2).
+      # We MUST run under controlled `set +e`, capture the rc, then
+      # restore `set -e`. Running under `set -e` would abort the
+      # workflow before we can classify the escalation and publish
+      # the policy status.
+      - name: Run trusted selector against candidate worktree
+        env:
+          HEAD_WORKTREE: ${{ env.HEAD_WORKTREE }}
+          MERGE_BASE: ${{ env.MERGE_BASE }}
+        run: |
+          set -euo pipefail
+          SELECTOR_JSON="$(mktemp -t retail-pr-deep-policy-selector-XXXXXX.json)"
+          echo "SELECTOR_JSON=$SELECTOR_JSON" >> "$GITHUB_ENV"
+          set +e
+          /usr/bin/python3.12 -I scripts/pr_fast_select_tests.py \
+            --root "$HEAD_WORKTREE" \
+            --base "$MERGE_BASE" \
+            > "$SELECTOR_JSON" 2> "$SELECTOR_JSON.stderr"
+          SELECTOR_RC=$?
+          set -e
+          echo "SELECTOR_RC=$SELECTOR_RC" >> "$GITHUB_ENV"
+          if [ ! -s "$SELECTOR_JSON" ]; then
+            echo "::error::trusted selector produced empty JSON (rc=$SELECTOR_RC)"
+            exit 1
+          fi
+
+      # Produce ONE machine-readable policy decision JSON. The publish
+      # step below consumes ONLY this file. Do NOT reconstruct the
+      # decision from selector state at publish time.
+      - name: Decide policy
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          MERGE_BASE: ${{ env.MERGE_BASE }}
+          SELECTOR_JSON: ${{ env.SELECTOR_JSON }}
+          SELECTOR_RC: ${{ env.SELECTOR_RC }}
+        run: |
+          set -euo pipefail
+          POLICY_FILE="$(mktemp -t retail-pr-deep-policy-decision-XXXXXX.json)"
+          echo "POLICY_FILE=$POLICY_FILE" >> "$GITHUB_ENV"
+          /usr/bin/python3.12 -I scripts/pr_b3b_decide_policy.py \
+            "$SELECTOR_JSON" "$HEAD_SHA" "$BASE_SHA" "$MERGE_BASE" \
+            "$SELECTOR_RC" "$REPO" "$GH_TOKEN" \
+            > "$POLICY_FILE"
+          cat "$POLICY_FILE"
+          # Validate the decision file before publishing it.
+          POLICY_STATE_VAL="$(/usr/bin/python3.12 -c 'import json,sys; print(json.load(open(sys.argv[1]))["policy_state"])' "$POLICY_FILE")"
+          if [ -z "$POLICY_STATE_VAL" ] || [ "$POLICY_STATE_VAL" = "null" ]; then
+            echo "::error::policy decision missing policy_state"
+            exit 1
+          fi
+          echo "POLICY_STATE=$POLICY_STATE_VAL" >> "$GITHUB_ENV"
+
+      # Compute the publication payload as explicit Python argv.
+      # NEVER depend on unexported shell locals — Python reads the
+      # decision JSON file directly. STATE/DESCRIPTION are derived
+      # from the decision JSON only; the bash layer never re-derives
+      # them from selector state.
+      - name: Publish retail/pr-deep-policy status
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          POLICY_FILE: ${{ env.POLICY_FILE }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          if [ ! -s "$POLICY_FILE" ]; then
+            echo "::error::POLICY_FILE missing or empty: $POLICY_FILE"
+            exit 1
+          fi
+          /usr/bin/python3.12 -I scripts/pr_b3b_publish_policy_status.py \
+            "$POLICY_FILE" "$HEAD_SHA" "$BASE_SHA" "$REPO" "$GH_TOKEN" "$RUN_URL" \
+            > /tmp/publish-status.json
+          cat /tmp/publish-status.json
+          STATE_VAL="$(/usr/bin/python3.12 -c 'import json,sys; print(json.load(open(sys.argv[1]))["state"])' /tmp/publish-status.json)"
+          if [ -z "$STATE_VAL" ] || [ "$STATE_VAL" = "null" ]; then
+            echo "::error::publication JSON missing state"
+            exit 1
+          fi
+          curl --silent --show-error --noproxy '*' --max-time 10 --fail \
+            -X POST \
+            -H "Authorization: token ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${REPO}/statuses/${HEAD_SHA}" \
+            -d @/tmp/publish-status.json
+          echo "retail/pr-deep-policy state=${STATE_VAL} published"

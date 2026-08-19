@@ -22,8 +22,9 @@ TRUST ORDER (security-critical — do NOT reorder without rereading):
        (AM additions + D deletions, --no-renames)
     3. classify trust-surface changes/deletions WITHOUT importing
        the PR-B2 gate
-    4. if any selector/gate/conftest/dependency/wiring/governance
-       trust surface changed:
+    4. if any selector/gate/conftest/dependency/wiring/governance/coverage
+       trust surface changed (including .coveragerc, the isolated-test
+       runner, and the bootstrap-test-DB script):
            return ESCALATION_REQUIRED immediately
     5. only after trust surfaces are proven unchanged:
            load the PR-B2 gate from the selected repository root
@@ -726,6 +727,45 @@ EXACT_ESCALATION_PATHS = frozenset({
     "scripts/pr_fast_select_tests.py",
     "scripts/check_high_risk_pr_governance.py",
     "scripts/is_high_risk_category_touched.py",
+    # Coverage authority + test runner trust surfaces (PR-B3b).
+    # Each one can change WHAT lines are measured, WHICH tests are
+    # collected, or HOW the isolated test DB / caches are provisioned —
+    # independently of any application logic. Therefore each one
+    # invalidates the affected-test / affected-coverage trust argument
+    # the selector relies on.
+    ".coveragerc",
+    "backend/scripts/run_tests_isolated.sh",
+    "backend/scripts/bootstrap_test_db.py",
+    # PR-B3b pr-fast selected-paths validator helper. The validator is
+    # the only point in the pr-fast pipeline that converts the trusted
+    # selector JSON into a pytest argv; modifying it would change which
+    # files the candidate PR actually exercises. Therefore it is itself
+    # control-plane authority.
+    "scripts/pr_b3b_selected_paths_validator.py",
+    # PR-B3b policy decision helper. Decides whether the current
+    # PR-DEEP certification is sufficient for the exact HEAD + current
+    # BASE combination. A modification could downgrade a valid
+    # matching certification back to pending, so it is control-plane
+    # authority.
+    "scripts/pr_b3b_decide_policy.py",
+    # PR-B3b status publisher. Builds the canonical commit-status
+    # JSON body from the policy decision JSON. A modification could
+    # re-derive state from selector state and silently downgrade a
+    # pending/success status, so it is control-plane authority.
+    "scripts/pr_b3b_publish_policy_status.py",
+    # PR-B3b certification composer. Assembles the FAIL-CLOSED
+    # certification evidence JSON for pr-deep.yml. A modification could
+    # weaken the JUnit / coverage parsing so a successful certification
+    # gets emitted for an actually-failed run, so it is control-plane
+    # authority.
+    "scripts/pr_b3b_compose_certification.py",
+    # PR-B3b critical-coverage authority. The exhaustive backend
+    # lane (PR-DEEP and exact-main) consults this script together
+    # with its thresholds file. A modification can lower the per-
+    # module coverage floor or remove modules from the threshold
+    # map without touching any application logic.
+    "backend/scripts/check_critical_coverage.py",
+    "backend/critical_coverage_thresholds.json",
 })
 
 _PREFIX_ESCALATION_PATTERNS = (
@@ -782,6 +822,23 @@ _PREFIX_ESCALATION_PATTERNS = (
      "wiring/composition root invalidates the static graph"),
     (re.compile(r"^backend/composition\.py$"), "wiring_root",
      "wiring/composition root invalidates the static graph"),
+    # Coverage authority + isolated-test runner surface (PR-B3b).
+    # Coverage configuration that lives in the backend subtree or that
+    # affects backend test runner setup is treated as gate_authority:
+    # it can change measurement semantics or test selection without
+    # touching any application logic.
+    (re.compile(r"^backend/.*\.coveragerc$"), "gate_authority",
+     "backend coverage configuration invalidates coverage measurement"),
+    (re.compile(r"^backend/pytest\.ini$"), "gate_authority",
+     "backend pytest configuration invalidates test collection"),
+    (re.compile(r"^backend/pyproject\.toml$"), "gate_authority",
+     "backend pyproject invalidates test configuration / collection"),
+    (re.compile(r"^backend/setup\.cfg$"), "gate_authority",
+     "backend setup.cfg invalidates test configuration / collection"),
+    (re.compile(r"^backend/conftest\.py$"), "conftest",
+     "pytest conftest affects every test"),
+    (re.compile(r"^backend/tests/conftest\.py$"), "conftest",
+     "pytest conftest affects every test"),
 )
 
 

@@ -351,3 +351,52 @@ def test_authority_paths_classify_as_deploy_release_ci(tmp_repo, authority_path)
         f"rc={cp.returncode} stdout={cp.stdout!r} stderr={cp.stderr!r}"
     )
 
+
+# ---------------------------------------------------------------------------
+# PR-B3b: B3/E2 selector + coverage / test-infrastructure trust surfaces
+# classified as deploy-release-ci by A3
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "selector_or_coverage_path",
+    [
+        "scripts/pr_fast_select_tests.py",
+        "scripts/pr_b3b_selected_paths_validator.py",
+        "scripts/pr_b3b_decide_policy.py",
+        "scripts/pr_b3b_publish_policy_status.py",
+        "scripts/pr_b3b_compose_certification.py",
+        ".coveragerc",
+        "backend/scripts/run_tests_isolated.sh",
+        "backend/scripts/bootstrap_test_db.py",
+        "backend/scripts/check_critical_coverage.py",
+        "backend/critical_coverage_thresholds.json",
+        "backend/conftest.py",
+        "backend/tests/conftest.py",
+    ],
+)
+def test_selector_and_test_infra_paths_classify_as_deploy_release_ci(
+        tmp_repo, selector_or_coverage_path):
+    """PR-B3b part 2: the B3/E2 selector, the three certification
+    helpers (decide / publish / compose), the selected-paths
+    validator, and the documented coverage / test-infrastructure
+    trust surfaces must classify as deploy-release-ci so the A3
+    trusted `pull_request_target` workflow sees them as control-plane
+    changes.
+
+    PR-B3b final correction pass also includes the critical-coverage
+    authority and its thresholds file because they directly define
+    the backend critical-coverage certification authority.
+    """
+    _commit(
+        tmp_repo,
+        {selector_or_coverage_path: "# b3b authority change"},
+        msg=f"touch {selector_or_coverage_path}",
+    )
+    cp = _classifier(tmp_repo)
+    assert cp.returncode == 0, (
+        f"{selector_or_coverage_path}: classifier did not classify as "
+        f"deploy-release-ci. rc={cp.returncode} stdout={cp.stdout!r} "
+        f"stderr={cp.stderr!r}"
+    )
+
