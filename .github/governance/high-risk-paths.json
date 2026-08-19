@@ -60,6 +60,8 @@
         ".coveragerc",
         "backend/scripts/run_tests_isolated.sh",
         "backend/scripts/bootstrap_test_db.py",
+        "backend/scripts/check_critical_coverage.py",
+        "backend/critical_coverage_thresholds.json",
         "backend/conftest.py",
         "backend/tests/conftest.py"
       ]

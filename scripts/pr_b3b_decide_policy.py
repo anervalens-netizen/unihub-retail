@@ -119,11 +119,22 @@ def _load_selector(payload_path: str) -> dict:
 
 
 def _fetch_existing_statuses(repo: str, sha: str, token: str) -> list:
-    """Fetch existing statuses for ``sha``. Returns an empty list on
-    network / parse / auth errors so the caller can treat the run
-    as "no matching certification" rather than crashing.
+    """Fetch existing statuses for ``sha``.
+
+    Returns an empty list on network / parse / auth errors so the
+    caller can treat the run as "no matching certification" rather
+    than crashing. We request ``per_page=100`` (the API max) to
+    maximise the chance the returned page is the complete list —
+    GitHub's List commit statuses returns statuses in reverse
+    chronological order, and the first entry is the latest one.
+    The policy does NOT paginate to exhaustion: if the latest
+    visible ``retail/pr-deep`` status is not a current-base
+    success, policy_state becomes "pending", never "success".
     """
-    url = f"https://api.github.com/repos/{repo}/commits/{sha}/statuses"
+    url = (
+        f"https://api.github.com/repos/{repo}/commits/{sha}/statuses"
+        "?per_page=100"
+    )
     req = Request(
         url,
         headers={
@@ -145,7 +156,14 @@ def _fetch_existing_statuses(repo: str, sha: str, token: str) -> list:
         return []
     if not isinstance(statuses, list):
         return []
-    return statuses
+    # Each status entry must be a JSON object. Anything else (None,
+    # string, list, scalar) is API/transport corruption; do NOT let
+    # it reach the sort key.
+    cleaned: list = []
+    for s in statuses:
+        if isinstance(s, dict):
+            cleaned.append(s)
+    return cleaned
 
 
 def _status_sort_key(s: dict) -> tuple:
@@ -226,6 +244,7 @@ def _build_decision(
     reason: str,
 ) -> dict:
     return {
+        "schema_version": SCHEMA_VERSION_SUPPORTED,
         "selector_state": selector_state,
         "selector_rc": selector_rc,
         "policy_state": policy_state,

@@ -96,14 +96,12 @@ jobs:
           printf '%s' "$HEAD_SHA" | grep -Eq '^[0-9a-f]{40}$' \
             || { echo "::error::head.sha is not a 40-char hex SHA: $HEAD_SHA"; exit 1; }
 
-      # Explicitly fetch the exact same-repo PR HEAD SHA so
-      # availability does NOT depend on incidental fetch behavior
-      # from prior steps.
-      #
-      # IMPORTANT: this runs AFTER actions/checkout (BASE) has made
-      # the repo a real git repo. We do NOT attempt `git fetch` before
-      # checkout because on a fresh GitHub-hosted runner there is no
-      # repo yet and the fetch would fail.
+      # Trusted BASE checkout. The BASE SHA is reachable from itself
+      # via fetch-depth:0. We do NOT perform an explicit authenticated
+      # post-checkout fetch for the PR HEAD here: the BASE refclone
+      # already brings the full same-repo history (fetch-depth:0,
+      # fetch-tags:true), so HEAD will be reachable iff it is a same-
+      # repo commit. The exact-object check below is fail-closed.
       - name: Checkout exact PR BASE SHA (trusted)
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
@@ -112,12 +110,11 @@ jobs:
           fetch-tags: true
           persist-credentials: false
 
-      # After checkout the repo is a real git repo (BASE is fetched
-      # with full history). The BASE SHA is always reachable from
-      # itself; the same-repo PR HEAD SHA may or may not be reachable
-      # from BASE without an explicit fetch. We verify via
-      # `git cat-file -e` and fail CLOSED if the exact HEAD object is
-      # not present.
+      # Fail-closed object-presence check. The BASE refclone with
+      # fetch-depth:0 already pulled every same-repo ref. If the
+      # exact PR HEAD object is not present, this is a same-repo
+      # availability problem and the policy workflow FAILS CLOSED —
+      # it does NOT silently re-enable credentialed fetches.
       - name: Verify exact PR HEAD commit object is available
         env:
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}

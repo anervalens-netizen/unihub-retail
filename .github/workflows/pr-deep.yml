@@ -261,17 +261,31 @@ jobs:
             -d "$BODY"
 
       # ===== Checkout exact head ==================================
+      # persist-credentials: false — candidate checkout. Candidate
+      # code MUST NOT be able to read the workflow token from
+      # .git/config extraheader.
       - name: Checkout exact PR HEAD
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           ref: ${{ env.EXPECTED_HEAD }}
           fetch-depth: 0
           fetch-tags: true
+          persist-credentials: false
 
-      - name: Fetch exact PR BASE
+      # Base object must already be reachable via fetch-depth:0. Fail
+      # closed if it is not — DO NOT silently re-enable authentication
+      # for an authenticated post-checkout fetch.
+      - name: Verify exact PR BASE commit object
+        env:
+          EXPECTED_BASE: ${{ env.EXPECTED_BASE }}
         run: |
           set -euo pipefail
-          git fetch --no-tags --depth=1 origin "$EXPECTED_BASE"
+          printf '%s' "$EXPECTED_BASE" | grep -Eq '^[0-9a-f]{40}$' \
+            || { echo "::error::expected base is not a 40-char hex SHA: $EXPECTED_BASE"; exit 1; }
+          if ! git cat-file -e "${EXPECTED_BASE}^{commit}" 2>/dev/null; then
+            echo "::error::PR-DEEP base commit ${EXPECTED_BASE} is NOT present in the candidate checkout"
+            exit 1
+          fi
 
       - name: Compute and validate MERGE_BASE
         env:
@@ -336,7 +350,14 @@ jobs:
       - name: Critical coverage check
         working-directory: .
         run: |
-          backend/venv/bin/python -I scripts/check_critical_coverage.py \
+          # The critical-coverage authority is at
+          # backend/scripts/check_critical_coverage.py (NOT
+          # scripts/check_critical_coverage.py). The repo root for this
+          # step is "." because the job's defaults block sets
+          # working-directory: backend for steps below; here we use the
+          # root-relative form so the script resolves correctly.
+          backend/venv/bin/python -I \
+            backend/scripts/check_critical_coverage.py \
             backend/pr-deep-coverage.json
 
       - name: Backend changed-line coverage gate (PR-DEEP)

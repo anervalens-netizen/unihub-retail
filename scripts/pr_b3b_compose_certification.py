@@ -24,11 +24,31 @@ Reads:
 
 Writes:
     <output_path>
+
+control_plane_sha semantics (deliberately narrow — DO NOT widen):
+
+  - ``control_plane_sha`` is the exact ``github.sha`` value of the
+    ``pr-deep`` workflow at dispatch time — i.e. the main commit
+    that supplied the trusted PR-DEEP workflow definition on
+    ``refs/heads/main``. It is recorded so pre-merge inspection can
+    see which main commit was the source of the trusted workflow
+    definition that ran this certification.
+  - It is NOT a byte-level attestation of every helper source
+    executed during backend verification. PR-B3b does NOT build a
+    SHA256 manifest/attestation framework; PR-DEEP makes no claim
+    that the executed ``scripts/pr_b3b_*.py``, the selector, the
+    coverage gate, or any other control-plane helper is byte-equal
+    to that commit's working tree.
+  - Control-plane changes (governance, workflows, selector, gate,
+    coverage, isolated-test runner) remain subject to A3
+    governance, adversarial review and the post-merge exact-main
+    FULL checkpoint.
 """
 from __future__ import annotations
 
 import datetime
 import json
+import math
 import os
 import re
 import sys
@@ -49,10 +69,38 @@ def _check_sha(value: str, name: str) -> bool:
     return True
 
 
+def _parse_non_negative_int(value, name: str) -> int | None:
+    """Return a non-negative int or None.
+
+    Rejects bool (which is an int subclass in Python). Rejects None,
+    non-numeric strings, NaN/Infinity, and negative values. Emits an
+    ::error:: explaining the rejection.
+    """
+    if isinstance(value, bool):
+        _emit_error(f"{name} must not be a bool: {value!r}")
+        return None
+    if isinstance(value, int):
+        v = value
+    elif isinstance(value, str):
+        try:
+            v = int(value)
+        except (TypeError, ValueError):
+            _emit_error(f"{name} is not an integer: {value!r}")
+            return None
+    else:
+        _emit_error(f"{name} is not an integer: {value!r}")
+        return None
+    if v < 0:
+        _emit_error(f"{name} is negative: {v}")
+        return None
+    return v
+
+
 def _parse_junit(path: str) -> dict:
     """Parse JUnit XML and return {tests, failures, errors, skipped}.
 
-    Fails closed: missing file, malformed XML, or zero tests -> error.
+    Fails closed: missing file, malformed XML, zero tests, failures,
+    errors, or non-numeric/non-negative attribute -> error.
     """
     if not os.path.isfile(path):
         _emit_error(f"JUnit file does not exist: {path}")
@@ -80,10 +128,34 @@ def _parse_junit(path: str) -> dict:
     errors = 0
     skipped = 0
     for suite in suites:
-        tests += int(suite.attrib.get("tests", 0))
-        failures += int(suite.attrib.get("failures", 0))
-        errors += int(suite.attrib.get("errors", 0))
-        skipped += int(suite.attrib.get("skipped", 0))
+        t = _parse_non_negative_int(
+            suite.attrib.get("tests", 0),
+            f"JUnit tests attribute in {path}",
+        )
+        if t is None:
+            return {}
+        f = _parse_non_negative_int(
+            suite.attrib.get("failures", 0),
+            f"JUnit failures attribute in {path}",
+        )
+        if f is None:
+            return {}
+        e = _parse_non_negative_int(
+            suite.attrib.get("errors", 0),
+            f"JUnit errors attribute in {path}",
+        )
+        if e is None:
+            return {}
+        s = _parse_non_negative_int(
+            suite.attrib.get("skipped", 0),
+            f"JUnit skipped attribute in {path}",
+        )
+        if s is None:
+            return {}
+        tests += t
+        failures += f
+        errors += e
+        skipped += s
     if tests <= 0:
         _emit_error(f"JUnit reports 0 tests in {path}")
         return {}
@@ -93,6 +165,11 @@ def _parse_junit(path: str) -> dict:
     if errors != 0:
         _emit_error(f"JUnit reports {errors} errors in {path}")
         return {}
+    if skipped > tests:
+        _emit_error(
+            f"JUnit reports skipped={skipped} > tests={tests} in {path}"
+        )
+        return {}
     return {
         "tests": tests,
         "failures": failures,
@@ -101,11 +178,32 @@ def _parse_junit(path: str) -> dict:
     }
 
 
+def _parse_percent_covered(value, name: str) -> float | None:
+    """Return a finite float in [0, 100] or None.
+
+    Rejects bool, NaN, Infinity, and out-of-range values.
+    """
+    if isinstance(value, bool):
+        _emit_error(f"{name} must not be a bool: {value!r}")
+        return None
+    if not isinstance(value, (int, float)):
+        _emit_error(f"{name} is not numeric: {value!r}")
+        return None
+    f = float(value)
+    if not math.isfinite(f):
+        _emit_error(f"{name} is not finite: {value!r}")
+        return None
+    if f < 0.0 or f > 100.0:
+        _emit_error(f"{name} is out of range [0, 100]: {f}")
+        return None
+    return f
+
+
 def _parse_coverage(path: str) -> dict:
     """Parse coverage JSON and return totals dict.
 
-    Fails closed: missing file, malformed JSON, missing
-    ``totals.percent_covered`` numeric -> error.
+    Fails closed: missing file, malformed JSON, malformed counters,
+    out-of-range percent_covered, non-finite numerics.
     """
     if not os.path.isfile(path):
         _emit_error(f"coverage JSON does not exist: {path}")
@@ -123,17 +221,40 @@ def _parse_coverage(path: str) -> dict:
     if not isinstance(totals, dict):
         _emit_error("coverage JSON missing 'totals' object")
         return {}
-    percent_covered = totals.get("percent_covered")
-    if not isinstance(percent_covered, (int, float)):
+    if "percent_covered" not in totals:
+        _emit_error("coverage JSON missing 'totals.percent_covered'")
+        return {}
+    percent_covered = _parse_percent_covered(
+        totals["percent_covered"], "totals.percent_covered"
+    )
+    if percent_covered is None:
+        return {}
+    if "covered_lines" not in totals:
+        _emit_error("coverage JSON missing 'totals.covered_lines'")
+        return {}
+    if "num_statements" not in totals:
+        _emit_error("coverage JSON missing 'totals.num_statements'")
+        return {}
+    covered_lines = _parse_non_negative_int(
+        totals["covered_lines"], "totals.covered_lines"
+    )
+    if covered_lines is None:
+        return {}
+    num_statements = _parse_non_negative_int(
+        totals["num_statements"], "totals.num_statements"
+    )
+    if num_statements is None:
+        return {}
+    if covered_lines > num_statements:
         _emit_error(
-            f"coverage JSON 'totals.percent_covered' is not numeric: "
-            f"{percent_covered!r}"
+            f"totals.covered_lines={covered_lines} > "
+            f"totals.num_statements={num_statements}"
         )
         return {}
     return {
-        "percent_covered": float(percent_covered),
-        "covered_lines": int(totals.get("covered_lines", 0)),
-        "num_statements": int(totals.get("num_statements", 0)),
+        "percent_covered": percent_covered,
+        "covered_lines": covered_lines,
+        "num_statements": num_statements,
     }
 
 
@@ -206,7 +327,7 @@ def main(argv: list) -> int:
     }
     try:
         with open(out_path, "w", encoding="utf-8") as f:
-            json.dump(payload, f, indent=2, sort_keys=False)
+            json.dump(payload, f, indent=2, sort_keys=False, allow_nan=False)
             f.write("\n")
     except OSError as exc:
         _emit_error(f"cannot write certification JSON: {exc}")

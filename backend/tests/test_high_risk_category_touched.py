@@ -369,6 +369,8 @@ def test_authority_paths_classify_as_deploy_release_ci(tmp_repo, authority_path)
         ".coveragerc",
         "backend/scripts/run_tests_isolated.sh",
         "backend/scripts/bootstrap_test_db.py",
+        "backend/scripts/check_critical_coverage.py",
+        "backend/critical_coverage_thresholds.json",
         "backend/conftest.py",
         "backend/tests/conftest.py",
     ],
@@ -381,6 +383,10 @@ def test_selector_and_test_infra_paths_classify_as_deploy_release_ci(
     trust surfaces must classify as deploy-release-ci so the A3
     trusted `pull_request_target` workflow sees them as control-plane
     changes.
+
+    PR-B3b final correction pass also includes the critical-coverage
+    authority and its thresholds file because they directly define
+    the backend critical-coverage certification authority.
     """
     _commit(
         tmp_repo,

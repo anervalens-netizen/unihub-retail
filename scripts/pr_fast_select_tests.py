@@ -759,6 +759,13 @@ EXACT_ESCALATION_PATHS = frozenset({
     # gets emitted for an actually-failed run, so it is control-plane
     # authority.
     "scripts/pr_b3b_compose_certification.py",
+    # PR-B3b critical-coverage authority. The exhaustive backend
+    # lane (PR-DEEP and exact-main) consults this script together
+    # with its thresholds file. A modification can lower the per-
+    # module coverage floor or remove modules from the threshold
+    # map without touching any application logic.
+    "backend/scripts/check_critical_coverage.py",
+    "backend/critical_coverage_thresholds.json",
 })
 
 _PREFIX_ESCALATION_PATTERNS = (

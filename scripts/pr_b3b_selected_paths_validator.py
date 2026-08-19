@@ -198,8 +198,46 @@ def main(argv: list) -> int:
             return 2
         seen.add(rel)
         full = head_repo / rel
-        if not full.is_file():
-            _emit_error(f"selected path missing at HEAD: {rel}")
+        # Symlink rejection: the validator's path-containment contract
+        # requires a non-symlink regular file whose resolved path
+        # stays inside the exact backend/tests tree at PR HEAD.
+        # Without this, a candidate can make
+        # backend/tests/test_x.py a symlink to an arbitrary file
+        # anywhere in the checkout (or anywhere the runner can read)
+        # and pytest will collect/execute its source.
+        try:
+            st = full.lstat()
+        except OSError as exc:
+            _emit_error(f"selected path missing at HEAD: {rel} ({exc})")
+            return 2
+        import stat as _stat
+        if _stat.S_ISLNK(st.st_mode):
+            _emit_error(
+                f"selected path is a symlink (validator rejects symlinks): {rel}"
+            )
+            return 2
+        if not _stat.S_ISREG(st.st_mode):
+            _emit_error(
+                f"selected path is not a regular file: {rel}"
+            )
+            return 2
+        try:
+            resolved = full.resolve(strict=True)
+        except OSError as exc:
+            _emit_error(f"selected path missing at HEAD: {rel} ({exc})")
+            return 2
+        try:
+            head_repo_resolved = head_repo.resolve(strict=True)
+        except OSError:
+            head_repo_resolved = head_repo
+        # Resolved path must remain under the exact backend/tests tree.
+        backend_tests_root = (head_repo_resolved / "backend" / "tests").resolve(strict=True)
+        try:
+            resolved.relative_to(backend_tests_root)
+        except ValueError:
+            _emit_error(
+                f"selected path escapes backend/tests/ after resolution: {rel}"
+            )
             return 2
         lines.append(rel)
 

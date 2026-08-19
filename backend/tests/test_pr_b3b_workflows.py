@@ -465,6 +465,8 @@ def _load_selector_module():
         ".coveragerc",
         "backend/scripts/run_tests_isolated.sh",
         "backend/scripts/bootstrap_test_db.py",
+        "backend/scripts/check_critical_coverage.py",
+        "backend/critical_coverage_thresholds.json",
     ],
 )
 def test_selector_classifies_pr_b3b_trust_surfaces(surface_path):
@@ -1076,10 +1078,13 @@ PUBLISH = WORKTREE / "scripts" / "pr_b3b_publish_policy_status.py"
 def _make_decision(tmp_path, policy_state, *, head_sha=_HEAD, base_sha=_BASE):
     p = tmp_path / "decision.json"
     p.write_text(json.dumps({
+        "schema_version": 1,
         "selector_state": "SELECTED",
+        "selector_rc": 0,
         "policy_state": policy_state,
         "head_sha": head_sha,
         "base_sha": base_sha,
+        "merge_base_sha": base_sha,
     }))
     return p
 
@@ -2079,3 +2084,802 @@ def test_latest_status_helper_obsolete_helper_removed():
     assert hasattr(mod, "_latest_status"), (
         "_latest_status (the single latest helper) must exist"
     )
+
+
+# ===========================================================================
+# PR-B3b FINAL BOUNDED CORRECTION PASS
+#
+# These tests pin the bounded corrections requested in the
+# post-review correction brief. They do not redesign B3/E2.
+# ===========================================================================
+
+
+# ---------------------------------------------------------------------------
+# (1) PR-DEEP critical-coverage path exists at HEAD
+# ---------------------------------------------------------------------------
+
+
+def test_pr_deep_critical_coverage_step_uses_backend_scripts_path():
+    """PR-DEEP must invoke the actual critical-coverage authority
+    script at backend/scripts/check_critical_coverage.py (NOT
+    scripts/check_critical_coverage.py, which is the wrong path).
+    """
+    import re as _re
+
+    text = PR_DEEP_YML.read_text(encoding="utf-8")
+    # The step must reference the backend/scripts path with the
+    # root-relative prefix that the .github/workflows/pr-deep.yml
+    # step uses (default working-directory: backend for steps
+    # below the certification block; the corrected form uses
+    # backend/scripts/check_critical_coverage.py explicitly).
+    assert "backend/scripts/check_critical_coverage.py" in text, (
+        "pr-deep.yml must reference backend/scripts/check_critical_coverage.py"
+    )
+    # The bare scripts/check_critical_coverage.py path (without the
+    # backend/ prefix) is wrong and must NOT appear as an
+    # executable invocation in pr-deep.yml.
+    active_lines = [
+        ln for ln in text.splitlines()
+        if ln.strip() and not ln.lstrip().startswith("#")
+    ]
+    # Match standalone 'scripts/check_critical_coverage.py' — i.e.
+    # NOT preceded by 'backend/' (negative lookbehind).
+    bad = _re.compile(r"(?<!backend/)scripts/check_critical_coverage\.py")
+    for ln in active_lines:
+        assert not bad.search(ln), (
+            "pr-deep.yml active line uses wrong critical-coverage path: "
+            f"{ln!r}"
+        )
+
+
+def test_pr_deep_critical_coverage_script_exists_at_head():
+    """The authority script that PR-DEEP invokes must exist at HEAD."""
+    import importlib.util as _ilu
+    _ = _ilu  # silence unused-import lint; we only need the import side-effect
+    # The corrected PR-DEEP step runs from root working-directory
+    # so the path is repo-relative. The file must exist.
+    assert (WORKTREE / "backend" / "scripts" / "check_critical_coverage.py").is_file(), (
+        "backend/scripts/check_critical_coverage.py must exist at HEAD"
+    )
+    assert (WORKTREE / "backend" / "critical_coverage_thresholds.json").is_file(), (
+        "backend/critical_coverage_thresholds.json must exist at HEAD"
+    )
+
+
+# ---------------------------------------------------------------------------
+# (2) Candidate checkout credentials are not persisted
+# ---------------------------------------------------------------------------
+
+
+def _checkout_blocks_for(workflow_path):
+    """Return the list of ``actions/checkout`` invocation blocks
+    (each a dict with `uses`, `with`, etc.). YAML comments and
+    inactive lines are stripped first.
+    """
+    yaml = _yaml()
+    data = yaml.safe_load(workflow_path.read_text(encoding="utf-8"))
+    out = []
+    for job_name, job in (data.get("jobs") or {}).items():
+        for step in job.get("steps", []):
+            uses = step.get("uses") or ""
+            if isinstance(uses, str) and uses.startswith("actions/checkout@"):
+                out.append((job_name, step))
+    return out
+
+
+def test_pr_fast_checkout_persist_credentials_false():
+    """The pr-fast candidate checkout MUST set
+    persist-credentials: false so candidate code cannot read the
+    workflow token from .git/config extraheader."""
+    blocks = _checkout_blocks_for(CI_YML)
+    pr_fast_blocks = [
+        (job, step) for (job, step) in blocks
+        if job == "pr-fast"
+    ]
+    assert pr_fast_blocks, "ci.yml must contain a pr-fast checkout"
+    for _job, step in pr_fast_blocks:
+        with_block = step.get("with") or {}
+        assert with_block.get("persist-credentials") is False, (
+            "pr-fast candidate checkout MUST set "
+            "persist-credentials: false (got: "
+            f"{with_block.get('persist-credentials')!r})"
+        )
+
+
+def test_pr_deep_candidate_checkout_persist_credentials_false():
+    """The PR-DEEP exact-PR-HEAD checkout MUST set
+    persist-credentials: false."""
+    blocks = _checkout_blocks_for(PR_DEEP_YML)
+    # PR-DEEP has a single candidate checkout at backend-deep.
+    candidate_blocks = [
+        (job, step) for (job, step) in blocks
+        if job == "backend-deep"
+    ]
+    assert candidate_blocks, (
+        "pr-deep.yml must contain a backend-deep candidate checkout"
+    )
+    for _job, step in candidate_blocks:
+        with_block = step.get("with") or {}
+        assert with_block.get("persist-credentials") is False, (
+            "PR-DEEP candidate checkout MUST set "
+            "persist-credentials: false (got: "
+            f"{with_block.get('persist-credentials')!r})"
+        )
+
+
+def test_pr_deep_policy_checkout_persist_credentials_false():
+    """The pr-deep-policy trusted-BASE checkout MUST set
+    persist-credentials: false (it already did, but pin it)."""
+    blocks = _checkout_blocks_for(PR_DEEP_POLICY_YML)
+    assert blocks, "pr-deep-policy.yml must contain a checkout"
+    for _job, step in blocks:
+        with_block = step.get("with") or {}
+        assert with_block.get("persist-credentials") is False, (
+            "pr-deep-policy trusted-BASE checkout MUST set "
+            "persist-credentials: false (got: "
+            f"{with_block.get('persist-credentials')!r})"
+        )
+
+
+def test_pr_fast_pr_b3b_step_replaces_authenticated_fetch_with_cat_file():
+    """The PR-B3b-added pr-fast step must NOT perform an
+    authenticated ``git fetch origin $PR_BASE_SHA``; it must use a
+    fail-closed ``git cat-file -e`` instead. Other pre-existing
+    pr-fast steps may keep their (defensive) ``git fetch``
+    invocations because they are audited separately.
+    """
+    text = CI_YML.read_text(encoding="utf-8")
+    # Extract just the PR-B3b step body.
+    start = text.find("PR-B3b backend affected coverage")
+    assert start != -1, "PR-B3b pr-fast step must exist"
+    end = text.find("Upload PR-B3b backend-affected evidence")
+    assert end != -1, "PR-B3b pr-fast artifact upload must exist"
+    body = text[start:end]
+    # Strip yaml comments.
+    active_lines = [
+        ln for ln in body.splitlines()
+        if ln.strip() and not ln.lstrip().startswith("#")
+    ]
+    active_body = "\n".join(active_lines)
+    assert "git cat-file -e" in active_body, (
+        "PR-B3b pr-fast step must include git cat-file -e "
+        f"object-presence check (body: {active_body!r})"
+    )
+    # It must NOT contain an authenticated post-checkout fetch of
+    # $PR_BASE_SHA (the spec is to replace it).
+    assert "git fetch --no-tags --depth=1 origin \"$PR_BASE_SHA\"" not in active_body, (
+        "PR-B3b pr-fast step must not perform authenticated fetch of "
+        "$PR_BASE_SHA; use cat-file -e instead"
+    )
+
+
+def test_pr_deep_replaces_authenticated_fetch_with_cat_file():
+    """The PR-DEEP step that used to ``git fetch origin
+    $EXPECTED_BASE`` must now use ``git cat-file -e`` instead."""
+    text = PR_DEEP_YML.read_text(encoding="utf-8")
+    # The corrected step lives right after the candidate HEAD
+    # checkout.
+    start = text.find("Checkout exact PR HEAD")
+    assert start != -1
+    end = text.find("Compute and validate MERGE_BASE")
+    assert end != -1
+    body = text[start:end]
+    active_lines = [
+        ln for ln in body.splitlines()
+        if ln.strip() and not ln.lstrip().startswith("#")
+    ]
+    active_body = "\n".join(active_lines)
+    assert "git cat-file -e" in active_body, (
+        "PR-DEEP base-presence step must include git cat-file -e"
+    )
+    assert "git fetch --no-tags --depth=1 origin \"$EXPECTED_BASE\"" not in active_body, (
+        "PR-DEEP must not perform authenticated post-checkout fetch "
+        "of $EXPECTED_BASE"
+    )
+
+
+def test_pr_fast_other_authenticated_fetches_audit_documented():
+    """Audit assertion: there are pre-existing pr-fast authenticated
+    fetches. We document that they are belt-and-suspenders only
+    (the base SHAs they consult are already reachable after
+    fetch-depth:0), so the candidate checkout's
+    persist-credentials:false is safe."""
+    text = CI_YML.read_text(encoding="utf-8")
+    # Identify pr-fast block by header.
+    start = text.find("  pr-fast:")
+    assert start != -1
+    end = text.find("  backend-check:")
+    body = text[start:end if end != -1 else len(text)]
+    # Pre-existing authenticated fetches use the same shape:
+    # git fetch --no-tags --depth=1 origin "$COMPLEXITY_BASE_SHA"
+    # git fetch --no-tags --depth=1 origin "$PR_BASE_SHA"
+    # git fetch --no-tags --depth=1 origin "$MERGE_BASE"
+    # All three should still appear (we do not modify them per the
+    # brief) and the brief explicitly audits them as redundant
+    # after fetch-depth:0.
+    assert "git fetch --no-tags --depth=1 origin \"$COMPLEXITY_BASE_SHA\"" in body, (
+        "audit: pre-existing COMPLEXITY_BASE_SHA fetch expected"
+    )
+    assert "git fetch --no-tags --depth=1 origin \"$MERGE_BASE\"" in body, (
+        "audit: pre-existing MERGE_BASE fetch expected"
+    )
+
+
+# ---------------------------------------------------------------------------
+# (3) Symlink / containment hardening for the validator
+# ---------------------------------------------------------------------------
+
+
+def _run_validator_with_workspace(tmp_path, sel_path, head_sha, base_sha, rc,
+                                  *, gworkspace=None):
+    import os
+    import subprocess
+    out_path = tmp_path / "out.txt"
+    env = os.environ.copy()
+    env["GITHUB_WORKSPACE"] = gworkspace if gworkspace is not None else str(tmp_path)
+    return subprocess.run(
+        ["/usr/bin/python3.12", "-I", str(SELECTED_PATHS_VALIDATOR),
+         str(sel_path), head_sha, base_sha, str(rc), str(out_path)],
+        capture_output=True, text=True, env=env,
+    )
+
+
+def test_validator_rejects_symlink_within_backend_tests(tmp_path):
+    """backend/tests/test_evil.py -> another file inside the
+    candidate checkout (still under backend/tests). The validator
+    MUST reject because the entry is a symlink."""
+    import os
+    import subprocess
+
+    backend_dir = tmp_path / "backend" / "tests"
+    tests = backend_dir
+    tests.mkdir(parents=True)
+    target = tmp_path / "backend" / "scripts" / "evil.py"
+    target.parent.mkdir(parents=True)
+    target.write_text("# evil target\n")
+    link = backend_dir / "test_evil.py"
+    os.symlink(str(target), str(link))
+
+    sel = _write_validator_payload(
+        tmp_path, state="SELECTED", base_sha=_BASE, head_sha=_HEAD,
+        selected_tests=[{
+            "file": "backend/tests/test_evil.py",
+            "node_id": "tests.test_evil",
+        }],
+    )
+    cp = _run_validator_with_workspace(tmp_path, sel, _HEAD, _BASE, 0,
+                                   gworkspace=str(tmp_path))
+    assert cp.returncode == 2, (cp.returncode, cp.stderr)
+    assert "symlink" in cp.stderr.lower()
+
+
+def test_validator_rejects_symlink_to_absolute_external_path(tmp_path):
+    """backend/tests/test_evil.py -> /etc/passwd. The validator
+    MUST reject (symlink rejection)."""
+    import os
+    import subprocess
+
+    backend_dir = tmp_path / "backend" / "tests"
+    backend_dir.mkdir(parents=True)
+    link = backend_dir / "test_evil.py"
+    # /etc/passwd exists on Linux runners
+    os.symlink("/etc/passwd", str(link))
+    sel = _write_validator_payload(
+        tmp_path, state="SELECTED", base_sha=_BASE, head_sha=_HEAD,
+        selected_tests=[{
+            "file": "backend/tests/test_evil.py",
+            "node_id": "tests.test_evil",
+        }],
+    )
+    cp = _run_validator_with_workspace(tmp_path, sel, _HEAD, _BASE, 0,
+                                   gworkspace=str(tmp_path))
+    assert cp.returncode == 2, (cp.returncode, cp.stderr)
+    assert "symlink" in cp.stderr.lower()
+
+
+def test_validator_accepts_normal_regular_test_file(tmp_path):
+    """Regression: a normal regular file under backend/tests/
+    still passes the hardened validator."""
+    backend_dir = tmp_path / "backend" / "tests"
+    backend_dir.mkdir(parents=True)
+    (backend_dir / "test_x.py").write_text("# x\n")
+    sel = _write_validator_payload(
+        tmp_path, state="SELECTED", base_sha=_BASE, head_sha=_HEAD,
+        selected_tests=[{
+            "file": "backend/tests/test_x.py",
+            "node_id": "tests.test_x",
+        }],
+    )
+    cp = _run_validator_with_workspace(tmp_path, sel, _HEAD, _BASE, 0,
+                                   gworkspace=str(tmp_path))
+    assert cp.returncode == 0, cp.stderr
+    out = tmp_path / "out.txt"
+    assert out.read_text().strip() == "backend/tests/test_x.py"
+
+
+# ---------------------------------------------------------------------------
+# (4) Certification evidence parsing fail-closed matrix
+# ---------------------------------------------------------------------------
+
+
+COMPOSE = WORKTREE / "scripts" / "pr_b3b_compose_certification.py"
+
+
+def _run_compose(tmp_path, junit=None, coverage=None, expected_rc=1,
+                 expected_marker=None, marker_in_stderr=True):
+    import os
+    import subprocess
+
+    out_path = tmp_path / "cert.json"
+    backend = tmp_path / "backend"
+    backend.mkdir(parents=True, exist_ok=True)
+    if junit is not None:
+        (backend / "pr-deep-junit.xml").write_text(junit)
+    if coverage is not None:
+        (backend / "pr-deep-coverage.json").write_text(coverage)
+
+    # 12-arg CLI: <output_path> <pr_number> <expected_head>
+    # <expected_base> <merge_base> <repo> <run_id> <run_attempt>
+    # <workflow> <workflow_ref> <control_plane_sha>
+    cp = subprocess.run(
+        ["/usr/bin/python3.12", "-I", str(COMPOSE),
+         str(out_path),
+         "172", _HEAD, _BASE, _BASE,
+         "anervalens-netizen/unihub-retail",
+         "1", "1", "pr-deep", "anervalens-netizen/unihub-retail/main",
+         _HEAD],
+        capture_output=True, text=True, cwd=str(tmp_path),
+    )
+    return cp, out_path
+
+
+_VALID_JUNIT = """<?xml version="1.0" encoding="utf-8"?>
+<testsuites>
+  <testsuite name="t" tests="3" failures="0" errors="0" skipped="1"/>
+</testsuites>
+"""
+_VALID_COVERAGE = json.dumps({
+    "files": {},
+    "totals": {
+        "percent_covered": 87.5,
+        "covered_lines": 70,
+        "num_statements": 80,
+    },
+})
+
+
+def test_compose_fails_when_percent_covered_is_bool_true(tmp_path):
+    cp, _ = _run_compose(tmp_path,
+                         junit=_VALID_JUNIT,
+                         coverage=json.dumps({"files": {},
+                                              "totals": {"percent_covered": True,
+                                                         "covered_lines": 70,
+                                                         "num_statements": 80}}))
+    assert cp.returncode == 1
+    assert "bool" in cp.stderr or "percent_covered" in cp.stderr
+
+
+def test_compose_fails_when_percent_covered_is_nan(tmp_path):
+    cp, _ = _run_compose(tmp_path,
+                         junit=_VALID_JUNIT,
+                         coverage=json.dumps({"files": {},
+                                              "totals": {"percent_covered": float("nan"),
+                                                         "covered_lines": 70,
+                                                         "num_statements": 80}}))
+    assert cp.returncode == 1
+    assert "finite" in cp.stderr or "percent_covered" in cp.stderr
+
+
+def test_compose_fails_when_percent_covered_is_infinity(tmp_path):
+    cp, _ = _run_compose(tmp_path,
+                         junit=_VALID_JUNIT,
+                         coverage=json.dumps({"files": {},
+                                              "totals": {"percent_covered": float("inf"),
+                                                         "covered_lines": 70,
+                                                         "num_statements": 80}}))
+    assert cp.returncode == 1
+    assert "finite" in cp.stderr or "percent_covered" in cp.stderr
+
+
+def test_compose_fails_when_percent_covered_negative(tmp_path):
+    cp, _ = _run_compose(tmp_path,
+                         junit=_VALID_JUNIT,
+                         coverage=json.dumps({"files": {},
+                                              "totals": {"percent_covered": -1.0,
+                                                         "covered_lines": 70,
+                                                         "num_statements": 80}}))
+    assert cp.returncode == 1
+    assert "range" in cp.stderr or "percent_covered" in cp.stderr
+
+
+def test_compose_fails_when_percent_covered_over_100(tmp_path):
+    cp, _ = _run_compose(tmp_path,
+                         junit=_VALID_JUNIT,
+                         coverage=json.dumps({"files": {},
+                                              "totals": {"percent_covered": 100.1,
+                                                         "covered_lines": 70,
+                                                         "num_statements": 80}}))
+    assert cp.returncode == 1
+    assert "range" in cp.stderr or "percent_covered" in cp.stderr
+
+
+def test_compose_fails_when_counters_are_bool(tmp_path):
+    cp, _ = _run_compose(tmp_path,
+                         junit=_VALID_JUNIT,
+                         coverage=json.dumps({"files": {},
+                                              "totals": {"percent_covered": 80.0,
+                                                         "covered_lines": True,
+                                                         "num_statements": 80}}))
+    assert cp.returncode == 1
+    assert "bool" in cp.stderr or "covered_lines" in cp.stderr
+
+
+def test_compose_fails_when_counters_negative(tmp_path):
+    cp, _ = _run_compose(tmp_path,
+                         junit=_VALID_JUNIT,
+                         coverage=json.dumps({"files": {},
+                                              "totals": {"percent_covered": 80.0,
+                                                         "covered_lines": -1,
+                                                         "num_statements": 80}}))
+    assert cp.returncode == 1
+    assert "negative" in cp.stderr or "covered_lines" in cp.stderr
+
+
+def test_compose_fails_when_covered_lines_greater_than_statements(tmp_path):
+    cp, _ = _run_compose(tmp_path,
+                         junit=_VALID_JUNIT,
+                         coverage=json.dumps({"files": {},
+                                              "totals": {"percent_covered": 80.0,
+                                                         "covered_lines": 90,
+                                                         "num_statements": 80}}))
+    assert cp.returncode == 1
+    assert "covered_lines" in cp.stderr
+
+
+def test_compose_fails_when_junit_attributes_are_non_numeric(tmp_path):
+    cp, _ = _run_compose(tmp_path,
+                         junit="""<?xml version="1.0" encoding="utf-8"?>
+<testsuites>
+  <testsuite name="t" tests="abc" failures="0" errors="0" skipped="0"/>
+</testsuites>
+""",
+                         coverage=_VALID_COVERAGE)
+    assert cp.returncode == 1
+    assert "tests" in cp.stderr
+
+
+def test_compose_fails_when_junit_skipped_greater_than_tests(tmp_path):
+    cp, _ = _run_compose(tmp_path,
+                         junit="""<?xml version="1.0" encoding="utf-8"?>
+<testsuites>
+  <testsuite name="t" tests="3" failures="0" errors="0" skipped="5"/>
+</testsuites>
+""",
+                         coverage=_VALID_COVERAGE)
+    assert cp.returncode == 1
+    assert "skipped" in cp.stderr
+
+
+def test_compose_succeeds_with_valid_evidence(tmp_path):
+    """Regression: the hardened composer still produces success for
+    valid evidence, with allow_nan=False JSON output."""
+    cp, out = _run_compose(tmp_path,
+                           junit=_VALID_JUNIT,
+                           coverage=_VALID_COVERAGE)
+    assert cp.returncode == 0, cp.stderr
+    # Output file is valid JSON parseable WITHOUT NaN/Infinity.
+    body = out.read_text()
+    # allow_nan=False: NaN/Infinity would raise on parse here.
+    parsed = json.loads(body, parse_constant=lambda _c: (
+        (_ for _ in ()).throw(ValueError("nan/infinity in cert"))
+    ))
+    assert parsed["result"] == "success"
+    assert parsed["backend_test_result"] == "PASS"
+    assert parsed["changed_line_result"] == "PASS"
+    assert parsed["coverage_result"]["percent_covered"] == 87.5
+
+
+# ---------------------------------------------------------------------------
+# (5) Critical-coverage trust surfaces (A3 + selector)
+# ---------------------------------------------------------------------------
+
+
+def test_critical_coverage_script_in_a3_deploy_release_ci_paths():
+    """A3 high-risk manifest must include the critical-coverage
+    authority and its thresholds file."""
+    data = json.loads(HIGH_RISK_JSON.read_text(encoding="utf-8"))
+    paths = data["categories"]["deploy-release-ci"]["paths"]
+    assert "backend/scripts/check_critical_coverage.py" in paths
+    assert "backend/critical_coverage_thresholds.json" in paths
+
+
+def test_selector_classifies_critical_coverage_script_as_gate_authority():
+    """The selector must classify modifications/deletions of the
+    critical-coverage authority and its thresholds file as
+    ESCALATION_REQUIRED before any gate is loaded."""
+    text = SELECTOR.read_text(encoding="utf-8")
+    assert "backend/scripts/check_critical_coverage.py" in text
+    assert "backend/critical_coverage_thresholds.json" in text
+
+
+# ---------------------------------------------------------------------------
+# (6) Publisher defense-in-depth (machine contract)
+# ---------------------------------------------------------------------------
+
+
+def _make_decision_with_version(tmp_path, *, policy_state, schema_version=1,
+                                selector_state="SELECTED", selector_rc=0,
+                                merge_base_sha=None):
+    p = tmp_path / "decision.json"
+    if merge_base_sha is None:
+        merge_base_sha = _BASE
+    p.write_text(json.dumps({
+        "schema_version": schema_version,
+        "selector_state": selector_state,
+        "selector_rc": selector_rc,
+        "policy_state": policy_state,
+        "head_sha": _HEAD,
+        "base_sha": _BASE,
+        "merge_base_sha": merge_base_sha,
+    }))
+    return p
+
+
+def test_publish_rejects_wrong_schema_version(tmp_path):
+    p = _make_decision_with_version(
+        tmp_path, policy_state="success", schema_version=99
+    )
+    cp = subprocess.run(
+        ["/usr/bin/python3.12", "-I", str(PUBLISH),
+         str(p), _HEAD, _BASE,
+         "anervalens-netizen/unihub-retail", "", "https://example/run"],
+        capture_output=True, text=True,
+    )
+    assert cp.returncode == 1
+    assert "schema_version" in cp.stderr
+
+
+def test_publish_rejects_unknown_selector_state(tmp_path):
+    p = _make_decision_with_version(
+        tmp_path, policy_state="success",
+        selector_state="NOT_A_REAL_STATE", selector_rc=0,
+    )
+    cp = subprocess.run(
+        ["/usr/bin/python3.12", "-I", str(PUBLISH),
+         str(p), _HEAD, _BASE,
+         "anervalens-netizen/unihub-retail", "", "https://example/run"],
+        capture_output=True, text=True,
+    )
+    assert cp.returncode == 1
+    assert "selector_state" in cp.stderr
+
+
+def test_publish_rejects_selector_rc_state_mismatch(tmp_path):
+    """SELECTED state must use selector_rc=0; mismatch is fail-closed."""
+    p = _make_decision_with_version(
+        tmp_path, policy_state="success",
+        selector_state="SELECTED", selector_rc=2,
+    )
+    cp = subprocess.run(
+        ["/usr/bin/python3.12", "-I", str(PUBLISH),
+         str(p), _HEAD, _BASE,
+         "anervalens-netizen/unihub-retail", "", "https://example/run"],
+        capture_output=True, text=True,
+    )
+    assert cp.returncode == 1
+    assert "inconsistent" in cp.stderr
+
+
+def test_publish_rejects_bad_merge_base_sha(tmp_path):
+    p = _make_decision_with_version(
+        tmp_path, policy_state="success",
+        merge_base_sha="not-a-sha",
+    )
+    cp = subprocess.run(
+        ["/usr/bin/python3.12", "-I", str(PUBLISH),
+         str(p), _HEAD, _BASE,
+         "anervalens-netizen/unihub-retail", "", "https://example/run"],
+        capture_output=True, text=True,
+    )
+    assert cp.returncode == 1
+    assert "merge_base_sha" in cp.stderr
+
+
+def test_publish_accepts_valid_decision_with_schema_version(tmp_path):
+    p = _make_decision_with_version(
+        tmp_path, policy_state="success",
+    )
+    cp = subprocess.run(
+        ["/usr/bin/python3.12", "-I", str(PUBLISH),
+         str(p), _HEAD, _BASE,
+         "anervalens-netizen/unihub-retail", "", "https://example/run"],
+        capture_output=True, text=True,
+    )
+    assert cp.returncode == 0, cp.stderr
+    body = json.loads(cp.stdout)
+    assert body["state"] == "success"
+    assert body["context"] == "retail/pr-deep-policy"
+
+
+def test_decide_policy_emits_schema_version():
+    """pr_b3b_decide_policy.py MUST emit schema_version: 1 in its
+    decision output."""
+    import importlib.util
+    import io
+    import sys
+    spec = importlib.util.spec_from_file_location(
+        "pr_b3b_decide_policy_sv_test", DECIDE_POLICY
+    )
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = mod
+    spec.loader.exec_module(mod)
+    decision = mod._build_decision(
+        selector_state="NO_ELIGIBLE_BACKEND_CHANGE",
+        selector_rc=0,
+        policy_state="success",
+        expected_head=_HEAD,
+        expected_base=_BASE,
+        merge_base=_BASE,
+        reason="test",
+    )
+    assert decision["schema_version"] == 1
+
+
+# ---------------------------------------------------------------------------
+# (7) Latest-status: no matching status -> pending (no historical fallback)
+# ---------------------------------------------------------------------------
+
+
+def test_decide_policy_empty_status_list_is_pending():
+    """No retail/pr-deep status visible for the exact head ->
+    policy_state MUST be 'pending'. There must be NO historical
+    fallback to an older success because there is none."""
+    decision = _decide_policy_with_statuses([])
+    assert decision["policy_state"] == "pending"
+    assert "no certification" in decision["reason"].lower() or \
+        "required" in decision["reason"].lower()
+
+
+def test_decide_policy_status_fetch_uses_per_page_100():
+    """The status fetch must request per_page=100 (the API max)
+    to maximise the chance the returned page is complete."""
+    text = DECIDE_POLICY.read_text(encoding="utf-8")
+    assert "per_page=100" in text
+
+
+# ---------------------------------------------------------------------------
+# (8) Postflight -> success ordering in pr-deep.yml
+# ---------------------------------------------------------------------------
+
+
+def _workflow_step_order(workflow_text, step_name_prefix):
+    """Return ordered list of (job, step_name) that match the
+    prefix in active YAML (excluding comments)."""
+    yaml = _yaml()
+    data = yaml.safe_load(workflow_text)
+    out = []
+    for job_name, job in (data.get("jobs") or {}).items():
+        for step in job.get("steps", []):
+            name = step.get("name") or ""
+            if isinstance(name, str) and name.startswith(step_name_prefix):
+                out.append((job_name, name))
+    return out
+
+
+def test_pr_deep_postflight_runs_before_success_publication():
+    """Postflight metadata revalidation must happen BEFORE
+    success publication in the same job."""
+    text = PR_DEEP_YML.read_text(encoding="utf-8")
+    postflight = text.find("Re-fetch PR metadata and re-validate identities")
+    success_pub = text.find("Set retail/pr-deep = success on expected head")
+    assert postflight != -1, "postflight step missing"
+    assert success_pub != -1, "success publication step missing"
+    assert postflight < success_pub, (
+        "postflight must precede success publication"
+    )
+
+
+def test_pr_deep_success_publication_has_if_success():
+    """The success publication step MUST have ``if: success()`` so
+    that an upstream postflight failure blocks certification."""
+    yaml = _yaml()
+    data = yaml.safe_load(PR_DEEP_YML.read_text(encoding="utf-8"))
+    target = None
+    for _job, job in (data.get("jobs") or {}).items():
+        for step in job.get("steps", []):
+            name = step.get("name") or ""
+            if isinstance(name, str) and name.startswith(
+                "Set retail/pr-deep = success on expected head"
+            ):
+                target = step
+    assert target is not None, "success publication step missing"
+    assert target.get("if") == "success()", (
+        f"success publication must have 'if: success()', got: {target.get('if')!r}"
+    )
+
+
+def test_pr_deep_artifact_upload_precedes_success_publication():
+    """Artifact upload must precede success publication so that
+    evidence is uploaded BEFORE the green status is announced."""
+    text = PR_DEEP_YML.read_text(encoding="utf-8")
+    upload = text.find("Upload PR-DEEP evidence")
+    success_pub = text.find("Set retail/pr-deep = success on expected head")
+    assert upload != -1, "upload step missing"
+    assert success_pub != -1, "success publication step missing"
+    assert upload < success_pub, (
+        "artifact upload must precede success publication"
+    )
+
+
+# ---------------------------------------------------------------------------
+# (9) Exact-main backend-check and release-artifact preserved
+# ---------------------------------------------------------------------------
+
+
+def test_exact_main_backend_check_check_critical_coverage_unchanged():
+    """The exact-main backend-check critical-coverage invocation
+    is NOT modified by PR-B3b (the path it uses
+    ``scripts/check_critical_coverage.py`` is fine because
+    exact-main's defaults set ``working-directory: backend``,
+    which resolves ``scripts/...`` to ``backend/scripts/...``).
+    The test pins the unchanged invocation as a regression
+    sentinel."""
+    text = CI_YML.read_text(encoding="utf-8")
+    # The exact-main backend-check step uses the bare path because
+    # its defaults block sets working-directory: backend.
+    assert "scripts/check_critical_coverage.py" in text
+    # Find the step context. It must live inside the
+    # backend-check job and use the defaults working-directory.
+    yaml = _yaml()
+    data = yaml.safe_load(text)
+    found = False
+    for job_name, job in (data.get("jobs") or {}).items():
+        if job_name != "backend-check":
+            continue
+        defaults = job.get("defaults") or {}
+        run_defaults = defaults.get("run") or {}
+        assert run_defaults.get("working-directory") == "backend", (
+            "exact-main backend-check working-directory must remain 'backend'"
+        )
+        for step in job.get("steps", []):
+            run = step.get("run") or ""
+            if "check_critical_coverage" in run and "scripts/check_critical_coverage.py" in run:
+                found = True
+    assert found, (
+        "exact-main backend-check critical-coverage invocation must remain"
+    )
+
+
+def test_exact_main_release_artifact_unchanged():
+    """The release-artifact job is not touched by PR-B3b."""
+    yaml = _yaml()
+    base_data = yaml.safe_load(PR_DEEP_YML.read_text(encoding="utf-8"))
+    assert "release-artifact" not in (base_data.get("jobs") or {}), (
+        "release-artifact must NOT be in pr-deep.yml (it lives in ci.yml)"
+    )
+    ci_data = yaml.safe_load(CI_YML.read_text(encoding="utf-8"))
+    assert "release-artifact" in (ci_data.get("jobs") or {}), (
+        "release-artifact job must remain in ci.yml"
+    )
+
+
+def test_pr_b3b_does_not_introduce_new_exact_main_job():
+    """PR-B3b must NOT add any workflow_dispatch-only exact-main
+    job. The new PR-DEEP / PR-DEEP-POLICY workflows are
+    PR-context (PR-DEEP-POLICY) or workflow_dispatch
+    certification (PR-DEEP) — they are not exact-main release
+    authority."""
+    yaml = _yaml()
+    for path, expected in [
+        (PR_DEEP_YML, "workflow_dispatch"),
+        (PR_DEEP_POLICY_YML, "pull_request_target"),
+    ]:
+        data = yaml.safe_load(path.read_text(encoding="utf-8"))
+        on = data.get(True) or data.get("on") or {}
+        triggers = sorted(on.keys())
+        assert expected in triggers, (
+            f"{path.name} triggers must include {expected!r}, got: {triggers!r}"
+        )
+        assert "workflow_dispatch" not in on if expected == "pull_request_target" else True, (
+            "pr-deep-policy must not run on workflow_dispatch"
+        )
