@@ -1387,3 +1387,322 @@ class TestEndToEndPytestExecution:
         selected_files = {t["file"] for t in payload["selected_tests"]}
         assert "backend/tests/test_a.py" in selected_files
         assert "backend/tests/test_b.py" not in selected_files
+
+
+# =============================================================================
+# Final trust-ordering fix — gate authority is classified BEFORE any
+# candidate gate module is imported.
+#
+# The five tests below (A–E) pin the post-fix order:
+#   1. resolve SHA identity
+#   2. obtain COMPLETE diff (AM + D, --no-renames)
+#   3. classify trust surfaces (gate/conftest/wiring/governance) WITHOUT
+#      importing the PR-B2 gate
+#   4. ESCALATE_REQUIRED immediately on trust-surface changes
+#   5. only then load the PR-B2 gate from the selected repository root
+#
+# The earlier prototype loaded the gate at step (3) and ran the classifier
+# at step (5). That order is unsafe: a modified gate would execute its
+# top-level code before the selector recognized the change, and a deleted
+# gate would raise at import before the selector could classify the
+# deletion as ESCALATION_REQUIRED.
+# =============================================================================
+
+
+def _seed_gate(repo, body):
+    """Write scripts/check_changed_line_coverage.py with `body` (string)."""
+    _write(repo, "scripts/__init__.py", "")
+    _write(repo, "scripts/check_changed_line_coverage.py", body)
+
+
+_GATE_BODY_HEALTHY = (
+    "def is_eligible_backend(name):\n"
+    "    if not (name.startswith('backend/') and name.endswith('.py')):\n"
+    "        return False\n"
+    "    if any(part in name for part in ('/tests/', '/scripts/', '/venv/')):\n"
+    "        return False\n"
+    "    return True\n"
+    "def is_eligible_frontend(name):\n"
+    "    return False\n"
+)
+
+
+class TestTrustOrderingGateNotImported:
+    """A. Modified gate MUST NOT be imported before classification.
+
+    Sentinel + exception probes: if the candidate gate is executed before
+    the trust-surface classifier runs, the sentinel file would be created
+    or the exception would be raised.
+    """
+
+    def test_modified_gate_with_sentinel_does_not_execute(self, tmp_path):
+        """Modified gate's top-level code (sentinel file write) MUST NOT
+        run. The selector returns ESCALATION_REQUIRED / exit 2 and no
+        sentinel file is created.
+        """
+        repo = _new_repo(tmp_path)
+        _seed_gate(repo, _GATE_BODY_HEALTHY)
+        _make_backend_skeleton(repo)
+        base = _commit(repo, "seed gate v1")
+        sentinel = repo / "GATE_IMPORTED_SENTINEL"
+        # Modified gate: top-level write that would create the sentinel.
+        modified_gate = (
+            "import pathlib\n"
+            "SENTINEL = pathlib.Path(__file__).resolve().parent.parent / "
+            "'GATE_IMPORTED_SENTINEL'\n"
+            "SENTINEL.write_text('gate top-level executed', encoding='utf-8')\n"
+            + _GATE_BODY_HEALTHY
+        )
+        _write(repo, "scripts/check_changed_line_coverage.py", modified_gate)
+        _commit(repo, "modify gate")
+        assert not sentinel.exists()
+
+        rc, payload, _ = _run_selector(repo, base)
+        assert rc == 2, payload
+        assert payload["state"] == "ESCALATION_REQUIRED"
+        cats = [r["category"] for r in payload["escalation_reasons"]]
+        assert "gate_authority" in cats
+        assert any("scripts/check_changed_line_coverage.py" in r["path"]
+                   for r in payload["escalation_reasons"])
+        # The candidate gate MUST NOT have been imported.
+        assert not sentinel.exists(), (
+            "selector imported the modified gate before classification"
+        )
+
+    def test_modified_gate_with_unmistakable_exception_does_not_execute(
+            self, tmp_path):
+        """If the candidate gate were imported, a top-level
+        `raise RuntimeError('GATE_TOP_LEVEL_EXECUTED')` would fire before
+        classification completes. The selector MUST classify the change
+        as ESCALATION_REQUIRED without surfacing that exception.
+        """
+        repo = _new_repo(tmp_path)
+        _seed_gate(repo, _GATE_BODY_HEALTHY)
+        _make_backend_skeleton(repo)
+        base = _commit(repo, "seed gate v1")
+        modified_gate = (
+            "raise RuntimeError('GATE_TOP_LEVEL_EXECUTED')\n"
+            + _GATE_BODY_HEALTHY
+        )
+        _write(repo, "scripts/check_changed_line_coverage.py", modified_gate)
+        _commit(repo, "modify gate explode")
+
+        rc, payload, _ = _run_selector(repo, base)
+        assert rc == 2, payload
+        assert payload["state"] == "ESCALATION_REQUIRED"
+        # The error must NOT mention the gate's RuntimeError; the selector
+        # would only surface that if it had imported the candidate.
+        joined = " ".join(payload.get("errors", []))
+        assert "GATE_TOP_LEVEL_EXECUTED" not in joined, (
+            f"selector surfaced gate's top-level exception: {joined!r}"
+        )
+        cats = [r["category"] for r in payload["escalation_reasons"]]
+        assert "gate_authority" in cats
+
+
+class TestTrustOrderingDeletedGate:
+    """B. Deleted gate MUST be classified as gate_authority and MUST NOT
+    raise an ERROR when the diff proves the deletion."""
+
+    def test_deleted_gate_escalates_with_gate_authority(self, tmp_path):
+        repo = _new_repo(tmp_path)
+        _seed_gate(repo, _GATE_BODY_HEALTHY)
+        _make_backend_skeleton(repo)
+        base = _commit(repo, "seed with gate")
+        (repo / "scripts/check_changed_line_coverage.py").unlink()
+        _commit(repo, "delete gate")
+
+        rc, payload, _ = _run_selector(repo, base)
+        assert rc == 2, payload
+        assert payload["state"] == "ESCALATION_REQUIRED"
+        cats = [r["category"] for r in payload["escalation_reasons"]]
+        assert "gate_authority" in cats, payload
+        assert any("scripts/check_changed_line_coverage.py" in r["path"]
+                   for r in payload["escalation_reasons"]), payload
+        # The selector MUST NOT surface this as ERROR — the diff already
+        # explained the missing gate.
+        assert payload["state"] != "ERROR"
+
+
+class TestTrustOrderingRootLocalGate:
+    """C. --root controls which gate the selector loads.
+
+    The selector must consume the gate under <root>/scripts/, NOT the
+    sibling gate next to the selector executable. We prove this by giving
+    the temp repo a sentinel-only gate (no real eligibility logic) and
+    asserting the selector still produces a valid SELECTED result on a
+    trivial eligible change.
+    """
+
+    def test_root_local_gate_is_used_when_present(self, tmp_path):
+        repo = _new_repo(tmp_path)
+        # Replace the copied PR-B2 gate with a sentinel-only gate.
+        _seed_gate(repo, _GATE_BODY_HEALTHY)
+        _make_backend_skeleton(repo)
+        _write(repo, "backend/services/a.py", "VAL = 1\n")
+        _write(repo, "backend/tests/test_a.py",
+               "from services.a import VAL\n"
+               "def test_a(): assert VAL == 1\n")
+        base = _commit(repo, "seed")
+        _write(repo, "backend/services/a.py", "VAL = 11\n")
+        _commit(repo, "modify a")
+
+        rc, payload, _ = _run_selector(repo, base)
+        assert rc == 0, payload
+        assert payload["state"] == "SELECTED"
+        node_ids = [t["node_id"] for t in payload["selected_tests"]]
+        assert "tests.test_a" in node_ids
+
+    def test_root_local_gate_differs_from_sibling(self, tmp_path):
+        """If the temp repo's gate contains a sentinel is_eligible_backend
+        predicate that returns False for every path (so the selector would
+        produce NO_ELIGIBLE if it actually loaded the root-local gate),
+        we must observe NO_ELIGIBLE — proving the selector consumed the
+        root-local gate, not the sibling one.
+        """
+        repo = _new_repo(tmp_path)
+        no_op_gate = (
+            "def is_eligible_backend(name):\n"
+            "    return False\n"
+            "def is_eligible_frontend(name):\n"
+            "    return False\n"
+        )
+        _seed_gate(repo, no_op_gate)
+        _make_backend_skeleton(repo)
+        _write(repo, "backend/services/a.py", "VAL = 1\n")
+        base = _commit(repo, "seed")
+        _write(repo, "backend/services/a.py", "VAL = 2\n")
+        _commit(repo, "modify a")
+
+        rc, payload, _ = _run_selector(repo, base)
+        assert rc == 0, payload
+        # If the selector had used the sibling (production) gate,
+        # backend/services/a.py would be eligible and state would be
+        # SELECTED. With the root-local no-op gate it must be
+        # NO_ELIGIBLE_BACKEND_CHANGE.
+        assert payload["state"] == "NO_ELIGIBLE_BACKEND_CHANGE", payload
+
+
+class TestTrustOrderingMissingGateFailsClosed:
+    """D. Missing gate WITHOUT a diff-justified deletion is ERROR / exit 3.
+
+    The diff must explain the missing gate; otherwise repository state
+    is inconsistent and the selector fails closed.
+    """
+
+    def test_missing_gate_without_diff_returns_error(self, tmp_path):
+        """Scenario D (spec): the diff does not explain the missing gate
+        but the root-local gate cannot be loaded.
+
+        Git always tracks file deletions in the diff, so a "deleted in
+        working tree but not in diff" state is unreachable through normal
+        git operations. The only true D scenario is when the gate was
+        NEVER in the repository at all: the diff is a normal eligible
+        backend change, but the gate file is absent on disk.
+
+        Construct by removing the gate BEFORE the initial commit and
+        committing only the backend skeleton — then the diff against
+        base will be the eligible change and the gate will be missing
+        on disk.
+        """
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        (repo / "backend").mkdir()
+        # NO scripts/ directory and NO gate file at all.
+        _make_backend_skeleton(repo)
+        _write(repo, "backend/services/a.py", "VAL = 1\n")
+        _git(repo, "init", "-q", "-b", "main")
+        _git(repo, "config", "user.email", "ci@example.com")
+        _git(repo, "config", "user.name", "CI")
+        _git(repo, "config", "commit.gpgsign", "false")
+        _git(repo, "config", "diff.renames", "false")
+        _git(repo, "config", "status.renames", "false")
+        base = _commit(repo, "seed")
+        _write(repo, "backend/services/a.py", "VAL = 2\n")
+        _commit(repo, "modify a")
+        assert not (repo / "scripts" / "check_changed_line_coverage.py").exists()
+
+        rc, payload, _ = _run_selector(repo, base)
+        assert rc == 3, payload
+        assert payload["state"] == "ERROR"
+        assert payload["errors"]
+        # The error must reference the missing gate.
+        joined = " ".join(payload["errors"])
+        assert "PR-B2 gate" in joined or "gate" in joined.lower(), joined
+
+    def test_missing_gate_with_explicit_no_diff_change_returns_error(
+            self, tmp_path):
+        """Same scenario with a docs-only diff (no trust surface moved)."""
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        (repo / "backend").mkdir()
+        _make_backend_skeleton(repo)
+        _write(repo, "docs/foo.md", "# initial\n")
+        _git(repo, "init", "-q", "-b", "main")
+        _git(repo, "config", "user.email", "ci@example.com")
+        _git(repo, "config", "user.name", "CI")
+        _git(repo, "config", "commit.gpgsign", "false")
+        _git(repo, "config", "diff.renames", "false")
+        _git(repo, "config", "status.renames", "false")
+        base = _commit(repo, "seed")
+        _write(repo, "docs/foo.md", "# updated\n")
+        _commit(repo, "docs")
+        assert not (repo / "scripts" / "check_changed_line_coverage.py").exists()
+
+        rc, payload, _ = _run_selector(repo, base)
+        # docs-only with missing gate: the diff proves the gate was not
+        # touched in this PR, so the missing gate is a repository-state
+        # inconsistency. The selector reaches step (5) before any
+        # state-classification short-circuit, so it must fail closed
+        # as ERROR.
+        assert rc == 3, payload
+        assert payload["state"] == "ERROR"
+
+
+class TestTrustOrderingSelectorSelfChange:
+    """E. A change to scripts/pr_fast_select_tests.py itself MUST be
+    classified as selector_self before any gate load is attempted.
+    """
+
+    def test_selector_self_change_escalates_before_gate_load(
+            self, tmp_path):
+        repo = _new_repo(tmp_path)
+        _seed_gate(repo, _GATE_BODY_HEALTHY)
+        _make_backend_skeleton(repo)
+        # Add a sentinel gate at the temp repo; a modification to the
+        # selector itself will NOT import this gate (selector self is
+        # classified before any gate load).
+        sentinel = repo / "SELECTOR_SELF_SENTINEL"
+        sentinel_gate = (
+            "import pathlib\n"
+            "_S = pathlib.Path(__file__).resolve().parent.parent / "
+            "'SELECTOR_SELF_SENTINEL'\n"
+            "_S.write_text('gate top-level executed', encoding='utf-8')\n"
+            + _GATE_BODY_HEALTHY
+        )
+        _write(repo, "scripts/check_changed_line_coverage.py", sentinel_gate)
+        base = _commit(repo, "seed")
+        # Modify the selector script — top-level marker that would
+        # change nothing about behavior, only its body.
+        # We write a copy of the selector into the temp repo because the
+        # diff is computed against the temp repo, not the production
+        # selector. This makes the diff see the selector-self change.
+        selector_path = WORKTREE / "scripts" / "pr_fast_select_tests.py"
+        selector_text = selector_path.read_text(encoding="utf-8")
+        # Append a no-op trailing comment so the diff is non-empty.
+        _write(repo, "scripts/pr_fast_select_tests.py",
+               selector_text + "\n# marker for selector-self test\n")
+        _commit(repo, "modify selector self")
+        assert not sentinel.exists()
+
+        rc, payload, _ = _run_selector(repo, base)
+        assert rc == 2, payload
+        assert payload["state"] == "ESCALATION_REQUIRED"
+        cats = [r["category"] for r in payload["escalation_reasons"]]
+        assert "selector_self" in cats
+        # The candidate gate MUST NOT have been imported (sentinel
+        # untouched).
+        assert not sentinel.exists(), (
+            "selector imported the candidate gate before classifying "
+            "its own change as selector_self"
+        )

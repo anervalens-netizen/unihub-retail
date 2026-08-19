@@ -11,8 +11,33 @@ which backend pytest test nodes must run for a pull request, given:
 It is intentionally self-contained: there is no cache, no testmon, no
 previous-run state, no filename-only authority, no network. It reuses
 the existing PR-B2 backend eligibility authority via importlib (we load
-`scripts/check_changed_line_coverage.py` from a sibling script path and
-call its public predicates). The PR-B2 gate is NOT modified by this PR.
+`scripts/check_changed_line_coverage.py` from the selected repository
+root and call its public predicates). The PR-B2 gate is NOT modified
+by this PR.
+
+TRUST ORDER (security-critical — do NOT reorder without rereading):
+
+    1. resolve base SHA + HEAD SHA
+    2. obtain COMPLETE git diff using git only
+       (AM additions + D deletions, --no-renames)
+    3. classify trust-surface changes/deletions WITHOUT importing
+       the PR-B2 gate
+    4. if any selector/gate/conftest/dependency/wiring/governance
+       trust surface changed:
+           return ESCALATION_REQUIRED immediately
+    5. only after trust surfaces are proven unchanged:
+           load the PR-B2 gate from the selected repository root
+    6. continue eligibility / graph / deletion-production logic
+
+Statement (claim scope deliberately narrow):
+
+    Untrusted PR changes to selector/gate/control-plane surfaces are
+    classified before executable gate code is imported.
+
+This guarantees that a PR which MODIFIES the gate cannot execute the
+modified gate before the selector recognizes the change, and a PR
+which DELETES the gate cannot fail at import time before the
+selector recognizes the deletion as ESCALATION_REQUIRED.
 
 Four-state contract:
     NO_ELIGIBLE_BACKEND_CHANGE  -> exit 0
@@ -79,21 +104,53 @@ BACKEND_TREE_SUBDIRS_TO_SKIP = ("/venv/", "/__pycache__/", "/scripts/", "/tests/
 
 
 # ---------------------------------------------------------------------------
-# PR-B2 gate authority (loaded by importlib from a sibling script).
+# PR-B2 gate authority (loaded by importlib from the selected repository root).
 # ---------------------------------------------------------------------------
+#
+# The PR-B2 gate is the single source of truth for backend eligibility and
+# diff collection. We deliberately do NOT copy its predicates here.
+#
+# Trust-ordering invariant: the gate file is ONLY loaded AFTER the trust-
+# surface classifier has confirmed that no selector/gate/control-plane
+# path changed in the diff. Loading it earlier would (a) execute the
+# candidate gate from a PR that modifies it and (b) crash on import for
+# a PR that deletes it — both before the selector can classify the
+# change as ESCALATION_REQUIRED.
+#
+# When `--root=<repo>` is supplied, the gate authority is loaded from
+# `<repo>/scripts/check_changed_line_coverage.py` (root-local). When
+# `--root` is omitted, it is loaded from the directory containing this
+# selector script (production invocation), which is naturally identical
+# because the selector lives next to the gate in the production checkout.
 
-_GATE_PATH = Path(__file__).resolve().parent / "check_changed_line_coverage.py"
 
+def _gate_path_for_root(root: Path) -> Path:
+    """Return the candidate path to the PR-B2 gate for the given repo root.
 
-def _load_pr_b2_gate():
-    """Load scripts/check_changed_line_coverage.py as a trusted sibling.
-
-    The PR-B2 gate is the single source of truth for backend eligibility and
-    diff collection. We deliberately do NOT copy its predicates here.
+    Always `<root>/scripts/check_changed_line_coverage.py`. The path is
+    NOT required to exist at this point; the caller decides whether a
+    missing gate is an ERROR (diff did not explain it) or part of the
+    normal ESCALATION path (diff already proved deletion).
     """
-    spec = importlib.util.spec_from_file_location("pr_b2_gate", _GATE_PATH)
+    return (root / "scripts" / "check_changed_line_coverage.py").resolve()
+
+
+def _load_pr_b2_gate(gate_path: Path):
+    """Load `gate_path` as the trusted PR-B2 gate module.
+
+    Raises FileNotFoundError if the file does not exist. Raises
+    RuntimeError if importlib cannot build a spec. Any exception raised
+    during module execution propagates to the caller — this is the only
+    safe behavior because we must surface the truth to the caller rather
+    than silently fall back to a different module.
+    """
+    if not gate_path.exists():
+        raise FileNotFoundError(
+            f"PR-B2 gate file does not exist at {gate_path}"
+        )
+    spec = importlib.util.spec_from_file_location("pr_b2_gate", gate_path)
     if spec is None or spec.loader is None:
-        raise RuntimeError(f"cannot load PR-B2 gate from {_GATE_PATH}")
+        raise RuntimeError(f"cannot build spec for PR-B2 gate at {gate_path}")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
@@ -802,8 +859,25 @@ def _emit_error(errors: list, state: str, msg: str) -> SelectionResult:
 
 
 def select_tests(base: str, root: Path) -> SelectionResult:
-    """Compute the deterministic SelectionResult for `base`..HEAD at `root`."""
-    # ----- Resolve both SHAs through git -----------------------------
+    """Compute the deterministic SelectionResult for `base`..HEAD at `root`.
+
+    TRUST ORDER (security-critical):
+
+      1. resolve base SHA + HEAD SHA through git
+      2. collect COMPLETE diff (AM additions + D deletions, --no-renames)
+      3. classify trust-surface changes/deletions WITHOUT importing the
+         PR-B2 gate
+      4. if any trust surface changed:
+            return ESCALATION_REQUIRED immediately
+      5. only then load the PR-B2 gate from the selected repository root
+      6. continue with eligibility / graph / deletion-production logic
+
+    Claim scope (deliberately narrow):
+
+      Untrusted PR changes to selector/gate/control-plane surfaces are
+      classified before executable gate code is imported.
+    """
+    # ----- 1. Resolve both SHAs through git ----------------------------
     # base may arrive as a short SHA, branch name, tag, or full SHA.
     # HEAD is resolved as a separate step. Both must be full 40-char SHAs
     # in the canonical JSON.
@@ -825,20 +899,68 @@ def select_tests(base: str, root: Path) -> SelectionResult:
 
     result = SelectionResult(state=STATE_ERROR, base=base_full, head=head_full)
 
-    # ----- Load PR-B2 gate authority via importlib ------------------
-    try:
-        gate = _load_pr_b2_gate()
-    except Exception as exc:
-        result.errors.append(f"failed to load PR-B2 gate: {exc}")
-        return result
-
-    # ----- Collect the COMPLETE diff (additions + modifications + deletions)
+    # ----- 2. Collect the COMPLETE diff using git ONLY ----------------
+    # We deliberately do this BEFORE importing the PR-B2 gate so that a
+    # modified or deleted gate cannot execute its top-level code during
+    # import before we have a chance to classify the change as
+    # ESCALATION_REQUIRED. The git diff is the only authority consulted
+    # at this stage.
     try:
         all_added = _all_changed_paths(base_full, root)
         all_deleted = _all_deleted_paths(base_full, root)
     except subprocess.CalledProcessError as exc:
         result.errors.append(f"git diff failed (rc={exc.returncode})")
         return result
+
+    # ----- 3. Classify trust surfaces WITHOUT importing the gate -----
+    # Same classifier for AM and D: a deletion of a trust surface
+    # invalidates selection trust just as surely as a change.
+    surface_paths = list(all_added) + list(all_deleted)
+    static_escalations = classify_changed_paths(surface_paths)
+
+    # ----- 4. Trust-surface short-circuit (gate NOT yet loaded) -----
+    # The candidate PR-B2 gate at <root>/scripts/check_changed_line_coverage.py
+    # may itself be in `surface_paths`. If so, we MUST NOT load it. This
+    # is the security boundary the previous prototype violated: it loaded
+    # the candidate gate via importlib BEFORE the trust-surface
+    # classifier ran, so a PR that modified or deleted the gate could
+    # execute the modified gate's top-level code (or crash at import)
+    # before the selector had a chance to ESCALATE_REQUIRED.
+    if static_escalations:
+        for r in static_escalations:
+            result.escalation_reasons.append(r)
+        result.notes.append(
+            "trust surface changed (added/modified/deleted); caller must run FULL"
+        )
+        result.state = STATE_ESCALATION
+        return result
+
+    # ----- 5. Trust surfaces proven unchanged -> load PR-B2 gate -----
+    # The gate is loaded from the SELECTED repository root so a
+    # --root=<temp_repo> invocation consumes the gate under that temp
+    # repo's scripts/ directory (root-local authority). For normal
+    # production invocation where --root is the checkout containing the
+    # selector, the path naturally resolves to the sibling gate.
+    gate_path = _gate_path_for_root(root)
+    try:
+        gate = _load_pr_b2_gate(gate_path)
+    except FileNotFoundError as exc:
+        # Diff did NOT explain the missing gate (no static escalation was
+        # raised). Repository state is inconsistent: fail closed as ERROR.
+        result.errors.append(
+            f"PR-B2 gate unexpectedly missing at {gate_path} "
+            f"after diff classified no gate deletion: {exc}"
+        )
+        result.state = STATE_ERROR
+        return result
+    except Exception as exc:
+        result.errors.append(
+            f"failed to load PR-B2 gate at {gate_path}: {exc}"
+        )
+        result.state = STATE_ERROR
+        return result
+
+    # ----- 6. Continue eligibility / graph / deletion-production ------
 
     # ----- Build the static graph over the CURRENT working tree -----
     try:
@@ -848,12 +970,6 @@ def select_tests(base: str, root: Path) -> SelectionResult:
     except FileNotFoundError as exc:
         result.errors.append(str(exc))
         return result
-
-    # ----- Trust-surface classification over the COMPLETE diff ----
-    # A change OR a deletion of a gate/selector/wiring/governance path
-    # invalidates selection trust. We classify both AM and D.
-    surface_paths = list(all_added) + list(all_deleted)
-    static_escalations = classify_changed_paths(surface_paths)
 
     # ----- Deleted-test surface (must fail closed) ----
     deleted_test_paths = [
@@ -885,19 +1001,7 @@ def select_tests(base: str, root: Path) -> SelectionResult:
         gate.is_eligible_backend(p) for p in all_added
     )
 
-    # ----- Escalation ordering (most specific first) ----
-    # 1. Static trust-surface changes (gates, wiring, governance,
-    #    selector, dependencies) — applies to both AM and D.
-    if static_escalations:
-        for r in static_escalations:
-            result.escalation_reasons.append(r)
-        result.notes.append(
-            "trust surface changed (added/modified/deleted); caller must run FULL"
-        )
-        result.state = STATE_ESCALATION
-        return result
-
-    # 2. Deleted backend test files — must fail closed.
+    # ----- 2. Deleted backend test files — must fail closed. -------
     if deleted_test_paths:
         for p in deleted_test_paths:
             result.escalation_reasons.append(EscalationReason(
@@ -911,7 +1015,7 @@ def select_tests(base: str, root: Path) -> SelectionResult:
         result.state = STATE_ESCALATION
         return result
 
-    # 3. Deleted eligible backend production files — must fail closed.
+    # ----- 3. Deleted eligible backend production files — must fail closed.
     if deleted_eligible_production_paths:
         for p in deleted_eligible_production_paths:
             result.escalation_reasons.append(EscalationReason(
@@ -927,7 +1031,7 @@ def select_tests(base: str, root: Path) -> SelectionResult:
         result.state = STATE_ESCALATION
         return result
 
-    # 4. Dynamic-import census on CHANGED files (only matters for AM).
+    # ----- 4. Dynamic-import census on CHANGED files (only matters for AM).
     changed_dynamic: list = []
     for rel in all_added:
         if rel in dynamic_files:
