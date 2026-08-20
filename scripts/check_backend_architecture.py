@@ -1,17 +1,26 @@
 #!/usr/bin/env python3
-"""Enforce the Retail router/service/repository dependency direction and cycles."""
+"""Enforce Retail backend architecture boundaries and direct-DB exception ratchets."""
 from __future__ import annotations
 
 import ast
+import hashlib
 import json
 import re
 from collections import defaultdict
 from pathlib import Path
+from typing import Any
 
 
 ROOT = Path(__file__).resolve().parents[1] / "backend"
 LAYERS = ("routers", "services", "repositories", "domain")
 CONTRACT_PATH = ROOT / "architecture_contract.json"
+DIRECT_DB_BASELINE_PATH = ROOT / "architecture_direct_db_baseline_v1.json"
+DIRECT_DB_BASELINE_SHA256 = "769041fb94bc302a4d0295822d4a1060f2628d6b11e277595bdc6cac3d1a980c"
+DIRECT_DB_CATEGORIES = (
+    "query_services",
+    "transaction_scripts",
+    "orchestration_boundaries",
+)
 DB_METHODS = {
     "acquire", "copy_records_to_table", "execute", "executemany", "fetch",
     "fetchrow", "fetchval", "transaction",
@@ -60,25 +69,107 @@ def direct_database_access(path: Path) -> bool:
     return False
 
 
+def _category_map(raw: Any, *, label: str) -> tuple[dict[str, str], list[str]]:
+    violations: list[str] = []
+    if not isinstance(raw, dict):
+        return {}, [f"{label} service_data_access must be an object"]
+
+    actual_categories = set(raw)
+    expected_categories = set(DIRECT_DB_CATEGORIES)
+    missing = sorted(expected_categories - actual_categories)
+    extra = sorted(actual_categories - expected_categories)
+    if missing:
+        violations.append(f"{label} missing data-access categories: " + ", ".join(missing))
+    if extra:
+        violations.append(f"{label} has unknown data-access categories: " + ", ".join(extra))
+
+    module_categories: dict[str, str] = {}
+    for category in DIRECT_DB_CATEGORIES:
+        modules = raw.get(category, [])
+        if not isinstance(modules, list) or any(not isinstance(module, str) or not module for module in modules):
+            violations.append(f"{label} category {category} must be a list of non-empty module names")
+            continue
+        if len(modules) != len(set(modules)):
+            violations.append(f"{label} category {category} contains duplicate module entries")
+        for module in modules:
+            previous = module_categories.get(module)
+            if previous is not None and previous != category:
+                violations.append(
+                    f"{label} data-access module {module} appears in multiple categories: "
+                    f"{previous}, {category}"
+                )
+            else:
+                module_categories[module] = category
+    return module_categories, violations
+
+
+def evaluate_data_access_ratchet(
+    contract: dict[str, Any],
+    baseline: dict[str, Any],
+) -> dict[str, Any]:
+    """Require today's direct-DB exceptions to be a category-stable baseline subset."""
+    violations: list[str] = []
+    if baseline.get("version") != 1:
+        violations.append("direct DB architecture baseline version must be 1")
+
+    current_map, current_violations = _category_map(
+        contract.get("service_data_access"),
+        label="current architecture contract",
+    )
+    baseline_map, baseline_violations = _category_map(
+        baseline.get("service_data_access"),
+        label="direct DB architecture baseline",
+    )
+    violations.extend(current_violations)
+    violations.extend(baseline_violations)
+
+    expected_count = baseline.get("baseline_exception_count")
+    if not isinstance(expected_count, int) or expected_count < 0:
+        violations.append("direct DB architecture baseline_exception_count must be a non-negative integer")
+    elif expected_count != len(baseline_map):
+        violations.append(
+            "direct DB architecture baseline_exception_count does not match baseline modules: "
+            f"{expected_count} != {len(baseline_map)}"
+        )
+
+    for module, current_category in sorted(current_map.items()):
+        baseline_category = baseline_map.get(module)
+        if baseline_category is None:
+            violations.append(f"new direct DB architecture exception is not in pinned baseline: {module}")
+        elif baseline_category != current_category:
+            violations.append(
+                f"direct DB architecture exception category changed for {module}: "
+                f"{baseline_category} -> {current_category}"
+            )
+
+    retired = sorted(set(baseline_map) - set(current_map))
+    return {
+        "violations": sorted(set(violations)),
+        "current_modules": set(current_map),
+        "baseline_modules": set(baseline_map),
+        "retired_modules": retired,
+    }
+
+
 def main() -> None:
     paths = sorted(path for path in ROOT.rglob("*.py") if "tests" not in path.parts and "venv" not in path.parts)
     modules = {module_name(path): path for path in paths}
     edges: dict[str, set[str]] = defaultdict(set)
     violations: list[str] = []
+
     contract = json.loads(CONTRACT_PATH.read_text(encoding="utf-8"))
-    categories = contract["service_data_access"]
-    allowed_data_access = {
-        module
-        for modules_in_category in categories.values()
-        for module in modules_in_category
-    }
-    duplicates = [
-        module
-        for module in allowed_data_access
-        if sum(module in group for group in categories.values()) != 1
-    ]
-    if duplicates:
-        violations.append("data-access modules have multiple categories: " + ", ".join(sorted(duplicates)))
+    baseline_bytes = DIRECT_DB_BASELINE_PATH.read_bytes()
+    actual_baseline_sha256 = hashlib.sha256(baseline_bytes).hexdigest()
+    if actual_baseline_sha256 != DIRECT_DB_BASELINE_SHA256:
+        violations.append(
+            "direct DB architecture baseline digest mismatch: "
+            f"{actual_baseline_sha256} != {DIRECT_DB_BASELINE_SHA256}"
+        )
+    baseline = json.loads(baseline_bytes.decode("utf-8"))
+    ratchet = evaluate_data_access_ratchet(contract, baseline)
+    violations.extend(ratchet["violations"])
+    allowed_data_access = ratchet["current_modules"]
+
     for source, path in modules.items():
         source_layer = source.split(".", 1)[0]
         accesses_database = direct_database_access(path)
@@ -131,9 +222,13 @@ def main() -> None:
             violations.append(f"stale data-access allowlist entry {module}")
     if violations:
         raise SystemExit("Backend architecture violations:\n  - " + "\n  - ".join(sorted(set(violations))))
+
+    baseline_count = len(ratchet["baseline_modules"])
+    current_count = len(allowed_data_access)
+    retired_count = len(ratchet["retired_modules"])
     print(
         f"Backend architecture valid: {len(modules)} modules, acyclic graph, "
-        f"{len(allowed_data_access)} classified hybrid data-access modules"
+        f"direct DB exceptions {current_count}/{baseline_count}, retired {retired_count}"
     )
 
 
