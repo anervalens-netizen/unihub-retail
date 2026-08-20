@@ -197,7 +197,7 @@ def test_case_2_new_function_cp_20_fails(check, l1, tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# 3. aggregate gte_20 33 -> 34 FAIL (transition validator)
+# 3. aggregate gte_20 32 -> 33 FAIL (transition validator)
 # ---------------------------------------------------------------------------
 
 
@@ -206,18 +206,18 @@ def test_case_3_aggregate_gte_20_increase_fails(check, l1, real_v2_contract):
     candidate = _set_path(
         real_v2_contract,
         ("release_b_gates", "complexity_proxy_gte_20_maximum"),
-        34,
+        33,
     )
     _rehash(candidate)
     result = check.evaluate(
         PR_B1_WORKTREE, candidate, l1, previous_contract=previous
     )
     assert result["result"] == "FAIL"
-    assert any("gte_20" in v and "34" in v for v in result["transition_violations"])
+    assert any("gte_20" in v and "33" in v for v in result["transition_violations"])
 
 
 # ---------------------------------------------------------------------------
-# 4. aggregate gte_30 3 -> 4 FAIL (transition validator)
+# 4. aggregate gte_30 2 -> 3 FAIL (transition validator)
 # ---------------------------------------------------------------------------
 
 
@@ -226,14 +226,14 @@ def test_case_4_aggregate_gte_30_increase_fails(check, l1, real_v2_contract):
     candidate = _set_path(
         real_v2_contract,
         ("release_b_gates", "complexity_proxy_gte_30_maximum"),
-        4,
+        3,
     )
     _rehash(candidate)
     result = check.evaluate(
         PR_B1_WORKTREE, candidate, l1, previous_contract=previous
     )
     assert result["result"] == "FAIL"
-    assert any("gte_30" in v and "4" in v for v in result["transition_violations"])
+    assert any("gte_30" in v and "3" in v for v in result["transition_violations"])
 
 
 # ---------------------------------------------------------------------------
