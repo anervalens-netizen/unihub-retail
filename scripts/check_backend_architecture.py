@@ -5,13 +5,16 @@ from __future__ import annotations
 import ast
 import hashlib
 import json
+import os
 import re
+import subprocess
 from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
 
 ROOT = Path(__file__).resolve().parents[1] / "backend"
+REPO_ROOT = ROOT.parent
 LAYERS = ("routers", "services", "repositories", "domain")
 CONTRACT_PATH = ROOT / "architecture_contract.json"
 DIRECT_DB_BASELINE_PATH = ROOT / "architecture_direct_db_baseline_v1.json"
@@ -103,11 +106,59 @@ def _category_map(raw: Any, *, label: str) -> tuple[dict[str, str], list[str]]:
     return module_categories, violations
 
 
+def _git_text(*args: str) -> str:
+    completed = subprocess.run(
+        ["git", *args],
+        cwd=REPO_ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return completed.stdout
+
+
+def _ci_previous_contract() -> tuple[dict[str, Any] | None, str | None, list[str]]:
+    """Load the exact previous architecture contract in CI, failing closed on lookup errors."""
+    event_name = os.environ.get("GITHUB_EVENT_NAME")
+    if not event_name:
+        return None, None, []
+
+    previous_sha: str | None = None
+    try:
+        if event_name == "pull_request":
+            event_path = os.environ.get("GITHUB_EVENT_PATH")
+            if not event_path:
+                return None, None, ["GITHUB_EVENT_PATH missing for architecture ratchet"]
+            event = json.loads(Path(event_path).read_text(encoding="utf-8"))
+            previous_sha = event.get("pull_request", {}).get("base", {}).get("sha")
+            if not isinstance(previous_sha, str) or re.fullmatch(r"[0-9a-f]{40}", previous_sha) is None:
+                return None, None, ["pull request base SHA missing or invalid for architecture ratchet"]
+        elif event_name == "workflow_dispatch":
+            previous_sha = os.environ.get("EXACT_MAIN_FIRST_PARENT") or _git_text("rev-parse", "HEAD^1").strip()
+            if re.fullmatch(r"[0-9a-f]{40}", previous_sha) is None:
+                return None, None, ["previous main SHA missing or invalid for architecture ratchet"]
+        else:
+            return None, None, []
+
+        raw = _git_text("show", f"{previous_sha}:backend/architecture_contract.json")
+        previous_contract = json.loads(raw)
+        if not isinstance(previous_contract, dict):
+            return None, previous_sha, ["previous architecture contract must be an object"]
+        return previous_contract, previous_sha, []
+    except (OSError, subprocess.CalledProcessError, json.JSONDecodeError) as exc:
+        return None, previous_sha, [
+            f"unable to load previous architecture contract at {previous_sha or 'unknown'}: "
+            f"{type(exc).__name__}"
+        ]
+
+
 def evaluate_data_access_ratchet(
     contract: dict[str, Any],
     baseline: dict[str, Any],
+    *,
+    previous_contract: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Require today's direct-DB exceptions to be a category-stable baseline subset."""
+    """Require direct-DB exceptions to shrink monotonically from the pinned baseline."""
     violations: list[str] = []
     if baseline.get("version") != 1:
         violations.append("direct DB architecture baseline version must be 1")
@@ -142,12 +193,35 @@ def evaluate_data_access_ratchet(
                 f"{baseline_category} -> {current_category}"
             )
 
+    previous_map: dict[str, str] | None = None
+    retired_since_previous: list[str] = []
+    if previous_contract is not None:
+        previous_map, previous_violations = _category_map(
+            previous_contract.get("service_data_access"),
+            label="previous architecture contract",
+        )
+        violations.extend(previous_violations)
+        for module, current_category in sorted(current_map.items()):
+            previous_category = previous_map.get(module)
+            if previous_category is None:
+                violations.append(
+                    f"direct DB architecture exception added since previous contract: {module}"
+                )
+            elif previous_category != current_category:
+                violations.append(
+                    f"direct DB architecture exception category changed since previous contract for {module}: "
+                    f"{previous_category} -> {current_category}"
+                )
+        retired_since_previous = sorted(set(previous_map) - set(current_map))
+
     retired = sorted(set(baseline_map) - set(current_map))
     return {
         "violations": sorted(set(violations)),
         "current_modules": set(current_map),
         "baseline_modules": set(baseline_map),
+        "previous_modules": set(previous_map or {}),
         "retired_modules": retired,
+        "retired_since_previous": retired_since_previous,
     }
 
 
@@ -166,7 +240,13 @@ def main() -> None:
             f"{actual_baseline_sha256} != {DIRECT_DB_BASELINE_SHA256}"
         )
     baseline = json.loads(baseline_bytes.decode("utf-8"))
-    ratchet = evaluate_data_access_ratchet(contract, baseline)
+    previous_contract, previous_sha, previous_violations = _ci_previous_contract()
+    violations.extend(previous_violations)
+    ratchet = evaluate_data_access_ratchet(
+        contract,
+        baseline,
+        previous_contract=previous_contract,
+    )
     violations.extend(ratchet["violations"])
     allowed_data_access = ratchet["current_modules"]
 
@@ -226,9 +306,11 @@ def main() -> None:
     baseline_count = len(ratchet["baseline_modules"])
     current_count = len(allowed_data_access)
     retired_count = len(ratchet["retired_modules"])
+    previous_label = f", previous {previous_sha[:12]}" if previous_sha else ""
     print(
         f"Backend architecture valid: {len(modules)} modules, acyclic graph, "
         f"direct DB exceptions {current_count}/{baseline_count}, retired {retired_count}"
+        f"{previous_label}"
     )
 
 

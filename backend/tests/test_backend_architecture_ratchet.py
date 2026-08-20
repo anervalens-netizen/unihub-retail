@@ -94,11 +94,34 @@ def test_retiring_existing_exception_is_allowed_by_ratchet(check, contract, base
     mutated = copy.deepcopy(contract)
     mutated["service_data_access"]["query_services"].remove("services.agents")
 
-    result = check.evaluate_data_access_ratchet(mutated, baseline)
+    result = check.evaluate_data_access_ratchet(
+        mutated,
+        baseline,
+        previous_contract=contract,
+    )
 
     assert result["violations"] == []
     assert len(result["current_modules"]) == 54
     assert result["retired_modules"] == ["services.agents"]
+    assert result["retired_since_previous"] == ["services.agents"]
+
+
+def test_retired_exception_cannot_be_readded_on_later_commit(check, contract, baseline):
+    retired = copy.deepcopy(contract)
+    retired["service_data_access"]["query_services"].remove("services.agents")
+
+    readded = copy.deepcopy(retired)
+    readded["service_data_access"]["query_services"].append("services.agents")
+
+    result = check.evaluate_data_access_ratchet(
+        readded,
+        baseline,
+        previous_contract=retired,
+    )
+
+    assert result["violations"] == [
+        "direct DB architecture exception added since previous contract: services.agents"
+    ]
 
 
 @pytest.mark.parametrize(
