@@ -105,46 +105,57 @@ These values are historical evidence, not the active blocking ratchet.
 ## Current active contract state
 
 The active `scripts/python-complexity-contract-v2.json` has been
-monotonically tightened by the Phase-C C1 `build_target_excel`
-refactor. The current measured tree is:
+monotonically tightened through the Phase-C C1, C2 and C3 Target
+Calculator refactors. The current CI-measured production tree is:
 
 | Metric                     | Value |
 |----------------------------|-------|
-| production_functions       | 2945  |
-| complexity_proxy > 19      | 32    |
-| complexity_proxy >= 30     | 2     |
-| maximum_complexity_proxy   | 49    |
+| production_functions       | 2953  |
+| complexity_proxy > 19      | 29    |
+| complexity_proxy >= 30     | 0     |
+| maximum_complexity_proxy   | 28    |
 | new_function above 19      | 0     |
 
-`build_target_excel` now measures complexity proxy `1`, so it is below
-the immutable v2 new-function boundary (`19`) and has correctly left
-the active locked/remediation set. The remaining remediation hotspots
-are:
+All three original Phase-C Target Calculator remediation hotspots are
+now below the immutable v2 new-function boundary (`19`):
 
-| Path                                                              | Function                       | current | target |
-|-------------------------------------------------------------------|--------------------------------|---------|--------|
-| `backend/services/target_calculator/profitability.py`             | `populate_profitability`       | 49      | 29     |
-| `backend/services/target_calculator/export.py`                    | `manager_allocation_analysis`  | 32      | 29     |
+| Function                       | Historical cp | Current cp |
+|--------------------------------|--------------:|-----------:|
+| `build_target_excel`           | 62            | 1          |
+| `populate_profitability`       | 49            | 16         |
+| `manager_allocation_analysis`  | 32            | 10         |
+
+`manager_allocation_analysis` now lives in
+`backend/services/target_calculator/manager_allocation.py`; the XLSX
+module imports/re-exports it so the existing presentation seam remains
+compatible. Its extracted helpers measure 3 / 5 / 17, all below the
+new-function ceiling.
+
+The Phase-C C1-C3 identities have therefore left the active
+locked/remediation set. `remediation_entries` is now empty. Remaining
+`entries[]` are ordinary >19 ratchet identities elsewhere in the
+production tree; the highest current identity is `regional_summary`
+at complexity proxy 28.
 
 ## Current blocking ratchet
 
 `scripts/python-complexity-contract-v2.json` records:
 
-| Limit                                            | Value | Meaning                                          |
-|--------------------------------------------------|-------|--------------------------------------------------|
-| `complexity_proxy_gte_20_maximum`                | 32    | total functions with cp > 19 may not exceed 32   |
-| `complexity_proxy_gte_30_maximum`                | 2     | total functions with cp >= 30 may not exceed 2   |
-| `maximum_complexity_proxy`                       | 49    | the largest single function cp may not exceed 49 |
-| `new_function_complexity_proxy_maximum`          | 19    | a function not in `entries` may not exceed cp 19 (i.e., may not reach cp >= 20) |
+| Limit                                            | Value | Meaning |
+|--------------------------------------------------|------:|---------|
+| `complexity_proxy_gte_20_maximum`                | 29    | total functions with cp > 19 may not exceed 29 |
+| `complexity_proxy_gte_30_maximum`                | 0     | no production function may reach cp >= 30 |
+| `maximum_complexity_proxy`                       | 28    | the largest single function cp may not exceed 28 |
+| `new_function_complexity_proxy_maximum`          | 19    | a new/unlocked function may not exceed cp 19 |
 
-The new-function threshold is **pinned at 19** for v2. Both values
-above 19 (would loosen) and below 19 (would tighten) are rejected by
-the v2 -> v2 transition validator. Changing the boundary requires
-v3 / rebaseline.
+The new-function threshold remains **pinned at 19** for v2. Both values
+above 19 (loosening) and below 19 (changing the v2 boundary) are
+rejected by the v2 -> v2 transition validator. Changing that boundary
+requires a new contract version / explicit rebaseline.
 
-Per-function ceilings in `entries[]` pin each current `> 19` identity
-at its recorded complexity. A regression of any entry above its
-ceiling is a FAIL.
+Per-function ceilings in `entries[]` continue to pin every remaining
+current `> 19` identity at its recorded complexity. A regression above
+any ceiling is a FAIL.
 
 The v2 contract deliberately omits the legacy v1 fields
 `wp11_locked_entries_maximum` and `mandatory_locked_gte_30_maximum`.
@@ -165,10 +176,10 @@ Informational, not blocking. Recorded in `future_target`:
 | `no_new_function_above_19`             | true  |
 
 The future target does not raise any limit automatically. The active
-`>19` ratchet has already improved past the historical informational
-value of 33 (it is now 32); that informational field does not loosen or
-override the blocking ratchet. Improvements continue through explicit
-contract updates in PRs that achieve them.
+ratchet has already improved beyond those historical informational
+ceilings (`>19 = 29`, `>=30 = 0`, `max = 28`); the informational fields
+do not loosen or override the blocking contract. Further improvements
+continue only through explicit monotonic contract updates.
 
 ## Result semantics
 
