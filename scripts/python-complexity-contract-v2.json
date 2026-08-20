@@ -22,16 +22,16 @@
     "walk": "ast.walk_including_nested_bodies"
   },
   "baseline_source_sha": "76a71d9bcf339385712ae1207824624af603a12f",
-  "contract_payload_sha256": "5e5eea128e63bf84cce34f1ac883ced057ed990dffbbfc0e7db0acbcf9b8e4b4",
+  "contract_payload_sha256": "57d34919c5111446a26848ddc70a21565a590293d2f663d088b8cb750f573614",
   "entries": [
     {
-      "ceiling": 62,
-      "current_complexity": 62,
-      "end_line": 430,
+      "ceiling": 51,
+      "current_complexity": 51,
+      "end_line": 435,
       "function": "build_target_excel",
-      "line_count": 296,
+      "line_count": 263,
       "path": "backend/services/target_calculator/export.py",
-      "start_line": 135
+      "start_line": 173
     },
     {
       "ceiling": 49,
@@ -355,12 +355,12 @@
   "release_b_gates": {
     "complexity_proxy_gte_20_maximum": 33,
     "complexity_proxy_gte_30_maximum": 3,
-    "maximum_complexity_proxy": 62,
+    "maximum_complexity_proxy": 51,
     "new_function_complexity_proxy_maximum": 19
   },
   "remediation_entries": [
     {
-      "current_complexity": 62,
+      "current_complexity": 51,
       "function": "build_target_excel",
       "path": "backend/services/target_calculator/export.py",
       "target_complexity": 29
