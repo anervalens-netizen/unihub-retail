@@ -45,6 +45,16 @@ class ProfitabilityConstants:
     base_salary_high_site_codes: frozenset[str]
 
 
+@dataclass(frozen=True)
+class _ProfitabilityRowResult:
+    salary_cost: Decimal
+    operating_costs: Decimal | None
+    break_even: Decimal | None
+    forecast: Decimal | None
+    target_below_break_even: bool
+    forecast_below_break_even: bool
+
+
 class ProfitabilityRepository(Protocol):
     async def get_profitability_inputs(
         self, *, site_codes: list[str], target_month: str
@@ -192,17 +202,204 @@ def forecast_coverage_error(coverage: dict[str, Any]) -> HTTPException:
     )
 
 
+def _normalize_weights(rows: list[dict[str, Any]]) -> None:
+    weight_total = sum(
+        (Decimal(str(row["calculated_weight"])) for row in rows),
+        Decimal("0"),
+    )
+    for row in rows:
+        weight = Decimal(str(row["calculated_weight"]))
+        row["normalized_weight"] = float(weight / weight_total) if weight_total > 0 else 0.0
+
+
+def _salary_rule_values(
+    target_rule_set: TargetRuleSet | None,
+    constants: ProfitabilityConstants,
+) -> tuple[Decimal, Decimal, Decimal, Decimal]:
+    if target_rule_set is not None:
+        salary_rules = target_rule_set.rules["salary"]
+        return (
+            Decimal(str(salary_rules["pnl_factor"])),
+            Decimal(str(salary_rules["meal_vouchers_per_agent"])),
+            Decimal(str(salary_rules["sales_commission_rate"])),
+            Decimal(str(salary_rules["assumed_attainment"])),
+        )
+    return (
+        constants.salary_pnl_factor,
+        constants.meal_vouchers_per_agent,
+        constants.sales_commission_rate,
+        constants.salary_assumed_attainment,
+    )
+
+
+def _store_salary_values(
+    site_code: str,
+    target_rule_set: TargetRuleSet | None,
+    constants: ProfitabilityConstants,
+) -> tuple[int, Decimal]:
+    if target_rule_set is not None:
+        return store_salary_parameters(target_rule_set, site_code)
+    agents = (
+        constants.sun_plaza_agent_count
+        if site_code == "SUNPLZ"
+        else constants.default_store_agent_count
+    )
+    base_salary = (
+        constants.base_salary_high
+        if site_code in constants.base_salary_high_site_codes
+        else constants.base_salary_default
+    )
+    return agents, base_salary
+
+
+def _pnl_metrics(
+    *,
+    site_code: str,
+    pnl_months: list[str],
+    pnl_values: dict[tuple[str, str], Decimal],
+    salary_cost: Decimal,
+    target_month: str,
+    vat_multiplier: Decimal,
+) -> tuple[bool, Decimal | None, Decimal | None, Decimal | None]:
+    categories = {
+        category: pnl_values.get((site_code, category))
+        for category in PROFITABILITY_REQUIRED_CATEGORIES
+    }
+    pnl_complete = len(pnl_months) == 3 and all(
+        value is not None for value in categories.values()
+    )
+    accessory_margin: Decimal | None = None
+    opex: Decimal | None = None
+    break_even: Decimal | None = None
+    if pnl_complete:
+        accessory_revenue = categories["v11"] or Decimal("0")
+        accessory_cogs = categories["c11"] or Decimal("0")
+        if accessory_revenue > 0:
+            accessory_margin = (
+                accessory_revenue - accessory_cogs
+            ) / accessory_revenue
+        if accessory_margin is not None and accessory_margin > 0:
+            opex = money(
+                (
+                    (categories["c4"] or Decimal("0"))
+                    + (categories["c5"] or Decimal("0"))
+                    + (categories["c6"] or Decimal("0"))
+                )
+                / Decimal(len(pnl_months))
+            )
+            net_break_even = (salary_cost + opex) / accessory_margin
+            break_even = net_to_gross(net_break_even, target_month)
+            if vat_multiplier != standard_vat_rule(target_month).multiplier:
+                break_even = money(net_break_even * vat_multiplier)
+    return pnl_complete, accessory_margin, opex, break_even
+
+
+def _anomaly_flags(
+    *,
+    pnl_complete: bool,
+    break_even: Decimal | None,
+    forecast: Decimal | None,
+    calculated_target: Decimal,
+) -> tuple[list[str], bool, bool]:
+    anomaly_flags: list[str] = []
+    target_below_break_even = False
+    forecast_below_break_even = False
+    if not pnl_complete or break_even is None:
+        anomaly_flags.append("PNL_INCOMPLETE")
+    if forecast is None:
+        anomaly_flags.append("FORECAST_MISSING")
+    if break_even is not None and calculated_target < break_even:
+        anomaly_flags.append("TARGET_BELOW_BREAK_EVEN")
+        target_below_break_even = True
+    if break_even is not None and forecast is not None and forecast < break_even:
+        anomaly_flags.append("FORECAST_BELOW_BREAK_EVEN")
+        forecast_below_break_even = True
+    elif forecast is not None and forecast < calculated_target:
+        anomaly_flags.append("FORECAST_BELOW_TARGET")
+    return anomaly_flags, target_below_break_even, forecast_below_break_even
+
+
+def _populate_profitability_row(
+    *,
+    row: dict[str, Any],
+    scenario: dict[str, Any],
+    pnl_months: list[str],
+    pnl_values: dict[tuple[str, str], Decimal],
+    forecast_values: dict[str, Decimal],
+    target_rule_set: TargetRuleSet | None,
+    constants: ProfitabilityConstants,
+    salary_pnl_factor: Decimal,
+    meal_vouchers: Decimal,
+    commission_rate: Decimal,
+    assumed_attainment: Decimal,
+    vat_multiplier: Decimal,
+) -> _ProfitabilityRowResult:
+    site_code = row["site_code"]
+    agents, base_salary = _store_salary_values(site_code, target_rule_set, constants)
+    calculated_target = money(row["proposed_target"])
+    salary_source = Decimal(agents) * (base_salary + meal_vouchers) + (
+        calculated_target * assumed_attainment * commission_rate
+    )
+    salary_cost = money(salary_source * salary_pnl_factor)
+    pnl_complete, accessory_margin, opex, break_even = _pnl_metrics(
+        site_code=site_code,
+        pnl_months=pnl_months,
+        pnl_values=pnl_values,
+        salary_cost=salary_cost,
+        target_month=scenario["target_month"],
+        vat_multiplier=vat_multiplier,
+    )
+    forecast = forecast_values.get(site_code)
+    anomaly_flags, target_below_break_even, forecast_below_break_even = _anomaly_flags(
+        pnl_complete=pnl_complete,
+        break_even=break_even,
+        forecast=forecast,
+        calculated_target=calculated_target,
+    )
+    row["profitability"] = {
+        "agent_count": agents,
+        "base_salary_per_agent": float(base_salary),
+        "salary_cost_at_90_pct": float(salary_cost),
+        "operating_costs": float(opex) if opex is not None else None,
+        "accessory_margin_pct": (
+            float(accessory_margin * Decimal("100"))
+            if accessory_margin is not None
+            else None
+        ),
+        "break_even_gross_sales": float(break_even) if break_even is not None else None,
+        "forecast_sales": float(forecast) if forecast is not None else None,
+        "anomaly_flags": anomaly_flags,
+    }
+    return _ProfitabilityRowResult(
+        salary_cost=salary_cost,
+        operating_costs=opex,
+        break_even=break_even,
+        forecast=forecast,
+        target_below_break_even=target_below_break_even,
+        forecast_below_break_even=forecast_below_break_even,
+    )
+
+
+def _forecast_run_summary(forecast_run: dict[str, Any] | None) -> dict[str, Any] | None:
+    if forecast_run is None:
+        return None
+    return {
+        "id": int(forecast_run["id"]),
+        "model_name": forecast_run["model_name"],
+        "model_mode": forecast_run["model_mode"],
+        "variant": forecast_run["variant"],
+        "generated_at": forecast_run["generated_at"],
+        "source_month": forecast_run["source_month"],
+    }
+
+
 def populate_profitability(
     scenario: dict[str, Any],
     rows: list[dict[str, Any]],
     inputs: dict[str, Any],
     constants: ProfitabilityConstants,
 ) -> dict[str, Any]:
-    weight_total = sum((Decimal(str(row["calculated_weight"])) for row in rows), Decimal("0"))
-    for row in rows:
-        weight = Decimal(str(row["calculated_weight"]))
-        row["normalized_weight"] = float(weight / weight_total) if weight_total > 0 else 0.0
-
+    _normalize_weights(rows)
     pnl_months = list(inputs.get("pnl_months") or [])
     pnl_values: dict[tuple[str, str], Decimal] = {
         (record["site_code"], record["category_code"]): Decimal(record["amount"] or 0)
@@ -218,106 +415,47 @@ def populate_profitability(
         else saved_profitability_assumptions(scenario, constants)
     )
     vat_multiplier = Decimal(str(saved_profitability["vat_multiplier"]))
-    if target_rule_set is not None:
-        salary_rules = target_rule_set.rules["salary"]
-        salary_pnl_factor = Decimal(str(salary_rules["pnl_factor"]))
-        meal_vouchers = Decimal(str(salary_rules["meal_vouchers_per_agent"]))
-        commission_rate = Decimal(str(salary_rules["sales_commission_rate"]))
-        assumed_attainment = Decimal(str(salary_rules["assumed_attainment"]))
-    else:
-        salary_pnl_factor = constants.salary_pnl_factor
-        meal_vouchers = constants.meal_vouchers_per_agent
-        commission_rate = constants.sales_commission_rate
-        assumed_attainment = constants.salary_assumed_attainment
+    (
+        salary_pnl_factor,
+        meal_vouchers,
+        commission_rate,
+        assumed_attainment,
+    ) = _salary_rule_values(target_rule_set, constants)
 
     salary_total = opex_total = break_even_total = forecast_total = Decimal("0")
     forecast_below_break_even_count = target_below_break_even_count = complete_pnl_count = 0
     for row in rows:
-        site_code = row["site_code"]
-        if target_rule_set is not None:
-            agents, base_salary = store_salary_parameters(target_rule_set, site_code)
-        else:
-            agents = (
-                constants.sun_plaza_agent_count
-                if site_code == "SUNPLZ"
-                else constants.default_store_agent_count
-            )
-            base_salary = (
-                constants.base_salary_high
-                if site_code in constants.base_salary_high_site_codes
-                else constants.base_salary_default
-            )
-        calculated_target = money(row["proposed_target"])
-        salary_source = Decimal(agents) * (base_salary + meal_vouchers) + (
-            calculated_target * assumed_attainment * commission_rate
+        result = _populate_profitability_row(
+            row=row,
+            scenario=scenario,
+            pnl_months=pnl_months,
+            pnl_values=pnl_values,
+            forecast_values=forecast_values,
+            target_rule_set=target_rule_set,
+            constants=constants,
+            salary_pnl_factor=salary_pnl_factor,
+            meal_vouchers=meal_vouchers,
+            commission_rate=commission_rate,
+            assumed_attainment=assumed_attainment,
+            vat_multiplier=vat_multiplier,
         )
-        salary_cost = money(salary_source * salary_pnl_factor)
-        salary_total += salary_cost
-        categories = {
-            category: pnl_values.get((site_code, category))
-            for category in PROFITABILITY_REQUIRED_CATEGORIES
-        }
-        pnl_complete = len(pnl_months) == 3 and all(value is not None for value in categories.values())
-        accessory_margin: Decimal | None = None
-        opex: Decimal | None = None
-        break_even: Decimal | None = None
-        if pnl_complete:
-            accessory_revenue = categories["v11"] or Decimal("0")
-            accessory_cogs = categories["c11"] or Decimal("0")
-            if accessory_revenue > 0:
-                accessory_margin = (accessory_revenue - accessory_cogs) / accessory_revenue
-            if accessory_margin is not None and accessory_margin > 0:
-                opex = money(
-                    ((categories["c4"] or Decimal("0")) + (categories["c5"] or Decimal("0")) + (categories["c6"] or Decimal("0")))
-                    / Decimal(len(pnl_months))
-                )
-                net_break_even = (salary_cost + opex) / accessory_margin
-                break_even = net_to_gross(net_break_even, scenario["target_month"])
-                if vat_multiplier != standard_vat_rule(scenario["target_month"]).multiplier:
-                    break_even = money(net_break_even * vat_multiplier)
-                complete_pnl_count += 1
-                opex_total += opex
-                break_even_total += break_even
-        forecast = forecast_values.get(site_code)
-        if forecast is not None:
-            forecast_total += forecast
-        anomaly_flags: list[str] = []
-        if not pnl_complete or break_even is None:
-            anomaly_flags.append("PNL_INCOMPLETE")
-        if forecast is None:
-            anomaly_flags.append("FORECAST_MISSING")
-        if break_even is not None and calculated_target < break_even:
-            anomaly_flags.append("TARGET_BELOW_BREAK_EVEN")
-            target_below_break_even_count += 1
-        if break_even is not None and forecast is not None and forecast < break_even:
-            anomaly_flags.append("FORECAST_BELOW_BREAK_EVEN")
-            forecast_below_break_even_count += 1
-        elif forecast is not None and forecast < calculated_target:
-            anomaly_flags.append("FORECAST_BELOW_TARGET")
-        row["profitability"] = {
-            "agent_count": agents,
-            "base_salary_per_agent": float(base_salary),
-            "salary_cost_at_90_pct": float(salary_cost),
-            "operating_costs": float(opex) if opex is not None else None,
-            "accessory_margin_pct": float(accessory_margin * Decimal("100")) if accessory_margin is not None else None,
-            "break_even_gross_sales": float(break_even) if break_even is not None else None,
-            "forecast_sales": float(forecast) if forecast is not None else None,
-            "anomaly_flags": anomaly_flags,
-        }
+        salary_total += result.salary_cost
+        if result.break_even is not None:
+            complete_pnl_count += 1
+            opex_total += result.operating_costs or Decimal("0")
+            break_even_total += result.break_even
+        if result.forecast is not None:
+            forecast_total += result.forecast
+        target_below_break_even_count += int(result.target_below_break_even)
+        forecast_below_break_even_count += int(result.forecast_below_break_even)
+
     forecast_complete = coverage_contract["mode"] == "uniform"
     return {
         "status": "ready" if complete_pnl_count == len(rows) and forecast_complete else "partial",
         "pnl_months": pnl_months,
         "pnl_store_count": complete_pnl_count,
         "forecast_store_count": int(coverage_contract["covered_store_count"]),
-        "forecast_run": {
-            "id": int(forecast_run["id"]),
-            "model_name": forecast_run["model_name"],
-            "model_mode": forecast_run["model_mode"],
-            "variant": forecast_run["variant"],
-            "generated_at": forecast_run["generated_at"],
-            "source_month": forecast_run["source_month"],
-        } if forecast_run else None,
+        "forecast_run": _forecast_run_summary(forecast_run),
         "forecast_coverage": coverage_contract,
         "assumptions": saved_profitability,
         "salary_total": float(money(salary_total)),
