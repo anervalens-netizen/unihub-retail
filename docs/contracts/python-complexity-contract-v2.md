@@ -79,9 +79,9 @@ This means the algorithm itself cannot be silently weakened by editing
 next contract will fail to validate, and the only legitimate path is
 to introduce a new contract version (v3) and rebaseline.
 
-## Current baseline (exact-main 76a71d9b)
+## Historical v2 baseline (exact-main 76a71d9b)
 
-Measured against the production tree at
+The v2 contract was initially measured against the production tree at
 `76a71d9bcf339385712ae1207824624af603a12f`:
 
 | Metric                     | Value |
@@ -92,12 +92,38 @@ Measured against the production tree at
 | maximum_complexity_proxy   | 62    |
 | new_function above 19      | 0     |
 
-The three current `>= 30` hotspots are tracked as remediation entries:
+The three `>= 30` hotspots at that initial v2 baseline were:
+
+| Path                                                              | Function                       | baseline | target |
+|-------------------------------------------------------------------|--------------------------------|----------|--------|
+| `backend/services/target_calculator/export.py`                    | `build_target_excel`           | 62       | 29     |
+| `backend/services/target_calculator/profitability.py`             | `populate_profitability`       | 49       | 29     |
+| `backend/services/target_calculator/export.py`                    | `manager_allocation_analysis`  | 32       | 29     |
+
+These values are historical evidence, not the active blocking ratchet.
+
+## Current active contract state
+
+The active `scripts/python-complexity-contract-v2.json` has been
+monotonically tightened by the Phase-C C1 `build_target_excel`
+refactor. The current measured tree is:
+
+| Metric                     | Value |
+|----------------------------|-------|
+| production_functions       | 2945  |
+| complexity_proxy > 19      | 32    |
+| complexity_proxy >= 30     | 2     |
+| maximum_complexity_proxy   | 49    |
+| new_function above 19      | 0     |
+
+`build_target_excel` now measures complexity proxy `1`, so it is below
+the immutable v2 new-function boundary (`19`) and has correctly left
+the active locked/remediation set. The remaining remediation hotspots
+are:
 
 | Path                                                              | Function                       | current | target |
 |-------------------------------------------------------------------|--------------------------------|---------|--------|
-| `backend/services/target_calculator/export.py`                    | `build_target_excel`           | 62      | 29     |
-| `backend/services/target_calculator/profitability.py`              | `populate_profitability`       | 49      | 29     |
+| `backend/services/target_calculator/profitability.py`             | `populate_profitability`       | 49      | 29     |
 | `backend/services/target_calculator/export.py`                    | `manager_allocation_analysis`  | 32      | 29     |
 
 ## Current blocking ratchet
@@ -106,10 +132,10 @@ The three current `>= 30` hotspots are tracked as remediation entries:
 
 | Limit                                            | Value | Meaning                                          |
 |--------------------------------------------------|-------|--------------------------------------------------|
-| `complexity_proxy_gte_20_maximum`                | 33    | total functions with cp > 19 may not exceed 33   |
-| `complexity_proxy_gte_30_maximum`                | 3     | total functions with cp >= 30 may not exceed 3   |
-| `maximum_complexity_proxy`                       | 62    | the largest single function cp may not exceed 62 |
-| `new_function_complexity_proxy_maximum`         | 19    | a function not in `entries` may not exceed cp 19 (i.e., may not reach cp >= 20) |
+| `complexity_proxy_gte_20_maximum`                | 32    | total functions with cp > 19 may not exceed 32   |
+| `complexity_proxy_gte_30_maximum`                | 2     | total functions with cp >= 30 may not exceed 2   |
+| `maximum_complexity_proxy`                       | 49    | the largest single function cp may not exceed 49 |
+| `new_function_complexity_proxy_maximum`          | 19    | a function not in `entries` may not exceed cp 19 (i.e., may not reach cp >= 20) |
 
 The new-function threshold is **pinned at 19** for v2. Both values
 above 19 (would loosen) and below 19 (would tighten) are rejected by
@@ -117,7 +143,7 @@ the v2 -> v2 transition validator. Changing the boundary requires
 v3 / rebaseline.
 
 Per-function ceilings in `entries[]` pin each current `> 19` identity
-at its exact-main complexity. A regression of any entry above its
+at its recorded complexity. A regression of any entry above its
 ceiling is a FAIL.
 
 The v2 contract deliberately omits the legacy v1 fields
@@ -138,9 +164,11 @@ Informational, not blocking. Recorded in `future_target`:
 | `maximum_complexity_proxy_target`      | 29    |
 | `no_new_function_above_19`             | true  |
 
-The future target does not raise any limit automatically. Improvements
-move toward these numbers through explicit contract updates in PRs
-that achieve them.
+The future target does not raise any limit automatically. The active
+`>19` ratchet has already improved past the historical informational
+value of 33 (it is now 32); that informational field does not loosen or
+override the blocking ratchet. Improvements continue through explicit
+contract updates in PRs that achieve them.
 
 ## Result semantics
 
@@ -256,9 +284,9 @@ absent from active v2.
 The v1 contract's `release_b_gates` reflect the strategic intent at
 the time it was authored (`gte_30_maximum: 0`, `maximum_complexity: 29`,
 `gte_20_maximum: 54`). These were targets, not achieved state. The v2
-contract's `release_b_gates` reflect what exact main actually
-achieves, so that v2 PASSES against current main and ratchets
-forward only by explicit tightening.
+contract's active `release_b_gates` reflect the measured tree for the
+revision carrying the contract, so the contract ratchets forward only
+by explicit tightening.
 
 ## Authority hierarchy
 
