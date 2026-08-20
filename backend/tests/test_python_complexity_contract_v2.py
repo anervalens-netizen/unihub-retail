@@ -157,10 +157,10 @@ def _minimal_contract(
 def test_case_1_pass_on_exact_main(check, l1, real_v2_contract):
     result = check.evaluate(PR_B1_WORKTREE, real_v2_contract, l1)
     assert result["result"] == "PASS"
-    assert result["metrics"]["production_functions"] == 2935
-    assert result["metrics"]["complexity_proxy_gte_threshold"] == 33
-    assert result["metrics"]["complexity_proxy_gte_30"] == 3
-    assert result["metrics"]["maximum_complexity_proxy"] == 62
+    assert result["metrics"]["production_functions"] == 2945
+    assert result["metrics"]["complexity_proxy_gte_threshold"] == 32
+    assert result["metrics"]["complexity_proxy_gte_30"] == 2
+    assert result["metrics"]["maximum_complexity_proxy"] == 49
     assert result["metrics"]["new_function_above_threshold"] == 0
     assert result["algorithm_runtime_match"] is True
 
@@ -237,7 +237,7 @@ def test_case_4_aggregate_gte_30_increase_fails(check, l1, real_v2_contract):
 
 
 # ---------------------------------------------------------------------------
-# 5. max 62 -> 63 FAIL (transition validator)
+# 5. max 49 -> 50 FAIL (transition validator)
 # ---------------------------------------------------------------------------
 
 
@@ -246,14 +246,14 @@ def test_case_5_max_increase_fails(check, l1, real_v2_contract):
     candidate = _set_path(
         real_v2_contract,
         ("release_b_gates", "maximum_complexity_proxy"),
-        63,
+        50,
     )
     _rehash(candidate)
     result = check.evaluate(
         PR_B1_WORKTREE, candidate, l1, previous_contract=previous
     )
     assert result["result"] == "FAIL"
-    assert any("maximum" in v and "63" in v for v in result["transition_violations"])
+    assert any("maximum" in v and "50" in v for v in result["transition_violations"])
 
 
 # ---------------------------------------------------------------------------
@@ -262,15 +262,15 @@ def test_case_5_max_increase_fails(check, l1, real_v2_contract):
 
 
 def test_case_6_entry_exceeds_ceiling_fails(check, l1, real_v2_contract):
-    """Lower build_target_excel's ceiling to 60. Actual is 62 -> FAIL."""
+    """Lower populate_profitability's ceiling to 48. Actual is 49 -> FAIL."""
     contract = copy.deepcopy(real_v2_contract)
     for entry in contract["entries"]:
-        if entry["function"] == "build_target_excel":
-            entry["ceiling"] = 60
+        if entry["function"] == "populate_profitability":
+            entry["ceiling"] = 48
     _rehash(contract)
     result = check.evaluate(PR_B1_WORKTREE, contract, l1)
     assert result["result"] == "FAIL"
-    assert any("build_target_excel" in v for v in result["entry_violations"])
+    assert any("populate_profitability" in v for v in result["entry_violations"])
 
 
 # ---------------------------------------------------------------------------
@@ -533,7 +533,7 @@ def test_case_17_locked_entry_removal_while_still_ge20_fails(
     previous = copy.deepcopy(real_v2_contract)
     candidate = copy.deepcopy(real_v2_contract)
     candidate["entries"] = [
-        e for e in candidate["entries"] if e["function"] != "build_target_excel"
+        e for e in candidate["entries"] if e["function"] != "populate_profitability"
     ]
     _rehash(candidate)
 
@@ -541,7 +541,7 @@ def test_case_17_locked_entry_removal_while_still_ge20_fails(
         PR_B1_WORKTREE, candidate, l1, previous_contract=previous
     )
     assert result["result"] == "FAIL"
-    assert any("build_target_excel" in v for v in result["transition_violations"])
+    assert any("populate_profitability" in v for v in result["transition_violations"])
 
 
 # ---------------------------------------------------------------------------
@@ -990,15 +990,15 @@ def test_case_37_duplicate_remediation_identities_fail(check, l1, tmp_path):
     contract = _minimal_contract(l1)
     contract["remediation_entries"] = [
         {
-            "path": "backend/services/target_calculator/export.py",
-            "function": "build_target_excel",
-            "current_complexity": 62,
+            "path": "backend/services/target_calculator/profitability.py",
+            "function": "populate_profitability",
+            "current_complexity": 49,
             "target_complexity": 29,
         },
         {
-            "path": "backend/services/target_calculator/export.py",
-            "function": "build_target_excel",
-            "current_complexity": 62,
+            "path": "backend/services/target_calculator/profitability.py",
+            "function": "populate_profitability",
+            "current_complexity": 49,
             "target_complexity": 29,
         },
     ]
