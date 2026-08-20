@@ -22,17 +22,8 @@
     "walk": "ast.walk_including_nested_bodies"
   },
   "baseline_source_sha": "76a71d9bcf339385712ae1207824624af603a12f",
-  "contract_payload_sha256": "5e5eea128e63bf84cce34f1ac883ced057ed990dffbbfc0e7db0acbcf9b8e4b4",
+  "contract_payload_sha256": "4c387d444f8c1f760ea959d8271ba87f9e6964ecf82af980a93a85812b0929d5",
   "entries": [
-    {
-      "ceiling": 62,
-      "current_complexity": 62,
-      "end_line": 430,
-      "function": "build_target_excel",
-      "line_count": 296,
-      "path": "backend/services/target_calculator/export.py",
-      "start_line": 135
-    },
     {
       "ceiling": 49,
       "current_complexity": 49,
@@ -353,18 +344,12 @@
   },
   "locked_entry_rule": "Renames are new functions and do not evade the total/new-function gates. Per-function ceilings pin current gte_20 identities at their exact-main complexity; subsequent regressions must fail.",
   "release_b_gates": {
-    "complexity_proxy_gte_20_maximum": 33,
-    "complexity_proxy_gte_30_maximum": 3,
-    "maximum_complexity_proxy": 62,
+    "complexity_proxy_gte_20_maximum": 32,
+    "complexity_proxy_gte_30_maximum": 2,
+    "maximum_complexity_proxy": 49,
     "new_function_complexity_proxy_maximum": 19
   },
   "remediation_entries": [
-    {
-      "current_complexity": 62,
-      "function": "build_target_excel",
-      "path": "backend/services/target_calculator/export.py",
-      "target_complexity": 29
-    },
     {
       "current_complexity": 49,
       "function": "populate_profitability",
