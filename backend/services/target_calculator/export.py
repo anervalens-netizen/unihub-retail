@@ -132,6 +132,44 @@ def manager_allocation_analysis(scenario: dict[str, Any]) -> list[dict[str, Any]
     return [*managers, network]
 
 
+def _build_parameters_sheet(workbook: Workbook, scenario: dict[str, Any]) -> Any:
+    parameters = workbook.create_sheet("Parametri")
+    append_openpyxl_row(parameters, ["Parametru", "Valoare"])
+    for key, value in (
+        ("Scenariu", scenario["id"]), ("Status", scenario["status"]),
+        ("Luna target", scenario["target_month"]),
+        ("Luna cohorta magazine active", scenario["cohort_month"]),
+        ("Target total", scenario["total_target"]),
+        ("Prag minim absolut", scenario["min_floor"]),
+        ("Floor fata de luna precedenta", scenario["previous_month_floor_pct"]),
+        ("Metoda", scenario["calculation_method"]),
+    ):
+        append_openpyxl_row(parameters, [key, value])
+    for key, value in (scenario.get("calculation_params") or {}).items():
+        append_openpyxl_row(parameters, [
+            f"Parametru {key}",
+            json.dumps(value, ensure_ascii=False) if isinstance(value, dict) else value,
+        ])
+    for item in scenario["source_months"]:
+        append_openpyxl_row(parameters, [item["label"], item["month"]])
+    for item in scenario["source_summary"]:
+        if item["is_forecast"]:
+            append_openpyxl_row(parameters, [
+                f"Forecast {item['month']}",
+                f"{item['forecast_factor']:.4f}x; importat {item['actual_realized']:.2f}; folosit {item['realized']:.2f}",
+            ])
+    for warning in scenario["warnings"]:
+        append_openpyxl_row(parameters, ["Atentionare", warning])
+    profitability_summary = scenario.get("profitability_summary") or {}
+    append_openpyxl_row(parameters, ["Status surse profitabilitate", profitability_summary.get("status")])
+    append_openpyxl_row(parameters, ["Luni P&L reale", ", ".join(profitability_summary.get("pnl_months") or [])])
+    forecast_run = profitability_summary.get("forecast_run") or {}
+    append_openpyxl_row(parameters, ["Forecast run", forecast_run.get("id")])
+    append_openpyxl_row(parameters, ["Forecast model", forecast_run.get("model_name")])
+    append_openpyxl_row(parameters, ["Forecast variant", forecast_run.get("variant")])
+    return parameters
+
+
 async def build_target_excel(
     scenario_id: int,
     load_scenario: Callable[[int], Awaitable[dict[str, Any]]],
@@ -266,40 +304,7 @@ async def build_target_excel(
             row.get("last_year_base_total"), row.get("last_year_target_total"), row.get("last_year_growth_pct"),
         ])
 
-    parameters = workbook.create_sheet("Parametri")
-    append_openpyxl_row(parameters, ["Parametru", "Valoare"])
-    for key, value in (
-        ("Scenariu", scenario["id"]), ("Status", scenario["status"]),
-        ("Luna target", scenario["target_month"]),
-        ("Luna cohorta magazine active", scenario["cohort_month"]),
-        ("Target total", scenario["total_target"]),
-        ("Prag minim absolut", scenario["min_floor"]),
-        ("Floor fata de luna precedenta", scenario["previous_month_floor_pct"]),
-        ("Metoda", scenario["calculation_method"]),
-    ):
-        append_openpyxl_row(parameters, [key, value])
-    for key, value in (scenario.get("calculation_params") or {}).items():
-        append_openpyxl_row(parameters, [
-            f"Parametru {key}",
-            json.dumps(value, ensure_ascii=False) if isinstance(value, dict) else value,
-        ])
-    for item in scenario["source_months"]:
-        append_openpyxl_row(parameters, [item["label"], item["month"]])
-    for item in scenario["source_summary"]:
-        if item["is_forecast"]:
-            append_openpyxl_row(parameters, [
-                f"Forecast {item['month']}",
-                f"{item['forecast_factor']:.4f}x; importat {item['actual_realized']:.2f}; folosit {item['realized']:.2f}",
-            ])
-    for warning in scenario["warnings"]:
-        append_openpyxl_row(parameters, ["Atentionare", warning])
-    profitability_summary = scenario.get("profitability_summary") or {}
-    append_openpyxl_row(parameters, ["Status surse profitabilitate", profitability_summary.get("status")])
-    append_openpyxl_row(parameters, ["Luni P&L reale", ", ".join(profitability_summary.get("pnl_months") or [])])
-    forecast_run = profitability_summary.get("forecast_run") or {}
-    append_openpyxl_row(parameters, ["Forecast run", forecast_run.get("id")])
-    append_openpyxl_row(parameters, ["Forecast model", forecast_run.get("model_name")])
-    append_openpyxl_row(parameters, ["Forecast variant", forecast_run.get("variant")])
+    parameters = _build_parameters_sheet(workbook, scenario)
 
     navy_fill = PatternFill("solid", fgColor="17365D")
     subtotal_fill = PatternFill("solid", fgColor="D9E2F3")
