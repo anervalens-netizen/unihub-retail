@@ -20,7 +20,7 @@
     "backend/repositories/target_calculator.py::TargetCalculatorRepository.get_profitability_inputs": 125,
     "backend/repositories/target_calculator.py::TargetCalculatorRepository.get_store_detail": 144,
     "backend/repositories/target_calculator.py::TargetCalculatorRepository.save_draft_scenario": 129,
-    "backend/services/target_calculator/export.py::build_target_excel": 296,
+    "backend/services/target_calculator/export.py::build_target_excel": 263,
     "backend/services/target_calculator/profitability.py::populate_profitability": 135
   }
 }
