@@ -19,7 +19,7 @@ and complexity for every production function.
 Current Target Calculator complexity characterization:
     build_target_excel          = 1
     populate_profitability      = 16
-    manager_allocation_analysis = 32
+    manager_allocation_analysis = 10
 """
 from __future__ import annotations
 
@@ -429,9 +429,9 @@ def test_zero_drift_across_all_production_functions(l1):
             16,
         ),
         (
-            "backend/services/target_calculator/export.py",
+            "backend/services/target_calculator/manager_allocation.py",
             "manager_allocation_analysis",
-            32,
+            10,
         ),
     ]
     for path, function, expected_cp in expected:
@@ -443,11 +443,11 @@ def test_zero_drift_across_all_production_functions(l1):
         )
 
 
-def test_total_production_function_count_is_2952(l1):
-    """Production tree must contain exactly 2952 measured functions."""
+def test_total_production_function_count_is_2953(l1):
+    """Production tree must contain exactly 2953 measured functions."""
     metrics = l1.collect_metrics(PR_B1_WORKTREE)
-    assert len(metrics) == 2952, (
-        f"production count drift: expected 2952, got {len(metrics)}"
+    assert len(metrics) == 2953, (
+        f"production count drift: expected 2953, got {len(metrics)}"
     )
 
 
