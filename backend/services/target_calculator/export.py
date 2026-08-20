@@ -170,20 +170,14 @@ def _build_parameters_sheet(workbook: Workbook, scenario: dict[str, Any]) -> Any
     return parameters
 
 
-async def build_target_excel(
-    scenario_id: int,
-    load_scenario: Callable[[int], Awaitable[dict[str, Any]]],
-) -> tuple[BytesIO, str]:
-    scenario = await load_scenario(scenario_id)
-    workbook = Workbook()
-    sheet = workbook.active
+def _build_target_sheet(
+    workbook: Workbook,
+    scenario: dict[str, Any],
+    target_month: str,
+    comparison_months: list[str],
+) -> tuple[Any, int]:
+    sheet: Any = workbook.active
     sheet.title = "Target + profitabilitate"
-    target_month = scenario["target_month"]
-    comparison_months = [
-        shift_month(target_month, -13),
-        shift_month(target_month, -12),
-        shift_month(target_month, -1),
-    ]
     headers = ["Firma", "Manager", "Nume locație", "Cod locație"]
     for month in comparison_months:
         headers.extend([f"Target {month}", f"Realizat {month}", f"% {month}"])
@@ -236,8 +230,18 @@ async def build_target_excel(
     for percentage_column, target_column, realized_column in (
         ("G", "E", "F"), ("J", "H", "I"), ("M", "K", "L")
     ):
-        sheet[f"{percentage_column}1"] = f"=IF({target_column}1=0,0,{realized_column}1/{target_column}1)"
+        sheet[f"{percentage_column}1"] = (
+            f"=IF({target_column}1=0,0,{realized_column}1/{target_column}1)"
+        )
+    return sheet, last_row
 
+
+def _build_manager_comparison_sheet(
+    workbook: Workbook,
+    scenario: dict[str, Any],
+    target_month: str,
+    comparison_months: list[str],
+) -> tuple[Any, int, int, int, int]:
     comparison = workbook.create_sheet("Comparație manageri")
     manager_analysis = manager_allocation_analysis(scenario)
     append_openpyxl_row(comparison, ["1. Distribuția targetului", *([""] * 8)])
@@ -287,7 +291,16 @@ async def build_target_excel(
             item["target_vs_forecast_pct"], item["signal"],
         ])
     analysis_total_row = comparison.max_row
+    return (
+        comparison,
+        distribution_total_row,
+        second_title_row,
+        second_header_row,
+        analysis_total_row,
+    )
 
+
+def _build_summary_sheet(workbook: Workbook, scenario: dict[str, Any]) -> Any:
     summary = workbook.create_sheet("Rezumat calcul")
     append_openpyxl_row(summary, [
         "Regional", "Magazine", "Floor", "Target propus", "Target final", "Diferenta",
@@ -299,13 +312,16 @@ async def build_target_excel(
         append_openpyxl_row(summary, [
             row["regional"], row["store_count"], row["floor_total"],
             row["proposed_total"], row["final_total"], row["final_total"] - row["proposed_total"],
-            row.get("current_month"), row.get("current_forecast_total"), row.get("proposed_growth_vs_current_pct"),
+            row.get("current_month"), row.get("current_forecast_total"),
+            row.get("proposed_growth_vs_current_pct"),
             row.get("last_year_base_month"), row.get("last_year_target_month"),
-            row.get("last_year_base_total"), row.get("last_year_target_total"), row.get("last_year_growth_pct"),
+            row.get("last_year_base_total"), row.get("last_year_target_total"),
+            row.get("last_year_growth_pct"),
         ])
+    return summary
 
-    parameters = _build_parameters_sheet(workbook, scenario)
 
+def _style_target_sheet(sheet: Any, last_row: int) -> None:
     navy_fill = PatternFill("solid", fgColor="17365D")
     subtotal_fill = PatternFill("solid", fgColor="D9E2F3")
     percentage_fill = PatternFill("solid", fgColor="F3F4F6")
@@ -342,13 +358,50 @@ async def build_target_excel(
             sheet[f"{column}{row_number}"].number_format = '#,##0;[Red]-#,##0;-'
     for column in ("G", "J", "M"):
         data_range = f"{column}3:{column}{last_row}"
-        sheet.conditional_formatting.add(data_range, CellIsRule(operator="lessThan", formula=["0.9"], font=red_font))
-        sheet.conditional_formatting.add(data_range, CellIsRule(operator="between", formula=["0.9", "0.999999999"], font=amber_font))
-        sheet.conditional_formatting.add(data_range, CellIsRule(operator="greaterThanOrEqual", formula=["1"], font=green_font))
-    sheet.conditional_formatting.add(f"O3:O{last_row}", FormulaRule(formula=["AND(ISNUMBER($S3),$O3<$S3)"], fill=red_fill, font=red_font))
-    sheet.conditional_formatting.add(f"P3:P{last_row}", FormulaRule(formula=["AND(ISNUMBER($P3),ISNUMBER($S3),$P3<$S3)"], fill=red_fill, font=red_font))
-    sheet.conditional_formatting.add(f"T3:T{last_row}", FormulaRule(formula=["AND(ISNUMBER($T3),ISNUMBER($S3),$T3<$S3)"], fill=red_fill, font=red_font))
-    sheet.conditional_formatting.add(f"T3:T{last_row}", FormulaRule(formula=["AND(ISNUMBER($T3),ISNUMBER($S3),$T3>=$S3)"], fill=green_fill, font=green_font))
+        sheet.conditional_formatting.add(
+            data_range,
+            CellIsRule(operator="lessThan", formula=["0.9"], font=red_font),
+        )
+        sheet.conditional_formatting.add(
+            data_range,
+            CellIsRule(
+                operator="between",
+                formula=["0.9", "0.999999999"],
+                font=amber_font,
+            ),
+        )
+        sheet.conditional_formatting.add(
+            data_range,
+            CellIsRule(operator="greaterThanOrEqual", formula=["1"], font=green_font),
+        )
+    sheet.conditional_formatting.add(
+        f"O3:O{last_row}",
+        FormulaRule(formula=["AND(ISNUMBER($S3),$O3<$S3)"], fill=red_fill, font=red_font),
+    )
+    sheet.conditional_formatting.add(
+        f"P3:P{last_row}",
+        FormulaRule(
+            formula=["AND(ISNUMBER($P3),ISNUMBER($S3),$P3<$S3)"],
+            fill=red_fill,
+            font=red_font,
+        ),
+    )
+    sheet.conditional_formatting.add(
+        f"T3:T{last_row}",
+        FormulaRule(
+            formula=["AND(ISNUMBER($T3),ISNUMBER($S3),$T3<$S3)"],
+            fill=red_fill,
+            font=red_font,
+        ),
+    )
+    sheet.conditional_formatting.add(
+        f"T3:T{last_row}",
+        FormulaRule(
+            formula=["AND(ISNUMBER($T3),ISNUMBER($S3),$T3>=$S3)"],
+            fill=green_fill,
+            font=green_font,
+        ),
+    )
     sheet.column_dimensions["A"].width = 12
     sheet.column_dimensions["B"].width = 20
     sheet.column_dimensions["C"].width = 29
@@ -361,12 +414,17 @@ async def build_target_excel(
     sheet.column_dimensions["R"].width = 19
     sheet.column_dimensions["S"].width = 18
 
+
+def _style_comparison_headers(
+    comparison: Any,
+    distribution_total_row: int,
+    second_title_row: int,
+    second_header_row: int,
+    analysis_total_row: int,
+) -> None:
     section_fill = PatternFill("solid", fgColor="17365D")
     header_fill = PatternFill("solid", fgColor="5B9BD5")
     total_fill = PatternFill("solid", fgColor="1F2937")
-    signal_balanced_fill = PatternFill("solid", fgColor="C6EFCE")
-    signal_seasonal_fill = PatternFill("solid", fgColor="FFF2CC")
-    signal_ai_fill = PatternFill("solid", fgColor="F4CCCC")
     for row_number in (1, second_title_row):
         for cell in comparison[row_number]:
             cell.font = Font(color="FFFFFF", bold=True)
@@ -375,12 +433,19 @@ async def build_target_excel(
         for cell in comparison[row_number]:
             cell.font = Font(color="FFFFFF", bold=True)
             cell.fill = header_fill
-            cell.alignment = Alignment(horizontal="center", vertical="bottom", wrap_text=True)
+            cell.alignment = Alignment(
+                horizontal="center",
+                vertical="bottom",
+                wrap_text=True,
+            )
         comparison.row_dimensions[row_number].height = 46
     for row_number in (distribution_total_row, analysis_total_row):
         for cell in comparison[row_number]:
             cell.font = Font(color="FFFFFF", bold=True)
             cell.fill = total_fill
+
+
+def _style_comparison_distribution(comparison: Any, distribution_total_row: int) -> None:
     for row_number in range(3, distribution_total_row + 1):
         for column in ("C", "D", "F", "H"):
             comparison[f"{column}{row_number}"].number_format = "0.0%"
@@ -388,7 +453,20 @@ async def build_target_excel(
             comparison[f"{column}{row_number}"].number_format = '0.0" pp"'
             value = comparison[f"{column}{row_number}"].value
             if isinstance(value, (int, float)) and value < 0:
-                comparison[f"{column}{row_number}"].font = Font(color="FF0000", bold=True)
+                comparison[f"{column}{row_number}"].font = Font(
+                    color="FF0000",
+                    bold=True,
+                )
+
+
+def _style_comparison_analysis(
+    comparison: Any,
+    second_header_row: int,
+    analysis_total_row: int,
+) -> None:
+    signal_balanced_fill = PatternFill("solid", fgColor="C6EFCE")
+    signal_seasonal_fill = PatternFill("solid", fgColor="FFF2CC")
+    signal_ai_fill = PatternFill("solid", fgColor="F4CCCC")
     for row_number in range(second_header_row + 1, analysis_total_row + 1):
         for column in ("B", "C", "G", "I", "K"):
             comparison[f"{column}{row_number}"].number_format = '#,##0;[Red]-#,##0;-'
@@ -396,7 +474,10 @@ async def build_target_excel(
             comparison[f"{column}{row_number}"].number_format = '0.0"%"'
             value = comparison[f"{column}{row_number}"].value
             if isinstance(value, (int, float)):
-                comparison[f"{column}{row_number}"].font = Font(color="00B050" if value >= 0 else "FF0000", bold=True)
+                comparison[f"{column}{row_number}"].font = Font(
+                    color="00B050" if value >= 0 else "FF0000",
+                    bold=True,
+                )
         comparison[f"F{row_number}"].number_format = '0.0" pp"'
         signal = comparison[f"M{row_number}"].value
         if signal == "Echilibrat":
@@ -408,6 +489,14 @@ async def build_target_excel(
         elif signal == "Peste AI":
             comparison[f"M{row_number}"].fill = signal_ai_fill
             comparison[f"M{row_number}"].font = Font(color="9C0006", bold=True)
+
+
+def _size_comparison_sheet(
+    comparison: Any,
+    distribution_total_row: int,
+    analysis_total_row: int,
+) -> None:
+    total_fill = PatternFill("solid", fgColor="1F2937")
     comparison.freeze_panes = "A3"
     comparison.column_dimensions["A"].width = 23
     comparison.column_dimensions["B"].width = 15
@@ -418,15 +507,74 @@ async def build_target_excel(
         for cell in comparison[row_number]:
             cell.font = Font(color="FFFFFF", bold=True)
             cell.fill = total_fill
+
+
+def _style_simple_sheets(summary: Any, parameters: Any) -> None:
+    navy_fill = PatternFill("solid", fgColor="17365D")
     for worksheet in (summary, parameters):
         for cell in worksheet[1]:
             cell.font = Font(color="FFFFFF", bold=True)
             cell.fill = navy_fill
-            cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+            cell.alignment = Alignment(
+                horizontal="center",
+                vertical="center",
+                wrap_text=True,
+            )
         for column in worksheet.columns:
             letter = get_column_letter(column[0].column)
             max_length = max(len(str(cell.value or "")) for cell in column)
-            worksheet.column_dimensions[letter].width = min(max(max_length + 2, 12), 34)
+            worksheet.column_dimensions[letter].width = min(
+                max(max_length + 2, 12),
+                34,
+            )
+
+
+async def build_target_excel(
+    scenario_id: int,
+    load_scenario: Callable[[int], Awaitable[dict[str, Any]]],
+) -> tuple[BytesIO, str]:
+    scenario = await load_scenario(scenario_id)
+    workbook = Workbook()
+    target_month = scenario["target_month"]
+    comparison_months = [
+        shift_month(target_month, -13),
+        shift_month(target_month, -12),
+        shift_month(target_month, -1),
+    ]
+
+    sheet, last_row = _build_target_sheet(
+        workbook,
+        scenario,
+        target_month,
+        comparison_months,
+    )
+    (
+        comparison,
+        distribution_total_row,
+        second_title_row,
+        second_header_row,
+        analysis_total_row,
+    ) = _build_manager_comparison_sheet(
+        workbook,
+        scenario,
+        target_month,
+        comparison_months,
+    )
+    summary = _build_summary_sheet(workbook, scenario)
+    parameters = _build_parameters_sheet(workbook, scenario)
+
+    _style_target_sheet(sheet, last_row)
+    _style_comparison_headers(
+        comparison,
+        distribution_total_row,
+        second_title_row,
+        second_header_row,
+        analysis_total_row,
+    )
+    _style_comparison_distribution(comparison, distribution_total_row)
+    _style_comparison_analysis(comparison, second_header_row, analysis_total_row)
+    _size_comparison_sheet(comparison, distribution_total_row, analysis_total_row)
+    _style_simple_sheets(summary, parameters)
 
     output = BytesIO()
     workbook.save(output)
