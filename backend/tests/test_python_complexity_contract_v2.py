@@ -157,10 +157,10 @@ def _minimal_contract(
 def test_case_1_pass_on_exact_main(check, l1, real_v2_contract):
     result = check.evaluate(PR_B1_WORKTREE, real_v2_contract, l1)
     assert result["result"] == "PASS"
-    assert result["metrics"]["production_functions"] == 2952
-    assert result["metrics"]["complexity_proxy_gte_threshold"] == 31
-    assert result["metrics"]["complexity_proxy_gte_30"] == 1
-    assert result["metrics"]["maximum_complexity_proxy"] == 32
+    assert result["metrics"]["production_functions"] == 2953
+    assert result["metrics"]["complexity_proxy_gte_threshold"] == 29
+    assert result["metrics"]["complexity_proxy_gte_30"] == 0
+    assert result["metrics"]["maximum_complexity_proxy"] == 28
     assert result["metrics"]["new_function_above_threshold"] == 0
     assert result["algorithm_runtime_match"] is True
 
@@ -197,7 +197,7 @@ def test_case_2_new_function_cp_20_fails(check, l1, tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# 3. aggregate gte_20 31 -> 32 FAIL (transition validator)
+# 3. aggregate gte_20 29 -> 30 FAIL (transition validator)
 # ---------------------------------------------------------------------------
 
 
@@ -206,18 +206,18 @@ def test_case_3_aggregate_gte_20_increase_fails(check, l1, real_v2_contract):
     candidate = _set_path(
         real_v2_contract,
         ("release_b_gates", "complexity_proxy_gte_20_maximum"),
-        32,
+        30,
     )
     _rehash(candidate)
     result = check.evaluate(
         PR_B1_WORKTREE, candidate, l1, previous_contract=previous
     )
     assert result["result"] == "FAIL"
-    assert any("gte_20" in v and "32" in v for v in result["transition_violations"])
+    assert any("gte_20" in v and "30" in v for v in result["transition_violations"])
 
 
 # ---------------------------------------------------------------------------
-# 4. aggregate gte_30 1 -> 2 FAIL (transition validator)
+# 4. aggregate gte_30 0 -> 1 FAIL (transition validator)
 # ---------------------------------------------------------------------------
 
 
@@ -226,18 +226,18 @@ def test_case_4_aggregate_gte_30_increase_fails(check, l1, real_v2_contract):
     candidate = _set_path(
         real_v2_contract,
         ("release_b_gates", "complexity_proxy_gte_30_maximum"),
-        2,
+        1,
     )
     _rehash(candidate)
     result = check.evaluate(
         PR_B1_WORKTREE, candidate, l1, previous_contract=previous
     )
     assert result["result"] == "FAIL"
-    assert any("gte_30" in v and "2" in v for v in result["transition_violations"])
+    assert any("gte_30" in v and "1" in v for v in result["transition_violations"])
 
 
 # ---------------------------------------------------------------------------
-# 5. max 32 -> 33 FAIL (transition validator)
+# 5. max 28 -> 29 FAIL (transition validator)
 # ---------------------------------------------------------------------------
 
 
@@ -246,14 +246,14 @@ def test_case_5_max_increase_fails(check, l1, real_v2_contract):
     candidate = _set_path(
         real_v2_contract,
         ("release_b_gates", "maximum_complexity_proxy"),
-        33,
+        29,
     )
     _rehash(candidate)
     result = check.evaluate(
         PR_B1_WORKTREE, candidate, l1, previous_contract=previous
     )
     assert result["result"] == "FAIL"
-    assert any("maximum" in v and "33" in v for v in result["transition_violations"])
+    assert any("maximum" in v and "29" in v for v in result["transition_violations"])
 
 
 # ---------------------------------------------------------------------------
@@ -262,15 +262,15 @@ def test_case_5_max_increase_fails(check, l1, real_v2_contract):
 
 
 def test_case_6_entry_exceeds_ceiling_fails(check, l1, real_v2_contract):
-    """Lower manager_allocation_analysis's ceiling to 31. Actual is 32 -> FAIL."""
+    """Lower regional_summary's ceiling to 27. Actual is 28 -> FAIL."""
     contract = copy.deepcopy(real_v2_contract)
     for entry in contract["entries"]:
-        if entry["function"] == "manager_allocation_analysis":
-            entry["ceiling"] = 31
+        if entry["function"] == "regional_summary":
+            entry["ceiling"] = 27
     _rehash(contract)
     result = check.evaluate(PR_B1_WORKTREE, contract, l1)
     assert result["result"] == "FAIL"
-    assert any("manager_allocation_analysis" in v for v in result["entry_violations"])
+    assert any("regional_summary" in v for v in result["entry_violations"])
 
 
 # ---------------------------------------------------------------------------
@@ -533,7 +533,7 @@ def test_case_17_locked_entry_removal_while_still_ge20_fails(
     previous = copy.deepcopy(real_v2_contract)
     candidate = copy.deepcopy(real_v2_contract)
     candidate["entries"] = [
-        e for e in candidate["entries"] if e["function"] != "manager_allocation_analysis"
+        e for e in candidate["entries"] if e["function"] != "regional_summary"
     ]
     _rehash(candidate)
 
@@ -541,7 +541,7 @@ def test_case_17_locked_entry_removal_while_still_ge20_fails(
         PR_B1_WORKTREE, candidate, l1, previous_contract=previous
     )
     assert result["result"] == "FAIL"
-    assert any("manager_allocation_analysis" in v for v in result["transition_violations"])
+    assert any("regional_summary" in v for v in result["transition_violations"])
 
 
 # ---------------------------------------------------------------------------
@@ -1068,7 +1068,7 @@ def test_cli_fail_returns_rc_1(tmp_path):
     import subprocess
 
     bad = json.loads(CONTRACT_PATH.read_text())
-    bad["release_b_gates"]["maximum_complexity_proxy"] = 29
+    bad["release_b_gates"]["maximum_complexity_proxy"] = 27
     _rehash(bad)
     bad_path = tmp_path / "bad.json"
     bad_path.write_text(json.dumps(bad, indent=2))
