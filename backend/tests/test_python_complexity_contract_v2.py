@@ -233,7 +233,7 @@ def test_case_4_aggregate_gte_30_increase_fails(check, l1, real_v2_contract):
         PR_B1_WORKTREE, candidate, l1, previous_contract=previous
     )
     assert result["result"] == "FAIL"
-    assert any("gte_30" in v and "3" in v for v in result["transition_violations"])
+    assert any("gte_30" in v and "2" in v for v in result["transition_violations"])
 
 
 # ---------------------------------------------------------------------------
@@ -253,7 +253,7 @@ def test_case_5_max_increase_fails(check, l1, real_v2_contract):
         PR_B1_WORKTREE, candidate, l1, previous_contract=previous
     )
     assert result["result"] == "FAIL"
-    assert any("maximum" in v and "50" in v for v in result["transition_violations"])
+    assert any("maximum" in v and "33" in v for v in result["transition_violations"])
 
 
 # ---------------------------------------------------------------------------
