@@ -16,9 +16,9 @@ implementation. The reference uses the same algorithm shape that
 was live at exact-main; we compare identity, start line, end line,
 and complexity for every production function.
 
-Current remediation hotspot characterization:
+Current Target Calculator complexity characterization:
     build_target_excel          = 1
-    populate_profitability      = 49
+    populate_profitability      = 16
     manager_allocation_analysis = 32
 """
 from __future__ import annotations
@@ -426,7 +426,7 @@ def test_zero_drift_across_all_production_functions(l1):
         (
             "backend/services/target_calculator/profitability.py",
             "populate_profitability",
-            49,
+            16,
         ),
         (
             "backend/services/target_calculator/export.py",
@@ -443,11 +443,11 @@ def test_zero_drift_across_all_production_functions(l1):
         )
 
 
-def test_total_production_function_count_is_2945(l1):
-    """Production tree must contain exactly 2945 measured functions."""
+def test_total_production_function_count_is_2952(l1):
+    """Production tree must contain exactly 2952 measured functions."""
     metrics = l1.collect_metrics(PR_B1_WORKTREE)
-    assert len(metrics) == 2945, (
-        f"production count drift: expected 2945, got {len(metrics)}"
+    assert len(metrics) == 2952, (
+        f"production count drift: expected 2952, got {len(metrics)}"
     )
 
 
