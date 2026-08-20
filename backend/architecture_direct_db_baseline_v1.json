@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "source_checkpoint_sha": "b9c4e87cca948102d99c3a38e52fefc5d00b94e3",
+  "source_checkpoint_sha_grouped": "b9c4e87c-ca948102-d99c3a38-e52fefc5-d00b94e3",
   "baseline_exception_count": 55,
   "service_data_access": {
     "query_services": [

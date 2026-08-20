@@ -18,7 +18,7 @@ REPO_ROOT = ROOT.parent
 LAYERS = ("routers", "services", "repositories", "domain")
 CONTRACT_PATH = ROOT / "architecture_contract.json"
 DIRECT_DB_BASELINE_PATH = ROOT / "architecture_direct_db_baseline_v1.json"
-DIRECT_DB_BASELINE_SHA256 = "769041fb94bc302a4d0295822d4a1060f2628d6b11e277595bdc6cac3d1a980c"
+DIRECT_DB_BASELINE_SHA256 = "158b1a3372fbb88d685ef9ab4627df69b501a9e91da46cbae78265f4a25ab805"  # pragma: allowlist secret
 DIRECT_DB_CATEGORIES = (
     "query_services",
     "transaction_scripts",
