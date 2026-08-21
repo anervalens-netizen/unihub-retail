@@ -10,6 +10,7 @@ import subprocess
 import sys
 import time
 from datetime import date
+from html.parser import HTMLParser
 from pathlib import Path
 from urllib.parse import unquote
 
@@ -29,17 +30,6 @@ REQUIRED_FIELDS = {
 ACTIVE_STATUSES = {"active"}
 ALL_STATUSES = ACTIVE_STATUSES | {"historical", "superseded"}
 REFERENCE_LINK_RE = re.compile(r"(?m)^\s*\[[^\]]+\]:\s*(.+?)\s*$")
-FORBIDDEN_RELEASE_IDENTITY_KEYS = {
-    "release",
-    "releaseid",
-    "releasename",
-    "releasetag",
-    "semanticrelease",
-    "currentrelease",
-    "latestrelease",
-    "releasecurrent",
-    "releaselatest",
-}
 RELEASE_SUPPORT_KEYS = {
     "artifact",
     "artifactdigest",
@@ -49,16 +39,19 @@ RELEASE_SUPPORT_KEYS = {
     "sourcesha",
 }
 CURRENT_FLAG_KEYS = {"current", "iscurrent", "latest", "islatest"}
-CURRENT_RELEASE_PATH_MARKERS = {
-    "currentrelease",
-    "currentreleases",
-    "latestrelease",
-    "latestreleases",
-    "releasecurrent",
-    "releasescurrent",
-    "releaselatest",
-    "releaseslatest",
-}
+
+
+class _HrefCollector(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.targets: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag.casefold() != "a":
+            return
+        for name, value in attrs:
+            if name.casefold() == "href" and value:
+                self.targets.append(value.strip())
 
 
 def _sha256(path: Path) -> str:
@@ -148,6 +141,9 @@ def _markdown_link_targets(text: str) -> list[str]:
         target = _markdown_destination(raw)
         if target:
             targets.append(target)
+    html_links = _HrefCollector()
+    html_links.feed(text)
+    targets.extend(html_links.targets)
     return targets
 
 
@@ -179,8 +175,13 @@ def _normalized_key(value: object) -> str:
 
 
 def _path_tokens(value: str) -> set[str]:
-    # Split explicit separators and camelCase boundaries, then case-fold.
-    camel_split = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", value)
+    # Split separators plus ordinary and acronym camelCase boundaries:
+    # currentQARelease -> current / QA / Release.
+    camel_split = re.sub(
+        r"(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])",
+        " ",
+        value,
+    )
     return {token.casefold() for token in re.split(r"[^A-Za-z0-9]+", camel_split) if token}
 
 
@@ -210,11 +211,21 @@ def _release_pointer_errors(root: Path) -> list[str]:
             continue
 
         path_tokens = _path_tokens(raw_path)
-        compact_path = _compact_path(raw_path)
+        compact_parts = [_compact_path(part) for part in Path(raw_path).parts]
         current_release_path = (
             bool({"current", "latest"} & path_tokens)
             and bool({"release", "releases"} & path_tokens)
-        ) or any(marker in compact_path for marker in CURRENT_RELEASE_PATH_MARKERS)
+        ) or any(
+            (
+                (part.startswith("current") or part.startswith("latest"))
+                and "release" in part
+            )
+            or (
+                (part.startswith("release") or part.startswith("releases"))
+                and ("current" in part or "latest" in part)
+            )
+            for part in compact_parts
+        )
         if current_release_path:
             errors.append(
                 f"{raw_path}: repository-managed current/latest release path is prohibited; "
@@ -227,11 +238,11 @@ def _release_pointer_errors(root: Path) -> list[str]:
             all_items.extend((_normalized_key(key), value) for key, value in node.items())
 
         normalized_keys = {key for key, _ in all_items}
-        forbidden_identity_keys = normalized_keys & FORBIDDEN_RELEASE_IDENTITY_KEYS
-        if forbidden_identity_keys:
+        release_keys = {key for key in normalized_keys if "release" in key}
+        if release_keys:
             errors.append(
-                f"{raw_path}: repository-managed release identity keys are prohibited "
-                f"({', '.join(sorted(forbidden_identity_keys))}); "
+                f"{raw_path}: tracked JSON keys containing 'release' are reserved "
+                f"({', '.join(sorted(release_keys))}); "
                 "release identity must come from signed CI/deploy evidence"
             )
             continue
