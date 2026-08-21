@@ -41,6 +41,20 @@ def test_release_pointer_guard_allows_unrelated_current_metadata(tmp_path: Path)
     assert release_pointer_errors(repo) == []
 
 
+def test_release_pointer_guard_allows_existing_non_identity_release_labels(tmp_path: Path) -> None:
+    repo = _repo(
+        tmp_path,
+        {
+            ".github/governance/high-risk-paths.json": {"deployReleaseCi": True},
+            "scripts/frontend-critical-coverage.json": {"oldRelease": 1, "newRelease": 2},
+            "scripts/python-complexity-contract-v2.json": {"releaseBGates": []},
+            "package-lock.json": {"nodeModulesNodeReleases": {}},
+            "history/notes.json": {"release_notes": "text"},
+        },
+    )
+    assert release_pointer_errors(repo) == []
+
+
 def test_release_pointer_guard_rejects_release_docs_pointer(tmp_path: Path) -> None:
     repo = _repo(tmp_path, {"docs/releases/latest.json": {"version": "v9"}})
     assert len(release_pointer_errors(repo)) == 1
@@ -79,18 +93,17 @@ def test_release_pointer_guard_rejects_current_release_filename_with_generic_pay
     assert len(release_pointer_errors(repo)) == 1
 
 
-def test_release_pointer_guard_reserves_any_release_key(tmp_path: Path) -> None:
+def test_release_pointer_guard_rejects_release_identity_keys(tmp_path: Path) -> None:
     repo = _repo(
         tmp_path,
         {
-            "history/metadata.json": {"release_name": "v8.0.0", "status": "historical"},
             "config/version.json": {"release_version": "v9"},
-            "config/notes.json": {"release_notes": "text"},
+            "config/name.json": {"release_name": "v9"},
+            "config/current.json": {"current_release": "v9"},
+            "config/object.json": {"release": {"version": "v9"}},
         },
     )
-    errors = release_pointer_errors(repo)
-    assert len(errors) == 3
-    assert all("keys containing 'release' are reserved" in error for error in errors)
+    assert len(release_pointer_errors(repo)) == 4
 
 
 def test_release_pointer_guard_scans_json_extension_case_insensitively(tmp_path: Path) -> None:
@@ -98,6 +111,28 @@ def test_release_pointer_guard_scans_json_extension_case_insensitively(tmp_path:
     errors = release_pointer_errors(repo)
     assert len(errors) == 1
     assert errors[0].startswith("config/authority.JSON:")
+
+
+def test_release_pointer_guard_allows_historical_release_identity_per_object(tmp_path: Path) -> None:
+    repo = _repo(tmp_path, {"history/version.json": {"release_name": "v8.0.0", "status": "historical"}})
+    assert release_pointer_errors(repo) == []
+
+
+def test_release_pointer_guard_does_not_launder_unmarked_sibling_with_historical_status(tmp_path: Path) -> None:
+    repo = _repo(
+        tmp_path,
+        {
+            "history/releases.json": {
+                "releases": [
+                    {"release_name": "v8", "status": "historical"},
+                    {"release_name": "v9"},
+                ]
+            }
+        },
+    )
+    errors = release_pointer_errors(repo)
+    assert len(errors) == 1
+    assert "releasename" in errors[0]
 
 
 def test_release_pointer_guard_rejects_current_identity_namespaces(tmp_path: Path) -> None:
@@ -113,11 +148,6 @@ def test_release_pointer_guard_rejects_current_identity_namespaces(tmp_path: Pat
     )
     errors = release_pointer_errors(repo)
     assert len(errors) == 5
-
-
-def test_release_pointer_guard_allows_historical_generic_metadata(tmp_path: Path) -> None:
-    repo = _repo(tmp_path, {"history/version.json": {"version": "v8.0.0", "status": "historical"}})
-    assert release_pointer_errors(repo) == []
 
 
 def test_markdown_link_targets_include_inline_reference_and_html() -> None:
