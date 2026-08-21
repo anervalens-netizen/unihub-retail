@@ -28,16 +28,20 @@ REQUIRED_FIELDS = {
 }
 ACTIVE_STATUSES = {"active"}
 ALL_STATUSES = ACTIVE_STATUSES | {"historical", "superseded"}
-LINK_RE = re.compile(r"\[[^\]]+\]\(([^)]+)\)")
-REFERENCE_LINK_RE = re.compile(r"(?m)^\s*\[[^\]]+\]:\s*(?:<([^>]+)>|(\S+))")
-RELEASE_IDENTITY_MARKER_KEYS = {
+INLINE_LINK_RE = re.compile(r"\[[^\]]+\]\(([^)]*)\)")
+REFERENCE_LINK_RE = re.compile(r"(?m)^\s*\[[^\]]+\]:\s*(.+?)\s*$")
+FORBIDDEN_RELEASE_IDENTITY_KEYS = {
     "release",
     "releaseid",
     "releasename",
     "releasetag",
     "semanticrelease",
+    "currentrelease",
+    "latestrelease",
+    "releasecurrent",
+    "releaselatest",
 }
-RELEASE_SUPPORT_MARKER_KEYS = {
+RELEASE_SUPPORT_KEYS = {
     "artifact",
     "artifactdigest",
     "evidencedocument",
@@ -45,30 +49,53 @@ RELEASE_SUPPORT_MARKER_KEYS = {
     "sbomdigest",
     "sourcesha",
 }
-CURRENT_RELEASE_MARKER_KEYS = {
-    "currentrelease",
-    "latestrelease",
-    "releasecurrent",
-    "releaselatest",
-}
 CURRENT_FLAG_KEYS = {"current", "iscurrent", "latest", "islatest"}
+CURRENT_RELEASE_PATH_MARKERS = {
+    "currentrelease",
+    "currentreleases",
+    "latestrelease",
+    "latestreleases",
+    "releasecurrent",
+    "releasescurrent",
+    "releaselatest",
+    "releaseslatest",
+}
 
 
 def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def _markdown_destination(raw: str) -> str:
+    """Extract one Markdown link destination while preserving spaces inside <...>."""
+    raw = raw.strip()
+    if not raw:
+        return ""
+    if raw.startswith("<"):
+        end = raw.find(">", 1)
+        if end != -1:
+            return raw[1:end].strip()
+        return raw[1:].strip()
+    return raw.split(maxsplit=1)[0].strip()
+
+
 def _markdown_link_targets(text: str) -> list[str]:
-    targets = list(LINK_RE.findall(text))
-    for angle_target, plain_target in REFERENCE_LINK_RE.findall(text):
-        targets.append(angle_target or plain_target)
+    targets: list[str] = []
+    for raw in INLINE_LINK_RE.findall(text):
+        target = _markdown_destination(raw)
+        if target:
+            targets.append(target)
+    for raw in REFERENCE_LINK_RE.findall(text):
+        target = _markdown_destination(raw)
+        if target:
+            targets.append(target)
     return targets
 
 
 def _check_links(path: Path) -> list[str]:
     errors: list[str] = []
     for raw_target in _markdown_link_targets(path.read_text()):
-        target = raw_target.strip().split(maxsplit=1)[0].strip("<>")
+        target = raw_target.strip()
         if not target or target.startswith(("#", "http://", "https://", "mailto:")):
             continue
         target = unquote(target.split("#", 1)[0].split("?", 1)[0])
@@ -92,8 +119,14 @@ def _normalized_key(value: object) -> str:
     return re.sub(r"[^a-z0-9]", "", str(value).casefold())
 
 
+def _compact_path(value: str) -> str:
+    # Stripping separators also normalizes snake/kebab/dotted paths; lowercasing
+    # makes camelCase variants such as currentRelease collapse to currentrelease.
+    return re.sub(r"[^a-z0-9]", "", value.casefold())
+
+
 def _release_pointer_errors(root: Path) -> list[str]:
-    """Reject tracked JSON that can act as repository-owned current-release authority."""
+    """Reject tracked JSON that could become a repository-owned release authority."""
     result = subprocess.run(
         ["git", "ls-files", "-z", "--", "*.json"],
         cwd=root,
@@ -111,20 +144,29 @@ def _release_pointer_errors(root: Path) -> list[str]:
         except (OSError, UnicodeDecodeError, json.JSONDecodeError):
             continue
 
-        path_tokens = {token for token in re.split(r"[/_.-]+", raw_path.casefold()) if token}
-        release_path = bool({"release", "releases"} & path_tokens)
-        current_path = bool({"current", "latest"} & path_tokens)
+        compact_path = _compact_path(raw_path)
+        if any(marker in compact_path for marker in CURRENT_RELEASE_PATH_MARKERS):
+            errors.append(
+                f"{raw_path}: repository-managed current/latest release path is prohibited; "
+                "release identity must come from signed CI/deploy evidence"
+            )
+            continue
 
         all_items: list[tuple[str, object]] = []
-        all_values: list[object] = []
         for node in _iter_dicts(payload):
             all_items.extend((_normalized_key(key), value) for key, value in node.items())
-            all_values.extend(node.values())
 
         normalized_keys = {key for key, _ in all_items}
-        identity_keys = normalized_keys & RELEASE_IDENTITY_MARKER_KEYS
-        support_keys = normalized_keys & RELEASE_SUPPORT_MARKER_KEYS
-        current_release_keys = normalized_keys & CURRENT_RELEASE_MARKER_KEYS
+        forbidden_identity_keys = normalized_keys & FORBIDDEN_RELEASE_IDENTITY_KEYS
+        if forbidden_identity_keys:
+            errors.append(
+                f"{raw_path}: repository-managed release identity keys are prohibited "
+                f"({', '.join(sorted(forbidden_identity_keys))}); "
+                "release identity must come from signed CI/deploy evidence"
+            )
+            continue
+
+        support_keys = normalized_keys & RELEASE_SUPPORT_KEYS
         statuses = {
             value.casefold()
             for key, value in all_items
@@ -135,27 +177,12 @@ def _release_pointer_errors(root: Path) -> list[str]:
             and (value is True or (isinstance(value, str) and value.casefold() in {"true", "current", "latest"}))
             for key, value in all_items
         )
-        points_to_release_docs = any(
-            isinstance(value, str)
-            and (
-                value.casefold().replace("\\", "/").startswith("releases/")
-                or "docs/releases/" in value.casefold().replace("\\", "/")
-            )
-            for value in all_values
-        )
-
-        current_semantics = current_path and release_path
-        current_semantics = current_semantics or bool(current_release_keys) or "current" in statuses or current_flag
-        release_semantics = release_path or bool(identity_keys) or bool(support_keys) or bool(current_release_keys) or points_to_release_docs
-        explicitly_historical = bool(statuses) and statuses <= {"historical", "superseded"}
-
-        prohibited = (current_semantics and release_semantics) or (bool(identity_keys) and not explicitly_historical)
-        if prohibited:
-            reasons = sorted(identity_keys | support_keys | current_release_keys)
-            reason = ", ".join(reasons) if reasons else "current/latest release path"
+        current_semantics = "current" in statuses or "latest" in statuses or current_flag
+        if current_semantics and support_keys:
             errors.append(
-                f"{raw_path}: repository-managed current-release pointer metadata is prohibited "
-                f"({reason}); release identity must come from signed CI/deploy evidence"
+                f"{raw_path}: current/latest metadata cannot carry release-support identity fields "
+                f"({', '.join(sorted(support_keys))}); "
+                "release identity must come from signed CI/deploy evidence"
             )
     return errors
 
@@ -235,8 +262,8 @@ def main() -> int:
     )
     for path in repository_release_metadata:
         errors.append(
-            f"{path}: repository-managed release metadata/pointers are prohibited; "
-            "release identity must come from signed CI/deploy evidence"
+            f"{path}: docs/releases is Markdown-only historical evidence; "
+            "repository-managed release metadata/pointers are prohibited"
         )
     errors.extend(_release_pointer_errors(ROOT))
 
@@ -256,8 +283,7 @@ def main() -> int:
         text = path.read_text()
         if "releases/current.json" in text:
             errors.append(f"{path.relative_to(ROOT)} references retired release pointer")
-        for raw_target in _markdown_link_targets(text):
-            target = raw_target.strip().split(maxsplit=1)[0].strip("<>")
+        for target in _markdown_link_targets(text):
             if not target or target.startswith(("#", "http://", "https://", "mailto:")):
                 continue
             target = unquote(target.split("#", 1)[0].split("?", 1)[0])
