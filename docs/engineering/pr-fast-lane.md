@@ -1,11 +1,19 @@
-# PR-fast lane (additive fast PR gate)
+# PR-fast lane (current additive fast PR gate)
 
-E1 adds one new self-hosted job `pr-fast` to `.github/workflows/ci.yml`. It
-duplicates a selected fast subset of the existing exhaustive validation on
-purpose: the repository has no native server-side branch enforcement, and
-`main-push-policy.yml` is a detector, not perfect server-side prevention.
-Release correctness must not depend on the assumption that a SHA previously
-passed a PR-fast run, so the existing FULL content is preserved exactly.
+`pr-fast` is the repository's consolidated self-hosted fast feedback lane in
+`.github/workflows/ci.yml`. It duplicates a bounded, selected subset of the
+existing exhaustive validation on purpose: the repository has no native
+server-side branch enforcement, and `main-push-policy.yml` is a detector, not
+perfect server-side prevention. Release correctness must not depend on the
+assumption that a SHA previously passed a PR-fast run, so the existing FULL
+content is preserved exactly.
+
+The normal target is **under 10 minutes**. The job timeout remains exactly
+**15 minutes as a guardrail, not a target**. Efficiency is a correctness
+requirement: large affected-backend fan-out escalates to PR-DEEP instead of
+expanding `pr-fast`, and unchanged failures/timeouts are not blindly rerun.
+Still-valid exact-SHA evidence is reused; `FULL` runs only when tracker policy
+actually justifies it.
 
 ## Active orthogonal gates (already on main)
 
@@ -19,7 +27,7 @@ passed a PR-fast run, so the existing FULL content is preserved exactly.
 
 `pr-fast` complements both; it does not replace them.
 
-## Triggers (current main, unchanged)
+## Triggers (current)
 
 ```yaml
 on:
@@ -27,11 +35,18 @@ on:
   pull_request:
     branches:
       - main
+    paths-ignore:
+      - "**/*.md"
+      - "docs/**"
 ```
 
-There is no `push: branches: [main]` trigger.
+Markdown/docs-only pull requests do not launch the heavy PR verification
+workflows under the current no-native-required-checks model. Runtime/code PRs
+retain the normal `ci` path; high-risk governance and `pr-deep-policy` use the
+same safe docs-only exclusion. There is no `push: branches: [main]` trigger in
+this workflow.
 
-## Job graph after E1
+## Current job graph
 
 | Job | `if:` | `needs:` | timeout | Lane |
 |---|---|---|---|---|
@@ -79,7 +94,12 @@ Backend (copied verbatim from current `backend-check`):
 - `Exact-SHA deploy and rollback sandbox` (`ops/test-deploy-retail-artifact.sh`)
 - `Targeted business mutation gate` (10 deterministic mutations covering
   target-calculator money/floor/cap/remainder)
-- New PR-fast-only: `Runtime import smoke` (single-line `import auth; import
+- PR-B3b backend affected coverage: trusted base selector over the exact
+  candidate checkout; selected pytest plus the existing changed-line authority
+  when safe, or `ESCALATION_REQUIRED` without executing the selected suite.
+  The selector budget is `MAX_PR_FAST_SELECTED_TEST_FILES = 120`; a result
+  above 120 routes to exact-head PR-DEEP.
+- Current PR-fast-only: `Runtime import smoke` (single-line `import auth; import
   main; import worker`, no second venv)
 - `Upload mypy diagnostics` (on failure)
 
@@ -90,46 +110,48 @@ Frontend (copied verbatim from current `frontend-check`):
 - `Frontend typecheck` + `TypeScript complexity ratchet` +
   `Frontend lint`
 - `Bundle budget` (after build)
-- New PR-fast-only: `Frontend unit tests without coverage` =
-  `npm run test` (`vitest run` without v8 instrumentation) — same test
-  files as FULL's `Unit tests with global coverage floor` minus the
-  coverage instrumentation and threshold gates
-- New PR-fast-only: `Build` (with PR DSN secret, separate from the FULL
-  build that runs with the dispatch DSN)
+- Current PR-fast frontend verification: affected `vitest run --coverage`
+  with the existing changed-line coverage authority; test-infrastructure
+  changes deliberately force the full frontend coverage path.
+- Current PR-fast `Build` (with PR DSN secret), separate from the FULL build
+  that runs with the dispatch DSN.
 
-## Why `vitest run` (no coverage) in PR-fast, coverage in FULL
+## Coverage and authority split
 
-`vitest run --coverage` with the 65/55/55/67 threshold gate stays in FULL
-under `Unit tests with global coverage floor`. PR-fast runs the same test
-suite without coverage instrumentation because:
-
-- The FULL coverage gate must not be skipped on exact main releases.
-- Coverage v8 instrumentation is heavy and not needed for behavior-regression
-  coverage on PR.
-- The behavior tests themselves (80 files, 657 tests) catch the same
-  regressions in either mode.
+PR-fast uses affected frontend coverage and the existing changed-line gate for
+ordinary PR diffs. The exact-main FULL lane retains its independent global
+coverage thresholds and exhaustive frontend suite. Backend PR-fast coverage is
+also selective only when the trusted selector proves the fan-out is within the
+120-file budget; otherwise PR-fast emits `ESCALATION_REQUIRED` and does not
+start the oversized selected backend suite. PR-DEEP remains the exhaustive
+backend certification authority for that path.
 
 ## Behavioral matrix
 
 | Event | runner-isolation | pr-fast | FULL jobs | release-artifact |
 |---|---|---|---|---|
-| `pull_request` (internal) | runs | runs | skipped | skipped |
+| `pull_request` (internal runtime/code) | runs | runs | skipped | skipped |
+| `pull_request` (Markdown/docs-only) | skipped | skipped | skipped | skipped |
 | `pull_request` (fork) | skipped (existing fork guard) | skipped | skipped | skipped |
 | `workflow_dispatch` + main | runs | skipped | runs sequentially | runs after all 4 FULL |
 | `workflow_dispatch` (other ref) | skipped | skipped | skipped | skipped |
 
-## Measured PR-fast wall-clock
+## Measured PR-fast wall-clock and routing boundary
 
-See the E1 design report; ~6-8 min hot, ≤15 min budget.
+The evidence-based boundary is not a promise that every 120-file suite is
+under 10 minutes. Validation PR #173 selected 111 backend test files and
+completed in about 7m35s; C7 PR #184 selected 133 files, spent 11m38s in the
+affected-backend step, and hit the 15-minute job timeout before completion.
+Therefore selection counts above 120 escalate to PR-DEEP. More profiling is
+required before changing the threshold; increasing the timeout is prohibited.
 
 ## Release/deploy contract: unchanged
 
 - `release-artifact` `if:`, `needs:`, `permissions:`, signing commands,
-  artifact provenance — all byte-identical to current main.
+  artifact provenance — all remain unchanged.
 - `.github/workflows/deploy.yml` is not modified.
-- `.github/workflows/high-risk-governance.yml` is not modified.
-- `.github/workflows/main-push-policy.yml` is not modified.
-- `.github/workflows/artifact-cleanup.yml` is not modified.
+- `main-push-policy.yml` is not modified.
+- `release-artifact` and exact-main FULL authority remain unchanged.
 
 
 ## Conditional optimization gates (E1 amendment)
@@ -192,17 +214,26 @@ tests covering all 15 proof cases plus the new BASE-trust test (HEAD
 manifest weakening must NOT skip). Run early in pr-fast via
 `backend/venv/bin/python -I -m pytest -q backend/tests/test_high_risk_category_touched.py`.
 
+### PR-DEEP escalation authority
+
+`PR-DEEP` remains a separate, manually dispatched, exact-head workflow for
+`ESCALATION_REQUIRED`. It is the exhaustive backend certification authority
+and is not hidden inside `pr-fast`. The selection budget only changes routing;
+it does not weaken changed-line coverage, high-risk governance, architecture,
+security, release, deploy, or exact-main FULL authorities.
+
 ### What does NOT change
 
-- `runner-isolation` — unchanged
+- `runner-isolation` — unchanged for runtime/code PRs
 - `backend-check` (FULL) — unchanged (30 steps)
 - `frontend-check` (FULL) — unchanged (23 steps)
 - `browser-smoke` (FULL) — unchanged (7 steps)
 - `integration-e2e` (FULL) — unchanged (8 steps)
 - `release-artifact` (FULL) — unchanged (9 steps)
-- `.github/workflows/high-risk-governance.yml` — unchanged
-- `.github/workflows/main-push-policy.yml` — unchanged
-- `.github/workflows/deploy.yml` — unchanged
+- high-risk governance authority — unchanged; only redundant docs-only trigger
+  execution is filtered
+- `main-push-policy.yml` — unchanged
+- `deploy.yml` — unchanged
 - Tracked secret regression scan — still exhaustive in PR-fast
 - `release-artifact` and exact-main release authority — unchanged
 
