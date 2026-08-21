@@ -30,6 +30,15 @@ Un document datat ori marcat `historical` este evidence, nu autoritate curentă.
 - planul Contract-Build-Prove activ:
   [`exec-plans/active/UR-CLOSE-20260812.md`](exec-plans/active/UR-CLOSE-20260812.md).
 
+## Remediere tehnică activă
+
+- trackerul operațional pentru audit/remediere este GitHub issue
+  [`#159`](https://github.com/anervalens-netizen/unihub-retail/issues/159); statusul
+  Phase C curent este **C1–C6 DONE**, cu C7/C8 rămase;
+- guardrail-ul de portabilitate pentru refactorizări este GitHub issue
+  [`#170`](https://github.com/anervalens-netizen/unihub-retail/issues/170); acesta este
+  o regulă de design, nu un task separat și nu justifică abstractions speculative.
+
 ## Evidence istoric
 
 - release-uri: [`releases/v2.0.0.md`](releases/v2.0.0.md),
