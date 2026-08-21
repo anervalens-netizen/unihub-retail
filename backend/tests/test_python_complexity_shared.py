@@ -443,11 +443,18 @@ def test_zero_drift_across_all_production_functions(l1):
         )
 
 
-def test_total_production_function_count_is_2953(l1):
-    """Production tree must contain exactly 2953 measured functions."""
+def test_total_production_function_count_is_2961(l1):
+    """Production tree must contain exactly 2961 measured functions.
+
+    The C6 Target Calculator repository decomposition intentionally
+    adds 8 focused helper functions (+2 in target_calculator_sources.py,
+    +3 in target_calculator_scenarios.py, +3 in target_calculator_detail.py);
+    baseline moved from 2953 to 2961. The function count ratchet remains
+    monotonic — no unrelated functions were added elsewhere.
+    """
     metrics = l1.collect_metrics(PR_B1_WORKTREE)
-    assert len(metrics) == 2953, (
-        f"production count drift: expected 2953, got {len(metrics)}"
+    assert len(metrics) == 2961, (
+        f"production count drift: expected 2961, got {len(metrics)}"
     )
 
 

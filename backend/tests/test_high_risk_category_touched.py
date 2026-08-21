@@ -400,3 +400,88 @@ def test_selector_and_test_infra_paths_classify_as_deploy_release_ci(
         f"stderr={cp.stderr!r}"
     )
 
+
+# ---------------------------------------------------------------------------
+# C6: target-calculator authority surface (backend repository facade + mixins)
+# classified as target-calculator by A3. The C6 decomposition split the
+# original `backend/repositories/target_calculator.py` into three focused
+# mixins (sources / scenarios / detail); the manifest must keep the new
+# files inside the target-calculator category so PRs cannot silently
+# weaken governance coverage.
+# ---------------------------------------------------------------------------
+
+
+def _classifier_target_calculator(repo, base_sha=None):
+    base = base_sha or _run(["git", "rev-parse", "HEAD~"], repo).stdout.strip()
+    cp = _run(
+        [
+            _python_isolated(),
+            "-I",
+            str(CLASSIFIER),
+            "--category",
+            "target-calculator",
+            "--base-sha",
+            base,
+            "--repo-root",
+            str(repo),
+        ],
+        repo,
+    )
+    return cp
+
+
+@pytest.mark.parametrize(
+    "target_calc_path",
+    [
+        "backend/services/target_calculator/profitability.py",
+        "backend/services/target_calculator/export.py",
+        "backend/repositories/target_calculator.py",
+        "backend/repositories/target_calculator_sources.py",
+        "backend/repositories/target_calculator_scenarios.py",
+        "backend/repositories/target_calculator_detail.py",
+        "backend/routers/target_calculator.py",
+        "src/api/targetCalculator.ts",
+        "src/features/target-calculator/TargetCalculator.tsx",
+    ],
+)
+def test_target_calculator_authority_paths_classify_as_target_calculator(
+        tmp_repo, target_calc_path):
+    """Every backend/frontend path in the target-calculator authority
+    surface must classify as the target-calculator category so PRs that
+    touch Target Calculator code (including the C6-extracted repository
+    mixins) trigger the A3 governance gate."""
+    _commit(
+        tmp_repo,
+        {target_calc_path: "# target-calculator change"},
+        msg=f"touch {target_calc_path}",
+    )
+    cp = _classifier_target_calculator(tmp_repo)
+    assert cp.returncode == 0, (
+        f"{target_calc_path}: classifier did not classify as target-calculator. "
+        f"rc={cp.returncode} stdout={cp.stdout!r} stderr={cp.stderr!r}"
+    )
+
+
+def test_target_calculator_mixin_paths_are_individually_required(tmp_repo):
+    """Regression guard: the C6 decomposition moved target_calculator.py
+    implementation into three new mixin files. Each of those files MUST
+    be explicitly listed in the target-calculator manifest, not merely
+    covered by a glob. This test fails closed if anyone removes one of
+    the three mixin paths, ensuring governance coverage cannot silently
+    regress when the repository layer is refactored further."""
+    manifest = json.loads(
+        (tmp_repo / ".github" / "governance" / "high-risk-paths.json").read_text()
+    )
+    paths = manifest["categories"]["target-calculator"]["paths"]
+    required = {
+        "backend/repositories/target_calculator.py",
+        "backend/repositories/target_calculator_sources.py",
+        "backend/repositories/target_calculator_scenarios.py",
+        "backend/repositories/target_calculator_detail.py",
+    }
+    missing = required - set(paths)
+    assert not missing, (
+        f"target-calculator manifest missing required C6 mixin paths: "
+        f"{sorted(missing)}"
+    )
+

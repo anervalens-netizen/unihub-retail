@@ -88,10 +88,13 @@
       ]
     },
     "target-calculator": {
-      "description": "Target calculator authority: backend service (prefix), repository, router, frontend API, frontend features (prefix). No tests.",
+      "description": "Target calculator authority: backend service (prefix), repository (facade + extracted mixins), router, frontend API, frontend features (prefix). No tests.",
       "paths": [
         "backend/services/target_calculator/",
         "backend/repositories/target_calculator.py",
+        "backend/repositories/target_calculator_sources.py",
+        "backend/repositories/target_calculator_scenarios.py",
+        "backend/repositories/target_calculator_detail.py",
         "backend/routers/target_calculator.py",
         "src/api/targetCalculator.ts",
         "src/features/target-calculator/"

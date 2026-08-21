@@ -7,7 +7,6 @@
   },
   "legacy_max_lines": {
     "backend/logging_config.py": 794,
-    "backend/repositories/target_calculator.py": 772,
     "backend/scripts/import_ai_forecast.py": 872,
     "backend/scripts/run_ai_forecast_backtest.py": 979,
     "backend/scripts/run_ai_forecast_xreg.py": 1189,
@@ -16,9 +15,6 @@
   "default_max_python_function_lines": 120,
   "legacy_max_python_function_lines": {
     "backend/repositories/ai_forecast.py::AiForecastRepository.fetch_response_rows": 187,
-    "backend/repositories/ai_forecast.py::AiForecastRepository.fetch_rolling_rows": 174,
-    "backend/repositories/target_calculator.py::TargetCalculatorRepository.get_profitability_inputs": 125,
-    "backend/repositories/target_calculator.py::TargetCalculatorRepository.get_store_detail": 144,
-    "backend/repositories/target_calculator.py::TargetCalculatorRepository.save_draft_scenario": 129
+    "backend/repositories/ai_forecast.py::AiForecastRepository.fetch_rolling_rows": 174
   }
 }
