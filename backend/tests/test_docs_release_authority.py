@@ -150,6 +150,41 @@ def test_release_pointer_guard_rejects_current_identity_namespaces(tmp_path: Pat
     assert len(errors) == 5
 
 
+def test_release_pointer_guard_rejects_conflicting_historical_and_current_state(tmp_path: Path) -> None:
+    repo = _repo(
+        tmp_path,
+        {
+            "config/conflict.json": {
+                "status": "historical",
+                "current": True,
+                "artifact_sha256": "abc",
+            },
+            "config/conflict-latest.json": {
+                "status": "superseded",
+                "latest": True,
+                "sbom_hash": "def",
+            },
+        },
+    )
+    errors = release_pointer_errors(repo)
+    assert len(errors) >= 2
+    assert sum("conflicting current/latest" in error for error in errors) == 2
+
+
+def test_release_pointer_guard_current_parent_cannot_be_laundered_by_historical_child(tmp_path: Path) -> None:
+    repo = _repo(
+        tmp_path,
+        {
+            "config/current-tree.json": {
+                "status": "current",
+                "metadata": {"status": "historical", "artifact_sha256": "abc"},
+            }
+        },
+    )
+    errors = release_pointer_errors(repo)
+    assert any("artifactsha256" in error for error in errors)
+
+
 def test_markdown_link_targets_include_inline_reference_and_html() -> None:
     text = (
         "[inline](docs/catalog.json)\n"
@@ -162,6 +197,16 @@ def test_markdown_link_targets_include_inline_reference_and_html() -> None:
         "config/current.json",
         "config/pointer.json",
     ]
+
+
+def test_markdown_link_targets_ignore_inline_and_fenced_code() -> None:
+    text = (
+        "`[inline](config/inline.json)`\n"
+        "```md\n[pointer](config/fenced.json)\n<a href=\"config/html.json\">x</a>\n```\n"
+        "~~~\n[ref]: config/reference.json\n~~~\n"
+        "[real](docs/catalog.json)\n"
+    )
+    assert markdown_link_targets(text) == ["docs/catalog.json"]
 
 
 def test_markdown_link_targets_preserve_angle_bracket_spaces() -> None:
