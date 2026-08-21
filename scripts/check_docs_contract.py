@@ -30,15 +30,19 @@ REQUIRED_FIELDS = {
 ACTIVE_STATUSES = {"active"}
 ALL_STATUSES = ACTIVE_STATUSES | {"historical", "superseded"}
 REFERENCE_LINK_RE = re.compile(r"(?m)^\s*\[[^\]]+\]:\s*(.+?)\s*$")
-RELEASE_SUPPORT_KEYS = {
-    "artifact",
-    "artifactdigest",
-    "evidencedocument",
-    "rollbackidentity",
-    "sbomdigest",
-    "sourcesha",
-}
 CURRENT_FLAG_KEYS = {"current", "iscurrent", "latest", "islatest"}
+CURRENT_IDENTITY_NAMESPACES = {
+    "artifact",
+    "deploy",
+    "evidence",
+    "manifest",
+    "migration",
+    "predecessor",
+    "provenance",
+    "rollback",
+    "sbom",
+    "source",
+}
 
 
 class _HrefCollector(HTMLParser):
@@ -247,7 +251,6 @@ def _release_pointer_errors(root: Path) -> list[str]:
             )
             continue
 
-        support_keys = normalized_keys & RELEASE_SUPPORT_KEYS
         statuses = {
             value.casefold()
             for key, value in all_items
@@ -259,12 +262,18 @@ def _release_pointer_errors(root: Path) -> list[str]:
             for key, value in all_items
         )
         current_semantics = "current" in statuses or "latest" in statuses or current_flag
-        if current_semantics and support_keys:
-            errors.append(
-                f"{raw_path}: current/latest metadata cannot carry release-support identity fields "
-                f"({', '.join(sorted(support_keys))}); "
-                "release identity must come from signed CI/deploy evidence"
-            )
+        if current_semantics:
+            current_identity_keys = {
+                key
+                for key in normalized_keys
+                if any(namespace in key for namespace in CURRENT_IDENTITY_NAMESPACES)
+            }
+            if current_identity_keys:
+                errors.append(
+                    f"{raw_path}: current/latest metadata cannot carry release-support identity namespaces "
+                    f"({', '.join(sorted(current_identity_keys))}); "
+                    "release identity must come from signed CI/deploy evidence"
+                )
     return errors
 
 
