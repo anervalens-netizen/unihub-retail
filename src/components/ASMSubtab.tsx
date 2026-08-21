@@ -98,7 +98,7 @@ export function ASMSubtab({ currentMonth }: { currentMonth?: string }) {
         </div>
       )}
       {!query.isLoading && !query.isError && query.data?.length === 0 && (
-        <div className="rounded-2xl border border-dashed border-slate-300 p-10 text-center text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400">
+        <div className="rounded-2xl border border-dashed border-slate-300 p-10 text-center text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
           Nu există manageri activi în structura curentă.
         </div>
       )}
