@@ -30,6 +30,7 @@ REQUIRED_FIELDS = {
 ACTIVE_STATUSES = {"active"}
 ALL_STATUSES = ACTIVE_STATUSES | {"historical", "superseded"}
 REFERENCE_LINK_RE = re.compile(r"(?m)^\s*\[[^\]]+\]:\s*(.+?)\s*$")
+HTML_CODE_RE = re.compile(r"(?is)<(pre|code)\b[^>]*>.*?</\1\s*>")
 CURRENT_FLAG_KEYS = {"current", "iscurrent", "latest", "islatest"}
 HISTORICAL_STATUSES = {"historical", "superseded"}
 RELEASE_IDENTITY_MARKERS = {
@@ -170,35 +171,129 @@ def _inline_link_targets(text: str) -> list[str]:
     return targets
 
 
+def _blank_preserving_newlines(value: str) -> str:
+    return "".join("\n" if char == "\n" else " " for char in value)
+
+
+def _without_blockquote_prefix(line: str) -> str:
+    """Return line content after ordinary CommonMark blockquote prefixes."""
+    position = 0
+    while position < len(line):
+        start = position
+        spaces = 0
+        while position < len(line) and line[position] == " " and spaces < 3:
+            position += 1
+            spaces += 1
+        if position >= len(line) or line[position] != ">":
+            position = start
+            break
+        position += 1
+        if position < len(line) and line[position] in " \t":
+            position += 1
+    return line[position:]
+
+
+def _opening_fence(line: str) -> tuple[str, int] | None:
+    """Recognize a fence after blockquote and optional list-container syntax."""
+    content = _without_blockquote_prefix(line)
+    leading = len(content) - len(content.lstrip(" "))
+    if leading <= 3:
+        candidate = content[leading:]
+        match = re.match(r"(`{3,}|~{3,})", candidate)
+        if match:
+            return match.group(1)[0], len(match.group(1))
+
+        list_marker = re.match(r"(?:[-+*]|\d{1,9}[.)])[ \t]+", candidate)
+        if list_marker:
+            nested = candidate[list_marker.end():]
+            nested_leading = len(nested) - len(nested.lstrip(" "))
+            if nested_leading <= 3:
+                match = re.match(r"(`{3,}|~{3,})", nested[nested_leading:])
+                if match:
+                    return match.group(1)[0], len(match.group(1))
+    return None
+
+
+def _is_closing_fence(line: str, fence_char: str, fence_len: int) -> bool:
+    content = _without_blockquote_prefix(line).lstrip(" \t")
+    match = re.match(r"(`{3,}|~{3,})", content)
+    if not match or match.group(1)[0] != fence_char or len(match.group(1)) < fence_len:
+        return False
+    return not content[match.end():].strip()
+
+
+def _indent_width(line: str) -> int:
+    width = 0
+    for char in line:
+        if char == " ":
+            width += 1
+        elif char == "\t":
+            width += 4 - (width % 4)
+        else:
+            break
+    return width
+
+
+def _find_matching_backtick_run(text: str, start: int, run_len: int) -> int | None:
+    """Find a closing backtick run whose full run length exactly matches."""
+    cursor = start
+    while cursor < len(text):
+        position = text.find("`", cursor)
+        if position == -1:
+            return None
+        end = position
+        while end < len(text) and text[end] == "`":
+            end += 1
+        if end - position == run_len:
+            return position
+        cursor = end
+    return None
+
+
 def _strip_markdown_code(text: str) -> str:
-    """Blank fenced and inline code while preserving line structure."""
+    """Blank fenced, indented, HTML and inline code while preserving line structure."""
+    text = HTML_CODE_RE.sub(lambda match: _blank_preserving_newlines(match.group(0)), text)
     visible_lines: list[str] = []
     fence_char: str | None = None
     fence_len = 0
+    indented_code = False
+    previous_blank = True
 
     for line in text.splitlines(keepends=True):
-        indent = len(line) - len(line.lstrip(" "))
-        stripped = line[indent:] if indent <= 3 else line
-        fence = re.match(r"(`{3,}|~{3,})", stripped) if indent <= 3 else None
+        blockquote_content = _without_blockquote_prefix(line)
+        source_blank = not blockquote_content.strip()
 
         if fence_char is not None:
-            if (
-                fence
-                and fence.group(1)[0] == fence_char
-                and len(fence.group(1)) >= fence_len
-            ):
+            if _is_closing_fence(line, fence_char, fence_len):
                 fence_char = None
                 fence_len = 0
             visible_lines.append("\n" if line.endswith("\n") else "")
+            previous_blank = source_blank
             continue
 
-        if fence:
-            fence_char = fence.group(1)[0]
-            fence_len = len(fence.group(1))
+        opening = _opening_fence(line)
+        if opening is not None:
+            fence_char, fence_len = opening
             visible_lines.append("\n" if line.endswith("\n") else "")
+            previous_blank = source_blank
+            continue
+
+        indent = _indent_width(blockquote_content)
+        if indented_code:
+            if source_blank or indent >= 4:
+                visible_lines.append("\n" if line.endswith("\n") else "")
+                previous_blank = source_blank
+                continue
+            indented_code = False
+
+        if not source_blank and indent >= 4 and previous_blank:
+            indented_code = True
+            visible_lines.append("\n" if line.endswith("\n") else "")
+            previous_blank = source_blank
             continue
 
         visible_lines.append(line)
+        previous_blank = source_blank
 
     visible = "".join(visible_lines)
     output: list[str] = []
@@ -212,16 +307,16 @@ def _strip_markdown_code(text: str) -> str:
         run_end = index
         while run_end < len(visible) and visible[run_end] == "`":
             run_end += 1
-        delimiter = visible[index:run_end]
-        close = visible.find(delimiter, run_end)
-        if close == -1:
-            output.append(delimiter)
+        run_len = run_end - index
+        close = _find_matching_backtick_run(visible, run_end, run_len)
+        if close is None:
+            output.append(visible[index:run_end])
             index = run_end
             continue
 
-        segment = visible[index : close + len(delimiter)]
-        output.extend("\n" if char == "\n" else " " for char in segment)
-        index = close + len(delimiter)
+        segment = visible[index : close + run_len]
+        output.append(_blank_preserving_newlines(segment))
+        index = close + run_len
 
     return "".join(output)
 
@@ -250,16 +345,6 @@ def _check_links(path: Path) -> list[str]:
         if not resolved.is_relative_to(ROOT) or not resolved.exists():
             errors.append(f"{path.relative_to(ROOT)}: broken relative link {raw_target}")
     return errors
-
-
-def _iter_dicts(value: object):
-    if isinstance(value, dict):
-        yield value
-        for child in value.values():
-            yield from _iter_dicts(child)
-    elif isinstance(value, list):
-        for child in value:
-            yield from _iter_dicts(child)
 
 
 def _normalized_key(value: object) -> str:
@@ -321,13 +406,17 @@ def _node_statuses(node: dict[object, object]) -> set[str]:
     }
 
 
+def _meaningful_current_value(value: object) -> bool:
+    if value is None or value is False:
+        return False
+    if isinstance(value, str):
+        return value.strip().casefold() not in {"", "false", "no", "none", "null", "off"}
+    return True
+
+
 def _node_current_flag(node: dict[object, object]) -> bool:
     return any(
-        _normalized_key(key) in CURRENT_FLAG_KEYS
-        and (
-            value is True
-            or (isinstance(value, str) and value.casefold() in {"true", "current", "latest"})
-        )
+        _normalized_key(key) in CURRENT_FLAG_KEYS and _meaningful_current_value(value)
         for key, value in node.items()
     )
 
