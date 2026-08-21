@@ -6,10 +6,10 @@ UniHub Retail este aplicatia centrala pentru vanzarile retail MobiUp: dashboard
 operational, campanii Focus, agenti, performanta managerilor, planificare
 target, salarii, P&L si raportare de vizite.
 
-Release-ul semantic curent este `v2.1.0` și se rezolvă numai prin pointerul
-non-self-referențial [`docs/releases/current.json`](docs/releases/current.json).
-Documentul indicat de pointer definește dovada exactă `SOURCE_SHA`, artefact și
-digest; valorile concrete sunt emise de CI/deploy, nu anticipate în sursă.
+Identitatea release-ului curent nu este declarată manual în sursă. CI generează
+`RELEASE_MANIFEST.json` pentru SHA-ul exact certificat, îl leagă de artefact/SBOM
+prin digesturi și îl semnează; deploy-ul verifică aceeași identitate și păstrează
+recordul de promovare runtime. Notele de release din `docs/releases/` sunt istorice.
 
 ## Stack si runtime
 
@@ -1193,7 +1193,7 @@ modifica un scenariu deja salvat/finalizat.
 - Hub consuma KPI-uri Retail prin API intern.
 - Prometheus si Grafana pentru metrics.
 - GlitchTip pentru erori.
-- In configuratia activa `v2.0.1`, `/metrics` este consumat numai pe calea interna
+- In configuratia de productie, `/metrics` este consumat numai pe calea interna
   Prometheus; proxy-ul Retail raspunde 404 public pentru `/metrics`, `/docs`,
   `/redoc` si `/openapi.json`, iar
   FastAPI nu publica UI/schema OpenAPI. Fallback-ul SPA se aplica numai
