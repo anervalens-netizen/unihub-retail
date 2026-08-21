@@ -1,9 +1,10 @@
 # UniHub Retail — catalog canonic
 
-Release-ul semantic curent este **v2.1.0**, rezolvat exclusiv prin pointerul
-non-self-referențial [`releases/current.json`](releases/current.json). Documentul
-indicat de pointer descrie frontiera exactă `SOURCE_SHA` / artefact / digest;
-dovezile concrete de deploy rămân în handoff-urile operaționale post-build.
+Identitatea release-ului curent nu este menținută manual în documentație.
+Autoritatea machine-readable a candidatului certificat este `RELEASE_MANIFEST.json`,
+generat de CI pentru SHA-ul exact, legat prin digesturi de artefact/SBOM și semnat.
+Starea de production este stabilită de recordul de promovare verificat de deploy;
+`releases/*.md` rămân note istorice.
 
 Catalogul complet și metadatele de stare sunt în [`catalog.json`](catalog.json).
 Un document datat ori marcat `historical` este evidence, nu autoritate curentă.
@@ -33,8 +34,8 @@ Un document datat ori marcat `historical` este evidence, nu autoritate curentă.
 ## Remediere tehnică activă
 
 - trackerul operațional pentru audit/remediere este GitHub issue
-  [`#159`](https://github.com/anervalens-netizen/unihub-retail/issues/159); statusul
-  Phase C curent este **C1–C6 DONE**, cu C7/C8 rămase;
+  [`#159`](https://github.com/anervalens-netizen/unihub-retail/issues/159); Phase C este
+  **COMPLETE + CERTIFIED**, iar programul continuă cu Phase D;
 - guardrail-ul de portabilitate pentru refactorizări este GitHub issue
   [`#170`](https://github.com/anervalens-netizen/unihub-retail/issues/170); acesta este
   o regulă de design, nu un task separat și nu justifică abstractions speculative.
