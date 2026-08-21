@@ -75,18 +75,18 @@ def _normalized_key(value: object) -> str:
     return re.sub(r"[^a-z0-9]", "", str(value).casefold())
 
 
-def _release_pointer_errors() -> list[str]:
+def _release_pointer_errors(root: Path) -> list[str]:
     """Reject tracked JSON that can act as repository-owned current-release authority."""
     result = subprocess.run(
         ["git", "ls-files", "-z", "--", "*.json"],
-        cwd=ROOT,
+        cwd=root,
         check=True,
         capture_output=True,
         text=True,
     )
     errors: list[str] = []
     for raw_path in filter(None, result.stdout.split("\0")):
-        path = ROOT / raw_path
+        path = root / raw_path
         if not path.is_file():
             continue
         try:
@@ -199,7 +199,7 @@ def main() -> int:
             f"{path}: repository-managed release metadata/pointers are prohibited; "
             "release identity must come from signed CI/deploy evidence"
         )
-    errors.extend(_release_pointer_errors())
+    errors.extend(_release_pointer_errors(ROOT))
 
     release_entries = [
         entry
