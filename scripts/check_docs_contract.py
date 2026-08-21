@@ -31,6 +31,22 @@ ACTIVE_STATUSES = {"active"}
 ALL_STATUSES = ACTIVE_STATUSES | {"historical", "superseded"}
 REFERENCE_LINK_RE = re.compile(r"(?m)^\s*\[[^\]]+\]:\s*(.+?)\s*$")
 CURRENT_FLAG_KEYS = {"current", "iscurrent", "latest", "islatest"}
+HISTORICAL_STATUSES = {"historical", "superseded"}
+RELEASE_IDENTITY_MARKERS = {
+    "candidate",
+    "commit",
+    "current",
+    "digest",
+    "hash",
+    "id",
+    "latest",
+    "name",
+    "ref",
+    "sha",
+    "sha256",
+    "tag",
+    "version",
+}
 CURRENT_IDENTITY_NAMESPACES = {
     "artifact",
     "deploy",
@@ -42,6 +58,21 @@ CURRENT_IDENTITY_NAMESPACES = {
     "rollback",
     "sbom",
     "source",
+}
+IDENTITY_DETAIL_TOKENS = {
+    "at",
+    "commit",
+    "digest",
+    "hash",
+    "id",
+    "name",
+    "ref",
+    "sha",
+    "sha256",
+    "tag",
+    "time",
+    "timestamp",
+    "version",
 }
 
 
@@ -196,6 +227,121 @@ def _compact_path(value: str) -> str:
     return re.sub(r"[^a-z0-9]", "", value.casefold())
 
 
+def _release_identity_key(normalized: str, tokens: set[str]) -> bool:
+    release_tokens = {"release", "releases"} & tokens
+    if release_tokens:
+        if tokens == {"release"}:
+            return True
+        return bool(RELEASE_IDENTITY_MARKERS & tokens)
+
+    compact_markers = tuple(sorted(RELEASE_IDENTITY_MARKERS, key=len, reverse=True))
+    if normalized == "release":
+        return True
+    if normalized.startswith(("currentrelease", "latestrelease")):
+        return True
+    return any(
+        normalized.startswith(prefix + marker)
+        for prefix in ("release", "releases")
+        for marker in compact_markers
+    )
+
+
+def _current_support_identity_key(normalized: str, tokens: set[str]) -> bool:
+    if CURRENT_IDENTITY_NAMESPACES & tokens:
+        return True
+    return any(
+        normalized.startswith(namespace + detail)
+        for namespace in CURRENT_IDENTITY_NAMESPACES
+        for detail in IDENTITY_DETAIL_TOKENS
+    )
+
+
+def _node_statuses(node: dict[object, object]) -> set[str]:
+    return {
+        value.casefold()
+        for key, value in node.items()
+        if _normalized_key(key) == "status" and isinstance(value, str)
+    }
+
+
+def _node_current_flag(node: dict[object, object]) -> bool:
+    return any(
+        _normalized_key(key) in CURRENT_FLAG_KEYS
+        and (
+            value is True
+            or (isinstance(value, str) and value.casefold() in {"true", "current", "latest"})
+        )
+        for key, value in node.items()
+    )
+
+
+def _scan_release_metadata(
+    value: object,
+    raw_path: str,
+    errors: list[str],
+    *,
+    inherited_current: bool = False,
+    inherited_historical: bool = False,
+) -> None:
+    if isinstance(value, list):
+        for child in value:
+            _scan_release_metadata(
+                child,
+                raw_path,
+                errors,
+                inherited_current=inherited_current,
+                inherited_historical=inherited_historical,
+            )
+        return
+    if not isinstance(value, dict):
+        return
+
+    statuses = _node_statuses(value)
+    local_current = bool({"current", "latest"} & statuses) or _node_current_flag(value)
+    local_historical = bool(HISTORICAL_STATUSES & statuses)
+    current = (inherited_current or local_current) and not local_historical
+    historical = (inherited_historical or local_historical) and not local_current
+
+    items = [
+        (_normalized_key(key), _identifier_tokens(key), child)
+        for key, child in value.items()
+    ]
+
+    release_identity_keys = {
+        normalized
+        for normalized, tokens, _ in items
+        if _release_identity_key(normalized, tokens)
+    }
+    if release_identity_keys and not historical:
+        errors.append(
+            f"{raw_path}: repository-managed release identity keys are prohibited "
+            f"({', '.join(sorted(release_identity_keys))}); "
+            "release identity must come from signed CI/deploy evidence"
+        )
+
+    if current:
+        current_identity_keys = {
+            normalized
+            for normalized, tokens, _ in items
+            if _current_support_identity_key(normalized, tokens)
+        }
+        if current_identity_keys:
+            errors.append(
+                f"{raw_path}: current/latest metadata cannot carry release-support identity namespaces "
+                f"({', '.join(sorted(current_identity_keys))}); "
+                "release identity must come from signed CI/deploy evidence"
+            )
+
+    for _, _, child in items:
+        _scan_release_metadata(
+            child,
+            raw_path,
+            errors,
+            inherited_current=current,
+            inherited_historical=historical,
+        )
+
+
 def _release_pointer_errors(root: Path) -> list[str]:
     """Reject tracked JSON that could become a repository-owned release authority."""
     result = subprocess.run(
@@ -240,49 +386,7 @@ def _release_pointer_errors(root: Path) -> list[str]:
             )
             continue
 
-        all_items: list[tuple[str, set[str], object]] = []
-        for node in _iter_dicts(payload):
-            all_items.extend(
-                (_normalized_key(key), _identifier_tokens(key), value)
-                for key, value in node.items()
-            )
-
-        normalized_keys = {key for key, _, _ in all_items}
-        release_keys = {key for key in normalized_keys if "release" in key}
-        if release_keys:
-            errors.append(
-                f"{raw_path}: tracked JSON keys containing 'release' are reserved "
-                f"({', '.join(sorted(release_keys))}); "
-                "release identity must come from signed CI/deploy evidence"
-            )
-            continue
-
-        statuses = {
-            value.casefold()
-            for key, _, value in all_items
-            if key == "status" and isinstance(value, str)
-        }
-        current_flag = any(
-            key in CURRENT_FLAG_KEYS
-            and (value is True or (isinstance(value, str) and value.casefold() in {"true", "current", "latest"}))
-            for key, _, value in all_items
-        )
-        current_semantics = "current" in statuses or "latest" in statuses or current_flag
-        if current_semantics:
-            current_identity_keys = {
-                key
-                for key, tokens, _ in all_items
-                if any(
-                    key.startswith(namespace) or namespace in tokens
-                    for namespace in CURRENT_IDENTITY_NAMESPACES
-                )
-            }
-            if current_identity_keys:
-                errors.append(
-                    f"{raw_path}: current/latest metadata cannot carry release-support identity namespaces "
-                    f"({', '.join(sorted(current_identity_keys))}); "
-                    "release identity must come from signed CI/deploy evidence"
-                )
+        _scan_release_metadata(payload, raw_path, errors)
     return errors
 
 
