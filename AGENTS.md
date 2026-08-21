@@ -3,9 +3,25 @@
 ## Fast lane pentru schimbări mici
 
 - Pentru schimbări UI mici, corecții locale, configurări/documentație și date punctuale, favorizează finalizarea în 5–10 minute, fără a sacrifica corectitudinea.
+- `pr-fast` are ținta normală **sub 10 minute**. Timeout-ul de 15 minute este
+  doar un guardrail, nu o țintă și nu se mărește pentru a acomoda mai multă
+  muncă.
+- Selectorul backend folosește bugetul evidence-based
+  `MAX_PR_FAST_SELECTED_TEST_FILES = 120`; fan-out-ul peste 120 devine
+  `ESCALATION_REQUIRED` către PR-DEEP și nu execută suita supradimensionată în
+  `pr-fast`.
 - Flux implicit: inspectează strict zona afectată, implementează, rulează un singur set de verificări țintite, fă un singur deploy când este în scope, apoi verifică exact comportamentul cerut și health-ul.
 - Nu crea framework-uri, scripturi generice, migrații, medii temporare, documentație nouă, screenshot-uri sau suite complete de teste decât dacă sunt strict necesare rezultatului.
 - Nu repeta lint, typecheck, build sau teste pe același conținut neschimbat; reutilizează dovezile încă valide și păstrează output-ul compact.
+- Nu face rerun-uri oarbe ale failure-urilor sau timeout-urilor neschimbate:
+  diagnostichează cauza înainte de a relua și reutilizează dovezile încă valide
+  pentru același SHA exact.
+- `FULL` se execută numai când politica trackerului justifică un checkpoint,
+  un release/promotion, un control-plane high-risk, o incertitudine nerezolvată
+  sau o cerere explicită; nu este ritual pentru fiecare PR/merge.
+- Eficiența este o cerință de corectitudine: o poartă care transformă
+  `pr-fast` într-un mini-FULL este defectă chiar dacă verificarea individuală
+  este validă.
 - Nu instala instrumente sau browsere pentru o validare minoră dacă există deja o cale directă de verificare.
 - Extinde investigația numai când ruta simplă este blocată, riscul este ridicat sau verificarea țintită eșuează; explică motivul într-o singură frază.
 - Porțile obligatorii specifice proiectului rămân valabile când schimbarea le activează direct; „proportionate checks” nu înseamnă automat toate verificările disponibile.
@@ -14,8 +30,13 @@
 
 - Run checks locally first; trusted CI uses the isolated repo-scoped Dell build
   runner, never the production deploy runner.
-- Markdown and `docs/**` changes must not trigger CI. Push one verified
-  candidate and never rerun historical failures.
+- Markdown and `docs/**` changes must not trigger the heavy PR verification
+  workflows (`ci`, high-risk governance, or PR-DEEP policy) under the current
+  no-native-required-checks model. Runtime/code changes retain their existing
+  verification paths.
+- Push one verified candidate and never rerun historical failures. Reuse still-
+  valid exact-SHA evidence; do not repeat checks on unchanged content merely for
+  ceremony.
 - GitHub-hosted execution follows the global USD 1 per-task ceiling.
 
 Retail is the source of truth for retail sales, targets, campaigns, salaries, visits reporting, and the active Grile UI.

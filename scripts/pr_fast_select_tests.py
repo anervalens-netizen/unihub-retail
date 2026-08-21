@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""PR-B3a deterministic backend PR test selector.
+"""PR-B3b deterministic backend PR test selector.
 
 This script is the PRODUCTION slice of the B3/E2 selector proof. It decides
 which backend pytest test nodes must run for a pull request, given:
@@ -61,10 +61,11 @@ Residual risks documented here (do NOT claim they are solved):
         in the composition root would explode the reverse closure; this is
         documented as a coding-rule boundary, not enforced by this script.
 
-This is the B3a slice only. PR-B3b will wire `pr-fast` and the future
-`PR-DEEP` workflow in a separate, additive change. PR-B3b is responsible
-for checkout-ing the exact intended HEAD before invoking this script; the
-selector itself does NOT take a working-tree argument.
+This selector is wired by PR-B3b into `pr-fast` and the separate
+`PR-DEEP` workflow. The caller checks out the exact intended HEAD before
+invoking it; the selector itself operates on the supplied repository root.
+An oversized otherwise-valid selection is evidence that the caller must
+route to PR-DEEP without executing that selected suite in pr-fast.
 """
 from __future__ import annotations
 
@@ -94,6 +95,13 @@ STATE_ERROR = "ERROR"
 EXIT_OK = 0
 EXIT_ESCALATION = 2
 EXIT_ERROR = 3
+
+# Evidence-based initial budget from tracker #159: selection_count=111
+# completed in ~7m35s, while selection_count=133 exceeded the 15-minute
+# pr-fast guardrail. Oversized fan-out belongs in PR-DEEP, not in pr-fast.
+MAX_PR_FAST_SELECTED_TEST_FILES = 120
+SELECTION_BUDGET_CATEGORY = "selection_budget"
+SELECTION_BUDGET_PATH = "<pr-fast-selection-budget>"
 
 
 # ---------------------------------------------------------------------------
@@ -242,6 +250,29 @@ def exit_code_for(state: str) -> int:
         STATE_ESCALATION: EXIT_ESCALATION,
         STATE_ERROR: EXIT_ERROR,
     }.get(state, EXIT_ERROR)
+
+
+def _apply_selection_budget(result: SelectionResult) -> bool:
+    """Escalate an oversized otherwise-valid selected suite.
+
+    The selected files remain in the evidence so the emitted count is
+    auditable, but the caller must not execute them in pr-fast.
+    """
+    if result.selection_count <= MAX_PR_FAST_SELECTED_TEST_FILES:
+        return False
+    result.escalation_reasons.append(EscalationReason(
+        category=SELECTION_BUDGET_CATEGORY,
+        path=SELECTION_BUDGET_PATH,
+        detail=(
+            f"selection_count={result.selection_count} exceeds "
+            f"max={MAX_PR_FAST_SELECTED_TEST_FILES}"
+        ),
+    ))
+    result.notes.append(
+        "selected backend test file budget exceeded; caller must run PR-DEEP"
+    )
+    result.state = STATE_ESCALATION
+    return True
 
 
 # ---------------------------------------------------------------------------
@@ -987,7 +1018,7 @@ def select_tests(base: str, root: Path) -> SelectionResult:
         for r in static_escalations:
             result.escalation_reasons.append(r)
         result.notes.append(
-            "trust surface changed (added/modified/deleted); caller must run FULL"
+            "trust surface changed (added/modified/deleted); caller must run PR-DEEP"
         )
         result.state = STATE_ESCALATION
         return result
@@ -1101,7 +1132,7 @@ def select_tests(base: str, root: Path) -> SelectionResult:
                 detail="dynamic import detected; reverse closure is unsafe",
             ))
         result.notes.append(
-            "dynamic import in changed set; caller must run FULL"
+            "dynamic import in changed set; caller must run PR-DEEP"
         )
         result.state = STATE_ESCALATION
         return result
@@ -1139,6 +1170,8 @@ def select_tests(base: str, root: Path) -> SelectionResult:
             ))
         result.selected_tests = selected
         result.selection_count = len(selected)
+        if _apply_selection_budget(result):
+            return result
         result.state = STATE_SELECTED
         result.notes.append("test-only diff; selecting every changed test")
         return result
@@ -1223,6 +1256,9 @@ def select_tests(base: str, root: Path) -> SelectionResult:
     result.selected_tests = selected_tests
     result.selection_count = len(selected_tests)
 
+    if _apply_selection_budget(result):
+        return result
+
     if not selected_tests:
         result.escalation_reasons.append(EscalationReason(
             category="empty_selection",
@@ -1230,7 +1266,7 @@ def select_tests(base: str, root: Path) -> SelectionResult:
             detail="no test file imports any impacted production module",
         ))
         result.notes.append(
-            "reverse closure produced an empty test set; caller must run FULL"
+            "reverse closure produced an empty test set; caller must run PR-DEEP"
         )
         result.state = STATE_ESCALATION
         return result
@@ -1277,7 +1313,7 @@ def _emit(payload: dict, exit_code: int) -> int:
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(
-        description="PR-B3a deterministic backend PR test selector."
+        description="PR-B3b deterministic backend PR test selector."
     )
     parser.add_argument("--base", required=True,
                         help="Base commit ref (SHA / branch / tag); "

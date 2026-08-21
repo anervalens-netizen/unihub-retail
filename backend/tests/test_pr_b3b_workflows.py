@@ -34,6 +34,7 @@ WORKTREE = Path(__file__).resolve().parents[2]
 CI_YML = WORKTREE / ".github" / "workflows" / "ci.yml"
 PR_DEEP_YML = WORKTREE / ".github" / "workflows" / "pr-deep.yml"
 PR_DEEP_POLICY_YML = WORKTREE / ".github" / "workflows" / "pr-deep-policy.yml"
+HIGH_RISK_YML = WORKTREE / ".github" / "workflows" / "high-risk-governance.yml"
 HIGH_RISK_JSON = WORKTREE / ".github" / "governance" / "high-risk-paths.json"
 SELECTOR = WORKTREE / "scripts" / "pr_fast_select_tests.py"
 
@@ -73,6 +74,23 @@ def test_high_risk_paths_json_parses():
     data = json.loads(HIGH_RISK_JSON.read_text(encoding="utf-8"))
     assert "categories" in data
     assert "deploy-release-ci" in data["categories"]
+
+
+def _workflow_on(workflow_path):
+    data = _yaml().safe_load(workflow_path.read_text(encoding="utf-8"))
+    return data.get(True) or data.get("on") or {}
+
+
+def test_pr_verification_workflows_skip_markdown_and_docs_only_changes():
+    """Docs-only PRs must not launch redundant heavy PR verification."""
+    for workflow_path, trigger_name in (
+        (CI_YML, "pull_request"),
+        (HIGH_RISK_YML, "pull_request_target"),
+        (PR_DEEP_POLICY_YML, "pull_request_target"),
+    ):
+        trigger = _workflow_on(workflow_path)[trigger_name]
+        ignored = set(trigger.get("paths-ignore", []))
+        assert {"**/*.md", "docs/**"} <= ignored, workflow_path
 
 
 # ---------------------------------------------------------------------------
@@ -338,12 +356,11 @@ def test_pr_fast_selective_pytest_omits_global_coverage_floor():
         )
 
 
-def test_pr_fast_timeout_at_most_15_minutes():
-    """pr-fast target is <15 minutes elapsed; the GH Actions budget
-    ceiling remains at 15 minutes (preserved from before PR-B3b)."""
+def test_pr_fast_timeout_is_15_minute_guardrail():
+    """The hard timeout stays 15 minutes; it is not the fast-lane target."""
     yaml = _yaml()
     data = yaml.safe_load(CI_YML.read_text(encoding="utf-8"))
-    assert data["jobs"]["pr-fast"]["timeout-minutes"] <= 15
+    assert data["jobs"]["pr-fast"]["timeout-minutes"] == 15
 
 
 def test_pr_fast_uploads_sha_bound_evidence_artifact():
