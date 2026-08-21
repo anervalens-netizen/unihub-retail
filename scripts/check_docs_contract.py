@@ -29,17 +29,19 @@ REQUIRED_FIELDS = {
 ACTIVE_STATUSES = {"active"}
 ALL_STATUSES = ACTIVE_STATUSES | {"historical", "superseded"}
 LINK_RE = re.compile(r"\[[^\]]+\]\(([^)]+)\)")
-RELEASE_POINTER_MARKER_KEYS = {
-    "artifact",
-    "artifactdigest",
-    "evidencedocument",
+RELEASE_IDENTITY_MARKER_KEYS = {
     "release",
     "releaseid",
     "releasename",
     "releasetag",
+    "semanticrelease",
+}
+RELEASE_SUPPORT_MARKER_KEYS = {
+    "artifact",
+    "artifactdigest",
+    "evidencedocument",
     "rollbackidentity",
     "sbomdigest",
-    "semanticrelease",
     "sourcesha",
 }
 CURRENT_RELEASE_MARKER_KEYS = {
@@ -107,10 +109,13 @@ def _release_pointer_errors(root: Path) -> list[str]:
         for node in _iter_dicts(payload):
             normalized_items = {_normalized_key(key): value for key, value in node.items()}
             normalized_keys = set(normalized_items)
-            marker_keys = normalized_keys & RELEASE_POINTER_MARKER_KEYS
+            identity_keys = normalized_keys & RELEASE_IDENTITY_MARKER_KEYS
+            support_keys = normalized_keys & RELEASE_SUPPORT_MARKER_KEYS
             current_release_keys = normalized_keys & CURRENT_RELEASE_MARKER_KEYS
             status = node.get("status")
-            status_current = isinstance(status, str) and status.casefold() == "current"
+            normalized_status = status.casefold() if isinstance(status, str) else ""
+            historical_status = normalized_status in {"historical", "superseded"}
+            status_current = normalized_status == "current"
             current_flag = any(
                 key in CURRENT_FLAG_KEYS
                 and (value is True or (isinstance(value, str) and value.casefold() in {"true", "current", "latest"}))
@@ -124,11 +129,16 @@ def _release_pointer_errors(root: Path) -> list[str]:
                 )
                 for value in node.values()
             )
-            current_semantics = bool(current_release_keys) or status_current or current_flag or release_named_current
-            release_semantics = bool(marker_keys) or bool(current_release_keys) or points_to_release_docs
-            if current_semantics and release_semantics:
-                reasons = sorted(marker_keys | current_release_keys)
-                reason = ", ".join(reasons) if reasons else "release-oriented path/value"
+            current_semantics = bool(current_release_keys) or status_current or current_flag
+            prohibited = (
+                release_named_current
+                or bool(current_release_keys)
+                or (bool(identity_keys) and not historical_status)
+                or (current_semantics and (bool(support_keys) or points_to_release_docs))
+            )
+            if prohibited:
+                reasons = sorted(identity_keys | support_keys | current_release_keys)
+                reason = ", ".join(reasons) if reasons else "current/latest release path"
                 errors.append(
                     f"{raw_path}: repository-managed current-release pointer metadata is prohibited "
                     f"({reason}); release identity must come from signed CI/deploy evidence"
@@ -227,10 +237,23 @@ def main() -> int:
         if entry.get("status") not in {"historical", "superseded"}:
             errors.append(f"{entry.get('path')}: release documentation must be historical/superseded, not current authority")
 
-    for path in (ROOT / "README.md", ROOT / "APP_ARCHITECTURE.md", ROOT / "docs/README.md"):
+    canonical_docs = (ROOT / "README.md", ROOT / "APP_ARCHITECTURE.md", ROOT / "docs/README.md")
+    allowed_canonical_json_links = {(ROOT / "docs/catalog.json").resolve()}
+    for path in canonical_docs:
         text = path.read_text()
         if "releases/current.json" in text:
             errors.append(f"{path.relative_to(ROOT)} references retired release pointer")
+        for raw_target in LINK_RE.findall(text):
+            target = raw_target.strip().split(maxsplit=1)[0].strip("<>")
+            if not target or target.startswith(("#", "http://", "https://", "mailto:")):
+                continue
+            target = unquote(target.split("#", 1)[0].split("?", 1)[0])
+            resolved = (path.parent / target).resolve()
+            if resolved.suffix.casefold() == ".json" and resolved not in allowed_canonical_json_links:
+                errors.append(
+                    f"{path.relative_to(ROOT)} links repository JSON {target}; "
+                    "canonical docs may not delegate current release authority to repository metadata"
+                )
 
     required_index_links = {
         "../APP_ARCHITECTURE.md",
