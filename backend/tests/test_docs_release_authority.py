@@ -41,6 +41,20 @@ def test_release_pointer_guard_allows_unrelated_current_metadata(tmp_path: Path)
     assert release_pointer_errors(repo) == []
 
 
+def test_release_pointer_guard_allows_false_like_current_flags(tmp_path: Path) -> None:
+    repo = _repo(
+        tmp_path,
+        {
+            "business/disabled.json": {
+                "current": False,
+                "latest": "false",
+                "artifact_sha256": "domain-artifact-not-release-authority",
+            }
+        },
+    )
+    assert release_pointer_errors(repo) == []
+
+
 def test_release_pointer_guard_allows_existing_non_identity_release_labels(tmp_path: Path) -> None:
     repo = _repo(
         tmp_path,
@@ -150,6 +164,25 @@ def test_release_pointer_guard_rejects_current_identity_namespaces(tmp_path: Pat
     assert len(errors) == 5
 
 
+def test_release_pointer_guard_treats_value_bearing_current_keys_as_current(tmp_path: Path) -> None:
+    repo = _repo(
+        tmp_path,
+        {
+            "config/string.json": {
+                "status": "historical",
+                "current": "v9",
+                "artifact_sha256": "abc",
+            },
+            "config/object.json": {
+                "current": {"artifact_sha256": "def"},
+            },
+        },
+    )
+    errors = release_pointer_errors(repo)
+    assert any("conflicting current/latest" in error for error in errors)
+    assert sum("artifactsha256" in error for error in errors) >= 2
+
+
 def test_release_pointer_guard_rejects_conflicting_historical_and_current_state(tmp_path: Path) -> None:
     repo = _repo(
         tmp_path,
@@ -199,11 +232,28 @@ def test_markdown_link_targets_include_inline_reference_and_html() -> None:
     ]
 
 
-def test_markdown_link_targets_ignore_inline_and_fenced_code() -> None:
+def test_markdown_link_targets_ignore_inline_fenced_indented_and_html_code() -> None:
     text = (
         "`[inline](config/inline.json)`\n"
         "```md\n[pointer](config/fenced.json)\n<a href=\"config/html.json\">x</a>\n```\n"
         "~~~\n[ref]: config/reference.json\n~~~\n"
+        "\n    [indented](config/indented.json)\n"
+        "\n<pre>[pre](config/pre.json)</pre>\n"
+        "<code><a href=\"config/code.json\">code</a></code>\n"
+        "[real](docs/catalog.json)\n"
+    )
+    assert markdown_link_targets(text) == ["docs/catalog.json"]
+
+
+def test_markdown_link_targets_do_not_close_code_span_on_unequal_backtick_run() -> None:
+    text = "``[real](config/current.json)```\n"
+    assert markdown_link_targets(text) == ["config/current.json"]
+
+
+def test_markdown_link_targets_ignore_blockquoted_and_list_fences() -> None:
+    text = (
+        "> ```md\n> [quoted](config/quoted.json)\n> ```\n"
+        "- ```md\n  [listed](config/listed.json)\n  ```\n"
         "[real](docs/catalog.json)\n"
     )
     assert markdown_link_targets(text) == ["docs/catalog.json"]
