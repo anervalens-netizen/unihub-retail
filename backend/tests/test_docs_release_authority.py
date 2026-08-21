@@ -91,11 +91,18 @@ def test_release_pointer_guard_scans_json_extension_case_insensitively(tmp_path:
     assert errors[0].startswith("config/authority.JSON:")
 
 
-def test_release_pointer_guard_rejects_nested_current_support_metadata(tmp_path: Path) -> None:
-    repo = _repo(tmp_path, {"nested/metadata.json": {"status": "current", "metadata": {"source_sha": "abc"}}})
+def test_release_pointer_guard_rejects_current_identity_namespaces(tmp_path: Path) -> None:
+    repo = _repo(
+        tmp_path,
+        {
+            "nested/source.json": {"status": "current", "metadata": {"source_sha": "abc"}},
+            "nested/artifact.json": {"status": "current", "artifact_sha256": "def"},
+            "nested/sbom.json": {"status": "latest", "sbom_hash": "ghi"},
+            "nested/manifest.json": {"current": True, "manifest_digest": "jkl"},
+        },
+    )
     errors = release_pointer_errors(repo)
-    assert len(errors) == 1
-    assert "sourcesha" in errors[0]
+    assert len(errors) == 4
 
 
 def test_release_pointer_guard_allows_historical_generic_metadata(tmp_path: Path) -> None:
