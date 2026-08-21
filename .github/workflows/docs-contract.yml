@@ -4,8 +4,8 @@ on:
   pull_request:
     branches: [main]
 
-# Lightweight, read-only PR gate. This intentionally runs for every PR so
-# release-authority protection cannot be bypassed through path/extension tricks.
+# Lightweight, read-only PR gate. It runs for every PR so the release-authority
+# invariant cannot be bypassed through docs-only or metadata-only changes.
 permissions:
   contents: read
 
@@ -15,7 +15,7 @@ concurrency:
 
 jobs:
   check:
-    name: Validate docs and release authority
+    name: Validate release authority and docs
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -25,7 +25,10 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha }}
           persist-credentials: false
 
-      - name: Run docs/release authority contract
+      - name: Validate release authority
+        run: python3 scripts/check_release_authority.py
+
+      - name: Validate documentation contract
         run: |
           set -euo pipefail
           python3 scripts/check_docs_contract.py \

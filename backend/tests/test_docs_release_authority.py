@@ -8,13 +8,17 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[2]
-SPEC = importlib.util.spec_from_file_location("docs_contract", ROOT / "scripts/check_docs_contract.py")
+SPEC = importlib.util.spec_from_file_location(
+    "release_authority",
+    ROOT / "scripts/check_release_authority.py",
+)
 assert SPEC is not None and SPEC.loader is not None
 MODULE = importlib.util.module_from_spec(SPEC)
 sys.modules[SPEC.name] = MODULE
 SPEC.loader.exec_module(MODULE)
-release_pointer_errors = MODULE._release_pointer_errors
-markdown_link_targets = MODULE._markdown_link_targets
+
+repository_metadata_errors = MODULE.repository_metadata_errors
+canonical_authority_errors = MODULE.canonical_authority_errors
 
 
 def _repo(tmp_path: Path, files: dict[str, object]) -> Path:
@@ -22,12 +26,15 @@ def _repo(tmp_path: Path, files: dict[str, object]) -> Path:
     for relative, payload in files.items():
         path = tmp_path / relative
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(payload), encoding="utf-8")
+        path.write_text(
+            payload if isinstance(payload, str) else json.dumps(payload),
+            encoding="utf-8",
+        )
     subprocess.run(["git", "add", "."], cwd=tmp_path, check=True)
     return tmp_path
 
 
-def test_release_pointer_guard_allows_unrelated_current_metadata(tmp_path: Path) -> None:
+def test_allows_unrelated_current_metadata(tmp_path: Path) -> None:
     repo = _repo(
         tmp_path,
         {
@@ -38,10 +45,10 @@ def test_release_pointer_guard_allows_unrelated_current_metadata(tmp_path: Path)
             }
         },
     )
-    assert release_pointer_errors(repo) == []
+    assert repository_metadata_errors(repo) == []
 
 
-def test_release_pointer_guard_allows_false_like_current_flags(tmp_path: Path) -> None:
+def test_allows_false_like_current_flags(tmp_path: Path) -> None:
     repo = _repo(
         tmp_path,
         {
@@ -52,218 +59,164 @@ def test_release_pointer_guard_allows_false_like_current_flags(tmp_path: Path) -
             }
         },
     )
-    assert release_pointer_errors(repo) == []
+    assert repository_metadata_errors(repo) == []
 
 
-def test_release_pointer_guard_allows_existing_non_identity_release_labels(tmp_path: Path) -> None:
+def test_allows_existing_non_identity_release_labels(tmp_path: Path) -> None:
     repo = _repo(
         tmp_path,
         {
             ".github/governance/high-risk-paths.json": {"deployReleaseCi": True},
-            "scripts/frontend-critical-coverage.json": {"oldRelease": 1, "newRelease": 2},
+            "scripts/frontend-critical-coverage.json": {
+                "oldRelease": 1,
+                "newRelease": 2,
+            },
             "scripts/python-complexity-contract-v2.json": {"releaseBGates": []},
             "package-lock.json": {"nodeModulesNodeReleases": {}},
-            "history/notes.json": {"release_notes": "text"},
+            "history/notes.json": {"release_notes": "historical prose"},
         },
     )
-    assert release_pointer_errors(repo) == []
+    assert repository_metadata_errors(repo) == []
 
 
-def test_release_pointer_guard_rejects_release_docs_pointer(tmp_path: Path) -> None:
-    repo = _repo(tmp_path, {"docs/releases/latest.json": {"version": "v9"}})
-    assert len(release_pointer_errors(repo)) == 1
-
-
-def test_release_pointer_guard_rejects_plural_nested_release_paths(tmp_path: Path) -> None:
+def test_rejects_non_markdown_release_docs_metadata(tmp_path: Path) -> None:
     repo = _repo(
         tmp_path,
         {
-            "docs/releases/current/metadata.json": {"version": "v9"},
+            "docs/releases/latest.json": {"version": "v9"},
+            "docs/releases/nested/current.yaml": "version: v9\n",
+        },
+    )
+    errors = repository_metadata_errors(repo)
+    assert len(errors) == 2
+    assert all("Markdown-only historical evidence" in error for error in errors)
+
+
+def test_rejects_plural_nested_current_release_paths(tmp_path: Path) -> None:
+    repo = _repo(
+        tmp_path,
+        {
             "config/releases/latest.json": {"version": "v9"},
+            "config/releases/current/metadata.json": {"version": "v9"},
         },
     )
-    assert len(release_pointer_errors(repo)) == 2
+    assert len(repository_metadata_errors(repo)) == 2
 
 
-def test_release_pointer_guard_rejects_camel_and_acronym_current_release_paths(tmp_path: Path) -> None:
+def test_rejects_camel_and_acronym_current_release_paths(tmp_path: Path) -> None:
     repo = _repo(
         tmp_path,
         {
-            "docs/currentRelease.json": {"version": "v9"},
+            "config/currentRelease.json": {"version": "v9"},
             "config/latestRelease.json": {"version": "v9"},
             "config/currentQARelease.json": {"version": "v9"},
         },
     )
-    assert len(release_pointer_errors(repo)) == 3
+    assert len(repository_metadata_errors(repo)) == 3
 
 
-def test_release_pointer_guard_rejects_qualified_current_release_paths(tmp_path: Path) -> None:
-    repo = _repo(tmp_path, {"config/current-production-release.json": {"version": "v9"}})
-    assert len(release_pointer_errors(repo)) == 1
+def test_rejects_qualified_current_release_path(tmp_path: Path) -> None:
+    repo = _repo(
+        tmp_path,
+        {"config/current-production-release.json": {"version": "v9"}},
+    )
+    assert len(repository_metadata_errors(repo)) == 1
 
 
-def test_release_pointer_guard_rejects_current_release_filename_with_generic_payload(tmp_path: Path) -> None:
-    repo = _repo(tmp_path, {"docs/current-release.json": {"version": "v9.9.9"}})
-    assert len(release_pointer_errors(repo)) == 1
-
-
-def test_release_pointer_guard_rejects_release_identity_keys(tmp_path: Path) -> None:
+def test_rejects_release_identity_keys_without_status_dependency(tmp_path: Path) -> None:
     repo = _repo(
         tmp_path,
         {
-            "config/version.json": {"release_version": "v9"},
             "config/name.json": {"release_name": "v9"},
+            "config/version.json": {"release_version": "v9"},
+            "config/status.json": {"release_status": "current"},
             "config/current.json": {"current_release": "v9"},
-            "config/object.json": {"release": {"version": "v9"}},
+            "config/metadata.json": {
+                "release_metadata": {"version": "v9", "status": "current"}
+            },
+            "config/container.json": {"release": {"version": "v9"}},
         },
     )
-    assert len(release_pointer_errors(repo)) == 4
+    assert len(repository_metadata_errors(repo)) == 6
 
 
-def test_release_pointer_guard_scans_json_extension_case_insensitively(tmp_path: Path) -> None:
-    repo = _repo(tmp_path, {"config/authority.JSON": {"release_name": "v99"}})
-    errors = release_pointer_errors(repo)
-    assert len(errors) == 1
-    assert errors[0].startswith("config/authority.JSON:")
-
-
-def test_release_pointer_guard_allows_historical_release_identity_per_object(tmp_path: Path) -> None:
-    repo = _repo(tmp_path, {"history/version.json": {"release_name": "v8.0.0", "status": "historical"}})
-    assert release_pointer_errors(repo) == []
-
-
-def test_release_pointer_guard_does_not_launder_unmarked_sibling_with_historical_status(tmp_path: Path) -> None:
+def test_rejects_release_identity_even_when_marked_historical(tmp_path: Path) -> None:
     repo = _repo(
         tmp_path,
         {
-            "history/releases.json": {
-                "releases": [
-                    {"release_name": "v8", "status": "historical"},
-                    {"release_name": "v9"},
-                ]
+            "history/version.json": {
+                "release_name": "v8.0.0",
+                "status": "historical",
             }
         },
     )
-    errors = release_pointer_errors(repo)
+    errors = repository_metadata_errors(repo)
     assert len(errors) == 1
     assert "releasename" in errors[0]
 
 
-def test_release_pointer_guard_rejects_current_identity_namespaces(tmp_path: Path) -> None:
+def test_scans_json_extensions_case_insensitively(tmp_path: Path) -> None:
     repo = _repo(
         tmp_path,
-        {
-            "nested/source.json": {"status": "current", "metadata": {"source_sha": "abc"}},
-            "nested/artifact.json": {"status": "current", "artifact_sha256": "def"},
-            "nested/sbom.json": {"status": "latest", "sbom_hash": "ghi"},
-            "nested/manifest.json": {"current": True, "manifest_digest": "jkl"},
-            "nested/prefixed.json": {"status": "current", "build_artifact_id": "mno"},
-        },
+        {"config/authority.JSON": {"release_name": "v99"}},
     )
-    errors = release_pointer_errors(repo)
-    assert len(errors) == 5
+    errors = repository_metadata_errors(repo)
+    assert len(errors) == 1
+    assert errors[0].startswith("config/authority.JSON:")
 
 
-def test_release_pointer_guard_treats_value_bearing_current_keys_as_current(tmp_path: Path) -> None:
+def test_rejects_current_support_identity_across_nested_objects(tmp_path: Path) -> None:
     repo = _repo(
         tmp_path,
         {
-            "config/string.json": {
-                "status": "historical",
-                "current": "v9",
-                "artifact_sha256": "abc",
-            },
-            "config/object.json": {
-                "current": {"artifact_sha256": "def"},
-            },
-        },
-    )
-    errors = release_pointer_errors(repo)
-    assert any("conflicting current/latest" in error for error in errors)
-    assert sum("artifactsha256" in error for error in errors) >= 2
-
-
-def test_release_pointer_guard_rejects_conflicting_historical_and_current_state(tmp_path: Path) -> None:
-    repo = _repo(
-        tmp_path,
-        {
-            "config/conflict.json": {
-                "status": "historical",
-                "current": True,
-                "artifact_sha256": "abc",
-            },
-            "config/conflict-latest.json": {
-                "status": "superseded",
-                "latest": True,
-                "sbom_hash": "def",
-            },
-        },
-    )
-    errors = release_pointer_errors(repo)
-    assert len(errors) >= 2
-    assert sum("conflicting current/latest" in error for error in errors) == 2
-
-
-def test_release_pointer_guard_current_parent_cannot_be_laundered_by_historical_child(tmp_path: Path) -> None:
-    repo = _repo(
-        tmp_path,
-        {
-            "config/current-tree.json": {
+            "nested/source.json": {
                 "status": "current",
-                "metadata": {"status": "historical", "artifact_sha256": "abc"},
+                "metadata": {"source_sha": "abc"},
+            },
+            "nested/artifact.json": {
+                "current": "v9",
+                "metadata": {"artifact_sha256": "def"},
+            },
+            "nested/sbom.json": {
+                "latest": {"id": "candidate"},
+                "metadata": {"sbom_hash": "ghi"},
+            },
+        },
+    )
+    errors = repository_metadata_errors(repo)
+    assert len(errors) == 3
+
+
+def test_support_identity_matching_respects_key_boundaries(tmp_path: Path) -> None:
+    repo = _repo(
+        tmp_path,
+        {
+            "business/current.json": {
+                "status": "current",
+                "resource_id": "inventory-feed",
+                "sourcecode_version": "v1",
             }
         },
     )
-    errors = release_pointer_errors(repo)
-    assert any("artifactsha256" in error for error in errors)
+    assert repository_metadata_errors(repo) == []
 
 
-def test_markdown_link_targets_include_inline_reference_and_html() -> None:
-    text = (
-        "[inline](docs/catalog.json)\n"
-        "[release][release-ref]\n"
-        "[release-ref]: config/current.json\n"
-        '<a href="config/pointer.json">pointer</a>\n'
+def test_canonical_docs_require_manifest_authority_marker(tmp_path: Path) -> None:
+    for relative in MODULE.CANONICAL_DOCS:
+        path = tmp_path / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("RELEASE_MANIFEST.json is authoritative.\n")
+    assert canonical_authority_errors(tmp_path) == []
+
+
+def test_canonical_docs_reject_retired_pointer(tmp_path: Path) -> None:
+    for relative in MODULE.CANONICAL_DOCS:
+        path = tmp_path / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("RELEASE_MANIFEST.json is authoritative.\n")
+    (tmp_path / "README.md").write_text(
+        "RELEASE_MANIFEST.json is authoritative; see releases/current.json.\n"
     )
-    assert markdown_link_targets(text) == [
-        "docs/catalog.json",
-        "config/current.json",
-        "config/pointer.json",
-    ]
-
-
-def test_markdown_link_targets_ignore_inline_fenced_indented_and_html_code() -> None:
-    text = (
-        "`[inline](config/inline.json)`\n"
-        "```md\n[pointer](config/fenced.json)\n<a href=\"config/html.json\">x</a>\n```\n"
-        "~~~\n[ref]: config/reference.json\n~~~\n"
-        "\n    [indented](config/indented.json)\n"
-        "\n<pre>[pre](config/pre.json)</pre>\n"
-        "<code><a href=\"config/code.json\">code</a></code>\n"
-        "[real](docs/catalog.json)\n"
-    )
-    assert markdown_link_targets(text) == ["docs/catalog.json"]
-
-
-def test_markdown_link_targets_do_not_close_code_span_on_unequal_backtick_run() -> None:
-    text = "``[real](config/current.json)```\n"
-    assert markdown_link_targets(text) == ["config/current.json"]
-
-
-def test_markdown_link_targets_ignore_blockquoted_and_list_fences() -> None:
-    text = (
-        "> ```md\n> [quoted](config/quoted.json)\n> ```\n"
-        "- ```md\n  [listed](config/listed.json)\n  ```\n"
-        "[real](docs/catalog.json)\n"
-    )
-    assert markdown_link_targets(text) == ["docs/catalog.json"]
-
-
-def test_markdown_link_targets_preserve_angle_bracket_spaces() -> None:
-    text = '[current]: <config/current release.json> "title"\n[inline](<config/current release.json>)\n'
-    assert markdown_link_targets(text) == ["config/current release.json", "config/current release.json"]
-
-
-def test_markdown_link_targets_preserve_parentheses_inside_angle_brackets() -> None:
-    text = "[settings](<config/settings (prod).json>)\n"
-    assert markdown_link_targets(text) == ["config/settings (prod).json"]
+    errors = canonical_authority_errors(tmp_path)
+    assert len(errors) == 1
+    assert "retired" in errors[0]
