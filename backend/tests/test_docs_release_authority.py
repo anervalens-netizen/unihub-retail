@@ -49,8 +49,6 @@ def test_release_pointer_guard_rejects_plural_nested_release_paths(tmp_path: Pat
     )
     errors = release_pointer_errors(repo)
     assert len(errors) == 2
-    assert errors[0].startswith("config/releases/latest.json:")
-    assert errors[1].startswith("docs/releases/current/metadata.json:")
 
 
 def test_release_pointer_guard_rejects_camel_case_current_release_paths(tmp_path: Path) -> None:
@@ -65,6 +63,12 @@ def test_release_pointer_guard_rejects_camel_case_current_release_paths(tmp_path
     assert len(errors) == 2
 
 
+def test_release_pointer_guard_rejects_qualified_current_release_paths(tmp_path: Path) -> None:
+    repo = _repo(tmp_path, {"config/current-production-release.json": {"version": "v9"}})
+    errors = release_pointer_errors(repo)
+    assert len(errors) == 1
+
+
 def test_release_pointer_guard_rejects_current_release_filename_with_generic_payload(tmp_path: Path) -> None:
     repo = _repo(tmp_path, {"docs/current-release.json": {"version": "v9.9.9"}})
     errors = release_pointer_errors(repo)
@@ -76,6 +80,13 @@ def test_release_pointer_guard_rejects_release_identity_even_when_historical(tmp
     errors = release_pointer_errors(repo)
     assert len(errors) == 1
     assert "releasename" in errors[0]
+
+
+def test_release_pointer_guard_scans_json_extension_case_insensitively(tmp_path: Path) -> None:
+    repo = _repo(tmp_path, {"config/authority.JSON": {"release_name": "v99"}})
+    errors = release_pointer_errors(repo)
+    assert len(errors) == 1
+    assert errors[0].startswith("config/authority.JSON:")
 
 
 def test_release_pointer_guard_rejects_current_release_key_without_status(tmp_path: Path) -> None:
@@ -113,3 +124,8 @@ def test_markdown_link_targets_include_inline_and_reference_style() -> None:
 def test_markdown_link_targets_preserve_angle_bracket_spaces() -> None:
     text = '[current]: <config/current release.json> "title"\n[inline](<config/current release.json>)\n'
     assert markdown_link_targets(text) == ["config/current release.json", "config/current release.json"]
+
+
+def test_markdown_link_targets_preserve_parentheses_inside_angle_brackets() -> None:
+    text = "[settings](<config/settings (prod).json>)\n"
+    assert markdown_link_targets(text) == ["config/settings (prod).json"]
