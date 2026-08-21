@@ -115,9 +115,17 @@ def main() -> int:
     for path in scanned:
         errors.extend(_check_links(path))
 
-    retired_release_pointer = ROOT / "docs/releases/current.json"
-    if retired_release_pointer.exists():
-        errors.append("docs/releases/current.json is retired; release identity must come from signed CI/deploy evidence")
+    release_docs_dir = ROOT / "docs/releases"
+    repository_release_metadata = sorted(
+        path.relative_to(ROOT)
+        for path in release_docs_dir.iterdir()
+        if path.is_file() and path.suffix.lower() != ".md"
+    )
+    for path in repository_release_metadata:
+        errors.append(
+            f"{path}: repository-managed release metadata/pointers are prohibited; "
+            "release identity must come from signed CI/deploy evidence"
+        )
 
     release_entries = [
         entry
