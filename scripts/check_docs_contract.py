@@ -42,6 +42,13 @@ RELEASE_POINTER_MARKER_KEYS = {
     "semanticrelease",
     "sourcesha",
 }
+CURRENT_RELEASE_MARKER_KEYS = {
+    "currentrelease",
+    "latestrelease",
+    "releasecurrent",
+    "releaselatest",
+}
+CURRENT_FLAG_KEYS = {"current", "iscurrent", "latest", "islatest"}
 
 
 def _sha256(path: Path) -> str:
@@ -98,11 +105,17 @@ def _release_pointer_errors(root: Path) -> list[str]:
         release_named_current = "release" in path_tokens and bool({"current", "latest"} & path_tokens)
 
         for node in _iter_dicts(payload):
-            status = node.get("status")
-            if not isinstance(status, str) or status.casefold() != "current":
-                continue
-            normalized_keys = {_normalized_key(key) for key in node}
+            normalized_items = {_normalized_key(key): value for key, value in node.items()}
+            normalized_keys = set(normalized_items)
             marker_keys = normalized_keys & RELEASE_POINTER_MARKER_KEYS
+            current_release_keys = normalized_keys & CURRENT_RELEASE_MARKER_KEYS
+            status = node.get("status")
+            status_current = isinstance(status, str) and status.casefold() == "current"
+            current_flag = any(
+                key in CURRENT_FLAG_KEYS
+                and (value is True or (isinstance(value, str) and value.casefold() in {"true", "current", "latest"}))
+                for key, value in normalized_items.items()
+            )
             points_to_release_docs = any(
                 isinstance(value, str)
                 and (
@@ -111,8 +124,11 @@ def _release_pointer_errors(root: Path) -> list[str]:
                 )
                 for value in node.values()
             )
-            if marker_keys or release_named_current or points_to_release_docs:
-                reason = ", ".join(sorted(marker_keys)) if marker_keys else "release-oriented path/value"
+            current_semantics = bool(current_release_keys) or status_current or current_flag or release_named_current
+            release_semantics = bool(marker_keys) or bool(current_release_keys) or points_to_release_docs
+            if current_semantics and release_semantics:
+                reasons = sorted(marker_keys | current_release_keys)
+                reason = ", ".join(reasons) if reasons else "release-oriented path/value"
                 errors.append(
                     f"{raw_path}: repository-managed current-release pointer metadata is prohibited "
                     f"({reason}); release identity must come from signed CI/deploy evidence"
