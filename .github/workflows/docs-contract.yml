@@ -1,0 +1,33 @@
+name: docs-contract
+
+on:
+  pull_request:
+    branches: [main]
+
+# Lightweight, read-only PR gate. This intentionally runs for every PR so
+# release-authority protection cannot be bypassed through path/extension tricks.
+permissions:
+  contents: read
+
+concurrency:
+  group: docs-contract-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Validate docs and release authority
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout exact PR head
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+
+      - name: Run docs/release authority contract
+        run: |
+          set -euo pipefail
+          python3 scripts/check_docs_contract.py \
+            --catalog docs/catalog.json \
+            --evidence /tmp/unihub-docs-contract-evidence.json
