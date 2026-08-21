@@ -29,6 +29,19 @@ REQUIRED_FIELDS = {
 ACTIVE_STATUSES = {"active"}
 ALL_STATUSES = ACTIVE_STATUSES | {"historical", "superseded"}
 LINK_RE = re.compile(r"\[[^\]]+\]\(([^)]+)\)")
+RELEASE_POINTER_MARKER_KEYS = {
+    "artifact",
+    "artifactdigest",
+    "evidencedocument",
+    "release",
+    "releaseid",
+    "releasename",
+    "releasetag",
+    "rollbackidentity",
+    "sbomdigest",
+    "semanticrelease",
+    "sourcesha",
+}
 
 
 def _sha256(path: Path) -> str:
@@ -45,6 +58,66 @@ def _check_links(path: Path) -> list[str]:
         resolved = (path.parent / target).resolve()
         if not resolved.is_relative_to(ROOT) or not resolved.exists():
             errors.append(f"{path.relative_to(ROOT)}: broken relative link {raw_target}")
+    return errors
+
+
+def _iter_dicts(value: object):
+    if isinstance(value, dict):
+        yield value
+        for child in value.values():
+            yield from _iter_dicts(child)
+    elif isinstance(value, list):
+        for child in value:
+            yield from _iter_dicts(child)
+
+
+def _normalized_key(value: object) -> str:
+    return re.sub(r"[^a-z0-9]", "", str(value).casefold())
+
+
+def _release_pointer_errors() -> list[str]:
+    """Reject tracked JSON that can act as repository-owned current-release authority."""
+    result = subprocess.run(
+        ["git", "ls-files", "-z", "--", "*.json"],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    errors: list[str] = []
+    for raw_path in filter(None, result.stdout.split("\0")):
+        path = ROOT / raw_path
+        if not path.is_file():
+            continue
+        try:
+            payload = json.loads(path.read_text())
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+            continue
+
+        path_tokens = {token for token in re.split(r"[/_.-]+", raw_path.casefold()) if token}
+        release_named_current = "release" in path_tokens and bool({"current", "latest"} & path_tokens)
+
+        for node in _iter_dicts(payload):
+            status = node.get("status")
+            if not isinstance(status, str) or status.casefold() != "current":
+                continue
+            normalized_keys = {_normalized_key(key) for key in node}
+            marker_keys = normalized_keys & RELEASE_POINTER_MARKER_KEYS
+            points_to_release_docs = any(
+                isinstance(value, str)
+                and (
+                    value.casefold().replace("\\", "/").startswith("releases/")
+                    or "docs/releases/" in value.casefold().replace("\\", "/")
+                )
+                for value in node.values()
+            )
+            if marker_keys or release_named_current or points_to_release_docs:
+                reason = ", ".join(sorted(marker_keys)) if marker_keys else "release-oriented path/value"
+                errors.append(
+                    f"{raw_path}: repository-managed current-release pointer metadata is prohibited "
+                    f"({reason}); release identity must come from signed CI/deploy evidence"
+                )
+                break
     return errors
 
 
@@ -126,6 +199,7 @@ def main() -> int:
             f"{path}: repository-managed release metadata/pointers are prohibited; "
             "release identity must come from signed CI/deploy evidence"
         )
+    errors.extend(_release_pointer_errors())
 
     release_entries = [
         entry
