@@ -28,7 +28,16 @@ def _repo(tmp_path: Path, files: dict[str, object]) -> Path:
 
 
 def test_release_pointer_guard_allows_unrelated_current_metadata(tmp_path: Path) -> None:
-    repo = _repo(tmp_path, {"business/current.json": {"status": "current", "generation": "g1"}})
+    repo = _repo(
+        tmp_path,
+        {
+            "business/current.json": {
+                "status": "current",
+                "generation": "g1",
+                "resource_id": "inventory-feed",
+            }
+        },
+    )
     assert release_pointer_errors(repo) == []
 
 
@@ -99,10 +108,11 @@ def test_release_pointer_guard_rejects_current_identity_namespaces(tmp_path: Pat
             "nested/artifact.json": {"status": "current", "artifact_sha256": "def"},
             "nested/sbom.json": {"status": "latest", "sbom_hash": "ghi"},
             "nested/manifest.json": {"current": True, "manifest_digest": "jkl"},
+            "nested/prefixed.json": {"status": "current", "build_artifact_id": "mno"},
         },
     )
     errors = release_pointer_errors(repo)
-    assert len(errors) == 4
+    assert len(errors) == 5
 
 
 def test_release_pointer_guard_allows_historical_generic_metadata(tmp_path: Path) -> None:
