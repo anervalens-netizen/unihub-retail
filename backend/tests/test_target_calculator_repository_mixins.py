@@ -179,6 +179,7 @@ async def test_sources_get_effective_target_rule_set_passes_target_month() -> No
 
     result = await repo.get_effective_target_rule_set("2026-06")
 
+    assert result is not None
     assert result["id"] == 1
     sql = conn.fetchrow.await_args.args[0]
     assert "target_calculator_effective_rule_sets" in sql
