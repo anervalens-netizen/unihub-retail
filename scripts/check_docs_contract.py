@@ -170,14 +170,71 @@ def _inline_link_targets(text: str) -> list[str]:
     return targets
 
 
+def _strip_markdown_code(text: str) -> str:
+    """Blank fenced and inline code while preserving line structure."""
+    visible_lines: list[str] = []
+    fence_char: str | None = None
+    fence_len = 0
+
+    for line in text.splitlines(keepends=True):
+        indent = len(line) - len(line.lstrip(" "))
+        stripped = line[indent:] if indent <= 3 else line
+        fence = re.match(r"(`{3,}|~{3,})", stripped) if indent <= 3 else None
+
+        if fence_char is not None:
+            if (
+                fence
+                and fence.group(1)[0] == fence_char
+                and len(fence.group(1)) >= fence_len
+            ):
+                fence_char = None
+                fence_len = 0
+            visible_lines.append("\n" if line.endswith("\n") else "")
+            continue
+
+        if fence:
+            fence_char = fence.group(1)[0]
+            fence_len = len(fence.group(1))
+            visible_lines.append("\n" if line.endswith("\n") else "")
+            continue
+
+        visible_lines.append(line)
+
+    visible = "".join(visible_lines)
+    output: list[str] = []
+    index = 0
+    while index < len(visible):
+        if visible[index] != "`":
+            output.append(visible[index])
+            index += 1
+            continue
+
+        run_end = index
+        while run_end < len(visible) and visible[run_end] == "`":
+            run_end += 1
+        delimiter = visible[index:run_end]
+        close = visible.find(delimiter, run_end)
+        if close == -1:
+            output.append(delimiter)
+            index = run_end
+            continue
+
+        segment = visible[index : close + len(delimiter)]
+        output.extend("\n" if char == "\n" else " " for char in segment)
+        index = close + len(delimiter)
+
+    return "".join(output)
+
+
 def _markdown_link_targets(text: str) -> list[str]:
-    targets = _inline_link_targets(text)
-    for raw in REFERENCE_LINK_RE.findall(text):
+    visible = _strip_markdown_code(text)
+    targets = _inline_link_targets(visible)
+    for raw in REFERENCE_LINK_RE.findall(visible):
         target = _markdown_destination(raw)
         if target:
             targets.append(target)
     html_links = _HrefCollector()
-    html_links.feed(text)
+    html_links.feed(visible)
     targets.extend(html_links.targets)
     return targets
 
@@ -299,8 +356,16 @@ def _scan_release_metadata(
     statuses = _node_statuses(value)
     local_current = bool({"current", "latest"} & statuses) or _node_current_flag(value)
     local_historical = bool(HISTORICAL_STATUSES & statuses)
-    current = (inherited_current or local_current) and not local_historical
-    historical = (inherited_historical or local_historical) and not local_current
+    if local_current and local_historical:
+        errors.append(
+            f"{raw_path}: conflicting current/latest and historical/superseded metadata is prohibited; "
+            "release authority state must be unambiguous"
+        )
+
+    # Current semantics take precedence and propagate fail-closed. A nested
+    # historical marker cannot launder exact identity under a current parent.
+    current = inherited_current or local_current
+    historical = (inherited_historical or local_historical) and not current
 
     items = [
         (_normalized_key(key), _identifier_tokens(key), child)
