@@ -8,6 +8,9 @@ This module is a thin facade. Substantial orchestration lives in:
 
 from __future__ import annotations
 
+import asyncio
+import time
+from contextlib import asynccontextmanager
 from datetime import date
 from typing import Any
 
@@ -60,6 +63,55 @@ from services.dashboard_specials import (
 )
 from services.incentive_db import get_incentive_campaign
 from services.request_deadline import RequestDeadline, RequestDeadlineExceeded
+
+
+async def _release_campaign_connection(pool: Any, conn: Any) -> None:
+    """Finish pool release even when the request task is being cancelled."""
+    release_task = asyncio.create_task(pool.release(conn))
+    try:
+        await asyncio.shield(release_task)
+    except asyncio.CancelledError:
+        await release_task
+        raise
+
+
+@asynccontextmanager
+async def _campaign_snapshot_transaction(conn: Any, *, owned: bool):
+    if not owned:
+        yield conn
+        return
+    async with conn.transaction(isolation="repeatable_read", readonly=True):
+        yield conn
+
+
+async def _acquire_snapshot_connection(
+    pool: asyncpg.Pool | None,
+    *,
+    caller_conn: asyncpg.Connection | None,
+) -> tuple[asyncpg.Connection, bool]:
+    """Resolve the DB connection used for the snapshot transaction."""
+    owns_connection = caller_conn is None
+    if not owns_connection:
+        assert caller_conn is not None
+        return caller_conn, False
+    if pool is None:
+        raise RuntimeError("Campaigns pool is unavailable")
+    _CAMPAIGN_DEADLINE_PHASE.set("pool_wait")
+    started = time.perf_counter()
+    try:
+        return await pool.acquire(), True
+    finally:
+        CAMPAIGN_POOL_WAIT_SECONDS.observe(time.perf_counter() - started)
+
+
+async def _caller_owned_connection(
+    conn: asyncpg.Connection,
+) -> tuple[asyncpg.Connection, bool]:
+    return conn, False
+
+
+async def _caller_owned_release(_conn: Any) -> None:
+    return None
 
 
 class CampaignsService:
@@ -130,7 +182,15 @@ class CampaignsService:
             return await request_deadline.run(
                 run_promotions_incentives_snapshot(
                     self.repo,
-                    self.pool,
+                    acquire_connection=lambda: _acquire_snapshot_connection(
+                        self.pool,
+                        caller_conn=None,
+                    ),
+                    transaction=_campaign_snapshot_transaction,
+                    release_connection=lambda conn: _release_campaign_connection(
+                        self.pool,
+                        conn,
+                    ),
                     start_date=start_date,
                     end_date=end_date,
                     firma=firma,
@@ -178,7 +238,9 @@ async def build_promotions_incentives_on_snapshot(
     """Build the canonical response on a caller-owned immutable DB snapshot."""
     return await run_promotions_incentives_snapshot(
         repo,
-        None,
+        acquire_connection=lambda: _caller_owned_connection(conn),
+        transaction=_campaign_snapshot_transaction,
+        release_connection=_caller_owned_release,
         start_date=start_date,
         end_date=end_date,
         firma=firma,
@@ -190,7 +252,6 @@ async def build_promotions_incentives_on_snapshot(
         view=view,
         current_scope=current_scope,
         include_closed_stores=include_closed_stores,
-        connection=conn,
         response_builder=build_promotions_incentives_response,
         config_loader=load_special_cards_config,
         definitions_loader=parse_promotion_definitions,
