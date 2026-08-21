@@ -68,6 +68,20 @@ def test_release_pointer_guard_rejects_pointer_anywhere_in_repository(tmp_path: 
     assert errors[1].startswith("nested/metadata.json:")
 
 
+def test_release_pointer_guard_rejects_current_release_filename_with_generic_payload(tmp_path: Path) -> None:
+    repo = _repo(tmp_path, {"docs/current-release.json": {"version": "v9.9.9"}})
+    errors = release_pointer_errors(repo)
+    assert len(errors) == 1
+    assert errors[0].startswith("docs/current-release.json:")
+
+
+def test_release_pointer_guard_rejects_nonhistorical_release_identity_without_current_status(tmp_path: Path) -> None:
+    repo = _repo(tmp_path, {"config/release-info.json": {"release_name": "v9.9.9"}})
+    errors = release_pointer_errors(repo)
+    assert len(errors) == 1
+    assert errors[0].startswith("config/release-info.json:")
+
+
 def test_release_pointer_guard_rejects_current_release_key_without_status(tmp_path: Path) -> None:
     repo = _repo(
         tmp_path,
