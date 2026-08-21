@@ -251,14 +251,17 @@ def repository_metadata_errors(root: Path) -> list[str]:
             )
             continue
 
-        if relative.suffix.casefold() != ".json":
-            continue
-
+        # Reserve current/latest release paths for every tracked file format.
+        # This blocks renamed YAML/TOML/text pointers without teaching this
+        # focused gate how to parse arbitrary serialization formats.
         if _current_release_path(raw_path):
             errors.append(
                 f"{raw_path}: tracked current/latest release metadata path is prohibited; "
                 "use signed CI/deploy evidence"
             )
+            continue
+
+        if relative.suffix.casefold() != ".json":
             continue
 
         path = root / relative

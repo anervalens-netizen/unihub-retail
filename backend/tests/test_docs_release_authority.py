@@ -92,6 +92,20 @@ def test_rejects_non_markdown_release_docs_metadata(tmp_path: Path) -> None:
     assert all("Markdown-only historical evidence" in error for error in errors)
 
 
+def test_rejects_current_release_paths_for_any_extension(tmp_path: Path) -> None:
+    repo = _repo(
+        tmp_path,
+        {
+            "config/current-release.yaml": "version: v9\n",
+            "config/latestRelease.toml": 'version = "v9"\n',
+            "config/currentQARelease.txt": "v9\n",
+        },
+    )
+    errors = repository_metadata_errors(repo)
+    assert len(errors) == 3
+    assert all("current/latest release metadata path" in error for error in errors)
+
+
 def test_rejects_plural_nested_current_release_paths(tmp_path: Path) -> None:
     repo = _repo(
         tmp_path,
