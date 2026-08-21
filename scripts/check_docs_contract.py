@@ -178,15 +178,18 @@ def _normalized_key(value: object) -> str:
     return re.sub(r"[^a-z0-9]", "", str(value).casefold())
 
 
-def _path_tokens(value: str) -> set[str]:
-    # Split separators plus ordinary and acronym camelCase boundaries:
-    # currentQARelease -> current / QA / Release.
+def _identifier_tokens(value: object) -> set[str]:
+    text = str(value)
     camel_split = re.sub(
         r"(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])",
         " ",
-        value,
+        text,
     )
     return {token.casefold() for token in re.split(r"[^A-Za-z0-9]+", camel_split) if token}
+
+
+def _path_tokens(value: str) -> set[str]:
+    return _identifier_tokens(value)
 
 
 def _compact_path(value: str) -> str:
@@ -237,11 +240,14 @@ def _release_pointer_errors(root: Path) -> list[str]:
             )
             continue
 
-        all_items: list[tuple[str, object]] = []
+        all_items: list[tuple[str, set[str], object]] = []
         for node in _iter_dicts(payload):
-            all_items.extend((_normalized_key(key), value) for key, value in node.items())
+            all_items.extend(
+                (_normalized_key(key), _identifier_tokens(key), value)
+                for key, value in node.items()
+            )
 
-        normalized_keys = {key for key, _ in all_items}
+        normalized_keys = {key for key, _, _ in all_items}
         release_keys = {key for key in normalized_keys if "release" in key}
         if release_keys:
             errors.append(
@@ -253,20 +259,23 @@ def _release_pointer_errors(root: Path) -> list[str]:
 
         statuses = {
             value.casefold()
-            for key, value in all_items
+            for key, _, value in all_items
             if key == "status" and isinstance(value, str)
         }
         current_flag = any(
             key in CURRENT_FLAG_KEYS
             and (value is True or (isinstance(value, str) and value.casefold() in {"true", "current", "latest"}))
-            for key, value in all_items
+            for key, _, value in all_items
         )
         current_semantics = "current" in statuses or "latest" in statuses or current_flag
         if current_semantics:
             current_identity_keys = {
                 key
-                for key in normalized_keys
-                if any(namespace in key for namespace in CURRENT_IDENTITY_NAMESPACES)
+                for key, tokens, _ in all_items
+                if any(
+                    key.startswith(namespace) or namespace in tokens
+                    for namespace in CURRENT_IDENTITY_NAMESPACES
+                )
             }
             if current_identity_keys:
                 errors.append(
