@@ -58,6 +58,11 @@ on:
       - ready_for_review
     branches:
       - main
+    # Docs-only PRs cannot require PR-DEEP certification and must not launch
+    # this redundant policy workflow under the current model.
+    paths-ignore:
+      - "**/*.md"
+      - "docs/**"
 
 concurrency:
   group: pr-deep-policy-${{ github.event.pull_request.number || github.ref }}

@@ -1816,3 +1816,61 @@ class TestTrustOrderingCoverageAndTestInfraSurfaces:
         assert payload["state"] == "NO_ELIGIBLE_BACKEND_CHANGE"
         cats = [r["category"] for r in payload["escalation_reasons"]]
         assert "gate_authority" not in cats
+
+
+# =============================================================================
+# PR-fast selection budget boundaries
+# =============================================================================
+
+
+class TestPrFastSelectionBudget:
+    """The evidence-based fan-out cap must route, not execute, oversized suites."""
+
+    @staticmethod
+    def _repo_with_safe_selected_tests(tmp_path, count):
+        repo = _new_repo(tmp_path)
+        _make_backend_skeleton(repo, with_test_consumer=False)
+        for index in range(count):
+            _write(
+                repo,
+                f"backend/tests/test_budget_{index:03d}.py",
+                "from services.a import VAL\n"
+                f"def test_budget_{index:03d}(): assert VAL == 1\n",
+            )
+        base = _commit(repo, "seed safe selected suite")
+        _write(repo, "backend/services/a.py", "VAL = 2\n")
+        _commit(repo, "modify safe production module")
+        return repo, base
+
+    def test_exactly_120_safe_selected_files_remains_selected(self, tmp_path):
+        repo, base = self._repo_with_safe_selected_tests(tmp_path, 120)
+
+        rc, payload, _ = _run_selector(repo, base)
+
+        assert rc == 0, payload
+        assert payload["state"] == "SELECTED"
+        assert payload["selection_count"] == 120
+        assert len(payload["selected_tests"]) == 120
+        assert not any(
+            reason["category"] == "selection_budget"
+            for reason in payload["escalation_reasons"]
+        )
+
+    def test_121_safe_selected_files_escalates_deterministically(self, tmp_path):
+        repo, base = self._repo_with_safe_selected_tests(tmp_path, 121)
+
+        rc1, payload1, _ = _run_selector(repo, base)
+        rc2, payload2, _ = _run_selector(repo, base)
+
+        assert rc1 == rc2 == 2
+        assert payload1["state"] == payload2["state"] == "ESCALATION_REQUIRED"
+        assert payload1["selection_count"] == payload2["selection_count"] == 121
+        assert len(payload1["selected_tests"]) == len(payload2["selected_tests"]) == 121
+        assert payload1["escalation_reasons"] == payload2["escalation_reasons"] == [
+            {
+                "category": "selection_budget",
+                "path": "<pr-fast-selection-budget>",
+                "detail": "selection_count=121 exceeds max=120",
+            }
+        ]
+        assert payload1["notes"] == payload2["notes"]

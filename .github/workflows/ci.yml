@@ -7,6 +7,11 @@ on:
   pull_request:
     branches:
       - main
+    # Markdown/docs-only PRs are non-runtime under the current no-native-
+    # required-checks model; do not launch the heavy CI workflow for them.
+    paths-ignore:
+      - "**/*.md"
+      - "docs/**"
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -70,8 +75,9 @@ jobs:
           test "$(docker info --format '{{.Name}}')" = "dell-standby"
 
   # ======================================================================
-  # E1 PR-FAST — single consolidated self-hosted job that gates realistic
-  # merge-breaking regressions on pull_request in <15 minutes.
+  # PR-FAST — single consolidated self-hosted job for realistic
+  # merge-breaking regressions, normally under 10 minutes. The 15-minute
+  # timeout is a hard guardrail, not an expected runtime.
   #
   # This job DUPLICATES a selected fast subset of the exhaustive FULL
   # validation on purpose: release correctness must not depend on the
