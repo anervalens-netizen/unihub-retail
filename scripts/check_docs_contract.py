@@ -29,6 +29,7 @@ REQUIRED_FIELDS = {
 ACTIVE_STATUSES = {"active"}
 ALL_STATUSES = ACTIVE_STATUSES | {"historical", "superseded"}
 LINK_RE = re.compile(r"\[[^\]]+\]\(([^)]+)\)")
+REFERENCE_LINK_RE = re.compile(r"(?m)^\s*\[[^\]]+\]:\s*(?:<([^>]+)>|(\S+))")
 RELEASE_IDENTITY_MARKER_KEYS = {
     "release",
     "releaseid",
@@ -57,9 +58,16 @@ def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def _markdown_link_targets(text: str) -> list[str]:
+    targets = list(LINK_RE.findall(text))
+    for angle_target, plain_target in REFERENCE_LINK_RE.findall(text):
+        targets.append(angle_target or plain_target)
+    return targets
+
+
 def _check_links(path: Path) -> list[str]:
     errors: list[str] = []
-    for raw_target in LINK_RE.findall(path.read_text()):
+    for raw_target in _markdown_link_targets(path.read_text()):
         target = raw_target.strip().split(maxsplit=1)[0].strip("<>")
         if not target or target.startswith(("#", "http://", "https://", "mailto:")):
             continue
@@ -104,46 +112,51 @@ def _release_pointer_errors(root: Path) -> list[str]:
             continue
 
         path_tokens = {token for token in re.split(r"[/_.-]+", raw_path.casefold()) if token}
-        release_named_current = "release" in path_tokens and bool({"current", "latest"} & path_tokens)
+        release_path = bool({"release", "releases"} & path_tokens)
+        current_path = bool({"current", "latest"} & path_tokens)
 
+        all_items: list[tuple[str, object]] = []
+        all_values: list[object] = []
         for node in _iter_dicts(payload):
-            normalized_items = {_normalized_key(key): value for key, value in node.items()}
-            normalized_keys = set(normalized_items)
-            identity_keys = normalized_keys & RELEASE_IDENTITY_MARKER_KEYS
-            support_keys = normalized_keys & RELEASE_SUPPORT_MARKER_KEYS
-            current_release_keys = normalized_keys & CURRENT_RELEASE_MARKER_KEYS
-            status = node.get("status")
-            normalized_status = status.casefold() if isinstance(status, str) else ""
-            historical_status = normalized_status in {"historical", "superseded"}
-            status_current = normalized_status == "current"
-            current_flag = any(
-                key in CURRENT_FLAG_KEYS
-                and (value is True or (isinstance(value, str) and value.casefold() in {"true", "current", "latest"}))
-                for key, value in normalized_items.items()
+            all_items.extend((_normalized_key(key), value) for key, value in node.items())
+            all_values.extend(node.values())
+
+        normalized_keys = {key for key, _ in all_items}
+        identity_keys = normalized_keys & RELEASE_IDENTITY_MARKER_KEYS
+        support_keys = normalized_keys & RELEASE_SUPPORT_MARKER_KEYS
+        current_release_keys = normalized_keys & CURRENT_RELEASE_MARKER_KEYS
+        statuses = {
+            value.casefold()
+            for key, value in all_items
+            if key == "status" and isinstance(value, str)
+        }
+        current_flag = any(
+            key in CURRENT_FLAG_KEYS
+            and (value is True or (isinstance(value, str) and value.casefold() in {"true", "current", "latest"}))
+            for key, value in all_items
+        )
+        points_to_release_docs = any(
+            isinstance(value, str)
+            and (
+                value.casefold().replace("\\", "/").startswith("releases/")
+                or "docs/releases/" in value.casefold().replace("\\", "/")
             )
-            points_to_release_docs = any(
-                isinstance(value, str)
-                and (
-                    value.casefold().replace("\\", "/").startswith("releases/")
-                    or "docs/releases/" in value.casefold().replace("\\", "/")
-                )
-                for value in node.values()
+            for value in all_values
+        )
+
+        current_semantics = current_path and release_path
+        current_semantics = current_semantics or bool(current_release_keys) or "current" in statuses or current_flag
+        release_semantics = release_path or bool(identity_keys) or bool(support_keys) or bool(current_release_keys) or points_to_release_docs
+        explicitly_historical = bool(statuses) and statuses <= {"historical", "superseded"}
+
+        prohibited = (current_semantics and release_semantics) or (bool(identity_keys) and not explicitly_historical)
+        if prohibited:
+            reasons = sorted(identity_keys | support_keys | current_release_keys)
+            reason = ", ".join(reasons) if reasons else "current/latest release path"
+            errors.append(
+                f"{raw_path}: repository-managed current-release pointer metadata is prohibited "
+                f"({reason}); release identity must come from signed CI/deploy evidence"
             )
-            current_semantics = bool(current_release_keys) or status_current or current_flag
-            prohibited = (
-                release_named_current
-                or bool(current_release_keys)
-                or (bool(identity_keys) and not historical_status)
-                or (current_semantics and (bool(support_keys) or points_to_release_docs))
-            )
-            if prohibited:
-                reasons = sorted(identity_keys | support_keys | current_release_keys)
-                reason = ", ".join(reasons) if reasons else "current/latest release path"
-                errors.append(
-                    f"{raw_path}: repository-managed current-release pointer metadata is prohibited "
-                    f"({reason}); release identity must come from signed CI/deploy evidence"
-                )
-                break
     return errors
 
 
@@ -217,7 +230,7 @@ def main() -> int:
     release_docs_dir = ROOT / "docs/releases"
     repository_release_metadata = sorted(
         path.relative_to(ROOT)
-        for path in release_docs_dir.iterdir()
+        for path in release_docs_dir.rglob("*")
         if path.is_file() and path.suffix.lower() != ".md"
     )
     for path in repository_release_metadata:
@@ -243,7 +256,7 @@ def main() -> int:
         text = path.read_text()
         if "releases/current.json" in text:
             errors.append(f"{path.relative_to(ROOT)} references retired release pointer")
-        for raw_target in LINK_RE.findall(text):
+        for raw_target in _markdown_link_targets(text):
             target = raw_target.strip().split(maxsplit=1)[0].strip("<>")
             if not target or target.startswith(("#", "http://", "https://", "mailto:")):
                 continue
@@ -280,7 +293,7 @@ def main() -> int:
             "markdown_files": len(actual_docs),
             "catalog_entries": len(entries),
             "active_entries": sum(entry.get("status") in ACTIVE_STATUSES for entry in entries),
-            "links_scanned": sum(len(LINK_RE.findall(path.read_text())) for path in scanned),
+            "links_scanned": sum(len(_markdown_link_targets(path.read_text())) for path in scanned),
             "errors": len(errors),
         },
         "thresholds": {"catalog_coverage_percent": 100, "active_max_age_days": 180, "errors": 0},
