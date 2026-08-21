@@ -28,7 +28,6 @@ REQUIRED_FIELDS = {
 }
 ACTIVE_STATUSES = {"active"}
 ALL_STATUSES = ACTIVE_STATUSES | {"historical", "superseded"}
-INLINE_LINK_RE = re.compile(r"\[[^\]]+\]\(([^)]*)\)")
 REFERENCE_LINK_RE = re.compile(r"(?m)^\s*\[[^\]]+\]:\s*(.+?)\s*$")
 FORBIDDEN_RELEASE_IDENTITY_KEYS = {
     "release",
@@ -67,7 +66,7 @@ def _sha256(path: Path) -> str:
 
 
 def _markdown_destination(raw: str) -> str:
-    """Extract one Markdown link destination while preserving spaces inside <...>."""
+    """Extract one Markdown destination while preserving spaces inside <...>."""
     raw = raw.strip()
     if not raw:
         return ""
@@ -79,12 +78,72 @@ def _markdown_destination(raw: str) -> str:
     return raw.split(maxsplit=1)[0].strip()
 
 
-def _markdown_link_targets(text: str) -> list[str]:
+def _inline_link_targets(text: str) -> list[str]:
+    """Parse inline Markdown destinations without truncating angle-bracket paths."""
     targets: list[str] = []
-    for raw in INLINE_LINK_RE.findall(text):
-        target = _markdown_destination(raw)
+    cursor = 0
+    while True:
+        marker = text.find("](", cursor)
+        if marker == -1:
+            break
+        index = marker + 2
+        while index < len(text) and text[index].isspace():
+            index += 1
+        if index >= len(text):
+            break
+
+        if text[index] == "<":
+            end = index + 1
+            escaped = False
+            while end < len(text):
+                char = text[end]
+                if escaped:
+                    escaped = False
+                elif char == "\\":
+                    escaped = True
+                elif char == ">":
+                    break
+                end += 1
+            if end < len(text) and text[end] == ">":
+                target = text[index + 1 : end].strip()
+                if target:
+                    targets.append(target)
+                cursor = end + 1
+                continue
+
+        chars: list[str] = []
+        depth = 0
+        escaped = False
+        end = index
+        while end < len(text):
+            char = text[end]
+            if escaped:
+                chars.append(char)
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == "(":
+                depth += 1
+                chars.append(char)
+            elif char == ")":
+                if depth == 0:
+                    break
+                depth -= 1
+                chars.append(char)
+            elif char.isspace() and depth == 0:
+                break
+            else:
+                chars.append(char)
+            end += 1
+        target = "".join(chars).strip()
         if target:
             targets.append(target)
+        cursor = max(end + 1, marker + 2)
+    return targets
+
+
+def _markdown_link_targets(text: str) -> list[str]:
+    targets = _inline_link_targets(text)
     for raw in REFERENCE_LINK_RE.findall(text):
         target = _markdown_destination(raw)
         if target:
@@ -119,16 +178,20 @@ def _normalized_key(value: object) -> str:
     return re.sub(r"[^a-z0-9]", "", str(value).casefold())
 
 
+def _path_tokens(value: str) -> set[str]:
+    # Split explicit separators and camelCase boundaries, then case-fold.
+    camel_split = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", value)
+    return {token.casefold() for token in re.split(r"[^A-Za-z0-9]+", camel_split) if token}
+
+
 def _compact_path(value: str) -> str:
-    # Stripping separators also normalizes snake/kebab/dotted paths; lowercasing
-    # makes camelCase variants such as currentRelease collapse to currentrelease.
     return re.sub(r"[^a-z0-9]", "", value.casefold())
 
 
 def _release_pointer_errors(root: Path) -> list[str]:
     """Reject tracked JSON that could become a repository-owned release authority."""
     result = subprocess.run(
-        ["git", "ls-files", "-z", "--", "*.json"],
+        ["git", "ls-files", "-z"],
         cwd=root,
         check=True,
         capture_output=True,
@@ -136,6 +199,8 @@ def _release_pointer_errors(root: Path) -> list[str]:
     )
     errors: list[str] = []
     for raw_path in filter(None, result.stdout.split("\0")):
+        if Path(raw_path).suffix.casefold() != ".json":
+            continue
         path = root / raw_path
         if not path.is_file():
             continue
@@ -144,8 +209,13 @@ def _release_pointer_errors(root: Path) -> list[str]:
         except (OSError, UnicodeDecodeError, json.JSONDecodeError):
             continue
 
+        path_tokens = _path_tokens(raw_path)
         compact_path = _compact_path(raw_path)
-        if any(marker in compact_path for marker in CURRENT_RELEASE_PATH_MARKERS):
+        current_release_path = (
+            bool({"current", "latest"} & path_tokens)
+            and bool({"release", "releases"} & path_tokens)
+        ) or any(marker in compact_path for marker in CURRENT_RELEASE_PATH_MARKERS)
+        if current_release_path:
             errors.append(
                 f"{raw_path}: repository-managed current/latest release path is prohibited; "
                 "release identity must come from signed CI/deploy evidence"
