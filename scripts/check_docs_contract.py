@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fail-closed catalog, link, staleness and current-release verifier."""
+"""Fail-closed catalog, link, staleness and release-authority verifier."""
 from __future__ import annotations
 
 import argparse
@@ -26,7 +26,7 @@ REQUIRED_FIELDS = {
     "superseded_by",
     "evidence",
 }
-ACTIVE_STATUSES = {"active", "current"}
+ACTIVE_STATUSES = {"active"}
 ALL_STATUSES = ACTIVE_STATUSES | {"historical", "superseded"}
 LINK_RE = re.compile(r"\[[^\]]+\]\(([^)]+)\)")
 
@@ -51,12 +51,14 @@ def _check_links(path: Path) -> list[str]:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--catalog", type=Path, required=True)
-    parser.add_argument("--release", type=Path, required=True)
+    # Kept as a compatibility-only CLI argument for older callers. D1 retires
+    # repository release pointers; this value is never an authority.
+    parser.add_argument("--release", type=Path, required=False, help=argparse.SUPPRESS)
     parser.add_argument("--evidence", type=Path, required=True)
     args = parser.parse_args()
     started = time.monotonic()
-    catalog_path, release_path = args.catalog.resolve(), args.release.resolve()
-    catalog, release = json.loads(catalog_path.read_text()), json.loads(release_path.read_text())
+    catalog_path = args.catalog.resolve()
+    catalog = json.loads(catalog_path.read_text())
     entries = catalog.get("entries", [])
     errors: list[str] = []
 
@@ -113,39 +115,30 @@ def main() -> int:
     for path in scanned:
         errors.extend(_check_links(path))
 
-    expected_release_keys = {"release_name", "evidence_document", "status"}
-    if set(release) != expected_release_keys:
-        errors.append(f"release pointer keys must be exactly {sorted(expected_release_keys)}")
-    release_name = str(release.get("release_name", ""))
-    release_document = str(release.get("evidence_document", ""))
-    if release.get("status") != "current":
-        errors.append("release pointer status must be current")
-    if not release_name or release_document == str(release_path.relative_to(ROOT)):
-        errors.append("release pointer must be named and non-self-referential")
-    evidence_document = ROOT / release_document
-    if not evidence_document.is_file():
-        errors.append("release evidence document is missing")
-    else:
-        release_text = evidence_document.read_text()
-        if release_name not in release_text:
-            errors.append("release evidence does not name the semantic release")
-        for marker in ("SOURCE_SHA", "artifact", "SHA256SUMS"):
-            if marker not in release_text:
-                errors.append(f"release evidence missing exact-artifact marker {marker}")
-        matching_entries = [entry for entry in entries if entry.get("path") == release_document]
-        if len(matching_entries) != 1 or matching_entries[0].get("status") != "current":
-            errors.append("release evidence must have exactly one current catalog entry")
+    retired_release_pointer = ROOT / "docs/releases/current.json"
+    if retired_release_pointer.exists():
+        errors.append("docs/releases/current.json is retired; release identity must come from signed CI/deploy evidence")
+
+    release_entries = [
+        entry
+        for entry in entries
+        if str(entry.get("canonical_key", "")).startswith("release.")
+        or "release" in entry.get("applies_to", [])
+    ]
+    for entry in release_entries:
+        if entry.get("status") not in {"historical", "superseded"}:
+            errors.append(f"{entry.get('path')}: release documentation must be historical/superseded, not current authority")
 
     for path in (ROOT / "README.md", ROOT / "APP_ARCHITECTURE.md", ROOT / "docs/README.md"):
         text = path.read_text()
-        if release_name not in text or "releases/current.json" not in text:
-            errors.append(f"{path.relative_to(ROOT)} disagrees with current-release pointer")
+        if "releases/current.json" in text:
+            errors.append(f"{path.relative_to(ROOT)} references retired release pointer")
+
     required_index_links = {
         "../APP_ARCHITECTURE.md",
         "RUNBOOK-campanii-promo-incentive-concursuri.md",
         "adr/004-sales-row-multiplicity.md",
         "engineering/h01-salary-identity-privacy.md",
-        "releases/current.json",
         "adr/006-verified-runtime-delivery.md",
         "operations/RETAIL_9_5_FINAL_HANDOFF.md",
     }
@@ -161,9 +154,7 @@ def main() -> int:
             ["git", "rev-parse", "HEAD"], cwd=ROOT, check=True, capture_output=True, text=True
         ).stdout.strip(),
         "catalog_sha256": _sha256(catalog_path),
-        "release_pointer_sha256": _sha256(release_path),
-        "release_name": release_name,
-        "release_evidence": release_document,
+        "release_identity_authority": "signed RELEASE_MANIFEST.json + deploy promotion record",
         "counts": {
             "markdown_files": len(actual_docs),
             "catalog_entries": len(entries),
