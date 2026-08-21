@@ -154,6 +154,26 @@ def test_rejects_release_identity_keys_without_status_dependency(tmp_path: Path)
     assert len(repository_metadata_errors(repo)) == 6
 
 
+def test_rejects_namespaced_release_identity_keys(tmp_path: Path) -> None:
+    repo = _repo(
+        tmp_path,
+        {
+            "config/version.json": {
+                "status": "current",
+                "production_release_version": "v9",
+            },
+            "config/status.json": {
+                "production_release_status": "current",
+                "artifact_sha256": "abc",
+            },
+        },
+    )
+    errors = repository_metadata_errors(repo)
+    assert len(errors) >= 2
+    assert any("productionreleaseversion" in error for error in errors)
+    assert any("productionreleasestatus" in error for error in errors)
+
+
 def test_rejects_release_identity_even_when_marked_historical(tmp_path: Path) -> None:
     repo = _repo(
         tmp_path,

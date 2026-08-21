@@ -53,6 +53,10 @@ RELEASE_MARKERS = {
     "tag",
     "version",
 }
+# Strong identity markers may appear before or after a `release` token. Keep
+# operational labels such as deployReleaseCi out of this set so the gate does
+# not reject existing governance/build metadata that is not a release identity.
+NAMESPACED_RELEASE_IDENTITY_MARKERS = RELEASE_MARKERS - {"deploy", "data", "document", "migration"}
 SUPPORT_NAMESPACES = {
     "artifact",
     "deploy",
@@ -118,8 +122,12 @@ def _meaningful(value: object) -> bool:
 def _is_release_identity_key(key: object) -> bool:
     normalized = _normalized(key)
     tokens = _tokens(key)
+    release_tokens = {"release", "releases"} & tokens
 
     if normalized in {"release", "releases"}:
+        return True
+
+    if release_tokens and NAMESPACED_RELEASE_IDENTITY_MARKERS & tokens:
         return True
 
     if normalized.startswith(
