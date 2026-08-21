@@ -70,23 +70,22 @@ depasesc bugetul; valorile volatile nu se copiaza in arhitectura fara data.
 
 ## Evidență Gate 0 și P0
 
-Release-ul auditat curent este
-`2cb2785c2340b901e07af7fcf40241e5bfd3555e`: CI main `31484028843`, arhivă
-SHA-256 `aec301e2c82084de526f8e334d8d38c7ef3633544b0f22a84e356e0d54db4dcd`
-și deploy formal `31485385533`. Gate 0 rămâne artifact -> deploy -> reverify ->
-rollback pe SHA identic; verificarea locală fără deploy se rulează cu
-`bash ops/test-deploy-retail-artifact.sh`. Approval-ul și deployul formal
-consumă numai `head_sha`, `SOURCE_SHA` și digestul `SHA256SUMS` ale aceluiași
-run CI.
+Acest runbook nu declară manual un „release curent”. Pentru fiecare candidat
+certificat, CI emite `RELEASE_MANIFEST.json` pentru exact `head_sha`, împreună cu
+`SOURCE_SHA`, `SHA256SUMS`, SBOM/provenance și semnătura Sigstore. Gate 0 rămâne
+artifact -> deploy -> reverify -> rollback pe SHA identic; verificarea locală fără
+deploy se rulează cu `bash ops/test-deploy-retail-artifact.sh`. Approval-ul și
+deployul formal consumă aceeași identitate de candidat și digestul artefactului,
+iar recordul de promovare stabilește ce identitate a ajuns efectiv în production.
 
 Pentru P0, migration manifest-ul este verificat înaintea restartului, iar recovery-ul este roll-forward sau rollback numai între manifeste identice. Nu se aplică Finance/TVA și nu se aplică salarii live din această cale: P&L effective-dated rămâne shadow-only, iar salariile rămân NO-GO până la HR.
 
 Dovezile de cod se păstrează împreună cu SHA-ul, manifestul și outputul testelor. Hosted CI, deploy production și mutațiile de date nu sunt revendicate de acest document dacă nu există un run ID și un audit handle.
 
-Pentru `v2.1.0`, tagul adnotat, `SOURCE_SHA`, `SHA256SUMS`, runul CI manual si
-runul deploy formeaza impreuna identitatea release-ului. Migrațiile 032–036 sunt
-numai aditive. Deployul de cod nu autorizează promotion Finance/TVA sau
-reconcilierea salary live; aceste mutații rămân porți separate.
+Pentru release-urile istorice precum `v2.1.0`, tagul și documentația rămân evidence
+istoric. Ele nu concurează cu manifestul semnat al candidatului curent sau cu
+recordul de promovare production. Deployul de cod nu autorizează promotion
+Finance/TVA sau reconcilierea salary live; aceste mutații rămân porți separate.
 
 ## Artifactul CI manual
 
