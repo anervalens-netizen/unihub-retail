@@ -14,7 +14,8 @@ pending, unknown or checksum-mismatched migrations.
 - `manifest.json` stores the immutable SHA-256 of the baseline and every file;
 - manifest v2 keeps transactional execution as the default and records only
   explicitly reviewed `online` exceptions in `execution_modes`;
-- production stores the applied checksum in `schema_migrations`;
+- production stores migration/recovery state in the single canonical
+  `schema_migrations` ledger;
 - historical files are never edited; corrections are forward migrations;
 - a session advisory lock serializes all runners;
 - ordinary migrations execute SQL and write their ledger row in the same
@@ -34,25 +35,29 @@ uses asyncpg's prepared/extended-query execution path outside an active database
 transaction, so accidental multi-command files are rejected by PostgreSQL rather
 than being silently executed as a batch.
 
-Because the online SQL statement and `schema_migrations` ledger row cannot be
-committed atomically, the runner uses a fail-closed recovery fence:
+Because the online SQL statement and its final checksum cannot be committed
+atomically, the canonical `schema_migrations` row is also the recovery fence:
 
-1. inside a short transaction, write the exact filename + immutable checksum to
-   `schema_migration_online_recovery`;
+1. inside a short transaction, insert the exact filename with checksum sentinel
+   `online-recovery:<immutable-sha256>`;
 2. leave the transaction and, when the dedicated migration authority is active,
    elevate the session to `unihub_schema_owner`;
 3. execute the single online statement with no active transaction;
 4. reset session role;
-5. inside a new transaction, write the ordinary `schema_migrations` ledger row
-   and delete the matching recovery fence atomically.
+5. inside a new transaction, update that exact row from the exact sentinel to
+   the immutable checksum and refresh `applied_at`; the update must affect
+   exactly one row.
 
 Any process loss, SQL error, role-reset failure or post-SQL ledger failure leaves
-the durable recovery row behind. A later migration run and the read-only current
-state verifier refuse to continue automatically while such a row exists or if
-its filename/checksum no longer matches the immutable manifest. This is
-intentional: **F1 does not retry or infer whether a partially executed online
-operation is safe to resume.** Controlled `CREATE INDEX CONCURRENTLY`, retry,
-invalid-index cleanup and post-validation belong to F2.
+the sentinel in the canonical ledger. A later migration run and the read-only
+current-state verifier refuse to continue automatically when they see it. The
+sentinel is bound to both the immutable checksum and explicit `online` manifest
+mode, so changing/removing the mode or changing the expected checksum cannot
+launder the recovery state into a normal applied migration.
+
+This is intentional: **F1 does not retry or infer whether a partially executed
+online operation is safe to resume.** Controlled `CREATE INDEX CONCURRENTLY`,
+retry, invalid-index cleanup and post-validation belong to F2.
 
 ## Existing database adoption
 
@@ -89,7 +94,7 @@ runtime `DATABASE_URL` and never gain migration privileges.
 2. install/update `unihub-retail-migrate.service`;
 3. run the one-shot migration service while the old web version remains live;
 4. require a successful exit and current checksums, with no unresolved online
-   recovery fence;
+   recovery sentinel;
 5. deploy/restart the web process;
 6. verify health and confirm the web log contains only read-only migration
    verification.
