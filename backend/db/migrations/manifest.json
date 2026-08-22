@@ -1,11 +1,10 @@
 {
-  "version": 2,
+  "version": 1,
   "baseline": {
     "file": "schema_v2.sql",
     "sha256": "3edeadbb13eea4d7b0d63997494e48a893e0ecc267b8e31a7217ce2f539ba0ac",
     "incorporated_through": "022_store_pnl_site_links.sql"
   },
-  "execution_modes": {},
   "migrations": {
     "001_add_cartela_composite_index.sql": "7f502462f585088286f9ae60d5c4ded69fccf745342ae6ddfc34c48241514b46",
     "002_target_calculator_nullable_final.sql": "5c801b9edcbdca126e286297593cefd72988ad5f16d8a7ac9b5fc5eb230e34d6",
