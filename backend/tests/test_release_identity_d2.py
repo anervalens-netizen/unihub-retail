@@ -18,12 +18,6 @@ SOURCE_SHA = "a" * 40
 ARCHIVE_SHA = "b" * 64
 
 
-@pytest.fixture(autouse=True)
-def reset_db_pool() -> None:
-    # This module is pure release-metadata logic and must not require the app DB.
-    yield
-
-
 def write_repo(tmp_path: Path) -> tuple[Path, Path]:
     repo = tmp_path / "repo"
     migration_dir = repo / "backend/db/migrations"
