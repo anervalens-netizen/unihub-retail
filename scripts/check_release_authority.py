@@ -44,7 +44,7 @@ RELEASE_NOTES_INDEX = Path("docs/README.md")
 HISTORICAL_RELEASE_MARKER = "Historical release note — not production authority."
 DERIVED_RENDERER_MARKER = "render_production_release_notes.py"
 PRODUCTION_TAG_MARKER = "production/retail-release-"
-COMPETING_CANONICAL_PHRASE = "Canonical identity:"
+COMPETING_CANONICAL_RE = re.compile(r"\bcanonical\s+identity\s*:", re.IGNORECASE)
 
 
 def _normalized(value: object) -> str:
@@ -210,7 +210,7 @@ def narrative_release_errors(root: Path) -> list[str]:
             relative = path.relative_to(root)
             if HISTORICAL_RELEASE_MARKER not in text:
                 errors.append(f"{relative}: tracked release note must be explicitly historical")
-            if COMPETING_CANONICAL_PHRASE in text:
+            if COMPETING_CANONICAL_RE.search(text):
                 errors.append(
                     f"{relative}: historical release note cannot declare a canonical identity"
                 )
