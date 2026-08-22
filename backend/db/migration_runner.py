@@ -142,22 +142,16 @@ def load_migration_manifest(path: Path | None = None) -> MigrationManifest:
         baseline = payload["baseline"]
         migrations = payload["migrations"]
         version = payload["version"]
+        execution_modes = payload.get("execution_modes", {})
     except (OSError, json.JSONDecodeError, KeyError, TypeError) as exc:
         raise MigrationError("Migration manifest is invalid") from exc
-    if not isinstance(baseline, dict) or not _valid_manifest_migrations(migrations):
+    if (
+        version != 1
+        or not isinstance(baseline, dict)
+        or not _valid_manifest_migrations(migrations)
+    ):
         raise MigrationError("Migration manifest is invalid")
     assert isinstance(migrations, dict)
-    if version == 1:
-        if "execution_modes" in payload:
-            raise MigrationError("Migration manifest is invalid")
-        execution_modes: object = {}
-    elif version == 2:
-        try:
-            execution_modes = payload["execution_modes"]
-        except KeyError as exc:
-            raise MigrationError("Migration manifest is invalid") from exc
-    else:
-        raise MigrationError("Migration manifest is invalid")
     if not _valid_execution_modes(execution_modes, migrations):
         raise MigrationError("Migration manifest is invalid")
     assert isinstance(execution_modes, dict)
@@ -311,6 +305,8 @@ async def _execute_online_statement(
     # parameters. PostgreSQL therefore accepts exactly one top-level statement
     # and rejects accidental multi-command migration files.
     await connection.fetch(sql)
+    if connection.is_in_transaction():
+        raise MigrationError("Online migration left an active transaction")
 
 
 async def _finalize_online_migration(
