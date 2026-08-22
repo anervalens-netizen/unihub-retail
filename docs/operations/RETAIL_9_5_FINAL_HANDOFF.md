@@ -1,6 +1,8 @@
 # Retail 9.5 final handoff
 
-Status: deployed and verified in production on
+> **Historical status snapshot — not current status authority.** This handoff records the production state observed on 2026-08-11. Current tracked-document lifecycle/status is machine-authoritative only in `docs/catalog.json`; current runtime readiness comes from `/readyz` and Prometheus machine signals; delivery identity is governed separately by the signed candidate and verified promotion evidence.
+
+Historical status: deployed and verified in production on
 `2cb2785c2340b901e07af7fcf40241e5bfd3555e`.
 
 ## Delivery identity
@@ -35,7 +37,7 @@ must still have the same clean `main`, and `git diff --name-only
 Owner access is unchanged. No Authentik group, SSH/sudoers boundary, service
 identity or credential was changed by the audit remediation.
 
-## Verified production state
+## Verified production state at handoff time
 
 - deployed Git SHA equals the delivery identity;
 - all five runtime services are active and enabled;
