@@ -56,9 +56,13 @@ def parse_release_env(path: Path) -> dict[str, str]:
             raise ValueError(f"release.env contains duplicate field: {key}")
         values[key] = value
 
-    missing = [field for field in REQUIRED_FIELDS if field not in values]
+    required = set(REQUIRED_FIELDS)
+    missing = sorted(required - set(values))
     if missing:
         raise ValueError(f"release.env is missing required field(s): {', '.join(missing)}")
+    unknown = sorted(set(values) - required)
+    if unknown:
+        raise ValueError(f"release.env contains unknown schema-v1 field(s): {', '.join(unknown)}")
     return values
 
 
