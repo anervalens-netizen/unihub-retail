@@ -12,8 +12,9 @@ pending, unknown or checksum-mismatched migrations.
 - `schema_v2.sql` is frozen at the H-02 baseline and used only for a fresh DB;
 - every later schema/data delta is a new `NNN_name.sql` file;
 - `manifest.json` stores the immutable SHA-256 of the baseline and every file;
-- manifest v2 keeps transactional execution as the default and records only
-  explicitly reviewed `online` exceptions in `execution_modes`;
+- the existing manifest v1 remains valid and means every migration is
+  transactional; v2 is required only when an explicitly reviewed `online`
+  exception is actually introduced through `execution_modes`;
 - production stores migration/recovery state in the single canonical
   `schema_migrations` ledger;
 - historical files are never edited; corrections are forward migrations;
@@ -23,12 +24,18 @@ pending, unknown or checksum-mismatched migrations.
 - the web startup path executes only `SELECT` statements for migration state;
 - unknown DB rows, missing checksums, file drift and pending files fail closed.
 
+F1 deliberately leaves the checked-in manifest at v1 because there is no online
+migration today. This adds the capability without changing current migration
+identity or making an otherwise schema-compatible rollback incompatible merely
+because runner metadata changed.
+
 ## Explicit online / non-transactional path
 
 F1 adds an opt-in path for PostgreSQL commands that cannot legitimately run in
-the ordinary transaction wrapper. A migration remains transactional unless its
-exact filename is mapped to `online` in manifest v2. Unknown filenames and any
-other execution-mode value make the manifest invalid.
+the ordinary transaction wrapper. A migration remains transactional unless a v2
+manifest maps its exact filename to `online`. Unknown filenames and any other
+execution-mode value make the manifest invalid. A v1 manifest cannot contain
+`execution_modes`, so the opt-in cannot be smuggled into the legacy format.
 
 An online migration is deliberately one top-level SQL statement. The runner
 uses asyncpg's prepared/extended-query execution path outside an active database
