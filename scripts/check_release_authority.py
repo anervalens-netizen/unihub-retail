@@ -40,7 +40,7 @@ CANONICAL_DOCS = (
 )
 REQUIRED_AUTHORITY_MARKER = "RELEASE_MANIFEST.json"
 RETIRED_POINTER_MARKER = "releases/current.json"
-RELEASE_NOTES_INDEX = Path("docs/releases/README.md")
+RELEASE_NOTES_INDEX = Path("docs/README.md")
 HISTORICAL_RELEASE_MARKER = "Historical release note — not production authority."
 DERIVED_RENDERER_MARKER = "render_production_release_notes.py"
 PRODUCTION_TAG_MARKER = "production/retail-release-"
@@ -206,8 +206,6 @@ def narrative_release_errors(root: Path) -> list[str]:
     releases_dir = root / "docs/releases"
     if releases_dir.is_dir():
         for path in sorted(releases_dir.glob("*.md")):
-            if path.name == "README.md":
-                continue
             text = path.read_text(encoding="utf-8")
             relative = path.relative_to(root)
             if HISTORICAL_RELEASE_MARKER not in text:
