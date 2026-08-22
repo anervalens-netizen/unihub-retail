@@ -40,9 +40,15 @@ class _Transaction:
 
 
 class _OnlineConnection:
-    def __init__(self, *, online_failure: Exception | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        online_failure: Exception | None = None,
+        leave_transaction_open: bool = False,
+    ) -> None:
         self.in_transaction = False
         self.online_failure = online_failure
+        self.leave_transaction_open = leave_transaction_open
         self.rows: dict[str, str] = {}
         self.events: list[str] = []
         self.role_active = False
@@ -103,12 +109,14 @@ class _OnlineConnection:
         self.events.append("online:execute")
         if self.online_failure is not None:
             raise self.online_failure
+        if self.leave_transaction_open:
+            self.in_transaction = True
         return []
 
 
-def _manifest_payload(*, execution_modes: dict[str, str]) -> dict[str, object]:
-    return {
-        "version": 2,
+def _manifest_payload(*, execution_modes: dict[str, str] | None = None) -> dict[str, object]:
+    payload: dict[str, object] = {
+        "version": 1,
         "baseline": {
             "file": "schema_v2.sql",
             "sha256": "a" * 64,
@@ -118,8 +126,10 @@ def _manifest_payload(*, execution_modes: dict[str, str]) -> dict[str, object]:
             "001_first.sql": "b" * 64,
             "002_online.sql": "c" * 64,
         },
-        "execution_modes": execution_modes,
     }
+    if execution_modes is not None:
+        payload["execution_modes"] = execution_modes
+    return payload
 
 
 def _online_manifest(*, checksum: str = "c" * 64) -> MigrationManifest:
@@ -134,7 +144,7 @@ def _online_manifest(*, checksum: str = "c" * 64) -> MigrationManifest:
     )
 
 
-def test_manifest_v2_keeps_transactional_default_and_explicit_online(
+def test_manifest_v1_keeps_transactional_default_and_allows_explicit_online(
     tmp_path: Path,
 ) -> None:
     path = tmp_path / "manifest.json"
@@ -153,14 +163,9 @@ def test_manifest_v2_keeps_transactional_default_and_explicit_online(
     assert manifest.execution_mode("002_online.sql") == ONLINE_EXECUTION_MODE
 
 
-def test_manifest_v1_remains_transactional_and_needs_no_metadata_upgrade(
-    tmp_path: Path,
-) -> None:
-    payload = _manifest_payload(execution_modes={})
-    payload["version"] = 1
-    payload.pop("execution_modes")
+def test_current_manifest_shape_needs_no_metadata_upgrade(tmp_path: Path) -> None:
     path = tmp_path / "manifest.json"
-    path.write_text(json.dumps(payload), encoding="utf-8")
+    path.write_text(json.dumps(_manifest_payload()), encoding="utf-8")
 
     manifest = load_migration_manifest(path)
 
@@ -177,7 +182,7 @@ def test_manifest_v1_remains_transactional_and_needs_no_metadata_upgrade(
         {"002_online.sql": "transactional"},
     ],
 )
-def test_manifest_v2_rejects_unknown_or_implicit_execution_overrides(
+def test_manifest_rejects_unknown_or_implicit_execution_overrides(
     tmp_path: Path,
     execution_modes: dict[str, str],
 ) -> None:
@@ -191,11 +196,11 @@ def test_manifest_v2_rejects_unknown_or_implicit_execution_overrides(
         load_migration_manifest(path)
 
 
-def test_manifest_v1_rejects_execution_mode_extension(tmp_path: Path) -> None:
+def test_manifest_rejects_unsupported_version(tmp_path: Path) -> None:
     payload = _manifest_payload(
         execution_modes={"002_online.sql": ONLINE_EXECUTION_MODE}
     )
-    payload["version"] = 1
+    payload["version"] = 2
     path = tmp_path / "manifest.json"
     path.write_text(json.dumps(payload), encoding="utf-8")
 
@@ -307,6 +312,20 @@ async def test_online_executor_refuses_active_transaction() -> None:
         )
 
     assert "online:execute" not in connection.events
+
+
+@pytest.mark.asyncio
+async def test_online_executor_refuses_statement_that_leaves_transaction_open() -> None:
+    connection = _OnlineConnection(leave_transaction_open=True)
+
+    with pytest.raises(MigrationError, match="left an active transaction"):
+        await _execute_online_statement(  # type: ignore[arg-type]
+            connection,
+            "BEGIN",
+        )
+
+    assert connection.events == ["online:execute"]
+    assert connection.in_transaction is True
 
 
 @pytest.mark.asyncio
