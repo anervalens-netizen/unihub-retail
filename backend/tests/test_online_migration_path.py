@@ -10,11 +10,13 @@ import pytest
 
 from db.migration_runner import (
     ONLINE_EXECUTION_MODE,
+    ONLINE_RECOVERY_PREFIX,
     MigrationError,
     MigrationManifest,
     _apply_online_migration,
     _execute_online_statement,
-    _validate_online_recovery,
+    _online_recovery_checksum,
+    _validate_applied,
     load_migration_manifest,
 )
 
@@ -41,8 +43,7 @@ class _OnlineConnection:
     def __init__(self, *, online_failure: Exception | None = None) -> None:
         self.in_transaction = False
         self.online_failure = online_failure
-        self.recovery: dict[str, str] = {}
-        self.applied: dict[str, str] = {}
+        self.rows: dict[str, str] = {}
         self.events: list[str] = []
         self.role_active = False
         self.local_role_active = False
@@ -76,27 +77,25 @@ class _OnlineConnection:
             self.role_active = False
             self.events.append("role:reset")
             return "RESET"
-        if "INSERT INTO schema_migration_online_recovery" in sql:
+        if compact.startswith("INSERT INTO schema_migrations"):
             assert self.in_transaction
             filename, checksum = str(args[0]), str(args[1])
-            assert filename not in self.recovery
-            self.recovery[filename] = checksum
-            self.events.append("recovery:mark")
+            assert filename not in self.rows
+            self.rows[filename] = checksum
+            self.events.append(
+                "recovery:mark"
+                if checksum.startswith(ONLINE_RECOVERY_PREFIX)
+                else "ledger:insert"
+            )
             return "INSERT 0 1"
-        if "INSERT INTO schema_migrations" in sql:
+        if compact.startswith("UPDATE schema_migrations SET checksum = $2"):
             assert self.in_transaction
-            filename, checksum = str(args[0]), str(args[1])
-            self.applied[filename] = checksum
-            self.events.append("ledger:insert")
-            return "INSERT 0 1"
-        if "DELETE FROM schema_migration_online_recovery" in sql:
-            assert self.in_transaction
-            filename, checksum = str(args[0]), str(args[1])
-            if self.recovery.get(filename) != checksum:
-                return "DELETE 0"
-            del self.recovery[filename]
-            self.events.append("recovery:clear")
-            return "DELETE 1"
+            filename, checksum, marker = map(str, args[:3])
+            if self.rows.get(filename) != marker:
+                return "UPDATE 0"
+            self.rows[filename] = checksum
+            self.events.append("ledger:finalize")
+            return "UPDATE 1"
         raise AssertionError(sql)
 
     async def fetch(self, sql: str, *_args: object) -> list[dict[str, Any]]:
@@ -121,6 +120,18 @@ def _manifest_payload(*, execution_modes: dict[str, str]) -> dict[str, object]:
         },
         "execution_modes": execution_modes,
     }
+
+
+def _online_manifest(*, checksum: str = "c" * 64) -> MigrationManifest:
+    return MigrationManifest(
+        "a" * 64,
+        "001_first.sql",
+        {
+            "001_first.sql": "b" * 64,
+            "070_online.sql": checksum,
+        },
+        {"070_online.sql": ONLINE_EXECUTION_MODE},
+    )
 
 
 def test_manifest_v2_keeps_transactional_default_and_explicit_online(
@@ -175,7 +186,7 @@ def test_manifest_v1_is_rejected_after_execution_contract_upgrade(tmp_path: Path
 
 
 @pytest.mark.asyncio
-async def test_online_migration_marks_before_execution_and_finalizes_atomically(
+async def test_online_migration_marks_before_execution_and_finalizes_same_ledger(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("UNIHUB_DB_PROCESS_AUTHORITY", "migrate")
@@ -189,20 +200,19 @@ async def test_online_migration_marks_before_execution_and_finalizes_atomically(
         sql="VACUUM schema_migrations",
     )
 
-    assert connection.recovery == {}
-    assert connection.applied == {"070_online.sql": checksum}
+    assert connection.rows == {"070_online.sql": checksum}
     assert connection.role_active is False
     assert connection.events.index("recovery:mark") < connection.events.index(
         "online:execute"
     )
     assert connection.events.index("online:execute") < connection.events.index(
-        "ledger:insert"
+        "ledger:finalize"
     )
-    assert connection.events[-2:] == ["recovery:clear", "transaction:commit"]
+    assert connection.events[-2:] == ["ledger:finalize", "transaction:commit"]
 
 
 @pytest.mark.asyncio
-async def test_online_failure_leaves_recovery_marker_and_no_ledger(
+async def test_online_failure_leaves_sentinel_in_canonical_ledger(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("UNIHUB_DB_PROCESS_AUTHORITY", "migrate")
@@ -217,45 +227,53 @@ async def test_online_failure_leaves_recovery_marker_and_no_ledger(
             sql="VACUUM schema_migrations",
         )
 
-    assert connection.recovery == {"070_online.sql": checksum}
-    assert connection.applied == {}
+    assert connection.rows == {
+        "070_online.sql": _online_recovery_checksum(checksum),
+    }
     assert connection.role_active is False
     assert "role:reset" in connection.events
+    assert "ledger:finalize" not in connection.events
 
 
-def test_existing_online_recovery_marker_blocks_automatic_retry() -> None:
-    manifest = MigrationManifest(
-        "a" * 64,
-        "001_first.sql",
-        {
-            "001_first.sql": "b" * 64,
-            "070_online.sql": "c" * 64,
-        },
-        {"070_online.sql": ONLINE_EXECUTION_MODE},
-    )
+def test_existing_online_recovery_sentinel_blocks_automatic_retry() -> None:
+    checksum = "c" * 64
+    manifest = _online_manifest(checksum=checksum)
 
     with pytest.raises(MigrationError, match="recovery required.*070_online.sql"):
-        _validate_online_recovery(
-            {"070_online.sql": "c" * 64},
+        _validate_applied(
+            {"070_online.sql": _online_recovery_checksum(checksum)},
             manifest,
+            allow_missing_checksums=False,
         )
 
 
-def test_recovery_marker_is_bound_to_manifest_checksum_and_mode() -> None:
+def test_recovery_sentinel_is_bound_to_manifest_checksum() -> None:
+    manifest = _online_manifest(checksum="c" * 64)
+
+    with pytest.raises(MigrationError, match="does not match the immutable manifest"):
+        _validate_applied(
+            {"070_online.sql": _online_recovery_checksum("d" * 64)},
+            manifest,
+            allow_missing_checksums=False,
+        )
+
+
+def test_recovery_sentinel_cannot_be_bypassed_by_removing_online_mode() -> None:
+    checksum = "c" * 64
     manifest = MigrationManifest(
         "a" * 64,
         "001_first.sql",
         {
             "001_first.sql": "b" * 64,
-            "070_online.sql": "c" * 64,
+            "070_online.sql": checksum,
         },
-        {"070_online.sql": ONLINE_EXECUTION_MODE},
     )
 
     with pytest.raises(MigrationError, match="does not match the immutable manifest"):
-        _validate_online_recovery(
-            {"070_online.sql": "d" * 64},
+        _validate_applied(
+            {"070_online.sql": _online_recovery_checksum(checksum)},
             manifest,
+            allow_missing_checksums=False,
         )
 
 
