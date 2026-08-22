@@ -1162,6 +1162,189 @@ load_candidate_identity_env() {
     || die "candidate release ID must equal retail-release-source SHA"
 }
 
+# D2 release.env values captured by validate_d2_release_env before any
+# rollback mutation. write_release_manifest reuses these captured values
+# so the rolled_back handle reproduces the exact identity that was
+# pre-validated, with no re-read of the file after mutation (no TOCTOU).
+D2_RELEASE_ID=""
+D2_SOURCE_SHA=""
+D2_MIGRATION_HEAD=""
+D2_ARTIFACT_SHA256=""
+D2_SBOM_SHA256=""
+D2_PREDECESSOR_RELEASE_ID=""
+D2_PREDECESSOR_SHA=""
+D2_ROLLBACK_RELEASE_ID=""
+D2_ROLLBACK_SHA=""
+D2_OLD_SHA=""
+D2_NEW_SHA=""
+D2_STATE=""
+D2_DEPLOYED_AT_UTC=""
+
+reset_d2_captured() {
+  D2_RELEASE_ID=""
+  D2_SOURCE_SHA=""
+  D2_MIGRATION_HEAD=""
+  D2_ARTIFACT_SHA256=""
+  D2_SBOM_SHA256=""
+  D2_PREDECESSOR_RELEASE_ID=""
+  D2_PREDECESSOR_SHA=""
+  D2_ROLLBACK_RELEASE_ID=""
+  D2_ROLLBACK_SHA=""
+  D2_OLD_SHA=""
+  D2_NEW_SHA=""
+  D2_STATE=""
+  D2_DEPLOYED_AT_UTC=""
+}
+
+read_release_env_field() {
+  local env_file="$1"
+  local key="$2"
+  local count value
+  [[ -f "$env_file" && ! -L "$env_file" ]] \
+    || die "release env is missing or unsafe: $env_file"
+  count="$(grep -c "^${key}=" "$env_file" || true)"
+  [[ "$count" -eq 1 ]] \
+    || die "release env field must appear exactly once: $key"
+  value="$(sed -n "s/^${key}=//p" "$env_file")"
+  [[ -n "$value" && "$value" != *$'\n'* ]] \
+    || die "release env field is missing or multi-line: $key"
+  printf '%s\n' "$value"
+}
+
+# Validate the D2 release.env at the given path. Pre-D2 handles (no
+# PROMOTION_SCHEMA_VERSION) return 0 and capture nothing, so a pre-D2
+# rollback handle keeps its legacy-only contract. D2 handles must have
+# PROMOTION_SCHEMA_VERSION=1 and exactly one occurrence of every required
+# field; every captured value is format-checked and the identity
+# relationships inside the file must hold.
+validate_d2_release_env() {
+  local release_env="$1"
+
+  [[ -f "$release_env" && ! -L "$release_env" ]] \
+    || die "release env is missing or unsafe: $release_env"
+
+  reset_d2_captured
+
+  if ! grep -q '^PROMOTION_SCHEMA_VERSION=' "$release_env"; then
+    return 0
+  fi
+
+  local schema_version
+  schema_version="$(read_release_env_field "$release_env" PROMOTION_SCHEMA_VERSION)"
+  [[ "$schema_version" == "1" ]] \
+    || die "PROMOTION_SCHEMA_VERSION must be exactly 1"
+
+  D2_RELEASE_ID="$(read_release_env_field "$release_env" RELEASE_ID)"
+  D2_SOURCE_SHA="$(read_release_env_field "$release_env" SOURCE_SHA)"
+  D2_MIGRATION_HEAD="$(read_release_env_field "$release_env" MIGRATION_HEAD)"
+  D2_ARTIFACT_SHA256="$(read_release_env_field "$release_env" ARTIFACT_SHA256)"
+  D2_SBOM_SHA256="$(read_release_env_field "$release_env" SBOM_SHA256)"
+  D2_PREDECESSOR_RELEASE_ID="$(read_release_env_field "$release_env" PREDECESSOR_RELEASE_ID)"
+  D2_PREDECESSOR_SHA="$(read_release_env_field "$release_env" PREDECESSOR_SHA)"
+  D2_ROLLBACK_RELEASE_ID="$(read_release_env_field "$release_env" ROLLBACK_RELEASE_ID)"
+  D2_ROLLBACK_SHA="$(read_release_env_field "$release_env" ROLLBACK_SHA)"
+  D2_OLD_SHA="$(read_release_env_field "$release_env" OLD_SHA)"
+  D2_NEW_SHA="$(read_release_env_field "$release_env" NEW_SHA)"
+  D2_STATE="$(read_release_env_field "$release_env" STATE)"
+  # DEPLOYED_AT_UTC is only written when the state first reaches deployed,
+  # so it may legitimately be absent for in-progress or recovery_required
+  # handles.
+  if grep -q '^DEPLOYED_AT_UTC=' "$release_env"; then
+    D2_DEPLOYED_AT_UTC="$(read_release_env_field "$release_env" DEPLOYED_AT_UTC)"
+  fi
+
+  validate_sha "$D2_SOURCE_SHA"
+  validate_sha256 "$D2_ARTIFACT_SHA256"
+  validate_sha256 "$D2_SBOM_SHA256"
+  [[ "$D2_MIGRATION_HEAD" =~ ^[0-9]{3}_[A-Za-z0-9_]+\.sql$ ]] \
+    || die "MIGRATION_HEAD is not a canonical migration filename"
+  if [[ -n "$D2_DEPLOYED_AT_UTC" ]]; then
+    [[ "$D2_DEPLOYED_AT_UTC" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]] \
+      || die "DEPLOYED_AT_UTC is not a UTC ISO timestamp"
+  fi
+  [[ "$D2_RELEASE_ID" == "retail-release-$D2_SOURCE_SHA" ]] \
+    || die "RELEASE_ID must equal retail-release-SOURCE_SHA"
+  [[ "$D2_PREDECESSOR_RELEASE_ID" == "retail-release-$D2_PREDECESSOR_SHA" ]] \
+    || die "PREDECESSOR_RELEASE_ID must equal retail-release-PREDECESSOR_SHA"
+  [[ "$D2_ROLLBACK_RELEASE_ID" == "retail-release-$D2_ROLLBACK_SHA" ]] \
+    || die "ROLLBACK_RELEASE_ID must equal retail-release-ROLLBACK_SHA"
+  [[ "$D2_PREDECESSOR_SHA" == "$D2_OLD_SHA" ]] \
+    || die "PREDECESSOR_SHA must equal OLD_SHA"
+  [[ "$D2_ROLLBACK_SHA" == "$D2_OLD_SHA" ]] \
+    || die "ROLLBACK_SHA must equal OLD_SHA"
+  [[ "$D2_NEW_SHA" == "$D2_SOURCE_SHA" ]] \
+    || die "NEW_SHA must equal SOURCE_SHA"
+
+  return 0
+}
+
+# For same-SHA reverification: locate the unique deployed handle for the
+# expected SHA and validate its release.env against the just-loaded
+# CANDIDATE_* set. Pre-D2 handles only need NEW_SHA to match.
+verify_active_d2_release_env_against_candidate() {
+  local release_env="$1"
+
+  [[ -f "$release_env" && ! -L "$release_env" ]] \
+    || die "active release env is missing or unsafe: $release_env"
+
+  if grep -q '^PROMOTION_SCHEMA_VERSION=' "$release_env"; then
+    validate_d2_release_env "$release_env"
+    [[ "$D2_SOURCE_SHA" == "${CANDIDATE_SOURCE_SHA:-}" ]] \
+      || die "active release.env SOURCE_SHA does not match verified candidate"
+    [[ "$D2_RELEASE_ID" == "${CANDIDATE_RELEASE_ID:-}" ]] \
+      || die "active release.env RELEASE_ID does not match verified candidate"
+    [[ "$D2_MIGRATION_HEAD" == "${CANDIDATE_MIGRATION_HEAD:-}" ]] \
+      || die "active release.env MIGRATION_HEAD does not match verified candidate"
+    [[ "$D2_ARTIFACT_SHA256" == "${CANDIDATE_ARTIFACT_SHA256:-}" ]] \
+      || die "active release.env ARTIFACT_SHA256 does not match verified candidate"
+    [[ "$D2_SBOM_SHA256" == "${CANDIDATE_SBOM_SHA256:-}" ]] \
+      || die "active release.env SBOM_SHA256 does not match verified candidate"
+    [[ "$D2_STATE" == "deployed" ]] \
+      || die "active release.env STATE must be deployed"
+    [[ "$D2_PREDECESSOR_RELEASE_ID" == "retail-release-$D2_OLD_SHA" ]] \
+      || die "active release.env PREDECESSOR_RELEASE_ID must equal retail-release-OLD_SHA"
+    [[ "$D2_ROLLBACK_RELEASE_ID" == "retail-release-$D2_OLD_SHA" ]] \
+      || die "active release.env ROLLBACK_RELEASE_ID must equal retail-release-OLD_SHA"
+    return 0
+  fi
+
+  local legacy_new_sha
+  legacy_new_sha="$(read_release_env_field "$release_env" NEW_SHA)"
+  [[ "$legacy_new_sha" == "${CANDIDATE_SOURCE_SHA:-}" ]] \
+    || die "active pre-D2 release.env NEW_SHA does not match verified candidate"
+}
+
+# Locate the unique active deployed release.env for the expected SHA. Used
+# by the reverify path to anchor D2 identity validation on the deployed
+# handle, never on an in-progress or rolled-back one. Returns 0 on success
+# and writes the canonical path to stdout; dies if zero or multiple matches.
+find_active_deployed_release_env() {
+  local expected_sha="$1"
+  local handle new_sha state active_handle=""
+  local active_count=0
+
+  [[ -d "$BACKUP_ROOT" && ! -L "$BACKUP_ROOT" ]] \
+    || die "retail backup root is unavailable"
+
+  shopt -s nullglob
+  local -a handles=("$BACKUP_ROOT"/*/release.env)
+  shopt -u nullglob
+
+  for handle in "${handles[@]}"; do
+    [[ -f "$handle" && ! -L "$handle" ]] || continue
+    new_sha="$(sed -n 's/^NEW_SHA=//p' "$handle" | head -n1)"
+    state="$(sed -n 's/^STATE=//p' "$handle" | head -n1)"
+    if [[ "$new_sha" == "$expected_sha" && "$state" == "deployed" ]]; then
+      active_count=$((active_count + 1))
+      active_handle="$handle"
+    fi
+  done
+
+  [[ "$active_count" -eq 1 ]] \
+    || die "exactly one active deployed release.env must exist for reverification"
+  printf '%s\n' "$active_handle"
+}
+
 PROMETHEUS_NETWORK_NAME=""
 PROMETHEUS_DOCKER_GATEWAY=""
 PROMETHEUS_DOCKER_SUBNET=""
@@ -2628,17 +2811,23 @@ write_release_manifest() {
   local write_d2=0
   if [[ -n "${CANDIDATE_RELEASE_ID:-}" ]]; then
     write_d2=1
+  elif [[ -n "${D2_RELEASE_ID:-}" ]]; then
+    write_d2=1
   elif [[ "$had_d2_fields" == "1" ]]; then
     write_d2=1
   fi
 
   local deployed_at=""
   if [[ "$state" == "deployed" ]]; then
-    if [[ -n "$existing_deployed_at" ]]; then
+    if [[ -n "${D2_DEPLOYED_AT_UTC:-}" ]]; then
+      deployed_at="$D2_DEPLOYED_AT_UTC"
+    elif [[ -n "$existing_deployed_at" ]]; then
       deployed_at="$existing_deployed_at"
     else
       deployed_at="$now"
     fi
+  elif [[ -n "${D2_DEPLOYED_AT_UTC:-}" ]]; then
+    deployed_at="$D2_DEPLOYED_AT_UTC"
   elif [[ -n "$existing_deployed_at" ]]; then
     deployed_at="$existing_deployed_at"
   fi
@@ -2656,6 +2845,16 @@ write_release_manifest() {
         printf 'PREDECESSOR_SHA=%s\n' "$old_sha"
         printf 'ROLLBACK_RELEASE_ID=retail-release-%s\n' "$old_sha"
         printf 'ROLLBACK_SHA=%s\n' "$old_sha"
+      elif [[ -n "${D2_RELEASE_ID:-}" ]]; then
+        printf 'RELEASE_ID=%s\n' "$D2_RELEASE_ID"
+        printf 'SOURCE_SHA=%s\n' "$D2_SOURCE_SHA"
+        printf 'MIGRATION_HEAD=%s\n' "$D2_MIGRATION_HEAD"
+        printf 'ARTIFACT_SHA256=%s\n' "$D2_ARTIFACT_SHA256"
+        printf 'SBOM_SHA256=%s\n' "$D2_SBOM_SHA256"
+        printf 'PREDECESSOR_RELEASE_ID=%s\n' "$D2_PREDECESSOR_RELEASE_ID"
+        printf 'PREDECESSOR_SHA=%s\n' "$D2_PREDECESSOR_SHA"
+        printf 'ROLLBACK_RELEASE_ID=%s\n' "$D2_ROLLBACK_RELEASE_ID"
+        printf 'ROLLBACK_SHA=%s\n' "$D2_ROLLBACK_SHA"
       else
         local k v
         for k in RELEASE_ID SOURCE_SHA MIGRATION_HEAD ARTIFACT_SHA256 SBOM_SHA256 \
@@ -2869,6 +3068,14 @@ rollback_from_backup() {
     assert_rollback_migration_compatible "$expected_current_sha" "$old_sha"
   fi
 
+  # D2 preflight: validate the backup's release.env before any runtime
+  # mutation. A corrupted/incomplete D2 handle must die here, before
+  # stop_runtime, git reset, restore_runtime_venv, restore_dist or
+  # restore_runtime_assets. The captured D2_* globals are reused by the
+  # final write_release_manifest so the rolled_back handle reproduces
+  # exactly the identity that was pre-validated (no TOCTOU).
+  validate_d2_release_env "$backup_dir/release.env"
+
   log "rolling back code from $expected_current_sha to $old_sha"
   preflight_runtime_venv_restore "$backup_dir"
   stop_runtime || true
@@ -2918,10 +3125,13 @@ deploy_release() {
     work_dir="$(mktemp -d "${TMPDIR:-/tmp}/retail-reverify.XXXXXX")"
     trap 'rm -rf -- "$work_dir"' RETURN
     artifact_tree="$(copy_and_verify_artifact "$source_archive" "$expected_sha" "$expected_artifact_sha256" "$work_dir")"
+    verify_candidate_identity "$source_archive" "$work_dir" "$expected_sha" "$expected_artifact_sha256"
     [[ -f "$artifact_tree/dist/index.html" && ! -L "$artifact_tree/dist/index.html" \
       && -s "$artifact_tree/dist/index.html" ]] || die "tested frontend artifact is missing"
     diff -qr -- "$LIVE_ROOT/dist" "$artifact_tree/dist" >/dev/null \
       || die "live frontend differs from the tested release artifact"
+    active_release_env="$(find_active_deployed_release_env "$expected_sha")"
+    verify_active_d2_release_env_against_candidate "$active_release_env"
     detect_prometheus_network
     assert_prometheus_shared_include
     verify_active_runtime_assets "$expected_sha"

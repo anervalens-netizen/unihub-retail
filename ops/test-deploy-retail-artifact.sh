@@ -790,6 +790,76 @@ fi
 mv -- "$ROOT/runtime-releases/$NEW_SHA/python-runtime-supply.missing-test" \
   "$ROOT/runtime-releases/$NEW_SHA/python-runtime-supply"
 
+# P2.1 regression: corrupting a D2 identity field on the active deployed
+# release.env must reject same-SHA reverification BEFORE any runtime,
+# frontend or health mutation. The reverify path runs
+# copy_and_verify_artifact + verify_candidate_identity first, then it
+# MUST fail at the D2 identity comparison step.
+git --git-dir="$REMOTE" update-ref refs/heads/main "$NEW_SHA"
+LIVE_HEAD_BEFORE_REVERIFY="$(git -C "$LIVE" rev-parse HEAD)"
+DIST_BEFORE_REVERIFY="$(find "$LIVE/dist" -type f -exec sha256sum {} + 2>/dev/null | sort | sha256sum | awk '{print $1}')"
+ORIGINAL_RELEASE_ID="$(sed -n 's/^RELEASE_ID=//p' "$HANDLE/release.env" | head -n1)"
+sed -i 's|^RELEASE_ID=.*|RELEASE_ID=retail-release-tampered00000000000000000000000000000000000000|' "$HANDLE/release.env"
+set +e
+run_deploy "$ARTIFACT" "$NEW_SHA" "$CI_RUN_ID" "$ARTIFACT_SHA256" \
+  >"$ROOT/reverify-tampered-release-id.log" 2>&1
+REVERIFY_TAMPERED_RC=$?
+set -e
+[[ "$REVERIFY_TAMPERED_RC" -ne 0 ]]
+grep -Eq 'RELEASE_ID (must equal retail-release-SOURCE_SHA|does not match verified candidate)' \
+  "$ROOT/reverify-tampered-release-id.log" \
+  || { echo "reverify did not fail at D2 RELEASE_ID mismatch" >&2; exit 1; }
+[[ "$(git -C "$LIVE" rev-parse HEAD)" == "$LIVE_HEAD_BEFORE_REVERIFY" ]] \
+  || { echo "tampered reverify mutated live HEAD" >&2; exit 1; }
+DIST_AFTER_REVERIFY="$(find "$LIVE/dist" -type f -exec sha256sum {} + 2>/dev/null | sort | sha256sum | awk '{print $1}')"
+[[ "$DIST_BEFORE_REVERIFY" == "$DIST_AFTER_REVERIFY" ]] \
+  || { echo "tampered reverify mutated live dist" >&2; exit 1; }
+# Restore the handle so the manual rollback test below still works.
+sed -i "s|^RELEASE_ID=.*|RELEASE_ID=$ORIGINAL_RELEASE_ID|" "$HANDLE/release.env"
+
+# P2.2 regression: corrupting a D2 identity field on a deployed release.env
+# must reject manual rollback BEFORE any mutation (stop_runtime, git reset,
+# restore_runtime_venv, restore_dist, restore_runtime_assets). The validator
+# runs at the start of rollback_from_backup and captures D2 values used by
+# the final write_release_manifest (no TOCTOU re-read).
+LIVE_HEAD_BEFORE_ROLLBACK="$(git -C "$LIVE" rev-parse HEAD)"
+DIST_BEFORE_ROLLBACK="$(find "$LIVE/dist" -type f -exec sha256sum {} + 2>/dev/null | sort | sha256sum | awk '{print $1}')"
+BACKEND_MAIN_BEFORE_ROLLBACK="$(sha256sum "$LIVE/backend/main.py" | awk '{print $1}')"
+SYSTEMD_BEFORE_ROLLBACK="$(sha256sum "$ROOT/etc/systemd/system/unihub-backend.service" 2>/dev/null | awk '{print $1}')"
+ORIGINAL_ROLLBACK_SHA="$(sed -n 's/^ROLLBACK_SHA=//p' "$HANDLE/release.env" | head -n1)"
+sed -i 's|^ROLLBACK_SHA=.*|ROLLBACK_SHA=tampered00000000000000000000000000000000000000|' "$HANDLE/release.env"
+set +e
+run_deploy rollback "$HANDLE" >"$ROOT/rollback-tampered-d2.log" 2>&1
+ROLLBACK_TAMPERED_RC=$?
+set -e
+[[ "$ROLLBACK_TAMPERED_RC" -ne 0 ]]
+grep -Eq 'ROLLBACK_(RELEASE_ID must equal retail-release-ROLLBACK_SHA|SHA must equal OLD_SHA)' \
+  "$ROOT/rollback-tampered-d2.log" \
+  || { echo "tampered rollback did not fail at D2 ROLLBACK_SHA invariant" >&2; exit 1; }
+if grep -q 'TEST systemctl stop ' "$ROOT/rollback-tampered-d2.log"; then
+  echo "tampered rollback mutated runtime before D2 preflight validation" >&2
+  exit 1
+fi
+if grep -q 'HEAD is now at' "$ROOT/rollback-tampered-d2.log"; then
+  echo "tampered rollback advanced git before D2 preflight validation" >&2
+  exit 1
+fi
+[[ "$(git -C "$LIVE" rev-parse HEAD)" == "$LIVE_HEAD_BEFORE_ROLLBACK" ]] \
+  || { echo "tampered rollback mutated live HEAD" >&2; exit 1; }
+DIST_AFTER_ROLLBACK="$(find "$LIVE/dist" -type f -exec sha256sum {} + 2>/dev/null | sort | sha256sum | awk '{print $1}')"
+[[ "$DIST_BEFORE_ROLLBACK" == "$DIST_AFTER_ROLLBACK" ]] \
+  || { echo "tampered rollback mutated live dist" >&2; exit 1; }
+BACKEND_MAIN_AFTER_ROLLBACK="$(sha256sum "$LIVE/backend/main.py" | awk '{print $1}')"
+[[ "$BACKEND_MAIN_BEFORE_ROLLBACK" == "$BACKEND_MAIN_AFTER_ROLLBACK" ]] \
+  || { echo "tampered rollback mutated backend main.py" >&2; exit 1; }
+SYSTEMD_AFTER_ROLLBACK="$(sha256sum "$ROOT/etc/systemd/system/unihub-backend.service" 2>/dev/null | awk '{print $1}')"
+[[ "$SYSTEMD_BEFORE_ROLLBACK" == "$SYSTEMD_AFTER_ROLLBACK" ]] \
+  || { echo "tampered rollback mutated systemd unit" >&2; exit 1; }
+grep -q '^STATE=deployed$' "$HANDLE/release.env" \
+  || { echo "tampered rollback flipped STATE away from deployed" >&2; exit 1; }
+# Restore so the existing legitimate HANDLE rollback below still works.
+sed -i "s|^ROLLBACK_SHA=.*|ROLLBACK_SHA=$ORIGINAL_ROLLBACK_SHA|" "$HANDLE/release.env"
+
 run_deploy rollback "$HANDLE"
 [[ "$(git -C "$LIVE" rev-parse HEAD)" == "$OLD_SHA" ]]
 [[ "$(venv_identity_hash)" == "$OLD_VENV_HASH" ]]
