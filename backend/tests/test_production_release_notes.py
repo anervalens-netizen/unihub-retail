@@ -57,15 +57,21 @@ def test_valid_d2_promotion_renders_non_authoritative_view(tmp_path: Path) -> No
     assert "repository-managed `current`/`latest` release" in rendered
 
 
-def test_parser_rejects_duplicate_and_missing_fields(tmp_path: Path) -> None:
+def test_parser_rejects_duplicate_missing_and_unknown_fields(tmp_path: Path) -> None:
     values = valid_values()
     path = write_env(tmp_path, values)
     path.write_text(path.read_text(encoding="utf-8") + f"SOURCE_SHA={SOURCE_SHA}\n", encoding="utf-8")
     with pytest.raises(ValueError, match="duplicate field: SOURCE_SHA"):
         release_notes.parse_release_env(path)
 
+    values = valid_values()
     values.pop("SBOM_SHA256")
     with pytest.raises(ValueError, match="missing required field.*SBOM_SHA256"):
+        release_notes.parse_release_env(write_env(tmp_path, values))
+
+    values = valid_values()
+    values["FUTURE_D2_FIELD"] = "must-not-be-silently-ignored"
+    with pytest.raises(ValueError, match="unknown schema-v1 field.*FUTURE_D2_FIELD"):
         release_notes.parse_release_env(write_env(tmp_path, values))
 
 
