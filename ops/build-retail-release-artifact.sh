@@ -580,6 +580,9 @@ if release_a_evidence is not None:
     manifest["releaseAEvidence"] = release_a_evidence
 (output_path / "RELEASE_MANIFEST.json").write_text(json.dumps(manifest, sort_keys=True, separators=(",", ":")) + "\n", encoding="utf-8")
 PY
+"$PYTHON_BASE" -I -S "$SCRIPT_DIR/../scripts/release_identity.py" enrich-manifest \
+  --repo "$REPO_ROOT" \
+  --manifest "$BUILD_DIR/RELEASE_MANIFEST.json"
 "$PYTHON_BASE" -I -S "$SCRIPT_DIR/../scripts/validate_release_sbom.py" aggregate \
   "$BUILD_DIR/SBOM.cdx.json" --expected-sha "$SOURCE_SHA"
 (
