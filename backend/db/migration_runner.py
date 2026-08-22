@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -32,6 +32,8 @@ BASELINE_REPLAY_MIGRATIONS = frozenset(
 TOMBSTONE_ADOPTION_PREREQUISITES = {
     "005_retail_ai_analysis_views.sql": "006_drop_ai_analysis_views.sql",
 }
+TRANSACTIONAL_EXECUTION_MODE = "transactional"
+ONLINE_EXECUTION_MODE = "online"
 TRACKING_SQL = """
 CREATE TABLE IF NOT EXISTS schema_meta (
     schema_name TEXT PRIMARY KEY,
@@ -44,6 +46,11 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
     applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 ALTER TABLE schema_migrations ADD COLUMN IF NOT EXISTS checksum TEXT;
+CREATE TABLE IF NOT EXISTS schema_migration_online_recovery (
+    filename TEXT PRIMARY KEY,
+    checksum TEXT NOT NULL,
+    marked_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
 """.strip()
 
 
@@ -56,6 +63,26 @@ async def _activate_migration_owner(connection: asyncpg.Connection) -> None:
         await connection.execute("SET LOCAL ROLE unihub_schema_owner")
         if await connection.fetchval("SELECT current_user = 'unihub_schema_owner'") is not True:
             raise MigrationError("Migration schema-owner elevation failed")
+
+
+async def _activate_online_migration_owner(connection: asyncpg.Connection) -> bool:
+    if configured_database_authority() != "migrate":
+        return False
+    await connection.execute("SET ROLE unihub_schema_owner")
+    if await connection.fetchval("SELECT current_user = 'unihub_schema_owner'") is True:
+        return True
+    await connection.execute("RESET ROLE")
+    raise MigrationError("Online migration schema-owner elevation failed")
+
+
+async def _reset_online_migration_owner(
+    connection: asyncpg.Connection, *, activated: bool
+) -> None:
+    if not activated:
+        return
+    await connection.execute("RESET ROLE")
+    if await connection.fetchval("SELECT current_user = session_user") is not True:
+        raise MigrationError("Online migration schema-owner reset failed")
 
 
 def _authority_cutover_bootstrap_enabled() -> bool:
@@ -74,6 +101,10 @@ class MigrationManifest:
     baseline_hash: str
     incorporated_through: str
     checksums: dict[str, str]
+    execution_modes: dict[str, str] = field(default_factory=dict)
+
+    def execution_mode(self, filename: str) -> str:
+        return self.execution_modes.get(filename, TRANSACTIONAL_EXECUTION_MODE)
 
 
 def _sha256(path: Path) -> str:
@@ -84,17 +115,48 @@ def get_manifest_path() -> Path:
     return get_migrations_dir() / "manifest.json"
 
 
+def _valid_manifest_migrations(migrations: object) -> bool:
+    if not isinstance(migrations, dict) or not migrations:
+        return False
+    return all(
+        isinstance(name, str)
+        and isinstance(checksum, str)
+        and len(checksum) == 64
+        for name, checksum in migrations.items()
+    )
+
+
+def _valid_execution_modes(
+    execution_modes: object, migrations: dict[str, str]
+) -> bool:
+    if not isinstance(execution_modes, dict):
+        return False
+    return all(
+        isinstance(name, str)
+        and name in migrations
+        and mode == ONLINE_EXECUTION_MODE
+        for name, mode in execution_modes.items()
+    )
+
+
 def load_migration_manifest(path: Path | None = None) -> MigrationManifest:
     manifest_path = path or get_manifest_path()
     try:
         payload: Any = json.loads(manifest_path.read_text(encoding="utf-8"))
         baseline = payload["baseline"]
         migrations = payload["migrations"]
+        execution_modes = payload["execution_modes"]
         version = payload["version"]
     except (OSError, json.JSONDecodeError, KeyError, TypeError) as exc:
         raise MigrationError("Migration manifest is invalid") from exc
-    if version != 1 or not isinstance(baseline, dict) or not isinstance(migrations, dict):
+    if version != 2 or not isinstance(baseline, dict):
         raise MigrationError("Migration manifest is invalid")
+    if not _valid_manifest_migrations(migrations):
+        raise MigrationError("Migration manifest is invalid")
+    assert isinstance(migrations, dict)
+    if not _valid_execution_modes(execution_modes, migrations):
+        raise MigrationError("Migration manifest is invalid")
+    assert isinstance(execution_modes, dict)
     baseline_hash = baseline.get("sha256")
     incorporated = baseline.get("incorporated_through")
     if (
@@ -103,16 +165,14 @@ def load_migration_manifest(path: Path | None = None) -> MigrationManifest:
         or len(baseline_hash) != 64
         or not isinstance(incorporated, str)
         or incorporated not in migrations
-        or not migrations
-        or any(
-            not isinstance(name, str)
-            or not isinstance(checksum, str)
-            or len(checksum) != 64
-            for name, checksum in migrations.items()
-        )
     ):
         raise MigrationError("Migration manifest is invalid")
-    return MigrationManifest(baseline_hash, incorporated, dict(migrations))
+    return MigrationManifest(
+        baseline_hash,
+        incorporated,
+        dict(migrations),
+        dict(execution_modes),
+    )
 
 
 def verify_migration_files(manifest: MigrationManifest) -> None:
@@ -135,6 +195,14 @@ async def _tracking_rows(connection: asyncpg.Connection) -> dict[str, str | None
     return {row["filename"]: row["checksum"] for row in rows}
 
 
+async def _online_recovery_rows(connection: asyncpg.Connection) -> dict[str, str]:
+    rows = await connection.fetch(
+        "SELECT filename, checksum "
+        "FROM schema_migration_online_recovery ORDER BY filename"
+    )
+    return {str(row["filename"]): str(row["checksum"]) for row in rows}
+
+
 def _validate_applied(
     applied: dict[str, str | None], manifest: MigrationManifest, *, allow_missing_checksums: bool
 ) -> None:
@@ -147,6 +215,24 @@ def _validate_applied(
             continue
         if stored_checksum != expected:
             raise MigrationError("Applied migration checksum mismatch")
+
+
+def _validate_online_recovery(
+    recovery: dict[str, str], manifest: MigrationManifest
+) -> None:
+    for filename, checksum in recovery.items():
+        if (
+            manifest.execution_mode(filename) != ONLINE_EXECUTION_MODE
+            or manifest.checksums.get(filename) != checksum
+        ):
+            raise MigrationError(
+                "Online migration recovery state does not match the immutable manifest"
+            )
+    if recovery:
+        names = ", ".join(sorted(recovery))
+        raise MigrationError(
+            f"Online migration recovery required before migrations can continue: {names}"
+        )
 
 
 async def _verify_authority_cutover_bootstrap(
@@ -206,6 +292,222 @@ async def _verify_authority_cutover_bootstrap(
         )
 
 
+async def _mark_online_recovery(
+    connection: asyncpg.Connection, filename: str, checksum: str
+) -> None:
+    async with connection.transaction():
+        await _activate_migration_owner(connection)
+        await connection.execute(
+            """
+            INSERT INTO schema_migration_online_recovery (filename, checksum)
+            VALUES ($1, $2)
+            """,
+            filename,
+            checksum,
+        )
+
+
+async def _execute_online_statement(
+    connection: asyncpg.Connection, sql: str
+) -> None:
+    if connection.is_in_transaction():
+        raise MigrationError("Online migration requires no active transaction")
+    # fetch() uses asyncpg's extended-query/prepared path even without bind
+    # parameters. PostgreSQL therefore accepts exactly one top-level statement
+    # and rejects accidental multi-command migration files.
+    await connection.fetch(sql)
+
+
+async def _finalize_online_migration(
+    connection: asyncpg.Connection, filename: str, checksum: str
+) -> None:
+    async with connection.transaction():
+        await _activate_migration_owner(connection)
+        await connection.execute(
+            "INSERT INTO schema_migrations (filename, checksum) VALUES ($1, $2)",
+            filename,
+            checksum,
+        )
+        deleted = await connection.execute(
+            """
+            DELETE FROM schema_migration_online_recovery
+            WHERE filename = $1 AND checksum = $2
+            """,
+            filename,
+            checksum,
+        )
+        if deleted != "DELETE 1":
+            raise MigrationError("Online migration recovery marker was not finalized")
+
+
+async def _apply_online_migration(
+    connection: asyncpg.Connection,
+    *,
+    filename: str,
+    checksum: str,
+    sql: str,
+) -> None:
+    await _mark_online_recovery(connection, filename, checksum)
+    role_activated = False
+    try:
+        role_activated = await _activate_online_migration_owner(connection)
+        await _execute_online_statement(connection, sql)
+    except Exception as exc:
+        raise MigrationError(
+            f"Online migration failed; recovery required for {filename}"
+        ) from exc
+    finally:
+        await _reset_online_migration_owner(
+            connection,
+            activated=role_activated,
+        )
+    await _finalize_online_migration(connection, filename, checksum)
+
+
+async def _apply_transactional_migration(
+    connection: asyncpg.Connection,
+    *,
+    filename: str,
+    checksum: str,
+    sql: str,
+) -> None:
+    async with connection.transaction():
+        await _activate_migration_owner(connection)
+        await connection.execute(sql)
+        await connection.execute(
+            "INSERT INTO schema_migrations (filename, checksum) VALUES ($1, $2)",
+            filename,
+            checksum,
+        )
+
+
+async def _adopt_tombstones(
+    connection: asyncpg.Connection,
+    manifest: MigrationManifest,
+    applied: dict[str, str | None],
+) -> None:
+    for tombstone, prerequisite in TOMBSTONE_ADOPTION_PREREQUISITES.items():
+        if tombstone not in applied and prerequisite in applied:
+            adopted_checksum = manifest.checksums[tombstone]
+            await connection.execute(
+                """
+                INSERT INTO schema_migrations (filename, checksum)
+                VALUES ($1, $2)
+                ON CONFLICT (filename) DO NOTHING
+                """,
+                tombstone,
+                adopted_checksum,
+            )
+            applied[tombstone] = adopted_checksum
+
+
+async def _backfill_missing_checksums(
+    connection: asyncpg.Connection,
+    manifest: MigrationManifest,
+    applied: dict[str, str | None],
+) -> None:
+    for filename, checksum in applied.items():
+        if checksum is not None:
+            continue
+        await connection.execute(
+            "UPDATE schema_migrations SET checksum = $2 WHERE filename = $1",
+            filename,
+            manifest.checksums[filename],
+        )
+        applied[filename] = manifest.checksums[filename]
+
+
+async def _record_fresh_baseline(
+    connection: asyncpg.Connection,
+    manifest: MigrationManifest,
+    applied: dict[str, str | None],
+) -> None:
+    incorporated_names = [
+        name
+        for name in manifest.checksums
+        if name <= manifest.incorporated_through
+        and name not in BASELINE_REPLAY_MIGRATIONS
+    ]
+    for filename in incorporated_names:
+        await connection.execute(
+            """
+            INSERT INTO schema_migrations (filename, checksum)
+            VALUES ($1, $2)
+            ON CONFLICT (filename) DO NOTHING
+            """,
+            filename,
+            manifest.checksums[filename],
+        )
+        applied[filename] = manifest.checksums[filename]
+    await connection.execute(
+        """
+        INSERT INTO schema_meta (schema_name, schema_hash, applied_at)
+        VALUES ('schema_v2', $1, now())
+        ON CONFLICT (schema_name) DO NOTHING
+        """,
+        manifest.baseline_hash,
+    )
+
+
+async def _prepare_migration_history(
+    connection: asyncpg.Connection,
+    manifest: MigrationManifest,
+    *,
+    has_application_schema: bool,
+) -> dict[str, str | None]:
+    async with connection.transaction():
+        await _activate_migration_owner(connection)
+        if not has_application_schema:
+            await connection.execute(get_schema_path().read_text(encoding="utf-8"))
+        await connection.execute(TRACKING_SQL)
+        applied = await _tracking_rows(connection)
+        _validate_applied(applied, manifest, allow_missing_checksums=True)
+        await _adopt_tombstones(connection, manifest, applied)
+        await _backfill_missing_checksums(connection, manifest, applied)
+        if not has_application_schema:
+            await _record_fresh_baseline(connection, manifest, applied)
+    _validate_applied(applied, manifest, allow_missing_checksums=False)
+    if manifest.execution_modes:
+        _validate_online_recovery(
+            await _online_recovery_rows(connection),
+            manifest,
+        )
+    return applied
+
+
+async def _apply_pending_migrations(
+    connection: asyncpg.Connection,
+    manifest: MigrationManifest,
+    applied: dict[str, str | None],
+    *,
+    cutover_bootstrap: bool,
+) -> list[str]:
+    applied_now: list[str] = []
+    for filename, checksum in manifest.checksums.items():
+        if filename in applied:
+            continue
+        if cutover_bootstrap and filename not in AUTHORITY_CUTOVER_MIGRATIONS:
+            continue
+        sql = (get_migrations_dir() / filename).read_text(encoding="utf-8")
+        if manifest.execution_mode(filename) == ONLINE_EXECUTION_MODE:
+            await _apply_online_migration(
+                connection,
+                filename=filename,
+                checksum=checksum,
+                sql=sql,
+            )
+        else:
+            await _apply_transactional_migration(
+                connection,
+                filename=filename,
+                checksum=checksum,
+                sql=sql,
+            )
+        applied[filename] = checksum
+        applied_now.append(filename)
+    return applied_now
+
+
 async def run_migrations(database_url: str | None = None) -> list[str]:
     manifest = load_migration_manifest()
     verify_migration_files(manifest)
@@ -216,7 +518,6 @@ async def run_migrations(database_url: str | None = None) -> list[str]:
         migration_database_url,
         **database_connection_options("unihub-retail-migrations"),
     )
-    applied_now: list[str] = []
     try:
         await connection.execute("SELECT pg_advisory_lock($1)", MIGRATION_ADVISORY_LOCK_ID)
         cutover_bootstrap = _authority_cutover_bootstrap_enabled()
@@ -233,78 +534,17 @@ async def run_migrations(database_url: str | None = None) -> list[str]:
             raise MigrationError(
                 "Fresh bootstrap requires the administrative extension/schema preflight"
             )
-        async with connection.transaction():
-            await _activate_migration_owner(connection)
-            if not has_application_schema:
-                await connection.execute(get_schema_path().read_text(encoding="utf-8"))
-            await connection.execute(TRACKING_SQL)
-            applied = await _tracking_rows(connection)
-            _validate_applied(applied, manifest, allow_missing_checksums=True)
-            for tombstone, prerequisite in TOMBSTONE_ADOPTION_PREREQUISITES.items():
-                if tombstone not in applied and prerequisite in applied:
-                    adopted_checksum = manifest.checksums[tombstone]
-                    await connection.execute(
-                        """
-                        INSERT INTO schema_migrations (filename, checksum)
-                        VALUES ($1, $2)
-                        ON CONFLICT (filename) DO NOTHING
-                        """,
-                        tombstone,
-                        adopted_checksum,
-                    )
-                    applied[tombstone] = adopted_checksum
-            for filename, checksum in applied.items():
-                if checksum is None:
-                    await connection.execute(
-                        "UPDATE schema_migrations SET checksum = $2 WHERE filename = $1",
-                        filename,
-                        manifest.checksums[filename],
-                    )
-                    applied[filename] = manifest.checksums[filename]
-            if not has_application_schema:
-                incorporated_names = [
-                    name
-                    for name in manifest.checksums
-                    if name <= manifest.incorporated_through
-                    and name not in BASELINE_REPLAY_MIGRATIONS
-                ]
-                for filename in incorporated_names:
-                    await connection.execute(
-                        """
-                        INSERT INTO schema_migrations (filename, checksum)
-                        VALUES ($1, $2)
-                        ON CONFLICT (filename) DO NOTHING
-                        """,
-                        filename,
-                        manifest.checksums[filename],
-                    )
-                    applied[filename] = manifest.checksums[filename]
-                await connection.execute(
-                    """
-                    INSERT INTO schema_meta (schema_name, schema_hash, applied_at)
-                    VALUES ('schema_v2', $1, now())
-                    ON CONFLICT (schema_name) DO NOTHING
-                    """,
-                    manifest.baseline_hash,
-                )
-        _validate_applied(applied, manifest, allow_missing_checksums=False)
-        for filename, checksum in manifest.checksums.items():
-            if filename in applied:
-                continue
-            if cutover_bootstrap and filename not in AUTHORITY_CUTOVER_MIGRATIONS:
-                continue
-            sql = (get_migrations_dir() / filename).read_text(encoding="utf-8")
-            async with connection.transaction():
-                await _activate_migration_owner(connection)
-                await connection.execute(sql)
-                await connection.execute(
-                    "INSERT INTO schema_migrations (filename, checksum) VALUES ($1, $2)",
-                    filename,
-                    checksum,
-                )
-            applied[filename] = checksum
-            applied_now.append(filename)
-        return applied_now
+        applied = await _prepare_migration_history(
+            connection,
+            manifest,
+            has_application_schema=has_application_schema,
+        )
+        return await _apply_pending_migrations(
+            connection,
+            manifest,
+            applied,
+            cutover_bootstrap=cutover_bootstrap,
+        )
     finally:
         try:
             await connection.execute(
@@ -340,6 +580,19 @@ async def verify_migrations_current(pool: asyncpg.Pool) -> None:
         if not checksum_exists:
             raise MigrationError("Migration checksum tracking is not initialized")
         applied = await _tracking_rows(connection)
+        if manifest.execution_modes:
+            online_tracking_exists = bool(
+                await connection.fetchval(
+                    "SELECT to_regclass('public.schema_migration_online_recovery') "
+                    "IS NOT NULL"
+                )
+            )
+            if not online_tracking_exists:
+                raise MigrationError("Online migration recovery tracking is not initialized")
+            _validate_online_recovery(
+                await _online_recovery_rows(connection),
+                manifest,
+            )
     _validate_applied(applied, manifest, allow_missing_checksums=False)
     if set(applied) != set(manifest.checksums):
         raise MigrationError("Database has pending migrations")
