@@ -1,18 +1,29 @@
 # UniHub Retail — catalog canonic
 
-Identitatea release-ului curent nu este menținută manual în documentație.
-Autoritatea machine-readable a candidatului certificat este `RELEASE_MANIFEST.json`,
-generat de CI pentru SHA-ul exact, legat prin digesturi de artefact/SBOM și semnat.
-Starea de production este stabilită de recordul D2 de promovare verificat de deploy,
-iar tag-urile D3 `production/retail-release-<SHA>` păstrează istoricul promovărilor.
-Un view narativ se generează numai dintr-un `release.env` D2 exact și verificat cu
-`scripts/render_production_release_notes.py`; Markdown-ul rezultat nu este autoritate.
-Rendererul nu descoperă și nu selectează un release `current`/`latest`: callerul trebuie
-să furnizeze exact recordul de promovare verificat. `releases/v*.md` sunt exclusiv note
-istorice și nu pot redeclara o identitate canonică de production.
+Există trei planuri de adevăr separate și nu trebuie amestecate:
 
-Catalogul complet și metadatele de stare sunt în [`catalog.json`](catalog.json).
-Un document datat ori marcat `historical` este evidence, nu autoritate curentă.
+1. **Lifecycle/status pentru documentația versionată:** singura autoritate
+   machine-readable este [`catalog.json`](catalog.json), câmpul
+   `entries[].status`. Valorile admise sunt `active`, `historical` și
+   `superseded`. Etichetele `Status:` din Markdown-uri vechi sunt snapshot-uri
+   istorice, nu stare curentă.
+2. **Readiness/health live:** starea runtime nu este versionată în Git.
+   Autoritatea este răspunsul `/readyz` împreună cu semnalele Prometheus
+   definite în [`operations/retail-slo-readiness.md`](operations/retail-slo-readiness.md).
+3. **Identitatea livrării:** identitatea candidatului certificat rămâne
+   `RELEASE_MANIFEST.json`, generat și semnat de CI pentru SHA-ul exact; D2
+   păstrează promotion state, iar tag-urile D3
+   `production/retail-release-<SHA>` păstrează istoricul promovărilor.
+
+Un view narativ de release se generează numai dintr-un `release.env` D2 exact și
+verificat cu `scripts/render_production_release_notes.py`; Markdown-ul rezultat
+nu este autoritate. Rendererul nu descoperă și nu selectează un release
+`current`/`latest`. `releases/v*.md` sunt exclusiv note istorice și nu pot
+redeclara o identitate canonică de production.
+
+GitHub Issue #159 rămâne cronologia/evidence log al programului de remediere, nu
+sursa machine-readable pentru statusul documentelor, release identity sau live
+health.
 
 ## Autoritate activă
 
@@ -34,21 +45,21 @@ Un document datat ori marcat `historical` este evidence, nu autoritate curentă.
 - runbook salarii HR: [`RUNBOOK-import-salarii-HR.md`](RUNBOOK-import-salarii-HR.md);
 - Grile: [`grile-integration-plan.md`](grile-integration-plan.md),
   [`engineering/h11-grile-monthly-idempotency.md`](engineering/h11-grile-monthly-idempotency.md);
-- SLO/readiness: [`operations/retail-slo-readiness.md`](operations/retail-slo-readiness.md);
-- planul Contract-Build-Prove activ:
-  [`exec-plans/active/UR-CLOSE-20260812.md`](exec-plans/active/UR-CLOSE-20260812.md).
+- contract SLO/readiness:
+  [`operations/retail-slo-readiness.md`](operations/retail-slo-readiness.md).
 
-## Remediere tehnică activă
+## Tracking și evidence
 
-- trackerul operațional pentru audit/remediere este GitHub issue
-  [`#159`](https://github.com/anervalens-netizen/unihub-retail/issues/159); Phase C este
-  **COMPLETE + CERTIFIED**, iar programul continuă cu Phase D;
-- guardrail-ul de portabilitate pentru refactorizări este GitHub issue
-  [`#170`](https://github.com/anervalens-netizen/unihub-retail/issues/170); acesta este
-  o regulă de design, nu un task separat și nu justifică abstractions speculative.
+- Issue #159: audit/remediation chronology și evidence; nu este status authority;
+- Issue #170: guardrail de portabilitate pentru refactorizări; regulă de design,
+  nu task separat și nu justifică abstracții speculative.
 
 ## Evidence istoric
 
+- planul de closure Release B, acum istoric:
+  [`exec-plans/completed/UR-CLOSE-20260812.md`](exec-plans/completed/UR-CLOSE-20260812.md);
+- substreamul PR #153/#158 finalizat:
+  [`exec-plans/completed/UR-PR153-READY-20260814.md`](exec-plans/completed/UR-PR153-READY-20260814.md);
 - release-uri istorice: [`releases/v2.0.0.md`](releases/v2.0.0.md),
   [`releases/v2.0.1.md`](releases/v2.0.1.md),
   [`releases/v2.1.0.md`](releases/v2.1.0.md);
