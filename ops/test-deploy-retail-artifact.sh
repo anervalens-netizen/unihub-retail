@@ -833,7 +833,7 @@ run_deploy rollback "$HANDLE" >"$ROOT/rollback-tampered-d2.log" 2>&1
 ROLLBACK_TAMPERED_RC=$?
 set -e
 [[ "$ROLLBACK_TAMPERED_RC" -ne 0 ]]
-grep -Eq 'ROLLBACK_(RELEASE_ID must equal retail-release-ROLLBACK_SHA|SHA must equal OLD_SHA)' \
+grep -Eq '(ROLLBACK_(RELEASE_ID must equal retail-release-ROLLBACK_SHA|SHA must equal OLD_SHA)|source SHA must be exactly 40 lowercase hex characters)' \
   "$ROOT/rollback-tampered-d2.log" \
   || { echo "tampered rollback did not fail at D2 ROLLBACK_SHA invariant" >&2; exit 1; }
 if grep -q 'TEST systemctl stop ' "$ROOT/rollback-tampered-d2.log"; then
@@ -859,6 +859,145 @@ grep -q '^STATE=deployed$' "$HANDLE/release.env" \
   || { echo "tampered rollback flipped STATE away from deployed" >&2; exit 1; }
 # Restore so the existing legitimate HANDLE rollback below still works.
 sed -i "s|^ROLLBACK_SHA=.*|ROLLBACK_SHA=$ORIGINAL_ROLLBACK_SHA|" "$HANDLE/release.env"
+
+# Test A: deleting PROMOTION_SCHEMA_VERSION from an otherwise-D2 handle
+# MUST NOT silently downgrade the validator to legacy mode. The
+# remaining D2-only fields (RELEASE_ID, SOURCE_SHA, MIGRATION_HEAD,
+# ARTIFACT_SHA256, SBOM_SHA256, DEPLOYED_AT_UTC, PREDECESSOR_*,
+# ROLLBACK_*) trip the schema-deletion guard.
+ORIGINAL_SCHEMA_LINE="$(grep '^PROMOTION_SCHEMA_VERSION=' "$HANDLE/release.env" | head -n1)"
+[[ -n "$ORIGINAL_SCHEMA_LINE" ]] \
+  || { echo "PROMOTION_SCHEMA_VERSION missing from deployed D2 handle" >&2; exit 1; }
+sed -i '/^PROMOTION_SCHEMA_VERSION=/d' "$HANDLE/release.env"
+DIST_BEFORE_SCHEMA_REVERIFY="$(find "$LIVE/dist" -type f -exec sha256sum {} + 2>/dev/null | sort | sha256sum | awk '{print $1}')"
+LIVE_HEAD_BEFORE_SCHEMA_REVERIFY="$(git -C "$LIVE" rev-parse HEAD)"
+set +e
+run_deploy "$ARTIFACT" "$NEW_SHA" "$CI_RUN_ID" "$ARTIFACT_SHA256" \
+  >"$ROOT/schema-delete-reverify.log" 2>&1
+SCHEMA_DELETE_REVERIFY_RC=$?
+set -e
+[[ "$SCHEMA_DELETE_REVERIFY_RC" -ne 0 ]]
+grep -Eq 'D2 fields present without PROMOTION_SCHEMA_VERSION' \
+  "$ROOT/schema-delete-reverify.log" \
+  || { echo "schema deletion reverify did not fail with D2-only field guard" >&2; exit 1; }
+[[ "$(git -C "$LIVE" rev-parse HEAD)" == "$LIVE_HEAD_BEFORE_SCHEMA_REVERIFY" ]] \
+  || { echo "schema deletion reverify mutated live HEAD" >&2; exit 1; }
+DIST_AFTER_SCHEMA_REVERIFY="$(find "$LIVE/dist" -type f -exec sha256sum {} + 2>/dev/null | sort | sha256sum | awk '{print $1}')"
+[[ "$DIST_BEFORE_SCHEMA_REVERIFY" == "$DIST_AFTER_SCHEMA_REVERIFY" ]] \
+  || { echo "schema deletion reverify mutated live dist" >&2; exit 1; }
+# Restore PROMOTION_SCHEMA_VERSION so subsequent tests still operate on
+# a complete D2 handle.
+printf '%s\n' "$ORIGINAL_SCHEMA_LINE" >>"$HANDLE/release.env"
+
+# Test B: same schema-deletion corruption on manual rollback must fail
+# at the rollback preflight, BEFORE stop_runtime / git reset / restore.
+sed -i '/^PROMOTION_SCHEMA_VERSION=/d' "$HANDLE/release.env"
+LIVE_HEAD_BEFORE_SCHEMA_ROLLBACK="$(git -C "$LIVE" rev-parse HEAD)"
+DIST_BEFORE_SCHEMA_ROLLBACK="$(find "$LIVE/dist" -type f -exec sha256sum {} + 2>/dev/null | sort | sha256sum | awk '{print $1}')"
+BACKEND_MAIN_BEFORE_SCHEMA_ROLLBACK="$(sha256sum "$LIVE/backend/main.py" | awk '{print $1}')"
+set +e
+run_deploy rollback "$HANDLE" >"$ROOT/schema-delete-rollback.log" 2>&1
+SCHEMA_DELETE_ROLLBACK_RC=$?
+set -e
+[[ "$SCHEMA_DELETE_ROLLBACK_RC" -ne 0 ]]
+grep -Eq 'D2 fields present without PROMOTION_SCHEMA_VERSION' \
+  "$ROOT/schema-delete-rollback.log" \
+  || { echo "schema deletion rollback did not fail with D2-only field guard" >&2; exit 1; }
+if grep -q 'TEST systemctl stop ' "$ROOT/schema-delete-rollback.log"; then
+  echo "schema deletion rollback mutated runtime before D2 preflight validation" >&2
+  exit 1
+fi
+if grep -q 'HEAD is now at' "$ROOT/schema-delete-rollback.log"; then
+  echo "schema deletion rollback advanced git before D2 preflight validation" >&2
+  exit 1
+fi
+[[ "$(git -C "$LIVE" rev-parse HEAD)" == "$LIVE_HEAD_BEFORE_SCHEMA_ROLLBACK" ]] \
+  || { echo "schema deletion rollback mutated live HEAD" >&2; exit 1; }
+DIST_AFTER_SCHEMA_ROLLBACK="$(find "$LIVE/dist" -type f -exec sha256sum {} + 2>/dev/null | sort | sha256sum | awk '{print $1}')"
+[[ "$DIST_BEFORE_SCHEMA_ROLLBACK" == "$DIST_AFTER_SCHEMA_ROLLBACK" ]] \
+  || { echo "schema deletion rollback mutated live dist" >&2; exit 1; }
+BACKEND_MAIN_AFTER_SCHEMA_ROLLBACK="$(sha256sum "$LIVE/backend/main.py" | awk '{print $1}')"
+[[ "$BACKEND_MAIN_BEFORE_SCHEMA_ROLLBACK" == "$BACKEND_MAIN_AFTER_SCHEMA_ROLLBACK" ]] \
+  || { echo "schema deletion rollback mutated backend main.py" >&2; exit 1; }
+grep -q '^STATE=deployed$' "$HANDLE/release.env" \
+  || { echo "schema deletion rollback flipped STATE away from deployed" >&2; exit 1; }
+printf '%s\n' "$ORIGINAL_SCHEMA_LINE" >>"$HANDLE/release.env"
+
+# Test C: a D2 STATE=deployed handle MUST have a canonical DEPLOYED_AT_UTC.
+# Deleting it must fail same-SHA reverify AND manual rollback.
+ORIGINAL_DEPLOYED_AT="$(grep '^DEPLOYED_AT_UTC=' "$HANDLE/release.env" | head -n1)"
+[[ -n "$ORIGINAL_DEPLOYED_AT" ]] \
+  || { echo "DEPLOYED_AT_UTC missing from deployed D2 handle" >&2; exit 1; }
+sed -i '/^DEPLOYED_AT_UTC=/d' "$HANDLE/release.env"
+set +e
+run_deploy "$ARTIFACT" "$NEW_SHA" "$CI_RUN_ID" "$ARTIFACT_SHA256" \
+  >"$ROOT/missing-timestamp-reverify.log" 2>&1
+MISSING_TIMESTAMP_REVERIFY_RC=$?
+set -e
+[[ "$MISSING_TIMESTAMP_REVERIFY_RC" -ne 0 ]]
+grep -Eq 'DEPLOYED_AT_UTC is required when STATE=deployed' \
+  "$ROOT/missing-timestamp-reverify.log" \
+  || { echo "missing timestamp reverify did not fail with D2 timestamp invariant" >&2; exit 1; }
+set +e
+run_deploy rollback "$HANDLE" >"$ROOT/missing-timestamp-rollback.log" 2>&1
+MISSING_TIMESTAMP_ROLLBACK_RC=$?
+set -e
+[[ "$MISSING_TIMESTAMP_ROLLBACK_RC" -ne 0 ]]
+grep -Eq 'DEPLOYED_AT_UTC is required when STATE=deployed' \
+  "$ROOT/missing-timestamp-rollback.log" \
+  || { echo "missing timestamp rollback did not fail with D2 timestamp invariant" >&2; exit 1; }
+if grep -q 'TEST systemctl stop ' "$ROOT/missing-timestamp-rollback.log"; then
+  echo "missing timestamp rollback mutated runtime before D2 preflight validation" >&2
+  exit 1
+fi
+grep -q '^STATE=deployed$' "$HANDLE/release.env" \
+  || { echo "missing timestamp rollback flipped STATE away from deployed" >&2; exit 1; }
+printf '%s\n' "$ORIGINAL_DEPLOYED_AT" >>"$HANDLE/release.env"
+
+# Test D: SHA format must be enforced even when the internal identity
+# relations are internally consistent. OLD_SHA / PREDECESSOR_SHA /
+# ROLLBACK_SHA / PREDECESSOR_RELEASE_ID / ROLLBACK_RELEASE_ID are
+# rewritten to a 40-character non-hex token and a matching
+# retail-release-* ID. The relation checks would pass but the SHA
+# format check must still reject.
+INVALID_TOKEN="tampered0000000000000000000000000000000000"
+INVALID_PREDECESSOR_ID="retail-release-${INVALID_TOKEN}"
+ORIGINAL_OLD_SHA="$(sed -n 's/^OLD_SHA=//p' "$HANDLE/release.env" | head -n1)"
+ORIGINAL_PREDECESSOR_SHA="$(sed -n 's/^PREDECESSOR_SHA=//p' "$HANDLE/release.env" | head -n1)"
+ORIGINAL_ROLLBACK_SHA="$(sed -n 's/^ROLLBACK_SHA=//p' "$HANDLE/release.env" | head -n1)"
+ORIGINAL_PREDECESSOR_RELEASE_ID="$(sed -n 's/^PREDECESSOR_RELEASE_ID=//p' "$HANDLE/release.env" | head -n1)"
+ORIGINAL_ROLLBACK_RELEASE_ID="$(sed -n 's/^ROLLBACK_RELEASE_ID=//p' "$HANDLE/release.env" | head -n1)"
+sed -i "s|^OLD_SHA=.*|OLD_SHA=$INVALID_TOKEN|" "$HANDLE/release.env"
+sed -i "s|^PREDECESSOR_SHA=.*|PREDECESSOR_SHA=$INVALID_TOKEN|" "$HANDLE/release.env"
+sed -i "s|^ROLLBACK_SHA=.*|ROLLBACK_SHA=$INVALID_TOKEN|" "$HANDLE/release.env"
+sed -i "s|^PREDECESSOR_RELEASE_ID=.*|PREDECESSOR_RELEASE_ID=$INVALID_PREDECESSOR_ID|" "$HANDLE/release.env"
+sed -i "s|^ROLLBACK_RELEASE_ID=.*|ROLLBACK_RELEASE_ID=$INVALID_PREDECESSOR_ID|" "$HANDLE/release.env"
+LIVE_HEAD_BEFORE_INVALID_SHA="$(git -C "$LIVE" rev-parse HEAD)"
+DIST_BEFORE_INVALID_SHA="$(find "$LIVE/dist" -type f -exec sha256sum {} + 2>/dev/null | sort | sha256sum | awk '{print $1}')"
+set +e
+run_deploy rollback "$HANDLE" >"$ROOT/invalid-sha-rollback.log" 2>&1
+INVALID_SHA_ROLLBACK_RC=$?
+set -e
+[[ "$INVALID_SHA_ROLLBACK_RC" -ne 0 ]]
+grep -Eq 'source SHA must be exactly 40 lowercase hex characters' \
+  "$ROOT/invalid-sha-rollback.log" \
+  || { echo "invalid SHA format rollback did not fail with SHA format check" >&2; exit 1; }
+if grep -q 'TEST systemctl stop ' "$ROOT/invalid-sha-rollback.log"; then
+  echo "invalid SHA format rollback mutated runtime before SHA format check" >&2
+  exit 1
+fi
+[[ "$(git -C "$LIVE" rev-parse HEAD)" == "$LIVE_HEAD_BEFORE_INVALID_SHA" ]] \
+  || { echo "invalid SHA format rollback mutated live HEAD" >&2; exit 1; }
+DIST_AFTER_INVALID_SHA="$(find "$LIVE/dist" -type f -exec sha256sum {} + 2>/dev/null | sort | sha256sum | awk '{print $1}')"
+[[ "$DIST_BEFORE_INVALID_SHA" == "$DIST_AFTER_INVALID_SHA" ]] \
+  || { echo "invalid SHA format rollback mutated live dist" >&2; exit 1; }
+grep -q '^STATE=deployed$' "$HANDLE/release.env" \
+  || { echo "invalid SHA format rollback flipped STATE away from deployed" >&2; exit 1; }
+sed -i "s|^OLD_SHA=.*|OLD_SHA=$ORIGINAL_OLD_SHA|" "$HANDLE/release.env"
+sed -i "s|^PREDECESSOR_SHA=.*|PREDECESSOR_SHA=$ORIGINAL_PREDECESSOR_SHA|" "$HANDLE/release.env"
+sed -i "s|^ROLLBACK_SHA=.*|ROLLBACK_SHA=$ORIGINAL_ROLLBACK_SHA|" "$HANDLE/release.env"
+sed -i "s|^PREDECESSOR_RELEASE_ID=.*|PREDECESSOR_RELEASE_ID=$ORIGINAL_PREDECESSOR_RELEASE_ID|" "$HANDLE/release.env"
+sed -i "s|^ROLLBACK_RELEASE_ID=.*|ROLLBACK_RELEASE_ID=$ORIGINAL_ROLLBACK_RELEASE_ID|" "$HANDLE/release.env"
 
 run_deploy rollback "$HANDLE"
 [[ "$(git -C "$LIVE" rev-parse HEAD)" == "$OLD_SHA" ]]

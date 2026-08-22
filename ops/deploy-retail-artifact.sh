@@ -1212,8 +1212,10 @@ read_release_env_field() {
 }
 
 # Validate the D2 release.env at the given path. Pre-D2 handles (no
-# PROMOTION_SCHEMA_VERSION) return 0 and capture nothing, so a pre-D2
-# rollback handle keeps its legacy-only contract. D2 handles must have
+# PROMOTION_SCHEMA_VERSION and no D2-only field) return 0 and capture
+# nothing, so a pre-D2 rollback handle keeps its legacy-only contract.
+# A handle that has D2-only fields without PROMOTION_SCHEMA_VERSION is
+# treated as a corrupted D2 handle and fails closed. D2 handles must have
 # PROMOTION_SCHEMA_VERSION=1 and exactly one occurrence of every required
 # field; every captured value is format-checked and the identity
 # relationships inside the file must hold.
@@ -1225,7 +1227,34 @@ validate_d2_release_env() {
 
   reset_d2_captured
 
-  if ! grep -q '^PROMOTION_SCHEMA_VERSION=' "$release_env"; then
+  local has_schema=0
+  if grep -q '^PROMOTION_SCHEMA_VERSION=' "$release_env"; then
+    has_schema=1
+  fi
+
+  # D2-only fields: any one of these in a release.env without
+  # PROMOTION_SCHEMA_VERSION is a corrupted D2 handle and fails closed.
+  local -a d2_only_fields=(
+    RELEASE_ID
+    SOURCE_SHA
+    MIGRATION_HEAD
+    ARTIFACT_SHA256
+    SBOM_SHA256
+    DEPLOYED_AT_UTC
+    PREDECESSOR_RELEASE_ID
+    PREDECESSOR_SHA
+    ROLLBACK_RELEASE_ID
+    ROLLBACK_SHA
+  )
+  local d2_field
+  for d2_field in "${d2_only_fields[@]}"; do
+    if grep -q "^${d2_field}=" "$release_env"; then
+      [[ "$has_schema" == "1" ]] \
+        || die "D2 fields present without PROMOTION_SCHEMA_VERSION: $d2_field"
+    fi
+  done
+
+  if [[ "$has_schema" == "0" ]]; then
     return 0
   fi
 
@@ -1246,22 +1275,34 @@ validate_d2_release_env() {
   D2_OLD_SHA="$(read_release_env_field "$release_env" OLD_SHA)"
   D2_NEW_SHA="$(read_release_env_field "$release_env" NEW_SHA)"
   D2_STATE="$(read_release_env_field "$release_env" STATE)"
-  # DEPLOYED_AT_UTC is only written when the state first reaches deployed,
-  # so it may legitimately be absent for in-progress or recovery_required
-  # handles.
   if grep -q '^DEPLOYED_AT_UTC=' "$release_env"; then
     D2_DEPLOYED_AT_UTC="$(read_release_env_field "$release_env" DEPLOYED_AT_UTC)"
   fi
 
+  # Format checks: independent SHA / SHA-256 hex validation on every
+  # SHA field, regardless of how the internal relationships end up.
   validate_sha "$D2_SOURCE_SHA"
+  validate_sha "$D2_OLD_SHA"
+  validate_sha "$D2_NEW_SHA"
+  validate_sha "$D2_PREDECESSOR_SHA"
+  validate_sha "$D2_ROLLBACK_SHA"
   validate_sha256 "$D2_ARTIFACT_SHA256"
   validate_sha256 "$D2_SBOM_SHA256"
   [[ "$D2_MIGRATION_HEAD" =~ ^[0-9]{3}_[A-Za-z0-9_]+\.sql$ ]] \
     || die "MIGRATION_HEAD is not a canonical migration filename"
-  if [[ -n "$D2_DEPLOYED_AT_UTC" ]]; then
-    [[ "$D2_DEPLOYED_AT_UTC" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]] \
-      || die "DEPLOYED_AT_UTC is not a UTC ISO timestamp"
+
+  # DEPLOYED_AT_UTC: mandatory when STATE=deployed, otherwise it may be
+  # legitimately absent (in-progress or recovery_required handles).
+  # When present it must be a UTC canonical timestamp with valid ranges.
+  if [[ "$D2_STATE" == "deployed" ]]; then
+    [[ -n "$D2_DEPLOYED_AT_UTC" ]] \
+      || die "DEPLOYED_AT_UTC is required when STATE=deployed"
   fi
+  if [[ -n "$D2_DEPLOYED_AT_UTC" ]]; then
+    validate_d2_deployed_at_utc "$D2_DEPLOYED_AT_UTC"
+  fi
+
+  # Identity relationships inside the file.
   [[ "$D2_RELEASE_ID" == "retail-release-$D2_SOURCE_SHA" ]] \
     || die "RELEASE_ID must equal retail-release-SOURCE_SHA"
   [[ "$D2_PREDECESSOR_RELEASE_ID" == "retail-release-$D2_PREDECESSOR_SHA" ]] \
@@ -1278,17 +1319,38 @@ validate_d2_release_env() {
   return 0
 }
 
+# Strict UTC canonical timestamp validation for D2 DEPLOYED_AT_UTC. The
+# pattern enforces YYYY-MM-DDTHH:MM:SSZ, and a roundtrip through `date`
+# catches impossible dates such as 2026-99-99T99:99:99Z or Feb 30.
+validate_d2_deployed_at_utc() {
+  local value="$1"
+  [[ "$value" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]] \
+    || die "DEPLOYED_AT_UTC is not a UTC canonical timestamp: $value"
+  local parsed reconstructed
+  if ! parsed="$(date -u -d "${value%Z}" +%s 2>/dev/null)"; then
+    die "DEPLOYED_AT_UTC is not a valid UTC timestamp: $value"
+  fi
+  reconstructed="$(date -u -d "@$parsed" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null)" \
+    || die "DEPLOYED_AT_UTC roundtrip failed: $value"
+  [[ "$reconstructed" == "$value" ]] \
+    || die "DEPLOYED_AT_UTC is not a UTC canonical timestamp: $value"
+}
+
 # For same-SHA reverification: locate the unique deployed handle for the
 # expected SHA and validate its release.env against the just-loaded
-# CANDIDATE_* set. Pre-D2 handles only need NEW_SHA to match.
+# CANDIDATE_* set. The validator always runs first; the decision between
+# D2 candidate comparison and genuine legacy comparison is taken from
+# whether D2_RELEASE_ID was captured. Genuine legacy same-SHA reverify
+# still requires NEW_SHA exactly and STATE=deployed exactly.
 verify_active_d2_release_env_against_candidate() {
   local release_env="$1"
 
   [[ -f "$release_env" && ! -L "$release_env" ]] \
     || die "active release env is missing or unsafe: $release_env"
 
-  if grep -q '^PROMOTION_SCHEMA_VERSION=' "$release_env"; then
-    validate_d2_release_env "$release_env"
+  validate_d2_release_env "$release_env"
+
+  if [[ -n "$D2_RELEASE_ID" ]]; then
     [[ "$D2_SOURCE_SHA" == "${CANDIDATE_SOURCE_SHA:-}" ]] \
       || die "active release.env SOURCE_SHA does not match verified candidate"
     [[ "$D2_RELEASE_ID" == "${CANDIDATE_RELEASE_ID:-}" ]] \
@@ -1308,10 +1370,13 @@ verify_active_d2_release_env_against_candidate() {
     return 0
   fi
 
-  local legacy_new_sha
+  local legacy_new_sha legacy_state
   legacy_new_sha="$(read_release_env_field "$release_env" NEW_SHA)"
+  legacy_state="$(read_release_env_field "$release_env" STATE)"
   [[ "$legacy_new_sha" == "${CANDIDATE_SOURCE_SHA:-}" ]] \
-    || die "active pre-D2 release.env NEW_SHA does not match verified candidate"
+    || die "active legacy release.env NEW_SHA does not match verified candidate"
+  [[ "$legacy_state" == "deployed" ]] \
+    || die "active legacy release.env STATE must be deployed"
 }
 
 # Locate the unique active deployed release.env for the expected SHA. Used
