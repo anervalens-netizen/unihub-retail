@@ -153,6 +153,22 @@ def test_manifest_v2_keeps_transactional_default_and_explicit_online(
     assert manifest.execution_mode("002_online.sql") == ONLINE_EXECUTION_MODE
 
 
+def test_manifest_v1_remains_transactional_and_needs_no_metadata_upgrade(
+    tmp_path: Path,
+) -> None:
+    payload = _manifest_payload(execution_modes={})
+    payload["version"] = 1
+    payload.pop("execution_modes")
+    path = tmp_path / "manifest.json"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    manifest = load_migration_manifest(path)
+
+    assert manifest.execution_modes == {}
+    assert manifest.execution_mode("001_first.sql") == "transactional"
+    assert manifest.execution_mode("002_online.sql") == "transactional"
+
+
 @pytest.mark.parametrize(
     "execution_modes",
     [
@@ -161,7 +177,7 @@ def test_manifest_v2_keeps_transactional_default_and_explicit_online(
         {"002_online.sql": "transactional"},
     ],
 )
-def test_manifest_rejects_unknown_or_implicit_execution_overrides(
+def test_manifest_v2_rejects_unknown_or_implicit_execution_overrides(
     tmp_path: Path,
     execution_modes: dict[str, str],
 ) -> None:
@@ -175,8 +191,10 @@ def test_manifest_rejects_unknown_or_implicit_execution_overrides(
         load_migration_manifest(path)
 
 
-def test_manifest_v1_is_rejected_after_execution_contract_upgrade(tmp_path: Path) -> None:
-    payload = _manifest_payload(execution_modes={})
+def test_manifest_v1_rejects_execution_mode_extension(tmp_path: Path) -> None:
+    payload = _manifest_payload(
+        execution_modes={"002_online.sql": ONLINE_EXECUTION_MODE}
+    )
     payload["version"] = 1
     path = tmp_path / "manifest.json"
     path.write_text(json.dumps(payload), encoding="utf-8")
