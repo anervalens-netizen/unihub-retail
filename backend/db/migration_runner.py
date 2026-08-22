@@ -141,15 +141,23 @@ def load_migration_manifest(path: Path | None = None) -> MigrationManifest:
         payload: Any = json.loads(manifest_path.read_text(encoding="utf-8"))
         baseline = payload["baseline"]
         migrations = payload["migrations"]
-        execution_modes = payload["execution_modes"]
         version = payload["version"]
     except (OSError, json.JSONDecodeError, KeyError, TypeError) as exc:
         raise MigrationError("Migration manifest is invalid") from exc
-    if version != 2 or not isinstance(baseline, dict):
-        raise MigrationError("Migration manifest is invalid")
-    if not _valid_manifest_migrations(migrations):
+    if not isinstance(baseline, dict) or not _valid_manifest_migrations(migrations):
         raise MigrationError("Migration manifest is invalid")
     assert isinstance(migrations, dict)
+    if version == 1:
+        if "execution_modes" in payload:
+            raise MigrationError("Migration manifest is invalid")
+        execution_modes: object = {}
+    elif version == 2:
+        try:
+            execution_modes = payload["execution_modes"]
+        except KeyError as exc:
+            raise MigrationError("Migration manifest is invalid") from exc
+    else:
+        raise MigrationError("Migration manifest is invalid")
     if not _valid_execution_modes(execution_modes, migrations):
         raise MigrationError("Migration manifest is invalid")
     assert isinstance(execution_modes, dict)
