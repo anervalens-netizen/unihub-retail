@@ -34,6 +34,7 @@ TOMBSTONE_ADOPTION_PREREQUISITES = {
 }
 TRANSACTIONAL_EXECUTION_MODE = "transactional"
 ONLINE_EXECUTION_MODE = "online"
+ONLINE_RECOVERY_PREFIX = "online-recovery:"
 TRACKING_SQL = """
 CREATE TABLE IF NOT EXISTS schema_meta (
     schema_name TEXT PRIMARY KEY,
@@ -46,11 +47,6 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
     applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 ALTER TABLE schema_migrations ADD COLUMN IF NOT EXISTS checksum TEXT;
-CREATE TABLE IF NOT EXISTS schema_migration_online_recovery (
-    filename TEXT PRIMARY KEY,
-    checksum TEXT NOT NULL,
-    marked_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
 """.strip()
 
 
@@ -195,44 +191,38 @@ async def _tracking_rows(connection: asyncpg.Connection) -> dict[str, str | None
     return {row["filename"]: row["checksum"] for row in rows}
 
 
-async def _online_recovery_rows(connection: asyncpg.Connection) -> dict[str, str]:
-    rows = await connection.fetch(
-        "SELECT filename, checksum "
-        "FROM schema_migration_online_recovery ORDER BY filename"
-    )
-    return {str(row["filename"]): str(row["checksum"]) for row in rows}
+def _online_recovery_checksum(checksum: str) -> str:
+    return f"{ONLINE_RECOVERY_PREFIX}{checksum}"
 
 
 def _validate_applied(
-    applied: dict[str, str | None], manifest: MigrationManifest, *, allow_missing_checksums: bool
+    applied: dict[str, str | None],
+    manifest: MigrationManifest,
+    *,
+    allow_missing_checksums: bool,
 ) -> None:
     unknown = sorted(set(applied) - set(manifest.checksums))
     if unknown:
         raise MigrationError("Database contains migrations absent from the manifest")
     for filename, stored_checksum in applied.items():
         expected = manifest.checksums[filename]
+        if isinstance(stored_checksum, str) and stored_checksum.startswith(
+            ONLINE_RECOVERY_PREFIX
+        ):
+            if (
+                stored_checksum != _online_recovery_checksum(expected)
+                or manifest.execution_mode(filename) != ONLINE_EXECUTION_MODE
+            ):
+                raise MigrationError(
+                    "Online migration recovery state does not match the immutable manifest"
+                )
+            raise MigrationError(
+                f"Online migration recovery required before migrations can continue: {filename}"
+            )
         if stored_checksum is None and allow_missing_checksums:
             continue
         if stored_checksum != expected:
             raise MigrationError("Applied migration checksum mismatch")
-
-
-def _validate_online_recovery(
-    recovery: dict[str, str], manifest: MigrationManifest
-) -> None:
-    for filename, checksum in recovery.items():
-        if (
-            manifest.execution_mode(filename) != ONLINE_EXECUTION_MODE
-            or manifest.checksums.get(filename) != checksum
-        ):
-            raise MigrationError(
-                "Online migration recovery state does not match the immutable manifest"
-            )
-    if recovery:
-        names = ", ".join(sorted(recovery))
-        raise MigrationError(
-            f"Online migration recovery required before migrations can continue: {names}"
-        )
 
 
 async def _verify_authority_cutover_bootstrap(
@@ -298,12 +288,9 @@ async def _mark_online_recovery(
     async with connection.transaction():
         await _activate_migration_owner(connection)
         await connection.execute(
-            """
-            INSERT INTO schema_migration_online_recovery (filename, checksum)
-            VALUES ($1, $2)
-            """,
+            "INSERT INTO schema_migrations (filename, checksum) VALUES ($1, $2)",
             filename,
-            checksum,
+            _online_recovery_checksum(checksum),
         )
 
 
@@ -323,20 +310,17 @@ async def _finalize_online_migration(
 ) -> None:
     async with connection.transaction():
         await _activate_migration_owner(connection)
-        await connection.execute(
-            "INSERT INTO schema_migrations (filename, checksum) VALUES ($1, $2)",
-            filename,
-            checksum,
-        )
-        deleted = await connection.execute(
+        updated = await connection.execute(
             """
-            DELETE FROM schema_migration_online_recovery
-            WHERE filename = $1 AND checksum = $2
+            UPDATE schema_migrations
+            SET checksum = $2, applied_at = now()
+            WHERE filename = $1 AND checksum = $3
             """,
             filename,
             checksum,
+            _online_recovery_checksum(checksum),
         )
-        if deleted != "DELETE 1":
+        if updated != "UPDATE 1":
             raise MigrationError("Online migration recovery marker was not finalized")
 
 
@@ -467,11 +451,6 @@ async def _prepare_migration_history(
         if not has_application_schema:
             await _record_fresh_baseline(connection, manifest, applied)
     _validate_applied(applied, manifest, allow_missing_checksums=False)
-    if manifest.execution_modes:
-        _validate_online_recovery(
-            await _online_recovery_rows(connection),
-            manifest,
-        )
     return applied
 
 
@@ -580,19 +559,6 @@ async def verify_migrations_current(pool: asyncpg.Pool) -> None:
         if not checksum_exists:
             raise MigrationError("Migration checksum tracking is not initialized")
         applied = await _tracking_rows(connection)
-        if manifest.execution_modes:
-            online_tracking_exists = bool(
-                await connection.fetchval(
-                    "SELECT to_regclass('public.schema_migration_online_recovery') "
-                    "IS NOT NULL"
-                )
-            )
-            if not online_tracking_exists:
-                raise MigrationError("Online migration recovery tracking is not initialized")
-            _validate_online_recovery(
-                await _online_recovery_rows(connection),
-                manifest,
-            )
     _validate_applied(applied, manifest, allow_missing_checksums=False)
     if set(applied) != set(manifest.checksums):
         raise MigrationError("Database has pending migrations")
