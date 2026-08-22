@@ -1082,11 +1082,12 @@ verify_candidate_identity() {
   local work_dir="$2"
   local expected_sha="$3"
   local expected_artifact_sha256="$4"
-  local bundle_dir artifact_tree identity_env
+  local bundle_dir artifact_tree identity_env identity_helper
 
   bundle_dir="$(dirname -- "$source_archive")"
   artifact_tree="$work_dir/artifact"
   identity_env="$work_dir/candidate-identity.env"
+  identity_helper="$artifact_tree/scripts/release_identity.py"
 
   [[ -d "$artifact_tree" && ! -L "$artifact_tree" ]] \
     || die "candidate identity verification needs an extracted artifact tree"
@@ -1096,10 +1097,14 @@ verify_candidate_identity() {
   [[ -f "$artifact_tree/backend/db/migrations/manifest.json" \
     && ! -L "$artifact_tree/backend/db/migrations/manifest.json" ]] \
     || die "candidate identity verification needs the migrations manifest in the artifact tree"
+  [[ "$identity_helper" == "$artifact_tree/scripts/release_identity.py" ]] \
+    || die "candidate identity helper path is outside the extracted artifact tree"
+  [[ -f "$identity_helper" && ! -L "$identity_helper" ]] \
+    || die "candidate identity helper must be a regular file in the artifact tree"
   [[ ! -e "$identity_env" && ! -L "$identity_env" ]] \
     || die "candidate identity env already exists: $identity_env"
 
-  "$PYTHON_BASE" -I -S "$(dirname "$SCRIPT_PATH")/../scripts/release_identity.py" verify-manifest \
+  "$PYTHON_BASE" -I -S "$identity_helper" verify-manifest \
     --repo "$artifact_tree" \
     --manifest "$bundle_dir/RELEASE_MANIFEST.json" \
     --expected-sha "$expected_sha" \

@@ -72,6 +72,8 @@ cp "$SCRIPT_DIR/provision-retail-service-identities.sh" "$BUILDER/ops/"
 cp "$SCRIPT_DIR/provision-retail-salary-export-database.sh" "$BUILDER/ops/"
 cp "$SCRIPT_DIR/observability/retail-process-scrape.yml" "$BUILDER/ops/observability/"
 cp "$SCRIPT_DIR/observability/retail-slo-rules.yml" "$BUILDER/ops/observability/"
+mkdir -p "$BUILDER/scripts"
+cp "$SCRIPT_DIR/../scripts/release_identity.py" "$BUILDER/scripts/release_identity.py"
 mkdir -p "$BUILDER/backend/db/migrations"
 printf '%s\n' \
   '{' \
@@ -425,7 +427,19 @@ set -e
 [[ "$CLAIMED_DUPLICATE_RC" -ne 0 ]]
 mv -- "$CLAIMED_APPROVAL" "$ACTIVE_APPROVAL"
 
-run_deploy "$ARTIFACT" "$NEW_SHA" "$CI_RUN_ID" "$ARTIFACT_SHA256"
+# Regression test for P1: the production-style privileged entrypoint at
+# $OPS/scripts/deploy-retail-artifact.sh is provisioned without a sibling
+# scripts/release_identity.py. The OLD lookup would resolve to
+# $OPS/scripts/release_identity.py (or its parent) and fail before any
+# claim_approval; the NEW lookup uses the verified artifact tree at
+# $artifact_tree/scripts/release_identity.py. The first deploy must go
+# through the bootstrap entrypoint to demonstrate that.
+[[ ! -e "$OPS/scripts/release_identity.py" ]] \
+  || { echo "regression fixture contamination: bootstrap sibling helper must not exist" >&2; exit 1; }
+RETAIL_DEPLOY_TEST_MODE=1 \
+RETAIL_DEPLOY_TEST_ROOT="$ROOT" \
+  /usr/bin/bash -p "$OPS/scripts/deploy-retail-artifact.sh" \
+    "$ARTIFACT" "$NEW_SHA" "$CI_RUN_ID" "$ARTIFACT_SHA256"
 [[ "$(git -C "$LIVE" rev-parse HEAD)" == "$NEW_SHA" ]]
 [[ -L "$LIVE/backend/venv/bin/python" \
   && "$(readlink -- "$LIVE/backend/venv/bin/python")" == "python3.12" ]]
