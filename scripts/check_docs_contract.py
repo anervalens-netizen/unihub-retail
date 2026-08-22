@@ -13,6 +13,8 @@ from datetime import date
 from pathlib import Path
 from urllib.parse import unquote
 
+from check_docs_status_authority import status_authority_errors
+
 
 ROOT = Path(__file__).resolve().parents[1]
 REQUIRED_FIELDS = {
@@ -61,7 +63,7 @@ def main() -> int:
     catalog_path = args.catalog.resolve()
     catalog = json.loads(catalog_path.read_text())
     entries = catalog.get("entries", [])
-    errors: list[str] = []
+    errors: list[str] = status_authority_errors(ROOT, catalog)
 
     actual_docs = {
         str(path.relative_to(ROOT))
@@ -171,6 +173,8 @@ def main() -> int:
             text=True,
         ).stdout.strip(),
         "catalog_sha256": _sha256(catalog_path),
+        "document_status_authority": "docs/catalog.json entries[].status",
+        "runtime_readiness_authority": "/readyz + Prometheus machine signals",
         "release_identity_authority": (
             "signed RELEASE_MANIFEST.json + deploy promotion record"
         ),
