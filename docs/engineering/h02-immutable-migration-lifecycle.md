@@ -12,9 +12,9 @@ pending, unknown or checksum-mismatched migrations.
 - `schema_v2.sql` is frozen at the H-02 baseline and used only for a fresh DB;
 - every later schema/data delta is a new `NNN_name.sql` file;
 - `manifest.json` stores the immutable SHA-256 of the baseline and every file;
-- the existing manifest v1 remains valid and means every migration is
-  transactional; v2 is required only when an explicitly reviewed `online`
-  exception is actually introduced through `execution_modes`;
+- manifest version 1 remains the format authority; absent `execution_modes`
+  means every migration is transactional, while an optional reviewed
+  `execution_modes` map may mark exact filenames as `online`;
 - production stores migration/recovery state in the single canonical
   `schema_migrations` ledger;
 - historical files are never edited; corrections are forward migrations;
@@ -24,23 +24,26 @@ pending, unknown or checksum-mismatched migrations.
 - the web startup path executes only `SELECT` statements for migration state;
 - unknown DB rows, missing checksums, file drift and pending files fail closed.
 
-F1 deliberately leaves the checked-in manifest at v1 because there is no online
-migration today. This adds the capability without changing current migration
-identity or making an otherwise schema-compatible rollback incompatible merely
-because runner metadata changed.
+F1 deliberately leaves the checked-in manifest byte-for-byte unchanged because
+there is no online migration today. `execution_modes` is additive metadata on
+the existing version-1 manifest, so release identity and rollback consumers
+remain compatible without creating a second manifest format merely for the
+execution strategy.
 
 ## Explicit online / non-transactional path
 
 F1 adds an opt-in path for PostgreSQL commands that cannot legitimately run in
-the ordinary transaction wrapper. A migration remains transactional unless a v2
-manifest maps its exact filename to `online`. Unknown filenames and any other
-execution-mode value make the manifest invalid. A v1 manifest cannot contain
-`execution_modes`, so the opt-in cannot be smuggled into the legacy format.
+the ordinary transaction wrapper. A migration remains transactional unless the
+version-1 manifest maps its exact filename to `online` in `execution_modes`.
+Unknown filenames and any other execution-mode value make the manifest invalid;
+`transactional` is deliberately implicit rather than an override value.
 
 An online migration is deliberately one top-level SQL statement. The runner
 uses asyncpg's prepared/extended-query execution path outside an active database
 transaction, so accidental multi-command files are rejected by PostgreSQL rather
-than being silently executed as a batch.
+than being silently executed as a batch. The runner checks both before and after
+the statement that no transaction is active, so a transaction-control statement
+cannot silently turn the online path back into transactional execution.
 
 Because the online SQL statement and its final checksum cannot be committed
 atomically, the canonical `schema_migrations` row is also the recovery fence:
@@ -105,6 +108,12 @@ runtime `DATABASE_URL` and never gain migration privileges.
 5. deploy/restart the web process;
 6. verify health and confirm the web log contains only read-only migration
    verification.
+
+The release/deploy identity path already accepts manifest version 1 while
+preserving unknown additive metadata, and rollback compares the complete parsed
+manifest payload. Therefore adding or removing an `execution_modes` declaration
+changes rollback compatibility exactly like any other manifest change, without a
+parallel deploy-side execution-mode authority.
 
 ## Rollback
 
