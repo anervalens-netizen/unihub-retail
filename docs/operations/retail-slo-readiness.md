@@ -1,5 +1,7 @@
 # Retail readiness, liveness and SLO
 
+> **Operational readiness contract — not a current health declaration.** This document defines what readiness means and how it is measured. Current runtime readiness is machine-observed only through `/readyz` and the Prometheus signals described below. Tracked-document lifecycle/status is authoritative only in `docs/catalog.json`.
+
 ## Probe contract
 
 | Endpoint | Meaning | Dependencies | Success |
