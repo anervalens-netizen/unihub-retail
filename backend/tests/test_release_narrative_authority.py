@@ -15,9 +15,10 @@ SPEC.loader.exec_module(MODULE)
 
 
 def write_release_contract(root: Path, note: str) -> None:
-    release_dir = root / "docs/releases"
+    docs_dir = root / "docs"
+    release_dir = docs_dir / "releases"
     release_dir.mkdir(parents=True, exist_ok=True)
-    (release_dir / "README.md").write_text(
+    (docs_dir / "README.md").write_text(
         "RELEASE_MANIFEST.json\n"
         "render_production_release_notes.py\n"
         "production/retail-release-\n",
@@ -52,10 +53,10 @@ def test_historical_note_cannot_redeclare_canonical_identity(tmp_path: Path) -> 
     assert "cannot declare a canonical identity" in errors[0]
 
 
-def test_release_notes_index_requires_machine_authority_and_renderer(tmp_path: Path) -> None:
-    release_dir = tmp_path / "docs/releases"
-    release_dir.mkdir(parents=True)
-    (release_dir / "README.md").write_text("historical notes only\n", encoding="utf-8")
+def test_canonical_docs_index_requires_machine_authority_and_renderer(tmp_path: Path) -> None:
+    docs_dir = tmp_path / "docs"
+    docs_dir.mkdir(parents=True)
+    (docs_dir / "README.md").write_text("historical notes only\n", encoding="utf-8")
     errors = MODULE.narrative_release_errors(tmp_path)
     assert len(errors) == 3
     assert any("RELEASE_MANIFEST.json" in error for error in errors)
@@ -63,6 +64,6 @@ def test_release_notes_index_requires_machine_authority_and_renderer(tmp_path: P
     assert any("production/retail-release-" in error for error in errors)
 
 
-def test_missing_release_notes_index_is_rejected(tmp_path: Path) -> None:
+def test_missing_canonical_docs_index_is_rejected(tmp_path: Path) -> None:
     errors = MODULE.narrative_release_errors(tmp_path)
-    assert errors == ["docs/releases/README.md: derived release narrative contract is missing"]
+    assert errors == ["docs/README.md: derived release narrative contract is missing"]
