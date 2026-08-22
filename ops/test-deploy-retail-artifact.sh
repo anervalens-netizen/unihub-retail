@@ -72,6 +72,19 @@ cp "$SCRIPT_DIR/provision-retail-service-identities.sh" "$BUILDER/ops/"
 cp "$SCRIPT_DIR/provision-retail-salary-export-database.sh" "$BUILDER/ops/"
 cp "$SCRIPT_DIR/observability/retail-process-scrape.yml" "$BUILDER/ops/observability/"
 cp "$SCRIPT_DIR/observability/retail-slo-rules.yml" "$BUILDER/ops/observability/"
+mkdir -p "$BUILDER/backend/db/migrations"
+printf '%s\n' \
+  '{' \
+  '  "version": 1,' \
+  '  "baseline": {' \
+  '    "file": "schema_v2.sql",' \
+  '    "sha256": "0000000000000000000000000000000000000000000000000000000000000000",' \
+  '    "incorporated_through": "001_first.sql"' \
+  '  },' \
+  '  "migrations": {' \
+  '    "001_first.sql": "1111111111111111111111111111111111111111111111111111111111111111"' \
+  '  }' \
+  '}' >"$BUILDER/backend/db/migrations/manifest.json"
 git -C "$BUILDER" add .
 git -C "$BUILDER" commit --quiet -m old
 OLD_SHA="$(git -C "$BUILDER" rev-parse HEAD)"
@@ -241,6 +254,55 @@ for runtime_supply in \
   [[ -s "$RELEASE_DIR/$runtime_supply" && ! -L "$RELEASE_DIR/$runtime_supply" ]]
 done
 ARTIFACT_SHA256="$(sha256sum "$ARTIFACT" | awk '{print $1}')"
+/usr/bin/python3.12 -I -S - \
+  "$RELEASE_DIR" "$NEW_SHA" "$ARTIFACT_SHA256" \
+  "$BUILDER/backend/db/migrations/manifest.json" <<'PY'
+import json
+import pathlib
+import sys
+
+release_dir, source_sha, artifact_sha256, builder_migrations = sys.argv[1:]
+manifest_path = pathlib.Path(release_dir) / "RELEASE_MANIFEST.json"
+manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+errors = []
+
+expected_release_id = f"retail-release-{source_sha}"
+if manifest.get("releaseId") != expected_release_id:
+    errors.append(
+        f"releaseId mismatch: {manifest.get('releaseId')!r} vs {expected_release_id!r}"
+    )
+
+migrations_payload = json.loads(pathlib.Path(builder_migrations).read_text(encoding="utf-8"))
+migrations = migrations_payload.get("migrations")
+if not isinstance(migrations, dict) or not migrations:
+    raise SystemExit("test fixture migrations manifest is invalid")
+expected_head = max(migrations.keys(), key=lambda n: int(n.split("_", 1)[0]))
+if manifest.get("migrationHead") != expected_head:
+    errors.append(
+        f"migrationHead mismatch: {manifest.get('migrationHead')!r} vs {expected_head!r}"
+    )
+
+inventory = manifest.get("sha256")
+archive = manifest.get("archive")
+if not isinstance(inventory, dict) or not isinstance(archive, str):
+    raise SystemExit("release manifest sha256 inventory or archive is invalid")
+if inventory.get(archive) != artifact_sha256:
+    errors.append("sha256 inventory archive digest mismatch")
+sbom_digest = inventory.get("SBOM.cdx.json")
+if not isinstance(sbom_digest, str) or len(sbom_digest) != 64:
+    errors.append("sha256 inventory SBOM digest missing")
+if manifest.get("artifactSha256") != artifact_sha256:
+    errors.append(
+        f"explicit artifactSha256 mismatch: {manifest.get('artifactSha256')!r}"
+    )
+if manifest.get("sbomSha256") != sbom_digest:
+    errors.append(
+        f"explicit sbomSha256 mismatch: {manifest.get('sbomSha256')!r}"
+    )
+
+if errors:
+    raise SystemExit("D2 manifest identity mismatch: " + "; ".join(errors))
+PY
 
 run_deploy() {
   RETAIL_DEPLOY_TEST_MODE=1 \
@@ -441,6 +503,88 @@ grep -q "^ci_run_id=$CI_RUN_ID$" "$HANDLE/approval.env"
 grep -q "^source_sha=$NEW_SHA$" "$HANDLE/approval.env"
 grep -q "^artifact_sha256=$ARTIFACT_SHA256$" "$HANDLE/approval.env"
 grep -q '^approved_by_os=test-approver$' "$HANDLE/approval.env"
+DEPLOYED_AT_UTC_AFTER_FIRST="$(sed -n 's/^DEPLOYED_AT_UTC=//p' "$HANDLE/release.env" | head -n1)"
+[[ "$DEPLOYED_AT_UTC_AFTER_FIRST" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]] \
+  || { echo "DEPLOYED_AT_UTC is not a UTC ISO timestamp: '$DEPLOYED_AT_UTC_AFTER_FIRST'" >&2; exit 1; }
+/usr/bin/python3.12 -I -S - \
+  "$HANDLE/release.env" "$NEW_SHA" "$OLD_SHA" "$ARTIFACT_SHA256" "$DEPLOYED_AT_UTC_AFTER_FIRST" <<'PY'
+import pathlib
+import re
+import sys
+
+release_env, new_sha, old_sha, artifact_sha256, expected_deployed_at = sys.argv[1:]
+text = pathlib.Path(release_env).read_text(encoding="utf-8")
+fields = {}
+for line in text.splitlines():
+    if not line or "=" not in line:
+        continue
+    key, _, value = line.partition("=")
+    fields.setdefault(key, []).append(value)
+errors = []
+required = [
+    "PROMOTION_SCHEMA_VERSION",
+    "RELEASE_ID",
+    "SOURCE_SHA",
+    "MIGRATION_HEAD",
+    "ARTIFACT_SHA256",
+    "SBOM_SHA256",
+    "DEPLOYED_AT_UTC",
+    "PREDECESSOR_RELEASE_ID",
+    "PREDECESSOR_SHA",
+    "ROLLBACK_RELEASE_ID",
+    "ROLLBACK_SHA",
+    "OLD_SHA",
+    "NEW_SHA",
+    "STATE",
+    "UPDATED_AT",
+]
+for key in required:
+    values = fields.get(key)
+    if not values or len(values) != 1:
+        errors.append(f"{key} missing or duplicated: {values!r}")
+if fields.get("PROMOTION_SCHEMA_VERSION") != ["1"]:
+    errors.append("PROMOTION_SCHEMA_VERSION must be exactly 1")
+if fields.get("RELEASE_ID") != [f"retail-release-{new_sha}"]:
+    errors.append(f"RELEASE_ID must equal retail-release-{new_sha}")
+if fields.get("SOURCE_SHA") != [new_sha]:
+    errors.append("SOURCE_SHA mismatch")
+if fields.get("ARTIFACT_SHA256") != [artifact_sha256]:
+    errors.append("ARTIFACT_SHA256 mismatch")
+if fields.get("OLD_SHA") != [old_sha]:
+    errors.append("OLD_SHA mismatch")
+if fields.get("NEW_SHA") != [new_sha]:
+    errors.append("NEW_SHA mismatch")
+if fields.get("STATE") != ["deployed"]:
+    errors.append("STATE must be deployed")
+if fields.get("PREDECESSOR_SHA") != [old_sha]:
+    errors.append("PREDECESSOR_SHA must equal old_sha")
+if fields.get("PREDECESSOR_RELEASE_ID") != [f"retail-release-{old_sha}"]:
+    errors.append("PREDECESSOR_RELEASE_ID must equal retail-release-old_sha")
+if fields.get("ROLLBACK_SHA") != [old_sha]:
+    errors.append("ROLLBACK_SHA must equal old_sha")
+if fields.get("ROLLBACK_RELEASE_ID") != [f"retail-release-{old_sha}"]:
+    errors.append("ROLLBACK_RELEASE_ID must equal retail-release-old_sha")
+migration_head_values = fields.get("MIGRATION_HEAD", [])
+if not migration_head_values or not re.fullmatch(
+    r"[0-9]{3}_[A-Za-z0-9_]+\.sql", migration_head_values[0]
+):
+    errors.append(f"MIGRATION_HEAD invalid: {migration_head_values!r}")
+sbom_sha_values = fields.get("SBOM_SHA256", [])
+if not sbom_sha_values or not re.fullmatch(r"[0-9a-f]{64}", sbom_sha_values[0]):
+    errors.append(f"SBOM_SHA256 invalid: {sbom_sha_values!r}")
+deployed_values = fields.get("DEPLOYED_AT_UTC", [])
+if not deployed_values or not re.fullmatch(
+    r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z",
+    deployed_values[0],
+):
+    errors.append(f"DEPLOYED_AT_UTC invalid: {deployed_values!r}")
+elif deployed_values[0] != expected_deployed_at:
+    errors.append(
+        f"DEPLOYED_AT_UTC {deployed_values[0]!r} != parsed {expected_deployed_at!r}"
+    )
+if errors:
+    raise SystemExit("D2 release.env identity mismatch: " + "; ".join(errors))
+PY
 [[ "$(find "$ROOT/approval-store" -maxdepth 1 -type f -name '*.consumed' | wc -l)" -eq 1 ]]
 [[ "$(find "$ROOT/approval-store" -maxdepth 1 -type f -name '*.approved' | wc -l)" -eq 0 ]]
 BACKUP_COUNT="$(find "$OPS/backups/retail-deploy" -mindepth 1 -maxdepth 1 -type d | wc -l)"
@@ -529,6 +673,9 @@ SECOND_HANDLE="$(
 )"
 [[ -n "$SECOND_HANDLE" && "$SECOND_HANDLE" != "$HANDLE" ]]
 NEWER_VENV_HASH="$(venv_identity_hash)"
+DEPLOYED_AT_UTC_BEFORE_SECOND_ROLLBACK="$(sed -n 's/^DEPLOYED_AT_UTC=//p' "$SECOND_HANDLE/release.env" | head -n1)"
+[[ "$DEPLOYED_AT_UTC_BEFORE_SECOND_ROLLBACK" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]] \
+  || { echo "second deploy DEPLOYED_AT_UTC is not a UTC ISO timestamp: '$DEPLOYED_AT_UTC_BEFORE_SECOND_ROLLBACK'" >&2; exit 1; }
 
 mv -- "$SECOND_HANDLE/venv-before.json" "$SECOND_HANDLE/venv-before.json.missing-test"
 set +e
@@ -566,6 +713,44 @@ run_deploy rollback "$SECOND_HANDLE"
 [[ "$(readlink -f "$ROOT/etc/systemd/system/unihub-backend.service")" == "$ROOT/runtime-releases/$NEW_SHA/systemd/unihub-backend.service" ]]
 [[ "$(<"$LIVE/docs/AUDIT_TEHNIC_RETAIL_UNIHUB_REAUDIT_2026-07-15.md")" == "published audit" ]]
 [[ "$(<"$LIVE/docs/PLAN_DEZVOLTARE_RETAIL_UNIHUB_URMATOAREA_VERSIUNE_2026-07-15.md")" == "published plan" ]]
+DEPLOYED_AT_UTC_AFTER_ROLLBACK="$(sed -n 's/^DEPLOYED_AT_UTC=//p' "$SECOND_HANDLE/release.env" | head -n1)"
+[[ "$DEPLOYED_AT_UTC_AFTER_ROLLBACK" == "$DEPLOYED_AT_UTC_BEFORE_SECOND_ROLLBACK" ]] \
+  || { echo "DEPLOYED_AT_UTC was not preserved after manual rollback: $DEPLOYED_AT_UTC_BEFORE_SECOND_ROLLBACK vs $DEPLOYED_AT_UTC_AFTER_ROLLBACK" >&2; exit 1; }
+grep -q '^STATE=rolled_back$' "$SECOND_HANDLE/release.env"
+/usr/bin/python3.12 -I -S - "$SECOND_HANDLE/release.env" "$NEWER_SHA" "$NEW_SHA" <<'PY'
+import pathlib
+import sys
+
+release_env, newer_sha, new_sha = sys.argv[1:]
+text = pathlib.Path(release_env).read_text(encoding="utf-8")
+fields = {}
+for line in text.splitlines():
+    if not line or "=" not in line:
+        continue
+    key, _, value = line.partition("=")
+    fields.setdefault(key, []).append(value)
+errors = []
+if fields.get("RELEASE_ID") != [f"retail-release-{newer_sha}"]:
+    errors.append(f"RELEASE_ID must equal retail-release-{newer_sha}")
+if fields.get("SOURCE_SHA") != [newer_sha]:
+    errors.append("SOURCE_SHA must remain newer_sha")
+if fields.get("NEW_SHA") != [newer_sha]:
+    errors.append("NEW_SHA must remain newer_sha")
+if fields.get("OLD_SHA") != [new_sha]:
+    errors.append("OLD_SHA must remain new_sha")
+if fields.get("PREDECESSOR_SHA") != [new_sha]:
+    errors.append("PREDECESSOR_SHA must remain new_sha")
+if fields.get("ROLLBACK_SHA") != [new_sha]:
+    errors.append("ROLLBACK_SHA must remain new_sha")
+if fields.get("PREDECESSOR_RELEASE_ID") != [f"retail-release-{new_sha}"]:
+    errors.append("PREDECESSOR_RELEASE_ID must remain retail-release-new_sha")
+if fields.get("ROLLBACK_RELEASE_ID") != [f"retail-release-{new_sha}"]:
+    errors.append("ROLLBACK_RELEASE_ID must remain retail-release-new_sha")
+if fields.get("STATE") != ["rolled_back"]:
+    errors.append("STATE must be rolled_back")
+if errors:
+    raise SystemExit("D2 release.env post-rollback mismatch: " + "; ".join(errors))
+PY
 
 # Once a release is contract-managed, removing its signed runtime supply must
 # fail before any service stop or runtime switch; it may never degrade to the
@@ -609,6 +794,96 @@ done
 [[ ! -e "$LIVE/docs/AUDIT_TEHNIC_RETAIL_UNIHUB_REAUDIT_2026-07-15.md" ]]
 [[ ! -e "$LIVE/docs/PLAN_DEZVOLTARE_RETAIL_UNIHUB_URMATOAREA_VERSIUNE_2026-07-15.md" ]]
 grep -q '^STATE=rolled_back$' "$HANDLE/release.env"
+
+# Pre-D2 manual rollback compatibility: a handle that lacks PROMOTION_SCHEMA_VERSION
+# must still roll back successfully and must NOT have D2 fields retroactively added.
+PRE_D2_STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
+PRE_D2_NONCE="$(od -An -N8 -tx1 /dev/urandom | tr -d ' \n')"
+PRE_D2_HANDLE="$OPS/backups/retail-deploy/${PRE_D2_STAMP}-${OLD_SHA:0:12}-to-${OLD_SHA:0:12}-${PRE_D2_NONCE}"
+mkdir -p "$PRE_D2_HANDLE"
+git -C "$LIVE" archive --format=tar.gz "$OLD_SHA" >"$PRE_D2_HANDLE/source-${OLD_SHA}.tar.gz"
+sha256sum "$PRE_D2_HANDLE/source-${OLD_SHA}.tar.gz" >"$PRE_D2_HANDLE/source.sha256"
+cat >"$PRE_D2_HANDLE/release.env" <<EOF
+OLD_SHA=$OLD_SHA
+NEW_SHA=$OLD_SHA
+STATE=deployed
+UPDATED_AT=${PRE_D2_STAMP%?}Z
+EOF
+chmod 0600 "$PRE_D2_HANDLE/release.env"
+cp -a "$LIVE/dist" "$PRE_D2_HANDLE/dist"
+/usr/bin/python3.12 -I -S - "$LIVE/backend/venv" "$PRE_D2_HANDLE/venv-before.json" <<'PY'
+import hashlib, json, pathlib, sys
+root = pathlib.Path(sys.argv[1])
+entries = []
+for path in sorted(root.rglob("*")):
+    relative = str(path.relative_to(root))
+    if path.is_symlink():
+        entries.append([relative, "symlink", path.readlink().as_posix()])
+    elif path.is_file():
+        entries.append([relative, "file", hashlib.sha256(path.read_bytes()).hexdigest()])
+digest = hashlib.sha256(json.dumps(entries, separators=(",", ":")).encode()).hexdigest()
+pathlib.Path(sys.argv[2]).write_text(
+    json.dumps({"schemaVersion": 1, "legacyOpaque": True, "treeSha256": digest}, sort_keys=True, separators=(",", ":")) + "\n",
+    encoding="utf-8",
+)
+PY
+chmod 0600 "$PRE_D2_HANDLE/venv-before.json"
+mkdir -p "$PRE_D2_HANDLE/runtime-assets/files"
+{
+  printf 'unihub-backend.service=1\n'
+  printf 'unihub-worker.service=1\n'
+  printf 'unihub-import-worker.service=1\n'
+  printf 'unihub-grile-worker.service=0\n'
+  printf 'unihub-export-worker.service=0\n'
+  printf 'unihub-salary-export-worker.service=0\n'
+  printf 'unihub-legacy-worker.service=0\n'
+  printf 'unihub-retail-migrate.service=1\n'
+  printf 'unihub-retail-network.env=0\n'
+  printf 'unihub-retail.yml=0\n'
+  printf 'retail-slo-rules.yml=0\n'
+} >"$PRE_D2_HANDLE/runtime-assets/state.env"
+chmod 0600 "$PRE_D2_HANDLE/runtime-assets/state.env"
+for unit in unihub-backend.service unihub-worker.service \
+  unihub-import-worker.service unihub-retail-migrate.service; do
+  cp -a --no-dereference -- "$ROOT/etc/systemd/system/$unit" \
+    "$PRE_D2_HANDLE/runtime-assets/files/$unit"
+done
+{
+  printf 'unihub-backend.service=0\n'
+  printf 'unihub-worker.service=0\n'
+  printf 'unihub-import-worker.service=0\n'
+  printf 'unihub-grile-worker.service=0\n'
+  printf 'unihub-export-worker.service=0\n'
+  printf 'unihub-salary-export-worker.service=0\n'
+  printf 'unihub-legacy-worker.service=0\n'
+  printf 'unihub-retail-migrate.service=0\n'
+} >"$PRE_D2_HANDLE/runtime-assets/enabled.env"
+chmod 0600 "$PRE_D2_HANDLE/runtime-assets/enabled.env"
+{
+  printf 'approval_id=pre-d2-legacy-test\n'
+  printf 'approved_by_os=pre-d2-legacy-test\n'
+  printf 'ci_run_id=0\n'
+  printf 'source_sha=%s\n' "$OLD_SHA"
+  printf 'artifact_sha256=%s\n' "$(printf 'a%.0s' {1..64})"
+  printf 'claimed_at_epoch=0\n'
+} >"$PRE_D2_HANDLE/approval.env"
+chmod 0600 "$PRE_D2_HANDLE/approval.env"
+run_deploy rollback "$PRE_D2_HANDLE"
+[[ "$(git -C "$LIVE" rev-parse HEAD)" == "$OLD_SHA" ]]
+grep -q '^STATE=rolled_back$' "$PRE_D2_HANDLE/release.env"
+if grep -q '^PROMOTION_SCHEMA_VERSION=' "$PRE_D2_HANDLE/release.env"; then
+  echo "pre-D2 manual rollback added D2 fields retroactively" >&2
+  exit 1
+fi
+if grep -Eq '^(RELEASE_ID|SOURCE_SHA|MIGRATION_HEAD|ARTIFACT_SHA256|SBOM_SHA256|DEPLOYED_AT_UTC|PREDECESSOR_RELEASE_ID|PREDECESSOR_SHA|ROLLBACK_RELEASE_ID|ROLLBACK_SHA)=' \
+  "$PRE_D2_HANDLE/release.env"; then
+  echo "pre-D2 manual rollback wrote unexpected D2 identity fields" >&2
+  exit 1
+fi
+grep -q "^OLD_SHA=$OLD_SHA$" "$PRE_D2_HANDLE/release.env"
+grep -q "^NEW_SHA=$OLD_SHA$" "$PRE_D2_HANDLE/release.env"
+rm -rf -- "$PRE_D2_HANDLE"
+
 git --git-dir="$REMOTE" update-ref refs/heads/main "$NEW_SHA"
 
 set +e

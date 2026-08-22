@@ -1077,6 +1077,86 @@ PY
   printf '%s\n' "$artifact_tree"
 }
 
+verify_candidate_identity() {
+  local source_archive="$1"
+  local work_dir="$2"
+  local expected_sha="$3"
+  local expected_artifact_sha256="$4"
+  local bundle_dir artifact_tree identity_env
+
+  bundle_dir="$(dirname -- "$source_archive")"
+  artifact_tree="$work_dir/artifact"
+  identity_env="$work_dir/candidate-identity.env"
+
+  [[ -d "$artifact_tree" && ! -L "$artifact_tree" ]] \
+    || die "candidate identity verification needs an extracted artifact tree"
+  [[ -f "$bundle_dir/RELEASE_MANIFEST.json" \
+    && ! -L "$bundle_dir/RELEASE_MANIFEST.json" ]] \
+    || die "candidate identity verification needs an extracted RELEASE_MANIFEST.json"
+  [[ -f "$artifact_tree/backend/db/migrations/manifest.json" \
+    && ! -L "$artifact_tree/backend/db/migrations/manifest.json" ]] \
+    || die "candidate identity verification needs the migrations manifest in the artifact tree"
+  [[ ! -e "$identity_env" && ! -L "$identity_env" ]] \
+    || die "candidate identity env already exists: $identity_env"
+
+  "$PYTHON_BASE" -I -S "$(dirname "$SCRIPT_PATH")/../scripts/release_identity.py" verify-manifest \
+    --repo "$artifact_tree" \
+    --manifest "$bundle_dir/RELEASE_MANIFEST.json" \
+    --expected-sha "$expected_sha" \
+    --expected-artifact-sha256 "$expected_artifact_sha256" \
+    --env-output "$identity_env"
+
+  [[ -f "$identity_env" && ! -L "$identity_env" ]] \
+    || die "candidate identity env was not produced by verify-manifest"
+  chmod 0600 "$identity_env"
+  [[ "$(stat -c '%a' "$identity_env")" == "600" ]] \
+    || die "candidate identity env must be mode 0600"
+
+  load_candidate_identity_env "$identity_env"
+}
+
+load_candidate_identity_env() {
+  local identity_env="$1"
+  local key count value
+  for key in CANDIDATE_SOURCE_SHA CANDIDATE_RELEASE_ID CANDIDATE_MIGRATION_HEAD \
+    CANDIDATE_ARTIFACT_SHA256 CANDIDATE_SBOM_SHA256; do
+    count="$(grep -c "^${key}=" "$identity_env" || true)"
+    [[ "$count" -eq 1 ]] \
+      || die "candidate identity env key must exist exactly once: $key"
+    value="$(sed -n "s/^${key}=//p" "$identity_env")"
+    [[ -n "$value" && "$value" != *$'\n'* ]] \
+      || die "candidate identity env value is missing or multi-line: $key"
+    case "$key" in
+      CANDIDATE_SOURCE_SHA)
+        [[ "$value" =~ ^[0-9a-f]{40}$ ]] \
+          || die "candidate source SHA is invalid"
+        CANDIDATE_SOURCE_SHA="$value"
+        ;;
+      CANDIDATE_RELEASE_ID)
+        [[ -n "$value" && "$value" != *"="* && "$value" != *$'\n'* ]] \
+          || die "candidate release ID is invalid"
+        CANDIDATE_RELEASE_ID="$value"
+        ;;
+      CANDIDATE_MIGRATION_HEAD)
+        [[ "$value" =~ ^[0-9]{3}_[A-Za-z0-9_]+\.sql$ ]] \
+          || die "candidate migration filename is invalid"
+        CANDIDATE_MIGRATION_HEAD="$value"
+        ;;
+      CANDIDATE_ARTIFACT_SHA256|CANDIDATE_SBOM_SHA256)
+        [[ "$value" =~ ^[0-9a-f]{64}$ ]] \
+          || die "candidate SHA-256 is invalid: $key"
+        if [[ "$key" == "CANDIDATE_ARTIFACT_SHA256" ]]; then
+          CANDIDATE_ARTIFACT_SHA256="$value"
+        else
+          CANDIDATE_SBOM_SHA256="$value"
+        fi
+        ;;
+    esac
+  done
+  [[ "$CANDIDATE_RELEASE_ID" == "retail-release-$CANDIDATE_SOURCE_SHA" ]] \
+    || die "candidate release ID must equal retail-release-source SHA"
+}
+
 PROMETHEUS_NETWORK_NAME=""
 PROMETHEUS_DOCKER_GATEWAY=""
 PROMETHEUS_DOCKER_SUBNET=""
@@ -2430,6 +2510,7 @@ recover_forward_release() {
   trap on_recovery_error EXIT
 
   artifact_tree="$(copy_and_verify_artifact "$source_archive" "$expected_sha" "$expected_artifact_sha256" "$work_dir")"
+  verify_candidate_identity "$source_archive" "$work_dir" "$expected_sha" "$expected_artifact_sha256"
   approval_claimed=1
   claim_approval "$ci_run_id" "$expected_sha" "$expected_artifact_sha256"
   supply_root="$(<"$work_dir/python-runtime-supply.path")"
@@ -2526,12 +2607,77 @@ write_release_manifest() {
   local new_sha="$3"
   local state="$4"
   local tmp="$backup_dir/release.env.tmp"
-  {
-    printf 'OLD_SHA=%s\n' "$old_sha"
-    printf 'NEW_SHA=%s\n' "$new_sha"
-    printf 'STATE=%s\n' "$state"
-    printf 'UPDATED_AT=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-  } >"$tmp"
+  local existing_file="$backup_dir/release.env"
+  local existing_deployed_at=""
+  local had_d2_fields=0
+  local now
+  now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+  if [[ -f "$existing_file" && ! -L "$existing_file" ]]; then
+    existing_deployed_at="$(sed -n 's/^DEPLOYED_AT_UTC=//p' "$existing_file" | head -n1)"
+    if grep -q '^PROMOTION_SCHEMA_VERSION=' "$existing_file"; then
+      had_d2_fields=1
+    fi
+  fi
+
+  local write_d2=0
+  if [[ -n "${CANDIDATE_RELEASE_ID:-}" ]]; then
+    write_d2=1
+  elif [[ "$had_d2_fields" == "1" ]]; then
+    write_d2=1
+  fi
+
+  local deployed_at=""
+  if [[ "$state" == "deployed" ]]; then
+    if [[ -n "$existing_deployed_at" ]]; then
+      deployed_at="$existing_deployed_at"
+    else
+      deployed_at="$now"
+    fi
+  elif [[ -n "$existing_deployed_at" ]]; then
+    deployed_at="$existing_deployed_at"
+  fi
+
+  if [[ "$write_d2" == "1" ]]; then
+    {
+      printf 'PROMOTION_SCHEMA_VERSION=1\n'
+      if [[ -n "${CANDIDATE_RELEASE_ID:-}" ]]; then
+        printf 'RELEASE_ID=%s\n' "$CANDIDATE_RELEASE_ID"
+        printf 'SOURCE_SHA=%s\n' "$CANDIDATE_SOURCE_SHA"
+        printf 'MIGRATION_HEAD=%s\n' "$CANDIDATE_MIGRATION_HEAD"
+        printf 'ARTIFACT_SHA256=%s\n' "$CANDIDATE_ARTIFACT_SHA256"
+        printf 'SBOM_SHA256=%s\n' "$CANDIDATE_SBOM_SHA256"
+        printf 'PREDECESSOR_RELEASE_ID=retail-release-%s\n' "$old_sha"
+        printf 'PREDECESSOR_SHA=%s\n' "$old_sha"
+        printf 'ROLLBACK_RELEASE_ID=retail-release-%s\n' "$old_sha"
+        printf 'ROLLBACK_SHA=%s\n' "$old_sha"
+      else
+        local k v
+        for k in RELEASE_ID SOURCE_SHA MIGRATION_HEAD ARTIFACT_SHA256 SBOM_SHA256 \
+          PREDECESSOR_RELEASE_ID PREDECESSOR_SHA \
+          ROLLBACK_RELEASE_ID ROLLBACK_SHA; do
+          v="$(sed -n "s/^${k}=//p" "$existing_file" | head -n1)"
+          [[ -n "$v" ]] || die "D2 release.env is missing field: $k"
+          printf '%s=%s\n' "$k" "$v"
+        done
+      fi
+      if [[ -n "$deployed_at" ]]; then
+        printf 'DEPLOYED_AT_UTC=%s\n' "$deployed_at"
+      fi
+      printf 'OLD_SHA=%s\n' "$old_sha"
+      printf 'NEW_SHA=%s\n' "$new_sha"
+      printf 'STATE=%s\n' "$state"
+      printf 'UPDATED_AT=%s\n' "$now"
+    } >"$tmp"
+  else
+    {
+      printf 'OLD_SHA=%s\n' "$old_sha"
+      printf 'NEW_SHA=%s\n' "$new_sha"
+      printf 'STATE=%s\n' "$state"
+      printf 'UPDATED_AT=%s\n' "$now"
+    } >"$tmp"
+  fi
+
   mv -f "$tmp" "$backup_dir/release.env"
   chmod 0600 "$backup_dir/release.env"
 }
@@ -2836,6 +2982,7 @@ deploy_release() {
   trap on_deploy_error EXIT
 
   artifact_tree="$(copy_and_verify_artifact "$source_archive" "$expected_sha" "$expected_artifact_sha256" "$work_dir")"
+  verify_candidate_identity "$source_archive" "$work_dir" "$expected_sha" "$expected_artifact_sha256"
   approval_claimed=1
   claim_approval "$ci_run_id" "$expected_sha" "$expected_artifact_sha256"
   supply_root="$(<"$work_dir/python-runtime-supply.path")"
