@@ -43,6 +43,7 @@
         "scripts/check_changed_line_coverage.py",
         "scripts/check_complexity_ratchet.py",
         "scripts/complexity-ratchet.json",
+        "scripts/create_production_release_tag.py",
         "ops/approve-retail-release.sh",
         "ops/build-retail-release-artifact.sh",
         "ops/deploy-retail-artifact.sh",

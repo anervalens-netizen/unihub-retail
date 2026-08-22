@@ -28,10 +28,18 @@ concurrency:
 
 jobs:
   deploy:
-    if: vars.PRODUCTION_DEPLOY_APPROVALS_ENFORCED == 'true'
+    if: >-
+      vars.PRODUCTION_DEPLOY_APPROVALS_ENFORCED == 'true'
+      && github.ref == 'refs/heads/main'
     environment: production
     runs-on: [self-hosted, unihub-deploy]
     timeout-minutes: 60
+    outputs:
+      release_id: ${{ steps.release_identity.outputs.release_id }}
+      source_sha: ${{ steps.release_identity.outputs.source_sha }}
+      migration_head: ${{ steps.release_identity.outputs.migration_head }}
+      artifact_sha256: ${{ steps.release_identity.outputs.artifact_sha256 }}
+      sbom_sha256: ${{ steps.release_identity.outputs.sbom_sha256 }}
     steps:
       - name: Validate approved CI source
         env:
@@ -97,6 +105,38 @@ jobs:
           test "$(tr -d '\n' < SOURCE_SHA)" = "$EXPECTED_SHA"
           test -f "retail-release-${EXPECTED_SHA}.tar.gz"
 
+      - name: Capture signed release identity
+        id: release_identity
+        env:
+          EXPECTED_SHA: ${{ inputs.source_sha }}
+        run: |
+          set -euo pipefail
+          cd verified-release
+          schema_version="$(jq -er '.schemaVersion' RELEASE_MANIFEST.json)"
+          source_sha="$(jq -er '.sourceSha | select(type == "string")' RELEASE_MANIFEST.json)"
+          release_id="$(jq -er '.releaseId | select(type == "string")' RELEASE_MANIFEST.json)"
+          migration_head="$(jq -er '.migrationHead | select(type == "string")' RELEASE_MANIFEST.json)"
+          artifact_sha256="$(jq -er '.artifactSha256 | select(type == "string")' RELEASE_MANIFEST.json)"
+          sbom_sha256="$(jq -er '.sbomSha256 | select(type == "string")' RELEASE_MANIFEST.json)"
+          archive="retail-release-${EXPECTED_SHA}.tar.gz"
+          inventory_artifact="$(jq -er --arg archive "$archive" '.sha256[$archive] | select(type == "string")' RELEASE_MANIFEST.json)"
+          inventory_sbom="$(jq -er '.sha256["SBOM.cdx.json"] | select(type == "string")' RELEASE_MANIFEST.json)"
+
+          test "$schema_version" = "1"
+          test "$source_sha" = "$EXPECTED_SHA"
+          test "$release_id" = "retail-release-$EXPECTED_SHA"
+          [[ "$migration_head" =~ ^[0-9]{3}_[A-Za-z0-9_]+\.sql$ ]]
+          [[ "$artifact_sha256" =~ ^[0-9a-f]{64}$ ]]
+          [[ "$sbom_sha256" =~ ^[0-9a-f]{64}$ ]]
+          test "$artifact_sha256" = "$inventory_artifact"
+          test "$sbom_sha256" = "$inventory_sbom"
+
+          printf 'release_id=%s\n' "$release_id" >>"$GITHUB_OUTPUT"
+          printf 'source_sha=%s\n' "$source_sha" >>"$GITHUB_OUTPUT"
+          printf 'migration_head=%s\n' "$migration_head" >>"$GITHUB_OUTPUT"
+          printf 'artifact_sha256=%s\n' "$artifact_sha256" >>"$GITHUB_OUTPUT"
+          printf 'sbom_sha256=%s\n' "$sbom_sha256" >>"$GITHUB_OUTPUT"
+
       - name: Verify public proxy hardening gate
         run: |
           set -euo pipefail
@@ -145,3 +185,47 @@ jobs:
         run: |
           sudo --non-interactive /usr/local/sbin/unihub-deploy-lock release \
             "${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+
+  tag-promoted-release:
+    name: tag-promoted-release
+    needs: deploy
+    if: needs.deploy.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout trusted deployment control plane
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Create or verify canonical production tag
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          SOURCE_SHA: ${{ needs.deploy.outputs.source_sha }}
+          RELEASE_ID: ${{ needs.deploy.outputs.release_id }}
+          MIGRATION_HEAD: ${{ needs.deploy.outputs.migration_head }}
+          ARTIFACT_SHA256: ${{ needs.deploy.outputs.artifact_sha256 }}
+          SBOM_SHA256: ${{ needs.deploy.outputs.sbom_sha256 }}
+          CI_RUN_ID: ${{ inputs.ci_run_id }}
+          DEPLOY_RUN_ID: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          python -I scripts/create_production_release_tag.py \
+            --repository "$REPOSITORY" \
+            --source-sha "$SOURCE_SHA" \
+            --release-id "$RELEASE_ID" \
+            --migration-head "$MIGRATION_HEAD" \
+            --artifact-sha256 "$ARTIFACT_SHA256" \
+            --sbom-sha256 "$SBOM_SHA256" \
+            --ci-run-id "$CI_RUN_ID" \
+            --deploy-run-id "$DEPLOY_RUN_ID"
