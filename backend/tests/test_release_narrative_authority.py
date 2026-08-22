@@ -42,11 +42,11 @@ def test_release_note_without_historical_banner_is_rejected(tmp_path: Path) -> N
     assert "must be explicitly historical" in errors[0]
 
 
-def test_historical_note_cannot_redeclare_canonical_identity(tmp_path: Path) -> None:
+def test_historical_note_cannot_redeclare_canonical_identity_case_insensitively(tmp_path: Path) -> None:
     write_release_contract(
         tmp_path,
         "> **Historical release note — not production authority.**\n"
-        "Canonical identity: annotated tag `v9.9.9`.\n",
+        "canonical identity : annotated tag `v9.9.9`.\n",
     )
     errors = MODULE.narrative_release_errors(tmp_path)
     assert len(errors) == 1
