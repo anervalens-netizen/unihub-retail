@@ -254,3 +254,25 @@ def test_invalid_identity_formats_fail_before_any_api_call() -> None:
             artifact_sha256="not-a-digest",
             sbom_sha256=SBOM_SHA,
         )
+
+
+def test_deploy_workflow_isolates_repository_write_after_successful_main_deploy() -> None:
+    workflow = (
+        Path(__file__).parents[2] / ".github/workflows/deploy.yml"
+    ).read_text(encoding="utf-8")
+
+    assert "permissions:\n  actions: read\n  contents: read\n" in workflow
+    assert "github.ref == 'refs/heads/main'" in workflow
+    assert "id: release_identity" in workflow
+
+    tag_job = workflow.split("\n  tag-promoted-release:\n", 1)[1]
+    assert "needs: deploy" in tag_job
+    assert "if: needs.deploy.result == 'success'" in tag_job
+    assert "runs-on: ubuntu-latest" in tag_job
+    assert "permissions:\n      contents: write" in tag_job
+    assert "ref: ${{ github.sha }}" in tag_job
+    assert "persist-credentials: false" in tag_job
+    assert "scripts/create_production_release_tag.py" in tag_job
+
+    deploy_job = workflow.split("\n  tag-promoted-release:\n", 1)[0]
+    assert "contents: write" not in deploy_job
