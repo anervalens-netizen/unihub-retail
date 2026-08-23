@@ -37,6 +37,10 @@ class _FakeConnection:
         self.fail_statement: Exception | None = None
         self.fail_restore = False
         self.fail_reset = False
+        self.closed = False
+
+    async def close(self) -> None:
+        self.closed = True
 
     def transaction(self) -> _Tx:
         return _Tx(self)
@@ -98,8 +102,8 @@ class _FakeConnection:
 @pytest.mark.parametrize(
     ("sql", "expected"),
     [
-        ("-- header\n/* note */\nCREATE INDEX idx_sales ON sales_transactions (site_code);", ("idx_sales", "sales_transactions")),
-        ("CREATE INDEX idx_a ON t USING btree (id) WHERE id > 0", ("idx_a", "t")),
+        ("-- header\n/* note */\nCREATE INDEX CONCURRENTLY idx_sales ON sales_transactions (site_code);", ("idx_sales", "sales_transactions")),
+        ("CREATE INDEX CONCURRENTLY idx_a ON t USING btree (id) WHERE id > 0", ("idx_a", "t")),
     ],
 )
 def test_controlled_cic_parser_accepts_only_safe_shape(sql: str, expected: tuple[str, str]) -> None:
