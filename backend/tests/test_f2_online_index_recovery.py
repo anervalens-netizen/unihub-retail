@@ -107,7 +107,7 @@ class _FakeConnection:
     ],
 )
 def test_controlled_cic_parser_accepts_only_safe_shape(sql: str, expected: tuple[str, str]) -> None:
-    assert runner.parse_controlled_cic(sql) == expected
+    assert recovery.parse_controlled_cic(sql) == expected
 
 
 @pytest.mark.parametrize(
@@ -124,7 +124,7 @@ def test_controlled_cic_parser_accepts_only_safe_shape(sql: str, expected: tuple
 )
 def test_controlled_cic_parser_fails_closed(sql: str) -> None:
     with pytest.raises(MigrationError):
-        runner.parse_controlled_cic(sql)
+        recovery.parse_controlled_cic(sql)
 
 
 @pytest.mark.asyncio
@@ -132,7 +132,7 @@ async def test_initial_preflight_happens_before_sentinel_and_rejects_any_object(
     connection = _FakeConnection()
     connection.existing_object = True
     with pytest.raises(MigrationError, match="already exists"):
-        await runner._apply_cic_online_migration(  # type: ignore[arg-type]
+        await recovery._apply_cic_online_migration(  # type: ignore[arg-type]
             connection,
             filename="070_idx.sql",
             checksum="a" * 64,
@@ -146,7 +146,7 @@ async def test_initial_preflight_happens_before_sentinel_and_rejects_any_object(
 @pytest.mark.asyncio
 async def test_cic_timeout_is_restored_after_success_and_failure() -> None:
     connection = _FakeConnection()
-    await runner._execute_cic_statement(  # type: ignore[arg-type]
+    await recovery._execute_cic_statement(  # type: ignore[arg-type]
         connection, "CREATE INDEX CONCURRENTLY idx ON t (id)"
     )
     assert connection.timeout == "0"
@@ -156,7 +156,7 @@ async def test_cic_timeout_is_restored_after_success_and_failure() -> None:
     connection = _FakeConnection()
     connection.fail_statement = RuntimeError("create failed")
     with pytest.raises(RuntimeError):
-        await runner._execute_cic_statement(  # type: ignore[arg-type]
+        await recovery._execute_cic_statement(  # type: ignore[arg-type]
             connection, "CREATE INDEX CONCURRENTLY idx ON t (id)"
         )
     assert connection.timeout == "0"
@@ -164,7 +164,7 @@ async def test_cic_timeout_is_restored_after_success_and_failure() -> None:
     connection = _FakeConnection()
     connection.fail_restore = True
     with pytest.raises(RuntimeError, match="lock timeout restore"):
-        await runner._execute_cic_statement(  # type: ignore[arg-type]
+        await recovery._execute_cic_statement(  # type: ignore[arg-type]
             connection, "CREATE INDEX CONCURRENTLY idx ON t (id)"
         )
 
@@ -181,12 +181,12 @@ async def test_post_validation_requires_exact_catalog_flags() -> None:
             "indislive": True,
         }
     ]
-    await runner._cic_post_validate_index(  # type: ignore[arg-type]
+    await recovery._cic_post_validate_index(  # type: ignore[arg-type]
         connection, "idx", "t"
     )
     connection.index_rows[0]["indisready"] = False
     with pytest.raises(MigrationError, match="catalog validation"):
-        await runner._cic_post_validate_index(  # type: ignore[arg-type]
+        await recovery._cic_post_validate_index(  # type: ignore[arg-type]
             connection, "idx", "t"
         )
 
@@ -215,7 +215,7 @@ async def test_cic_success_finalizes_only_after_validation() -> None:
         }
     ]
     checksum = "b" * 64
-    await runner._apply_cic_online_migration(  # type: ignore[arg-type]
+    await recovery._apply_cic_online_migration(  # type: ignore[arg-type]
         connection,
         filename="070_idx.sql",
         checksum=checksum,
@@ -307,11 +307,11 @@ async def test_real_cic_runs_outside_transaction_and_validates_catalog() -> None
     try:
         await connection.execute("DROP TABLE IF EXISTS f2_cic_table CASCADE")
         await connection.execute("CREATE TABLE f2_cic_table (id integer NOT NULL)")
-        await runner._execute_cic_statement(  # type: ignore[arg-type]
+        await recovery._execute_cic_statement(  # type: ignore[arg-type]
             connection, "CREATE INDEX CONCURRENTLY f2_cic_index ON f2_cic_table (id)"
         )
         assert not connection.is_in_transaction()
-        await runner._cic_post_validate_index(  # type: ignore[arg-type]
+        await recovery._cic_post_validate_index(  # type: ignore[arg-type]
             connection, "f2_cic_index", "f2_cic_table"
         )
     finally:
@@ -322,13 +322,13 @@ async def test_real_cic_runs_outside_transaction_and_validates_catalog() -> None
 @pytest.mark.parametrize("sql", ["", "/* unterminated", "CREATE INDEX CONCURRENTLY idx ON t."])
 def test_parser_rejects_empty_unterminated_and_ambiguous_sql(sql: str) -> None:
     with pytest.raises(MigrationError):
-        runner.parse_controlled_cic(sql)
+        recovery.parse_controlled_cic(sql)
 
 
 def test_cic_detector_routes_only_cic_attempts() -> None:
-    assert runner._looks_like_cic_statement("-- c\nCREATE INDEX CONCURRENTLY idx ON t (id)")
-    assert runner._looks_like_cic_statement("CREATE UNIQUE INDEX CONCURRENTLY idx ON t (id)")
-    assert not runner._looks_like_cic_statement("CREATE INDEX idx ON t (id)")
+    assert recovery._looks_like_cic_statement("-- c\nCREATE INDEX CONCURRENTLY idx ON t (id)")
+    assert recovery._looks_like_cic_statement("CREATE UNIQUE INDEX CONCURRENTLY idx ON t (id)")
+    assert not recovery._looks_like_cic_statement("CREATE INDEX idx ON t (id)")
 
 
 @pytest.mark.asyncio
@@ -345,7 +345,7 @@ async def test_post_validation_rejects_every_catalog_mismatch(row: dict[str, obj
     connection = _FakeConnection()
     connection.index_rows = [row]
     with pytest.raises(MigrationError, match="catalog validation"):
-        await runner._cic_post_validate_index(  # type: ignore[arg-type]
+        await recovery._cic_post_validate_index(  # type: ignore[arg-type]
             connection, "idx", "t"
         )
 
@@ -356,7 +356,7 @@ async def test_post_validation_rejects_missing_or_duplicate_index() -> None:
     for rows in ([], [{"index_name": "idx"}, {"index_name": "idx"}]):
         connection.index_rows = rows
         with pytest.raises(MigrationError, match="created exactly once"):
-            await runner._cic_post_validate_index(  # type: ignore[arg-type]
+            await recovery._cic_post_validate_index(  # type: ignore[arg-type]
                 connection, "idx", "t"
             )
 
@@ -366,7 +366,7 @@ async def test_cic_attempt_failures_preserve_sentinel() -> None:
     connection = _FakeConnection()
     connection.fail_statement = RuntimeError("create failed")
     with pytest.raises(MigrationError, match="recovery required"):
-        await runner._apply_cic_online_migration(  # type: ignore[arg-type]
+        await recovery._apply_cic_online_migration(  # type: ignore[arg-type]
             connection,
             filename="070_idx.sql",
             checksum="c" * 64,
@@ -382,7 +382,7 @@ async def test_cic_attempt_failures_preserve_sentinel() -> None:
         "indisready": True, "indislive": True,
     }]
     with pytest.raises(MigrationError, match="catalog validation"):
-        await runner._apply_cic_online_migration(  # type: ignore[arg-type]
+        await recovery._apply_cic_online_migration(  # type: ignore[arg-type]
             connection,
             filename="071_idx.sql",
             checksum="d" * 64,
@@ -421,7 +421,7 @@ async def test_pending_online_cic_uses_controlled_path(
     connection = _FakeConnection()
     apply = AsyncMock()
     monkeypatch.setattr(runner, "get_migrations_dir", lambda: tmp_path)
-    monkeypatch.setattr(runner, "_apply_cic_online_migration", apply)
+    monkeypatch.setattr(recovery, "_apply_cic_online_migration", apply)
     applied = await runner._apply_pending_migrations(  # type: ignore[arg-type]
         connection, manifest, {}, cutover_bootstrap=False
     )
@@ -439,3 +439,98 @@ async def test_recovery_rejects_unknown_or_non_online_filename(
     monkeypatch.setattr(recovery, "verify_migration_files", lambda _manifest: None)
     with pytest.raises(MigrationError, match="manifest|online"):
         await recovery.recover_online_migration(filename, "postgresql://test")
+
+
+@pytest.mark.skipif(os.getenv("UNIHUB_TEST_DATABASE") != "1", reason="requires isolated PostgreSQL")
+@pytest.mark.asyncio
+async def test_real_recovery_rebuilds_existing_index_and_preserves_failed_sentinel(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import asyncpg
+
+    from db.connection import get_database_url
+
+    database_url = get_database_url()
+    success_file = "f2_recovery_real.sql"
+    failure_file = "f2_recovery_failure.sql"
+    success_checksum = "e" * 64
+    failure_checksum = "f" * 64
+    success_sql = "CREATE INDEX CONCURRENTLY f2_recovery_index ON f2_recovery_table (id)"
+    failure_sql = "CREATE INDEX CONCURRENTLY f2_recovery_conflict_index ON f2_recovery_table (id)"
+    manifest = MigrationManifest(
+        "a" * 64,
+        "001.sql",
+        {success_file: success_checksum, failure_file: failure_checksum},
+        {success_file: "online", failure_file: "online"},
+    )
+    (tmp_path / success_file).write_text(success_sql, encoding="utf-8")
+    (tmp_path / failure_file).write_text(failure_sql, encoding="utf-8")
+    monkeypatch.setattr(recovery, "load_migration_manifest", lambda: manifest)
+    monkeypatch.setattr(recovery, "verify_migration_files", lambda _manifest: None)
+    monkeypatch.setattr(recovery, "get_migrations_dir", lambda: tmp_path)
+
+    connection = await asyncpg.connect(database_url)
+    try:
+        await connection.execute("DROP TABLE IF EXISTS f2_recovery_table CASCADE")
+        await connection.execute("DROP TABLE IF EXISTS f2_recovery_other CASCADE")
+        await connection.execute("CREATE TABLE f2_recovery_table (id integer NOT NULL)")
+        await connection.execute("CREATE TABLE f2_recovery_other (id integer NOT NULL)")
+        await connection.execute(
+            "CREATE INDEX CONCURRENTLY f2_recovery_index ON f2_recovery_table (id)"
+        )
+        await connection.execute(
+            "CREATE INDEX CONCURRENTLY f2_recovery_conflict_index ON f2_recovery_other (id)"
+        )
+        await connection.execute(
+            "INSERT INTO schema_migrations (filename, checksum) VALUES ($1, $2), ($3, $4)",
+            success_file,
+            runner._online_recovery_checksum(success_checksum),
+            failure_file,
+            runner._online_recovery_checksum(failure_checksum),
+        )
+        await connection.execute(
+            "INSERT INTO schema_migrations (filename, checksum) VALUES ($1, $2)",
+            "f2_recovery_control.sql",
+            "control-checksum",
+        )
+
+        await recovery.recover_online_migration(success_file, database_url)
+        success_row = await connection.fetchrow(
+            "SELECT checksum FROM schema_migrations WHERE filename = $1", success_file
+        )
+        success_catalog = await connection.fetchrow(
+            """
+            SELECT table_class.relname AS table_name,
+                   pg_index.indisvalid, pg_index.indisready, pg_index.indislive
+            FROM pg_class AS index_class
+            JOIN pg_index ON pg_index.indexrelid = index_class.oid
+            JOIN pg_class AS table_class ON table_class.oid = pg_index.indrelid
+            WHERE index_class.relname = 'f2_recovery_index'
+            """
+        )
+        assert success_row["checksum"] == success_checksum
+        assert success_catalog["table_name"] == "f2_recovery_table"
+        assert all(success_catalog[key] for key in ("indisvalid", "indisready", "indislive"))
+        assert not connection.is_in_transaction()
+
+        with pytest.raises(MigrationError, match="recovery failed"):
+            await recovery.recover_online_migration(failure_file, database_url)
+        failure_row = await connection.fetchrow(
+            "SELECT checksum FROM schema_migrations WHERE filename = $1", failure_file
+        )
+        control_row = await connection.fetchrow(
+            "SELECT checksum FROM schema_migrations WHERE filename = $1",
+            "f2_recovery_control.sql",
+        )
+        assert failure_row["checksum"] == runner._online_recovery_checksum(failure_checksum)
+        assert control_row["checksum"] == "control-checksum"
+    finally:
+        await connection.execute(
+            "DELETE FROM schema_migrations WHERE filename IN ($1, $2, $3)",
+            success_file,
+            failure_file,
+            "f2_recovery_control.sql",
+        )
+        await connection.execute("DROP TABLE IF EXISTS f2_recovery_table CASCADE")
+        await connection.execute("DROP TABLE IF EXISTS f2_recovery_other CASCADE")
+        await connection.close()
