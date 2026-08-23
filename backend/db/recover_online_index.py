@@ -228,7 +228,9 @@ async def _inspect_index(
     if len(rows) != 1:
         raise MigrationError("Recovery candidate index is ambiguous")
     row = rows[0]
-    return str(row["relkind"]), str(row["table_name"])
+    raw_relkind = row["relkind"]
+    relkind = raw_relkind.decode("ascii") if isinstance(raw_relkind, bytes) else str(raw_relkind)
+    return relkind, str(row["table_name"])
 
 
 async def _recover_cic_index(
