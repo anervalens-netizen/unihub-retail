@@ -441,6 +441,59 @@ async def test_recovery_rejects_unknown_or_non_online_filename(
         await recovery.recover_online_migration(filename, "postgresql://test")
 
 
+def test_manifest_loader_and_file_verifier_fail_closed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    invalid = tmp_path / "invalid.json"
+    invalid.write_text("{", encoding="utf-8")
+    with pytest.raises(MigrationError, match="manifest is invalid"):
+        runner.load_migration_manifest(invalid)
+    bad_baseline = tmp_path / "bad-baseline.json"
+    bad_baseline.write_text(
+        '{"baseline":{"file":"schema_v2.sql","sha256":"'
+        + "a" * 64
+        + '","incorporated_through":"missing.sql"},'
+        '"migrations":{"001.sql":"'
+        + "b" * 64
+        + '"},"version":1}',
+        encoding="utf-8",
+    )
+    with pytest.raises(MigrationError, match="manifest is invalid"):
+        runner.load_migration_manifest(bad_baseline)
+
+    migration_dir = tmp_path / "migrations"
+    migration_dir.mkdir()
+    migration = migration_dir / "001.sql"
+    migration.write_text("SELECT 1", encoding="utf-8")
+    schema = tmp_path / "schema_v2.sql"
+    schema.write_text("schema", encoding="utf-8")
+    monkeypatch.setattr(runner, "get_migrations_dir", lambda: migration_dir)
+    monkeypatch.setattr(runner, "get_schema_path", lambda: schema)
+    manifest = MigrationManifest("0" * 64, "001.sql", {"001.sql": "1" * 64})
+    with pytest.raises(MigrationError, match="files do not match"):
+        runner.verify_migration_files(manifest)
+    matching = MigrationManifest(
+        runner._sha256(schema), "001.sql", {"001.sql": runner._sha256(migration)}
+    )
+    runner.verify_migration_files(matching)
+    with pytest.raises(MigrationError, match="Frozen schema"):
+        runner.verify_migration_files(
+            MigrationManifest("2" * 64, "001.sql", {"001.sql": runner._sha256(migration)})
+        )
+
+
+def test_manifest_validation_rejects_unknown_and_wrong_checksum() -> None:
+    manifest = MigrationManifest("a" * 64, "001.sql", {"001.sql": "b" * 64})
+    with pytest.raises(MigrationError, match="absent from the manifest"):
+        runner._validate_applied(
+            {"unknown.sql": "c" * 64}, manifest, allow_missing_checksums=False
+        )
+    with pytest.raises(MigrationError, match="checksum mismatch"):
+        runner._validate_applied(
+            {"001.sql": "c" * 64}, manifest, allow_missing_checksums=False
+        )
+
+
 @pytest.mark.skipif(os.getenv("UNIHUB_TEST_DATABASE") != "1", reason="requires isolated PostgreSQL")
 @pytest.mark.asyncio
 async def test_real_recovery_rebuilds_existing_index_and_preserves_failed_sentinel(
