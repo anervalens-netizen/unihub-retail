@@ -157,8 +157,8 @@ def _minimal_contract(
 def test_case_1_pass_on_exact_main(check, l1, real_v2_contract):
     result = check.evaluate(PR_B1_WORKTREE, real_v2_contract, l1)
     assert result["result"] == "PASS"
-    assert result["metrics"]["production_functions"] == 2963
-    assert result["metrics"]["complexity_proxy_gte_threshold"] == 29
+    assert result["metrics"]["production_functions"] == 2979
+    assert result["metrics"]["complexity_proxy_gte_threshold"] == 28
     assert result["metrics"]["complexity_proxy_gte_30"] == 0
     assert result["metrics"]["maximum_complexity_proxy"] == 28
     assert result["metrics"]["new_function_above_threshold"] == 0
