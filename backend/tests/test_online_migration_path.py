@@ -13,9 +13,13 @@ from db.migration_runner import (
     ONLINE_RECOVERY_PREFIX,
     MigrationError,
     MigrationManifest,
+    _activate_online_migration_owner,
     _apply_online_migration,
+    _apply_pending_migrations,
     _execute_online_statement,
+    _finalize_online_migration,
     _online_recovery_checksum,
+    _reset_online_migration_owner,
     _validate_applied,
     load_migration_manifest,
 )
@@ -45,10 +49,14 @@ class _OnlineConnection:
         *,
         online_failure: Exception | None = None,
         leave_transaction_open: bool = False,
+        owner_elevation_succeeds: bool = True,
+        role_reset_succeeds: bool = True,
     ) -> None:
         self.in_transaction = False
         self.online_failure = online_failure
         self.leave_transaction_open = leave_transaction_open
+        self.owner_elevation_succeeds = owner_elevation_succeeds
+        self.role_reset_succeeds = role_reset_succeeds
         self.rows: dict[str, str] = {}
         self.events: list[str] = []
         self.role_active = False
@@ -62,9 +70,11 @@ class _OnlineConnection:
 
     async def fetchval(self, sql: str, *_args: object) -> bool:
         if "current_user = 'unihub_schema_owner'" in sql:
-            return self.role_active or self.local_role_active
+            return (
+                self.role_active or self.local_role_active
+            ) and self.owner_elevation_succeeds
         if "current_user = session_user" in sql:
-            return not self.role_active
+            return not self.role_active and self.role_reset_succeeds
         raise AssertionError(sql)
 
     async def execute(self, sql: str, *args: object) -> str:
@@ -208,6 +218,26 @@ def test_manifest_rejects_unsupported_version(tmp_path: Path) -> None:
         load_migration_manifest(path)
 
 
+def test_manifest_rejects_non_mapping_migrations(tmp_path: Path) -> None:
+    payload = _manifest_payload()
+    payload["migrations"] = []
+    path = tmp_path / "manifest.json"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(MigrationError, match="manifest is invalid"):
+        load_migration_manifest(path)
+
+
+def test_manifest_rejects_non_mapping_execution_modes(tmp_path: Path) -> None:
+    payload = _manifest_payload()
+    payload["execution_modes"] = []
+    path = tmp_path / "manifest.json"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(MigrationError, match="manifest is invalid"):
+        load_migration_manifest(path)
+
+
 @pytest.mark.asyncio
 async def test_online_migration_marks_before_execution_and_finalizes_same_ledger(
     monkeypatch: pytest.MonkeyPatch,
@@ -235,6 +265,61 @@ async def test_online_migration_marks_before_execution_and_finalizes_same_ledger
 
 
 @pytest.mark.asyncio
+async def test_online_migration_without_migrate_authority_skips_session_role(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("UNIHUB_DB_PROCESS_AUTHORITY", raising=False)
+    connection = _OnlineConnection()
+    checksum = "f" * 64
+
+    await _apply_online_migration(  # type: ignore[arg-type]
+        connection,
+        filename="070_online.sql",
+        checksum=checksum,
+        sql="VACUUM schema_migrations",
+    )
+
+    assert connection.rows == {"070_online.sql": checksum}
+    assert "role:set-session" not in connection.events
+    assert "role:reset" not in connection.events
+
+
+@pytest.mark.asyncio
+async def test_online_owner_elevation_failure_resets_session_role(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("UNIHUB_DB_PROCESS_AUTHORITY", "migrate")
+    connection = _OnlineConnection(owner_elevation_succeeds=False)
+
+    with pytest.raises(MigrationError, match="schema-owner elevation"):
+        await _activate_online_migration_owner(connection)  # type: ignore[arg-type]
+
+    assert connection.events == ["role:set-session", "role:reset"]
+
+
+@pytest.mark.asyncio
+async def test_online_owner_reset_failure_prevents_finalization(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("UNIHUB_DB_PROCESS_AUTHORITY", "migrate")
+    connection = _OnlineConnection(role_reset_succeeds=False)
+    checksum = "g" * 64
+
+    with pytest.raises(MigrationError, match="schema-owner reset"):
+        await _apply_online_migration(  # type: ignore[arg-type]
+            connection,
+            filename="070_online.sql",
+            checksum=checksum,
+            sql="VACUUM schema_migrations",
+        )
+
+    assert connection.rows == {
+        "070_online.sql": _online_recovery_checksum(checksum),
+    }
+    assert "ledger:finalize" not in connection.events
+
+
+@pytest.mark.asyncio
 async def test_online_failure_leaves_sentinel_in_canonical_ledger(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -256,6 +341,54 @@ async def test_online_failure_leaves_sentinel_in_canonical_ledger(
     assert connection.role_active is False
     assert "role:reset" in connection.events
     assert "ledger:finalize" not in connection.events
+
+
+@pytest.mark.asyncio
+async def test_pending_online_migration_uses_non_transactional_executor(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import db.migration_runner as runner
+
+    migration = tmp_path / "070_online.sql"
+    migration.write_text("VACUUM schema_migrations", encoding="utf-8")
+    checksum = runner._sha256(migration)
+    manifest = MigrationManifest(
+        "a" * 64,
+        migration.name,
+        {migration.name: checksum},
+        {migration.name: ONLINE_EXECUTION_MODE},
+    )
+    connection = _OnlineConnection()
+    monkeypatch.delenv("UNIHUB_DB_PROCESS_AUTHORITY", raising=False)
+    monkeypatch.setattr(runner, "get_migrations_dir", lambda: tmp_path)
+
+    applied = await _apply_pending_migrations(  # type: ignore[arg-type]
+        connection,
+        manifest,
+        {},
+        cutover_bootstrap=False,
+    )
+
+    assert applied == [migration.name]
+    assert connection.rows == {migration.name: checksum}
+    assert connection.events.index("online:execute") < connection.events.index(
+        "ledger:finalize"
+    )
+
+
+@pytest.mark.asyncio
+async def test_online_finalize_requires_its_recovery_marker() -> None:
+    connection = _OnlineConnection()
+
+    with pytest.raises(MigrationError, match="was not finalized"):
+        await _finalize_online_migration(  # type: ignore[arg-type]
+            connection,
+            "070_online.sql",
+            "h" * 64,
+        )
+
+    assert connection.events[-1] == "transaction:rollback"
 
 
 def test_existing_online_recovery_sentinel_blocks_automatic_retry() -> None:
