@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -35,6 +36,20 @@ TOMBSTONE_ADOPTION_PREREQUISITES = {
 TRANSACTIONAL_EXECUTION_MODE = "transactional"
 ONLINE_EXECUTION_MODE = "online"
 ONLINE_RECOVERY_PREFIX = "online-recovery:"
+# F2: controlled non-unique CREATE INDEX CONCURRENTLY recovery uses a bounded
+# lock_timeout (5s) so a competing long-holder cannot stall an online recovery
+# indefinitely; the prior per-session setting is restored in a finally.
+CIC_LOCK_TIMEOUT_MS = 5000
+_SAFE_IDENTIFIER_RE = re.compile(r"[a-z_][a-z0-9_]*")
+_CIC_ATTEMPT_RE = re.compile(
+    r"^\s*CREATE\s+(?:UNIQUE\s+)?INDEX\s+CONCURRENTLY\b", re.IGNORECASE
+)
+_CIC_STATEMENT_RE = re.compile(
+    r"^\s*CREATE\s+INDEX\s+CONCURRENTLY\s+"
+    r"(?P<index>[a-z_][a-z0-9_]*)\s+ON\s+"
+    r"(?P<table>[a-z_][a-z0-9_]*)(?P<tail>.*)$",
+    re.DOTALL | re.IGNORECASE,
+)
 TRACKING_SQL = """
 CREATE TABLE IF NOT EXISTS schema_meta (
     schema_name TEXT PRIMARY KEY,
@@ -352,6 +367,191 @@ async def _apply_online_migration(
     await _finalize_online_migration(connection, filename, checksum)
 
 
+def _strip_leading_comments(sql: str) -> str:
+    """Remove PostgreSQL comments and whitespace from the front of SQL."""
+    s = sql
+    while True:
+        s = s.lstrip()
+        if not s:
+            return s
+        if s.startswith("--"):
+            newline = s.find("\n")
+            if newline == -1:
+                return ""
+            s = s[newline + 1 :]
+            continue
+        if s.startswith("/*"):
+            end = s.find("*/")
+            if end == -1:
+                raise MigrationError("Migration SQL contains an unterminated block comment")
+            s = s[end + 2 :]
+            continue
+        return s
+
+
+def _looks_like_cic_statement(sql: str) -> bool:
+    """True when the SQL is intended as a CREATE INDEX CONCURRENTLY attempt.
+
+    This is intentionally permissive: it only detects the CIC pattern so the
+    runner can route it through the controlled F2 path. The strict parser
+    (:func:`parse_controlled_cic`) is the authority that then fails closed on
+    UNIQUE, IF NOT EXISTS, quoted/ambiguous identifiers and multi-statement
+    bodies.
+    """
+    return bool(_CIC_ATTEMPT_RE.match(_strip_leading_comments(sql)))
+
+
+def parse_controlled_cic(sql: str) -> tuple[str, str]:
+    """Parse a standalone non-unique CREATE INDEX CONCURRENTLY statement.
+
+    Returns ``(index_name, table_name)`` for the exact unquoted-safe lowercase
+    identifiers, or raises :class:`MigrationError` fail-closed for UNIQUE,
+    ``IF NOT EXISTS``, ordinary CREATE INDEX, quoted/ambiguous identifiers,
+    multiple top-level statements, or any other (generic online) SQL.
+    """
+    stmt = _strip_leading_comments(sql).strip()
+    if not stmt:
+        raise MigrationError("Migration SQL is empty")
+    if stmt.endswith(";"):
+        stmt = stmt[:-1].rstrip()
+    if ";" in stmt:
+        raise MigrationError("Multiple top-level SQL statements are not allowed")
+    match = _CIC_STATEMENT_RE.match(stmt)
+    if not match:
+        raise MigrationError(
+            "Migration SQL is not a standalone non-unique "
+            "CREATE INDEX CONCURRENTLY statement"
+        )
+    index_name = match.group("index")
+    table_name = match.group("table")
+    if not _SAFE_IDENTIFIER_RE.fullmatch(index_name) or not _SAFE_IDENTIFIER_RE.fullmatch(
+        table_name
+    ):
+        raise MigrationError(
+            "Quoted or ambiguous index/table identifiers are not allowed"
+        )
+    if match.group("tail").lstrip().startswith("."):
+        raise MigrationError(
+            "Quoted or ambiguous index/table identifiers are not allowed"
+        )
+    return index_name, table_name
+
+
+async def _cic_session_lock_timeout(connection: asyncpg.Connection) -> str:
+    value = await connection.fetchval("SHOW lock_timeout")
+    return str(value)
+
+
+async def _cic_set_lock_timeout(connection: asyncpg.Connection, value: str) -> None:
+    # set_config sets the per-session setting (is_local=false) and accepts the
+    # prior value as a bound parameter, so the restore is quoting-safe.
+    await connection.fetchval("SELECT set_config('lock_timeout', $1, false)", value)
+
+
+async def _execute_cic_statement(connection: asyncpg.Connection, sql: str) -> None:
+    """Run one controlled CREATE/DROP INDEX CONCURRENTLY outside a transaction.
+
+    A bounded 5s ``lock_timeout`` is applied for the statement and the prior
+    session setting is restored in a ``finally`` on success and on failure.
+    """
+    if connection.is_in_transaction():
+        raise MigrationError("Controlled online migration requires no active transaction")
+    prior_timeout = await _cic_session_lock_timeout(connection)
+    try:
+        await _cic_set_lock_timeout(connection, f"{CIC_LOCK_TIMEOUT_MS}ms")
+        await connection.fetch(sql)
+    finally:
+        await _cic_set_lock_timeout(connection, prior_timeout)
+    if connection.is_in_transaction():
+        raise MigrationError("Controlled online migration left an active transaction")
+
+
+async def _cic_preflight_index_absent(
+    connection: asyncpg.Connection, index_name: str
+) -> None:
+    """Fail closed before the F2 sentinel when the exact index already exists."""
+    exists = await connection.fetchval(
+        """
+        SELECT EXISTS (
+            SELECT 1
+            FROM pg_class AS index_class
+            JOIN pg_namespace AS namespace ON namespace.oid = index_class.relnamespace
+            WHERE index_class.relname = $1
+              AND namespace.nspname = 'public'
+        )
+        """,
+        index_name,
+    )
+    if exists:
+        raise MigrationError(
+            "Online migration candidate index already exists before it can be created"
+        )
+
+
+async def _cic_post_validate_index(
+    connection: asyncpg.Connection,
+    index_name: str,
+    table_name: str,
+) -> None:
+    """Require the exact valid/ready/live index on the exact expected table."""
+    rows = await connection.fetch(
+        """
+        SELECT index_class.relname AS index_name,
+               table_class.relname AS table_name,
+               pg_index.indisvalid AS indisvalid,
+               pg_index.indisready AS indisready,
+               pg_index.indislive AS indislive
+        FROM pg_class AS index_class
+        JOIN pg_index ON pg_index.indexrelid = index_class.oid
+        JOIN pg_class AS table_class ON table_class.oid = pg_index.indrelid
+        JOIN pg_namespace AS namespace ON namespace.oid = index_class.relnamespace
+        WHERE index_class.relname = $1
+          AND index_class.relkind = 'i'
+          AND namespace.nspname = 'public'
+        """,
+        index_name,
+    )
+    if len(rows) != 1:
+        raise MigrationError("Online migration index was not created exactly once")
+    row = rows[0]
+    if (
+        str(row["index_name"]) != index_name
+        or str(row["table_name"]) != table_name
+        or not bool(row["indisvalid"])
+        or not bool(row["indisready"])
+        or not bool(row["indislive"])
+    ):
+        raise MigrationError("Online migration index catalog validation failed")
+
+
+async def _apply_cic_online_migration(
+    connection: asyncpg.Connection,
+    *,
+    filename: str,
+    checksum: str,
+    sql: str,
+    index_name: str,
+    table_name: str,
+) -> None:
+    await _cic_preflight_index_absent(connection, index_name)
+    await _mark_online_recovery(connection, filename, checksum)
+    role_activated = False
+    try:
+        role_activated = await _activate_online_migration_owner(connection)
+        await _execute_cic_statement(connection, sql)
+    except Exception as exc:
+        raise MigrationError(
+            f"Online migration failed; recovery required for {filename}"
+        ) from exc
+    finally:
+        await _reset_online_migration_owner(
+            connection,
+            activated=role_activated,
+        )
+    await _cic_post_validate_index(connection, index_name, table_name)
+    await _finalize_online_migration(connection, filename, checksum)
+
+
 async def _apply_transactional_migration(
     connection: asyncpg.Connection,
     *,
@@ -473,12 +673,23 @@ async def _apply_pending_migrations(
             continue
         sql = (get_migrations_dir() / filename).read_text(encoding="utf-8")
         if manifest.execution_mode(filename) == ONLINE_EXECUTION_MODE:
-            await _apply_online_migration(
-                connection,
-                filename=filename,
-                checksum=checksum,
-                sql=sql,
-            )
+            if _looks_like_cic_statement(sql):
+                index_name, table_name = parse_controlled_cic(sql)
+                await _apply_cic_online_migration(
+                    connection,
+                    filename=filename,
+                    checksum=checksum,
+                    sql=sql,
+                    index_name=index_name,
+                    table_name=table_name,
+                )
+            else:
+                await _apply_online_migration(
+                    connection,
+                    filename=filename,
+                    checksum=checksum,
+                    sql=sql,
+                )
         else:
             await _apply_transactional_migration(
                 connection,
