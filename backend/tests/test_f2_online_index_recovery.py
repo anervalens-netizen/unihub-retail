@@ -326,9 +326,15 @@ def test_parser_rejects_empty_unterminated_and_ambiguous_sql(sql: str) -> None:
 
 
 def test_cic_detector_routes_only_cic_attempts() -> None:
-    assert recovery._looks_like_cic_statement("-- c\nCREATE INDEX CONCURRENTLY idx ON t (id)")
-    assert recovery._looks_like_cic_statement("CREATE UNIQUE INDEX CONCURRENTLY idx ON t (id)")
-    assert not recovery._looks_like_cic_statement("CREATE INDEX idx ON t (id)")
+    assert recovery._CIC_ATTEMPT_RE.match(
+        recovery._strip_leading_comments("-- c\nCREATE INDEX CONCURRENTLY idx ON t (id)")
+    )
+    assert recovery._CIC_ATTEMPT_RE.match(
+        recovery._strip_leading_comments("CREATE UNIQUE INDEX CONCURRENTLY idx ON t (id)")
+    )
+    assert not recovery._CIC_ATTEMPT_RE.match(
+        recovery._strip_leading_comments("CREATE INDEX idx ON t (id)")
+    )
 
 
 @pytest.mark.asyncio

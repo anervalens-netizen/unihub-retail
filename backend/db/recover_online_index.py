@@ -64,11 +64,6 @@ def _strip_leading_comments(sql: str) -> str:
         return s
 
 
-def _looks_like_cic_statement(sql: str) -> bool:
-    """Detect CIC syntax so the strict parser can route it fail-closed."""
-    return bool(_CIC_ATTEMPT_RE.match(_strip_leading_comments(sql)))
-
-
 def parse_controlled_cic(sql: str) -> tuple[str, str]:
     """Parse one standalone non-unique CIC with safe unquoted identifiers."""
     stmt = _strip_leading_comments(sql).strip()
@@ -99,26 +94,21 @@ def parse_controlled_cic(sql: str) -> tuple[str, str]:
     return index_name, table_name
 
 
-async def _cic_session_lock_timeout(connection: asyncpg.Connection) -> str:
-    value = await connection.fetchval("SHOW lock_timeout")
-    return str(value)
-
-
-async def _cic_set_lock_timeout(connection: asyncpg.Connection, value: str) -> None:
-    """Set a session-level lock timeout using a bound value."""
-    await connection.fetchval("SELECT set_config('lock_timeout', $1, false)", value)
-
-
 async def _execute_cic_statement(connection: asyncpg.Connection, sql: str) -> None:
     """Run one controlled CIC statement outside a transaction and restore timeout."""
     if connection.is_in_transaction():
         raise MigrationError("Controlled online migration requires no active transaction")
-    prior_timeout = await _cic_session_lock_timeout(connection)
+    prior_timeout = str(await connection.fetchval("SHOW lock_timeout"))
     try:
-        await _cic_set_lock_timeout(connection, f"{CIC_LOCK_TIMEOUT_MS}ms")
+        await connection.fetchval(
+            "SELECT set_config('lock_timeout', $1, false)",
+            f"{CIC_LOCK_TIMEOUT_MS}ms",
+        )
         await connection.fetch(sql)
     finally:
-        await _cic_set_lock_timeout(connection, prior_timeout)
+        await connection.fetchval(
+            "SELECT set_config('lock_timeout', $1, false)", prior_timeout
+        )
     if connection.is_in_transaction():
         raise MigrationError("Controlled online migration left an active transaction")
 

@@ -474,12 +474,13 @@ async def _apply_pending_migrations(
         sql = (get_migrations_dir() / filename).read_text(encoding="utf-8")
         if manifest.execution_mode(filename) == ONLINE_EXECUTION_MODE:
             from db.recover_online_index import (
+                _CIC_ATTEMPT_RE,
                 _apply_cic_online_migration,
-                _looks_like_cic_statement,
+                _strip_leading_comments,
                 parse_controlled_cic,
             )
 
-            if _looks_like_cic_statement(sql):
+            if _CIC_ATTEMPT_RE.match(_strip_leading_comments(sql)):
                 index_name, table_name = parse_controlled_cic(sql)
                 await _apply_cic_online_migration(
                     connection,
