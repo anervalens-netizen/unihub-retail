@@ -110,11 +110,17 @@ Calculator refactors. The current CI-measured production tree is:
 
 | Metric                     | Value |
 |----------------------------|-------|
-| production_functions       | 2953  |
+| production_functions       | 2989  |
 | complexity_proxy > 19      | 29    |
 | complexity_proxy >= 30     | 0     |
 | maximum_complexity_proxy   | 28    |
 | new_function above 19      | 0     |
+
+Phase F2 adds ten bounded recovery functions across the controlled CIC
+recovery module and operator script. They all remain at or below the pinned
+v2 new-function ceiling of 19, so no aggregate ceiling or locked entry is
+weakened. The active v2 contract records the resulting production-function
+baseline (`2989`) in the append-only `history.phase_f2` record.
 
 All three original Phase-C Target Calculator remediation hotspots are
 now below the immutable v2 new-function boundary (`19`):
