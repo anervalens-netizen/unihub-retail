@@ -359,7 +359,14 @@ async def test_post_validation_rejects_every_catalog_mismatch(row: dict[str, obj
 @pytest.mark.asyncio
 async def test_post_validation_rejects_missing_or_duplicate_index() -> None:
     connection = _FakeConnection()
-    for rows in ([], [{"index_name": "idx"}, {"index_name": "idx"}]):
+    row_sets: tuple[list[dict[str, object]], ...] = (
+        [],
+        [
+            {"index_name": "idx"},
+            {"index_name": "idx"},
+        ],
+    )
+    for rows in row_sets:
         connection.index_rows = rows
         with pytest.raises(MigrationError, match="created exactly once"):
             await recovery._cic_post_validate_index(  # type: ignore[arg-type]

@@ -22,7 +22,7 @@
     "walk": "ast.walk_including_nested_bodies"
   },
   "baseline_source_sha": "76a71d9bcf339385712ae1207824624af603a12f",
-  "contract_payload_sha256": "190c24b0bb672d281f329155f34e4a953ede3d00de25aa08097725a5ff21ca4a",
+  "contract_payload_sha256": "6b4230005857e532c8ec247a7a7a897edeb1602f2593b1065ca647fa19271d3a",
   "entries": [
     {
       "ceiling": 28,
@@ -307,7 +307,7 @@
     },
     "phase_f2": {
       "baseline_metrics": {
-        "complexity_proxy_gte_20": 29,
+        "complexity_proxy_gte_20": 28,
         "complexity_proxy_gte_30": 0,
         "maximum_complexity_proxy": 28,
         "production_functions": 2989

@@ -111,7 +111,7 @@ Calculator refactors. The current CI-measured production tree is:
 | Metric                     | Value |
 |----------------------------|-------|
 | production_functions       | 2989  |
-| complexity_proxy > 19      | 29    |
+| complexity_proxy > 19      | 28    |
 | complexity_proxy >= 30     | 0     |
 | maximum_complexity_proxy   | 28    |
 | new_function above 19      | 0     |
