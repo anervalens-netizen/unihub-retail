@@ -60,9 +60,11 @@ Latest-status-wins (one-defect fix):
   - The latest status itself must satisfy ALL:
       * context == "retail/pr-deep"
       * state   == "success"
-      * sha     == exact current PR HEAD
+      * if present, sha == exact current PR HEAD
       * description EXACTLY == "PASS base=<40-char expected_base_sha>"
-    If any of these fail, policy_state = pending — an older
+    The status list is already bound to the exact HEAD by the request URL,
+    so individual status objects may omit ``sha``. If any of these fail,
+    policy_state = pending — an older
     matching success CANNOT count.
   - No status -> pending.
   - Latest pending -> pending.
@@ -156,81 +158,114 @@ def _fetch_existing_statuses(repo: str, sha: str, token: str) -> list:
         return []
     if not isinstance(statuses, list):
         return []
-    # Each status entry must be a JSON object. Anything else (None,
-    # string, list, scalar) is API/transport corruption; do NOT let
-    # it reach the sort key.
-    cleaned: list = []
-    for s in statuses:
-        if isinstance(s, dict):
-            cleaned.append(s)
-    return cleaned
+    # Every status entry must be a JSON object. Ignoring a malformed entry
+    # could make an older success appear authoritative, so reject the whole
+    # payload instead of certifying from a partial list.
+    if any(not isinstance(s, dict) for s in statuses):
+        return []
+    return statuses
 
 
-def _status_sort_key(s: dict) -> tuple:
-    """Return the deterministic sort key for a status.
-
-    We sort by ``(updated_at, created_at, id)`` (descending) so the
-    ordering is robust to:
-
-    - API list NOT being in reverse-chronological order
-      (we do NOT assume list order);
-    - ``updated_at`` being absent on some entries (fall back to
-      ``created_at``);
-    - two entries with equal timestamps (use the numeric status ``id``
-      as a deterministic tie-breaker — larger id wins because GitHub
-      assigns strictly increasing ids to newer statuses).
-
-    A status with NO timestamp AND NO id sorts to the very end (empty
-    string for timestamps, -1 for id); such an entry cannot be
-    authoritative because we cannot establish a safe ordering for it.
-    """
-    ts = s.get("updated_at") or s.get("created_at") or ""
-    sid = s.get("id")
+def _parse_status_timestamp(value) -> datetime.datetime | None:
+    """Parse a GitHub RFC3339 timestamp, rejecting malformed values."""
+    if not isinstance(value, str) or not value:
+        return None
     try:
-        sid_int = int(sid) if sid is not None else -1
-    except (TypeError, ValueError):
-        sid_int = -1
-    return (ts, "", sid_int)
+        parsed = datetime.datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return None
+    return parsed.astimezone(datetime.timezone.utc)
+
+
+def _status_sort_key(s: dict) -> tuple | None:
+    """Return a safe ``(updated_at, created_at, id)`` ordering key.
+
+    A status must have at least one valid, timezone-aware timestamp.
+    An id is optional when timestamps establish a strict order, but an
+    invalid id is rejected rather than silently treated as absent.
+    """
+    updated_raw = s.get("updated_at")
+    created_raw = s.get("created_at")
+    updated_at = _parse_status_timestamp(updated_raw)
+    created_at = _parse_status_timestamp(created_raw)
+    if updated_raw is not None and updated_at is None:
+        return None
+    if created_raw is not None and created_at is None:
+        return None
+    if updated_at is None and created_at is None:
+        return None
+
+    status_id = s.get("id")
+    if status_id is not None and (
+        isinstance(status_id, bool)
+        or not isinstance(status_id, int)
+        or status_id < 0
+    ):
+        return None
+    minimum = datetime.datetime.min.replace(tzinfo=datetime.timezone.utc)
+    return (updated_at or created_at, created_at or minimum, status_id)
 
 
 def _latest_status(statuses: list, head_sha: str) -> dict | None:
     """Pick the SINGLE latest authoritative status for the exact head.
 
-    Filters by:
-
-      - ``context == "retail/pr-deep"``
-      - ``sha    == head_sha``
-
-    then sorts by ``(updated_at, created_at, id)`` descending and
-    returns the first entry. If no entry has a usable ``id`` or any
-    timestamp, the sort still produces a stable answer (entries with
-    no key sort to the end); the caller MUST verify the returned
-    status itself is acceptable for certification.
+    The response is already scoped to ``/commits/<head>/statuses``. We
+    therefore select every ``retail/pr-deep`` object regardless of whether
+    GitHub included a redundant per-status ``sha`` field, while rejecting a
+    conflicting field if one is present. The ordering metadata must be
+    valid and unambiguous; otherwise return ``None`` so policy fails closed.
 
     This is the ONLY "latest" helper used by the policy. There is
     intentionally no `_latest_matching_status` because accepting an
     older matching success when the latest status is a different
     success (or anything else) is a downgrade-by-history bug.
     """
+    if not isinstance(statuses, list) or any(
+        not isinstance(status, dict) for status in statuses
+    ):
+        return None
     candidates = [
         s for s in statuses
         if s.get("context") == PR_DEEP_CONTEXT
-        and s.get("sha") == head_sha
     ]
     if not candidates:
         return None
-    # Sort by (updated_at, created_at, id) descending. The key is
-    # built in _status_sort_key; we negate the numeric part so the
-    # list is sorted in descending order overall.
-    candidates.sort(
-        key=lambda s: (
-            s.get("updated_at") or s.get("created_at") or "",
-            s.get("created_at") or "",
-            s.get("id") if isinstance(s.get("id"), int) else -1,
+    if any(
+        s.get("sha") is not None and s.get("sha") != head_sha
+        for s in candidates
+    ):
+        return None
+
+    keyed = []
+    for status in candidates:
+        key = _status_sort_key(status)
+        if key is None:
+            return None
+        keyed.append((key, status))
+
+    # Equal timestamps require a numeric id on every tied status. Without
+    # it, an older success could be selected merely because the newer
+    # status has incomplete metadata.
+    for index, (left_key, _) in enumerate(keyed):
+        for right_key, _ in keyed[index + 1:]:
+            if left_key[:2] == right_key[:2] and (
+                left_key[2] is None
+                or right_key[2] is None
+                or left_key[2] == right_key[2]
+            ):
+                return None
+
+    keyed.sort(
+        key=lambda item: (
+            item[0][0],
+            item[0][1],
+            item[0][2] if item[0][2] is not None else -1,
         ),
         reverse=True,
     )
-    return candidates[0]
+    return keyed[0][1]
 
 
 def _build_decision(
