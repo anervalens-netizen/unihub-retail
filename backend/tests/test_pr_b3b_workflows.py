@@ -1006,22 +1006,38 @@ def _decide_policy_with_statuses(
         mod._fetch_existing_statuses = real_fetch
 
 
+def _real_github_status(
+    state: str, *, description: str, status_id: int,
+    timestamp: str, context: str = "retail/pr-deep",
+) -> dict:
+    """Build the status shape returned by GitHub's commit-status API.
+
+    The exact-commit endpoint provides the HEAD binding; individual status
+    objects intentionally do not include a redundant ``sha`` field.
+    """
+    return {
+        "context": context,
+        "state": state,
+        "description": description,
+        "id": status_id,
+        "created_at": timestamp,
+        "updated_at": timestamp,
+    }
+
+
 def test_decide_policy_accepts_matching_cert_for_same_head_and_base():
     """A: same head + same base successful cert -> policy success."""
     statuses = [
-        {
-            "context": "retail/pr-deep",
-            "state": "success",
-            "sha": _HEAD,
-            "description": f"PASS base={_BASE}",
-        },
-        {
-            "context": "something/else",
-            "state": "success",
-            "sha": _HEAD,
-            "description": "irrelevant",
-        },
+        _real_github_status(
+            "success", description=f"PASS base={_BASE}",
+            status_id=1001, timestamp="2026-08-19T10:00:00Z",
+        ),
+        _real_github_status(
+            "success", context="something/else", description="irrelevant",
+            status_id=1002, timestamp="2026-08-19T10:01:00Z",
+        ),
     ]
+    assert all("sha" not in status for status in statuses)
     decision = _decide_policy_with_statuses(statuses)
     assert decision["policy_state"] == "success"
 
@@ -1030,13 +1046,12 @@ def test_decide_policy_rejects_stale_base_same_head():
     """B: same head + OLD base successful cert -> policy pending."""
     stale_base = "8" + ("1234567890" * 4)[:39]
     statuses = [
-        {
-            "context": "retail/pr-deep",
-            "state": "success",
-            "sha": _HEAD,
-            "description": f"PASS base={stale_base}",
-        },
+        _real_github_status(
+            "success", description=f"PASS base={stale_base}",
+            status_id=1003, timestamp="2026-08-19T10:00:00Z",
+        ),
     ]
+    assert all("sha" not in status for status in statuses)
     decision = _decide_policy_with_statuses(statuses)
     assert decision["policy_state"] == "pending"
 
@@ -1059,13 +1074,12 @@ def test_decide_policy_irrelevant_old_head_cert():
 def test_decide_policy_failed_cert_same_current_base_is_pending():
     """D: failed cert same current base -> pending / uncertified."""
     statuses = [
-        {
-            "context": "retail/pr-deep",
-            "state": "failure",
-            "sha": _HEAD,
-            "description": f"FAIL base={_BASE}",
-        },
+        _real_github_status(
+            "failure", description=f"FAIL base={_BASE}",
+            status_id=1004, timestamp="2026-08-19T10:00:00Z",
+        ),
     ]
+    assert all("sha" not in status for status in statuses)
     decision = _decide_policy_with_statuses(statuses)
     assert decision["policy_state"] == "pending"
 
@@ -1073,13 +1087,56 @@ def test_decide_policy_failed_cert_same_current_base_is_pending():
 def test_decide_policy_malformed_description_is_not_certified():
     """E: malformed description -> not certified (still pending)."""
     statuses = [
+        _real_github_status(
+            "success", description="PASS base=NOT-A-SHA",
+            status_id=1005, timestamp="2026-08-19T10:00:00Z",
+        ),
+    ]
+    assert all("sha" not in status for status in statuses)
+    decision = _decide_policy_with_statuses(statuses)
+    assert decision["policy_state"] == "pending"
+
+
+def test_decide_policy_malformed_status_entry_fails_closed():
+    """A non-object status must not be dropped before latest selection."""
+    statuses = [
+        _real_github_status(
+            "success", description=f"PASS base={_BASE}",
+            status_id=1006, timestamp="2026-08-19T10:00:00Z",
+        ),
+        None,
+    ]
+    decision = _decide_policy_with_statuses(statuses)
+    assert decision["policy_state"] == "pending"
+
+
+def test_decide_policy_malformed_ordering_metadata_fails_closed():
+    """A malformed timestamp must not certify a success payload."""
+    statuses = [
+        _real_github_status(
+            "success", description=f"PASS base={_BASE}",
+            status_id=1006, timestamp="not-a-timestamp",
+        ),
+    ]
+    decision = _decide_policy_with_statuses(statuses)
+    assert decision["policy_state"] == "pending"
+
+
+def test_decide_policy_ambiguous_ordering_does_not_select_old_success():
+    """A newer status with no ordering metadata must not let an older
+    exact-base success certify merely because it sorts last."""
+    statuses = [
+        _real_github_status(
+            "success", description=f"PASS base={_BASE}",
+            status_id=1007, timestamp="2026-08-19T10:00:00Z",
+        ),
         {
             "context": "retail/pr-deep",
-            "state": "success",
-            "sha": _HEAD,
-            "description": "PASS base=NOT-A-SHA",
+            "state": "pending",
+            "description": f"RUNNING base={_BASE}",
         },
     ]
+    assert all("sha" not in status for status in statuses)
     decision = _decide_policy_with_statuses(statuses)
     assert decision["policy_state"] == "pending"
 
@@ -1958,10 +2015,17 @@ def _status(
     state: str, *, sha: str, description: str,
     updated_at: str, id: int, context: str = "retail/pr-deep",
 ) -> dict:
+    """Build a realistic exact-commit status object without ``sha``.
+
+    ``sha`` remains an argument at call sites to document which HEAD the
+    fixture represents, but GitHub does not require it per status object.
+    The endpoint identity is tested by the policy helper's exact-head
+    invocation, not by a redundant object field.
+    """
+    del sha
     return {
         "context": context,
         "state": state,
-        "sha": sha,
         "description": description,
         "updated_at": updated_at,
         "created_at": updated_at,
@@ -2755,6 +2819,12 @@ def test_decide_policy_empty_status_list_is_pending():
     assert decision["policy_state"] == "pending"
     assert "no certification" in decision["reason"].lower() or \
         "required" in decision["reason"].lower()
+
+
+def test_decide_policy_status_fetch_is_exact_head_scoped():
+    """Status lookup must stay bound to the exact expected HEAD."""
+    text = DECIDE_POLICY.read_text(encoding="utf-8")
+    assert "commits/{sha}/statuses" in text
 
 
 def test_decide_policy_status_fetch_uses_per_page_100():
