@@ -22,7 +22,7 @@
     "walk": "ast.walk_including_nested_bodies"
   },
   "baseline_source_sha": "76a71d9bcf339385712ae1207824624af603a12f",
-  "contract_payload_sha256": "e900ac8c299310f75099bdd9c459fa5a165c75818e8edd9804029d77166b600f",
+  "contract_payload_sha256": "6b4230005857e532c8ec247a7a7a897edeb1602f2593b1065ca647fa19271d3a",
   "entries": [
     {
       "ceiling": 28,
@@ -304,6 +304,23 @@
         "wp11_locked_entries_maximum": 19
       },
       "version": 1
+    },
+    "phase_f2": {
+      "baseline_metrics": {
+        "complexity_proxy_gte_20": 28,
+        "complexity_proxy_gte_30": 0,
+        "maximum_complexity_proxy": 28,
+        "production_functions": 2989
+      },
+      "baseline_source_sha": "3d0530fe6a5d61f71b3a7e2f6bd56e1c35fe261b",
+      "entry_count": 28,
+      "release_b_gates": {
+        "complexity_proxy_gte_20_maximum": 28,
+        "complexity_proxy_gte_30_maximum": 0,
+        "maximum_complexity_proxy": 28,
+        "new_function_complexity_proxy_maximum": 19
+      },
+      "version": 2
     }
   },
   "locked_entry_rule": "Renames are new functions and do not evade the total/new-function gates. Per-function ceilings pin current gte_20 identities at their exact-main complexity; subsequent regressions must fail.",

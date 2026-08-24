@@ -443,8 +443,8 @@ def test_zero_drift_across_all_production_functions(l1):
         )
 
 
-def test_total_production_function_count_is_2979(l1):
-    """Production tree must contain exactly 2979 measured functions.
+def test_total_production_function_count_is_2989(l1):
+    """Production tree must contain exactly 2989 measured functions.
 
     The C6 Target Calculator repository decomposition intentionally
     adds 8 focused helper functions (+2 in target_calculator_sources.py,
@@ -453,13 +453,14 @@ def test_total_production_function_count_is_2979(l1):
     adds 2 focused helper functions in backend/services/campaigns/ to
     preserve the architecture ratchet facade while splitting the loader path;
     baseline moved from 2961 to 2963. F1 adds 16 focused migration-runner
-    functions in backend/db/migration_runner.py; baseline moves from
-    2963 to 2979. The exact snapshot rejects unrelated production-function
+    functions and F2 adds 10 controlled recovery functions across the
+    migration runner, recovery module, and operator script; baseline moves
+    from 2963 to 2989. The exact snapshot rejects unrelated production-function
     drift.
     """
     metrics = l1.collect_metrics(PR_B1_WORKTREE)
-    assert len(metrics) == 2979, (
-        f"production count drift: expected 2979, got {len(metrics)}"
+    assert len(metrics) == 2989, (
+        f"production count drift: expected 2989, got {len(metrics)}"
     )
 
 

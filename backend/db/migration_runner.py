@@ -16,6 +16,21 @@ from db.connection import (
     get_schema_path,
     verify_database_connection_authority,
 )
+from db.migration_runtime import (
+    ONLINE_RECOVERY_PREFIX,
+    MigrationError,
+    _CIC_ATTEMPT_RE,
+    _activate_migration_owner,
+    _activate_online_migration_owner,
+    _apply_cic_online_migration,
+    _execute_online_statement,
+    _finalize_online_migration,
+    _mark_online_recovery,
+    _online_recovery_checksum,
+    _reset_online_migration_owner,
+    _strip_leading_comments,
+    parse_controlled_cic,
+)
 
 
 MIGRATION_ADVISORY_LOCK_ID = 7_221_904_202_607_12
@@ -34,7 +49,6 @@ TOMBSTONE_ADOPTION_PREREQUISITES = {
 }
 TRANSACTIONAL_EXECUTION_MODE = "transactional"
 ONLINE_EXECUTION_MODE = "online"
-ONLINE_RECOVERY_PREFIX = "online-recovery:"
 TRACKING_SQL = """
 CREATE TABLE IF NOT EXISTS schema_meta (
     schema_name TEXT PRIMARY KEY,
@@ -50,46 +64,37 @@ ALTER TABLE schema_migrations ADD COLUMN IF NOT EXISTS checksum TEXT;
 """.strip()
 
 
-class MigrationError(RuntimeError):
-    pass
-
-
-async def _activate_migration_owner(connection: asyncpg.Connection) -> None:
-    if configured_database_authority() == "migrate":
-        await connection.execute("SET LOCAL ROLE unihub_schema_owner")
-        if await connection.fetchval("SELECT current_user = 'unihub_schema_owner'") is not True:
-            raise MigrationError("Migration schema-owner elevation failed")
-
-
-async def _activate_online_migration_owner(connection: asyncpg.Connection) -> bool:
-    if configured_database_authority() != "migrate":
-        return False
-    await connection.execute("SET ROLE unihub_schema_owner")
-    if await connection.fetchval("SELECT current_user = 'unihub_schema_owner'") is True:
-        return True
-    await connection.execute("RESET ROLE")
-    raise MigrationError("Online migration schema-owner elevation failed")
-
-
-async def _reset_online_migration_owner(
-    connection: asyncpg.Connection, *, activated: bool
-) -> None:
-    if not activated:
-        return
-    await connection.execute("RESET ROLE")
-    if await connection.fetchval("SELECT current_user = session_user") is not True:
-        raise MigrationError("Online migration schema-owner reset failed")
-
-
-def _authority_cutover_bootstrap_enabled() -> bool:
-    value = os.getenv(AUTHORITY_CUTOVER_BOOTSTRAP_ENV, "").strip()
-    if not value:
-        return False
-    if value != "1":
-        raise MigrationError(
-            f"{AUTHORITY_CUTOVER_BOOTSTRAP_ENV} must be exactly 1 for the one-time cutover"
-        )
-    return True
+__all__ = [
+    "MIGRATION_ADVISORY_LOCK_ID",
+    "AUTHORITY_CUTOVER_BOOTSTRAP_ENV",
+    "AUTHORITY_CUTOVER_MIGRATIONS",
+    "BASELINE_REPLAY_MIGRATIONS",
+    "TOMBSTONE_ADOPTION_PREREQUISITES",
+    "TRANSACTIONAL_EXECUTION_MODE",
+    "ONLINE_EXECUTION_MODE",
+    "ONLINE_RECOVERY_PREFIX",
+    "TRACKING_SQL",
+    "MigrationError",
+    "MigrationManifest",
+    "get_manifest_path",
+    "load_migration_manifest",
+    "verify_migration_files",
+    "verify_migrations_current",
+    "run_migrations",
+    "_activate_migration_owner",
+    "_activate_online_migration_owner",
+    "_apply_cic_online_migration",
+    "_apply_online_migration",
+    "_execute_online_statement",
+    "_finalize_online_migration",
+    "_mark_online_recovery",
+    "_online_recovery_checksum",
+    "_reset_online_migration_owner",
+    "_validate_applied",
+    "_CIC_ATTEMPT_RE",
+    "_strip_leading_comments",
+    "parse_controlled_cic",
+]
 
 
 @dataclass(frozen=True, slots=True)
@@ -193,10 +198,6 @@ async def _tracking_rows(connection: asyncpg.Connection) -> dict[str, str | None
     return {row["filename"]: row["checksum"] for row in rows}
 
 
-def _online_recovery_checksum(checksum: str) -> str:
-    return f"{ONLINE_RECOVERY_PREFIX}{checksum}"
-
-
 def _validate_applied(
     applied: dict[str, str | None],
     manifest: MigrationManifest,
@@ -282,50 +283,6 @@ async def _verify_authority_cutover_bootstrap(
             "Authority cutover bootstrap requires every migration through 039 "
             "applied and every migration from 040 onward pending"
         )
-
-
-async def _mark_online_recovery(
-    connection: asyncpg.Connection, filename: str, checksum: str
-) -> None:
-    async with connection.transaction():
-        await _activate_migration_owner(connection)
-        await connection.execute(
-            "INSERT INTO schema_migrations (filename, checksum) VALUES ($1, $2)",
-            filename,
-            _online_recovery_checksum(checksum),
-        )
-
-
-async def _execute_online_statement(
-    connection: asyncpg.Connection, sql: str
-) -> None:
-    if connection.is_in_transaction():
-        raise MigrationError("Online migration requires no active transaction")
-    # fetch() uses asyncpg's extended-query/prepared path even without bind
-    # parameters. PostgreSQL therefore accepts exactly one top-level statement
-    # and rejects accidental multi-command migration files.
-    await connection.fetch(sql)
-    if connection.is_in_transaction():
-        raise MigrationError("Online migration left an active transaction")
-
-
-async def _finalize_online_migration(
-    connection: asyncpg.Connection, filename: str, checksum: str
-) -> None:
-    async with connection.transaction():
-        await _activate_migration_owner(connection)
-        updated = await connection.execute(
-            """
-            UPDATE schema_migrations
-            SET checksum = $2, applied_at = now()
-            WHERE filename = $1 AND checksum = $3
-            """,
-            filename,
-            checksum,
-            _online_recovery_checksum(checksum),
-        )
-        if updated != "UPDATE 1":
-            raise MigrationError("Online migration recovery marker was not finalized")
 
 
 async def _apply_online_migration(
@@ -473,12 +430,23 @@ async def _apply_pending_migrations(
             continue
         sql = (get_migrations_dir() / filename).read_text(encoding="utf-8")
         if manifest.execution_mode(filename) == ONLINE_EXECUTION_MODE:
-            await _apply_online_migration(
-                connection,
-                filename=filename,
-                checksum=checksum,
-                sql=sql,
-            )
+            if _CIC_ATTEMPT_RE.match(_strip_leading_comments(sql)):
+                index_name, table_name = parse_controlled_cic(sql)
+                await _apply_cic_online_migration(
+                    connection,
+                    filename=filename,
+                    checksum=checksum,
+                    sql=sql,
+                    index_name=index_name,
+                    table_name=table_name,
+                )
+            else:
+                await _apply_online_migration(
+                    connection,
+                    filename=filename,
+                    checksum=checksum,
+                    sql=sql,
+                )
         else:
             await _apply_transactional_migration(
                 connection,
@@ -535,6 +503,17 @@ async def run_migrations(database_url: str | None = None) -> list[str]:
             )
         finally:
             await connection.close()
+
+
+def _authority_cutover_bootstrap_enabled() -> bool:
+    value = os.getenv(AUTHORITY_CUTOVER_BOOTSTRAP_ENV, "").strip()
+    if not value:
+        return False
+    if value != "1":
+        raise MigrationError(
+            f"{AUTHORITY_CUTOVER_BOOTSTRAP_ENV} must be exactly 1 for the one-time cutover"
+        )
+    return True
 
 
 async def verify_migrations_current(pool: asyncpg.Pool) -> None:

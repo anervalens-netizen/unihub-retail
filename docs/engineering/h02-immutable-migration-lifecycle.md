@@ -69,6 +69,34 @@ This is intentional: **F1 does not retry or infer whether a partially executed
 online operation is safe to resume.** Controlled `CREATE INDEX CONCURRENTLY`,
 retry, invalid-index cleanup and post-validation belong to F2.
 
+### F2 controlled concurrent-index recovery
+
+F2 adds no production/business migration and does not change the checked-in
+manifest or frozen schema baseline. It is an explicit operator action only:
+`backend/scripts/recover_online_migration.py <filename>` calls
+`recover_online_migration(filename)`. A normal startup or migration run never
+recovers or retries a sentinel.
+
+The recovery entrypoint accepts only a manifest migration explicitly marked
+`online` whose immutable SQL is one standalone, non-unique
+`CREATE INDEX CONCURRENTLY <safe-unquoted-index> ON <safe-unquoted-table> ...`
+statement (leading comments are allowed). `UNIQUE`, `IF NOT EXISTS`, ordinary
+`CREATE INDEX`, quoted/ambiguous identifiers, multiple statements and
+arbitrary online DDL fail closed. Before the initial attempt, the candidate
+index name must be absent from the public catalog; no `IF NOT EXISTS` shortcut
+is used.
+
+Each controlled `CREATE` or cleanup `DROP INDEX CONCURRENTLY` uses a bounded
+5-second `lock_timeout`, restoring the prior session setting in `finally`.
+The explicit recovery performs at most one retry: an absent index is created,
+while an existing index is dropped only when it is an index on the exact
+expected table, then recreated. An unexpected object or table is never
+removed. After the DDL, catalog validation requires the exact name and table
+plus `indisvalid`, `indisready` and `indislive` all true. Only then is the
+canonical sentinel changed to the immutable checksum. Any drop, create, role
+reset, lock-timeout reset or validation failure leaves the sentinel and keeps
+normal runs blocked. There is no generic online-DDL recovery framework.
+
 ## Existing database adoption
 
 The first H-02 run adds the nullable checksum column under the migration lock,
