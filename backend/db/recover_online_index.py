@@ -3,11 +3,17 @@
 F2 keeps recovery out of ``run_migrations``. A normal migration run never
 auto-recovers an online-recovery sentinel; the operator invokes
 :func:`recover_online_migration` with the exact manifest filename.
+
+The controlled-CIC primitives (parser, executor, preflight, post-validation,
+catalog inspection) live in :mod:`db.migration_runtime` together with the
+shared online-migration runtime primitives. This module re-uses them and adds
+the operator-facing dispatch: load the manifest, re-derive ``pg_advisory_lock``
+ownership, replay the exact CIC, drop an existing partial index, then
+finalize the recovery sentinel.
 """
 from __future__ import annotations
 
 import os
-import re
 
 import asyncpg
 
@@ -15,185 +21,23 @@ from db.connection import (
     database_connection_options,
     verify_database_connection_authority,
 )
+from db.migration_runtime import (
+    MigrationError,
+    _activate_online_migration_owner,
+    _cic_post_validate_index,
+    _execute_cic_statement,
+    _finalize_online_migration,
+    _online_recovery_checksum,
+    _reset_online_migration_owner,
+    parse_controlled_cic,
+)
 from db.migration_runner import (
     MIGRATION_ADVISORY_LOCK_ID,
     ONLINE_EXECUTION_MODE,
-    MigrationError,
-    _activate_online_migration_owner,
-    _finalize_online_migration,
-    _mark_online_recovery,
-    _online_recovery_checksum,
-    _reset_online_migration_owner,
     get_migrations_dir,
     load_migration_manifest,
     verify_migration_files,
 )
-
-CIC_LOCK_TIMEOUT_MS = 5000
-_SAFE_IDENTIFIER_RE = re.compile(r"[a-z_][a-z0-9_]*")
-_CIC_ATTEMPT_RE = re.compile(
-    r"^\s*CREATE\s+(?:UNIQUE\s+)?INDEX\s+CONCURRENTLY\b", re.IGNORECASE
-)
-_CIC_STATEMENT_RE = re.compile(
-    r"^\s*CREATE\s+INDEX\s+CONCURRENTLY\s+"
-    r"(?P<index>[a-z_][a-z0-9_]*)\s+ON\s+"
-    r"(?P<table>[a-z_][a-z0-9_]*)(?P<tail>.*)$",
-    re.DOTALL | re.IGNORECASE,
-)
-
-
-def _strip_leading_comments(sql: str) -> str:
-    """Remove PostgreSQL comments and whitespace from the front of SQL."""
-    s = sql
-    while True:
-        s = s.lstrip()
-        if not s:
-            return s
-        if s.startswith("--"):
-            newline = s.find("\n")
-            if newline == -1:
-                return ""
-            s = s[newline + 1 :]
-            continue
-        if s.startswith("/*"):
-            end = s.find("*/")
-            if end == -1:
-                raise MigrationError("Migration SQL contains an unterminated block comment")
-            s = s[end + 2 :]
-            continue
-        return s
-
-
-def parse_controlled_cic(sql: str) -> tuple[str, str]:
-    """Parse one standalone non-unique CIC with safe unquoted identifiers."""
-    stmt = _strip_leading_comments(sql).strip()
-    if not stmt:
-        raise MigrationError("Migration SQL is empty")
-    if stmt.endswith(";"):
-        stmt = stmt[:-1].rstrip()
-    if ";" in stmt:
-        raise MigrationError("Multiple top-level SQL statements are not allowed")
-    match = _CIC_STATEMENT_RE.match(stmt)
-    if not match:
-        raise MigrationError(
-            "Migration SQL is not a standalone non-unique "
-            "CREATE INDEX CONCURRENTLY statement"
-        )
-    index_name = match.group("index")
-    table_name = match.group("table")
-    if not _SAFE_IDENTIFIER_RE.fullmatch(index_name) or not _SAFE_IDENTIFIER_RE.fullmatch(
-        table_name
-    ):
-        raise MigrationError(
-            "Quoted or ambiguous index/table identifiers are not allowed"
-        )
-    if match.group("tail").lstrip().startswith("."):
-        raise MigrationError(
-            "Quoted or ambiguous index/table identifiers are not allowed"
-        )
-    return index_name, table_name
-
-
-async def _execute_cic_statement(connection: asyncpg.Connection, sql: str) -> None:
-    """Run one controlled CIC statement outside a transaction and restore timeout."""
-    if connection.is_in_transaction():
-        raise MigrationError("Controlled online migration requires no active transaction")
-    prior_timeout = str(await connection.fetchval("SHOW lock_timeout"))
-    try:
-        await connection.fetchval(
-            "SELECT set_config('lock_timeout', $1, false)",
-            f"{CIC_LOCK_TIMEOUT_MS}ms",
-        )
-        await connection.fetch(sql)
-    finally:
-        await connection.fetchval(
-            "SELECT set_config('lock_timeout', $1, false)", prior_timeout
-        )
-    if connection.is_in_transaction():
-        raise MigrationError("Controlled online migration left an active transaction")
-
-
-async def _cic_preflight_index_absent(
-    connection: asyncpg.Connection, index_name: str
-) -> None:
-    """Fail closed before writing a sentinel if the public name already exists."""
-    exists = await connection.fetchval(
-        """
-        SELECT EXISTS (
-            SELECT 1
-            FROM pg_class AS index_class
-            JOIN pg_namespace AS namespace ON namespace.oid = index_class.relnamespace
-            WHERE index_class.relname = $1
-              AND namespace.nspname = 'public'
-        )
-        """,
-        index_name,
-    )
-    if exists:
-        raise MigrationError(
-            "Online migration candidate index already exists before it can be created"
-        )
-
-
-async def _cic_post_validate_index(
-    connection: asyncpg.Connection,
-    index_name: str,
-    table_name: str,
-) -> None:
-    """Require the exact valid/ready/live index on the exact expected table."""
-    rows = await connection.fetch(
-        """
-        SELECT index_class.relname AS index_name,
-               table_class.relname AS table_name,
-               pg_index.indisvalid AS indisvalid,
-               pg_index.indisready AS indisready,
-               pg_index.indislive AS indislive
-        FROM pg_class AS index_class
-        JOIN pg_index ON pg_index.indexrelid = index_class.oid
-        JOIN pg_class AS table_class ON table_class.oid = pg_index.indrelid
-        JOIN pg_namespace AS namespace ON namespace.oid = index_class.relnamespace
-        WHERE index_class.relname = $1
-          AND index_class.relkind = 'i'
-          AND namespace.nspname = 'public'
-        """,
-        index_name,
-    )
-    if len(rows) != 1:
-        raise MigrationError("Online migration index was not created exactly once")
-    row = rows[0]
-    if (
-        str(row["index_name"]) != index_name
-        or str(row["table_name"]) != table_name
-        or not bool(row["indisvalid"])
-        or not bool(row["indisready"])
-        or not bool(row["indislive"])
-    ):
-        raise MigrationError("Online migration index catalog validation failed")
-
-
-async def _apply_cic_online_migration(
-    connection: asyncpg.Connection,
-    *,
-    filename: str,
-    checksum: str,
-    sql: str,
-    index_name: str,
-    table_name: str,
-) -> None:
-    await _cic_preflight_index_absent(connection, index_name)
-    await _mark_online_recovery(connection, filename, checksum)
-    role_activated = False
-    try:
-        role_activated = await _activate_online_migration_owner(connection)
-        await _execute_cic_statement(connection, sql)
-    except Exception as exc:
-        raise MigrationError(
-            f"Online migration failed; recovery required for {filename}"
-        ) from exc
-    finally:
-        await _reset_online_migration_owner(connection, activated=role_activated)
-    await _cic_post_validate_index(connection, index_name, table_name)
-    await _finalize_online_migration(connection, filename, checksum)
 
 
 async def _inspect_index(

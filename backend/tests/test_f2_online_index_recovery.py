@@ -11,6 +11,8 @@ import pytest
 import db.migration_runner as runner
 import db.recover_online_index as recovery
 from db.migration_runner import MigrationError, MigrationManifest
+from db.migration_runtime import _apply_cic_online_migration, parse_controlled_cic
+from db.migration_runtime import _CIC_ATTEMPT_RE, _strip_leading_comments
 
 
 class _Tx:
@@ -107,7 +109,7 @@ class _FakeConnection:
     ],
 )
 def test_controlled_cic_parser_accepts_only_safe_shape(sql: str, expected: tuple[str, str]) -> None:
-    assert recovery.parse_controlled_cic(sql) == expected
+    assert parse_controlled_cic(sql) == expected
 
 
 @pytest.mark.parametrize(
@@ -124,7 +126,7 @@ def test_controlled_cic_parser_accepts_only_safe_shape(sql: str, expected: tuple
 )
 def test_controlled_cic_parser_fails_closed(sql: str) -> None:
     with pytest.raises(MigrationError):
-        recovery.parse_controlled_cic(sql)
+        parse_controlled_cic(sql)
 
 
 @pytest.mark.asyncio
@@ -132,7 +134,7 @@ async def test_initial_preflight_happens_before_sentinel_and_rejects_any_object(
     connection = _FakeConnection()
     connection.existing_object = True
     with pytest.raises(MigrationError, match="already exists"):
-        await recovery._apply_cic_online_migration(  # type: ignore[arg-type]
+        await _apply_cic_online_migration(  # type: ignore[arg-type]
             connection,
             filename="070_idx.sql",
             checksum="a" * 64,
@@ -215,7 +217,7 @@ async def test_cic_success_finalizes_only_after_validation() -> None:
         }
     ]
     checksum = "b" * 64
-    await recovery._apply_cic_online_migration(  # type: ignore[arg-type]
+    await _apply_cic_online_migration(  # type: ignore[arg-type]
         connection,
         filename="070_idx.sql",
         checksum=checksum,
@@ -322,18 +324,18 @@ async def test_real_cic_runs_outside_transaction_and_validates_catalog() -> None
 @pytest.mark.parametrize("sql", ["", "/* unterminated", "CREATE INDEX CONCURRENTLY idx ON t."])
 def test_parser_rejects_empty_unterminated_and_ambiguous_sql(sql: str) -> None:
     with pytest.raises(MigrationError):
-        recovery.parse_controlled_cic(sql)
+        parse_controlled_cic(sql)
 
 
 def test_cic_detector_routes_only_cic_attempts() -> None:
-    assert recovery._CIC_ATTEMPT_RE.match(
-        recovery._strip_leading_comments("-- c\nCREATE INDEX CONCURRENTLY idx ON t (id)")
+    assert _CIC_ATTEMPT_RE.match(
+        _strip_leading_comments("-- c\nCREATE INDEX CONCURRENTLY idx ON t (id)")
     )
-    assert recovery._CIC_ATTEMPT_RE.match(
-        recovery._strip_leading_comments("CREATE UNIQUE INDEX CONCURRENTLY idx ON t (id)")
+    assert _CIC_ATTEMPT_RE.match(
+        _strip_leading_comments("CREATE UNIQUE INDEX CONCURRENTLY idx ON t (id)")
     )
-    assert not recovery._CIC_ATTEMPT_RE.match(
-        recovery._strip_leading_comments("CREATE INDEX idx ON t (id)")
+    assert not _CIC_ATTEMPT_RE.match(
+        _strip_leading_comments("CREATE INDEX idx ON t (id)")
     )
 
 
@@ -379,7 +381,7 @@ async def test_cic_attempt_failures_preserve_sentinel() -> None:
     connection = _FakeConnection()
     connection.fail_statement = RuntimeError("create failed")
     with pytest.raises(MigrationError, match="recovery required"):
-        await recovery._apply_cic_online_migration(  # type: ignore[arg-type]
+        await _apply_cic_online_migration(  # type: ignore[arg-type]
             connection,
             filename="070_idx.sql",
             checksum="c" * 64,
@@ -395,7 +397,7 @@ async def test_cic_attempt_failures_preserve_sentinel() -> None:
         "indisready": True, "indislive": True,
     }]
     with pytest.raises(MigrationError, match="catalog validation"):
-        await recovery._apply_cic_online_migration(  # type: ignore[arg-type]
+        await _apply_cic_online_migration(  # type: ignore[arg-type]
             connection,
             filename="071_idx.sql",
             checksum="d" * 64,
@@ -434,7 +436,7 @@ async def test_pending_online_cic_uses_controlled_path(
     connection = _FakeConnection()
     apply = AsyncMock()
     monkeypatch.setattr(runner, "get_migrations_dir", lambda: tmp_path)
-    monkeypatch.setattr(recovery, "_apply_cic_online_migration", apply)
+    monkeypatch.setattr(runner, "_apply_cic_online_migration", apply)
     applied = await runner._apply_pending_migrations(  # type: ignore[arg-type]
         connection, manifest, {}, cutover_bootstrap=False
     )
