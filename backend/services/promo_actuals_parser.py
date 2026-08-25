@@ -219,9 +219,14 @@ def validate_promo_actuals_report(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Raportul nu contine unitati promo nete pozitive",
         )
+    promo_units = sum(int(row["quantity"]) for row in rows)
+    if promo_units < 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Raportul are un total promo net negativ",
+        )
     return PromoActualsParseResult(
         report_rows=len(rows),
-        promo_units=sum(int(row["quantity"]) for row in rows),
+        promo_units=promo_units,
         rows=rows,
     )
-
