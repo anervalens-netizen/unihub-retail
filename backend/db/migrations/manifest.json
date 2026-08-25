@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "baseline": {
     "file": "schema_v2.sql",
     "sha256": "3edeadbb13eea4d7b0d63997494e48a893e0ecc267b8e31a7217ce2f539ba0ac",

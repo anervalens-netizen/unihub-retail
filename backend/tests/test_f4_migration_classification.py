@@ -14,6 +14,7 @@ from db.migration_runner import (
     TRANSACTIONAL_EXECUTION_MODE,
     MigrationError,
     MigrationManifest,
+    get_manifest_path,
     load_migration_manifest,
 )
 
@@ -22,13 +23,14 @@ def _payload(
     *,
     execution_modes: dict[str, str] | None = None,
     execution_classes: dict[str, str] | None = None,
+    version: int = 2,
 ) -> dict[str, object]:
     migrations = {
         "001_first.sql": "b" * 64,
         "002_second.sql": "c" * 64,
     }
     payload: dict[str, object] = {
-        "version": 1,
+        "version": version,
         "baseline": {
             "file": "schema_v2.sql",
             "sha256": "a" * 64,
@@ -54,7 +56,10 @@ def test_legacy_manifest_infers_class_from_existing_execution_mode(
 ) -> None:
     path = _write_manifest(
         tmp_path,
-        _payload(execution_modes={"002_second.sql": ONLINE_EXECUTION_MODE}),
+        _payload(
+            execution_modes={"002_second.sql": ONLINE_EXECUTION_MODE},
+            version=1,
+        ),
     )
 
     manifest = load_migration_manifest(path)
@@ -137,6 +142,15 @@ def test_current_manifest_classifies_every_migration_explicitly() -> None:
     assert set(manifest.execution_classes.values()) <= ALLOWED_EXECUTION_CLASSES
 
 
+def test_current_manifest_is_version_2() -> None:
+    """The active repository manifest is the F4 v2 contract: version=2
+    AND exhaustive ``execution_classes``."""
+    payload = json.loads(get_manifest_path().read_text(encoding="utf-8"))
+    assert payload["version"] == 2
+    assert isinstance(payload.get("execution_classes"), dict)
+    assert set(payload["execution_classes"]) == set(payload["migrations"])
+
+
 def test_explicit_null_execution_classes_is_rejected_fail_closed(
     tmp_path: Path,
 ) -> None:
@@ -152,7 +166,7 @@ def test_explicit_null_execution_classes_is_rejected_fail_closed(
     path.write_text(
         json.dumps(
             {
-                "version": 1,
+                "version": 2,
                 "baseline": {
                     "file": "schema_v2.sql",
                     "sha256": "a" * 64,
@@ -163,6 +177,129 @@ def test_explicit_null_execution_classes_is_rejected_fail_closed(
             }
         ),
         encoding="utf-8",
+    )
+
+    with pytest.raises(MigrationError, match="manifest is invalid"):
+        load_migration_manifest(path)
+
+
+def test_v2_absent_execution_classes_is_rejected_fail_closed(
+    tmp_path: Path,
+) -> None:
+    """The F4 v2 contract requires ``execution_classes`` to be present.
+    An ABSENT key on a v2 manifest fails closed."""
+    path = tmp_path / "manifest.json"
+    path.write_text(
+        json.dumps(
+            {
+                "version": 2,
+                "baseline": {
+                    "file": "schema_v2.sql",
+                    "sha256": "a" * 64,
+                    "incorporated_through": "001_first.sql",
+                },
+                "migrations": {
+                    "001_first.sql": "b" * 64,
+                    "002_second.sql": "c" * 64,
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(MigrationError, match="manifest is invalid"):
+        load_migration_manifest(path)
+
+
+def test_v2_exhaustive_execution_classes_is_accepted(
+    tmp_path: Path,
+) -> None:
+    """A v2 manifest with a valid exhaustive ``execution_classes`` dict
+    MUST be accepted."""
+    path = _write_manifest(
+        tmp_path,
+        _payload(
+            execution_classes={
+                "001_first.sql": TRANSACTIONAL_EXECUTION_MODE,
+                "002_second.sql": TRANSACTIONAL_EXECUTION_MODE,
+            },
+            version=2,
+        ),
+    )
+
+    manifest = load_migration_manifest(path)
+    assert manifest.execution_classes == {
+        "001_first.sql": TRANSACTIONAL_EXECUTION_MODE,
+        "002_second.sql": TRANSACTIONAL_EXECUTION_MODE,
+    }
+
+
+def test_v1_legacy_missing_execution_classes_remains_compatible(
+    tmp_path: Path,
+) -> None:
+    """v1 manifests may omit ``execution_classes`` and infer from
+    ``execution_modes``. This MUST keep working."""
+    path = tmp_path / "manifest.json"
+    path.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "baseline": {
+                    "file": "schema_v2.sql",
+                    "sha256": "a" * 64,
+                    "incorporated_through": "001_first.sql",
+                },
+                "migrations": {
+                    "001_first.sql": "b" * 64,
+                    "002_second.sql": "c" * 64,
+                },
+                "execution_modes": {"002_second.sql": ONLINE_EXECUTION_MODE},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    manifest = load_migration_manifest(path)
+    assert manifest.execution_classes == {}
+    assert manifest.execution_mode("002_second.sql") == ONLINE_EXECUTION_MODE
+
+
+def test_v1_with_explicit_execution_classes_is_still_validated(
+    tmp_path: Path,
+) -> None:
+    """A v1 manifest that explicitly opts into F4 by providing a valid
+    ``execution_classes`` dict MUST still be accepted."""
+    path = _write_manifest(
+        tmp_path,
+        _payload(
+            execution_classes={
+                "001_first.sql": TRANSACTIONAL_EXECUTION_MODE,
+                "002_second.sql": TRANSACTIONAL_EXECUTION_MODE,
+            },
+            version=1,
+        ),
+    )
+
+    manifest = load_migration_manifest(path)
+    assert manifest.execution_classes == {
+        "001_first.sql": TRANSACTIONAL_EXECUTION_MODE,
+        "002_second.sql": TRANSACTIONAL_EXECUTION_MODE,
+    }
+
+
+def test_unsupported_version_is_rejected(
+    tmp_path: Path,
+) -> None:
+    """Anything other than v1 or v2 MUST be rejected."""
+    path = _write_manifest(
+        tmp_path,
+        _payload(
+            execution_classes={
+                "001_first.sql": TRANSACTIONAL_EXECUTION_MODE,
+                "002_second.sql": TRANSACTIONAL_EXECUTION_MODE,
+            },
+            version=3,
+        ),
     )
 
     with pytest.raises(MigrationError, match="manifest is invalid"):
@@ -195,7 +332,7 @@ def test_explicit_non_dict_execution_classes_is_rejected_fail_closed(
         path.write_text(
             json.dumps(
                 {
-                    "version": 1,
+                    "version": 2,
                     "baseline": baseline,
                     "migrations": migrations,
                     "execution_classes": bad_value,
@@ -210,9 +347,9 @@ def test_explicit_non_dict_execution_classes_is_rejected_fail_closed(
 def test_absent_execution_classes_remains_legacy_compatible(
     tmp_path: Path,
 ) -> None:
-    """An ABSENT ``execution_classes`` key MUST continue to behave as legacy
-    v1: the classification is inferred from ``execution_modes``.
-    """
+    """An ABSENT ``execution_classes`` key on a v1 manifest MUST continue
+    to behave as legacy: the classification is inferred from
+    ``execution_modes``."""
     path = tmp_path / "manifest.json"
     path.write_text(
         json.dumps(

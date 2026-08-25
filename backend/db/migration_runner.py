@@ -159,7 +159,7 @@ def load_migration_manifest(path: Path | None = None) -> MigrationManifest:
     except (OSError, json.JSONDecodeError, KeyError, TypeError) as exc:
         raise MigrationError("Migration manifest is invalid") from exc
     if (
-        version != 1
+        version not in (1, 2)
         or not isinstance(baseline, dict)
         or not _valid_manifest_migrations(migrations)
     ):
@@ -169,6 +169,8 @@ def load_migration_manifest(path: Path | None = None) -> MigrationManifest:
         raise MigrationError("Migration manifest is invalid")
     assert isinstance(execution_modes, dict)
     if execution_classes is _MISSING_EXECUTION_CLASSES:
+        if version != 1:
+            raise MigrationError("Migration manifest is invalid")
         execution_classes = {}
     elif not _valid_execution_classes(execution_classes, migrations, execution_modes):
         raise MigrationError("Migration manifest is invalid")
