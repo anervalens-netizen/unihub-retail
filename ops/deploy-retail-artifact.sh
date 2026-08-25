@@ -813,10 +813,53 @@ def _validate(payload):
         raise ValueError("invalid migration manifest")
 
 
+def _canonical(payload):
+    """Return a rollback-comparable view of a validated manifest.
+
+    The F4 v2 rollout introduces only metadata-level changes: the
+    schema ``version`` field and the explicit ``execution_classes`` map.
+    The actual migration semantics (baseline, migrations/checksums, the
+    resulting per-migration execution class) MUST remain identical for a
+    rollback from a v2 release to the immediately previous v1 release to
+    be safe.
+
+    After strict validation, normalize ONLY the representation fields so
+    that a v1 manifest and the equivalent v2 manifest compare equal:
+
+      * ``version`` is dropped (representation, not migration semantics).
+      * ``execution_modes`` is rebuilt as a fresh dict (stable shape).
+      * ``execution_classes`` is rebuilt as a fresh dict; for a v1
+        manifest where the key is absent, it is inferred from
+        ``execution_modes`` (legacy v1 compatibility contract).
+
+    All other fields are preserved verbatim via ``dict(payload)``, so any
+    unknown/future metadata difference still blocks rollback.
+    """
+    _validate(payload)
+    migrations = payload["migrations"]
+    execution_modes = dict(payload.get("execution_modes", {}))
+
+    execution_classes_raw = payload.get(
+        "execution_classes", _MISSING_EXECUTION_CLASSES
+    )
+    if execution_classes_raw is _MISSING_EXECUTION_CLASSES:
+        execution_classes = {
+            name: ("online" if name in execution_modes else "transactional")
+            for name in migrations
+        }
+    else:
+        execution_classes = dict(execution_classes_raw)
+
+    normalized = dict(payload)
+    normalized.pop("version", None)
+    normalized["execution_modes"] = execution_modes
+    normalized["execution_classes"] = execution_classes
+    return normalized
+
+
 def load(path):
     payload = json.loads(Path(path).read_text(encoding="utf-8"))
-    _validate(payload)
-    return payload
+    return _canonical(payload)
 
 
 try:

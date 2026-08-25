@@ -52,8 +52,15 @@ def _payload(
     }
     if execution_modes is not None:
         payload["execution_modes"] = execution_modes
-    if include_execution_classes and execution_classes is not ...:
-        payload["execution_classes"] = execution_classes
+    if include_execution_classes:
+        # Caller passed an explicit value (including None) — use it as-is.
+        if execution_classes is not ...:
+            payload["execution_classes"] = execution_classes
+        # No value passed: provide a sensible default per version so the
+        # payload validates.
+        elif version == 2:
+            payload["execution_classes"] = {name: "transactional" for name in m}
+        # version == 1 with no execution_classes argument: omit the key.
     return payload
 
 
@@ -592,3 +599,161 @@ def test_release_identity_and_deploy_script_share_validation_outcomes(
         assert ri_ok is accepted, (
             f"unexpected outcome on {description!r}: accepted={accepted}"
         )
+
+
+# ---------------------------------------------------------------------------
+# F4 v2 rollout rollback-compatibility canonicalization
+# ---------------------------------------------------------------------------
+
+
+_BASE_SHA = "d3ee8a6679120f69c2ced992798294c9b5512253"
+
+
+def _base_v1_manifest_bytes() -> bytes:
+    import subprocess
+
+    return subprocess.check_output(
+        ["git", "show", f"{_BASE_SHA}:backend/db/migrations/manifest.json"],
+        cwd=str(REPO_ROOT),
+    )
+
+
+def test_rollback_compat_real_base_v1_equals_real_current_v2(deploy_validator) -> None:
+    """A. Real transition: the base v1 manifest (d3ee8a6) and the current
+    candidate v2 manifest MUST be rollback-compatible: their canonical
+    representations compare equal because they share baseline, migrations,
+    checksums, and per-migration execution classes."""
+    base_payload = json.loads(_base_v1_manifest_bytes())
+    current_payload = json.loads(
+        (REPO_ROOT / "backend/db/migrations/manifest.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert base_payload["version"] == 1
+    assert current_payload["version"] == 2
+    assert "execution_classes" not in base_payload
+    assert set(current_payload["execution_classes"]) == set(
+        current_payload["migrations"]
+    )
+
+    base_canonical = deploy_validator["_canonical"](base_payload)
+    current_canonical = deploy_validator["_canonical"](current_payload)
+    assert base_canonical == current_canonical, (
+        "base v1 and current v2 must canonicalize identically"
+    )
+
+
+def test_rollback_compat_synthetic_v1_with_online_equals_v2_with_online(
+    deploy_validator,
+) -> None:
+    """B. A v1 manifest that declares an explicit ``online`` execution_mode
+    canonicalizes to the same per-migration classification as the
+    equivalent v2 manifest with an exhaustive execution_classes map."""
+    migrations = _migrations(2)
+    keys = list(migrations)
+    v1_payload = _payload(
+        version=1,
+        migrations=migrations,
+        execution_modes={keys[1]: "online"},
+        include_execution_classes=False,
+    )
+    v2_payload = _payload(
+        version=2,
+        migrations=migrations,
+        execution_modes={keys[1]: "online"},
+        execution_classes={keys[0]: "transactional", keys[1]: "online"},
+    )
+    assert deploy_validator["_canonical"](v1_payload) == deploy_validator[
+        "_canonical"
+    ](v2_payload)
+
+
+def test_rollback_compat_v2_maintenance_window_blocked_from_v1_inferred_tx(
+    deploy_validator,
+) -> None:
+    """C. v2 maintenance-window classification is NOT equivalent to legacy
+    v1 inferred transactional: the canonical view differs and a rollback
+    from the maintenance-window release to the previous v1 release must
+    fail closed."""
+    migrations = _migrations(2)
+    keys = list(migrations)
+    v1_payload = _payload(
+        version=1,
+        migrations=migrations,
+        include_execution_classes=False,
+    )
+    v2_payload = _payload(
+        version=2,
+        migrations=migrations,
+        execution_classes={
+            keys[0]: "transactional",
+            keys[1]: "maintenance-window",
+        },
+    )
+    assert deploy_validator["_canonical"](v1_payload) != deploy_validator[
+        "_canonical"
+    ](v2_payload)
+
+
+def test_rollback_compat_checksum_mismatch_remains_blocked(deploy_validator) -> None:
+    """D. A checksum difference between the deployed release and the
+    rollback target MUST still block rollback even after canonicalization."""
+    migrations = _migrations(2)
+    current = _payload(version=2, migrations=migrations)
+    target = _payload(version=2, migrations=migrations)
+    target["migrations"] = dict(target["migrations"])
+    first_key = next(iter(target["migrations"]))
+    # Flip a single character of the checksum.
+    flipped = "f" if target["migrations"][first_key][0] != "f" else "0"
+    target["migrations"][first_key] = (
+        flipped + target["migrations"][first_key][1:]
+    )
+    assert deploy_validator["_canonical"](current) != deploy_validator[
+        "_canonical"
+    ](target)
+
+
+def test_rollback_compat_baseline_mismatch_remains_blocked(deploy_validator) -> None:
+    """E. A baseline difference between the deployed release and the
+    rollback target MUST still block rollback even after canonicalization."""
+    current = _payload(version=2)
+    target = _payload(version=2)
+    target["baseline"] = dict(target["baseline"])
+    target["baseline"]["file"] = "schema_v3.sql"
+    target["baseline"]["sha256"] = "e" * 64
+    assert deploy_validator["_canonical"](current) != deploy_validator[
+        "_canonical"
+    ](target)
+
+
+def test_rollback_compat_unknown_metadata_mismatch_remains_blocked(
+    deploy_validator,
+) -> None:
+    """F. An unknown metadata field added to one manifest MUST still block
+    rollback after canonicalization: canonicalization must NOT silently
+    drop unrelated fields. The canonical view starts from ``dict(payload)``
+    and only normalizes the three representation fields."""
+    current = _payload(version=2)
+    target = _payload(version=2)
+    target["some_unknown_metadata"] = "extra"
+    assert deploy_validator["_canonical"](current) != deploy_validator[
+        "_canonical"
+    ](target)
+
+
+def test_rollback_compat_malformed_and_non_integer_versions_still_rejected(
+    deploy_validator,
+) -> None:
+    """G. The previous fail-closed semantics MUST remain intact: the
+    canonicalization wrapper still calls the strict validator, so
+    malformed/non-integer versions are rejected before any comparison."""
+    migrations = _migrations(1)
+    key = next(iter(migrations))
+    for bad_version in (True, 1.0, 2.0, "1", None):
+        payload = _payload(
+            version=bad_version,  # type: ignore[arg-type]
+            migrations=migrations,
+            execution_classes={key: "transactional"},
+        )
+        with pytest.raises(ValueError, match="invalid migration manifest"):
+            deploy_validator["_canonical"](payload)
