@@ -43,6 +43,11 @@ ONLINE_EXECUTION_MODE = "online"
 MAINTENANCE_WINDOW_EXECUTION_CLASS = "maintenance-window"
 MAINTENANCE_WINDOW_AUTHORIZATION_ENV = "UNIHUB_MIGRATION_MAINTENANCE_WINDOW"
 ALLOWED_EXECUTION_CLASSES = frozenset({TRANSACTIONAL_EXECUTION_MODE, ONLINE_EXECUTION_MODE, MAINTENANCE_WINDOW_EXECUTION_CLASS})
+# Sentinel used to distinguish an ABSENT ``execution_classes`` key (legacy v1
+# manifest) from a PRESENT key whose value is JSON ``null`` (malformed F4
+# metadata). Falling back to ``None`` would conflate the two cases and let a
+# malformed F4 manifest silently behave as legacy.
+_MISSING_EXECUTION_CLASSES = object()
 TRACKING_SQL = """
 CREATE TABLE IF NOT EXISTS schema_meta (
     schema_name TEXT PRIMARY KEY,
@@ -150,7 +155,7 @@ def load_migration_manifest(path: Path | None = None) -> MigrationManifest:
         migrations = payload["migrations"]
         version = payload["version"]
         execution_modes = payload.get("execution_modes", {})
-        execution_classes = payload.get("execution_classes")
+        execution_classes = payload.get("execution_classes", _MISSING_EXECUTION_CLASSES)
     except (OSError, json.JSONDecodeError, KeyError, TypeError) as exc:
         raise MigrationError("Migration manifest is invalid") from exc
     if (
@@ -163,7 +168,7 @@ def load_migration_manifest(path: Path | None = None) -> MigrationManifest:
     if not _valid_execution_modes(execution_modes, migrations):
         raise MigrationError("Migration manifest is invalid")
     assert isinstance(execution_modes, dict)
-    if execution_classes is None:
+    if execution_classes is _MISSING_EXECUTION_CLASSES:
         execution_classes = {}
     elif not _valid_execution_classes(execution_classes, migrations, execution_modes):
         raise MigrationError("Migration manifest is invalid")

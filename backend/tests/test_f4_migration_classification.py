@@ -137,6 +137,107 @@ def test_current_manifest_classifies_every_migration_explicitly() -> None:
     assert set(manifest.execution_classes.values()) <= ALLOWED_EXECUTION_CLASSES
 
 
+def test_explicit_null_execution_classes_is_rejected_fail_closed(
+    tmp_path: Path,
+) -> None:
+    """An explicitly-present ``"execution_classes": null`` is malformed F4
+    metadata and MUST be rejected. Only an ABSENT key is allowed to fall
+    back to legacy v1 behavior.
+    """
+    path = tmp_path / "manifest.json"
+    migrations = {
+        "001_first.sql": "b" * 64,
+        "002_second.sql": "c" * 64,
+    }
+    path.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "baseline": {
+                    "file": "schema_v2.sql",
+                    "sha256": "a" * 64,
+                    "incorporated_through": "001_first.sql",
+                },
+                "migrations": migrations,
+                "execution_classes": None,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(MigrationError, match="manifest is invalid"):
+        load_migration_manifest(path)
+
+
+def test_explicit_non_dict_execution_classes_is_rejected_fail_closed(
+    tmp_path: Path,
+) -> None:
+    """Non-dict values for an explicitly-present ``execution_classes`` key
+    (list, string, int, bool) MUST also be rejected; the F4 contract only
+    accepts a dict when the key is present.
+    """
+    migrations = {
+        "001_first.sql": "b" * 64,
+        "002_second.sql": "c" * 64,
+    }
+    baseline = {
+        "file": "schema_v2.sql",
+        "sha256": "a" * 64,
+        "incorporated_through": "001_first.sql",
+    }
+    for bad_value in (
+        ["001_first.sql", TRANSACTIONAL_EXECUTION_MODE],
+        "transactional",
+        1,
+        True,
+    ):
+        path = tmp_path / "manifest.json"
+        path.write_text(
+            json.dumps(
+                {
+                    "version": 1,
+                    "baseline": baseline,
+                    "migrations": migrations,
+                    "execution_classes": bad_value,
+                }
+            ),
+            encoding="utf-8",
+        )
+        with pytest.raises(MigrationError, match="manifest is invalid"):
+            load_migration_manifest(path)
+
+
+def test_absent_execution_classes_remains_legacy_compatible(
+    tmp_path: Path,
+) -> None:
+    """An ABSENT ``execution_classes`` key MUST continue to behave as legacy
+    v1: the classification is inferred from ``execution_modes``.
+    """
+    path = tmp_path / "manifest.json"
+    path.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "baseline": {
+                    "file": "schema_v2.sql",
+                    "sha256": "a" * 64,
+                    "incorporated_through": "001_first.sql",
+                },
+                "migrations": {
+                    "001_first.sql": "b" * 64,
+                    "002_second.sql": "c" * 64,
+                },
+                "execution_modes": {"002_second.sql": ONLINE_EXECUTION_MODE},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    manifest = load_migration_manifest(path)
+    assert manifest.execution_classes == {}
+    assert manifest.execution_mode("002_second.sql") == ONLINE_EXECUTION_MODE
+
+
 @pytest.mark.asyncio
 async def test_maintenance_window_migration_requires_exact_authorization(
     tmp_path: Path,
