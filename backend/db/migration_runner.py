@@ -355,7 +355,8 @@ async def _backfill_missing_checksums(
         if checksum is not None:
             continue
         await connection.execute(
-            "UPDATE schema_migrations SET checksum = $2 WHERE filename = $1",
+            "UPDATE schema_migrations SET checksum = $2 "
+            "WHERE filename = $1 AND checksum IS NULL",
             filename,
             manifest.checksums[filename],
         )
