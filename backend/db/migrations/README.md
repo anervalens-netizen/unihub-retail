@@ -8,8 +8,11 @@ refuza startup-ul daca exista drift sau migrations neaplicate.
 
 - Numele: `NNN_descriere_scurta.sql` (3 cifre obligatorii, lowercase + underscore).
 - Exemplu valid: `001_add_store_index.sql`, `042_rename_agent_col.sql`.
-- Fiecare fisier ruleaza intr-o tranzactie si este tracked in
-  `schema_migrations` impreuna cu checksum-ul SHA-256.
+- Execuția urmează clasificarea din `manifest.json`: `transactional` pentru calea
+  normală, `online` explicit pentru operații în afara tranzacției și
+  `maintenance-window` pentru operații tranzacționale care cer autorizare de
+  fereastră. Toate sunt tracked în `schema_migrations` cu checksum SHA-256; vezi
+  `EXECUTION_POLICY.md`.
 - Migrations sunt **imutabile** după ce au rulat în producție. Dacă greșești,
   adaugi o migration nouă care corectează, nu editezi istoric.
 - `manifest.json` este gate-ul Git pentru baseline si toate migrations.
@@ -27,8 +30,10 @@ Workflow tipic pentru schimbare de schemă:
 3. Rulezi unitatea `unihub-retail-migrate.service` inainte de restartul web.
    Unitatea citeste exclusiv `.env.migrations`, fisier root-protected care
    contine `MIGRATION_DATABASE_URL` pentru `unihub_migration_runner`. Runnerul
-   este NOINHERIT și activează ownerul NOLOGIN numai cu `SET LOCAL ROLE` în
-   tranzacția migrației. Web și workerii folosesc loginurile lor non-owner.
+   este NOINHERIT și activează ownerul NOLOGIN conform clasei de execuție:
+   `SET LOCAL ROLE` pentru `transactional`/`maintenance-window`, respectiv
+   `SET ROLE` urmat de `RESET ROLE` pentru `online`. Web și workerii folosesc
+   loginurile lor non-owner.
 4. Instalarile noi aplica baseline-ul inghetat, marcheaza migrations deja
    incorporate, apoi ruleaza toate delta-urile ulterioare.
 
