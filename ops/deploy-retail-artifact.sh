@@ -754,24 +754,67 @@ import re
 import sys
 from pathlib import Path
 
+# F4 execution_classes contract. Must mirror scripts/release_identity.py
+# exactly so the rollback-compatibility gate agrees with the candidate
+# identity helper and the migration runner.
+_ALLOWED_EXECUTION_CLASSES = {"transactional", "online", "maintenance-window"}
+_MISSING_EXECUTION_CLASSES = object()
+_SHA256_RE = re.compile(r"[0-9a-f]{64}")
 
-def load(path: str) -> dict[str, object]:
-    payload = json.loads(Path(path).read_text(encoding="utf-8"))
+
+def _validate(payload):
     baseline = payload.get("baseline")
     migrations = payload.get("migrations")
+    version = payload.get("version")
     if (
-        payload.get("version") != 1
+        version not in (1, 2)
         or not isinstance(baseline, dict)
         or not isinstance(migrations, dict)
         or not migrations
-        or any(
-            not isinstance(name, str)
-            or not isinstance(checksum, str)
-            or re.fullmatch(r"[0-9a-f]{64}", checksum) is None
-            for name, checksum in migrations.items()
-        )
     ):
         raise ValueError("invalid migration manifest")
+    if any(
+        not isinstance(name, str)
+        or not isinstance(checksum, str)
+        or _SHA256_RE.fullmatch(checksum) is None
+        for name, checksum in migrations.items()
+    ):
+        raise ValueError("invalid migration manifest")
+
+    execution_modes = payload.get("execution_modes", {})
+    if not isinstance(execution_modes, dict) or any(
+        not isinstance(name, str)
+        or name not in migrations
+        or mode != "online"
+        for name, mode in execution_modes.items()
+    ):
+        raise ValueError("invalid migration manifest")
+
+    execution_classes = payload.get("execution_classes", _MISSING_EXECUTION_CLASSES)
+    if execution_classes is _MISSING_EXECUTION_CLASSES:
+        if version != 1:
+            raise ValueError("invalid migration manifest")
+        return
+    if not isinstance(execution_classes, dict):
+        raise ValueError("invalid migration manifest")
+    if set(execution_classes) != set(migrations):
+        raise ValueError("invalid migration manifest")
+    if any(
+        not isinstance(execution_class, str)
+        or execution_class not in _ALLOWED_EXECUTION_CLASSES
+        for execution_class in execution_classes.values()
+    ):
+        raise ValueError("invalid migration manifest")
+    if any(
+        (execution_class == "online") != (name in execution_modes)
+        for name, execution_class in execution_classes.items()
+    ):
+        raise ValueError("invalid migration manifest")
+
+
+def load(path):
+    payload = json.loads(Path(path).read_text(encoding="utf-8"))
+    _validate(payload)
     return payload
 
 
