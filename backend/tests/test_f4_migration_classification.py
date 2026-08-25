@@ -161,7 +161,11 @@ async def test_maintenance_window_migration_requires_exact_authorization(
     monkeypatch.setattr(runner, "get_migrations_dir", lambda: tmp_path)
     monkeypatch.setattr(runner, "_apply_transactional_migration", fake_apply)
 
-    for unauthorized in (None, "0", "true"):
+    # Missing authorization, the legacy boolean "1", and a stale/wrong
+    # filename must all be refused: authorization must equal the exact
+    # migration filename, nothing else.
+    unauthorized_values = (None, "", "0", "1", "true", "070_other.sql")
+    for unauthorized in unauthorized_values:
         if unauthorized is None:
             monkeypatch.delenv(MAINTENANCE_WINDOW_AUTHORIZATION_ENV, raising=False)
         else:
@@ -198,7 +202,8 @@ async def test_authorized_maintenance_window_uses_transactional_executor(
     async def fake_apply(_connection: object, **kwargs: Any) -> None:
         calls.append(kwargs)
 
-    monkeypatch.setenv(MAINTENANCE_WINDOW_AUTHORIZATION_ENV, "1")
+    # Authorization must equal the exact migration filename.
+    monkeypatch.setenv(MAINTENANCE_WINDOW_AUTHORIZATION_ENV, migration.name)
     monkeypatch.setattr(runner, "get_migrations_dir", lambda: tmp_path)
     monkeypatch.setattr(runner, "_apply_transactional_migration", fake_apply)
 
@@ -217,3 +222,68 @@ async def test_authorized_maintenance_window_uses_transactional_executor(
             "sql": "SELECT 1;",
         }
     ]
+
+
+@pytest.mark.asyncio
+async def test_stale_maintenance_window_authorization_does_not_authorize_other_migration(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An authorization left over from a previous maintenance migration must
+    never authorize a different maintenance-window migration that happens to
+    run later. A stale ``UNIHUB_MIGRATION_MAINTENANCE_WINDOW=070_first.sql``
+    in ``.env.migrations`` MUST NOT authorize ``071_second.sql``."""
+    import db.migration_runner as runner
+
+    first = tmp_path / "070_first.sql"
+    first.write_text("SELECT 1;", encoding="utf-8")
+    second = tmp_path / "071_second.sql"
+    second.write_text("SELECT 2;", encoding="utf-8")
+    manifest = MigrationManifest(
+        "a" * 64,
+        second.name,
+        {
+            first.name: runner._sha256(first),
+            second.name: runner._sha256(second),
+        },
+        execution_classes={
+            first.name: MAINTENANCE_WINDOW_EXECUTION_CLASS,
+            second.name: MAINTENANCE_WINDOW_EXECUTION_CLASS,
+        },
+    )
+
+    applied: list[str] = []
+
+    async def record_apply(_connection: object, **kwargs: Any) -> None:
+        applied.append(str(kwargs["filename"]))
+
+    monkeypatch.setattr(runner, "get_migrations_dir", lambda: tmp_path)
+    monkeypatch.setattr(runner, "_apply_transactional_migration", record_apply)
+
+    # 070 has already been authorized and applied; the operator forgot to
+    # clear the env var before starting the second run.
+    monkeypatch.setenv(MAINTENANCE_WINDOW_AUTHORIZATION_ENV, first.name)
+    applied.clear()
+
+    # The remaining migration must NOT be authorized by the stale env var.
+    with pytest.raises(MigrationError, match=MAINTENANCE_WINDOW_AUTHORIZATION_ENV):
+        await runner._apply_pending_migrations(  # type: ignore[arg-type]
+            object(),
+            manifest,
+            {first.name: runner._sha256(first)},
+            cutover_bootstrap=False,
+        )
+
+    assert applied == []
+
+    # Re-running with the matching authorization for the second migration
+    # must now allow it through.
+    monkeypatch.setenv(MAINTENANCE_WINDOW_AUTHORIZATION_ENV, second.name)
+    scheduled = await runner._apply_pending_migrations(  # type: ignore[arg-type]
+        object(),
+        manifest,
+        {first.name: runner._sha256(first)},
+        cutover_bootstrap=False,
+    )
+    assert scheduled == [second.name]
+    assert applied == [second.name]

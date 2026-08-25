@@ -35,29 +35,14 @@ from db.migration_runtime import (
 
 MIGRATION_ADVISORY_LOCK_ID = 7_221_904_202_607_12
 AUTHORITY_CUTOVER_BOOTSTRAP_ENV = "UNIHUB_DB_AUTHORITY_CUTOVER_BOOTSTRAP"
-AUTHORITY_CUTOVER_MIGRATIONS = frozenset(
-    {
-        "040_db_authority_append_only.sql",
-        "041_schema_owner_handoff.sql",
-    }
-)
-BASELINE_REPLAY_MIGRATIONS = frozenset(
-    {"014_target_calculator_store_exclusions.sql"}
-)
-TOMBSTONE_ADOPTION_PREREQUISITES = {
-    "005_retail_ai_analysis_views.sql": "006_drop_ai_analysis_views.sql",
-}
+AUTHORITY_CUTOVER_MIGRATIONS = frozenset({"040_db_authority_append_only.sql", "041_schema_owner_handoff.sql"})
+BASELINE_REPLAY_MIGRATIONS = frozenset({"014_target_calculator_store_exclusions.sql"})
+TOMBSTONE_ADOPTION_PREREQUISITES = {"005_retail_ai_analysis_views.sql": "006_drop_ai_analysis_views.sql"}
 TRANSACTIONAL_EXECUTION_MODE = "transactional"
 ONLINE_EXECUTION_MODE = "online"
 MAINTENANCE_WINDOW_EXECUTION_CLASS = "maintenance-window"
 MAINTENANCE_WINDOW_AUTHORIZATION_ENV = "UNIHUB_MIGRATION_MAINTENANCE_WINDOW"
-ALLOWED_EXECUTION_CLASSES = frozenset(
-    {
-        TRANSACTIONAL_EXECUTION_MODE,
-        ONLINE_EXECUTION_MODE,
-        MAINTENANCE_WINDOW_EXECUTION_CLASS,
-    }
-)
+ALLOWED_EXECUTION_CLASSES = frozenset({TRANSACTIONAL_EXECUTION_MODE, ONLINE_EXECUTION_MODE, MAINTENANCE_WINDOW_EXECUTION_CLASS})
 TRACKING_SQL = """
 CREATE TABLE IF NOT EXISTS schema_meta (
     schema_name TEXT PRIMARY KEY,
@@ -74,38 +59,21 @@ ALTER TABLE schema_migrations ADD COLUMN IF NOT EXISTS checksum TEXT;
 
 
 __all__ = [
-    "MIGRATION_ADVISORY_LOCK_ID",
-    "AUTHORITY_CUTOVER_BOOTSTRAP_ENV",
-    "AUTHORITY_CUTOVER_MIGRATIONS",
-    "BASELINE_REPLAY_MIGRATIONS",
-    "TOMBSTONE_ADOPTION_PREREQUISITES",
-    "TRANSACTIONAL_EXECUTION_MODE",
-    "ONLINE_EXECUTION_MODE",
-    "MAINTENANCE_WINDOW_EXECUTION_CLASS",
-    "MAINTENANCE_WINDOW_AUTHORIZATION_ENV",
-    "ALLOWED_EXECUTION_CLASSES",
-    "ONLINE_RECOVERY_PREFIX",
-    "TRACKING_SQL",
-    "MigrationError",
-    "MigrationManifest",
-    "get_manifest_path",
-    "load_migration_manifest",
-    "verify_migration_files",
-    "verify_migrations_current",
-    "run_migrations",
-    "_activate_migration_owner",
-    "_activate_online_migration_owner",
-    "_apply_cic_online_migration",
-    "_apply_online_migration",
-    "_execute_online_statement",
-    "_finalize_online_migration",
-    "_mark_online_recovery",
-    "_online_recovery_checksum",
-    "_reset_online_migration_owner",
-    "_validate_applied",
-    "_CIC_ATTEMPT_RE",
-    "_strip_leading_comments",
-    "parse_controlled_cic",
+    "MIGRATION_ADVISORY_LOCK_ID", "AUTHORITY_CUTOVER_BOOTSTRAP_ENV",
+    "AUTHORITY_CUTOVER_MIGRATIONS", "BASELINE_REPLAY_MIGRATIONS",
+    "TOMBSTONE_ADOPTION_PREREQUISITES", "TRANSACTIONAL_EXECUTION_MODE",
+    "ONLINE_EXECUTION_MODE", "MAINTENANCE_WINDOW_EXECUTION_CLASS",
+    "MAINTENANCE_WINDOW_AUTHORIZATION_ENV", "ALLOWED_EXECUTION_CLASSES",
+    "ONLINE_RECOVERY_PREFIX", "TRACKING_SQL",
+    "MigrationError", "MigrationManifest",
+    "get_manifest_path", "load_migration_manifest",
+    "verify_migration_files", "verify_migrations_current", "run_migrations",
+    "_activate_migration_owner", "_activate_online_migration_owner",
+    "_apply_cic_online_migration", "_apply_online_migration",
+    "_execute_online_statement", "_finalize_online_migration",
+    "_mark_online_recovery", "_online_recovery_checksum",
+    "_reset_online_migration_owner", "_validate_applied",
+    "_CIC_ATTEMPT_RE", "_strip_leading_comments", "parse_controlled_cic",
 ]
 
 
@@ -481,10 +449,11 @@ async def _apply_pending_migrations(
         execution_mode = manifest.execution_mode(filename)
         execution_class = manifest.execution_classes.get(filename, execution_mode)
         if execution_class == MAINTENANCE_WINDOW_EXECUTION_CLASS:
-            if os.getenv(MAINTENANCE_WINDOW_AUTHORIZATION_ENV) != "1":
+            authorized = os.getenv(MAINTENANCE_WINDOW_AUTHORIZATION_ENV)
+            if authorized != filename:
                 raise MigrationError(
-                    "Maintenance-window migration requires explicit authorization "
-                    f"{MAINTENANCE_WINDOW_AUTHORIZATION_ENV}=1: {filename}"
+                    f"Maintenance-window migration requires explicit authorization "
+                    f"{MAINTENANCE_WINDOW_AUTHORIZATION_ENV}={filename}; got {authorized!r}"
                 )
             await _apply_transactional_migration(
                 connection,

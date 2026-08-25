@@ -12,8 +12,16 @@ The classification is operational metadata and is separate from the F1
   outside a database transaction. Controlled `CREATE INDEX CONCURRENTLY`
   migrations use the dedicated validated recovery path.
 - `maintenance-window` — planned-window work that still uses the transactional
-  executor, but the runner refuses to start that migration unless
-  `UNIHUB_MIGRATION_MAINTENANCE_WINDOW=1` is present exactly.
+  executor, but the runner refuses to start that migration unless the
+  operator has set `UNIHUB_MIGRATION_MAINTENANCE_WINDOW` to the EXACT
+  migration filename that is about to run. The comparison is strict
+  string equality with the current migration filename: a stale
+  authorization for migration `X` MUST NOT authorize migration `Y`, and
+  the legacy boolean `=1` is no longer accepted. The expected operator
+  contract is therefore `UNIHUB_MIGRATION_MAINTENANCE_WINDOW=070_*.sql`
+  (matching the migration that is about to apply), and the env var must
+  be cleared between separate maintenance-window migrations to avoid
+  accidental authorization.
 
 `maintenance-window` does not make a migration non-transactional. It adds an
 operator authorization boundary around transactionally safe work whose lock,
