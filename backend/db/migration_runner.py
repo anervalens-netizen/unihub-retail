@@ -49,6 +49,15 @@ TOMBSTONE_ADOPTION_PREREQUISITES = {
 }
 TRANSACTIONAL_EXECUTION_MODE = "transactional"
 ONLINE_EXECUTION_MODE = "online"
+MAINTENANCE_WINDOW_EXECUTION_CLASS = "maintenance-window"
+MAINTENANCE_WINDOW_AUTHORIZATION_ENV = "UNIHUB_MIGRATION_MAINTENANCE_WINDOW"
+ALLOWED_EXECUTION_CLASSES = frozenset(
+    {
+        TRANSACTIONAL_EXECUTION_MODE,
+        ONLINE_EXECUTION_MODE,
+        MAINTENANCE_WINDOW_EXECUTION_CLASS,
+    }
+)
 TRACKING_SQL = """
 CREATE TABLE IF NOT EXISTS schema_meta (
     schema_name TEXT PRIMARY KEY,
@@ -72,6 +81,9 @@ __all__ = [
     "TOMBSTONE_ADOPTION_PREREQUISITES",
     "TRANSACTIONAL_EXECUTION_MODE",
     "ONLINE_EXECUTION_MODE",
+    "MAINTENANCE_WINDOW_EXECUTION_CLASS",
+    "MAINTENANCE_WINDOW_AUTHORIZATION_ENV",
+    "ALLOWED_EXECUTION_CLASSES",
     "ONLINE_RECOVERY_PREFIX",
     "TRACKING_SQL",
     "MigrationError",
@@ -103,6 +115,7 @@ class MigrationManifest:
     incorporated_through: str
     checksums: dict[str, str]
     execution_modes: dict[str, str] = field(default_factory=dict)
+    execution_classes: dict[str, str] = field(default_factory=dict)
 
     def execution_mode(self, filename: str) -> str:
         return self.execution_modes.get(filename, TRANSACTIONAL_EXECUTION_MODE)
@@ -148,6 +161,7 @@ def load_migration_manifest(path: Path | None = None) -> MigrationManifest:
         migrations = payload["migrations"]
         version = payload["version"]
         execution_modes = payload.get("execution_modes", {})
+        execution_classes = payload.get("execution_classes")
     except (OSError, json.JSONDecodeError, KeyError, TypeError) as exc:
         raise MigrationError("Migration manifest is invalid") from exc
     if (
@@ -160,6 +174,25 @@ def load_migration_manifest(path: Path | None = None) -> MigrationManifest:
     if not _valid_execution_modes(execution_modes, migrations):
         raise MigrationError("Migration manifest is invalid")
     assert isinstance(execution_modes, dict)
+    if execution_classes is not None:
+        if not isinstance(execution_classes, dict):
+            raise MigrationError("Migration manifest is invalid")
+        if set(execution_classes) != set(migrations):
+            raise MigrationError("Migration manifest is invalid")
+        if not all(
+            isinstance(execution_class, str)
+            and execution_class in ALLOWED_EXECUTION_CLASSES
+            for execution_class in execution_classes.values()
+        ):
+            raise MigrationError("Migration manifest is invalid")
+        if any(
+            (execution_class == ONLINE_EXECUTION_MODE) != (name in execution_modes)
+            for name, execution_class in execution_classes.items()
+        ):
+            raise MigrationError("Migration manifest is invalid")
+    else:
+        execution_classes = {}
+    assert isinstance(execution_classes, dict)
     baseline_hash = baseline.get("sha256")
     incorporated = baseline.get("incorporated_through")
     if (
@@ -175,6 +208,7 @@ def load_migration_manifest(path: Path | None = None) -> MigrationManifest:
         incorporated,
         dict(migrations),
         dict(execution_modes),
+        dict(execution_classes),
     )
 
 
@@ -444,7 +478,21 @@ async def _apply_pending_migrations(
         if cutover_bootstrap and filename not in AUTHORITY_CUTOVER_MIGRATIONS:
             continue
         sql = (get_migrations_dir() / filename).read_text(encoding="utf-8")
-        if manifest.execution_mode(filename) == ONLINE_EXECUTION_MODE:
+        execution_mode = manifest.execution_mode(filename)
+        execution_class = manifest.execution_classes.get(filename, execution_mode)
+        if execution_class == MAINTENANCE_WINDOW_EXECUTION_CLASS:
+            if os.getenv(MAINTENANCE_WINDOW_AUTHORIZATION_ENV) != "1":
+                raise MigrationError(
+                    "Maintenance-window migration requires explicit authorization "
+                    f"{MAINTENANCE_WINDOW_AUTHORIZATION_ENV}=1: {filename}"
+                )
+            await _apply_transactional_migration(
+                connection,
+                filename=filename,
+                checksum=checksum,
+                sql=sql,
+            )
+        elif execution_mode == ONLINE_EXECUTION_MODE:
             if _CIC_ATTEMPT_RE.match(_strip_leading_comments(sql)):
                 index_name, table_name = parse_controlled_cic(sql)
                 await _apply_cic_online_migration(
