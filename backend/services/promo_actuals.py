@@ -106,7 +106,7 @@ def _validated_material_row(
     invalid_quantity = (
         isinstance(quantity, bool)
         or not isinstance(quantity, int)
-        or quantity <= 0
+        or quantity == 0
     )
     if not site_code or not item_code or invalid_quantity:
         raise ValueError("identitate sau cantitate invalidă")
