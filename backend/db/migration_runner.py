@@ -354,13 +354,27 @@ async def _backfill_missing_checksums(
     for filename, checksum in applied.items():
         if checksum is not None:
             continue
-        await connection.execute(
+        expected_checksum = manifest.checksums[filename]
+        update_status = await connection.execute(
             "UPDATE schema_migrations SET checksum = $2 "
             "WHERE filename = $1 AND checksum IS NULL",
             filename,
-            manifest.checksums[filename],
+            expected_checksum,
         )
-        applied[filename] = manifest.checksums[filename]
+        if update_status == "UPDATE 1":
+            applied[filename] = expected_checksum
+            continue
+        row = await connection.fetchrow(
+            "SELECT checksum FROM schema_migrations WHERE filename = $1",
+            filename,
+        )
+        stored_checksum = None if row is None else row["checksum"]
+        _validate_applied(
+            {filename: stored_checksum},
+            manifest,
+            allow_missing_checksums=False,
+        )
+        applied[filename] = stored_checksum
 
 
 async def _record_fresh_baseline(
