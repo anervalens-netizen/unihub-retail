@@ -606,7 +606,8 @@ def test_release_identity_and_deploy_script_share_validation_outcomes(
 # ---------------------------------------------------------------------------
 
 
-_BASE_SHA = "d3ee8a6679120f69c2ced992798294c9b5512253"
+# Public repository commit used as the historical v1 rollout fixture.
+_BASE_SHA = "d3ee8a6679120f69c2ced992798294c9b5512253"  # pragma: allowlist secret
 
 
 def _base_v1_manifest_bytes() -> bytes:
