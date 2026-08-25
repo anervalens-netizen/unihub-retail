@@ -48,9 +48,10 @@ class _AtomicConnection:
 
 
 class _BackfillConnection:
-    def __init__(self, filename: str, checksum: str) -> None:
-        self.rows = {filename: checksum}
+    def __init__(self, filename: str, checksum: str | None) -> None:
+        self.rows: dict[str, str | None] = {filename: checksum}
         self.executed_sql: list[str] = []
+        self.read_sql: list[str] = []
 
     async def execute(self, sql: str, *args: object) -> str:
         self.executed_sql.append(sql)
@@ -62,6 +63,13 @@ class _BackfillConnection:
             return "UPDATE 0"
         self.rows[filename] = checksum
         return "UPDATE 1"
+
+    async def fetchrow(self, sql: str, *args: object) -> dict[str, str | None] | None:
+        self.read_sql.append(sql)
+        filename = str(args[0])
+        if filename not in self.rows:
+            return None
+        return {"checksum": self.rows[filename]}
 
 
 async def _noop_activate(_connection: Any) -> None:
@@ -91,7 +99,7 @@ async def test_transactional_migration_rolls_back_schema_when_ledger_insert_fail
 
 
 @pytest.mark.asyncio
-async def test_checksum_backfill_never_overwrites_non_null_database_value() -> None:
+async def test_checksum_backfill_fails_closed_when_concurrent_value_conflicts() -> None:
     import db.migration_runner as runner
 
     filename = "001_first.sql"
@@ -105,8 +113,36 @@ async def test_checksum_backfill_never_overwrites_non_null_database_value() -> N
     )
 
     # Simulate a legacy NULL value observed in the earlier tracking snapshot,
-    # followed by a non-NULL database value before the backfill write executes.
+    # followed by a conflicting non-NULL database value before backfill writes.
     applied: dict[str, str | None] = {filename: None}
+    with pytest.raises(runner.MigrationError, match="Applied migration checksum mismatch"):
+        await runner._backfill_missing_checksums(  # type: ignore[arg-type]
+            connection,
+            manifest,
+            applied,
+        )
+
+    assert len(connection.executed_sql) == 1
+    assert "AND checksum IS NULL" in connection.executed_sql[0]
+    assert len(connection.read_sql) == 1
+    assert connection.rows[filename] == immutable_checksum
+    assert applied[filename] is None
+
+
+@pytest.mark.asyncio
+async def test_checksum_backfill_accepts_concurrent_expected_value() -> None:
+    import db.migration_runner as runner
+
+    filename = "001_first.sql"
+    manifest_checksum = "b" * 64
+    connection = _BackfillConnection(filename, manifest_checksum)
+    manifest = MigrationManifest(
+        "a" * 64,
+        filename,
+        {filename: manifest_checksum},
+    )
+    applied: dict[str, str | None] = {filename: None}
+
     await runner._backfill_missing_checksums(  # type: ignore[arg-type]
         connection,
         manifest,
@@ -114,5 +150,5 @@ async def test_checksum_backfill_never_overwrites_non_null_database_value() -> N
     )
 
     assert len(connection.executed_sql) == 1
-    assert "AND checksum IS NULL" in connection.executed_sql[0]
-    assert connection.rows[filename] == immutable_checksum
+    assert len(connection.read_sql) == 1
+    assert applied[filename] == manifest_checksum
