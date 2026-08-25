@@ -767,7 +767,8 @@ def _validate(payload):
     migrations = payload.get("migrations")
     version = payload.get("version")
     if (
-        version not in (1, 2)
+        type(version) is not int
+        or version not in (1, 2)
         or not isinstance(baseline, dict)
         or not isinstance(migrations, dict)
         or not migrations

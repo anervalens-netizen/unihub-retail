@@ -171,6 +171,42 @@ def test_release_identity_rejects_unsupported_version_3() -> None:
         m._validate_migration_payload(payload)
 
 
+@pytest.mark.parametrize("bad_version", [True, False, 1.0, 2.0, "1", "2", None])
+def test_release_identity_rejects_non_integer_version(
+    bad_version: object,
+) -> None:
+    """Release-identity validation MUST reject non-integer ``version``
+    values, including JSON booleans (``true``/``false``) and floats
+    (``1.0``/``2.0``)."""
+    m = _load_release_identity()
+    migrations = _migrations(1)
+    payload = _payload(
+        version=bad_version,  # type: ignore[arg-type]
+        migrations=migrations,
+        execution_classes={next(iter(migrations)): "transactional"},
+    )
+    with pytest.raises(ValueError, match="invalid migration manifest"):
+        m._validate_migration_payload(payload)
+
+
+@pytest.mark.parametrize("bad_version", [True, False, 1.0, 2.0, "1", "2", None])
+def test_deploy_script_rejects_non_integer_version(
+    tmp_path, deploy_validator, bad_version: object
+) -> None:
+    """The deploy-script inline validator MUST reject the same non-integer
+    versions that the release-identity helper and the migration runner
+    reject."""
+    migrations = _migrations(1)
+    payload = _payload(
+        version=bad_version,  # type: ignore[arg-type]
+        migrations=migrations,
+        execution_classes={next(iter(migrations)): "transactional"},
+    )
+    path = _write_manifest(tmp_path, payload, "m.json")
+    with pytest.raises(ValueError, match="invalid migration manifest"):
+        deploy_validator["load"](str(path))
+
+
 def test_release_identity_current_repo_manifest_is_v2() -> None:
     """The active repository manifest is v2 and is accepted by the
     formal release-identity validator."""
@@ -492,6 +528,39 @@ def test_release_identity_and_deploy_script_share_validation_outcomes(
             lambda: _payload(
                 version=3,
                 execution_classes={list(_migrations(1))[0]: "transactional"},
+            ),
+            False,
+        ),
+        (
+            "bool True as version (== 1 in Python)",
+            lambda: _payload(
+                version=True,
+                execution_classes={
+                    list(_migrations(2))[0]: "transactional",
+                    list(_migrations(2))[1]: "transactional",
+                },
+            ),
+            False,
+        ),
+        (
+            "float 1.0 as version (== 1 in Python)",
+            lambda: _payload(
+                version=1.0,
+                execution_classes={
+                    list(_migrations(2))[0]: "transactional",
+                    list(_migrations(2))[1]: "transactional",
+                },
+            ),
+            False,
+        ),
+        (
+            "float 2.0 as version",
+            lambda: _payload(
+                version=2.0,
+                execution_classes={
+                    list(_migrations(2))[0]: "transactional",
+                    list(_migrations(2))[1]: "transactional",
+                },
             ),
             False,
         ),

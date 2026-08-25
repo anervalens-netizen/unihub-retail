@@ -159,7 +159,8 @@ def load_migration_manifest(path: Path | None = None) -> MigrationManifest:
     except (OSError, json.JSONDecodeError, KeyError, TypeError) as exc:
         raise MigrationError("Migration manifest is invalid") from exc
     if (
-        version not in (1, 2)
+        type(version) is not int
+        or version not in (1, 2)
         or not isinstance(baseline, dict)
         or not _valid_manifest_migrations(migrations)
     ):

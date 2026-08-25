@@ -306,6 +306,30 @@ def test_unsupported_version_is_rejected(
         load_migration_manifest(path)
 
 
+@pytest.mark.parametrize("bad_version", [True, False, 1.0, 2.0, "1", "2", None])
+def test_non_integer_manifest_version_is_rejected(
+    tmp_path: Path, bad_version: object
+) -> None:
+    """The manifest ``version`` MUST be a concrete Python ``int``. JSON
+    booleans (``true``/``false``), floats (``1.0``/``2.0``), strings, and
+    null MUST be rejected so a malformed F4 metadata blob cannot pass as
+    legacy v1.
+    """
+    path = _write_manifest(
+        tmp_path,
+        _payload(
+            execution_classes={
+                "001_first.sql": TRANSACTIONAL_EXECUTION_MODE,
+                "002_second.sql": TRANSACTIONAL_EXECUTION_MODE,
+            },
+            version=bad_version,  # type: ignore[arg-type]
+        ),
+    )
+
+    with pytest.raises(MigrationError, match="manifest is invalid"):
+        load_migration_manifest(path)
+
+
 def test_explicit_non_dict_execution_classes_is_rejected_fail_closed(
     tmp_path: Path,
 ) -> None:
