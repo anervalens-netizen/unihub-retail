@@ -121,6 +121,27 @@ def _valid_execution_modes(
     )
 
 
+def _valid_execution_classes(
+    execution_classes: object,
+    migrations: dict[str, str],
+    execution_modes: dict[str, str],
+) -> bool:
+    if not isinstance(execution_classes, dict):
+        return False
+    if set(execution_classes) != set(migrations):
+        return False
+    if not all(
+        isinstance(execution_class, str)
+        and execution_class in ALLOWED_EXECUTION_CLASSES
+        for execution_class in execution_classes.values()
+    ):
+        return False
+    return not any(
+        (execution_class == ONLINE_EXECUTION_MODE) != (name in execution_modes)
+        for name, execution_class in execution_classes.items()
+    )
+
+
 def load_migration_manifest(path: Path | None = None) -> MigrationManifest:
     manifest_path = path or get_manifest_path()
     try:
@@ -142,25 +163,10 @@ def load_migration_manifest(path: Path | None = None) -> MigrationManifest:
     if not _valid_execution_modes(execution_modes, migrations):
         raise MigrationError("Migration manifest is invalid")
     assert isinstance(execution_modes, dict)
-    if execution_classes is not None:
-        if not isinstance(execution_classes, dict):
-            raise MigrationError("Migration manifest is invalid")
-        if set(execution_classes) != set(migrations):
-            raise MigrationError("Migration manifest is invalid")
-        if not all(
-            isinstance(execution_class, str)
-            and execution_class in ALLOWED_EXECUTION_CLASSES
-            for execution_class in execution_classes.values()
-        ):
-            raise MigrationError("Migration manifest is invalid")
-        if any(
-            (execution_class == ONLINE_EXECUTION_MODE) != (name in execution_modes)
-            for name, execution_class in execution_classes.items()
-        ):
-            raise MigrationError("Migration manifest is invalid")
-    else:
+    if execution_classes is None:
         execution_classes = {}
-    assert isinstance(execution_classes, dict)
+    elif not _valid_execution_classes(execution_classes, migrations, execution_modes):
+        raise MigrationError("Migration manifest is invalid")
     baseline_hash = baseline.get("sha256")
     incorporated = baseline.get("incorporated_through")
     if (
