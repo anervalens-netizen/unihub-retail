@@ -145,13 +145,22 @@ def _require_item_identity(site_code: str, item_code: str) -> None:
         )
 
 
-def _positive_promo_rows(
+def _non_zero_promo_rows(
     net_units: dict[tuple[str, str], int],
     net_values: dict[tuple[str, str], Decimal],
 ) -> tuple[dict[str, str | int], ...]:
+    """Materialize every non-zero net key, including isolated negative returns.
+
+    Mixed reports must preserve the signed net of every (site_code, item_code)
+    key so that a regression such as gross 244 + isolated -1 + isolated -1
+    records 242 in the material. Consumers that grant promo units (Incentive,
+    copurchase) keep filtering value > 0 — the parser only materializes the
+    full signed picture; the report-level fail-closed check still rejects
+    all-returns reports without a positive net key.
+    """
     rows: list[dict[str, str | int]] = []
     for (site_code, item_code), quantity in sorted(net_units.items()):
-        if quantity <= 0:
+        if quantity == 0:
             continue
         value = net_values.get((site_code, item_code), Decimal("0"))
         rows.append(
@@ -204,8 +213,8 @@ def validate_promo_actuals_report(
                 key,
                 Decimal("0"),
             ) + _promo_value(dataframe.at[index, value_column])
-    rows = _positive_promo_rows(net_units, net_values)
-    if not rows:
+    rows = _non_zero_promo_rows(net_units, net_values)
+    if not any(int(row["quantity"]) > 0 for row in rows):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Raportul nu contine unitati promo nete pozitive",

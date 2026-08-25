@@ -14,7 +14,7 @@ from fastapi import HTTPException, UploadFile
 from openpyxl import Workbook
 
 import services.imports as imports_module
-from services.imports import ImportsService
+from services.imports import ImportsService, PromoActualsParseResult
 from services.dashboard_specials import _generated_config_path
 from services.promo_copurchase import load_promo_actual_units, load_promo_actual_values
 
@@ -394,6 +394,13 @@ def test_validate_promo_actuals_report_rejects_invalid_quantities(
 def test_validate_promo_actuals_report_nets_returns_for_duplicate_keys(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Per-key signed netting: keep every non-zero net key, drop zero-net keys.
+
+    With inputs [3, -1, 1, -1, -2] the nets are S1/I1=2, S2/I2=0, S3/I3=-2.
+    S1/I1 stays as a positive row, S2/I2 is dropped (net zero), and S3/I3 is
+    an isolated negative return that must remain in the material bytes so a
+    regression in the gross row is auditable. Signed promo_units sum is 0.
+    """
     dataframe = pd.DataFrame(
         {
             "site_code": ["S1", "S1", "S2", "S2", "S3"],
@@ -403,7 +410,12 @@ def test_validate_promo_actuals_report_nets_returns_for_duplicate_keys(
     )
     monkeypatch.setattr(imports_module.pd, "read_excel", lambda *args, **kwargs: dataframe)
 
-    assert ImportsService._validate_promo_actuals_report(b"data") == (1, 2)
+    parsed = ImportsService._validate_promo_actuals_report(b"data")
+    assert isinstance(parsed, PromoActualsParseResult)
+    assert parsed.report_rows == 2
+    assert parsed.promo_units == 0
+    keys = {(row["site_code"], row["item_code"]): int(row["quantity"]) for row in parsed.rows}
+    assert keys == {("S1", "I1"): 2, ("S3", "I3"): -2}
 
 
 def test_publish_promo_generation_rejects_stale_pointer(tmp_path: Path) -> None:
