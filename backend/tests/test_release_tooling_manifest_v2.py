@@ -4,6 +4,7 @@ import importlib.util
 import json
 import re
 from pathlib import Path
+from typing import cast
 
 import pytest
 
@@ -38,7 +39,7 @@ def _migrations(n: int = 2) -> dict[str, str]:
 
 def _payload(
     *,
-    version: int = 2,
+    version: object = 2,
     migrations: dict[str, str] | None = None,
     execution_modes: dict[str, str] | None = None,
     execution_classes: object = ...,
@@ -702,13 +703,14 @@ def test_rollback_compat_checksum_mismatch_remains_blocked(deploy_validator) -> 
     migrations = _migrations(2)
     current = _payload(version=2, migrations=migrations)
     target = _payload(version=2, migrations=migrations)
-    target["migrations"] = dict(target["migrations"])
-    first_key = next(iter(target["migrations"]))
+    target_migrations = cast(dict[str, str], target["migrations"])
+    target_migrations = dict(target_migrations)
+    first_key = next(iter(target_migrations))
+    checksum = target_migrations[first_key]
     # Flip a single character of the checksum.
-    flipped = "f" if target["migrations"][first_key][0] != "f" else "0"
-    target["migrations"][first_key] = (
-        flipped + target["migrations"][first_key][1:]
-    )
+    flipped = "f" if checksum[0] != "f" else "0"
+    target_migrations[first_key] = flipped + checksum[1:]
+    target["migrations"] = target_migrations
     assert deploy_validator["_canonical"](current) != deploy_validator[
         "_canonical"
     ](target)
@@ -719,9 +721,11 @@ def test_rollback_compat_baseline_mismatch_remains_blocked(deploy_validator) -> 
     rollback target MUST still block rollback even after canonicalization."""
     current = _payload(version=2)
     target = _payload(version=2)
-    target["baseline"] = dict(target["baseline"])
-    target["baseline"]["file"] = "schema_v3.sql"
-    target["baseline"]["sha256"] = "e" * 64
+    target_baseline = cast(dict[str, str], target["baseline"])
+    target_baseline = dict(target_baseline)
+    target_baseline["file"] = "schema_v3.sql"
+    target_baseline["sha256"] = "e" * 64
+    target["baseline"] = target_baseline
     assert deploy_validator["_canonical"](current) != deploy_validator[
         "_canonical"
     ](target)
