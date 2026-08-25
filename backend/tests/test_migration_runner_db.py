@@ -60,7 +60,14 @@ class _Connection:
             return self.checksum_exists
         raise AssertionError(sql)
 
-    async def fetchrow(self, _sql: str) -> dict[str, object]:
+    async def fetchrow(
+        self, sql: str, *args: object
+    ) -> dict[str, object] | None:
+        if "SELECT checksum FROM schema_migrations" in sql:
+            filename = str(args[0])
+            if filename not in self.rows:
+                return None
+            return {"checksum": self.rows[filename]}
         return {
             "current_user": "unihub",
             "session_user": "unihub",
@@ -76,9 +83,16 @@ class _Connection:
     async def execute(self, sql: str, *args: object) -> str:
         self.executed.append(sql)
         if "UPDATE schema_migrations SET checksum" in sql:
+            filename = str(args[0])
+            if filename not in self.rows:
+                return "UPDATE 0"
+            if "checksum IS NULL" in sql and self.rows[filename] is not None:
+                return "UPDATE 0"
+            self.rows[filename] = str(args[1])
+            return "UPDATE 1"
+        if "INSERT INTO schema_migrations" in sql and args:
             self.rows[str(args[0])] = str(args[1])
-        elif "INSERT INTO schema_migrations" in sql and args:
-            self.rows[str(args[0])] = str(args[1])
+            return "INSERT 0 1"
         return "OK"
 
     def transaction(self) -> _Transaction:
