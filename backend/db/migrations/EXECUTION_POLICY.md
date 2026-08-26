@@ -36,7 +36,8 @@ Unsupported manifest versions (anything other than 1 or 2) are rejected.
   string equality with the current migration filename: a stale
   authorization for migration `X` MUST NOT authorize migration `Y`, and
   the legacy boolean `=1` is no longer accepted. The expected operator
-  contract is therefore `UNIHUB_MIGRATION_MAINTENANCE_WINDOW=070_*.sql`
+  contract is therefore, for example,
+  `UNIHUB_MIGRATION_MAINTENANCE_WINDOW=070_rebuild_index.sql`
   (matching the migration that is about to apply), and the env var must
   be cleared between separate maintenance-window migrations to avoid
   accidental authorization.
