@@ -12,9 +12,14 @@ pending, unknown or checksum-mismatched migrations.
 - `schema_v2.sql` is frozen at the H-02 baseline and used only for a fresh DB;
 - every later schema/data delta is a new `NNN_name.sql` file;
 - `manifest.json` stores the immutable SHA-256 of the baseline and every file;
-- manifest version 1 remains the format authority; absent `execution_modes`
-  means every migration is transactional, while an optional reviewed
-  `execution_modes` map may mark exact filenames as `online`;
+- manifest version 2 is the active authoring authority and requires an exhaustive
+  `execution_classes` map covering every migration with exactly one of
+  `transactional`, `online` or `maintenance-window`; version 1 remains accepted
+  only for legacy compatibility and may omit `execution_classes`, in which case
+  execution is inferred from the reviewed `execution_modes` map;
+- an explicit `online` class must agree exactly with the same filename in
+  `execution_modes`, and a `maintenance-window` migration remains transactional
+  but requires exact filename-bound operator authorization before execution;
 - production stores migration/recovery state in the single canonical
   `schema_migrations` ledger;
 - historical files are never edited; corrections are forward migrations;
@@ -24,19 +29,22 @@ pending, unknown or checksum-mismatched migrations.
 - the web startup path executes only `SELECT` statements for migration state;
 - unknown DB rows, missing checksums, file drift and pending files fail closed.
 
-F1 deliberately leaves the checked-in manifest byte-for-byte unchanged because
-there is no online migration today. `execution_modes` is additive metadata on
-the existing version-1 manifest, so release identity and rollback consumers
-remain compatible without creating a second manifest format merely for the
-execution strategy.
+At F1, the checked-in manifest deliberately remained version 1 because there
+was no online migration and `execution_modes` was introduced as additive legacy
+metadata. F4 supersedes that authoring contract: the active checked-in manifest
+is version 2 and newly authored active manifests must classify every migration
+explicitly. Version 1 support exists only so historical artifacts remain
+readable and rollback-compatible; it is not the format to copy for new work.
 
 ## Explicit online / non-transactional path
 
 F1 adds an opt-in path for PostgreSQL commands that cannot legitimately run in
-the ordinary transaction wrapper. A migration remains transactional unless the
-version-1 manifest maps its exact filename to `online` in `execution_modes`.
-Unknown filenames and any other execution-mode value make the manifest invalid;
-`transactional` is deliberately implicit rather than an override value.
+the ordinary transaction wrapper. In a legacy version-1 manifest, a migration
+is inferred as transactional unless its exact filename is mapped to `online` in
+`execution_modes`. In the active version-2 contract, that same filename must
+also be classified explicitly as `online` in `execution_classes`; the two maps
+must agree exactly. Unknown filenames and any other execution-mode value make
+the manifest invalid.
 
 An online migration is deliberately one top-level SQL statement. The runner
 uses asyncpg's prepared/extended-query execution path outside an active database
@@ -97,6 +105,23 @@ canonical sentinel changed to the immutable checksum. Any drop, create, role
 reset, lock-timeout reset or validation failure leaves the sentinel and keeps
 normal runs blocked. There is no generic online-DDL recovery framework.
 
+### F4 explicit execution classification
+
+F4 makes execution intent explicit for every migration in the active manifest.
+Version 2 requires `execution_classes` to cover exactly the migration inventory;
+missing, null, partial, extra or invalid classification metadata fails closed.
+The allowed classes are `transactional`, `online` and `maintenance-window`.
+`online` must agree exactly with `execution_modes`; `maintenance-window` still
+uses the transactional executor but additionally requires
+`UNIHUB_MIGRATION_MAINTENANCE_WINDOW` to equal the exact pending migration
+filename. A stale authorization for one filename cannot authorize another, and
+the legacy boolean value `1` is not accepted.
+
+The currently tracked migrations are all classified `transactional`; F4 does
+not retroactively change the execution semantics of historical SQL. Future
+migration authors must choose the operational class deliberately in the v2
+manifest rather than relying on omitted metadata.
+
 ## Existing database adoption
 
 The first H-02 run adds the nullable checksum column under the migration lock,
@@ -137,22 +162,31 @@ runtime `DATABASE_URL` and never gain migration privileges.
 6. verify health and confirm the web log contains only read-only migration
    verification.
 
-The release/deploy identity path already accepts manifest version 1 while
-preserving unknown additive metadata, and rollback compares the complete parsed
-manifest payload. Therefore adding or removing an `execution_modes` declaration
-changes rollback compatibility exactly like any other manifest change, without a
-parallel deploy-side execution-mode authority.
+The release/deploy identity path validates both legacy version 1 and active
+version 2 with the same fail-closed structural rules used by the migration
+contract. Version 2 requires exhaustive `execution_classes`; version 1 may omit
+that map only for legacy compatibility. Release tooling rejects unsupported or
+non-integer versions and preserves unknown additive metadata rather than
+silently dropping it.
 
 ## Rollback
 
 Application rollback does not delete migration rows or reverse committed DDL.
-Before stopping the runtime, the privileged entrypoint requires the rollback
-target and deployed commit to have identical immutable migration manifests.
-This permits code-only rollback across a schema-compatible release and refuses
-an older manifest fail-closed, without downtime. Use a reviewed forward
-correction whenever possible. A destructive database rollback requires
-restoring the verified pre-release backup and coordinating all consumers of the
-Retail database plus any writes made after that backup.
+Before stopping the runtime, the privileged entrypoint strictly validates both
+manifests and compares their canonical migration semantics. Canonicalization
+normalizes only the schema-representation fields `version`, `execution_modes`
+and `execution_classes`: a legacy v1 omission is expanded to the same inferred
+transactional/online classes that the runner uses. This allows the metadata-only
+v1 -> v2 F4 rollout to remain rollback-compatible when the migration inventory,
+checksums, baseline and execution semantics are actually identical.
+
+Checksum, migration-inventory, baseline, execution-class or unknown-metadata
+differences remain incompatible and fail closed. A legacy inferred
+`transactional` migration is therefore not rollback-equivalent to a v2
+`maintenance-window` migration, and online-mode mismatches are also rejected.
+Use a reviewed forward correction whenever possible. A destructive database
+rollback requires restoring the verified pre-release backup and coordinating all
+consumers of the Retail database plus any writes made after that backup.
 
 When the new manifest may already be applied and rollback is incompatible, the
 deploy audit state is `recovery_required`. The same verified artifact may be

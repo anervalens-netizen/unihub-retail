@@ -19,6 +19,22 @@ SHA40_RE = re.compile(r"[0-9a-f]{40}")
 SHA256_RE = re.compile(r"[0-9a-f]{64}")
 MIGRATION_RE = re.compile(r"(?P<id>[0-9]{3})_[A-Za-z0-9_]+\.sql")
 
+# F4 execution_classes contract. Mirrored by the migration runner so the
+# release tooling rejects the same manifests the runner would reject at the
+# moment the artifact is unpacked. Keep these three values identical to
+# backend/db/migration_runner.py:ALLOWED_EXECUTION_CLASSES.
+EXECUTION_CLASS_TRANSACTIONAL = "transactional"
+EXECUTION_CLASS_ONLINE = "online"
+EXECUTION_CLASS_MAINTENANCE_WINDOW = "maintenance-window"
+ALLOWED_EXECUTION_CLASSES = frozenset(
+    {EXECUTION_CLASS_TRANSACTIONAL, EXECUTION_CLASS_ONLINE, EXECUTION_CLASS_MAINTENANCE_WINDOW}
+)
+
+# Sentinel used to distinguish an ABSENT ``execution_classes`` key (allowed on
+# v1 manifests only) from a PRESENT key whose value is JSON ``null`` or any
+# other non-dict (always invalid).
+_MISSING_EXECUTION_CLASSES = object()
+
 
 def _read_json(path: pathlib.Path) -> dict[str, Any]:
     if not path.is_file() or path.is_symlink():
@@ -35,18 +51,80 @@ def _sha256(path: pathlib.Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def _validate_migration_payload(payload: dict[str, Any]) -> None:
+    """Synchronize the release tooling with the migration runner's v1/v2
+    fail-closed manifest contract.
+
+    v1 (legacy compatibility): ``execution_classes`` MAY be absent; if
+    present, the same exhaustive validation as v2 applies.
+
+    v2 (active F4 contract): ``execution_classes`` MUST be present and must
+    classify every migration exactly.
+
+    Any other version, any absent ``execution_classes`` on v2, and any
+    non-dict ``execution_classes`` value are rejected here so that the
+    formal release tooling never accepts a manifest the runner would
+    later reject.
+    """
+    baseline = payload.get("baseline")
+    migrations = payload.get("migrations")
+    version = payload.get("version")
+    if (
+        type(version) is not int
+        or version not in (1, 2)
+        or not isinstance(baseline, dict)
+        or not isinstance(migrations, dict)
+        or not migrations
+    ):
+        raise ValueError("invalid migration manifest")
+    if any(
+        not isinstance(name, str)
+        or not isinstance(checksum, str)
+        or SHA256_RE.fullmatch(checksum) is None
+        for name, checksum in migrations.items()
+    ):
+        raise ValueError("invalid migration manifest")
+
+    execution_modes = payload.get("execution_modes", {})
+    if not isinstance(execution_modes, dict) or any(
+        not isinstance(name, str)
+        or name not in migrations
+        or mode != EXECUTION_CLASS_ONLINE
+        for name, mode in execution_modes.items()
+    ):
+        raise ValueError("invalid migration manifest")
+
+    execution_classes: Any = payload.get("execution_classes", _MISSING_EXECUTION_CLASSES)
+    if execution_classes is _MISSING_EXECUTION_CLASSES:
+        if version != 1:
+            raise ValueError("invalid migration manifest")
+        return
+    if not isinstance(execution_classes, dict):
+        raise ValueError("invalid migration manifest")
+    if set(execution_classes) != set(migrations):
+        raise ValueError("invalid migration manifest")
+    if any(
+        not isinstance(execution_class, str)
+        or execution_class not in ALLOWED_EXECUTION_CLASSES
+        for execution_class in execution_classes.values()
+    ):
+        raise ValueError("invalid migration manifest")
+    if any(
+        (execution_class == EXECUTION_CLASS_ONLINE) != (name in execution_modes)
+        for name, execution_class in execution_classes.items()
+    ):
+        raise ValueError("invalid migration manifest")
+
+
 def migration_head(repo: pathlib.Path) -> str:
     manifest_path = repo / "backend/db/migrations/manifest.json"
     payload = _read_json(manifest_path)
-    migrations = payload.get("migrations")
-    if payload.get("version") != 1 or not isinstance(migrations, dict) or not migrations:
-        raise ValueError("migration manifest is missing or invalid")
+    _validate_migration_payload(payload)
+    migrations = payload["migrations"]
 
     parsed: list[tuple[int, str]] = []
     seen_ids: set[int] = set()
     for name, digest in migrations.items():
-        if not isinstance(name, str) or not isinstance(digest, str) or SHA256_RE.fullmatch(digest) is None:
-            raise ValueError("migration manifest entry is invalid")
         match = MIGRATION_RE.fullmatch(name)
         if match is None:
             raise ValueError(f"migration filename is non-canonical: {name}")

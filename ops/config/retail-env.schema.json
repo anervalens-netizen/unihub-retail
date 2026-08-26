@@ -11,7 +11,7 @@
     "operations-worker": ["DATABASE_URL", "UNIHUB_DB_PROCESS_AUTHORITY", "RETAIL_WORKER_ROLE", "VALKEY_URL"],
     "salary-export-worker": ["DATABASE_URL", "UNIHUB_DB_PROCESS_AUTHORITY", "RETAIL_WORKER_ROLE", "VALKEY_URL"],
     "import-worker": ["DATABASE_URL", "UNIHUB_DB_PROCESS_AUTHORITY", "RETAIL_WORKER_ROLE", "VALKEY_URL"],
-    "migration": ["MIGRATION_DATABASE_URL", "UNIHUB_DB_PROCESS_AUTHORITY"],
+    "migration": ["MIGRATION_DATABASE_URL", "UNIHUB_DB_PROCESS_AUTHORITY", "UNIHUB_MIGRATION_MAINTENANCE_WINDOW"],
     "frontend-build": ["VITE_API_BASE_URL", "VITE_FRONTEND_GLITCHTIP_DSN"]
   },
   "properties": {
@@ -101,6 +101,7 @@
     "UNIHUB_DATA_DIR": {"type": "string", "x-process-only": true},
     "UNIHUB_HUB_SPECIALS_CONFIG": {"type": "string"},
     "UNIHUB_INCENTIVE_FILE": {"type": "string"},
+    "UNIHUB_MIGRATION_MAINTENANCE_WINDOW": {"type": "string", "pattern": "^[0-9]{3}_[A-Za-z0-9_]+\\.sql$"},
     "UNIHUB_API_URL": {"type": "string", "x-process-only": true},
     "UNIHUB_PERF_COPY_DATABASE": {"type": "string", "x-ephemeral": true},
     "UNIHUB_RUNNING_TESTS": {"type": "string", "enum": ["0", "1"], "x-ephemeral": true},

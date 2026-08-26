@@ -30,6 +30,14 @@
 
 - Run checks locally first; trusted CI uses the isolated repo-scoped Dell build
   runner, never the production deploy runner.
+- Pentru orice PR de cod/runtime care adaugă material linii executabile, testele
+  pentru ramurile/comportamentele noi se scriu în același PR, nu după ce
+  PR-DEEP descoperă deficitul. Înainte de dispatch PR-DEEP, rulează local gate-ul
+  de changed-line coverage față de exact base-ul PR și confirmă **>= 80%** pe
+  candidate-ul exact. Dacă este sub 80%, PR-DEEP NU se pornește: acoperă prin
+  teste relevante liniile/ramurile noi sau simplifică codul. Nu coborî pragul,
+  nu exclude linii și nu modifica snapshots/gate-uri doar ca verificarea să
+  devină verde.
 - Markdown and `docs/**` changes must not trigger the heavy PR verification
   workflows (`ci`, high-risk governance, or PR-DEEP policy) under the current
   no-native-required-checks model. Runtime/code changes retain their existing

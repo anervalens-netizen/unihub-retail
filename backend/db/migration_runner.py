@@ -35,20 +35,19 @@ from db.migration_runtime import (
 
 MIGRATION_ADVISORY_LOCK_ID = 7_221_904_202_607_12
 AUTHORITY_CUTOVER_BOOTSTRAP_ENV = "UNIHUB_DB_AUTHORITY_CUTOVER_BOOTSTRAP"
-AUTHORITY_CUTOVER_MIGRATIONS = frozenset(
-    {
-        "040_db_authority_append_only.sql",
-        "041_schema_owner_handoff.sql",
-    }
-)
-BASELINE_REPLAY_MIGRATIONS = frozenset(
-    {"014_target_calculator_store_exclusions.sql"}
-)
-TOMBSTONE_ADOPTION_PREREQUISITES = {
-    "005_retail_ai_analysis_views.sql": "006_drop_ai_analysis_views.sql",
-}
+AUTHORITY_CUTOVER_MIGRATIONS = frozenset({"040_db_authority_append_only.sql", "041_schema_owner_handoff.sql"})
+BASELINE_REPLAY_MIGRATIONS = frozenset({"014_target_calculator_store_exclusions.sql"})
+TOMBSTONE_ADOPTION_PREREQUISITES = {"005_retail_ai_analysis_views.sql": "006_drop_ai_analysis_views.sql"}
 TRANSACTIONAL_EXECUTION_MODE = "transactional"
 ONLINE_EXECUTION_MODE = "online"
+MAINTENANCE_WINDOW_EXECUTION_CLASS = "maintenance-window"
+MAINTENANCE_WINDOW_AUTHORIZATION_ENV = "UNIHUB_MIGRATION_MAINTENANCE_WINDOW"
+ALLOWED_EXECUTION_CLASSES = frozenset({TRANSACTIONAL_EXECUTION_MODE, ONLINE_EXECUTION_MODE, MAINTENANCE_WINDOW_EXECUTION_CLASS})
+# Sentinel used to distinguish an ABSENT ``execution_classes`` key (legacy v1
+# manifest) from a PRESENT key whose value is JSON ``null`` (malformed F4
+# metadata). Falling back to ``None`` would conflate the two cases and let a
+# malformed F4 manifest silently behave as legacy.
+_MISSING_EXECUTION_CLASSES = object()
 TRACKING_SQL = """
 CREATE TABLE IF NOT EXISTS schema_meta (
     schema_name TEXT PRIMARY KEY,
@@ -65,35 +64,21 @@ ALTER TABLE schema_migrations ADD COLUMN IF NOT EXISTS checksum TEXT;
 
 
 __all__ = [
-    "MIGRATION_ADVISORY_LOCK_ID",
-    "AUTHORITY_CUTOVER_BOOTSTRAP_ENV",
-    "AUTHORITY_CUTOVER_MIGRATIONS",
-    "BASELINE_REPLAY_MIGRATIONS",
-    "TOMBSTONE_ADOPTION_PREREQUISITES",
-    "TRANSACTIONAL_EXECUTION_MODE",
-    "ONLINE_EXECUTION_MODE",
-    "ONLINE_RECOVERY_PREFIX",
-    "TRACKING_SQL",
-    "MigrationError",
-    "MigrationManifest",
-    "get_manifest_path",
-    "load_migration_manifest",
-    "verify_migration_files",
-    "verify_migrations_current",
-    "run_migrations",
-    "_activate_migration_owner",
-    "_activate_online_migration_owner",
-    "_apply_cic_online_migration",
-    "_apply_online_migration",
-    "_execute_online_statement",
-    "_finalize_online_migration",
-    "_mark_online_recovery",
-    "_online_recovery_checksum",
-    "_reset_online_migration_owner",
-    "_validate_applied",
-    "_CIC_ATTEMPT_RE",
-    "_strip_leading_comments",
-    "parse_controlled_cic",
+    "MIGRATION_ADVISORY_LOCK_ID", "AUTHORITY_CUTOVER_BOOTSTRAP_ENV",
+    "AUTHORITY_CUTOVER_MIGRATIONS", "BASELINE_REPLAY_MIGRATIONS",
+    "TOMBSTONE_ADOPTION_PREREQUISITES", "TRANSACTIONAL_EXECUTION_MODE",
+    "ONLINE_EXECUTION_MODE", "MAINTENANCE_WINDOW_EXECUTION_CLASS",
+    "MAINTENANCE_WINDOW_AUTHORIZATION_ENV", "ALLOWED_EXECUTION_CLASSES",
+    "ONLINE_RECOVERY_PREFIX", "TRACKING_SQL",
+    "MigrationError", "MigrationManifest",
+    "get_manifest_path", "load_migration_manifest",
+    "verify_migration_files", "verify_migrations_current", "run_migrations",
+    "_activate_migration_owner", "_activate_online_migration_owner",
+    "_apply_cic_online_migration", "_apply_online_migration",
+    "_execute_online_statement", "_finalize_online_migration",
+    "_mark_online_recovery", "_online_recovery_checksum",
+    "_reset_online_migration_owner", "_validate_applied",
+    "_CIC_ATTEMPT_RE", "_strip_leading_comments", "parse_controlled_cic",
 ]
 
 
@@ -103,6 +88,7 @@ class MigrationManifest:
     incorporated_through: str
     checksums: dict[str, str]
     execution_modes: dict[str, str] = field(default_factory=dict)
+    execution_classes: dict[str, str] = field(default_factory=dict)
 
     def execution_mode(self, filename: str) -> str:
         return self.execution_modes.get(filename, TRANSACTIONAL_EXECUTION_MODE)
@@ -140,6 +126,27 @@ def _valid_execution_modes(
     )
 
 
+def _valid_execution_classes(
+    execution_classes: object,
+    migrations: dict[str, str],
+    execution_modes: dict[str, str],
+) -> bool:
+    if not isinstance(execution_classes, dict):
+        return False
+    if set(execution_classes) != set(migrations):
+        return False
+    if not all(
+        isinstance(execution_class, str)
+        and execution_class in ALLOWED_EXECUTION_CLASSES
+        for execution_class in execution_classes.values()
+    ):
+        return False
+    return not any(
+        (execution_class == ONLINE_EXECUTION_MODE) != (name in execution_modes)
+        for name, execution_class in execution_classes.items()
+    )
+
+
 def load_migration_manifest(path: Path | None = None) -> MigrationManifest:
     manifest_path = path or get_manifest_path()
     try:
@@ -148,10 +155,12 @@ def load_migration_manifest(path: Path | None = None) -> MigrationManifest:
         migrations = payload["migrations"]
         version = payload["version"]
         execution_modes = payload.get("execution_modes", {})
+        execution_classes = payload.get("execution_classes", _MISSING_EXECUTION_CLASSES)
     except (OSError, json.JSONDecodeError, KeyError, TypeError) as exc:
         raise MigrationError("Migration manifest is invalid") from exc
     if (
-        version != 1
+        type(version) is not int
+        or version not in (1, 2)
         or not isinstance(baseline, dict)
         or not _valid_manifest_migrations(migrations)
     ):
@@ -160,6 +169,12 @@ def load_migration_manifest(path: Path | None = None) -> MigrationManifest:
     if not _valid_execution_modes(execution_modes, migrations):
         raise MigrationError("Migration manifest is invalid")
     assert isinstance(execution_modes, dict)
+    if execution_classes is _MISSING_EXECUTION_CLASSES:
+        if version != 1:
+            raise MigrationError("Migration manifest is invalid")
+        execution_classes = {}
+    elif not _valid_execution_classes(execution_classes, migrations, execution_modes):
+        raise MigrationError("Migration manifest is invalid")
     baseline_hash = baseline.get("sha256")
     incorporated = baseline.get("incorporated_through")
     if (
@@ -175,6 +190,7 @@ def load_migration_manifest(path: Path | None = None) -> MigrationManifest:
         incorporated,
         dict(migrations),
         dict(execution_modes),
+        dict(execution_classes),
     )
 
 
@@ -444,7 +460,22 @@ async def _apply_pending_migrations(
         if cutover_bootstrap and filename not in AUTHORITY_CUTOVER_MIGRATIONS:
             continue
         sql = (get_migrations_dir() / filename).read_text(encoding="utf-8")
-        if manifest.execution_mode(filename) == ONLINE_EXECUTION_MODE:
+        execution_mode = manifest.execution_mode(filename)
+        execution_class = manifest.execution_classes.get(filename, execution_mode)
+        if execution_class == MAINTENANCE_WINDOW_EXECUTION_CLASS:
+            authorized = os.getenv(MAINTENANCE_WINDOW_AUTHORIZATION_ENV)
+            if authorized != filename:
+                raise MigrationError(
+                    f"Maintenance-window migration requires explicit authorization "
+                    f"{MAINTENANCE_WINDOW_AUTHORIZATION_ENV}={filename}; got {authorized!r}"
+                )
+            await _apply_transactional_migration(
+                connection,
+                filename=filename,
+                checksum=checksum,
+                sql=sql,
+            )
+        elif execution_mode == ONLINE_EXECUTION_MODE:
             if _CIC_ATTEMPT_RE.match(_strip_leading_comments(sql)):
                 index_name, table_name = parse_controlled_cic(sql)
                 await _apply_cic_online_migration(
