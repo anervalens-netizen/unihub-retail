@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -549,3 +549,124 @@ async def test_stale_maintenance_window_authorization_does_not_authorize_other_m
     )
     assert scheduled == [second.name]
     assert applied == [second.name]
+
+
+# ---------------------------------------------------------------------------
+# F4 environment contract regression
+# ---------------------------------------------------------------------------
+
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+SCHEMA_PATH = REPO_ROOT / "ops" / "config" / "retail-env.schema.json"
+MIGRATIONS_TEMPLATE = REPO_ROOT / "ops" / "config" / ".env.migrations.example"
+MIGRATION_PROCESS_PROFILE = "migration"
+UNRELATED_PROCESS_PROFILES = (
+    "web",
+    "operations-worker",
+    "salary-export-worker",
+    "import-worker",
+    "frontend-build",
+)
+MIGRATION_FILENAME_REGEX = r"^[0-9]{3}_[A-Za-z0-9_]+\.sql$"
+
+
+def _load_schema() -> dict[str, Any]:
+    return cast(dict[str, Any], json.loads(SCHEMA_PATH.read_text(encoding="utf-8")))
+
+
+def _migration_property(schema: dict[str, Any]) -> dict[str, Any]:
+    properties = cast(dict[str, Any], schema["properties"])
+    definition = properties.get(MAINTENANCE_WINDOW_AUTHORIZATION_ENV)
+    assert isinstance(definition, dict), (
+        f"{MAINTENANCE_WINDOW_AUTHORIZATION_ENV} missing from schema properties"
+    )
+    return definition
+
+
+def _migration_profile(schema: dict[str, Any]) -> list[str]:
+    profiles = cast(dict[str, Any], schema["x-process-profiles"])
+    profile = profiles.get(MIGRATION_PROCESS_PROFILE)
+    assert isinstance(profile, list), "migration process profile missing"
+    return list(profile)
+
+
+def test_maintenance_window_runtime_constant_is_target_env_name() -> None:
+    """The runtime constant must match the canonical env contract name.
+
+    This pins the runtime constant as the single source of truth and prevents
+    future drift between backend/db/migration_runner.py and the maintained
+    environment schema/template. If the runtime constant name ever changes,
+    this assertion will fail and surface the disagreement.
+    """
+    assert MAINTENANCE_WINDOW_AUTHORIZATION_ENV == "UNIHUB_MIGRATION_MAINTENANCE_WINDOW"
+
+
+def test_maintenance_window_env_is_in_schema_properties() -> None:
+    schema = _load_schema()
+    definition = _migration_property(schema)
+    pattern = definition.get("pattern")
+    assert isinstance(pattern, str)
+    assert pattern == MIGRATION_FILENAME_REGEX
+
+
+def test_maintenance_window_env_is_in_migration_process_profile() -> None:
+    schema = _load_schema()
+    assert MAINTENANCE_WINDOW_AUTHORIZATION_ENV in _migration_profile(schema)
+
+
+def test_maintenance_window_env_is_not_in_unrelated_process_profiles() -> None:
+    schema = _load_schema()
+    profiles = cast(dict[str, Any], schema["x-process-profiles"])
+    for name in UNRELATED_PROCESS_PROFILES:
+        profile = profiles.get(name)
+        if not isinstance(profile, list):
+            continue
+        assert MAINTENANCE_WINDOW_AUTHORIZATION_ENV not in profile, (
+            f"maintenance-window env leaked into process profile {name!r}: {profile}"
+        )
+
+
+def test_maintenance_window_env_is_present_in_migration_template() -> None:
+    from dotenv import dotenv_values
+
+    values = dotenv_values(MIGRATIONS_TEMPLATE)
+    assert MAINTENANCE_WINDOW_AUTHORIZATION_ENV in values, (
+        f"{MAINTENANCE_WINDOW_AUTHORIZATION_ENV} missing from "
+        f"{MIGRATIONS_TEMPLATE.relative_to(REPO_ROOT)}"
+    )
+
+
+def test_maintenance_window_template_default_is_empty() -> None:
+    from dotenv import dotenv_values
+
+    values = dotenv_values(MIGRATIONS_TEMPLATE)
+    raw = values.get(MAINTENANCE_WINDOW_AUTHORIZATION_ENV)
+    assert raw == "" or raw is None, (
+        f"template default must be empty; got {raw!r}"
+    )
+
+
+def test_schema_accepts_canonical_migration_filename() -> None:
+    """A well-formed migration filename like 070_example.sql is accepted."""
+    schema = _load_schema()
+    definition = _migration_property(schema)
+
+    candidate = "070_example.sql"
+    import re
+
+    pattern = definition["pattern"]
+    assert re.search(pattern, candidate) is not None
+
+
+def test_schema_rejects_invalid_authorization_values() -> None:
+    """Empty/1/true/wrong-name/70_example.sql must NOT match the pattern."""
+    schema = _load_schema()
+    definition = _migration_property(schema)
+
+    import re
+
+    pattern = definition["pattern"]
+    for invalid in ("1", "true", "wrong-name", "70_example.sql"):
+        assert re.search(pattern, invalid) is None, (
+            f"schema pattern must reject {invalid!r} but matched"
+        )
