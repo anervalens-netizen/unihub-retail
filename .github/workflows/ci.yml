@@ -95,21 +95,6 @@ jobs:
     needs: runner-isolation
     runs-on: [self-hosted, Linux, X64, dell-compute, unihub-build, unihub-retail-build]
     timeout-minutes: 15
-    env:
-      PYTHONNOUSERSITE: "1"
-      PYTHONSAFEPATH: "1"
-      PYTHONHOME: ""
-      PYTHONPATH: ""
-      PYTHONSTARTUP: ""
-      PYTHONINSPECT: ""
-      MYPYPATH: ""
-      MYPY_CONFIG_FILE: ""
-      NODE_OPTIONS: ""
-      NODE_PATH: ""
-      BASH_ENV: ""
-      ENV: ""
-      CDPATH: ""
-      GLOBIGNORE: ""
     defaults:
       run:
         working-directory: backend
@@ -837,21 +822,6 @@ jobs:
     needs: runner-isolation
     runs-on: [self-hosted, Linux, X64, dell-compute, unihub-build, unihub-retail-build]
     timeout-minutes: 75
-    env:
-      PYTHONNOUSERSITE: "1"
-      PYTHONSAFEPATH: "1"
-      PYTHONHOME: ""
-      PYTHONPATH: ""
-      PYTHONSTARTUP: ""
-      PYTHONINSPECT: ""
-      MYPYPATH: ""
-      MYPY_CONFIG_FILE: ""
-      NODE_OPTIONS: ""
-      NODE_PATH: ""
-      BASH_ENV: ""
-      ENV: ""
-      CDPATH: ""
-      GLOBIGNORE: ""
     defaults:
       run:
         working-directory: backend
@@ -1303,18 +1273,6 @@ jobs:
       RETAIL_NPM_CLI: /opt/codex-desktop/resources/node-runtime/lib/node_modules/npm/bin/npm-cli.js
       PATH: /opt/codex-desktop/resources/node-runtime/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
       VITE_FRONTEND_GLITCHTIP_DSN: ${{ secrets.VITE_GLITCHTIP_DSN }}
-      PYTHONNOUSERSITE: "1"
-      PYTHONSAFEPATH: "1"
-      PYTHONHOME: ""
-      PYTHONPATH: ""
-      PYTHONSTARTUP: ""
-      PYTHONINSPECT: ""
-      NODE_OPTIONS: ""
-      NODE_PATH: ""
-      BASH_ENV: ""
-      ENV: ""
-      CDPATH: ""
-      GLOBIGNORE: ""
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
@@ -1491,12 +1449,6 @@ jobs:
       RETAIL_NODE: /opt/codex-desktop/resources/node-runtime/bin/node
       RETAIL_NPM_CLI: /opt/codex-desktop/resources/node-runtime/lib/node_modules/npm/bin/npm-cli.js
       PATH: /opt/codex-desktop/resources/node-runtime/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-      NODE_OPTIONS: ""
-      NODE_PATH: ""
-      BASH_ENV: ""
-      ENV: ""
-      CDPATH: ""
-      GLOBIGNORE: ""
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
@@ -1552,20 +1504,6 @@ jobs:
       RETAIL_NODE: /opt/codex-desktop/resources/node-runtime/bin/node
       RETAIL_NPM_CLI: /opt/codex-desktop/resources/node-runtime/lib/node_modules/npm/bin/npm-cli.js
       PATH: /opt/codex-desktop/resources/node-runtime/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-      PYTHONNOUSERSITE: "1"
-      PYTHONSAFEPATH: "1"
-      PYTHONHOME: ""
-      PYTHONPATH: ""
-      PYTHONSTARTUP: ""
-      PYTHONINSPECT: ""
-      MYPYPATH: ""
-      MYPY_CONFIG_FILE: ""
-      NODE_OPTIONS: ""
-      NODE_PATH: ""
-      BASH_ENV: ""
-      ENV: ""
-      CDPATH: ""
-      GLOBIGNORE: ""
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
