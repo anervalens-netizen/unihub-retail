@@ -56,6 +56,21 @@ def test_ci_yml_parses():
     assert "jobs" in data
 
 
+def test_ci_jobs_do_not_redeclare_identical_workflow_env():
+    """Job-level env must override workflow env only with a distinct value."""
+    data = _yaml().safe_load(CI_YML.read_text(encoding="utf-8"))
+    workflow_env = data.get("env") or {}
+    jobs = data.get("jobs") or {}
+    for job_name, job in jobs.items():
+        job_env = (job or {}).get("env") or {}
+        for key, value in job_env.items():
+            if key in workflow_env:
+                assert value != workflow_env[key], (
+                    f"job {job_name!r} redeclares workflow env key {key!r} "
+                    "with an identical value"
+                )
+
+
 def test_pr_deep_yml_parses():
     yaml = _yaml()
     data = yaml.safe_load(PR_DEEP_YML.read_text(encoding="utf-8"))
