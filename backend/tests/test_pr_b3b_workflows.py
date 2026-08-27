@@ -2985,3 +2985,210 @@ def test_pr_b3b_does_not_introduce_new_exact_main_job():
         assert "workflow_dispatch" not in on if expected == "pull_request_target" else True, (
             "pr-deep-policy must not run on workflow_dispatch"
         )
+
+
+# ---------------------------------------------------------------------------
+# (10) Caddy validation steps must not bind the runner workspace into Docker
+# ---------------------------------------------------------------------------
+
+
+CADDY_STEP_NAME = "Versioned Retail edge request limits"
+CADDY_PINNED_IMAGE = (
+    "caddy@sha256:844f60b64e4724a5aa8245e019dace0d3f199f7433ce6c57676cb30a920dbad9"
+)
+
+
+def _collect_caddy_steps():
+    """Return every run-block whose enclosing step is named
+    ``Versioned Retail edge request limits``.
+
+    Operates on the raw workflow text so the assertions are
+    robust to YAML anchor / alias / merge-key choices and to
+    incidental reformatting of unrelated lines.
+    """
+    text = CI_YML.read_text(encoding="utf-8")
+    lines = text.splitlines()
+    blocks = []
+    i = 0
+    while i < len(lines):
+        if CADDY_STEP_NAME in lines[i] and "- name:" in lines[i]:
+            run_buffer = []
+            in_run = False
+            run_indent = None
+            j = i
+            while j < len(lines):
+                line = lines[j]
+                stripped = line.lstrip()
+                indent = len(line) - len(stripped)
+                if not in_run:
+                    if stripped.startswith("run:") or stripped.startswith("run: |"):
+                        in_run = True
+                        run_indent = indent + 2
+                        if "|" in stripped:
+                            after = stripped.split("|", 1)[1].strip()
+                            if after and after not in ("|", "|-", "|+"):
+                                run_buffer.append(after)
+                        j += 1
+                        continue
+                else:
+                    if stripped == "":
+                        run_buffer.append("")
+                        j += 1
+                        continue
+                    if indent < run_indent:
+                        break
+                    run_buffer.append(line[run_indent:])
+                j += 1
+            blocks.append("\n".join(run_buffer))
+            i = j
+        else:
+            i += 1
+    return blocks
+
+
+def test_caddy_validation_steps_present_in_exactly_two_jobs():
+    """The two Caddy validation steps (pr-fast and the exact-main
+    FULL backend-check pre-step) must both still exist."""
+    blocks = _collect_caddy_steps()
+    assert len(blocks) == 2, (
+        f"expected exactly 2 'Versioned Retail edge request limits' "
+        f"steps in ci.yml, found {len(blocks)}"
+    )
+
+
+@pytest.mark.parametrize("block_index", [0, 1])
+def test_caddy_validation_step_uses_no_host_bind(block_index):
+    """Each Caddy validation step must not bind a host path
+    into the container."""
+    blocks = _collect_caddy_steps()
+    block = blocks[block_index]
+    # Strip the comment that explicitly mentions the forbidden
+    # tokens before scanning, so the negative assertions below
+    # catch a real regression rather than a comment that names
+    # the prohibited forms.
+    code_lines = [
+        line for line in block.splitlines()
+        if not line.lstrip().startswith("#")
+    ]
+    code = "\n".join(code_lines)
+    for forbidden in (" -v ", "--volume", "--mount"):
+        assert forbidden not in code, (
+            f"Caddy validation step #{block_index} contains forbidden "
+            f"host-bind token {forbidden!r}:\n{block}"
+        )
+    # The OLD form was a literal `docker run ... -v "$PWD/ops/caddy:..."`.
+    # Guard that specific shape: '$PWD/ops/caddy' must NOT be followed by
+    # ':/...' (a docker bind-mount source/target pair). Note that a bare
+    # $PWD/ops/caddy/ reference on the runner side (e.g. inside `cp -R`) is
+    # legitimate — the runner is allowed to read its own workspace.
+    code_lines = [
+        line for line in block.splitlines()
+        if not line.lstrip().startswith("#")
+    ]
+    code = "\n".join(code_lines)
+    assert "PWD/ops/caddy:/" not in code, (
+        f"Caddy validation step #{block_index} still references the "
+        f"old host-bind mount '$PWD/ops/caddy:/...' — must use docker cp "
+        f"instead."
+    )
+
+
+@pytest.mark.parametrize("block_index", [0, 1])
+def test_caddy_validation_step_uses_docker_cp(block_index):
+    """Each Caddy validation step must use docker cp to feed
+    candidate ops/caddy into a stopped container."""
+    blocks = _collect_caddy_steps()
+    block = blocks[block_index]
+    assert "docker cp " in block, (
+        f"Caddy validation step #{block_index} must use 'docker cp' "
+        f"to inject candidate ops/caddy into the container"
+    )
+    assert "ops/caddy" in block, (
+        f"Caddy validation step #{block_index} must reference the "
+        f"candidate ops/caddy source path"
+    )
+
+
+@pytest.mark.parametrize("block_index", [0, 1])
+def test_caddy_validation_step_uses_stopped_container_no_pull(block_index):
+    """Each Caddy validation step must use `docker create`
+    (not `docker run`), `--pull=never`, and `--network none`."""
+    blocks = _collect_caddy_steps()
+    block = blocks[block_index]
+    assert "docker create " in block, (
+        f"Caddy validation step #{block_index} must use 'docker create' "
+        f"to build a stopped container, not 'docker run'"
+    )
+    assert "--pull=never" in block, (
+        f"Caddy validation step #{block_index} must keep --pull=never"
+    )
+    assert "--network none" in block, (
+        f"Caddy validation step #{block_index} must keep --network none"
+    )
+
+
+@pytest.mark.parametrize("block_index", [0, 1])
+def test_caddy_validation_step_invokes_same_caddy_validate(block_index):
+    """The Caddy validation command and config path must remain
+    byte-equivalent to the previously pinned invocation."""
+    blocks = _collect_caddy_steps()
+    block = blocks[block_index]
+    assert "caddy validate" in block
+    assert "--config /etc/caddy/Caddyfile.validate" in block
+    assert "--adapter caddyfile" in block
+
+
+@pytest.mark.parametrize("block_index", [0, 1])
+def test_caddy_validation_step_pins_image_digest(block_index):
+    """The pinned caddy image digest must be preserved."""
+    blocks = _collect_caddy_steps()
+    block = blocks[block_index]
+    assert CADDY_PINNED_IMAGE in block, (
+        f"Caddy validation step #{block_index} lost the pinned image "
+        f"digest {CADDY_PINNED_IMAGE}"
+    )
+
+
+@pytest.mark.parametrize("block_index", [0, 1])
+def test_caddy_validation_step_has_cleanup(block_index):
+    """Each Caddy validation step must remove the disposable
+    container and the staging directory on exit, even on
+    failure."""
+    blocks = _collect_caddy_steps()
+    block = blocks[block_index]
+    assert "docker rm -f " in block, (
+        f"Caddy validation step #{block_index} must 'docker rm -f' the "
+        f"disposable container on exit"
+    )
+    assert "trap cleanup EXIT" in block, (
+        f"Caddy validation step #{block_index} must 'trap cleanup EXIT' "
+        f"so failure paths still tear down"
+    )
+
+
+def test_caddy_validation_steps_are_byte_equivalent():
+    """The two Caddy validation steps must be semantically
+    identical (the only allowed structural difference is the
+    unique container name suffix ``$$`` and the in-step comment
+    block) so the same code path runs in PR-fast and FULL."""
+    blocks = _collect_caddy_steps()
+    assert len(blocks) == 2
+    a, b = blocks
+
+    def _normalize(s: str) -> str:
+        # Drop the comment block (intentionally identical).
+        code = "\n".join(
+            line for line in s.splitlines() if not line.lstrip().startswith("#")
+        )
+        # The `$$` token is expanded by the shell at run time, so the
+        # authored text is identical across the two steps; substitute a
+        # stable placeholder to keep the comparison robust to that.
+        return code.replace("$$", "<PID>")
+
+    assert _normalize(a) == _normalize(b), (
+        "Caddy validation steps diverged; they must remain structurally "
+        "identical between pr-fast and FULL so a single fix is exercised "
+        "by both jobs.\n"
+        "----- step #0 -----\n" + a + "\n"
+        "----- step #1 -----\n" + b + "\n"
+    )
