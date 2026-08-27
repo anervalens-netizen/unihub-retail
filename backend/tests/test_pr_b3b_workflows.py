@@ -3068,6 +3068,113 @@ def _strip_comments(lines):
     return out
 
 
+def _join_continuation_lines(text):
+    """Join backslash-continuation lines into logical lines.
+
+    A line ending in a single backslash consumes the immediately
+    following newline so the next physical line becomes part of
+    the same logical line. A double trailing backslash is treated
+    as a literal backslash (the second one escapes the first), so
+    the line does NOT continue.
+    """
+    logical_lines = []
+    buf = []
+    for line in text.splitlines():
+        if line.endswith("\\") and not line.endswith("\\\\"):
+            buf.append(line[:-1])
+        else:
+            buf.append(line)
+            logical_lines.append("".join(buf))
+            buf = []
+    if buf:
+        logical_lines.append("".join(buf))
+    return logical_lines
+
+
+def _consume_single_quoted(line, i):
+    """Consume a single-quoted ``'...'`` token starting at ``i``.
+
+    Returns ``(token, next_index)``. If the closing ``'`` is
+    missing, returns ``(rest_of_line, len(line))`` — fail-closed:
+    the partial token is still emitted so the caller can decide
+    whether to keep it.
+    """
+    end = line.find("'", i + 1)
+    if end == -1:
+        return line[i:], len(line)
+    return line[i:end + 1], end + 1
+
+
+def _consume_double_quoted(line, i):
+    """Consume a double-quoted ``"..."`` token starting at ``i``.
+
+    Returns ``(token, next_index)``. If the closing ``"`` is
+    missing, returns ``(rest_of_line, len(line))`` — fail-closed
+    like the single-quoted helper.
+    """
+    j = i + 1
+    n = len(line)
+    while j < n and line[j] != '"':
+        j += 1
+    if j >= n:
+        return line[i:], n
+    return line[i:j + 1], j + 1
+
+
+def _consume_unquoted_token(line, i):
+    """Consume one unquoted, whitespace-separated token starting at
+    ``i``. Stops at whitespace, ``'``, ``"``, or an inline ``#``
+    comment that begins at a token boundary.
+
+    Returns ``(token, next_index)``. If the token is terminated
+    by an inline ``#`` comment, ``next_index`` is the position
+    of that ``#`` so the caller can stop processing the rest of
+    the line.
+    """
+    n = len(line)
+    j = i
+    while j < n and line[j] not in " \t\"'":
+        if line[j] == "#" and (j == 0 or line[j - 1] in " \t"):
+            break
+        j += 1
+    return line[i:j], j
+
+
+def _tokenize_one_line(line):
+    """Tokenize a single logical line into argv-like tokens.
+
+    Handles single-quoted, double-quoted, and unquoted tokens.
+    Each helper is fail-closed on ambiguous input (an unterminated
+    quoted string yields the partial token; an inline ``#``
+    comment terminates the line). See ``_shell_tokenize_for_detection``
+    for the full context.
+    """
+    tokens = []
+    i = 0
+    n = len(line)
+    while i < n:
+        ch = line[i]
+        if ch in " \t":
+            i += 1
+            continue
+        if ch == "'":
+            tok, i = _consume_single_quoted(line, i)
+            tokens.append(tok)
+            continue
+        if ch == '"':
+            tok, i = _consume_double_quoted(line, i)
+            tokens.append(tok)
+            continue
+        tok, j = _consume_unquoted_token(line, i)
+        tokens.append(tok)
+        # An inline ``#`` comment at a token boundary terminates
+        # the line; the rest of the line is not tokenized.
+        if j < n and line[j] == "#":
+            break
+        i = j
+    return tokens
+
+
 def _shell_tokenize_for_detection(text):
     """Tokenize shell text into argv-like elements for fail-closed
     host-bind detection.
@@ -3088,62 +3195,18 @@ def _shell_tokenize_for_detection(text):
     anything ambiguous is treated as a single token, which can
     only produce false positives (the test will fail on a real
     regression, never on a legitimate one).
-    """
-    # Join continuation lines first.
-    logical_lines = []
-    buf = []
-    for line in text.splitlines():
-        if line.endswith("\\") and not line.endswith("\\\\"):
-            buf.append(line[:-1])
-        else:
-            buf.append(line)
-            logical_lines.append("".join(buf))
-            buf = []
-    if buf:
-        logical_lines.append("".join(buf))
 
+    Decomposed into single-responsibility helpers so each one
+    satisfies the changed-function complexity budget:
+      * ``_join_continuation_lines`` — backslash-continuation join
+      * ``_consume_single_quoted``   — `'...'` token consumption
+      * ``_consume_double_quoted``   — `"..."` token consumption
+      * ``_consume_unquoted_token``  — bare token consumption
+      * ``_tokenize_one_line``       — per-line orchestration
+    """
     tokens = []
-    for line in logical_lines:
-        i = 0
-        n = len(line)
-        while i < n:
-            ch = line[i]
-            if ch in " \t":
-                i += 1
-                continue
-            if ch == "'":
-                # single-quoted: take everything up to the next '
-                end = line.find("'", i + 1)
-                if end == -1:
-                    tokens.append(line[i:])
-                    return tokens
-                tokens.append(line[i:end + 1])
-                i = end + 1
-                continue
-            if ch == '"':
-                # double-quoted: take everything up to the next ",
-                # backslash-escapes inside are kept literal.
-                j = i + 1
-                while j < n and line[j] != '"':
-                    j += 1
-                if j >= n:
-                    tokens.append(line[i:])
-                    return tokens
-                tokens.append(line[i:j + 1])
-                i = j + 1
-                continue
-            # unquoted token: stop at whitespace, '#', '"', "'"
-            j = i
-            while j < n and line[j] not in " \t\"'":
-                if line[j] == "#" and (j == 0 or line[j - 1] in " \t"):
-                    break
-                j += 1
-            tokens.append(line[i:j])
-            # If we stopped on an inline comment, drop the rest of
-            # the line.
-            if j < n and line[j] == "#":
-                break
-            i = j
+    for line in _join_continuation_lines(text):
+        tokens.extend(_tokenize_one_line(line))
     return tokens
 
 
