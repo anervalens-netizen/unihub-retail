@@ -26,6 +26,7 @@ import json
 import re
 import subprocess
 import textwrap
+from difflib import unified_diff as _unified_diff
 from pathlib import Path
 
 import pytest
@@ -2988,31 +2989,72 @@ def test_pr_b3b_does_not_introduce_new_exact_main_job():
 
 
 # ---------------------------------------------------------------------------
-# (10) Caddy validation steps must not bind the runner workspace into Docker
+# (10) Caddy validation steps are pinned to one canonical authorized run block
 # ---------------------------------------------------------------------------
+#
+# The Caddy validation steps in .github/workflows/ci.yml are an E5 trust-
+# boundary fixture: the dedicated rootless Docker daemon cannot see
+# /opt/Mobiup, so a host bind (`-v`, `--volume`, `--mount`, including the
+# `=` forms) would silently fail or — worse — escape the isolation.
+# Modeling arbitrary Bash expansion in a Python regression test is not
+# acceptable; instead the operational contract is reduced to a single
+# property: the run block of every "Versioned Retail edge request limits"
+# step is byte-for-byte equal to one canonical block. Any future drift
+# in the Caddy command surface (extra flags, alternate image, alternate
+# network, variable-generated flags, command substitution, changed
+# cleanup) will fail this test by simple inequality.
 
 
 CADDY_STEP_NAME = "Versioned Retail edge request limits"
 CADDY_PINNED_IMAGE = (
     "caddy@sha256:844f60b64e4724a5aa8245e019dace0d3f199f7433ce6c57676cb30a920dbad9"
 )
-# The only `-v` short option that the Caddy validation steps are allowed
-# to contain. This is the cleanup flag for `docker rm` that removes the
-# official Caddy image's anonymous /data and /config volumes; it is NOT
-# a bind-mount source. The detector must permit this exact line (and
-# nothing else that contains `-v` as a short option token).
-CADDY_CLEANUP_LEGAL_LINE = (
-    'docker rm -f -v "$container" >/dev/null 2>&1 || true'
-)
+
+
+# The single source of truth for the Caddy run block. Every step named
+# "Versioned Retail edge request limits" in ci.yml must produce a
+# block that, after _collect_caddy_steps' indentation stripping, is
+# exactly equal to this string. Comments are part of the contract so
+# a future reviewer can read what the canonical block is meant to do.
+CADDY_EXPECTED_RUN_BLOCK = textwrap.dedent("""\
+    set -euo pipefail
+    caddy_image=caddy@sha256:844f60b64e4724a5aa8245e019dace0d3f199f7433ce6c57676cb30a920dbad9
+    docker image inspect "$caddy_image" >/dev/null
+    # The rootless Docker daemon is sandboxed away from the runner
+    # workspace (InaccessiblePaths=/opt/Mobiup). Stage candidate
+    # ops/caddy at a daemon-readable path the runner controls, then
+    # `docker cp` it into a stopped, network-isolated container.
+    # No host bind, no -v, no --mount, no volume, no pull.
+    caddy_stage="$(mktemp -d -t unihub-retail-caddy-stage.XXXXXX)"
+    container="unihub-retail-caddy-validate-$$"
+    cleanup() {
+      docker rm -f -v "$container" >/dev/null 2>&1 || true
+      rm -rf -- "$caddy_stage"
+    }
+    trap cleanup EXIT
+    chmod 0700 "$caddy_stage"
+    cp -R "$PWD/ops/caddy/." "$caddy_stage/"
+    docker create \\
+      --pull=never \\
+      --name "$container" \\
+      --network none \\
+      "$caddy_image" \\
+      caddy validate \\
+      --config /etc/caddy/Caddyfile.validate \\
+      --adapter caddyfile \\
+      >/dev/null
+    docker cp "$caddy_stage/." "$container:/etc/caddy"
+    docker start -a "$container"
+""")
 
 
 def _collect_caddy_steps():
     """Return every run-block whose enclosing step is named
     ``Versioned Retail edge request limits``.
 
-    Operates on the raw workflow text so the assertions are
-    robust to YAML anchor / alias / merge-key choices and to
-    incidental reformatting of unrelated lines.
+    Operates on the raw workflow text so the assertion is robust to
+    YAML anchor / alias / merge-key choices. The block returned is
+    the indented run-block with the 10-space common indent stripped.
     """
     text = CI_YML.read_text(encoding="utf-8")
     lines = text.splitlines()
@@ -3054,233 +3096,9 @@ def _collect_caddy_steps():
     return blocks
 
 
-def _strip_comments(lines):
-    """Drop YAML/shell comment lines and drop inline ``# ...`` tails."""
-    out = []
-    for line in lines:
-        # A `#` after whitespace starts a comment. We must NOT touch
-        # `#` inside a quoted string for tokenization below, but a
-        # bare line-prefix comment is unambiguous. For a one-line
-        # detection pass we conservatively drop the line entirely.
-        if line.lstrip().startswith("#"):
-            continue
-        out.append(line)
-    return out
-
-
-def _join_continuation_lines(text):
-    """Join backslash-continuation lines into logical lines.
-
-    A line ending in a single backslash consumes the immediately
-    following newline so the next physical line becomes part of
-    the same logical line. A double trailing backslash is treated
-    as a literal backslash (the second one escapes the first), so
-    the line does NOT continue.
-    """
-    logical_lines = []
-    buf = []
-    for line in text.splitlines():
-        if line.endswith("\\") and not line.endswith("\\\\"):
-            buf.append(line[:-1])
-        else:
-            buf.append(line)
-            logical_lines.append("".join(buf))
-            buf = []
-    if buf:
-        logical_lines.append("".join(buf))
-    return logical_lines
-
-
-def _consume_single_quoted(line, i):
-    """Consume a single-quoted ``'...'`` token starting at ``i``.
-
-    Returns ``(token, next_index)``. If the closing ``'`` is
-    missing, returns ``(rest_of_line, len(line))`` — fail-closed:
-    the partial token is still emitted so the caller can decide
-    whether to keep it.
-    """
-    end = line.find("'", i + 1)
-    if end == -1:
-        return line[i:], len(line)
-    return line[i:end + 1], end + 1
-
-
-def _consume_double_quoted(line, i):
-    """Consume a double-quoted ``"..."`` token starting at ``i``.
-
-    Returns ``(token, next_index)``. If the closing ``"`` is
-    missing, returns ``(rest_of_line, len(line))`` — fail-closed
-    like the single-quoted helper.
-    """
-    j = i + 1
-    n = len(line)
-    while j < n and line[j] != '"':
-        j += 1
-    if j >= n:
-        return line[i:], n
-    return line[i:j + 1], j + 1
-
-
-def _consume_unquoted_token(line, i):
-    """Consume one unquoted, whitespace-separated token starting at
-    ``i``. Stops at whitespace, ``'``, ``"``, or an inline ``#``
-    comment that begins at a token boundary.
-
-    Returns ``(token, next_index)``. If the token is terminated
-    by an inline ``#`` comment, ``next_index`` is the position
-    of that ``#`` so the caller can stop processing the rest of
-    the line.
-    """
-    n = len(line)
-    j = i
-    while j < n and line[j] not in " \t\"'":
-        if line[j] == "#" and (j == 0 or line[j - 1] in " \t"):
-            break
-        j += 1
-    return line[i:j], j
-
-
-def _tokenize_one_line(line):
-    """Tokenize a single logical line into argv-like tokens.
-
-    Handles single-quoted, double-quoted, and unquoted tokens.
-    Each helper is fail-closed on ambiguous input (an unterminated
-    quoted string yields the partial token; an inline ``#``
-    comment terminates the line). See ``_shell_tokenize_for_detection``
-    for the full context.
-    """
-    tokens = []
-    i = 0
-    n = len(line)
-    while i < n:
-        ch = line[i]
-        if ch in " \t":
-            i += 1
-            continue
-        if ch == "'":
-            tok, i = _consume_single_quoted(line, i)
-            tokens.append(tok)
-            continue
-        if ch == '"':
-            tok, i = _consume_double_quoted(line, i)
-            tokens.append(tok)
-            continue
-        tok, j = _consume_unquoted_token(line, i)
-        tokens.append(tok)
-        # An inline ``#`` comment at a token boundary terminates
-        # the line; the rest of the line is not tokenized.
-        if j < n and line[j] == "#":
-            break
-        i = j
-    return tokens
-
-
-def _shell_tokenize_for_detection(text):
-    """Tokenize shell text into argv-like elements for fail-closed
-    host-bind detection.
-
-    Handles:
-      * backslash-newline line continuations (joins the next physical
-        line into the same logical line);
-      * single-quoted strings (preserved verbatim, no $ expansion);
-      * double-quoted strings (preserved verbatim, no $ expansion);
-      * unquoted whitespace-separated tokens;
-      * variable expansions (``$container``, ``${container}``,
-        ``$PWD/...``) — the literal ``$`` is preserved so that
-        ``"$container"`` round-trips as one argv element.
-
-    The tokenizer is intentionally narrow — it exists to split
-    options like ``-v`` from arguments and from values. It is NOT a
-    full POSIX shell tokenizer; the goal is to be fail-closed, so
-    anything ambiguous is treated as a single token, which can
-    only produce false positives (the test will fail on a real
-    regression, never on a legitimate one).
-
-    Decomposed into single-responsibility helpers so each one
-    satisfies the changed-function complexity budget:
-      * ``_join_continuation_lines`` — backslash-continuation join
-      * ``_consume_single_quoted``   — `'...'` token consumption
-      * ``_consume_double_quoted``   — `"..."` token consumption
-      * ``_consume_unquoted_token``  — bare token consumption
-      * ``_tokenize_one_line``       — per-line orchestration
-    """
-    tokens = []
-    for line in _join_continuation_lines(text):
-        tokens.extend(_tokenize_one_line(line))
-    return tokens
-
-
-def _detect_host_bind_violations(block, *, allowed_cleanup_lines):
-    """Return a list of human-readable violations found in a Caddy
-    step's run-block. Empty list = clean.
-
-    The detector is fail-closed: anything it cannot prove safe
-    is reported. It is meant to catch every realistic
-    authoring of a host-bind that targets the official Caddy
-    image, including:
-      * ``docker run -v host:cont ...``
-      * ``docker create \\ -v ... \\ image``
-      * ``docker create --pull=never -v ... image``
-      * a multiline continuation that places ``-v`` on a
-        non-leading line.
-
-    The detector explicitly exempts the exact legal cleanup
-    line (e.g. ``docker rm -f -v "$container" >/dev/null 2>&1
-    || true``) so the legitimate anonymous-volume removal is
-    preserved.
-    """
-    violations = []
-
-    # 1. Strip comments line-by-line.
-    code_lines = _strip_comments(block.splitlines())
-    code = "\n".join(code_lines)
-
-    # 2. Remove ONLY the exact allowed cleanup line(s). We compare
-    #    each physical line (after lstrip) to the allowed patterns
-    #    so that incidental whitespace does not break the exemption.
-    allowed_phys = [a.lstrip() for a in allowed_cleanup_lines]
-    remaining = []
-    for line in code_lines:
-        if line.lstrip() in allowed_phys:
-            continue
-        remaining.append(line)
-    remaining_text = "\n".join(remaining)
-
-    # 3. The OLD literal host-bind shape.
-    if "PWD/ops/caddy:/" in remaining_text:
-        violations.append(
-            "old literal host-bind shape '$PWD/ops/caddy:/...' is present "
-            "(must use docker cp instead)"
-        )
-
-    # 4. Tokenize and scan argv-style for forbidden option tokens.
-    tokens = _shell_tokenize_for_detection(remaining_text)
-
-    def _strip_quotes(tok):
-        if len(tok) >= 2 and tok[0] == tok[-1] and tok[0] in ("'", '"'):
-            return tok[1:-1]
-        return tok
-
-    for tok in tokens:
-        bare = _strip_quotes(tok)
-        if bare == "--volume":
-            violations.append(f"forbidden long option token {bare!r}")
-            continue
-        if bare == "--mount":
-            violations.append(f"forbidden long option token {bare!r}")
-            continue
-        if bare == "-v":
-            violations.append(
-                f"forbidden short option token '-v' (must not be a bind mount)"
-            )
-            continue
-
-    return violations
-
-
 def test_caddy_validation_steps_present_in_exactly_two_jobs():
-    """The two Caddy validation steps (pr-fast and the exact-main
-    FULL backend-check pre-step) must both still exist."""
+    """Both the pr-fast and the exact-main FULL backend-check
+    pre-step must still exist."""
     blocks = _collect_caddy_steps()
     assert len(blocks) == 2, (
         f"expected exactly 2 'Versioned Retail edge request limits' "
@@ -3289,312 +3107,99 @@ def test_caddy_validation_steps_present_in_exactly_two_jobs():
 
 
 @pytest.mark.parametrize("block_index", [0, 1])
-def test_caddy_validation_step_uses_no_host_bind(block_index):
-    """Each Caddy validation step must not bind a host path
-    into the container.
-
-    Forbidden (regardless of where they appear in the executable
-    shell text, including on a continuation line):
-      * the short option token ``-v`` (a Docker bind mount);
-      * the long option token ``--volume`` (same);
-      * the long option token ``--mount`` (same);
-      * the OLD literal ``"$PWD/ops/caddy:/..."`` bind-mount
-        source.
-
-    Allowed (and required):
-      * the exact cleanup line
-        ``docker rm -f -v "$container" >/dev/null 2>&1 || true``
-        where ``-v`` is the ``docker rm`` flag for removing
-        anonymous volumes (NOT a bind mount);
-      * a bare ``$PWD/ops/caddy/`` reference on the runner side
-        (e.g. inside ``cp -R``) — the runner is allowed to read
-        its own workspace.
-
-    Detection is delegated to ``_detect_host_bind_violations``,
-    which is a token-aware scanner that handles multiline ``\\``
-    continuations and is fail-closed. Focused adversarial
-    tests in ``test_detect_host_bind_violations_*`` prove the
-    detector catches realistic future regressions.
-    """
-    blocks = _collect_caddy_steps()
-    block = blocks[block_index]
-    violations = _detect_host_bind_violations(
-        block,
-        allowed_cleanup_lines=[CADDY_CLEANUP_LEGAL_LINE],
-    )
-    assert not violations, (
-        f"Caddy validation step #{block_index} has host-bind "
-        f"violations:\n  - " + "\n  - ".join(violations) + "\n"
-        f"--- block ---\n{block}\n--- end block ---"
-    )
-
-
-@pytest.mark.parametrize("block_index", [0, 1])
-def test_caddy_validation_step_uses_docker_cp(block_index):
-    """Each Caddy validation step must use docker cp to feed
-    candidate ops/caddy into a stopped container."""
-    blocks = _collect_caddy_steps()
-    block = blocks[block_index]
-    assert "docker cp " in block, (
-        f"Caddy validation step #{block_index} must use 'docker cp' "
-        f"to inject candidate ops/caddy into the container"
-    )
-    assert "ops/caddy" in block, (
-        f"Caddy validation step #{block_index} must reference the "
-        f"candidate ops/caddy source path"
-    )
-
-
-@pytest.mark.parametrize("block_index", [0, 1])
-def test_caddy_validation_step_uses_stopped_container_no_pull(block_index):
-    """Each Caddy validation step must use `docker create`
-    (not `docker run`), `--pull=never`, and `--network none`."""
-    blocks = _collect_caddy_steps()
-    block = blocks[block_index]
-    assert "docker create " in block, (
-        f"Caddy validation step #{block_index} must use 'docker create' "
-        f"to build a stopped container, not 'docker run'"
-    )
-    assert "--pull=never" in block, (
-        f"Caddy validation step #{block_index} must keep --pull=never"
-    )
-    assert "--network none" in block, (
-        f"Caddy validation step #{block_index} must keep --network none"
-    )
-
-
-@pytest.mark.parametrize("block_index", [0, 1])
-def test_caddy_validation_step_invokes_same_caddy_validate(block_index):
-    """The Caddy validation command and config path must remain
-    byte-equivalent to the previously pinned invocation."""
-    blocks = _collect_caddy_steps()
-    block = blocks[block_index]
-    assert "caddy validate" in block
-    assert "--config /etc/caddy/Caddyfile.validate" in block
-    assert "--adapter caddyfile" in block
-
-
-@pytest.mark.parametrize("block_index", [0, 1])
-def test_caddy_validation_step_pins_image_digest(block_index):
-    """The pinned caddy image digest must be preserved."""
-    blocks = _collect_caddy_steps()
-    block = blocks[block_index]
-    assert CADDY_PINNED_IMAGE in block, (
-        f"Caddy validation step #{block_index} lost the pinned image "
-        f"digest {CADDY_PINNED_IMAGE}"
-    )
-
-
-@pytest.mark.parametrize("block_index", [0, 1])
-def test_caddy_validation_step_has_cleanup(block_index):
-    """Each Caddy validation step must remove the disposable
-    container, the staging directory, and any anonymous Docker
-    volumes the official Caddy image created, on exit — even
-    on failure."""
-    blocks = _collect_caddy_steps()
-    block = blocks[block_index]
-    assert "docker rm -f -v " in block, (
-        f"Caddy validation step #{block_index} must 'docker rm -f -v' "
-        f"the disposable container on exit so the official Caddy "
-        f"image's anonymous /data and /config volumes do not leak."
-    )
-    assert "trap cleanup EXIT" in block, (
-        f"Caddy validation step #{block_index} must 'trap cleanup EXIT' "
-        f"so failure paths still tear down"
-    )
-
-
-@pytest.mark.parametrize("block_index", [0, 1])
-def test_caddy_validation_step_uses_docker_rm_fv_in_cleanup(block_index):
-    """Pin the exact required cleanup form so the anonymous-volume
-    removal is preserved and a future refactor cannot regress
-    it (e.g. by reverting to plain ``docker rm -f``)."""
-    blocks = _collect_caddy_steps()
-    block = blocks[block_index]
-    required = "docker rm -f -v \"$container\""
-    assert required in block, (
-        f"Caddy validation step #{block_index} must contain the exact "
-        f"cleanup line {required!r} so the official Caddy image's "
-        f"anonymous /data and /config volumes are removed."
-    )
-
-
-def test_caddy_validation_steps_are_byte_equivalent():
-    """The two Caddy validation steps must be semantically
-    identical (the only allowed structural difference is the
-    unique container name suffix ``$$`` and the in-step comment
-    block) so the same code path runs in PR-fast and FULL."""
+def test_caddy_validation_block_is_byte_equal_to_canonical(block_index):
+    """The Caddy run block must be byte-for-byte equal to the
+    canonical authorized block. Any executable deviation — extra
+    flag, alternate image, alternate network, variable-generated
+    flag, command substitution, missing cleanup, lost trap order,
+    etc. — is a fail-closed regression."""
     blocks = _collect_caddy_steps()
     assert len(blocks) == 2
-    a, b = blocks
-
-    def _normalize(s: str) -> str:
-        # Drop the comment block (intentionally identical).
-        code = "\n".join(
-            line for line in s.splitlines() if not line.lstrip().startswith("#")
+    actual = blocks[block_index]
+    expected = CADDY_EXPECTED_RUN_BLOCK
+    assert actual == expected, (
+        f"Caddy validation step #{block_index} does not match the "
+        f"canonical authorized block.\n"
+        f"--- expected ({len(expected)} chars) ---\n{expected}\n"
+        f"--- actual ({len(actual)} chars) ---\n{actual}\n"
+        f"--- diff (unified) ---\n"
+        + "\n".join(
+            f"{ln:>4} {mark} {line}" for ln, mark, line in _unified_diff(
+                expected.splitlines(), actual.splitlines(), lineterm=""
+            )
         )
-        # The `$$` token is expanded by the shell at run time, so the
-        # authored text is identical across the two steps; substitute a
-        # stable placeholder to keep the comparison robust to that.
-        return code.replace("$$", "<PID>")
-
-    assert _normalize(a) == _normalize(b), (
-        "Caddy validation steps diverged; they must remain structurally "
-        "identical between pr-fast and FULL so a single fix is exercised "
-        "by both jobs.\n"
-        "----- step #0 -----\n" + a + "\n"
-        "----- step #1 -----\n" + b + "\n"
     )
 
 
-# ---------------------------------------------------------------------------
-# Adversarial regression tests for the host-bind detector
-# ---------------------------------------------------------------------------
-#
-# These tests exercise the detector directly with realistic future
-# regressions. They are independent of the current ci.yml text so a
-# future PR that re-introduces a host bind via a multiline
-# continuation, a different short option, or a non-leading line is
-# caught by the detector itself, not by incidental matches in the
-# current authoring.
-
-
-def test_detect_host_bind_violations_rejects_docker_create_v_multiline():
-    """Adversarial case A: ``docker create`` with ``-v`` on a
-    continuation line that does NOT begin with ``docker``."""
-    block = (
-        "set -euo pipefail\n"
-        "caddy_image=caddy@sha256:844f60b64e4724a5aa8245e019dace0d3f199f7433ce6c57676cb30a920dbad9\n"
-        "docker create \\\n"
-        '  -v "$PWD/ops/caddy:/etc/caddy:ro" \\\n'
-        '  "$caddy_image"\n'
-    )
-    violations = _detect_host_bind_violations(
-        block, allowed_cleanup_lines=[CADDY_CLEANUP_LEGAL_LINE],
-    )
-    assert any("PWD/ops/caddy:/" in v for v in violations), (
-        f"expected old-literal host-bind shape to be flagged; got {violations!r}"
+def test_caddy_validation_pinned_image_is_present():
+    """The pinned caddy image digest must still appear in the
+    canonical block. This is a positive contract sanity check
+    that does not depend on a particular authoring pattern."""
+    assert CADDY_PINNED_IMAGE in CADDY_EXPECTED_RUN_BLOCK, (
+        f"pinned caddy image digest {CADDY_PINNED_IMAGE!r} missing "
+        f"from the canonical block"
     )
 
 
-def test_detect_host_bind_violations_rejects_docker_create_pull_v():
-    """Adversarial case B: ``docker create`` with ``--pull=never``
-    then ``-v`` on a continuation line."""
-    block = (
-        "set -euo pipefail\n"
-        "docker create \\\n"
-        "  --pull=never \\\n"
-        "  -v /tmp/foo:/etc/caddy:ro \\\n"
-        '  "$caddy_image"\n'
-    )
-    violations = _detect_host_bind_violations(
-        block, allowed_cleanup_lines=[CADDY_CLEANUP_LEGAL_LINE],
-    )
-    assert any("'-v'" in v for v in violations), (
-        f"expected -v short option to be flagged; got {violations!r}"
-    )
+def test_caddy_validation_canonical_block_rejects_mutations():
+    """Mechanically prove the canonical contract is fail-closed:
+    every realistic regression that would change the executable
+    surface must differ from the canonical block."""
+    expected = CADDY_EXPECTED_RUN_BLOCK
 
-
-def test_detect_host_bind_violations_rejects_docker_run_v_singleline():
-    """Adversarial case C: ``docker run`` with ``-v foo:bar`` on a
-    single line (the original authoring shape)."""
-    block = (
-        "set -euo pipefail\n"
-        "docker run \\\n"
-        "  -v foo:bar \\\n"
-        "  image\n"
-    )
-    violations = _detect_host_bind_violations(
-        block, allowed_cleanup_lines=[CADDY_CLEANUP_LEGAL_LINE],
-    )
-    assert any("'-v'" in v for v in violations), (
-        f"expected -v short option on docker run to be flagged; got {violations!r}"
-    )
-
-
-def test_detect_host_bind_violations_rejects_long_options():
-    """``--volume`` and ``--mount`` are forbidden even when no ``-v``
-    is present, even on a continuation line."""
-    for forbidden in ("--volume", "--mount"):
-        block = (
-            "set -euo pipefail\n"
-            "docker create \\\n"
-            f"  {forbidden} /tmp/foo:/etc/caddy:ro \\\n"
-            '  "$caddy_image"\n'
+    def _substr_mutation(label, anchor, replacement):
+        candidate = expected.replace(anchor, replacement, 1)
+        assert candidate != expected, (
+            f"mutation {label!r} did not actually change the canonical "
+            f"block; fix the test"
         )
-        violations = _detect_host_bind_violations(
-            block, allowed_cleanup_lines=[CADDY_CLEANUP_LEGAL_LINE],
+        return candidate
+
+    def _reorder_mutation_I():
+        # Move "trap cleanup EXIT" to AFTER the cp -R line. This models
+        # the P3 regression where a chmod/cp failure leaves the stage
+        # dir behind because the trap was not yet installed.
+        candidate = expected.replace(
+            "trap cleanup EXIT\nchmod 0700",
+            "chmod 0700",
+        ).replace(
+            'chmod 0700 "$caddy_stage"\ncp -R "$PWD/ops/caddy/." "$caddy_stage/"',
+            'cp -R "$PWD/ops/caddy/." "$caddy_stage/"\ntrap cleanup EXIT',
         )
-        assert any(forbidden in v for v in violations), (
-            f"expected {forbidden!r} to be flagged; got {violations!r}"
+        assert candidate != expected, (
+            "mutation I did not actually change the canonical block; "
+            "fix the test"
         )
+        return candidate
 
-
-def test_detect_host_bind_violations_allows_exact_cleanup():
-    """The detector MUST permit the exact cleanup line (anonymous
-    volume removal) and nothing else. The text is the literal
-    content of the current ci.yml cleanup function."""
-    block = (
-        "set -euo pipefail\n"
-        "cleanup() {\n"
-        '  docker rm -f -v "$container" >/dev/null 2>&1 || true\n'
-        "  rm -rf -- \"$caddy_stage\"\n"
-        "}\n"
-    )
-    violations = _detect_host_bind_violations(
-        block, allowed_cleanup_lines=[CADDY_CLEANUP_LEGAL_LINE],
-    )
-    assert violations == [], (
-        f"exact cleanup line must not be flagged; got {violations!r}"
-    )
-
-
-def test_detect_host_bind_violations_rejects_v_on_rm_outside_cleanup():
-    """``docker rm -f -v`` is only legal on the exact allowed cleanup
-    line. A different ``docker rm -f -v ...`` with extra arguments
-    must still be flagged — the detector is not a generic permit
-    for ``-v`` on any ``docker rm`` invocation."""
-    block = (
-        "set -euo pipefail\n"
-        'docker rm -f -v "$container" /some/other/arg\n'
-    )
-    violations = _detect_host_bind_violations(
-        block, allowed_cleanup_lines=[CADDY_CLEANUP_LEGAL_LINE],
-    )
-    assert any("'-v'" in v for v in violations), (
-        f"expected stray -v on a non-cleanup docker rm to be flagged; "
-        f"got {violations!r}"
-    )
-
-
-def test_detect_host_bind_violations_strips_comments():
-    """Comments must not trigger the detector. The current ci.yml
-    comment block explicitly mentions the forbidden tokens; if
-    comment lines were scanned, every block would self-fail."""
-    block = (
-        "# No host bind, no -v, no --mount, no volume, no pull.\n"
-        "set -euo pipefail\n"
-        'docker cp "$caddy_stage/." "$container:/etc/caddy"\n'
-    )
-    violations = _detect_host_bind_violations(
-        block, allowed_cleanup_lines=[CADDY_CLEANUP_LEGAL_LINE],
-    )
-    assert violations == [], (
-        f"comments must not trigger violations; got {violations!r}"
-    )
-
-
-def test_detect_host_bind_violations_preserves_bare_pwd_ops_caddy():
-    """A bare ``$PWD/ops/caddy/`` reference on the runner side
-    (e.g. inside ``cp -R``) is legitimate — the runner reads its
-    own workspace. Only the bind-mount source/target shape
-    ``$PWD/ops/caddy:/...`` is forbidden."""
-    block = (
-        'cp -R "$PWD/ops/caddy/." "$caddy_stage/"\n'
-    )
-    violations = _detect_host_bind_violations(
-        block, allowed_cleanup_lines=[CADDY_CLEANUP_LEGAL_LINE],
-    )
-    assert violations == [], (
-        f"bare $PWD/ops/caddy/ must not be flagged; got {violations!r}"
+    mutations = [
+        ("A: -v host bind", "docker create \\\n",
+         '        docker create \\\n          -v "$PWD/ops/caddy:/etc/caddy:ro" \\\n'),
+        ("B: --mount= bind form", "docker create \\\n",
+         '        docker create \\\n          --mount=type=bind,src=/tmp/foo,dst=/etc/caddy \\\n'),
+        ("C: --volume= bind form", "docker create \\\n",
+         '        docker create \\\n          --volume=/tmp/foo:/etc/caddy \\\n'),
+        ("D: variable-generated flag", "docker create \\\n",
+         '        mount_flag=-v\n        docker create \\\n          "$mount_flag" \\\n'),
+        ("E: alternate network", "docker create \\\n",
+         '        docker create \\\n          --network host \\\n'),
+        ("F: drop --pull=never", "docker create \\\n",
+         '        docker create \\\n          --name "$container" \\\n'),
+        ("G: change pinned digest", CADDY_PINNED_IMAGE + "\n",
+         'caddy_image=caddy@sha256:0000000000000000000000000000000000000000000000000000000000000000\n'),
+        ("H: drop -v from docker rm cleanup",
+         'docker rm -f -v "$container" >/dev/null 2>&1 || true\n',
+         'docker rm -f "$container" >/dev/null 2>&1 || true\n'),
+    ]
+    for label, anchor, replacement in mutations:
+        candidate = _substr_mutation(label, anchor, replacement)
+        # The mutation must be rejected by the canonical-equality test.
+        assert candidate != CADDY_EXPECTED_RUN_BLOCK, (
+            f"mutation {label!r} produced a block that still equals the "
+            f"canonical block — the test would not catch this regression"
+        )
+    candidate = _reorder_mutation_I()
+    assert candidate != CADDY_EXPECTED_RUN_BLOCK, (
+        "mutation I (trap after cp) produced a block that still equals "
+        "the canonical block — the test would not catch this regression"
     )

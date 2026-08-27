@@ -252,14 +252,14 @@ jobs:
           # `docker cp` it into a stopped, network-isolated container.
           # No host bind, no -v, no --mount, no volume, no pull.
           caddy_stage="$(mktemp -d -t unihub-retail-caddy-stage.XXXXXX)"
-          chmod 0700 "$caddy_stage"
-          cp -R "$PWD/ops/caddy/." "$caddy_stage/"
           container="unihub-retail-caddy-validate-$$"
           cleanup() {
             docker rm -f -v "$container" >/dev/null 2>&1 || true
             rm -rf -- "$caddy_stage"
           }
           trap cleanup EXIT
+          chmod 0700 "$caddy_stage"
+          cp -R "$PWD/ops/caddy/." "$caddy_stage/"
           docker create \
             --pull=never \
             --name "$container" \
@@ -1047,14 +1047,14 @@ jobs:
           # `docker cp` it into a stopped, network-isolated container.
           # No host bind, no -v, no --mount, no volume, no pull.
           caddy_stage="$(mktemp -d -t unihub-retail-caddy-stage.XXXXXX)"
-          chmod 0700 "$caddy_stage"
-          cp -R "$PWD/ops/caddy/." "$caddy_stage/"
           container="unihub-retail-caddy-validate-$$"
           cleanup() {
             docker rm -f -v "$container" >/dev/null 2>&1 || true
             rm -rf -- "$caddy_stage"
           }
           trap cleanup EXIT
+          chmod 0700 "$caddy_stage"
+          cp -R "$PWD/ops/caddy/." "$caddy_stage/"
           docker create \
             --pull=never \
             --name "$container" \
