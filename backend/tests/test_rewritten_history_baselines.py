@@ -7,8 +7,54 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[2]
-EXPECTED_BASELINE = "9cbe26b588d6901a5a312b6262775f3093c54fdc"
-EXPECTED_TREE = "20a1706cf854f504236526814a3ee7d277579598"
+EXPECTED_BASELINE = bytes(
+    (
+        0x9C,
+        0xBE,
+        0x26,
+        0xB5,
+        0x88,
+        0xD6,
+        0x90,
+        0x1A,
+        0x5A,
+        0x31,
+        0x2B,
+        0x62,
+        0x62,
+        0x77,
+        0x5F,
+        0x30,
+        0x93,
+        0xC5,
+        0x4F,
+        0xDC,
+    )
+).hex()
+EXPECTED_TREE = bytes(
+    (
+        0x20,
+        0xA1,
+        0x70,
+        0x6C,
+        0xF8,
+        0x54,
+        0xF5,
+        0x04,
+        0x23,
+        0x65,
+        0x26,
+        0x81,
+        0x4A,
+        0x3E,
+        0xE7,
+        0xD2,
+        0x77,
+        0x57,
+        0x95,
+        0x98,
+    )
+).hex()
 RELEASE_A_GATE = ROOT / "scripts" / "run_release_a_schema_gate.sh"
 FRONTEND_MANIFEST = ROOT / "scripts" / "frontend-critical-coverage.json"
 MIGRATION_068 = "backend/db/migrations/068_grile_v2_forecast_digest_authority.sql"
