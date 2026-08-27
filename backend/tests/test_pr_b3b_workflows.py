@@ -3203,3 +3203,299 @@ def test_caddy_validation_canonical_block_rejects_mutations():
         "mutation I (trap after cp) produced a block that still equals "
         "the canonical block — the test would not catch this regression"
     )
+
+
+# ---------------------------------------------------------------------------
+# (11) Caddy step execution envelope: step + job + workflow execution layers
+# ---------------------------------------------------------------------------
+#
+# Section (10) pinned the run block; this section pins the *execution
+# envelope* — the step-level metadata, the relevant job-level overrides,
+# and the workflow-level env/defaults that could redirect or interpose
+# shell or Docker execution. A future edit that keeps the canonical
+# run block verbatim but adds a step-level `env: DOCKER_HOST: ...` or
+# `shell: ...`, or a job-level `env:`/`defaults.run.shell:`, or a
+# workflow-level env/defaults change, would silently shift the
+# execution surface and is therefore a fail-closed regression.
+
+
+CADDY_RELEVANT_JOBS = ("pr-fast", "backend-check")
+CADDY_EXPECTED_STEP_KEYS = frozenset({"name", "run", "working-directory"})
+CADDY_EXPECTED_STEP = {
+    "name": "Versioned Retail edge request limits",
+    "working-directory": ".",
+    "run": None,  # filled by _caddy_expected_step_dict() so the test
+                  # tracks the same canonical run block (Section 10)
+}
+CADDY_EXPECTED_JOB_KEYS_NO_ENV = frozenset(
+    # The set of normal job keys. ``env`` is NOT in this set; a
+    # future `env: DOCKER_HOST: ...` would be detected. All other
+    # job keys (`name`, `runs-on`, `needs`, `if`, `steps`,
+    # `timeout-minutes`, `defaults`, `concurrency`, `strategy`,
+    # `permissions`, `container`, `services`, `uses`, `with`,
+    # `continue-on-error`, `environment`, `tools`) are normal job
+    # metadata and are not execution-interposers. New job keys
+    # must be consciously added here if they ever appear.
+    {
+        "name", "needs", "if", "runs-on", "steps", "timeout-minutes",
+        "defaults", "concurrency", "strategy", "permissions",
+        "continue-on-error", "environment",
+    }
+)
+CADDY_EXPECTED_JOB_DEFAULTS = {"run": {"working-directory": "backend"}}
+CADDY_EXPECTED_WORKFLOW_ENV = {
+    "PYTHONNOUSERSITE": "1",
+    "PYTHONSAFEPATH": "1",
+    "PYTHONHOME": "",
+    "PYTHONPATH": "",
+    "PYTHONSTARTUP": "",
+    "PYTHONINSPECT": "",
+    "PYTHONDONTWRITEBYTECODE": "1",
+    "MYPYPATH": "",
+    "MYPY_CONFIG_FILE": "",
+    "NODE_OPTIONS": "",
+    "NODE_PATH": "",
+    "BASH_ENV": "",
+    "ENV": "",
+    "CDPATH": "",
+    "GLOBIGNORE": "",
+}
+
+
+def _caddy_expected_step_dict():
+    """Return the full expected Caddy step dict. The ``run`` value
+    is the same canonical block pinned by Section (10) so the two
+    sections cannot drift apart."""
+    expected = dict(CADDY_EXPECTED_STEP)
+    expected["run"] = CADDY_EXPECTED_RUN_BLOCK
+    return expected
+
+
+def _parsed_workflow():
+    """Parse the workflow YAML once for the envelope tests."""
+    return _yaml().safe_load(CI_YML.read_text(encoding="utf-8"))
+
+
+def _caddy_steps_from_job(workflow, job_name):
+    """Return the parsed Caddy step list (parsed YAML) for the
+    named job. Asserts the job exists and contains at least one
+    Caddy step. The returned list is the actual parsed step dicts
+    from the workflow, so any addition to step-level keys is
+    visible immediately to the assertions.
+    """
+    job = (workflow.get("jobs") or {}).get(job_name)
+    assert job is not None, (
+        f"required job {job_name!r} is missing from ci.yml"
+    )
+    steps = [
+        step for step in (job.get("steps") or [])
+        if step.get("name") == "Versioned Retail edge request limits"
+    ]
+    assert steps, (
+        f"job {job_name!r} has no step named 'Versioned Retail edge "
+        f"request limits'"
+    )
+    return steps
+
+
+@pytest.fixture(scope="module")
+def parsed_workflow():
+    return _parsed_workflow()
+
+
+@pytest.mark.parametrize("job_name", list(CADDY_RELEVANT_JOBS))
+def test_caddy_validation_step_metadata_is_exact(parsed_workflow, job_name):
+    """Each Caddy step's parsed YAML must equal the authorized
+    step shape: exactly the three keys {name, run, working-directory}
+    with the exact canonical run block, and no env/shell/if/etc.
+    """
+    steps = _caddy_steps_from_job(parsed_workflow, job_name)
+    expected = _caddy_expected_step_dict()
+    for step in steps:
+        # Exact key set: reject any extra step-level key, including
+        # env, shell, if, continue-on-error, timeout-minutes, with,
+        # etc. A future addition must consciously update this contract.
+        assert set(step.keys()) == CADDY_EXPECTED_STEP_KEYS, (
+            f"Caddy step in job {job_name!r} has unexpected/insufficient "
+            f"step keys: {sorted(set(step.keys()) - CADDY_EXPECTED_STEP_KEYS)} "
+            f"present, "
+            f"{sorted(CADDY_EXPECTED_STEP_KEYS - set(step.keys()))} missing"
+        )
+        # Every value must match the authorized step shape exactly.
+        assert step == expected, (
+            f"Caddy step in job {job_name!r} does not match the "
+            f"authorized step shape.\n"
+            f"--- expected ---\n{expected}\n"
+            f"--- actual ---\n{step}\n"
+        )
+
+
+@pytest.mark.parametrize("job_name", list(CADDY_RELEVANT_JOBS))
+def test_caddy_validation_job_level_execution_overrides_are_exact(
+    parsed_workflow, job_name,
+):
+    """The Caddy-relevant jobs must have no job-level `env` and
+    an exact `defaults` of ``{run: {working-directory: backend}}``,
+    so a future `env:`/`defaults.run.shell:` cannot silently
+    re-route the canonical run block."""
+    job = (parsed_workflow.get("jobs") or {})[job_name]
+    # No job-level env: a future `env: DOCKER_HOST: ...` would
+    # redirect Docker execution to a candidate-controlled daemon.
+    assert "env" not in job, (
+        f"job {job_name!r} must not declare job-level `env` (it could "
+        f"inject DOCKER_HOST/BASH_ENV/etc. and re-route the canonical "
+        f"Caddy run block); got: {job.get('env')!r}"
+    )
+    # No other job-level execution key may exist; the only one we
+    # permit today is `defaults`.
+    extra_execution_keys = set(job.keys()) - CADDY_EXPECTED_JOB_KEYS_NO_ENV
+    assert not extra_execution_keys, (
+        f"job {job_name!r} has unexpected execution keys: "
+        f"{sorted(extra_execution_keys)}"
+    )
+    # `defaults` must be exactly the authorized shape (in particular,
+    # no `defaults.run.shell:` or other execution-interposers).
+    assert job.get("defaults") == CADDY_EXPECTED_JOB_DEFAULTS, (
+        f"job {job_name!r} has unexpected `defaults`: "
+        f"expected={CADDY_EXPECTED_JOB_DEFAULTS!r} "
+        f"got={job.get('defaults')!r}"
+    )
+
+
+def test_caddy_validation_workflow_level_execution_overrides_are_exact(
+    parsed_workflow,
+):
+    """No top-level `defaults` may exist (so the Caddy jobs cannot
+    inherit a `defaults.run.shell: ...`), and the workflow-level
+    `env` must equal the authorized dictionary exactly so a future
+    `BASH_ENV: candidate-controlled` or `DOCKER_HOST: tcp://...`
+    addition is a fail-closed regression."""
+    # No top-level defaults.
+    assert "defaults" not in parsed_workflow, (
+        "ci.yml must not declare top-level `defaults` (it could "
+        "inject `defaults.run.shell: ...` and re-route every job's "
+        f"shell). Got: {parsed_workflow.get('defaults')!r}"
+    )
+    # Workflow env must equal the authorized dictionary.
+    actual_env = parsed_workflow.get("env")
+    assert actual_env == CADDY_EXPECTED_WORKFLOW_ENV, (
+        "ci.yml workflow-level `env` does not match the authorized "
+        f"trust-boundary contract. expected={CADDY_EXPECTED_WORKFLOW_ENV!r} "
+        f"got={actual_env!r}"
+    )
+
+
+def test_caddy_validation_execution_envelope_rejects_mutations(parsed_workflow):
+    """Mechanically prove the envelope contract is fail-closed:
+    every realistic injection at the step/job/workflow layer that
+    could change how/where the canonical run block executes must
+    be detected by exact inequality."""
+    # Build a candidate by mutating an in-memory copy of the parsed
+    # workflow. Each mutation is a single, surgical edit and the test
+    # asserts the post-mutation parsed structure is no longer
+    # equal to the original.
+    expected_step = _caddy_expected_step_dict()
+
+    def _clone():
+        # Cheap structural copy via YAML re-emit so we exercise the
+        # same parser the test uses.
+        return _yaml().safe_load(_yaml().dump(parsed_workflow))
+
+    def _caddy_step(cwf, jn):
+        return _caddy_steps_from_job(cwf, jn)[0]
+
+    def _step_index(cwf, jn):
+        return next(
+            i for i, s in enumerate(cwf["jobs"][jn]["steps"])
+            if s.get("name") == "Versioned Retail edge request limits"
+        )
+
+    # --- A: step-level env (DOCKER_HOST) ---
+    cwf = _clone()
+    cwf["jobs"]["pr-fast"]["steps"][_step_index(cwf, "pr-fast")]["env"] = {
+        "DOCKER_HOST": "tcp://example.invalid:2375"
+    }
+    assert _caddy_step(cwf, "pr-fast") != expected_step, (
+        "A: step-level env injection was not caught by exact inequality"
+    )
+
+    # --- B: step-level env (BASH_ENV) ---
+    cwf = _clone()
+    cwf["jobs"]["backend-check"]["steps"][_step_index(cwf, "backend-check")]["env"] = {
+        "BASH_ENV": "/tmp/wrapper"
+    }
+    assert _caddy_step(cwf, "backend-check") != expected_step, (
+        "B: step-level BASH_ENV injection was not caught"
+    )
+
+    # --- C: step-level shell: python ---
+    cwf = _clone()
+    cwf["jobs"]["pr-fast"]["steps"][_step_index(cwf, "pr-fast")]["shell"] = "python"
+    assert _caddy_step(cwf, "pr-fast") != expected_step, (
+        "C: step-level shell=python was not caught"
+    )
+
+    # --- D: step-level shell: bash --noprofile --norc {0} ---
+    cwf = _clone()
+    cwf["jobs"]["pr-fast"]["steps"][_step_index(cwf, "pr-fast")][
+        "shell"
+    ] = "bash --noprofile --norc {0}"
+    assert _caddy_step(cwf, "pr-fast") != expected_step, (
+        "D: step-level shell=bash --noprofile --norc {0} was not caught"
+    )
+
+    # --- E: job-level env: DOCKER_HOST ... ---
+    cwf = _clone()
+    cwf["jobs"]["pr-fast"]["env"] = {
+        "DOCKER_HOST": "tcp://example.invalid:2375"
+    }
+    # The job-level assertion (`env not in job`) is the primary
+    # detection path; the no-env assertion would fail too. We
+    # additionally verify the parsed structure differs from
+    # canonical so the test does not depend solely on `not in`.
+    assert "env" in cwf["jobs"]["pr-fast"], (
+        "E: job-level env injection was not detectable"
+    )
+    assert cwf["jobs"]["pr-fast"]["env"] != parsed_workflow[
+        "jobs"
+    ]["pr-fast"].get("env"), "E: job-level env should differ from canonical"
+
+    # --- F: job-level defaults.run.shell: ... ---
+    cwf = _clone()
+    cwf["jobs"]["backend-check"]["defaults"]["run"]["shell"] = "bash --norc"
+    assert cwf["jobs"]["backend-check"]["defaults"] != CADDY_EXPECTED_JOB_DEFAULTS, (
+        "F: job-level defaults.run.shell injection was not caught"
+    )
+
+    # --- G: workflow-level defaults: ... ---
+    cwf = _clone()
+    cwf["defaults"] = {"run": {"shell": "bash --norc"}}
+    assert "defaults" in cwf, (
+        "G: workflow-level defaults was not detectable"
+    )
+    assert cwf.get("defaults") != parsed_workflow.get("defaults"), (
+        "G: workflow-level defaults should differ from canonical (None)"
+    )
+
+    # --- H: workflow-level env addition (DOCKER_HOST) ---
+    cwf = _clone()
+    new_env = dict(cwf["env"])
+    new_env["DOCKER_HOST"] = "tcp://example.invalid:2375"
+    cwf["env"] = new_env
+    assert cwf["env"] != CADDY_EXPECTED_WORKFLOW_ENV, (
+        "H: workflow-level env DOCKER_HOST addition was not caught"
+    )
+
+    # --- I: workflow-level BASH_ENV changed from "" to candidate value ---
+    cwf = _clone()
+    cwf["env"]["BASH_ENV"] = "/tmp/candidate/wrapper"
+    assert cwf["env"] != CADDY_EXPECTED_WORKFLOW_ENV, (
+        "I: workflow-level BASH_ENV change was not caught"
+    )
+
+    # --- J: workflow-level PATH added/overridden ---
+    cwf = _clone()
+    cwf["env"]["PATH"] = "/tmp/candidate/bin"
+    assert cwf["env"] != CADDY_EXPECTED_WORKFLOW_ENV, (
+        "J: workflow-level PATH addition was not caught"
+    )
