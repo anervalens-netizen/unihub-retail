@@ -256,7 +256,7 @@ jobs:
           cp -R "$PWD/ops/caddy/." "$caddy_stage/"
           container="unihub-retail-caddy-validate-$$"
           cleanup() {
-            docker rm -f "$container" >/dev/null 2>&1 || true
+            docker rm -f -v "$container" >/dev/null 2>&1 || true
             rm -rf -- "$caddy_stage"
           }
           trap cleanup EXIT
@@ -1051,7 +1051,7 @@ jobs:
           cp -R "$PWD/ops/caddy/." "$caddy_stage/"
           container="unihub-retail-caddy-validate-$$"
           cleanup() {
-            docker rm -f "$container" >/dev/null 2>&1 || true
+            docker rm -f -v "$container" >/dev/null 2>&1 || true
             rm -rf -- "$caddy_stage"
           }
           trap cleanup EXIT

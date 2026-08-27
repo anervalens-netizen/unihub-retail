@@ -3059,7 +3059,26 @@ def test_caddy_validation_steps_present_in_exactly_two_jobs():
 @pytest.mark.parametrize("block_index", [0, 1])
 def test_caddy_validation_step_uses_no_host_bind(block_index):
     """Each Caddy validation step must not bind a host path
-    into the container."""
+    into the container.
+
+    Forbidden:
+      * ``-v`` as a container-creation / container-run option (would
+        be a Docker bind mount);
+      * ``--volume`` for the same reason;
+      * ``--mount`` for the same reason;
+      * the OLD literal ``"$PWD/ops/caddy:/..."`` bind-mount source.
+
+    Allowed:
+      * a bare ``$PWD/ops/caddy/`` reference on the runner side, e.g.
+        inside ``cp -R`` (the runner is allowed to read its own
+        workspace);
+      * the cleanup flag ``docker rm -f -v "$container"``, where ``-v``
+        is the ``docker rm`` flag for removing anonymous volumes
+        (NOT a bind mount) — that token is a known exception and is
+        only permitted in the `cleanup` function. The dedicated
+        ``test_caddy_validation_step_uses_docker_rm_fv_in_cleanup``
+        test pins the exact required form.
+    """
     blocks = _collect_caddy_steps()
     block = blocks[block_index]
     # Strip the comment that explicitly mentions the forbidden
@@ -3071,7 +3090,7 @@ def test_caddy_validation_step_uses_no_host_bind(block_index):
         if not line.lstrip().startswith("#")
     ]
     code = "\n".join(code_lines)
-    for forbidden in (" -v ", "--volume", "--mount"):
+    for forbidden in ("--volume", "--mount"):
         assert forbidden not in code, (
             f"Caddy validation step #{block_index} contains forbidden "
             f"host-bind token {forbidden!r}:\n{block}"
@@ -3081,15 +3100,30 @@ def test_caddy_validation_step_uses_no_host_bind(block_index):
     # ':/...' (a docker bind-mount source/target pair). Note that a bare
     # $PWD/ops/caddy/ reference on the runner side (e.g. inside `cp -R`) is
     # legitimate — the runner is allowed to read its own workspace.
-    code_lines = [
-        line for line in block.splitlines()
-        if not line.lstrip().startswith("#")
-    ]
-    code = "\n".join(code_lines)
     assert "PWD/ops/caddy:/" not in code, (
         f"Caddy validation step #{block_index} still references the "
         f"old host-bind mount '$PWD/ops/caddy:/...' — must use docker cp "
         f"instead."
+    )
+    # A bind-mount `-v` option to `docker create`/`docker run` would
+    # appear as a line whose first non-whitespace token is `docker`
+    # followed by `create` or `run` and later a ` -v ` token. Scan for
+    # that specific shape so the cleanup's `docker rm -f -v` is
+    # legitimately allowed.
+    bind_violations = []
+    for line in code.splitlines():
+        stripped = line.lstrip()
+        if not stripped.startswith("docker "):
+            continue
+        if " create " not in stripped and not stripped.startswith("docker create ") \
+                and " run " not in stripped and not stripped.startswith("docker run "):
+            continue
+        if " -v " in (" " + stripped + " "):
+            bind_violations.append(line)
+    assert not bind_violations, (
+        f"Caddy validation step #{block_index} uses `-v` as a "
+        f"container creation/run bind-mount option:\n"
+        + "\n".join(bind_violations)
     )
 
 
@@ -3152,17 +3186,34 @@ def test_caddy_validation_step_pins_image_digest(block_index):
 @pytest.mark.parametrize("block_index", [0, 1])
 def test_caddy_validation_step_has_cleanup(block_index):
     """Each Caddy validation step must remove the disposable
-    container and the staging directory on exit, even on
-    failure."""
+    container, the staging directory, and any anonymous Docker
+    volumes the official Caddy image created, on exit — even
+    on failure."""
     blocks = _collect_caddy_steps()
     block = blocks[block_index]
-    assert "docker rm -f " in block, (
-        f"Caddy validation step #{block_index} must 'docker rm -f' the "
-        f"disposable container on exit"
+    assert "docker rm -f -v " in block, (
+        f"Caddy validation step #{block_index} must 'docker rm -f -v' "
+        f"the disposable container on exit so the official Caddy "
+        f"image's anonymous /data and /config volumes do not leak."
     )
     assert "trap cleanup EXIT" in block, (
         f"Caddy validation step #{block_index} must 'trap cleanup EXIT' "
         f"so failure paths still tear down"
+    )
+
+
+@pytest.mark.parametrize("block_index", [0, 1])
+def test_caddy_validation_step_uses_docker_rm_fv_in_cleanup(block_index):
+    """Pin the exact required cleanup form so the anonymous-volume
+    removal is preserved and a future refactor cannot regress
+    it (e.g. by reverting to plain ``docker rm -f``)."""
+    blocks = _collect_caddy_steps()
+    block = blocks[block_index]
+    required = "docker rm -f -v \"$container\""
+    assert required in block, (
+        f"Caddy validation step #{block_index} must contain the exact "
+        f"cleanup line {required!r} so the official Caddy image's "
+        f"anonymous /data and /config volumes are removed."
     )
 
 
