@@ -1,4 +1,4 @@
-import { RefreshCw, Search } from 'lucide-react';
+import { AlertCircle, RefreshCw, Search } from 'lucide-react';
 
 import { SalaryAreaChart } from '../../components/SalaryAreaChart';
 import { SalaryDrawer } from '../../components/SalaryDrawer';
@@ -9,8 +9,47 @@ import { SalaryExportButton, SalaryExportStatus } from './SalaryExportControls';
 import { COMPANY_COLORS, PAGE_SIZE, RATIO_HELP_TEXT, formatCompactCurrency, formatCurrency, formatMonthSpan, ratioToneStyle, salarySalesRatio, summaryMonthOptions, toggleSort } from './model';
 import type { SalaryController } from './useSalaryController';
 
+type ReadPath = 'overview' | 'summary' | 'trend' | 'agents';
+
+const READ_LABELS: Record<ReadPath, string> = {
+  overview: 'statistici',
+  summary: 'comparația salarii vs vânzări',
+  trend: 'evoluția lunară',
+  agents: 'lista de agenți',
+};
+
+const READ_RETRY_LABELS: Record<ReadPath, string> = {
+  overview: 'Reîncarcă statistici',
+  summary: 'Reîncarcă comparația',
+  trend: 'Reîncarcă evoluția',
+  agents: 'Reîncarcă agenți',
+};
+
+function formatReadErrors(readErrors: Partial<Record<ReadPath, string>>): string {
+  const paths = Object.keys(readErrors) as ReadPath[];
+  if (paths.length === 0) return '';
+  if (paths.length === 1) return readErrors[paths[0]!] ?? '';
+  const labels = paths.map((path) => READ_LABELS[path]).join(', ');
+  return `Datele de salarii nu au putut fi încărcate pentru: ${labels}.`;
+}
+
+function SalaryReadErrorBanner({ model }: { model: SalaryController }) {
+  const readErrors = model.readErrors ?? {};
+  const paths = Object.keys(readErrors) as ReadPath[];
+  if (paths.length === 0) return null;
+  const message = formatReadErrors(readErrors);
+  return (
+    <div role="alert" aria-live="polite" className="flex flex-wrap items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200">
+      <span className="flex items-start gap-2"><AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0" /><span>{message}</span></span>
+      <span className="ml-auto flex flex-wrap gap-2">
+        {paths.map((path) => <button key={path} type="button" onClick={() => model.retryRead(path)} className="rounded-lg bg-amber-600 px-3 py-1 text-xs font-semibold text-white hover:bg-amber-700">{READ_RETRY_LABELS[path]}</button>)}
+      </span>
+    </div>
+  );
+}
+
 export function SalaryHeader({ model }: { model: SalaryController }) {
-  return <><SegmentedTabs ariaLabel="Vizualizare salarii" level="secondary" options={[{ value: 'overview', label: 'Overview' }, { value: 'stores', label: 'Magazine' }, { value: 'agents', label: 'Agenți' }]} value={model.salaryView} onChange={model.setSalaryView} /><p className="rounded-2xl border border-indigo-100 bg-indigo-50 px-3 py-2 text-xs text-indigo-700 dark:border-indigo-900/50 dark:bg-indigo-950/30 dark:text-indigo-300">Media lunară include doar valorile de cel puțin 2.000 RON. Totalurile, istoricul și numărul de agenți rămân complete.</p><SalaryExportStatus busy={model.salaryExport.busy} message={model.salaryExport.message} operationId={model.salaryExport.operationId} onResume={(operationId) => void model.salaryExport.resume(operationId)} /></>;
+  return <><SegmentedTabs ariaLabel="Vizualizare salarii" level="secondary" options={[{ value: 'overview', label: 'Overview' }, { value: 'stores', label: 'Magazine' }, { value: 'agents', label: 'Agenți' }]} value={model.salaryView} onChange={model.setSalaryView} /><p className="rounded-2xl border border-indigo-100 bg-indigo-50 px-3 py-2 text-xs text-indigo-700 dark:border-indigo-900/50 dark:bg-indigo-950/30 dark:text-indigo-300">Media lunară include doar valorile de cel puțin 2.000 RON. Totalurile, istoricul și numărul de agenți rămân complete.</p><SalaryReadErrorBanner model={model} /><SalaryExportStatus busy={model.salaryExport.busy} message={model.salaryExport.message} operationId={model.salaryExport.operationId} onResume={(operationId) => void model.salaryExport.resume(operationId)} /></>;
 }
 
 export function SalaryOverviewStats({ model }: { model: SalaryController }) {

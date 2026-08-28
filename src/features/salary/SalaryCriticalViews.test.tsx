@@ -95,6 +95,8 @@ function richController() {
     startStoreExport: vi.fn(),
     startTrendExport: vi.fn(),
     startAgentsExport: vi.fn(),
+    readErrors: {},
+    retryRead: vi.fn(),
   };
 }
 
@@ -172,6 +174,30 @@ describe('salary critical views', () => {
     expect(onClose).toHaveBeenCalledOnce();
     rerender(<SalaryDrawer personId="" fullName="" isOpen={false} onClose={onClose} />);
     expect(screen.queryByText('Detalii Lunare')).not.toBeInTheDocument();
+  });
+
+  it('surfaces a per-read-path error banner and clears it on retry', async () => {
+    controller.current = {
+      ...richController(),
+      overview: null,
+      sortedSummary: [],
+      sortedTrend: [],
+      agents: [],
+      totalAgents: 0,
+      loading: false,
+      loadingCards: false,
+      readErrors: {
+        summary: 'Comparația salarii vs vânzări nu a putut fi încărată.',
+        agents: 'Lista de agenți nu a putut fi încărcată.',
+      },
+      retryRead: vi.fn(),
+    };
+    controller.current.retryRead = vi.fn();
+    render(<SalariiSubtab />);
+    const banner = screen.getByRole('alert');
+    expect(banner.textContent).toMatch(/nu au putut fi încărcate pentru: .*lista de agenți/);
+    fireEvent.click(screen.getByRole('button', { name: /Reîncarcă agenți/ }));
+    expect((controller.current.retryRead as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith('agents');
   });
 
   it('renders forecast/final ASM grids and exposes reload/error states', async () => {
