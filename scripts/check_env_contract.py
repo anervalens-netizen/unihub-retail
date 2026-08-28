@@ -29,14 +29,51 @@ FRONTEND_ENV_FILES = (
 )
 
 
+def _module_string_constants(tree: ast.AST) -> dict[str, str]:
+    """Resolve same-module top-level string assignments without executing code.
+
+    Only module-level ``NAME = "literal"`` assignments are accepted. Conditional
+    branches, function-local bindings, imports, type annotations and any
+    expression that is not a plain string literal are deliberately rejected.
+    """
+
+    constants: dict[str, str] = {}
+    for node in getattr(tree, "body", []) or []:
+        if not isinstance(node, ast.Assign):
+            continue
+        if len(node.targets) != 1:
+            continue
+        target = node.targets[0]
+        if not isinstance(target, ast.Name):
+            continue
+        value = node.value
+        if isinstance(value, ast.Constant) and isinstance(value.value, str):
+            constants[target.id] = value.value
+    return constants
+
+
+def _resolve_constant_arg(
+    first: ast.AST, constants: dict[str, str]
+) -> str | None:
+    """Return the string value for a direct literal or a same-module constant."""
+
+    if isinstance(first, ast.Constant) and isinstance(first.value, str):
+        return first.value
+    if isinstance(first, ast.Name) and first.id in constants:
+        return constants[first.id]
+    return None
+
+
 def _python_env_names(path: Path) -> set[str]:
     tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
     names: set[str] = set()
+    constants = _module_string_constants(tree)
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call) or not node.args:
             continue
         first = node.args[0]
-        if not isinstance(first, ast.Constant) or not isinstance(first.value, str):
+        resolved = _resolve_constant_arg(first, constants)
+        if resolved is None:
             continue
         function = node.func
         if (
@@ -52,7 +89,7 @@ def _python_env_names(path: Path) -> set[str]:
             and function.value.attr == "environ"
             and function.attr == "get"
         ):
-            names.add(first.value)
+            names.add(resolved)
     return names
 
 
