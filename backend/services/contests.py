@@ -65,7 +65,7 @@ def _scope_clause_for_stores(scope: dict[str, Any]) -> tuple[str, list[Any]]:
     clauses = [distribution_location_clause("s")]
     if scope.get("site_codes"):
         params.append([str(code) for code in scope["site_codes"]])
-        clauses.append(f"s.site_code = ANY(${len(params)}::TEXT[])")
+        clauses.append(f"s.site_code = ANY(${len(params)}::TEXT[])" )
     else:
         for key in ("asm", "regional", "firma"):
             if scope.get(key):
