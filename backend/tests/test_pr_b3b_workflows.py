@@ -3227,22 +3227,41 @@ CADDY_EXPECTED_STEP = {
     "run": None,  # filled by _caddy_expected_step_dict() so the test
                   # tracks the same canonical run block (Section 10)
 }
-CADDY_EXPECTED_JOB_KEYS_NO_ENV = frozenset(
-    # The set of normal job keys. ``env`` is NOT in this set; a
-    # future `env: DOCKER_HOST: ...` would be detected. All other
-    # job keys (`name`, `runs-on`, `needs`, `if`, `steps`,
-    # `timeout-minutes`, `defaults`, `concurrency`, `strategy`,
-    # `permissions`, `container`, `services`, `uses`, `with`,
-    # `continue-on-error`, `environment`, `tools`) are normal job
-    # metadata and are not execution-interposers. New job keys
-    # must be consciously added here if they ever appear.
-    {
-        "name", "needs", "if", "runs-on", "steps", "timeout-minutes",
-        "defaults", "concurrency", "strategy", "permissions",
-        "continue-on-error", "environment",
-    }
-)
-CADDY_EXPECTED_JOB_DEFAULTS = {"run": {"working-directory": "backend"}}
+CADDY_EXPECTED_JOB_ENVELOPES = {
+    "pr-fast": {
+        "name": "pr-fast",
+        "if": "github.event_name == 'pull_request'",
+        "needs": "runner-isolation",
+        "runs-on": [
+            "self-hosted",
+            "Linux",
+            "X64",
+            "dell-compute",
+            "unihub-build",
+            "unihub-retail-build",
+        ],
+        "timeout-minutes": 15,
+        "defaults": {"run": {"working-directory": "backend"}},
+    },
+    "backend-check": {
+        "name": "backend-check",
+        "if": (
+            "github.event_name == 'workflow_dispatch' "
+            "&& github.ref == 'refs/heads/main'"
+        ),
+        "needs": "runner-isolation",
+        "runs-on": [
+            "self-hosted",
+            "Linux",
+            "X64",
+            "dell-compute",
+            "unihub-build",
+            "unihub-retail-build",
+        ],
+        "timeout-minutes": 75,
+        "defaults": {"run": {"working-directory": "backend"}},
+    },
+}
 CADDY_EXPECTED_WORKFLOW_ENV = {
     "PYTHONNOUSERSITE": "1",
     "PYTHONSAFEPATH": "1",
@@ -3331,34 +3350,46 @@ def test_caddy_validation_step_metadata_is_exact(parsed_workflow, job_name):
 
 
 @pytest.mark.parametrize("job_name", list(CADDY_RELEVANT_JOBS))
-def test_caddy_validation_job_level_execution_overrides_are_exact(
+def test_caddy_validation_job_routing_envelope_is_exact(
     parsed_workflow, job_name,
 ):
-    """The Caddy-relevant jobs must have no job-level `env` and
-    an exact `defaults` of ``{run: {working-directory: backend}}``,
-    so a future `env:`/`defaults.run.shell:` cannot silently
-    re-route the canonical run block."""
+    """The Caddy-relevant job's full job-level envelope (every key
+    except ``steps``) must equal the authorized contract exactly.
+
+    This pins the trusted routing: ``needs: runner-isolation`` keeps
+    Caddy validation after the runner-isolation gate, and
+    ``runs-on`` keeps it on the isolated Retail build-runner (NOT
+    GitHub-hosted or a deploy runner). A future edit such as
+    ``runs-on: [self-hosted, unihub-deploy]`` or
+    ``needs: some-other-job`` or removing ``needs`` entirely
+    would move Caddy validation outside the trusted boundary
+    while still leaving the step shape and the canonical run
+    block untouched — and the exact envelope equality would
+    fail closed.
+    """
     job = (parsed_workflow.get("jobs") or {})[job_name]
-    # No job-level env: a future `env: DOCKER_HOST: ...` would
-    # redirect Docker execution to a candidate-controlled daemon.
-    assert "env" not in job, (
-        f"job {job_name!r} must not declare job-level `env` (it could "
-        f"inject DOCKER_HOST/BASH_ENV/etc. and re-route the canonical "
-        f"Caddy run block); got: {job.get('env')!r}"
+    expected = CADDY_EXPECTED_JOB_ENVELOPES[job_name]
+    # Exclude ONLY ``steps``; pin every other current job-level
+    # field exactly. This inherently proves absence of every
+    # not-listed job-level execution key (env, container,
+    # services, strategy, environment, continue-on-error, ...) and
+    # pins the values of every present one (needs, runs-on, if,
+    # timeout-minutes, defaults, name).
+    actual = {k: v for k, v in job.items() if k != "steps"}
+    assert actual == expected, (
+        f"Caddy-relevant job {job_name!r} does not match the "
+        f"authorized routing envelope.\n"
+        f"--- expected ---\n{expected}\n"
+        f"--- actual ---\n{actual}\n"
     )
-    # No other job-level execution key may exist; the only one we
-    # permit today is `defaults`.
-    extra_execution_keys = set(job.keys()) - CADDY_EXPECTED_JOB_KEYS_NO_ENV
-    assert not extra_execution_keys, (
-        f"job {job_name!r} has unexpected execution keys: "
-        f"{sorted(extra_execution_keys)}"
-    )
-    # `defaults` must be exactly the authorized shape (in particular,
-    # no `defaults.run.shell:` or other execution-interposers).
-    assert job.get("defaults") == CADDY_EXPECTED_JOB_DEFAULTS, (
-        f"job {job_name!r} has unexpected `defaults`: "
-        f"expected={CADDY_EXPECTED_JOB_DEFAULTS!r} "
-        f"got={job.get('defaults')!r}"
+    # Belt-and-braces: explicitly prove the job's key set is exactly
+    # the expected-envelope key set plus ``steps``. This catches a
+    # future extra job-level key even if it happens to match the
+    # expected envelope by accident.
+    expected_keys = set(expected.keys()) | {"steps"}
+    assert set(job.keys()) == expected_keys, (
+        f"Caddy-relevant job {job_name!r} has unexpected key set: "
+        f"expected={sorted(expected_keys)} got={sorted(job.keys())}"
     )
 
 
@@ -3390,16 +3421,13 @@ def test_caddy_validation_execution_envelope_rejects_mutations(parsed_workflow):
     every realistic injection at the step/job/workflow layer that
     could change how/where the canonical run block executes must
     be detected by exact inequality."""
-    # Build a candidate by mutating an in-memory copy of the parsed
-    # workflow. Each mutation is a single, surgical edit and the test
-    # asserts the post-mutation parsed structure is no longer
-    # equal to the original.
     expected_step = _caddy_expected_step_dict()
+    yaml = _yaml()
 
     def _clone():
         # Cheap structural copy via YAML re-emit so we exercise the
         # same parser the test uses.
-        return _yaml().safe_load(_yaml().dump(parsed_workflow))
+        return yaml.safe_load(yaml.dump(parsed_workflow))
 
     def _caddy_step(cwf, jn):
         return _caddy_steps_from_job(cwf, jn)[0]
@@ -3410,92 +3438,175 @@ def test_caddy_validation_execution_envelope_rejects_mutations(parsed_workflow):
             if s.get("name") == "Versioned Retail edge request limits"
         )
 
-    # --- A: step-level env (DOCKER_HOST) ---
-    cwf = _clone()
-    cwf["jobs"]["pr-fast"]["steps"][_step_index(cwf, "pr-fast")]["env"] = {
-        "DOCKER_HOST": "tcp://example.invalid:2375"
-    }
-    assert _caddy_step(cwf, "pr-fast") != expected_step, (
-        "A: step-level env injection was not caught by exact inequality"
-    )
+    def _job_envelope(cwf, jn):
+        return {k: v for k, v in cwf["jobs"][jn].items() if k != "steps"}
 
-    # --- B: step-level env (BASH_ENV) ---
-    cwf = _clone()
-    cwf["jobs"]["backend-check"]["steps"][_step_index(cwf, "backend-check")]["env"] = {
-        "BASH_ENV": "/tmp/wrapper"
-    }
-    assert _caddy_step(cwf, "backend-check") != expected_step, (
-        "B: step-level BASH_ENV injection was not caught"
-    )
+    def _assert_rejected(label, condition, hint):
+        assert condition, (
+            f"mutation {label} was not caught by the canonical "
+            f"envelope check: {hint}"
+        )
 
-    # --- C: step-level shell: python ---
-    cwf = _clone()
-    cwf["jobs"]["pr-fast"]["steps"][_step_index(cwf, "pr-fast")]["shell"] = "python"
-    assert _caddy_step(cwf, "pr-fast") != expected_step, (
-        "C: step-level shell=python was not caught"
-    )
-
-    # --- D: step-level shell: bash --noprofile --norc {0} ---
-    cwf = _clone()
-    cwf["jobs"]["pr-fast"]["steps"][_step_index(cwf, "pr-fast")][
-        "shell"
-    ] = "bash --noprofile --norc {0}"
-    assert _caddy_step(cwf, "pr-fast") != expected_step, (
-        "D: step-level shell=bash --noprofile --norc {0} was not caught"
-    )
-
-    # --- E: job-level env: DOCKER_HOST ... ---
-    cwf = _clone()
-    cwf["jobs"]["pr-fast"]["env"] = {
-        "DOCKER_HOST": "tcp://example.invalid:2375"
-    }
-    # The job-level assertion (`env not in job`) is the primary
-    # detection path; the no-env assertion would fail too. We
-    # additionally verify the parsed structure differs from
-    # canonical so the test does not depend solely on `not in`.
-    assert "env" in cwf["jobs"]["pr-fast"], (
-        "E: job-level env injection was not detectable"
-    )
-    assert cwf["jobs"]["pr-fast"]["env"] != parsed_workflow[
-        "jobs"
-    ]["pr-fast"].get("env"), "E: job-level env should differ from canonical"
-
-    # --- F: job-level defaults.run.shell: ... ---
-    cwf = _clone()
-    cwf["jobs"]["backend-check"]["defaults"]["run"]["shell"] = "bash --norc"
-    assert cwf["jobs"]["backend-check"]["defaults"] != CADDY_EXPECTED_JOB_DEFAULTS, (
-        "F: job-level defaults.run.shell injection was not caught"
-    )
-
-    # --- G: workflow-level defaults: ... ---
-    cwf = _clone()
-    cwf["defaults"] = {"run": {"shell": "bash --norc"}}
-    assert "defaults" in cwf, (
-        "G: workflow-level defaults was not detectable"
-    )
-    assert cwf.get("defaults") != parsed_workflow.get("defaults"), (
-        "G: workflow-level defaults should differ from canonical (None)"
-    )
-
-    # --- H: workflow-level env addition (DOCKER_HOST) ---
-    cwf = _clone()
-    new_env = dict(cwf["env"])
-    new_env["DOCKER_HOST"] = "tcp://example.invalid:2375"
-    cwf["env"] = new_env
-    assert cwf["env"] != CADDY_EXPECTED_WORKFLOW_ENV, (
-        "H: workflow-level env DOCKER_HOST addition was not caught"
-    )
-
-    # --- I: workflow-level BASH_ENV changed from "" to candidate value ---
-    cwf = _clone()
-    cwf["env"]["BASH_ENV"] = "/tmp/candidate/wrapper"
-    assert cwf["env"] != CADDY_EXPECTED_WORKFLOW_ENV, (
-        "I: workflow-level BASH_ENV change was not caught"
-    )
-
-    # --- J: workflow-level PATH added/overridden ---
-    cwf = _clone()
-    cwf["env"]["PATH"] = "/tmp/candidate/bin"
-    assert cwf["env"] != CADDY_EXPECTED_WORKFLOW_ENV, (
-        "J: workflow-level PATH addition was not caught"
-    )
+    mutations = [
+        # --- A: step-level env (DOCKER_HOST) ---
+        ("A: step-level env DOCKER_HOST", lambda cwf: (
+            cwf["jobs"]["pr-fast"]["steps"][
+                _step_index(cwf, "pr-fast")
+            ].__setitem__("env", {"DOCKER_HOST": "tcp://example.invalid:2375"}),
+            _assert_rejected(
+                "A", _caddy_step(cwf, "pr-fast") != expected_step,
+                "step-level DOCKER_HOST env was not caught",
+            ),
+        )),
+        # --- B: step-level env (BASH_ENV) ---
+        ("B: step-level env BASH_ENV", lambda cwf: (
+            cwf["jobs"]["backend-check"]["steps"][
+                _step_index(cwf, "backend-check")
+            ].__setitem__("env", {"BASH_ENV": "/tmp/wrapper"}),
+            _assert_rejected(
+                "B", _caddy_step(cwf, "backend-check") != expected_step,
+                "step-level BASH_ENV env was not caught",
+            ),
+        )),
+        # --- C: step-level shell: python ---
+        ("C: step-level shell=python", lambda cwf: (
+            cwf["jobs"]["pr-fast"]["steps"][
+                _step_index(cwf, "pr-fast")
+            ].__setitem__("shell", "python"),
+            _assert_rejected(
+                "C", _caddy_step(cwf, "pr-fast") != expected_step,
+                "step-level shell=python was not caught",
+            ),
+        )),
+        # --- D: step-level shell: bash --noprofile --norc {0} ---
+        ("D: step-level shell=bash --noprofile --norc {0}", lambda cwf: (
+            cwf["jobs"]["pr-fast"]["steps"][
+                _step_index(cwf, "pr-fast")
+            ].__setitem__("shell", "bash --noprofile --norc {0}"),
+            _assert_rejected(
+                "D", _caddy_step(cwf, "pr-fast") != expected_step,
+                "step-level shell=bash ... was not caught",
+            ),
+        )),
+        # --- E: job-level env: DOCKER_HOST ... ---
+        ("E: job-level env", lambda cwf: (
+            cwf["jobs"]["pr-fast"].__setitem__("env", {
+                "DOCKER_HOST": "tcp://example.invalid:2375"
+            }),
+            _assert_rejected(
+                "E", "env" in cwf["jobs"]["pr-fast"],
+                "job-level env injection was not detectable",
+            ),
+        )),
+        # --- F: job-level defaults.run.shell: ... ---
+        ("F: job-level defaults.run.shell", lambda cwf: (
+            cwf["jobs"]["backend-check"]["defaults"]["run"].__setitem__(
+                "shell", "bash --norc"
+            ),
+            _assert_rejected(
+                "F",
+                _job_envelope(cwf, "backend-check")
+                    != CADDY_EXPECTED_JOB_ENVELOPES["backend-check"],
+                "job-level defaults.run.shell was not caught",
+            ),
+        )),
+        # --- K: pr-fast runs-on broadened ---
+        ("K: pr-fast runs-on broadened", lambda cwf: (
+            cwf["jobs"]["pr-fast"].__setitem__(
+                "runs-on", ["self-hosted", "unihub-deploy"]
+            ),
+            _assert_rejected(
+                "K",
+                _job_envelope(cwf, "pr-fast")
+                    != CADDY_EXPECTED_JOB_ENVELOPES["pr-fast"],
+                "pr-fast runs-on broadening was not caught",
+            ),
+        )),
+        # --- L: backend-check needs removed ---
+        ("L: backend-check needs removed", lambda cwf: (
+            cwf["jobs"]["backend-check"].__delitem__("needs"),
+            _assert_rejected(
+                "L",
+                _job_envelope(cwf, "backend-check")
+                    != CADDY_EXPECTED_JOB_ENVELOPES["backend-check"],
+                "backend-check needs removal was not caught",
+            ),
+        )),
+        # --- M: backend-check needs changed to some other job ---
+        ("M: backend-check needs changed", lambda cwf: (
+            cwf["jobs"]["backend-check"].__setitem__(
+                "needs", "some-other-job"
+            ),
+            _assert_rejected(
+                "M",
+                _job_envelope(cwf, "backend-check")
+                    != CADDY_EXPECTED_JOB_ENVELOPES["backend-check"],
+                "backend-check needs change was not caught",
+            ),
+        )),
+        # --- N: pr-fast runs-on changed to ubuntu-latest ---
+        ("N: pr-fast runs-on=ubuntu-latest", lambda cwf: (
+            cwf["jobs"]["pr-fast"].__setitem__("runs-on", "ubuntu-latest"),
+            _assert_rejected(
+                "N",
+                _job_envelope(cwf, "pr-fast")
+                    != CADDY_EXPECTED_JOB_ENVELOPES["pr-fast"],
+                "pr-fast runs-on=ubuntu-latest was not caught",
+            ),
+        )),
+        # --- O: pr-fast timeout-minutes bumped ---
+        ("O: pr-fast timeout-minutes change", lambda cwf: (
+            cwf["jobs"]["pr-fast"].__setitem__("timeout-minutes", 999),
+            _assert_rejected(
+                "O",
+                _job_envelope(cwf, "pr-fast")
+                    != CADDY_EXPECTED_JOB_ENVELOPES["pr-fast"],
+                "pr-fast timeout-minutes change was not caught",
+            ),
+        )),
+        # --- P: pr-fast if-condition rewritten ---
+        ("P: pr-fast if=always()", lambda cwf: (
+            cwf["jobs"]["pr-fast"].__setitem__("if", "always()"),
+            _assert_rejected(
+                "P",
+                _job_envelope(cwf, "pr-fast")
+                    != CADDY_EXPECTED_JOB_ENVELOPES["pr-fast"],
+                "pr-fast if=always() was not caught",
+            ),
+        )),
+        # --- G: workflow-level defaults: ... ---
+        ("G: workflow-level defaults", lambda cwf: (
+            cwf.__setitem__("defaults", {"run": {"shell": "bash --norc"}}),
+            _assert_rejected(
+                "G", "defaults" in cwf and cwf["defaults"] is not None,
+                "workflow-level defaults was not detectable",
+            ),
+        )),
+        # --- H: workflow-level env addition (DOCKER_HOST) ---
+        ("H: workflow-level env DOCKER_HOST", lambda cwf: (
+            cwf["env"].__setitem__("DOCKER_HOST", "tcp://example.invalid:2375"),
+            _assert_rejected(
+                "H", cwf["env"] != CADDY_EXPECTED_WORKFLOW_ENV,
+                "workflow-level env DOCKER_HOST addition was not caught",
+            ),
+        )),
+        # --- I: workflow-level BASH_ENV changed ---
+        ("I: workflow-level BASH_ENV change", lambda cwf: (
+            cwf["env"].__setitem__("BASH_ENV", "/tmp/candidate/wrapper"),
+            _assert_rejected(
+                "I", cwf["env"] != CADDY_EXPECTED_WORKFLOW_ENV,
+                "workflow-level BASH_ENV change was not caught",
+            ),
+        )),
+        # --- J: workflow-level PATH added/overridden ---
+        ("J: workflow-level PATH addition", lambda cwf: (
+            cwf["env"].__setitem__("PATH", "/tmp/candidate/bin"),
+            _assert_rejected(
+                "J", cwf["env"] != CADDY_EXPECTED_WORKFLOW_ENV,
+                "workflow-level PATH addition was not caught",
+            ),
+        )),
+    ]
+    for _label, mutate in mutations:
+        cwf = _clone()
+        mutate(cwf)
