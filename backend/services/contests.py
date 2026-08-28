@@ -288,12 +288,16 @@ class ContestsService:
         if not enabled:
             return {}
         config, config_error = load_special_cards_config()
+        if config_error:
+            raise RuntimeError("Configurația promo pentru concurs nu poate fi validată.")
         definition, definition_error = parse_promotion_definition(config, month)
-        if definition is None or definition_error or config_error:
+        if definition_error:
+            raise RuntimeError("Configurația promo pentru concurs nu poate fi validată.")
+        if definition is None:
             return {}
         products, products_error = load_promotion_rule_products(definition)
-        if products is None or products_error is not None:
-            return {}
+        if products_error is not None or products is None:
+            raise RuntimeError("Masterul promo pentru concurs nu poate fi validat.")
         rule_type, item_codes = self._promo_codes(definition, products)
         async with self.pool.acquire() as conn:
             result = await self._promo_with_tail(
