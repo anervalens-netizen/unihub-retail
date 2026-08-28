@@ -22,7 +22,6 @@ from services.dashboard_specials import (
     parse_promotion_definition,
 )
 from services.promo_copurchase import (
-    PromoActualsError,
     PromoCoPurchaseResult,
     compute_promo_actuals_from_report,
     compute_promo_copurchase,
@@ -222,16 +221,13 @@ class ContestsService:
         item_codes: list[str],
         scope_kwargs: dict[str, Any],
     ) -> PromoCoPurchaseResult | None:
-        try:
-            return await compute_promo_actuals_from_report(
-                conn,
-                month=month,
-                definition=definition,
-                item_codes=item_codes,
-                **scope_kwargs,
-            )
-        except PromoActualsError:
-            return PromoCoPurchaseResult()
+        return await compute_promo_actuals_from_report(
+            conn,
+            month=month,
+            definition=definition,
+            item_codes=item_codes,
+            **scope_kwargs,
+        )
 
     async def _promo_with_tail(
         self,
