@@ -26,6 +26,7 @@ import json
 import re
 import subprocess
 import textwrap
+from difflib import unified_diff as _unified_diff
 from pathlib import Path
 
 import pytest
@@ -2985,3 +2986,867 @@ def test_pr_b3b_does_not_introduce_new_exact_main_job():
         assert "workflow_dispatch" not in on if expected == "pull_request_target" else True, (
             "pr-deep-policy must not run on workflow_dispatch"
         )
+
+
+# ---------------------------------------------------------------------------
+# (10) Caddy validation steps are pinned to one canonical authorized run block
+# ---------------------------------------------------------------------------
+#
+# The Caddy validation steps in .github/workflows/ci.yml are an E5 trust-
+# boundary fixture: the dedicated rootless Docker daemon cannot see
+# /opt/Mobiup, so a host bind (`-v`, `--volume`, `--mount`, including the
+# `=` forms) would silently fail or — worse — escape the isolation.
+# Modeling arbitrary Bash expansion in a Python regression test is not
+# acceptable; instead the operational contract is reduced to a single
+# property: the run block of every "Versioned Retail edge request limits"
+# step is byte-for-byte equal to one canonical block. Any future drift
+# in the Caddy command surface (extra flags, alternate image, alternate
+# network, variable-generated flags, command substitution, changed
+# cleanup) will fail this test by simple inequality.
+
+
+CADDY_STEP_NAME = "Versioned Retail edge request limits"
+CADDY_PINNED_IMAGE = (
+    "caddy@sha256:844f60b64e4724a5aa8245e019dace0d3f199f7433ce6c57676cb30a920dbad9"
+)
+
+
+# The single source of truth for the Caddy run block. Every step named
+# "Versioned Retail edge request limits" in ci.yml must produce a
+# block that, after _collect_caddy_steps' indentation stripping, is
+# exactly equal to this string. Comments are part of the contract so
+# a future reviewer can read what the canonical block is meant to do.
+CADDY_EXPECTED_RUN_BLOCK = textwrap.dedent("""\
+    set -euo pipefail
+    caddy_image=caddy@sha256:844f60b64e4724a5aa8245e019dace0d3f199f7433ce6c57676cb30a920dbad9
+    docker image inspect "$caddy_image" >/dev/null
+    # The rootless Docker daemon is sandboxed away from the runner
+    # workspace (InaccessiblePaths=/opt/Mobiup). Stage candidate
+    # ops/caddy at a daemon-readable path the runner controls, then
+    # `docker cp` it into a stopped, network-isolated container.
+    # No host bind, no -v, no --mount, no volume, no pull.
+    caddy_stage="$(mktemp -d -t unihub-retail-caddy-stage.XXXXXX)"
+    container="unihub-retail-caddy-validate-$$"
+    cleanup() {
+      docker rm -f -v "$container" >/dev/null 2>&1 || true
+      rm -rf -- "$caddy_stage"
+    }
+    trap cleanup EXIT
+    chmod 0700 "$caddy_stage"
+    cp -R "$PWD/ops/caddy/." "$caddy_stage/"
+    docker create \\
+      --pull=never \\
+      --name "$container" \\
+      --network none \\
+      "$caddy_image" \\
+      caddy validate \\
+      --config /etc/caddy/Caddyfile.validate \\
+      --adapter caddyfile \\
+      >/dev/null
+    docker cp "$caddy_stage/." "$container:/etc/caddy"
+    docker start -a "$container"
+""").rstrip("\n")
+
+
+def _collect_caddy_steps():
+    """Return every run-block whose enclosing step is named
+    ``Versioned Retail edge request limits``.
+
+    Operates on the raw workflow text so the assertion is robust to
+    YAML anchor / alias / merge-key choices. The block returned is
+    the indented run-block with the 10-space common indent stripped.
+    Blank lines that come after the step's content (a list-item
+    separator) are NOT included, so the result is the actual shell
+    text the runner will execute.
+    """
+    text = CI_YML.read_text(encoding="utf-8")
+    lines = text.splitlines()
+    blocks = []
+    i = 0
+    while i < len(lines):
+        if CADDY_STEP_NAME in lines[i] and "- name:" in lines[i]:
+            run_buffer = []
+            in_run = False
+            run_indent = None
+            j = i
+            while j < len(lines):
+                line = lines[j]
+                stripped = line.lstrip()
+                indent = len(line) - len(stripped)
+                if not in_run:
+                    if stripped.startswith("run:") or stripped.startswith("run: |"):
+                        in_run = True
+                        run_indent = indent + 2
+                        if "|" in stripped:
+                            after = stripped.split("|", 1)[1].strip()
+                            if after and after not in ("|", "|-", "|+"):
+                                run_buffer.append(after)
+                        j += 1
+                        continue
+                else:
+                    if stripped == "":
+                        # Blank line: this is either a blank inside the
+                        # block (unlikely for a shell run: | block) or
+                        # the list-item separator after the step. Stop.
+                        break
+                    if indent < run_indent:
+                        break
+                    run_buffer.append(line[run_indent:])
+                j += 1
+            blocks.append("\n".join(run_buffer).rstrip("\n"))
+            i = j
+        else:
+            i += 1
+    return blocks
+
+
+def test_caddy_validation_steps_present_in_exactly_two_jobs():
+    """Both the pr-fast and the exact-main FULL backend-check
+    pre-step must still exist."""
+    blocks = _collect_caddy_steps()
+    assert len(blocks) == 2, (
+        f"expected exactly 2 'Versioned Retail edge request limits' "
+        f"steps in ci.yml, found {len(blocks)}"
+    )
+
+
+@pytest.mark.parametrize("block_index", [0, 1])
+def test_caddy_validation_block_is_byte_equal_to_canonical(block_index):
+    """The Caddy run block must be byte-for-byte equal to the
+    canonical authorized block. Any executable deviation — extra
+    flag, alternate image, alternate network, variable-generated
+    flag, command substitution, missing cleanup, lost trap order,
+    etc. — is a fail-closed regression."""
+    blocks = _collect_caddy_steps()
+    assert len(blocks) == 2
+    actual = blocks[block_index]
+    expected = CADDY_EXPECTED_RUN_BLOCK
+    assert actual == expected, (
+        f"Caddy validation step #{block_index} does not match the "
+        f"canonical authorized block.\n"
+        f"--- expected ({len(expected)} chars) ---\n{expected}\n"
+        f"--- actual ({len(actual)} chars) ---\n{actual}\n"
+        f"--- diff (unified) ---\n"
+        + "\n".join(
+            f"{ln:>4} {mark} {line}" for ln, mark, line in _unified_diff(
+                expected.splitlines(), actual.splitlines(), lineterm=""
+            )
+        )
+    )
+
+
+def test_caddy_validation_pinned_image_is_present():
+    """The pinned caddy image digest must still appear in the
+    canonical block. This is a positive contract sanity check
+    that does not depend on a particular authoring pattern."""
+    assert CADDY_PINNED_IMAGE in CADDY_EXPECTED_RUN_BLOCK, (
+        f"pinned caddy image digest {CADDY_PINNED_IMAGE!r} missing "
+        f"from the canonical block"
+    )
+
+
+def test_caddy_validation_canonical_block_rejects_mutations():
+    """Mechanically prove the canonical contract is fail-closed:
+    every realistic regression that would change the executable
+    surface must differ from the canonical block."""
+    expected = CADDY_EXPECTED_RUN_BLOCK
+
+    def _substr_mutation(label, anchor, replacement):
+        candidate = expected.replace(anchor, replacement, 1)
+        assert candidate != expected, (
+            f"mutation {label!r} did not actually change the canonical "
+            f"block; fix the test"
+        )
+        return candidate
+
+    def _reorder_mutation_I():
+        # Move "trap cleanup EXIT" to AFTER the cp -R line. This models
+        # the P3 regression where a chmod/cp failure leaves the stage
+        # dir behind because the trap was not yet installed.
+        candidate = expected.replace(
+            "trap cleanup EXIT\nchmod 0700",
+            "chmod 0700",
+        ).replace(
+            'chmod 0700 "$caddy_stage"\ncp -R "$PWD/ops/caddy/." "$caddy_stage/"',
+            'cp -R "$PWD/ops/caddy/." "$caddy_stage/"\ntrap cleanup EXIT',
+        )
+        assert candidate != expected, (
+            "mutation I did not actually change the canonical block; "
+            "fix the test"
+        )
+        return candidate
+
+    mutations = [
+        ("A: -v host bind", "docker create \\\n",
+         '        docker create \\\n          -v "$PWD/ops/caddy:/etc/caddy:ro" \\\n'),
+        ("B: --mount= bind form", "docker create \\\n",
+         '        docker create \\\n          --mount=type=bind,src=/tmp/foo,dst=/etc/caddy \\\n'),
+        ("C: --volume= bind form", "docker create \\\n",
+         '        docker create \\\n          --volume=/tmp/foo:/etc/caddy \\\n'),
+        ("D: variable-generated flag", "docker create \\\n",
+         '        mount_flag=-v\n        docker create \\\n          "$mount_flag" \\\n'),
+        ("E: alternate network", "docker create \\\n",
+         '        docker create \\\n          --network host \\\n'),
+        ("F: drop --pull=never", "docker create \\\n",
+         '        docker create \\\n          --name "$container" \\\n'),
+        ("G: change pinned digest", CADDY_PINNED_IMAGE + "\n",
+         'caddy_image=caddy@sha256:0000000000000000000000000000000000000000000000000000000000000000\n'),
+        ("H: drop -v from docker rm cleanup",
+         'docker rm -f -v "$container" >/dev/null 2>&1 || true\n',
+         'docker rm -f "$container" >/dev/null 2>&1 || true\n'),
+    ]
+    for label, anchor, replacement in mutations:
+        candidate = _substr_mutation(label, anchor, replacement)
+        # The mutation must be rejected by the canonical-equality test.
+        assert candidate != CADDY_EXPECTED_RUN_BLOCK, (
+            f"mutation {label!r} produced a block that still equals the "
+            f"canonical block — the test would not catch this regression"
+        )
+    candidate = _reorder_mutation_I()
+    assert candidate != CADDY_EXPECTED_RUN_BLOCK, (
+        "mutation I (trap after cp) produced a block that still equals "
+        "the canonical block — the test would not catch this regression"
+    )
+
+
+# ---------------------------------------------------------------------------
+# (11) Caddy step execution envelope: step + job + workflow execution layers
+# ---------------------------------------------------------------------------
+#
+# Section (10) pinned the run block; this section pins the *execution
+# envelope* — the step-level metadata, the relevant job-level overrides,
+# and the workflow-level env/defaults that could redirect or interpose
+# shell or Docker execution. A future edit that keeps the canonical
+# run block verbatim but adds a step-level `env: DOCKER_HOST: ...` or
+# `shell: ...`, or a job-level `env:`/`defaults.run.shell:`, or a
+# workflow-level env/defaults change, would silently shift the
+# execution surface and is therefore a fail-closed regression.
+
+
+CADDY_RELEVANT_JOBS = ("pr-fast", "backend-check")
+CADDY_EXPECTED_STEP_KEYS = frozenset({"name", "run", "working-directory"})
+CADDY_EXPECTED_STEP = {
+    "name": "Versioned Retail edge request limits",
+    "working-directory": ".",
+    "run": None,  # filled by _caddy_expected_step_dict() so the test
+                  # tracks the same canonical run block (Section 10)
+}
+CADDY_EXPECTED_JOB_ENVELOPES = {
+    "pr-fast": {
+        "name": "pr-fast",
+        "if": "github.event_name == 'pull_request'",
+        "needs": "runner-isolation",
+        "runs-on": [
+            "self-hosted",
+            "Linux",
+            "X64",
+            "dell-compute",
+            "unihub-build",
+            "unihub-retail-build",
+        ],
+        "timeout-minutes": 15,
+        "defaults": {"run": {"working-directory": "backend"}},
+    },
+    "backend-check": {
+        "name": "backend-check",
+        "if": (
+            "github.event_name == 'workflow_dispatch' "
+            "&& github.ref == 'refs/heads/main'"
+        ),
+        "needs": "runner-isolation",
+        "runs-on": [
+            "self-hosted",
+            "Linux",
+            "X64",
+            "dell-compute",
+            "unihub-build",
+            "unihub-retail-build",
+        ],
+        "timeout-minutes": 75,
+        "defaults": {"run": {"working-directory": "backend"}},
+    },
+}
+CADDY_EXPECTED_WORKFLOW_ENV = {
+    "PYTHONNOUSERSITE": "1",
+    "PYTHONSAFEPATH": "1",
+    "PYTHONHOME": "",
+    "PYTHONPATH": "",
+    "PYTHONSTARTUP": "",
+    "PYTHONINSPECT": "",
+    "PYTHONDONTWRITEBYTECODE": "1",
+    "MYPYPATH": "",
+    "MYPY_CONFIG_FILE": "",
+    "NODE_OPTIONS": "",
+    "NODE_PATH": "",
+    "BASH_ENV": "",
+    "ENV": "",
+    "CDPATH": "",
+    "GLOBIGNORE": "",
+}
+
+
+def _caddy_normalize_run(s):
+    """Normalize a Caddy run-block string by stripping any trailing
+    newlines. PyYAML's block-scalar parsing may include a trailing
+    newline that the canonical constant does not."""
+    return s.rstrip("\n") if isinstance(s, str) else s
+
+
+def _caddy_normalize_step(s):
+    """Normalize a Caddy step dict: strip trailing newlines on the
+    ``run`` value; leave every other key untouched."""
+    return {
+        k: (_caddy_normalize_run(v) if k == "run" else v)
+        for k, v in s.items()
+    }
+
+
+def _caddy_normalize_prefix(prefix):
+    """Normalize a list of step dicts for trusted-prefix equality."""
+    return [_caddy_normalize_step(s) for s in prefix]
+
+
+def _caddy_expected_step_dict():
+    """Return the full expected Caddy step dict. The ``run`` value
+    is the same canonical block pinned by Section (10) so the two
+    sections cannot drift apart."""
+    expected = dict(CADDY_EXPECTED_STEP)
+    expected["run"] = CADDY_EXPECTED_RUN_BLOCK
+    return expected
+
+
+def _parsed_workflow():
+    """Parse the workflow YAML once for the envelope tests."""
+    return _yaml().safe_load(CI_YML.read_text(encoding="utf-8"))
+
+
+def _caddy_steps_from_job(workflow, job_name):
+    """Return the parsed Caddy step list (parsed YAML) for the
+    named job. Asserts the job exists and contains at least one
+    Caddy step. The returned list is the actual parsed step dicts
+    from the workflow, so any addition to step-level keys is
+    visible immediately to the assertions.
+    """
+    job = (workflow.get("jobs") or {}).get(job_name)
+    assert job is not None, (
+        f"required job {job_name!r} is missing from ci.yml"
+    )
+    steps = [
+        step for step in (job.get("steps") or [])
+        if step.get("name") == "Versioned Retail edge request limits"
+    ]
+    assert steps, (
+        f"job {job_name!r} has no step named 'Versioned Retail edge "
+        f"request limits'"
+    )
+    return steps
+
+
+@pytest.fixture(scope="module")
+def parsed_workflow():
+    return _parsed_workflow()
+
+
+@pytest.mark.parametrize("job_name", list(CADDY_RELEVANT_JOBS))
+def test_caddy_validation_step_metadata_is_exact(parsed_workflow, job_name):
+    """Each Caddy step's parsed YAML must equal the authorized
+    step shape: exactly the three keys {name, run, working-directory}
+    with the exact canonical run block, and no env/shell/if/etc.
+    """
+    steps = _caddy_steps_from_job(parsed_workflow, job_name)
+    expected = _caddy_expected_step_dict()
+    for step in steps:
+        # Exact key set: reject any extra step-level key, including
+        # env, shell, if, continue-on-error, timeout-minutes, with,
+        # etc. A future addition must consciously update this contract.
+        assert set(step.keys()) == CADDY_EXPECTED_STEP_KEYS, (
+            f"Caddy step in job {job_name!r} has unexpected/insufficient "
+            f"step keys: {sorted(set(step.keys()) - CADDY_EXPECTED_STEP_KEYS)} "
+            f"present, "
+            f"{sorted(CADDY_EXPECTED_STEP_KEYS - set(step.keys()))} missing"
+        )
+        # Normalize the run block (PyYAML's block scalar may include
+        # a trailing newline the canonical constant does not), then
+        # every value must match the authorized step shape exactly.
+        normalized = dict(step)
+        normalized["run"] = _caddy_normalize_run(normalized.get("run", ""))
+        assert normalized == expected, (
+            f"Caddy step in job {job_name!r} does not match the "
+            f"authorized step shape.\n"
+            f"--- expected ---\n{expected}\n"
+            f"--- actual ---\n{step}\n"
+        )
+
+
+@pytest.mark.parametrize("job_name", list(CADDY_RELEVANT_JOBS))
+def test_caddy_validation_job_routing_envelope_is_exact(
+    parsed_workflow, job_name,
+):
+    """The Caddy-relevant job's full job-level envelope (every key
+    except ``steps``) must equal the authorized contract exactly.
+
+    This pins the trusted routing: ``needs: runner-isolation`` keeps
+    Caddy validation after the runner-isolation gate, and
+    ``runs-on`` keeps it on the isolated Retail build-runner (NOT
+    GitHub-hosted or a deploy runner). A future edit such as
+    ``runs-on: [self-hosted, unihub-deploy]`` or
+    ``needs: some-other-job`` or removing ``needs`` entirely
+    would move Caddy validation outside the trusted boundary
+    while still leaving the step shape and the canonical run
+    block untouched — and the exact envelope equality would
+    fail closed.
+    """
+    job = (parsed_workflow.get("jobs") or {})[job_name]
+    expected = CADDY_EXPECTED_JOB_ENVELOPES[job_name]
+    # Exclude ONLY ``steps``; pin every other current job-level
+    # field exactly. This inherently proves absence of every
+    # not-listed job-level execution key (env, container,
+    # services, strategy, environment, continue-on-error, ...) and
+    # pins the values of every present one (needs, runs-on, if,
+    # timeout-minutes, defaults, name).
+    actual = {k: v for k, v in job.items() if k != "steps"}
+    assert actual == expected, (
+        f"Caddy-relevant job {job_name!r} does not match the "
+        f"authorized routing envelope.\n"
+        f"--- expected ---\n{expected}\n"
+        f"--- actual ---\n{actual}\n"
+    )
+    # Belt-and-braces: explicitly prove the job's key set is exactly
+    # the expected-envelope key set plus ``steps``. This catches a
+    # future extra job-level key even if it happens to match the
+    # expected envelope by accident.
+    expected_keys = set(expected.keys()) | {"steps"}
+    assert set(job.keys()) == expected_keys, (
+        f"Caddy-relevant job {job_name!r} has unexpected key set: "
+        f"expected={sorted(expected_keys)} got={sorted(job.keys())}"
+    )
+
+
+def test_caddy_validation_workflow_level_execution_overrides_are_exact(
+    parsed_workflow,
+):
+    """No top-level `defaults` may exist (so the Caddy jobs cannot
+    inherit a `defaults.run.shell: ...`), and the workflow-level
+    `env` must equal the authorized dictionary exactly so a future
+    `BASH_ENV: candidate-controlled` or `DOCKER_HOST: tcp://...`
+    addition is a fail-closed regression."""
+    # No top-level defaults.
+    assert "defaults" not in parsed_workflow, (
+        "ci.yml must not declare top-level `defaults` (it could "
+        "inject `defaults.run.shell: ...` and re-route every job's "
+        f"shell). Got: {parsed_workflow.get('defaults')!r}"
+    )
+    # Workflow env must equal the authorized dictionary.
+    actual_env = parsed_workflow.get("env")
+    assert actual_env == CADDY_EXPECTED_WORKFLOW_ENV, (
+        "ci.yml workflow-level `env` does not match the authorized "
+        f"trust-boundary contract. expected={CADDY_EXPECTED_WORKFLOW_ENV!r} "
+        f"got={actual_env!r}"
+    )
+
+
+def test_caddy_validation_execution_envelope_rejects_mutations(parsed_workflow):
+    """Mechanically prove the envelope contract is fail-closed:
+    every realistic injection at the step/job/workflow layer that
+    could change how/where the canonical run block executes must
+    be detected by exact inequality."""
+    expected_step = _caddy_expected_step_dict()
+    yaml = _yaml()
+
+    def _clone():
+        # Cheap structural copy via YAML re-emit so we exercise the
+        # same parser the test uses.
+        return yaml.safe_load(yaml.dump(parsed_workflow))
+
+    def _caddy_step(cwf, jn):
+        return _caddy_steps_from_job(cwf, jn)[0]
+
+    def _step_index(cwf, jn):
+        return next(
+            i for i, s in enumerate(cwf["jobs"][jn]["steps"])
+            if s.get("name") == "Versioned Retail edge request limits"
+        )
+
+    def _job_envelope(cwf, jn):
+        return {k: v for k, v in cwf["jobs"][jn].items() if k != "steps"}
+
+    def _assert_rejected(label, condition, hint):
+        assert condition, (
+            f"mutation {label} was not caught by the canonical "
+            f"envelope check: {hint}"
+        )
+
+    mutations = [
+        # --- A: step-level env (DOCKER_HOST) ---
+        ("A: step-level env DOCKER_HOST", lambda cwf: (
+            cwf["jobs"]["pr-fast"]["steps"][
+                _step_index(cwf, "pr-fast")
+            ].__setitem__("env", {"DOCKER_HOST": "tcp://example.invalid:2375"}),
+            _assert_rejected(
+                "A", _caddy_step(cwf, "pr-fast") != expected_step,
+                "step-level DOCKER_HOST env was not caught",
+            ),
+        )),
+        # --- B: step-level env (BASH_ENV) ---
+        ("B: step-level env BASH_ENV", lambda cwf: (
+            cwf["jobs"]["backend-check"]["steps"][
+                _step_index(cwf, "backend-check")
+            ].__setitem__("env", {"BASH_ENV": "/tmp/wrapper"}),
+            _assert_rejected(
+                "B", _caddy_step(cwf, "backend-check") != expected_step,
+                "step-level BASH_ENV env was not caught",
+            ),
+        )),
+        # --- C: step-level shell: python ---
+        ("C: step-level shell=python", lambda cwf: (
+            cwf["jobs"]["pr-fast"]["steps"][
+                _step_index(cwf, "pr-fast")
+            ].__setitem__("shell", "python"),
+            _assert_rejected(
+                "C", _caddy_step(cwf, "pr-fast") != expected_step,
+                "step-level shell=python was not caught",
+            ),
+        )),
+        # --- D: step-level shell: bash --noprofile --norc {0} ---
+        ("D: step-level shell=bash --noprofile --norc {0}", lambda cwf: (
+            cwf["jobs"]["pr-fast"]["steps"][
+                _step_index(cwf, "pr-fast")
+            ].__setitem__("shell", "bash --noprofile --norc {0}"),
+            _assert_rejected(
+                "D", _caddy_step(cwf, "pr-fast") != expected_step,
+                "step-level shell=bash ... was not caught",
+            ),
+        )),
+        # --- E: job-level env: DOCKER_HOST ... ---
+        ("E: job-level env", lambda cwf: (
+            cwf["jobs"]["pr-fast"].__setitem__("env", {
+                "DOCKER_HOST": "tcp://example.invalid:2375"
+            }),
+            _assert_rejected(
+                "E", "env" in cwf["jobs"]["pr-fast"],
+                "job-level env injection was not detectable",
+            ),
+        )),
+        # --- F: job-level defaults.run.shell: ... ---
+        ("F: job-level defaults.run.shell", lambda cwf: (
+            cwf["jobs"]["backend-check"]["defaults"]["run"].__setitem__(
+                "shell", "bash --norc"
+            ),
+            _assert_rejected(
+                "F",
+                _job_envelope(cwf, "backend-check")
+                    != CADDY_EXPECTED_JOB_ENVELOPES["backend-check"],
+                "job-level defaults.run.shell was not caught",
+            ),
+        )),
+        # --- K: pr-fast runs-on broadened ---
+        ("K: pr-fast runs-on broadened", lambda cwf: (
+            cwf["jobs"]["pr-fast"].__setitem__(
+                "runs-on", ["self-hosted", "unihub-deploy"]
+            ),
+            _assert_rejected(
+                "K",
+                _job_envelope(cwf, "pr-fast")
+                    != CADDY_EXPECTED_JOB_ENVELOPES["pr-fast"],
+                "pr-fast runs-on broadening was not caught",
+            ),
+        )),
+        # --- L: backend-check needs removed ---
+        ("L: backend-check needs removed", lambda cwf: (
+            cwf["jobs"]["backend-check"].__delitem__("needs"),
+            _assert_rejected(
+                "L",
+                _job_envelope(cwf, "backend-check")
+                    != CADDY_EXPECTED_JOB_ENVELOPES["backend-check"],
+                "backend-check needs removal was not caught",
+            ),
+        )),
+        # --- M: backend-check needs changed to some other job ---
+        ("M: backend-check needs changed", lambda cwf: (
+            cwf["jobs"]["backend-check"].__setitem__(
+                "needs", "some-other-job"
+            ),
+            _assert_rejected(
+                "M",
+                _job_envelope(cwf, "backend-check")
+                    != CADDY_EXPECTED_JOB_ENVELOPES["backend-check"],
+                "backend-check needs change was not caught",
+            ),
+        )),
+        # --- N: pr-fast runs-on changed to ubuntu-latest ---
+        ("N: pr-fast runs-on=ubuntu-latest", lambda cwf: (
+            cwf["jobs"]["pr-fast"].__setitem__("runs-on", "ubuntu-latest"),
+            _assert_rejected(
+                "N",
+                _job_envelope(cwf, "pr-fast")
+                    != CADDY_EXPECTED_JOB_ENVELOPES["pr-fast"],
+                "pr-fast runs-on=ubuntu-latest was not caught",
+            ),
+        )),
+        # --- O: pr-fast timeout-minutes bumped ---
+        ("O: pr-fast timeout-minutes change", lambda cwf: (
+            cwf["jobs"]["pr-fast"].__setitem__("timeout-minutes", 999),
+            _assert_rejected(
+                "O",
+                _job_envelope(cwf, "pr-fast")
+                    != CADDY_EXPECTED_JOB_ENVELOPES["pr-fast"],
+                "pr-fast timeout-minutes change was not caught",
+            ),
+        )),
+        # --- P: pr-fast if-condition rewritten ---
+        ("P: pr-fast if=always()", lambda cwf: (
+            cwf["jobs"]["pr-fast"].__setitem__("if", "always()"),
+            _assert_rejected(
+                "P",
+                _job_envelope(cwf, "pr-fast")
+                    != CADDY_EXPECTED_JOB_ENVELOPES["pr-fast"],
+                "pr-fast if=always() was not caught",
+            ),
+        )),
+        # --- G: workflow-level defaults: ... ---
+        ("G: workflow-level defaults", lambda cwf: (
+            cwf.__setitem__("defaults", {"run": {"shell": "bash --norc"}}),
+            _assert_rejected(
+                "G", "defaults" in cwf and cwf["defaults"] is not None,
+                "workflow-level defaults was not detectable",
+            ),
+        )),
+        # --- H: workflow-level env addition (DOCKER_HOST) ---
+        ("H: workflow-level env DOCKER_HOST", lambda cwf: (
+            cwf["env"].__setitem__("DOCKER_HOST", "tcp://example.invalid:2375"),
+            _assert_rejected(
+                "H", cwf["env"] != CADDY_EXPECTED_WORKFLOW_ENV,
+                "workflow-level env DOCKER_HOST addition was not caught",
+            ),
+        )),
+        # --- I: workflow-level BASH_ENV changed ---
+        ("I: workflow-level BASH_ENV change", lambda cwf: (
+            cwf["env"].__setitem__("BASH_ENV", "/tmp/candidate/wrapper"),
+            _assert_rejected(
+                "I", cwf["env"] != CADDY_EXPECTED_WORKFLOW_ENV,
+                "workflow-level BASH_ENV change was not caught",
+            ),
+        )),
+        # --- J: workflow-level PATH added/overridden ---
+        ("J: workflow-level PATH addition", lambda cwf: (
+            cwf["env"].__setitem__("PATH", "/tmp/candidate/bin"),
+            _assert_rejected(
+                "J", cwf["env"] != CADDY_EXPECTED_WORKFLOW_ENV,
+                "workflow-level PATH addition was not caught",
+            ),
+        )),
+    ]
+    for _label, mutate in mutations:
+        cwf = _clone()
+        mutate(cwf)
+
+
+# ---------------------------------------------------------------------------
+# (12) Caddy validation is the first non-checkout step (temporal isolation)
+# ---------------------------------------------------------------------------
+#
+# The Caddy validation step must run BEFORE any candidate-controlled
+# executable code so that a candidate cannot redirect Docker execution
+# (e.g. via `>> "$GITHUB_ENV"`) before Caddy validates. The exact
+# "trusted prefix" is the first two steps of every Caddy-relevant job:
+#
+#   step 0 = pinned actions/checkout
+#   step 1 = exact Caddy step
+#
+# No setup-python, no pip install, no Python smoke import, no env write,
+# no candidate action may run between them or before Caddy.
+
+
+def _caddy_expected_checkout_step(parsed_workflow, job_name):
+    """Return the exact parsed checkout step dict for the given job.
+    Captured from the actual current workflow so the contract tracks
+    any future legitimate evolution of the trusted checkout (e.g. a
+    Pinning bump would consciously update this captured value)."""
+    return parsed_workflow["jobs"][job_name]["steps"][0]
+
+
+def _caddy_trusted_prefix(parsed_workflow, job_name):
+    """Return the expected trusted prefix (steps 0 and 1) for the
+    named job, using the current parsed checkout as step 0 and the
+    canonical Caddy step as step 1."""
+    return [
+        _caddy_expected_checkout_step(parsed_workflow, job_name),
+        _caddy_expected_step_dict(),
+    ]
+
+
+@pytest.mark.parametrize("job_name", list(CADDY_RELEVANT_JOBS))
+def test_caddy_validation_runs_before_any_candidate_step(
+    parsed_workflow, job_name,
+):
+    """The first two steps of every Caddy-relevant job must be
+    exactly `[pinned actions/checkout, exact Caddy step]`. Any
+    setup-python / install / smoke / candidate action inserted
+    between them or before Caddy would let candidate code
+    redirect Docker execution before Caddy validates."""
+    steps = parsed_workflow["jobs"][job_name]["steps"]
+    assert len(steps) >= 2, (
+        f"job {job_name!r} must have at least 2 steps so that the "
+        f"trusted prefix can be verified; got {len(steps)}"
+    )
+    expected_prefix = _caddy_trusted_prefix(parsed_workflow, job_name)
+    # Normalize the parsed run-block trailing newlines so the
+    # equality is not affected by PyYAML's block-scalar parser.
+    actual_prefix = _caddy_normalize_prefix(steps[:2])
+    assert actual_prefix == expected_prefix, (
+        f"job {job_name!r} trusted prefix is not the exact "
+        f"[pinned actions/checkout, exact Caddy step]. This means a "
+        f"candidate-controlled step is allowed to run before Caddy "
+        f"and could redirect Docker execution.\n"
+        f"--- expected ---\n{expected_prefix}\n"
+        f"--- actual (first 2) ---\n{steps[:2]}\n"
+    )
+    # Belt-and-braces: the Caddy step must occupy index 1 exactly
+    # (so no future added step silently demotes Caddy).
+    assert steps[1].get("name") == CADDY_STEP_NAME, (
+        f"job {job_name!r} step[1] is not the Caddy step; got "
+        f"step[1]={steps[1]!r}"
+    )
+
+
+@pytest.mark.parametrize("job_name", list(CADDY_RELEVANT_JOBS))
+def test_caddy_step_occurs_exactly_once_per_job(parsed_workflow, job_name):
+    """The Caddy step must occur exactly once in every Caddy-relevant
+    job (no duplicates, no accidental insertions during edits)."""
+    caddies = [
+        s for s in parsed_workflow["jobs"][job_name]["steps"]
+        if s.get("name") == CADDY_STEP_NAME
+    ]
+    assert len(caddies) == 1, (
+        f"job {job_name!r} must contain exactly 1 Caddy step; "
+        f"got {len(caddies)}"
+    )
+
+
+def test_caddy_step_count_total_is_two(parsed_workflow):
+    """The whole workflow contains exactly 2 Caddy steps (one per
+    Caddy-relevant job). This guards against accidental insertions
+    in other jobs and against the same step being defined twice
+    within a job."""
+    total = 0
+    for jn, job in (parsed_workflow.get("jobs") or {}).items():
+        total += sum(
+            1 for s in (job.get("steps") or [])
+            if s.get("name") == CADDY_STEP_NAME
+        )
+    assert total == 2, f"workflow must contain exactly 2 Caddy steps; got {total}"
+
+
+def test_caddy_validation_trusted_prefix_rejects_ordering_mutations(parsed_workflow):
+    """Mechanically prove the temporal isolation is fail-closed:
+    inserting a candidate step between checkout and Caddy, moving
+    setup-python or Runtime import smoke before Caddy, changing the
+    checkout SHA, or moving Caddy off index 1 must all be detected
+    by exact trusted-prefix inequality."""
+    yaml = _yaml()
+    target = parsed_workflow  # mutations are applied to deep copies
+
+    # Canonical trusted prefix computed once from the ORIGINAL
+    # workflow, so every mutation is compared against the unchanged
+    # contract (not a per-mutation re-derivation).
+    canonical_prefix = {
+        jn: _caddy_normalize_prefix(_caddy_trusted_prefix(target, jn))
+        for jn in CADDY_RELEVANT_JOBS
+    }
+
+    def _clone():
+        return yaml.safe_load(yaml.dump(target))
+
+    def _job_steps(cwf, jn):
+        return cwf["jobs"][jn]["steps"]
+
+    def _expect_rejected(label, condition, hint):
+        assert condition, (
+            f"ordering mutation {label} was not caught: {hint}"
+        )
+
+    # --- Q: candidate env-injection step between checkout and Caddy ---
+    cwf = _clone()
+    injection_q = {
+        "name": "Candidate environment injection",
+        "run": "echo 'DOCKER_HOST=tcp://example.invalid:2375' >> \"$GITHUB_ENV\"",
+    }
+    _job_steps(cwf, "pr-fast").insert(1, injection_q)
+    _expect_rejected(
+        "Q", _caddy_normalize_prefix(_job_steps(cwf, "pr-fast")[:2]) != canonical_prefix["pr-fast"],
+        "inserting a candidate env-injection step between checkout and Caddy was not caught",
+    )
+
+    # --- R: candidate BASH_ENV injection between checkout and Caddy ---
+    cwf = _clone()
+    injection_r = {
+        "name": "Candidate BASH_ENV injection",
+        "run": "echo 'BASH_ENV=/tmp/wrapper' >> \"$GITHUB_ENV\"",
+    }
+    _job_steps(cwf, "backend-check").insert(1, injection_r)
+    _expect_rejected(
+        "R", _caddy_normalize_prefix(_job_steps(cwf, "backend-check")[:2]) != canonical_prefix["backend-check"],
+        "inserting a candidate BASH_ENV injection between checkout and Caddy was not caught",
+    )
+
+    # --- S: move actions/setup-python before Caddy ---
+    cwf = _clone()
+    sp = next(
+        s for s in _job_steps(cwf, "pr-fast")
+        if isinstance(s, dict) and s.get("uses", "").startswith("actions/setup-python")
+    )
+    _job_steps(cwf, "pr-fast").remove(sp)
+    _job_steps(cwf, "pr-fast").insert(1, sp)
+    _expect_rejected(
+        "S", _caddy_normalize_prefix(_job_steps(cwf, "pr-fast")[:2]) != canonical_prefix["pr-fast"],
+        "moving actions/setup-python before Caddy was not caught",
+    )
+
+    # --- T: move a candidate runtime step (Runtime dependency smoke)
+    # before Caddy ---
+    cwf = _clone()
+    smoke = next(
+        s for s in _job_steps(cwf, "backend-check")
+        if s.get("name") == "Runtime dependency smoke"
+    )
+    _job_steps(cwf, "backend-check").remove(smoke)
+    _job_steps(cwf, "backend-check").insert(1, smoke)
+    _expect_rejected(
+        "T", _caddy_normalize_prefix(_job_steps(cwf, "backend-check")[:2]) != canonical_prefix["backend-check"],
+        "moving Runtime dependency smoke before Caddy was not caught",
+    )
+
+    # --- U: change checkout SHA ---
+    cwf = _clone()
+    _job_steps(cwf, "pr-fast")[0]["uses"] = (
+        "actions/checkout@0000000000000000000000000000000000000000"
+    )
+    _expect_rejected(
+        "U", _caddy_normalize_prefix(_job_steps(cwf, "pr-fast")[:2]) != canonical_prefix["pr-fast"],
+        "changing the checkout SHA was not caught",
+    )
+
+    # --- V: insert ANY extra `run:` step between checkout and Caddy ---
+    cwf = _clone()
+    extra_step = {
+        "name": "Arbitrary extra step",
+        "run": "echo arbitrary",
+    }
+    _job_steps(cwf, "pr-fast").insert(1, extra_step)
+    _expect_rejected(
+        "V", _caddy_normalize_prefix(_job_steps(cwf, "pr-fast")[:2]) != canonical_prefix["pr-fast"],
+        "inserting an arbitrary run: step between checkout and Caddy was not caught",
+    )
+
+    # --- W: move Caddy to index 2 (or later) ---
+    cwf = _clone()
+    caddy_step = next(
+        s for s in _job_steps(cwf, "pr-fast")
+        if s.get("name") == CADDY_STEP_NAME
+    )
+    _job_steps(cwf, "pr-fast").remove(caddy_step)
+    _job_steps(cwf, "pr-fast").insert(2, caddy_step)
+    _expect_rejected(
+        "W", _caddy_normalize_prefix(_job_steps(cwf, "pr-fast")[:2]) != canonical_prefix["pr-fast"],
+        "moving Caddy off index 1 was not caught",
+    )
