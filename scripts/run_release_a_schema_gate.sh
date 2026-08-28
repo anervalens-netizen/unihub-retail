@@ -4,7 +4,7 @@ set -Eeuo pipefail
 GATE_STARTED_EPOCH_NS="$(date +%s%N)"
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-BASELINE_SHA="0be82b430e55b7414babf470abe3fc5404b6cdc9"
+BASELINE_SHA="9cbe26b588d6901a5a312b6262775f3093c54fdc"
 PYTHON="$ROOT_DIR/backend/venv/bin/python"
 PYTHON_BASE="/usr/bin/python3.12"
 PYTHON_BASE_SHA256="1643dacd9feaedc58f3cc581e4d22577dfe25c09b10282936186ccf0f2e61118"
@@ -88,6 +88,22 @@ mkdir -p "$EVIDENCE_DIR" "$TEMP_DIR/baseline"
   printf 'Release-A evidence directory contains an unsafe symlink.\n' >&2
   exit 1
 }
+if ! git -C "$ROOT_DIR" cat-file -e "${BASELINE_SHA}^{commit}" 2>/dev/null; then
+  printf 'Release-A baseline commit is unreachable: %s\n' "$BASELINE_SHA" >&2
+  exit 1
+fi
+if ! git -C "$ROOT_DIR" cat-file -e \
+    "${BASELINE_SHA}:backend/db/migrations/068_grile_v2_forecast_digest_authority.sql" \
+    2>/dev/null; then
+  printf 'Release-A baseline is missing migration 068: %s\n' "$BASELINE_SHA" >&2
+  exit 1
+fi
+if git -C "$ROOT_DIR" cat-file -e \
+    "${BASELINE_SHA}:backend/db/migrations/069_ai_cohort_and_transactional_outbox.sql" \
+    2>/dev/null; then
+  printf 'Release-A baseline must remain pre-069: %s\n' "$BASELINE_SHA" >&2
+  exit 1
+fi
 git -C "$ROOT_DIR" archive "$BASELINE_SHA" | tar -x -C "$TEMP_DIR/baseline"
 
 PASSWORD="$(openssl rand -hex 24)"
