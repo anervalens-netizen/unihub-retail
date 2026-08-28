@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { getApiErrorMessage } from '../../api/client';
 import { fetchSalariiOverview, fetchSalaryAgents, fetchSalaryEvolution, fetchSalarySummary, fetchSalaryTrend, type SalariiOverview, type SalaryAgentSummary, type SalaryComparisonPoint, type SalaryEvolutionPoint, type SalaryTrendMonth } from '../../api/salarii';
@@ -17,12 +17,22 @@ const EMPTY_ERROR = {
   agents: 'Lista de agenți nu a putut fi încărcată.',
 } as const;
 
-type SetReadErrors = (
-  next: Partial<Record<ReadPath, string>> | ((previous: Partial<Record<ReadPath, string>>) => Partial<Record<ReadPath, string>>),
-) => void;
+type ReadGenerations = Record<ReadPath, number>;
 
-function updateReadErrors(setter: SetReadErrors, path: ReadPath, mutator: (previous: Partial<Record<ReadPath, string>>) => Partial<Record<ReadPath, string>>) {
-  setter((previous) => mutator(previous));
+// Per-path monotonic request generation: `begin(path)` increments and returns
+// the captured ID; `isCurrent(path, captured)` reports whether that ID is
+// still the latest. Loaders re-check `isCurrent` after every `await` so a
+// stale fulfillment / rejection / finally cannot mutate state for a newer
+// sibling request. Independent paths keep their own counter.
+function useRequestGuard() {
+  const ref = useRef<ReadGenerations>({ overview: 0, summary: 0, trend: 0, agents: 0 });
+  const begin = useCallback((path: ReadPath): number => {
+    const next = ref.current[path] + 1;
+    ref.current = { ...ref.current, [path]: next };
+    return next;
+  }, []);
+  const isCurrent = useCallback((path: ReadPath, captured: number): boolean => ref.current[path] === captured, []);
+  return { begin, isCurrent };
 }
 
 export function useSalaryController(globalFilters?: AppFilters) {
@@ -49,72 +59,78 @@ export function useSalaryController(globalFilters?: AppFilters) {
   const filterRegional = globalFilters?.rm !== ALL_SCOPE ? globalFilters?.rm : undefined;
   const filterSiteCode = globalFilters?.magazin.length ? globalFilters.magazin : undefined;
   const scope = useMemo(() => ({ company_name: filterCompany, site_code: filterSiteCode, regional: filterRegional }), [filterCompany, filterRegional, filterSiteCode]);
-
   useEffect(() => { const timer = setTimeout(() => setDebouncedSearch(search), 300); return () => clearTimeout(timer); }, [search]);
-
+  const { begin: beginRequest, isCurrent: isCurrentRequest } = useRequestGuard();
   const clearError = useCallback((path: ReadPath) => {
-    updateReadErrors(setReadErrors, path, (previous) => {
+    setReadErrors((previous) => {
       if (previous[path] === undefined) return previous;
       const { [path]: _drop, ...rest } = previous;
       return rest;
     });
   }, []);
-
   const setError = useCallback((path: ReadPath, message: string) => {
-    updateReadErrors(setReadErrors, path, (previous) => ({ ...previous, [path]: message }));
+    setReadErrors((previous) => ({ ...previous, [path]: message }));
   }, []);
-
   const loadOverview = useCallback(async () => {
+    const generation = beginRequest('overview');
     setOverview(null); setEvolution([]); clearError('overview');
     try {
       const [nextOverview, nextEvolution] = await Promise.all([fetchSalariiOverview(scope), fetchSalaryEvolution(scope)]);
+      if (!isCurrentRequest('overview', generation)) return;
       setOverview(nextOverview); setEvolution(nextEvolution);
     } catch (error) {
+      if (!isCurrentRequest('overview', generation)) return;
       console.error('Failed to load overview:', error);
       setError('overview', getApiErrorMessage(error, EMPTY_ERROR.overview));
     }
-  }, [clearError, scope, setError]);
+  }, [beginRequest, clearError, isCurrentRequest, scope, setError]);
 
   const loadSummary = useCallback(async () => {
+    const generation = beginRequest('summary');
     setLoadingCards(true); setSummary([]); setSummaryMonth(null); clearError('summary');
+    let year: number | undefined; let month: number | undefined;
+    if (/^\d{4}-\d{2}$/.test(selectedSummaryMonth)) [year, month] = selectedSummaryMonth.split('-').map(Number);
     try {
-      let year: number | undefined; let month: number | undefined;
-      if (/^\d{4}-\d{2}$/.test(selectedSummaryMonth)) [year, month] = selectedSummaryMonth.split('-').map(Number);
       const data = await fetchSalarySummary({ ...scope, year, month });
+      if (!isCurrentRequest('summary', generation)) return;
       setSummary(data.items || []); setSummaryMonth(data.month);
     } catch (error) {
+      if (!isCurrentRequest('summary', generation)) return;
       console.error('Failed to load summary:', error);
       setError('summary', getApiErrorMessage(error, EMPTY_ERROR.summary));
-    } finally { setLoadingCards(false); }
-  }, [clearError, scope, selectedSummaryMonth, setError]);
+    } finally { if (isCurrentRequest('summary', generation)) setLoadingCards(false); }
+  }, [beginRequest, clearError, isCurrentRequest, scope, selectedSummaryMonth, setError]);
 
   const loadTrend = useCallback(async () => {
+    const generation = beginRequest('trend');
     setLoadingCards(true); setTrend([]); clearError('trend');
-    try { setTrend(await fetchSalaryTrend(scope)); }
+    try { const result = await fetchSalaryTrend(scope); if (!isCurrentRequest('trend', generation)) return; setTrend(result); }
     catch (error) {
+      if (!isCurrentRequest('trend', generation)) return;
       console.error('Failed to load trend:', error);
       setError('trend', getApiErrorMessage(error, EMPTY_ERROR.trend));
-    } finally { setLoadingCards(false); }
-  }, [clearError, scope, setError]);
+    } finally { if (isCurrentRequest('trend', generation)) setLoadingCards(false); }
+  }, [beginRequest, clearError, isCurrentRequest, scope, setError]);
 
   const loadAgents = useCallback(async (offset = 0, reset = false) => {
+    const generation = beginRequest('agents');
     setLoading(true);
     if (reset) { setAgents([]); setTotalAgents(0); }
     clearError('agents');
     try {
       const response = await fetchSalaryAgents({ ...scope, q: debouncedSearch || undefined, limit: PAGE_SIZE, offset });
+      if (!isCurrentRequest('agents', generation)) return;
       setAgents(response?.items || []); setTotalAgents(response?.total || 0);
     } catch (error) {
+      if (!isCurrentRequest('agents', generation)) return;
       console.error('Failed to load agents:', error);
       setError('agents', getApiErrorMessage(error, EMPTY_ERROR.agents));
-    } finally { setLoading(false); }
-  }, [clearError, debouncedSearch, scope, setError]);
-
+    } finally { if (isCurrentRequest('agents', generation)) setLoading(false); }
+  }, [beginRequest, clearError, debouncedSearch, isCurrentRequest, scope, setError]);
   useEffect(() => { void loadOverview(); }, [loadOverview]);
   useEffect(() => { void loadSummary(); }, [loadSummary]);
   useEffect(() => { void loadTrend(); }, [loadTrend]);
   useEffect(() => { setPage(0); void loadAgents(0, true); }, [loadAgents]);
-
   const retryRead = useCallback((path: ReadPath) => {
     clearError(path);
     if (path === 'overview') void loadOverview();
@@ -122,23 +138,19 @@ export function useSalaryController(globalFilters?: AppFilters) {
     else if (path === 'trend') void loadTrend();
     else void loadAgents(page * PAGE_SIZE);
   }, [clearError, loadAgents, loadOverview, loadSummary, loadTrend, page]);
-
   const handleSearchChange = (value: string) => { setSearch(value); setPage(0); };
   const resetSearch = () => { setSearch(''); setDebouncedSearch(''); setPage(0); };
   const goToPage = (nextPage: number) => { setPage(nextPage); void loadAgents(nextPage * PAGE_SIZE); };
   const sortedSummary = useMemo(() => sortSummary(summary, summarySort), [summary, summarySort]);
   const sortedTrend = useMemo(() => sortTrend(trend, trendSort), [trend, trendSort]);
-  const startStoreExport = () => { const period = summaryMonth?.match(/^(\d{4})-(\d{2})$/); return salaryExport.start({ export_kind: 'store_summary', ...scope, site_code: filterSiteCode ?? [], year: period ? Number(period[1]) : undefined, month: period ? Number(period[2]) : undefined }); };
+  const period = summaryMonth?.match(/^(\d{4})-(\d{2})$/);
+  const startStoreExport = () => salaryExport.start({ export_kind: 'store_summary', ...scope, site_code: filterSiteCode ?? [], year: period ? Number(period[1]) : undefined, month: period ? Number(period[2]) : undefined });
   const startTrendExport = () => salaryExport.start({ export_kind: 'monthly_trend', ...scope, site_code: filterSiteCode ?? [] });
   const startAgentsExport = () => salaryExport.start({ export_kind: 'agents', ...scope, site_code: filterSiteCode ?? [], q: debouncedSearch || undefined });
-  return {
-    salaryView, setSalaryView, overview, evolution, agents, totalAgents, loading, search, debouncedSearch, page, drawer, setDrawer,
+  return { salaryView, setSalaryView, overview, evolution, agents, totalAgents, loading, search, debouncedSearch, page, drawer, setDrawer,
     selectedSummaryMonth, setSelectedSummaryMonth, summaryMonth, loadingCards, summarySort, setSummarySort, trendSort, setTrendSort,
     sortedSummary, sortedTrend, summaryRatioAverage: weightedRatioAverage(summary), trendRatioAverage: weightedRatioAverage(trend),
     hasMore: (page + 1) * PAGE_SIZE < totalAgents, salaryExport, handleSearchChange, resetSearch, goToPage,
-    startStoreExport, startTrendExport, startAgentsExport,
-    readErrors, retryRead,
-  };
+    startStoreExport, startTrendExport, startAgentsExport, readErrors, retryRead };
 }
-
 export type SalaryController = ReturnType<typeof useSalaryController>;
