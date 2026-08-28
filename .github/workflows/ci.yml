@@ -112,6 +112,38 @@ jobs:
           fetch-depth: 0
           fetch-tags: true
           persist-credentials: false
+      - name: Versioned Retail edge request limits
+        working-directory: .
+        run: |
+          set -euo pipefail
+          caddy_image=caddy@sha256:844f60b64e4724a5aa8245e019dace0d3f199f7433ce6c57676cb30a920dbad9
+          docker image inspect "$caddy_image" >/dev/null
+          # The rootless Docker daemon is sandboxed away from the runner
+          # workspace (InaccessiblePaths=/opt/Mobiup). Stage candidate
+          # ops/caddy at a daemon-readable path the runner controls, then
+          # `docker cp` it into a stopped, network-isolated container.
+          # No host bind, no -v, no --mount, no volume, no pull.
+          caddy_stage="$(mktemp -d -t unihub-retail-caddy-stage.XXXXXX)"
+          container="unihub-retail-caddy-validate-$$"
+          cleanup() {
+            docker rm -f -v "$container" >/dev/null 2>&1 || true
+            rm -rf -- "$caddy_stage"
+          }
+          trap cleanup EXIT
+          chmod 0700 "$caddy_stage"
+          cp -R "$PWD/ops/caddy/." "$caddy_stage/"
+          docker create \
+            --pull=never \
+            --name "$container" \
+            --network none \
+            "$caddy_image" \
+            caddy validate \
+            --config /etc/caddy/Caddyfile.validate \
+            --adapter caddyfile \
+            >/dev/null
+          docker cp "$caddy_stage/." "$container:/etc/caddy"
+          docker start -a "$container"
+
 
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
@@ -239,38 +271,6 @@ jobs:
       - name: Environment schema and process templates
         working-directory: .
         run: backend/venv/bin/python -I scripts/check_env_contract.py
-
-      - name: Versioned Retail edge request limits
-        working-directory: .
-        run: |
-          set -euo pipefail
-          caddy_image=caddy@sha256:844f60b64e4724a5aa8245e019dace0d3f199f7433ce6c57676cb30a920dbad9
-          docker image inspect "$caddy_image" >/dev/null
-          # The rootless Docker daemon is sandboxed away from the runner
-          # workspace (InaccessiblePaths=/opt/Mobiup). Stage candidate
-          # ops/caddy at a daemon-readable path the runner controls, then
-          # `docker cp` it into a stopped, network-isolated container.
-          # No host bind, no -v, no --mount, no volume, no pull.
-          caddy_stage="$(mktemp -d -t unihub-retail-caddy-stage.XXXXXX)"
-          container="unihub-retail-caddy-validate-$$"
-          cleanup() {
-            docker rm -f -v "$container" >/dev/null 2>&1 || true
-            rm -rf -- "$caddy_stage"
-          }
-          trap cleanup EXIT
-          chmod 0700 "$caddy_stage"
-          cp -R "$PWD/ops/caddy/." "$caddy_stage/"
-          docker create \
-            --pull=never \
-            --name "$container" \
-            --network none \
-            "$caddy_image" \
-            caddy validate \
-            --config /etc/caddy/Caddyfile.validate \
-            --adapter caddyfile \
-            >/dev/null
-          docker cp "$caddy_stage/." "$container:/etc/caddy"
-          docker start -a "$container"
 
       - name: Frontend dependency policy
         working-directory: .
@@ -853,6 +853,38 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0
           fetch-tags: true
+      - name: Versioned Retail edge request limits
+        working-directory: .
+        run: |
+          set -euo pipefail
+          caddy_image=caddy@sha256:844f60b64e4724a5aa8245e019dace0d3f199f7433ce6c57676cb30a920dbad9
+          docker image inspect "$caddy_image" >/dev/null
+          # The rootless Docker daemon is sandboxed away from the runner
+          # workspace (InaccessiblePaths=/opt/Mobiup). Stage candidate
+          # ops/caddy at a daemon-readable path the runner controls, then
+          # `docker cp` it into a stopped, network-isolated container.
+          # No host bind, no -v, no --mount, no volume, no pull.
+          caddy_stage="$(mktemp -d -t unihub-retail-caddy-stage.XXXXXX)"
+          container="unihub-retail-caddy-validate-$$"
+          cleanup() {
+            docker rm -f -v "$container" >/dev/null 2>&1 || true
+            rm -rf -- "$caddy_stage"
+          }
+          trap cleanup EXIT
+          chmod 0700 "$caddy_stage"
+          cp -R "$PWD/ops/caddy/." "$caddy_stage/"
+          docker create \
+            --pull=never \
+            --name "$container" \
+            --network none \
+            "$caddy_image" \
+            caddy validate \
+            --config /etc/caddy/Caddyfile.validate \
+            --adapter caddyfile \
+            >/dev/null
+          docker cp "$caddy_stage/." "$container:/etc/caddy"
+          docker start -a "$container"
+
 
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
@@ -1034,38 +1066,6 @@ jobs:
       - name: Environment schema and process templates
         working-directory: .
         run: backend/venv/bin/python -I scripts/check_env_contract.py
-
-      - name: Versioned Retail edge request limits
-        working-directory: .
-        run: |
-          set -euo pipefail
-          caddy_image=caddy@sha256:844f60b64e4724a5aa8245e019dace0d3f199f7433ce6c57676cb30a920dbad9
-          docker image inspect "$caddy_image" >/dev/null
-          # The rootless Docker daemon is sandboxed away from the runner
-          # workspace (InaccessiblePaths=/opt/Mobiup). Stage candidate
-          # ops/caddy at a daemon-readable path the runner controls, then
-          # `docker cp` it into a stopped, network-isolated container.
-          # No host bind, no -v, no --mount, no volume, no pull.
-          caddy_stage="$(mktemp -d -t unihub-retail-caddy-stage.XXXXXX)"
-          container="unihub-retail-caddy-validate-$$"
-          cleanup() {
-            docker rm -f -v "$container" >/dev/null 2>&1 || true
-            rm -rf -- "$caddy_stage"
-          }
-          trap cleanup EXIT
-          chmod 0700 "$caddy_stage"
-          cp -R "$PWD/ops/caddy/." "$caddy_stage/"
-          docker create \
-            --pull=never \
-            --name "$container" \
-            --network none \
-            "$caddy_image" \
-            caddy validate \
-            --config /etc/caddy/Caddyfile.validate \
-            --adapter caddyfile \
-            >/dev/null
-          docker cp "$caddy_stage/." "$container:/etc/caddy"
-          docker start -a "$container"
 
       - name: Frontend dependency policy
         working-directory: .
