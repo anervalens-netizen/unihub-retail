@@ -18,12 +18,13 @@ from __future__ import annotations
 import importlib.util
 import sys
 from pathlib import Path
+from typing import Any
 
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "scripts" / "check_env_contract.py"
 
 
-def _load_module() -> object:
+def _load_module() -> Any:
     spec = importlib.util.spec_from_file_location("check_env_contract", SCRIPT)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
