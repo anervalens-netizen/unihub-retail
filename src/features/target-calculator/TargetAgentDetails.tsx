@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Store, Users, X } from 'lucide-react';
 import {
   Bar,
@@ -100,6 +100,21 @@ export function TargetAgentDetails({ scenarioId, siteCode, onClose }: {
   const [chartMode, setChartMode] = useState<StoreChartMode>('sales');
   const overlayRef = useRef<HTMLDivElement>(null);
 
+  // Synchronous request-identity reset. Runs before browser paint so that
+  // when scenarioId or siteCode change the previous store's detail /
+  // error / loading is cleared in the same commit as the new selection,
+  // preventing a frame that paints the old Target data under the new
+  // identity.
+  useLayoutEffect(() => {
+    if (!siteCode) return;
+
+    setChartMode('sales');
+    setDetail(null);
+    setLoading(true);
+    setError(null);
+  }, [scenarioId, siteCode]);
+
+  // Async fetch lifecycle with per-request latest-request-wins guard.
   useEffect(() => {
     if (!siteCode) return;
 
@@ -107,11 +122,6 @@ export function TargetAgentDetails({ scenarioId, siteCode, onClose }: {
     // callback flips it to false whenever scenarioId/siteCode changes or
     // the component unmounts, making any in-flight completion a no-op.
     let active = true;
-
-    setChartMode('sales');
-    setDetail(null);
-    setLoading(true);
-    setError(null);
 
     void fetchTargetStoreDetail(scenarioId, siteCode)
       .then((nextDetail) => {
