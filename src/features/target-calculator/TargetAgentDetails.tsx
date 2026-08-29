@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Store, Users, X } from 'lucide-react';
 import {
   Bar,
@@ -100,18 +100,47 @@ export function TargetAgentDetails({ scenarioId, siteCode, onClose }: {
   const [chartMode, setChartMode] = useState<StoreChartMode>('sales');
   const overlayRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
+  // Synchronous request-identity reset. Runs before browser paint so that
+  // when scenarioId or siteCode change the previous store's detail /
+  // error / loading is cleared in the same commit as the new selection,
+  // preventing a frame that paints the old Target data under the new
+  // identity.
+  useLayoutEffect(() => {
     if (!siteCode) return;
+
     setChartMode('sales');
+    setDetail(null);
     setLoading(true);
     setError(null);
+  }, [scenarioId, siteCode]);
+
+  // Async fetch lifecycle with per-request latest-request-wins guard.
+  useEffect(() => {
+    if (!siteCode) return;
+
+    // `active` is closed-over by each fulfillment handler; the cleanup
+    // callback flips it to false whenever scenarioId/siteCode changes or
+    // the component unmounts, making any in-flight completion a no-op.
+    let active = true;
+
     void fetchTargetStoreDetail(scenarioId, siteCode)
-      .then(setDetail)
+      .then((nextDetail) => {
+        if (!active) return;
+        setDetail(nextDetail);
+      })
       .catch((err) => {
+        if (!active) return;
         console.error(err);
         setError(getApiErrorMessage(err, 'Nu am putut incarca detaliile locatiei.'));
       })
-      .finally(() => setLoading(false));
+      .finally(() => {
+        if (!active) return;
+        setLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
   }, [scenarioId, siteCode]);
 
   if (!siteCode) return null;

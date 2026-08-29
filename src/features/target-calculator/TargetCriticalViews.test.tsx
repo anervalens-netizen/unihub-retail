@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
 
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { createRef } from 'react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const api = vi.hoisted(() => ({ detail: vi.fn() }));
 vi.mock('./api', () => ({ fetchTargetStoreDetail: api.detail }));
@@ -110,5 +110,122 @@ describe('Target critical views', () => {
     rerender(<TargetAgentDetails key="empty" scenarioId={8} siteCode="S2" onClose={vi.fn()} />);
     expect(await screen.findByText('Nu exista agenti activi in luna cohortei.')).toBeInTheDocument();
     await waitFor(() => expect(api.detail).toHaveBeenCalledTimes(2));
+  });
+});
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => { resolve = res; reject = rej; });
+  return { promise, resolve, reject };
+}
+
+const storeDetailA = { ...detail, site_code: 'S1', locatie: 'Alfa' };
+const storeDetailB = { ...detail, site_code: 'S2', locatie: 'Beta' };
+const storeDetailBHeader = 'Detalii locatie';
+
+describe('TargetAgentDetails latest-request-wins', () => {
+  let consoleErrorSpy: ReturnType<typeof vi.spyOn>;
+  beforeEach(() => {
+    vi.clearAllMocks();
+    consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+  });
+  afterEach(() => {
+    consoleErrorSpy.mockRestore();
+  });
+
+  it('discards a stale success when a newer site request already published B', async () => {
+    const a = deferred<typeof detail>();
+    const b = deferred<typeof detail>();
+    api.detail.mockImplementationOnce(() => a.promise).mockImplementationOnce(() => b.promise);
+
+    const { rerender } = render(<TargetAgentDetails scenarioId={7} siteCode="S1" onClose={vi.fn()} />);
+    expect(await screen.findByText('Se incarca detaliile...')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 2 })).toHaveTextContent('S1');
+    await waitFor(() => expect(api.detail).toHaveBeenCalledWith(7, 'S1'));
+
+    rerender(<TargetAgentDetails scenarioId={7} siteCode="S2" onClose={vi.fn()} />);
+    expect(await screen.findByText('Se incarca detaliile...')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 2 })).toHaveTextContent('S2');
+    await waitFor(() => expect(api.detail).toHaveBeenCalledWith(7, 'S2'));
+
+    await act(async () => { b.resolve(storeDetailB); });
+    expect(await screen.findByText(storeDetailBHeader)).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 2 })).toHaveTextContent('Beta');
+    expect(api.detail).toHaveBeenCalledTimes(2);
+
+    await act(async () => { a.resolve(storeDetailA); });
+    await waitFor(() => expect(api.detail).toHaveBeenCalledTimes(2));
+
+    expect(screen.getByRole('heading', { level: 2 })).toHaveTextContent('Beta');
+    expect(screen.queryByText('Alfa')).not.toBeInTheDocument();
+    expect(screen.getByText(storeDetailBHeader)).toBeInTheDocument();
+    expect(api.detail).toHaveBeenCalledTimes(2);
+  });
+
+  it('discards a stale failure so no obsolete error appears for the newer selection', async () => {
+    const a = deferred<typeof detail>();
+    const b = deferred<typeof detail>();
+    api.detail.mockImplementationOnce(() => a.promise).mockImplementationOnce(() => b.promise);
+
+    const { rerender } = render(<TargetAgentDetails scenarioId={7} siteCode="S1" onClose={vi.fn()} />);
+    expect(await screen.findByText('Se incarca detaliile...')).toBeInTheDocument();
+    await waitFor(() => expect(api.detail).toHaveBeenCalledWith(7, 'S1'));
+
+    rerender(<TargetAgentDetails scenarioId={7} siteCode="S2" onClose={vi.fn()} />);
+    expect(await screen.findByText('Se incarca detaliile...')).toBeInTheDocument();
+    await waitFor(() => expect(api.detail).toHaveBeenCalledWith(7, 'S2'));
+
+    await act(async () => { b.resolve(storeDetailB); });
+    expect(await screen.findByText('Beta')).toBeInTheDocument();
+    expect(api.detail).toHaveBeenCalledTimes(2);
+
+    await act(async () => { a.reject(new Error('A failed late')); });
+    await waitFor(() => expect(api.detail).toHaveBeenCalledTimes(2));
+
+    expect(consoleErrorSpy).not.toHaveBeenCalled();
+    expect(screen.queryByText(/Nu am putut incarca/)).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 2 })).toHaveTextContent('Beta');
+  });
+
+  it('keeps the newer request in a loading state when an older request settles first', async () => {
+    const a = deferred<typeof detail>();
+    const b = deferred<typeof detail>();
+    api.detail.mockImplementationOnce(() => a.promise).mockImplementationOnce(() => b.promise);
+
+    const { rerender } = render(<TargetAgentDetails scenarioId={7} siteCode="S1" onClose={vi.fn()} />);
+    expect(await screen.findByText('Se incarca detaliile...')).toBeInTheDocument();
+    await waitFor(() => expect(api.detail).toHaveBeenCalledWith(7, 'S1'));
+
+    rerender(<TargetAgentDetails scenarioId={7} siteCode="S2" onClose={vi.fn()} />);
+    expect(await screen.findByText('Se incarca detaliile...')).toBeInTheDocument();
+    await waitFor(() => expect(api.detail).toHaveBeenCalledWith(7, 'S2'));
+
+    await act(async () => { a.resolve(storeDetailA); });
+    await waitFor(() => expect(api.detail).toHaveBeenCalledTimes(2));
+
+    expect(screen.getByText('Se incarca detaliile...')).toBeInTheDocument();
+    expect(screen.queryByText('Alfa')).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 2 })).toHaveTextContent('S2');
+
+    await act(async () => { b.resolve(storeDetailB); });
+    expect(await screen.findByText('Beta')).toBeInTheDocument();
+    expect(screen.getByText(storeDetailBHeader)).toBeInTheDocument();
+  });
+
+  it('treats completion after unmount as a no-op (no visible effect, no console.error)', async () => {
+    const a = deferred<typeof detail>();
+    api.detail.mockImplementationOnce(() => a.promise);
+
+    const { unmount } = render(<TargetAgentDetails scenarioId={7} siteCode="S1" onClose={vi.fn()} />);
+    expect(await screen.findByText('Se incarca detaliile...')).toBeInTheDocument();
+    await waitFor(() => expect(api.detail).toHaveBeenCalledWith(7, 'S1'));
+
+    unmount();
+
+    await act(async () => { a.reject(new Error('rejected after unmount')); });
+    await waitFor(() => expect(api.detail).toHaveBeenCalledTimes(1));
+
+    expect(consoleErrorSpy).not.toHaveBeenCalled();
   });
 });
