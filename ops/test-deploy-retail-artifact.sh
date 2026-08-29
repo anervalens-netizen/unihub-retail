@@ -437,7 +437,12 @@ PHASE_I_MISSING_USER="unihub-grile"
 PHASE_I_PROVISION_APPLY="/opt/Mobiup/ops/scripts/provision-retail-service-identities.sh apply"
 PHASE_I_PROVISION_VERIFY="/opt/Mobiup/ops/scripts/provision-retail-service-identities.sh verify"
 PHASE_I_LIVE_HEAD_BEFORE="$(git -C "$LIVE" rev-parse HEAD)"
-PHASE_I_BACKUP_COUNT_BEFORE="$(find "$OPS/backups/retail-deploy" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l)"
+PHASE_I_BACKUP_ROOT="$OPS/backups/retail-deploy"
+[[ ! -e "$PHASE_I_BACKUP_ROOT" ]] \
+  || {
+    echo "phase-I fixture expected no deployment backup root before first deploy" >&2
+    exit 1
+  }
 PHASE_I_APPROVED_COUNT_BEFORE="$(find "$ROOT/approval-store" -maxdepth 1 -type f -name '*.approved' | wc -l)"
 PHASE_I_CLAIMED_COUNT_BEFORE="$(find "$ROOT/approval-store" -maxdepth 1 -type f -name '*.claimed.*' | wc -l)"
 PHASE_I_CONSUMED_COUNT_BEFORE="$(find "$ROOT/approval-store" -maxdepth 1 -type f -name '*.consumed' | wc -l)"
@@ -462,9 +467,8 @@ grep -Fq "$PHASE_I_PROVISION_VERIFY" "$ROOT/phase-i-missing-identity.log" \
   || { echo "missing-identity deploy did not direct operator to the verify remediation" >&2; exit 1; }
 [[ "$(git -C "$LIVE" rev-parse HEAD)" == "$PHASE_I_LIVE_HEAD_BEFORE" ]] \
   || { echo "missing-identity deploy mutated the live Git HEAD" >&2; exit 1; }
-[[ "$(find "$OPS/backups/retail-deploy" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l)" \
-  == "$PHASE_I_BACKUP_COUNT_BEFORE" ]] \
-  || { echo "missing-identity deploy mutated the deployment backup store" >&2; exit 1; }
+[[ ! -e "$PHASE_I_BACKUP_ROOT" ]] \
+  || { echo "missing-identity deploy created or mutated the deployment backup store" >&2; exit 1; }
 [[ "$(find "$ROOT/approval-store" -maxdepth 1 -type f -name '*.approved' | wc -l)" \
   == "$PHASE_I_APPROVED_COUNT_BEFORE" ]] \
   || { echo "missing-identity deploy consumed or replaced the active approval" >&2; exit 1; }
@@ -497,6 +501,8 @@ grep -Fq "RETAIL_DEPLOY_TEST_MISSING_RUNTIME_IDENTITY must match a required runt
   || { echo "out-of-list injection did not fail with the deterministic guard" >&2; exit 1; }
 [[ "$(git -C "$LIVE" rev-parse HEAD)" == "$PHASE_I_LIVE_HEAD_BEFORE" ]] \
   || { echo "out-of-list injection mutated the live Git HEAD" >&2; exit 1; }
+[[ ! -e "$PHASE_I_BACKUP_ROOT" ]] \
+  || { echo "out-of-list injection created or mutated the deployment backup store" >&2; exit 1; }
 [[ "$(find "$ROOT/approval-store" -maxdepth 1 -type f -name '*.claimed.*' | wc -l)" \
   == "$PHASE_I_CLAIMED_COUNT_BEFORE" ]] \
   || { echo "out-of-list injection moved the approval to claimed state" >&2; exit 1; }
