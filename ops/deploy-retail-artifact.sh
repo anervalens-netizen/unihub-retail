@@ -51,6 +51,8 @@ elif [[ "$READ_ONLY_MODE" == "1" ]]; then
   [[ -z "${RETAIL_DEPLOY_TEST_ROOT:-}" ]] || die "test root is forbidden outside test mode"
   [[ -z "$TEST_FAIL_PHASE" ]] || die "failure injection is forbidden outside test mode"
   [[ -z "$TEST_NOW" ]] || die "test time is forbidden outside test mode"
+  [[ -z "${RETAIL_DEPLOY_TEST_MISSING_RUNTIME_IDENTITY:-}" ]] \
+    || die "test-only missing runtime identity is forbidden outside test mode"
   LIVE_ROOT="/opt/Mobiup/unihub-retail"
   OPS_ROOT="/opt/Mobiup/ops"
   SERVICE_USER="$(stat -c %U "$LIVE_ROOT")"
@@ -61,6 +63,8 @@ else
   [[ -z "${RETAIL_DEPLOY_TEST_ROOT:-}" ]] || die "test root is forbidden in production mode"
   [[ -z "$TEST_FAIL_PHASE" ]] || die "failure injection is forbidden in production mode"
   [[ -z "$TEST_NOW" ]] || die "test time is forbidden in production mode"
+  [[ -z "${RETAIL_DEPLOY_TEST_MISSING_RUNTIME_IDENTITY:-}" ]] \
+    || die "test-only missing runtime identity is forbidden in production mode"
   LIVE_ROOT="/opt/Mobiup/unihub-retail"
   OPS_ROOT="/opt/Mobiup/ops"
   SERVICE_USER="andrei"
@@ -672,7 +676,40 @@ verify_service_account_contract() {
     || die "runtime service user password is not locked: $user"
 }
 
+REQUIRED_RUNTIME_USERS=(
+  unihub-web
+  unihub-operations
+  unihub-import
+  unihub-grile
+  unihub-export
+  unihub-salary-export
+  unihub-migrate
+)
+
+RETAIL_IDENTITY_PROVISION_APPLY="/opt/Mobiup/ops/scripts/provision-retail-service-identities.sh apply"
+RETAIL_IDENTITY_PROVISION_VERIFY="/opt/Mobiup/ops/scripts/provision-retail-service-identities.sh verify"
+
+verify_required_runtime_users() {
+  local user
+  if [[ "$TEST_MODE" == "1" ]]; then
+    if [[ -z "${RETAIL_DEPLOY_TEST_MISSING_RUNTIME_IDENTITY:-}" ]]; then
+      return
+    fi
+    for user in "${REQUIRED_RUNTIME_USERS[@]}"; do
+      if [[ "$user" == "$RETAIL_DEPLOY_TEST_MISSING_RUNTIME_IDENTITY" ]]; then
+        die "required runtime service user is absent: $user; remediate via $RETAIL_IDENTITY_PROVISION_APPLY followed by $RETAIL_IDENTITY_PROVISION_VERIFY"
+      fi
+    done
+    die "test-only RETAIL_DEPLOY_TEST_MISSING_RUNTIME_IDENTITY must match a required runtime user: ${REQUIRED_RUNTIME_USERS[*]}"
+  fi
+  for user in "${REQUIRED_RUNTIME_USERS[@]}"; do
+    getent passwd "$user" >/dev/null \
+      || die "required runtime service user is absent: $user; remediate via $RETAIL_IDENTITY_PROVISION_APPLY followed by $RETAIL_IDENTITY_PROVISION_VERIFY"
+  done
+}
+
 verify_runtime_identity_prerequisites() {
+  verify_required_runtime_users
   [[ "$TEST_MODE" == "1" ]] && return
   verify_service_account_contract \
     unihub-web unihub-web \
