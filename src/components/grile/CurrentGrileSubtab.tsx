@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, CheckCircle2, Clock, Loader2, PlayCircle, RefreshCw, XCircle } from 'lucide-react';
 
+import { getApiErrorMessage } from '../../api/client';
 import { getGrileOverview, runGrileCheck } from '../../api/grile';
 import { cn } from '../../lib/utils';
 import { GrileMonthlyPanel } from '../GrileMonthlyPanel';
@@ -10,6 +11,7 @@ import { relativeGrileTime } from './grileFormatting';
 import { GrileOverviewTree } from './GrileOverviewTree';
 
 const LEGACY_GRILE_MONTH_KEY = 'unihub_grile_month';
+const RUN_CHECK_ERROR_FALLBACK = 'Verificarea grilelor nu a putut fi pornită. Încearcă din nou.';
 
 function useCurrentGrile(initialMonth?: string) {
   const [month, setMonth] = useState(initialMonth ?? '');
@@ -28,13 +30,17 @@ function useCurrentGrile(initialMonth?: string) {
   }, [overview.data?.month, month]);
   useEffect(() => { sessionStorage.removeItem(LEGACY_GRILE_MONTH_KEY); }, []);
   const runCheck = useMutation({
-    mutationFn: () => runGrileCheck(month),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['grile-overview', month] }),
+    mutationFn: (submittedMonth: string) => runGrileCheck(submittedMonth),
+    onSuccess: (_result, submittedMonth) => queryClient.invalidateQueries({
+      queryKey: ['grile-overview', submittedMonth],
+    }),
   });
   const run = overview.data?.run ?? null;
-  const running = run?.active === true || runCheck.isPending;
+  const runCheckMatchesMonth = runCheck.variables === month;
+  const running = run?.active === true || (runCheck.isPending && runCheckMatchesMonth);
+  const canRunCheck = Boolean(month) && !running && !runCheck.isPending;
   const progressPct = run && run.progress_total > 0 ? Math.round((run.progress_current / run.progress_total) * 100) : 0;
-  return { month, setMonth, filter, setFilter, overview, runCheck, run, running, progressPct };
+  return { month, setMonth, filter, setFilter, overview, runCheck, run, running, runCheckMatchesMonth, canRunCheck, progressPct };
 }
 
 type GrileModel = ReturnType<typeof useCurrentGrile>;
@@ -56,7 +62,7 @@ function GrileStatusCard({ model }: { model: GrileModel }) {
       <div><h3 className="text-lg font-semibold text-slate-800 dark:text-slate-100">Verificare grile salariale</h3><p className="mt-0.5 text-xs text-slate-500">Grila (K5/L5) vs target + vânzări din DB · cheie <code>site_code</code>. Rulează automat zilnic după importul vânzărilor.</p></div>
       <div className="flex items-center gap-3">
         <input type="month" value={model.month} onChange={(event) => model.setMonth(event.target.value)} className="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-800" />
-        <button onClick={() => model.runCheck.mutate()} disabled={model.running} className={cn('inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-medium text-white transition-colors', model.running ? 'cursor-not-allowed bg-slate-400' : 'bg-indigo-600 hover:bg-indigo-700')}>{model.running ? <Loader2 className="h-4 w-4 animate-spin" /> : <PlayCircle className="h-4 w-4" />}{model.running ? 'Rulează…' : 'Rulează verificare'}</button>
+        <button onClick={() => model.runCheck.mutate(model.month)} disabled={!model.canRunCheck} className={cn('inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-medium text-white transition-colors', !model.canRunCheck ? 'cursor-not-allowed bg-slate-400' : 'bg-indigo-600 hover:bg-indigo-700')}>{model.running ? <Loader2 className="h-4 w-4 animate-spin" /> : <PlayCircle className="h-4 w-4" />}{model.running ? 'Rulează…' : 'Rulează verificare'}</button>
       </div>
     </div>
     <div className="mt-4 flex flex-wrap items-center gap-6">
@@ -71,6 +77,16 @@ function GrileStatusCard({ model }: { model: GrileModel }) {
     </div>
     {model.running && model.run && <div className="mt-3"><div className="mb-1 flex justify-between text-xs text-slate-500"><span>Verificare în curs…</span><span>{model.run.progress_current}/{model.run.progress_total}</span></div><div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700"><div className="h-full bg-indigo-500 transition-all" style={{ width: `${model.progressPct}%` }} /></div></div>}
     {model.run?.status === 'failed' && <p className="mt-2 text-xs text-rose-500">Rulare eșuată: {model.run.error_message}</p>}
+    {model.runCheck.isError && model.runCheckMatchesMonth && (
+      <div
+        role="alert"
+        aria-live="polite"
+        className="mt-3 flex items-start gap-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/30 dark:text-rose-300"
+      >
+        <XCircle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
+        <span>{getApiErrorMessage(model.runCheck.error, RUN_CHECK_ERROR_FALLBACK)}</span>
+      </div>
+    )}
     <GrileMonthlyPanel month={model.month || data?.month || ''} />
   </div>;
 }
