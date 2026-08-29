@@ -30,13 +30,16 @@ function useCurrentGrile(initialMonth?: string) {
   }, [overview.data?.month, month]);
   useEffect(() => { sessionStorage.removeItem(LEGACY_GRILE_MONTH_KEY); }, []);
   const runCheck = useMutation({
-    mutationFn: () => runGrileCheck(month),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['grile-overview', month] }),
+    mutationFn: (submittedMonth: string) => runGrileCheck(submittedMonth),
+    onSuccess: (_result, submittedMonth) => queryClient.invalidateQueries({
+      queryKey: ['grile-overview', submittedMonth],
+    }),
   });
   const run = overview.data?.run ?? null;
-  const running = run?.active === true || runCheck.isPending;
+  const runCheckMatchesMonth = runCheck.variables === month;
+  const running = run?.active === true || (runCheck.isPending && runCheckMatchesMonth);
   const progressPct = run && run.progress_total > 0 ? Math.round((run.progress_current / run.progress_total) * 100) : 0;
-  return { month, setMonth, filter, setFilter, overview, runCheck, run, running, progressPct };
+  return { month, setMonth, filter, setFilter, overview, runCheck, run, running, runCheckMatchesMonth, progressPct };
 }
 
 type GrileModel = ReturnType<typeof useCurrentGrile>;
@@ -58,7 +61,7 @@ function GrileStatusCard({ model }: { model: GrileModel }) {
       <div><h3 className="text-lg font-semibold text-slate-800 dark:text-slate-100">Verificare grile salariale</h3><p className="mt-0.5 text-xs text-slate-500">Grila (K5/L5) vs target + vânzări din DB · cheie <code>site_code</code>. Rulează automat zilnic după importul vânzărilor.</p></div>
       <div className="flex items-center gap-3">
         <input type="month" value={model.month} onChange={(event) => model.setMonth(event.target.value)} className="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-800" />
-        <button onClick={() => model.runCheck.mutate()} disabled={model.running} className={cn('inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-medium text-white transition-colors', model.running ? 'cursor-not-allowed bg-slate-400' : 'bg-indigo-600 hover:bg-indigo-700')}>{model.running ? <Loader2 className="h-4 w-4 animate-spin" /> : <PlayCircle className="h-4 w-4" />}{model.running ? 'Rulează…' : 'Rulează verificare'}</button>
+        <button onClick={() => model.runCheck.mutate(model.month)} disabled={model.running} className={cn('inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-medium text-white transition-colors', model.running ? 'cursor-not-allowed bg-slate-400' : 'bg-indigo-600 hover:bg-indigo-700')}>{model.running ? <Loader2 className="h-4 w-4 animate-spin" /> : <PlayCircle className="h-4 w-4" />}{model.running ? 'Rulează…' : 'Rulează verificare'}</button>
       </div>
     </div>
     <div className="mt-4 flex flex-wrap items-center gap-6">
@@ -73,7 +76,7 @@ function GrileStatusCard({ model }: { model: GrileModel }) {
     </div>
     {model.running && model.run && <div className="mt-3"><div className="mb-1 flex justify-between text-xs text-slate-500"><span>Verificare în curs…</span><span>{model.run.progress_current}/{model.run.progress_total}</span></div><div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700"><div className="h-full bg-indigo-500 transition-all" style={{ width: `${model.progressPct}%` }} /></div></div>}
     {model.run?.status === 'failed' && <p className="mt-2 text-xs text-rose-500">Rulare eșuată: {model.run.error_message}</p>}
-    {model.runCheck.isError && (
+    {model.runCheck.isError && model.runCheckMatchesMonth && (
       <div
         role="alert"
         aria-live="polite"

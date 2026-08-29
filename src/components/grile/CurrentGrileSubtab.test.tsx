@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -32,6 +32,7 @@ vi.mock('./GrileOverviewTree', () => ({
 import { CurrentGrileSubtab } from './CurrentGrileSubtab';
 
 const MONTH = '2026-08';
+const OTHER_MONTH = '2026-09';
 
 interface Deferred<T> {
   promise: Promise<T>;
@@ -79,6 +80,12 @@ function renderSubtab(month = MONTH) {
     </QueryClientProvider>,
   );
   return { client };
+}
+
+function getMonthInput(): HTMLInputElement {
+  const input = document.querySelector<HTMLInputElement>('input[type="month"]');
+  if (!input) throw new Error('month picker not found');
+  return input;
 }
 
 const FALLBACK_TEXT = 'Verificarea grilelor nu a putut fi pornită. Încearcă din nou.';
@@ -178,5 +185,140 @@ describe('CurrentGrileSubtab run-check error visibility', () => {
 
       cleanup();
     }
+  });
+});
+
+describe('CurrentGrileSubtab run-check month scoping', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    api.getGrileOverview.mockResolvedValue(baseOverview());
+  });
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  it('passes the current selected month to runGrileCheck', async () => {
+    const user = userEvent.setup();
+    api.runGrileCheck.mockResolvedValueOnce({ status: 'enqueued' });
+
+    renderSubtab(MONTH);
+    const button = await screen.findByRole('button', { name: RUN_BUTTON_LABEL });
+    await user.click(button);
+
+    expect(api.runGrileCheck).toHaveBeenCalledWith(MONTH);
+  });
+
+  it('removes the run-check error from the rendered UI when the selected month changes', async () => {
+    const user = userEvent.setup();
+    api.runGrileCheck.mockRejectedValue(
+      new ApiError(403, 'Lipsește permisiunea unihub-manager.', null),
+    );
+
+    renderSubtab(MONTH);
+    const button = await screen.findByRole('button', { name: RUN_BUTTON_LABEL });
+    await user.click(button);
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Lipsește permisiunea unihub-manager.');
+
+    // Operator switches the month to B while A's run-check error is still owned by A.
+    const monthPicker = getMonthInput();
+    fireEvent.change(monthPicker, { target: { value: OTHER_MONTH } });
+
+    // A's error must no longer appear beneath B's selection.
+    await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
+    expect(api.runGrileCheck).toHaveBeenCalledTimes(1);
+    expect(api.runGrileCheck).toHaveBeenCalledWith(MONTH);
+  });
+
+  it('does not keep month B disabled because month A is still pending', async () => {
+    const user = userEvent.setup();
+    const aDeferred = createDeferred<{ status: 'enqueued' }>();
+    api.runGrileCheck.mockImplementationOnce(() => aDeferred.promise);
+
+    renderSubtab(MONTH);
+    const aButton = await screen.findByRole('button', { name: RUN_BUTTON_LABEL });
+    await user.click(aButton);
+
+    // A is pending: button shows the pending label and is disabled.
+    expect(await screen.findByRole('button', { name: PENDING_BUTTON_LABEL })).toBeDisabled();
+
+    // Operator switches the month to B while A's mutation is still in flight.
+    const monthPicker = getMonthInput();
+    fireEvent.change(monthPicker, { target: { value: OTHER_MONTH } });
+
+    // B must not be disabled because A's mutation is still settling for A.
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: RUN_BUTTON_LABEL })).toBeEnabled(),
+    );
+
+    // The A mutation is still pending — only one call has been made.
+    expect(api.runGrileCheck).toHaveBeenCalledTimes(1);
+    expect(api.runGrileCheck).toHaveBeenCalledWith(MONTH);
+  });
+
+  it('does not render a stale month A failure under month B', async () => {
+    const user = userEvent.setup();
+    const aDeferred = createDeferred<unknown>();
+    api.runGrileCheck.mockImplementationOnce(() => aDeferred.promise);
+
+    renderSubtab(MONTH);
+    const aButton = await screen.findByRole('button', { name: RUN_BUTTON_LABEL });
+    await user.click(aButton);
+
+    expect(await screen.findByRole('button', { name: PENDING_BUTTON_LABEL })).toBeDisabled();
+
+    // Switch to B before A resolves.
+    const monthPicker = getMonthInput();
+    fireEvent.change(monthPicker, { target: { value: OTHER_MONTH } });
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: RUN_BUTTON_LABEL })).toBeEnabled(),
+    );
+
+    // Now A's deferred rejects with the actionable 403. The mutation error belongs to A.
+    await act(async () => {
+      aDeferred.reject(new ApiError(403, 'Lipsește permisiunea unihub-manager.', null));
+      await aDeferred.promise.catch(() => undefined);
+    });
+
+    // B must not display A's failure alert.
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(api.runGrileCheck).toHaveBeenCalledTimes(1);
+    expect(api.runGrileCheck).toHaveBeenCalledWith(MONTH);
+  });
+
+  it('invalidates the submitted month cache, not the currently selected month', async () => {
+    const user = userEvent.setup();
+    const aDeferred = createDeferred<{ status: 'enqueued' }>();
+    api.runGrileCheck.mockImplementationOnce(() => aDeferred.promise);
+
+    const { client } = renderSubtab(MONTH);
+    const invalidateSpy = vi.spyOn(client, 'invalidateQueries');
+
+    await screen.findByRole('button', { name: RUN_BUTTON_LABEL });
+    const runButton = screen.getByRole('button', { name: RUN_BUTTON_LABEL });
+    await user.click(runButton);
+
+    expect(api.runGrileCheck).toHaveBeenCalledWith(MONTH);
+
+    // Switch to B while A's mutation is still in flight.
+    const monthPicker = getMonthInput();
+    fireEvent.change(monthPicker, { target: { value: OTHER_MONTH } });
+    await waitFor(() => expect(monthPicker.value).toBe(OTHER_MONTH));
+
+    // Resolve A's deferred so onSuccess runs with submittedMonth = MONTH (A).
+    await act(async () => {
+      aDeferred.resolve({ status: 'enqueued' });
+      await aDeferred.promise;
+    });
+
+    // The submitted month (A) must be the one targeted for invalidation.
+    expect(invalidateSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ queryKey: ['grile-overview', MONTH] }),
+    );
+    // The current selection (B) must not be the target of the success invalidation.
+    expect(invalidateSpy).not.toHaveBeenCalledWith(
+      expect.objectContaining({ queryKey: ['grile-overview', OTHER_MONTH] }),
+    );
   });
 });
