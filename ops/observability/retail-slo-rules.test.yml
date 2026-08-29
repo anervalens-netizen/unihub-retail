@@ -120,3 +120,37 @@ tests:
             exp_annotations:
               summary: Retail Grile reconciliation repeatedly fails
               description: Monthly reconciliation has failed 4 consecutive times.
+
+  - name: Web metrics target missing fires after the configured duration
+    interval: 1m
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: UniHubRetailWebTargetMissing
+      - eval_time: 6m
+        alertname: UniHubRetailWebTargetMissing
+        exp_alerts:
+          - exp_labels:
+              job: unihub-retail-web
+              severity: critical
+            exp_annotations:
+              summary: Retail web metrics target is missing
+              description: Prometheus has no web metrics target for 5 minutes.
+
+  - name: Web metrics target down fires after the configured duration
+    interval: 1m
+    input_series:
+      - series: 'up{job="unihub-retail-web",instance="web:9898"}'
+        values: '0x10'
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: UniHubRetailWebTargetDown
+      - eval_time: 3m
+        alertname: UniHubRetailWebTargetDown
+        exp_alerts:
+          - exp_labels:
+              instance: web:9898
+              job: unihub-retail-web
+              severity: critical
+            exp_annotations:
+              summary: Retail web metrics target is down
+              description: unihub-retail-web has not been scraped successfully for 2 minutes.

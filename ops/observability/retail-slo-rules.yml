@@ -82,6 +82,24 @@ groups:
           summary: "Retail is not ready"
           description: "The public /readyz dependency probe has failed for 2 minutes."
 
+      - alert: UniHubRetailWebTargetMissing
+        expr: absent(up{job="unihub-retail-web"})
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Retail web metrics target is missing"
+          description: "Prometheus has no web metrics target for 5 minutes."
+
+      - alert: UniHubRetailWebTargetDown
+        expr: up{job="unihub-retail-web"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Retail web metrics target is down"
+          description: "unihub-retail-web has not been scraped successfully for 2 minutes."
+
       - alert: UniHubRetailErrorRateSLO
         expr: >-
           unihub_retail:http_5xx_ratio:rate5m > 0.05
