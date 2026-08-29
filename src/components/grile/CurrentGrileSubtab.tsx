@@ -38,7 +38,7 @@ function useCurrentGrile(initialMonth?: string) {
   const run = overview.data?.run ?? null;
   const runCheckMatchesMonth = runCheck.variables === month;
   const running = run?.active === true || (runCheck.isPending && runCheckMatchesMonth);
-  const canRunCheck = Boolean(month) && !running;
+  const canRunCheck = Boolean(month) && !running && !runCheck.isPending;
   const progressPct = run && run.progress_total > 0 ? Math.round((run.progress_current / run.progress_total) * 100) : 0;
   return { month, setMonth, filter, setFilter, overview, runCheck, run, running, runCheckMatchesMonth, canRunCheck, progressPct };
 }

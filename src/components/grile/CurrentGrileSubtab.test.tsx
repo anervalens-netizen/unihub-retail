@@ -246,7 +246,7 @@ describe('CurrentGrileSubtab run-check month scoping', () => {
     expect(api.runGrileCheck).toHaveBeenCalledWith(MONTH);
   });
 
-  it('does not keep month B disabled because month A is still pending', async () => {
+  it('keeps month B disabled while month A mutation is pending (global lock)', async () => {
     const user = userEvent.setup();
     const aDeferred = createDeferred<{ status: 'enqueued' }>();
     api.runGrileCheck.mockImplementationOnce(() => aDeferred.promise);
@@ -258,16 +258,44 @@ describe('CurrentGrileSubtab run-check month scoping', () => {
     // A is pending: button shows the pending label and is disabled.
     expect(await screen.findByRole('button', { name: PENDING_BUTTON_LABEL })).toBeDisabled();
 
-    // Operator switches the month to B while A's mutation is still in flight.
+    // Operator switches to B while A's mutation is still in flight.
     const monthPicker = getMonthInput();
     fireEvent.change(monthPicker, { target: { value: OTHER_MONTH } });
 
-    // B must not be disabled because A's mutation is still settling for A.
+    // B must remain disabled because the global lock prevents concurrent submissions.
+    const bButton = screen.getByRole('button', { name: RUN_BUTTON_LABEL });
+    expect(bButton).toBeDisabled();
+    // B has no pending mutation of its own, so the spinner / "Rulează…" must NOT appear.
+    expect(screen.queryByRole('button', { name: PENDING_BUTTON_LABEL })).not.toBeInTheDocument();
+
+    // Attempted interaction must not submit a duplicate mutation.
+    await user.click(bButton);
+    expect(api.runGrileCheck).toHaveBeenCalledTimes(1);
+    expect(api.runGrileCheck).toHaveBeenCalledWith(MONTH);
+  });
+
+  it('keeps month A disabled when operator switches back to A while A is still pending', async () => {
+    const user = userEvent.setup();
+    const aDeferred = createDeferred<{ status: 'enqueued' }>();
+    api.runGrileCheck.mockImplementationOnce(() => aDeferred.promise);
+
+    renderSubtab(MONTH);
+    await user.click(await screen.findByRole('button', { name: RUN_BUTTON_LABEL }));
+    expect(await screen.findByRole('button', { name: PENDING_BUTTON_LABEL })).toBeDisabled();
+
+    // Detour through B and back while A is still pending.
+    const monthPicker = getMonthInput();
+    fireEvent.change(monthPicker, { target: { value: OTHER_MONTH } });
     await waitFor(() =>
-      expect(screen.getByRole('button', { name: RUN_BUTTON_LABEL })).toBeEnabled(),
+      expect(screen.getByRole('button', { name: RUN_BUTTON_LABEL })).toBeDisabled(),
     );
 
-    // The A mutation is still pending — only one call has been made.
+    fireEvent.change(monthPicker, { target: { value: MONTH } });
+    const aButton = await screen.findByRole('button', { name: PENDING_BUTTON_LABEL });
+    expect(aButton).toBeDisabled();
+
+    // Duplicate A click must not submit a second request.
+    await user.click(aButton);
     expect(api.runGrileCheck).toHaveBeenCalledTimes(1);
     expect(api.runGrileCheck).toHaveBeenCalledWith(MONTH);
   });
@@ -278,17 +306,13 @@ describe('CurrentGrileSubtab run-check month scoping', () => {
     api.runGrileCheck.mockImplementationOnce(() => aDeferred.promise);
 
     renderSubtab(MONTH);
-    const aButton = await screen.findByRole('button', { name: RUN_BUTTON_LABEL });
-    await user.click(aButton);
-
+    await user.click(await screen.findByRole('button', { name: RUN_BUTTON_LABEL }));
     expect(await screen.findByRole('button', { name: PENDING_BUTTON_LABEL })).toBeDisabled();
 
-    // Switch to B before A resolves.
+    // Switch to B before A resolves. B must remain disabled because A is still pending.
     const monthPicker = getMonthInput();
     fireEvent.change(monthPicker, { target: { value: OTHER_MONTH } });
-    await waitFor(() =>
-      expect(screen.getByRole('button', { name: RUN_BUTTON_LABEL })).toBeEnabled(),
-    );
+    expect(screen.getByRole('button', { name: RUN_BUTTON_LABEL })).toBeDisabled();
 
     // Now A's deferred rejects with the actionable 403. The mutation error belongs to A.
     await act(async () => {
@@ -296,8 +320,51 @@ describe('CurrentGrileSubtab run-check month scoping', () => {
       await aDeferred.promise.catch(() => undefined);
     });
 
+    // After A settles, B becomes enabled.
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: RUN_BUTTON_LABEL })).toBeEnabled(),
+    );
+
     // B must not display A's failure alert.
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(api.runGrileCheck).toHaveBeenCalledTimes(1);
+    expect(api.runGrileCheck).toHaveBeenCalledWith(MONTH);
+  });
+
+  it('preserves A identity so A error reappears when switching back to A after failure', async () => {
+    const user = userEvent.setup();
+    const aDeferred = createDeferred<unknown>();
+    api.runGrileCheck.mockImplementationOnce(() => aDeferred.promise);
+
+    renderSubtab(MONTH);
+    await user.click(await screen.findByRole('button', { name: RUN_BUTTON_LABEL }));
+    expect(await screen.findByRole('button', { name: PENDING_BUTTON_LABEL })).toBeDisabled();
+
+    // Switch to B while A is pending; the global lock blocks a duplicate submission.
+    const monthPicker = getMonthInput();
+    fireEvent.change(monthPicker, { target: { value: OTHER_MONTH } });
+    expect(screen.getByRole('button', { name: RUN_BUTTON_LABEL })).toBeDisabled();
+
+    // Reject A with an actionable ApiError.
+    await act(async () => {
+      aDeferred.reject(new ApiError(403, 'Lipsește permisiunea unihub-manager.', null));
+      await aDeferred.promise.catch(() => undefined);
+    });
+
+    // B still must not display A's alert.
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    // After A settles, B becomes enabled.
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: RUN_BUTTON_LABEL })).toBeEnabled(),
+    );
+
+    // Switch back to A: the original A mutation observer is preserved, so A's
+    // actionable failure is now visible because the selection matches its identity.
+    fireEvent.change(monthPicker, { target: { value: MONTH } });
+    const aAlert = await screen.findByRole('alert');
+    expect(aAlert).toHaveTextContent('Lipsește permisiunea unihub-manager.');
+
+    // Only the original A submission was made — no duplicate.
     expect(api.runGrileCheck).toHaveBeenCalledTimes(1);
     expect(api.runGrileCheck).toHaveBeenCalledWith(MONTH);
   });
