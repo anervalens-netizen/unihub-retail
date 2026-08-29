@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, CheckCircle2, Clock, Loader2, PlayCircle, RefreshCw, XCircle } from 'lucide-react';
 
+import { getApiErrorMessage } from '../../api/client';
 import { getGrileOverview, runGrileCheck } from '../../api/grile';
 import { cn } from '../../lib/utils';
 import { GrileMonthlyPanel } from '../GrileMonthlyPanel';
@@ -10,6 +11,7 @@ import { relativeGrileTime } from './grileFormatting';
 import { GrileOverviewTree } from './GrileOverviewTree';
 
 const LEGACY_GRILE_MONTH_KEY = 'unihub_grile_month';
+const RUN_CHECK_ERROR_FALLBACK = 'Verificarea grilelor nu a putut fi pornită. Încearcă din nou.';
 
 function useCurrentGrile(initialMonth?: string) {
   const [month, setMonth] = useState(initialMonth ?? '');
@@ -71,6 +73,16 @@ function GrileStatusCard({ model }: { model: GrileModel }) {
     </div>
     {model.running && model.run && <div className="mt-3"><div className="mb-1 flex justify-between text-xs text-slate-500"><span>Verificare în curs…</span><span>{model.run.progress_current}/{model.run.progress_total}</span></div><div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700"><div className="h-full bg-indigo-500 transition-all" style={{ width: `${model.progressPct}%` }} /></div></div>}
     {model.run?.status === 'failed' && <p className="mt-2 text-xs text-rose-500">Rulare eșuată: {model.run.error_message}</p>}
+    {model.runCheck.isError && (
+      <div
+        role="alert"
+        aria-live="polite"
+        className="mt-3 flex items-start gap-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/30 dark:text-rose-300"
+      >
+        <XCircle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
+        <span>{getApiErrorMessage(model.runCheck.error, RUN_CHECK_ERROR_FALLBACK)}</span>
+      </div>
+    )}
     <GrileMonthlyPanel month={model.month || data?.month || ''} />
   </div>;
 }
