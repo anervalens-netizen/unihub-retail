@@ -102,16 +102,35 @@ export function TargetAgentDetails({ scenarioId, siteCode, onClose }: {
 
   useEffect(() => {
     if (!siteCode) return;
+
+    // `active` is closed-over by each fulfillment handler; the cleanup
+    // callback flips it to false whenever scenarioId/siteCode changes or
+    // the component unmounts, making any in-flight completion a no-op.
+    let active = true;
+
     setChartMode('sales');
+    setDetail(null);
     setLoading(true);
     setError(null);
+
     void fetchTargetStoreDetail(scenarioId, siteCode)
-      .then(setDetail)
+      .then((nextDetail) => {
+        if (!active) return;
+        setDetail(nextDetail);
+      })
       .catch((err) => {
+        if (!active) return;
         console.error(err);
         setError(getApiErrorMessage(err, 'Nu am putut incarca detaliile locatiei.'));
       })
-      .finally(() => setLoading(false));
+      .finally(() => {
+        if (!active) return;
+        setLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
   }, [scenarioId, siteCode]);
 
   if (!siteCode) return null;
