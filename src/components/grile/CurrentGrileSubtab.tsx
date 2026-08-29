@@ -38,8 +38,9 @@ function useCurrentGrile(initialMonth?: string) {
   const run = overview.data?.run ?? null;
   const runCheckMatchesMonth = runCheck.variables === month;
   const running = run?.active === true || (runCheck.isPending && runCheckMatchesMonth);
+  const canRunCheck = Boolean(month) && !running;
   const progressPct = run && run.progress_total > 0 ? Math.round((run.progress_current / run.progress_total) * 100) : 0;
-  return { month, setMonth, filter, setFilter, overview, runCheck, run, running, runCheckMatchesMonth, progressPct };
+  return { month, setMonth, filter, setFilter, overview, runCheck, run, running, runCheckMatchesMonth, canRunCheck, progressPct };
 }
 
 type GrileModel = ReturnType<typeof useCurrentGrile>;
@@ -61,7 +62,7 @@ function GrileStatusCard({ model }: { model: GrileModel }) {
       <div><h3 className="text-lg font-semibold text-slate-800 dark:text-slate-100">Verificare grile salariale</h3><p className="mt-0.5 text-xs text-slate-500">Grila (K5/L5) vs target + vânzări din DB · cheie <code>site_code</code>. Rulează automat zilnic după importul vânzărilor.</p></div>
       <div className="flex items-center gap-3">
         <input type="month" value={model.month} onChange={(event) => model.setMonth(event.target.value)} className="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-800" />
-        <button onClick={() => model.runCheck.mutate(model.month)} disabled={model.running} className={cn('inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-medium text-white transition-colors', model.running ? 'cursor-not-allowed bg-slate-400' : 'bg-indigo-600 hover:bg-indigo-700')}>{model.running ? <Loader2 className="h-4 w-4 animate-spin" /> : <PlayCircle className="h-4 w-4" />}{model.running ? 'Rulează…' : 'Rulează verificare'}</button>
+        <button onClick={() => model.runCheck.mutate(model.month)} disabled={!model.canRunCheck} className={cn('inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-medium text-white transition-colors', !model.canRunCheck ? 'cursor-not-allowed bg-slate-400' : 'bg-indigo-600 hover:bg-indigo-700')}>{model.running ? <Loader2 className="h-4 w-4 animate-spin" /> : <PlayCircle className="h-4 w-4" />}{model.running ? 'Rulează…' : 'Rulează verificare'}</button>
       </div>
     </div>
     <div className="mt-4 flex flex-wrap items-center gap-6">

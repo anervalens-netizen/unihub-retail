@@ -82,6 +82,21 @@ function renderSubtab(month = MONTH) {
   return { client };
 }
 
+function renderSubtabWithoutInitialMonth() {
+  const client = new QueryClient({
+    defaultOptions: {
+      queries: { retry: false, gcTime: 0 },
+      mutations: { retry: false },
+    },
+  });
+  render(
+    <QueryClientProvider client={client}>
+      <CurrentGrileSubtab />
+    </QueryClientProvider>,
+  );
+  return { client };
+}
+
 function getMonthInput(): HTMLInputElement {
   const input = document.querySelector<HTMLInputElement>('input[type="month"]');
   if (!input) throw new Error('month picker not found');
@@ -320,5 +335,38 @@ describe('CurrentGrileSubtab run-check month scoping', () => {
     expect(invalidateSpy).not.toHaveBeenCalledWith(
       expect.objectContaining({ queryKey: ['grile-overview', OTHER_MONTH] }),
     );
+  });
+
+  it('keeps the Run button disabled until the server-resolved default month is adopted', async () => {
+    const user = userEvent.setup();
+    const overviewDeferred = createDeferred<ReturnType<typeof baseOverview>>();
+    api.getGrileOverview.mockImplementationOnce(() => overviewDeferred.promise);
+    api.runGrileCheck.mockResolvedValue({ status: 'enqueued' });
+
+    // Render WITHOUT initialMonth so `month` starts as ''.
+    renderSubtabWithoutInitialMonth();
+
+    // Before the overview resolves, the month identity is empty.
+    const button = await screen.findByRole('button', { name: RUN_BUTTON_LABEL });
+    expect(button).toBeDisabled();
+    expect(api.runGrileCheck).not.toHaveBeenCalled();
+
+    // Operator interaction with a disabled button must not submit a mutation.
+    await user.click(button);
+    expect(api.runGrileCheck).not.toHaveBeenCalled();
+
+    // Resolve the overview with a concrete month and let the component adopt it.
+    await act(async () => {
+      overviewDeferred.resolve(baseOverview());
+      await overviewDeferred.promise;
+    });
+
+    // Once `month` becomes a non-empty concrete value, the button is enabled.
+    await waitFor(() => expect(button).toBeEnabled());
+
+    // A real click must now submit exactly that concrete month.
+    await user.click(button);
+    expect(api.runGrileCheck).toHaveBeenCalledTimes(1);
+    expect(api.runGrileCheck).toHaveBeenCalledWith(MONTH);
   });
 });
