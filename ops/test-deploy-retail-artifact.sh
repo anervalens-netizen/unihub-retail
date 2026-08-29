@@ -427,6 +427,80 @@ set -e
 [[ "$CLAIMED_DUPLICATE_RC" -ne 0 ]]
 mv -- "$CLAIMED_APPROVAL" "$ACTIVE_APPROVAL"
 
+# Phase I regression: missing required runtime user must fail closed
+# BEFORE consuming the one-time approval, mutating the deployment
+# backup store, or advancing the live Git HEAD. The SAME unconsumed
+# ACTIVE_APPROVAL proves both paths: injected missing identity -> fail
+# closed with operator-visible remediation; no injection -> existing
+# success path consumes the approval normally.
+PHASE_I_MISSING_USER="unihub-grile"
+PHASE_I_PROVISION_APPLY="/opt/Mobiup/ops/scripts/provision-retail-service-identities.sh apply"
+PHASE_I_PROVISION_VERIFY="/opt/Mobiup/ops/scripts/provision-retail-service-identities.sh verify"
+PHASE_I_LIVE_HEAD_BEFORE="$(git -C "$LIVE" rev-parse HEAD)"
+PHASE_I_BACKUP_COUNT_BEFORE="$(find "$OPS/backups/retail-deploy" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l)"
+PHASE_I_APPROVED_COUNT_BEFORE="$(find "$ROOT/approval-store" -maxdepth 1 -type f -name '*.approved' | wc -l)"
+PHASE_I_CLAIMED_COUNT_BEFORE="$(find "$ROOT/approval-store" -maxdepth 1 -type f -name '*.claimed.*' | wc -l)"
+PHASE_I_CONSUMED_COUNT_BEFORE="$(find "$ROOT/approval-store" -maxdepth 1 -type f -name '*.consumed' | wc -l)"
+PHASE_I_FAILED_COUNT_BEFORE="$(find "$ROOT/approval-store" -maxdepth 1 -type f -name '*.failed' | wc -l)"
+set +e
+RETAIL_DEPLOY_TEST_MODE=1 \
+RETAIL_DEPLOY_TEST_ROOT="$ROOT" \
+RETAIL_DEPLOY_TEST_MISSING_RUNTIME_IDENTITY="$PHASE_I_MISSING_USER" \
+  /usr/bin/bash -p "$OPS/scripts/deploy-retail-artifact.sh" \
+    "$ARTIFACT" "$NEW_SHA" "$CI_RUN_ID" "$ARTIFACT_SHA256" \
+    >"$ROOT/phase-i-missing-identity.log" 2>&1
+PHASE_I_MISSING_RC=$?
+set -e
+[[ "$PHASE_I_MISSING_RC" -ne 0 ]] \
+  || { echo "missing-identity deploy unexpectedly succeeded" >&2; exit 1; }
+grep -Fq "required runtime service user is absent: $PHASE_I_MISSING_USER" \
+  "$ROOT/phase-i-missing-identity.log" \
+  || { echo "missing-identity deploy did not report the exact missing account" >&2; exit 1; }
+grep -Fq "$PHASE_I_PROVISION_APPLY" "$ROOT/phase-i-missing-identity.log" \
+  || { echo "missing-identity deploy did not direct operator to the apply remediation" >&2; exit 1; }
+grep -Fq "$PHASE_I_PROVISION_VERIFY" "$ROOT/phase-i-missing-identity.log" \
+  || { echo "missing-identity deploy did not direct operator to the verify remediation" >&2; exit 1; }
+[[ "$(git -C "$LIVE" rev-parse HEAD)" == "$PHASE_I_LIVE_HEAD_BEFORE" ]] \
+  || { echo "missing-identity deploy mutated the live Git HEAD" >&2; exit 1; }
+[[ "$(find "$OPS/backups/retail-deploy" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l)" \
+  == "$PHASE_I_BACKUP_COUNT_BEFORE" ]] \
+  || { echo "missing-identity deploy mutated the deployment backup store" >&2; exit 1; }
+[[ "$(find "$ROOT/approval-store" -maxdepth 1 -type f -name '*.approved' | wc -l)" \
+  == "$PHASE_I_APPROVED_COUNT_BEFORE" ]] \
+  || { echo "missing-identity deploy consumed or replaced the active approval" >&2; exit 1; }
+[[ "$(find "$ROOT/approval-store" -maxdepth 1 -type f -name '*.claimed.*' | wc -l)" \
+  == "$PHASE_I_CLAIMED_COUNT_BEFORE" ]] \
+  || { echo "missing-identity deploy moved the approval to claimed state" >&2; exit 1; }
+[[ "$(find "$ROOT/approval-store" -maxdepth 1 -type f -name '*.consumed' | wc -l)" \
+  == "$PHASE_I_CONSUMED_COUNT_BEFORE" ]] \
+  || { echo "missing-identity deploy finalized the approval as consumed" >&2; exit 1; }
+[[ "$(find "$ROOT/approval-store" -maxdepth 1 -type f -name '*.failed' | wc -l)" \
+  == "$PHASE_I_FAILED_COUNT_BEFORE" ]] \
+  || { echo "missing-identity deploy finalized the approval as failed" >&2; exit 1; }
+
+# Out-of-list test-only injection must be rejected deterministically, not
+# silently coerced to a missing-user error. The same approval must remain
+# untouched and the deployment backup store must stay clean.
+set +e
+RETAIL_DEPLOY_TEST_MODE=1 \
+RETAIL_DEPLOY_TEST_ROOT="$ROOT" \
+RETAIL_DEPLOY_TEST_MISSING_RUNTIME_IDENTITY=not-a-real-user \
+  /usr/bin/bash -p "$OPS/scripts/deploy-retail-artifact.sh" \
+    "$ARTIFACT" "$NEW_SHA" "$CI_RUN_ID" "$ARTIFACT_SHA256" \
+    >"$ROOT/phase-i-bogus-injection.log" 2>&1
+PHASE_I_BOGUS_RC=$?
+set -e
+[[ "$PHASE_I_BOGUS_RC" -ne 0 ]] \
+  || { echo "out-of-list injection unexpectedly succeeded" >&2; exit 1; }
+grep -Fq "RETAIL_DEPLOY_TEST_MISSING_RUNTIME_IDENTITY must match a required runtime user" \
+  "$ROOT/phase-i-bogus-injection.log" \
+  || { echo "out-of-list injection did not fail with the deterministic guard" >&2; exit 1; }
+[[ "$(git -C "$LIVE" rev-parse HEAD)" == "$PHASE_I_LIVE_HEAD_BEFORE" ]] \
+  || { echo "out-of-list injection mutated the live Git HEAD" >&2; exit 1; }
+[[ "$(find "$ROOT/approval-store" -maxdepth 1 -type f -name '*.claimed.*' | wc -l)" \
+  == "$PHASE_I_CLAIMED_COUNT_BEFORE" ]] \
+  || { echo "out-of-list injection moved the approval to claimed state" >&2; exit 1; }
+
 # Regression test for P1: the production-style privileged entrypoint at
 # $OPS/scripts/deploy-retail-artifact.sh is provisioned without a sibling
 # scripts/release_identity.py. The OLD lookup would resolve to
