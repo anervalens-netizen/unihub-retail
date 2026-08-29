@@ -262,7 +262,7 @@ describe('useSalaryController', () => {
     expect(api.startExport).toHaveBeenLastCalledWith(expect.objectContaining({ q: 'ion' }));
   });
 
-  it('keeps last good state when loaders fail', async () => {
+  it('surfaces every loader read error without leaking the previous scope', async () => {
     api.fetchSalariiOverview.mockRejectedValueOnce(new Error('overview down'));
     api.fetchSalaryEvolution.mockRejectedValueOnce(new Error('evolution down'));
     api.fetchSalarySummary.mockRejectedValueOnce(new Error('summary down'));
@@ -283,10 +283,241 @@ describe('useSalaryController', () => {
     expect(result.current.totalAgents).toBe(0);
     expect(result.current.hasMore).toBe(false);
 
+    expect(result.current.readErrors.overview).toBe('Datele de tip statistici nu au putut fi încărcate.');
+    expect(result.current.readErrors.summary).toBe('Comparația salarii vs vânzări nu a putut fi încărcată.');
+    expect(result.current.readErrors.trend).toBe('Evoluția lunară nu a putut fi încărcată.');
+    expect(result.current.readErrors.agents).toBe('Lista de agenți nu a putut fi încărcată.');
+
     const logged = consoleError.mock.calls.map((call: unknown[]) => call[0]);
     expect(logged).toContain('Failed to load overview:');
     expect(logged).toContain('Failed to load summary:');
     expect(logged).toContain('Failed to load trend:');
     expect(logged).toContain('Failed to load agents:');
+  });
+
+  it('does not let a successful sibling loader clear a sibling read error', async () => {
+    api.fetchSalarySummary.mockRejectedValueOnce(new Error('summary permanently down')).mockResolvedValueOnce({ items: summaryItems, month: '2026-05' });
+    api.fetchSalariiOverview.mockResolvedValue(overviewFixture);
+    api.fetchSalaryEvolution.mockResolvedValue(evolutionPoints);
+    api.fetchSalaryTrend.mockResolvedValue(trendPoints);
+    api.fetchSalaryAgents.mockResolvedValue({ items: [agentSummary], total: 1 });
+
+    const { result } = renderHook(() => useSalaryController(defaultFilters));
+
+    await waitFor(() => expect(result.current.readErrors.summary).toBe('Comparația salarii vs vânzări nu a putut fi încărcată.'));
+    await waitFor(() => expect(result.current.overview).toBe(overviewFixture));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    await waitFor(() => expect(result.current.loadingCards).toBe(false));
+
+    expect(result.current.readErrors.summary).toBe('Comparația salarii vs vânzări nu a putut fi încărcată.');
+    expect(result.current.readErrors.overview).toBeUndefined();
+    expect(result.current.readErrors.trend).toBeUndefined();
+    expect(result.current.readErrors.agents).toBeUndefined();
+
+    act(() => result.current.retryRead('summary'));
+    await waitFor(() => expect(result.current.readErrors.summary).toBeUndefined());
+    await waitFor(() => expect(result.current.summaryMonth).toBe('2026-05'));
+  });
+
+  it('replaces last-good data with the new request identity when scope changes', async () => {
+    api.fetchSalariiOverview.mockResolvedValueOnce(overviewFixture);
+    api.fetchSalaryEvolution.mockResolvedValueOnce(evolutionPoints);
+    api.fetchSalarySummary.mockResolvedValueOnce({ items: summaryItems, month: '2026-05' });
+    api.fetchSalaryTrend.mockResolvedValueOnce(trendPoints);
+    api.fetchSalaryAgents.mockResolvedValueOnce({ items: [agentSummary], total: 1 });
+
+    const { result, rerender } = renderHook(({ filters }: { filters: AppFilters }) => useSalaryController(filters), {
+      initialProps: { filters: defaultFilters },
+    });
+
+    await waitFor(() => expect(result.current.overview).toBe(overviewFixture));
+    await waitFor(() => expect(result.current.agents).toEqual([agentSummary]));
+
+    api.fetchSalaryTrend.mockRejectedValueOnce(new Error('trend down for scope B'));
+    api.fetchSalarySummary.mockResolvedValueOnce({ items: [], month: '2026-06' });
+    api.fetchSalariiOverview.mockRejectedValueOnce(new Error('overview down for scope B'));
+    api.fetchSalaryAgents.mockRejectedValueOnce(new Error('agents down for scope B'));
+
+    rerender({ filters: scopedFilters });
+
+    await waitFor(() => expect(result.current.readErrors.trend).toBe('Evoluția lunară nu a putut fi încărcată.'));
+    expect(result.current.overview).toBeNull();
+    expect(result.current.agents).toEqual([]);
+    expect(result.current.sortedTrend).toEqual([]);
+    expect(result.current.summaryMonth).toBe('2026-06');
+    expect(result.current.readErrors.overview).toBe('Datele de tip statistici nu au putut fi încărcate.');
+    expect(result.current.readErrors.agents).toBe('Lista de agenți nu a putut fi încărcată.');
+  });
+
+  it('preserves legitimate empty successful responses without surfacing an error', async () => {
+    api.fetchSalariiOverview.mockResolvedValue(overviewFixture);
+    api.fetchSalaryEvolution.mockResolvedValue([]);
+    api.fetchSalarySummary.mockResolvedValue({ items: [], month: '2026-05' });
+    api.fetchSalaryTrend.mockResolvedValue([]);
+    api.fetchSalaryAgents.mockResolvedValue({ items: [], total: 0 });
+
+    const { result } = renderHook(() => useSalaryController(defaultFilters));
+
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    await waitFor(() => expect(result.current.loadingCards).toBe(false));
+
+    expect(result.current.readErrors).toEqual({});
+    expect(result.current.sortedSummary).toEqual([]);
+    expect(result.current.summaryMonth).toBe('2026-05');
+    expect(result.current.sortedTrend).toEqual([]);
+    expect(result.current.agents).toEqual([]);
+    expect(result.current.totalAgents).toBe(0);
+    expect(result.current.hasMore).toBe(false);
+  });
+
+  it('surfaces the ApiError detail when a loader rejects with an ApiError', async () => {
+    const { ApiError } = await import('../../api/client');
+    api.fetchSalaryTrend.mockRejectedValueOnce(new ApiError(403, 'Nu ai acces la evoluția lunară.', null));
+
+    const { result } = renderHook(() => useSalaryController(defaultFilters));
+
+    await waitFor(() => expect(result.current.loadingCards).toBe(false));
+    expect(result.current.readErrors.trend).toBe('Nu ai acces la evoluția lunară.');
+    expect(result.current.readErrors.overview).toBeUndefined();
+    expect(result.current.readErrors.summary).toBeUndefined();
+    expect(result.current.readErrors.agents).toBeUndefined();
+  });
+
+  describe('request-generation guards', () => {
+    type Deferred<T> = { promise: Promise<T>; resolve: (value: T) => void; reject: (error: unknown) => void };
+    function deferred<T>(): Deferred<T> {
+      let resolve!: (value: T) => void;
+      let reject!: (error: unknown) => void;
+      const promise = new Promise<T>((res, rej) => { resolve = res; reject = rej; });
+      return { promise, resolve, reject };
+    }
+
+    it('discards a stale success when a newer sibling request on the same path started first', async () => {
+      const overviewA = deferred<SalariiOverview>();
+      const evolutionA = deferred<SalaryEvolutionPoint[]>();
+      const overviewB = deferred<SalariiOverview>();
+      const evolutionB = deferred<SalaryEvolutionPoint[]>();
+
+      api.fetchSalariiOverview.mockImplementationOnce(() => overviewA.promise).mockImplementationOnce(() => overviewB.promise);
+      api.fetchSalaryEvolution.mockImplementationOnce(() => evolutionA.promise).mockImplementationOnce(() => evolutionB.promise);
+
+      const { result, rerender } = renderHook(({ filters }: { filters: AppFilters }) => useSalaryController(filters), {
+        initialProps: { filters: defaultFilters },
+      });
+
+      await waitFor(() => expect(api.fetchSalariiOverview).toHaveBeenCalledTimes(1));
+      await waitFor(() => expect(api.fetchSalaryEvolution).toHaveBeenCalledTimes(1));
+
+      rerender({ filters: scopedFilters });
+      await waitFor(() => expect(api.fetchSalariiOverview).toHaveBeenCalledTimes(2));
+      await waitFor(() => expect(api.fetchSalaryEvolution).toHaveBeenCalledTimes(2));
+
+      const scopedOverview = { ...overviewFixture, total_agents: 99 } as SalariiOverview;
+      const scopedEvolution = [{ month: '2026-09', total: 1234, mobicell: 0, mobiup: 1234 } as unknown as SalaryEvolutionPoint];
+      overviewB.resolve(scopedOverview);
+      evolutionB.resolve(scopedEvolution);
+      await waitFor(() => expect(result.current.overview).toBe(scopedOverview));
+      await waitFor(() => expect(result.current.evolution).toBe(scopedEvolution));
+
+      const staleOverview = { ...overviewFixture, total_agents: 1 } as SalariiOverview;
+      const staleEvolution = [{ month: '2026-01', total: 9000, mobicell: 4000, mobiup: 5000 } as unknown as SalaryEvolutionPoint];
+      overviewA.resolve(staleOverview);
+      evolutionA.resolve(staleEvolution);
+      await new Promise((resolve) => setTimeout(resolve, 25));
+
+      expect(result.current.overview).toBe(scopedOverview);
+      expect(result.current.overview).not.toBe(staleOverview);
+      expect(result.current.evolution).toBe(scopedEvolution);
+      expect(result.current.evolution).not.toBe(staleEvolution);
+    });
+
+    it('discards a stale failure when a newer successful sibling request has already published', async () => {
+      const summaryA = deferred<{ items: SalaryComparisonPoint[]; month: string }>();
+      const trendA = deferred<SalaryTrendMonth[]>();
+      const summaryB = deferred<{ items: SalaryComparisonPoint[]; month: string }>();
+      const trendB = deferred<SalaryTrendMonth[]>();
+
+      api.fetchSalarySummary.mockImplementationOnce(() => summaryA.promise).mockImplementationOnce(() => summaryB.promise);
+      api.fetchSalaryTrend.mockImplementationOnce(() => trendA.promise).mockImplementationOnce(() => trendB.promise);
+
+      api.fetchSalariiOverview.mockResolvedValue(overviewFixture);
+      api.fetchSalaryEvolution.mockResolvedValue(evolutionPoints);
+
+      const { result, rerender } = renderHook(({ filters }: { filters: AppFilters }) => useSalaryController(filters), {
+        initialProps: { filters: defaultFilters },
+      });
+      await waitFor(() => expect(api.fetchSalarySummary).toHaveBeenCalledTimes(1));
+      await waitFor(() => expect(api.fetchSalaryTrend).toHaveBeenCalledTimes(1));
+
+      rerender({ filters: scopedFilters });
+      await waitFor(() => expect(api.fetchSalarySummary).toHaveBeenCalledTimes(2));
+      await waitFor(() => expect(api.fetchSalaryTrend).toHaveBeenCalledTimes(2));
+
+      summaryB.resolve({ items: [], month: '2026-09' });
+      trendB.resolve([]);
+      await waitFor(() => expect(result.current.summaryMonth).toBe('2026-09'));
+      expect(result.current.sortedTrend).toEqual([]);
+
+      summaryA.reject(new Error('summary A failed late'));
+      trendA.reject(new Error('trend A failed late'));
+      await new Promise((resolve) => setTimeout(resolve, 25));
+
+      expect(result.current.summaryMonth).toBe('2026-09');
+      expect(result.current.readErrors.summary).toBeUndefined();
+      expect(result.current.readErrors.trend).toBeUndefined();
+    });
+
+    it('discards a stale success when a newer sibling request has already published a failure', async () => {
+      const summaryA = deferred<{ items: SalaryComparisonPoint[]; month: string }>();
+      const summaryB = deferred<{ items: SalaryComparisonPoint[]; month: string }>();
+      api.fetchSalarySummary.mockImplementationOnce(() => summaryA.promise).mockImplementationOnce(() => summaryB.promise);
+      api.fetchSalariiOverview.mockResolvedValue(overviewFixture);
+      api.fetchSalaryEvolution.mockResolvedValue(evolutionPoints);
+      api.fetchSalaryTrend.mockResolvedValue(trendPoints);
+
+      const { result, rerender } = renderHook(({ filters }: { filters: AppFilters }) => useSalaryController(filters), {
+        initialProps: { filters: defaultFilters },
+      });
+      await waitFor(() => expect(api.fetchSalarySummary).toHaveBeenCalledTimes(1));
+
+      rerender({ filters: scopedFilters });
+      await waitFor(() => expect(api.fetchSalarySummary).toHaveBeenCalledTimes(2));
+
+      summaryB.reject(new Error('summary B rejected'));
+      await waitFor(() => expect(result.current.readErrors.summary).toBe('Comparația salarii vs vânzări nu a putut fi încărcată.'));
+
+      summaryA.resolve({ items: summaryItems, month: '2026-04' });
+      await new Promise((resolve) => setTimeout(resolve, 25));
+
+      expect(result.current.readErrors.summary).toBe('Comparația salarii vs vânzări nu a putut fi încărcată.');
+      expect(result.current.summaryMonth).toBeNull();
+      expect(result.current.sortedSummary).toEqual([]);
+    });
+
+    it('discards a stale agents success when the user paginates and the earlier page resolves late', async () => {
+      const page0 = deferred<{ items: SalaryAgentSummary[]; total: number }>();
+      const page1 = deferred<{ items: SalaryAgentSummary[]; total: number }>();
+      api.fetchSalaryAgents.mockImplementationOnce(() => page0.promise).mockImplementationOnce(() => page1.promise);
+
+      const { result } = renderHook(() => useSalaryController(defaultFilters));
+      await waitFor(() => expect(api.fetchSalaryAgents).toHaveBeenCalledTimes(1));
+
+      act(() => result.current.goToPage(1));
+      await waitFor(() => expect(api.fetchSalaryAgents).toHaveBeenCalledTimes(2));
+
+      const page1Items = [{ ...agentSummary, person_id: 'p_late_page1' } as SalaryAgentSummary];
+      page1.resolve({ items: page1Items, total: 1 });
+      await waitFor(() => expect(result.current.agents[0]?.person_id).toBe('p_late_page1'));
+      expect(result.current.page).toBe(1);
+
+      const page0Items = [{ ...agentSummary, person_id: 'p_late_page0' } as SalaryAgentSummary];
+      page0.resolve({ items: page0Items, total: 999 });
+      await new Promise((resolve) => setTimeout(resolve, 25));
+
+      expect(result.current.agents[0]?.person_id).toBe('p_late_page1');
+      expect(result.current.agents[0]?.person_id).not.toBe('p_late_page0');
+      expect(result.current.totalAgents).toBe(1);
+      expect(result.current.loading).toBe(false);
+    });
   });
 });
