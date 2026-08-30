@@ -61,7 +61,7 @@ def test_workflow_is_trusted_control_plane_and_never_checks_out_candidate():
     on = data.get(True) or data.get("on") or {}
     assert set(on) == {"pull_request_target", "workflow_run", "status", "push"}
     assert on["pull_request_target"]["branches"] == ["main"]
-    assert set(on["workflow_run"]["workflows"]) == {"CI", "docs-contract", "high-risk-governance"}
+    assert set(on["workflow_run"]["workflows"]) == {"CI", "docs-contract", "high-risk-governance", "pr-deep-policy", "pr-deep"}
     assert on["push"]["branches"] == ["main"]
     assert data["permissions"] == {
         "contents": "read",
@@ -610,3 +610,65 @@ def test_newer_same_name_malformed_marker_blocks_older_exact_marker():
             marker.pop(malformed_field)
             evidence[path].append(m.WorkflowEvidence(run, [marker]))
             assert _decide_with_evidence(m, evidence, pr_number=pr).state == "failure"
+
+
+def test_trusted_workflow_dispatch_without_ref_field_can_certify():
+    """Real workflow-runs REST responses do not expose the workflow ``ref``
+    key. A legitimate trusted PR-DEEP run therefore arrives without one and
+    must still certify when every other exact invariant passes."""
+    m = _load_helper()
+    head, base, pr = "a" * 40, "b" * 40, 42
+    evidence = _trusted_evidence(
+        m, pr_number=pr, head=head, base=base, policy_state="pending", deep=True
+    )
+    run = evidence[m.DEEP_WORKFLOW_PATH][0].run
+    run.pop("ref", None)
+    assert "ref" not in run
+    assert run.get("head_branch") == "main"
+    decision = _decide_with_evidence(m, evidence, pr_number=pr)
+    assert decision.state == "success"
+    assert decision.reason == "pr-deep-passed"
+
+
+def test_workflow_dispatch_with_non_main_head_branch_is_rejected():
+    m = _load_helper()
+    head, base, pr = "a" * 40, "b" * 40, 42
+    evidence = _trusted_evidence(
+        m, pr_number=pr, head=head, base=base, policy_state="pending", deep=True
+    )
+    evidence[m.DEEP_WORKFLOW_PATH][0].run["head_branch"] = "feature/evil"
+    assert _decide_with_evidence(m, evidence, pr_number=pr).state != "success"
+
+
+def test_workflow_dispatch_with_missing_head_branch_is_rejected():
+    m = _load_helper()
+    head, base, pr = "a" * 40, "b" * 40, 42
+    evidence = _trusted_evidence(
+        m, pr_number=pr, head=head, base=base, policy_state="pending", deep=True
+    )
+    evidence[m.DEEP_WORKFLOW_PATH][0].run.pop("head_branch", None)
+    assert _decide_with_evidence(m, evidence, pr_number=pr).state != "success"
+
+
+def test_workflow_dispatch_with_malformed_head_branch_is_rejected():
+    m = _load_helper()
+    head, base, pr = "a" * 40, "b" * 40, 42
+    evidence = _trusted_evidence(
+        m, pr_number=pr, head=head, base=base, policy_state="pending", deep=True
+    )
+    evidence[m.DEEP_WORKFLOW_PATH][0].run["head_branch"] = "Main"  # wrong case
+    assert _decide_with_evidence(m, evidence, pr_number=pr).state != "success"
+
+
+def test_pr_merge_gate_workflow_run_trusted_sources_include_marker_workflows():
+    """The merge gate must reevaluate after the trusted marker-producing
+    workflows finish, so the ``workflow_run`` trigger must list them
+    explicitly. Without this, an early visibility status can leave the gate
+    permanently pending until the next unrelated event."""
+    data = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
+    on = data.get(True) or data.get("on") or {}
+    sources = set(on["workflow_run"]["workflows"])
+    assert "pr-deep-policy" in sources
+    assert "pr-deep" in sources
+    # Sanity check: the existing sources are preserved.
+    assert {"CI", "docs-contract", "high-risk-governance"} <= sources

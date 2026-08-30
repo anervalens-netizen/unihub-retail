@@ -186,7 +186,11 @@ def _run_matches(
     if not _valid_run_id(run.get("id")) or not _valid_sha(run.get("head_sha")):
         return False
     if workflow_dispatch:
-        if run.get("head_branch") != "main" or run.get("ref") != "refs/heads/main":
+        # GitHub's workflow-runs REST response does not expose the workflow
+        # `ref` field for ``workflow_dispatch`` runs, so we never depend on it.
+        # The authoritative main-branch invariant is ``head_branch == "main"``;
+        # a dispatch run from any other branch must be rejected.
+        if run.get("head_branch") != "main":
             return False
     elif (
         pr_number is None
@@ -208,6 +212,10 @@ def _run_provenance_valid(
 
     The API fetch filters runs, but ``decide`` also accepts injected evidence
     from callers and must never trust the dictionary key as provenance.
+
+    For ``workflow_dispatch`` runs GitHub does not return a ``ref`` field on
+    the workflow-runs REST response, so the validation must rely on
+    ``head_branch`` and the workflow path/event/repo invariants instead.
     """
     if not _run_matches(
         run,
