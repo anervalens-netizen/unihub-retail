@@ -559,3 +559,54 @@ def test_older_exact_marker_survives_newer_stale_marker():
     decision = _decide_with_evidence(m, evidence, pr_number=pr)
     assert decision.state == "success"
     assert decision.reason == "pr-deep-passed"
+
+
+def test_newer_same_name_malformed_marker_blocks_older_exact_marker():
+    m = _load_helper()
+    head, base, pr = "a" * 40, "b" * 40, 42
+    for kind in ("policy", "deep"):
+        evidence = _trusted_evidence(
+            m, pr_number=pr, head=head, base=base,
+            policy_state="success" if kind == "policy" else "pending",
+            deep=kind == "deep",
+        )
+        path = m.POLICY_WORKFLOW_PATH if kind == "policy" else m.DEEP_WORKFLOW_PATH
+        prefix = m.POLICY_MARKER_PREFIX if kind == "policy" else m.DEEP_MARKER_PREFIX
+        event = "pull_request_target" if kind == "policy" else "workflow_dispatch"
+        run_head = head if kind == "policy" else "d" * 40
+        run = _trusted_run(
+            m, path, event, pr, run_head, base, run_id=30,
+            head_branch="main" if kind == "deep" else None,
+            ref="refs/heads/main" if kind == "deep" else None,
+            pull_requests=[] if kind == "deep" else [{"number": pr, "base": {"sha": base}}],
+            updated_at="2026-08-30T07:00:00Z",
+        )
+        marker = {"id": 30, "run_id": 30,
+                  "name": m._marker_name(prefix, state="success" if kind == "policy" else None,
+                                           pr_number=pr, head_sha=head, base_sha=base),
+                  "head_sha": "c" * 40, "status": "completed", "conclusion": "success",
+                  "created_at": "2026-08-30T07:00:00Z", "updated_at": "2026-08-30T07:00:00Z"}
+        evidence[path].append(m.WorkflowEvidence(run, [marker]))
+        assert _decide_with_evidence(m, evidence, pr_number=pr).state == "failure"
+
+        for malformed_field in ("run_id", "head_sha"):
+            evidence = _trusted_evidence(
+                m, pr_number=pr, head=head, base=base,
+                policy_state="success" if kind == "policy" else "pending",
+                deep=kind == "deep",
+            )
+            run = _trusted_run(
+                m, path, event, pr, run_head, base, run_id=31,
+                head_branch="main" if kind == "deep" else None,
+                ref="refs/heads/main" if kind == "deep" else None,
+                pull_requests=[] if kind == "deep" else [{"number": pr, "base": {"sha": base}}],
+                updated_at="2026-08-30T07:00:00Z",
+            )
+            marker = {"id": 31, "run_id": 31,
+                      "name": m._marker_name(prefix, state="success" if kind == "policy" else None,
+                                               pr_number=pr, head_sha=head, base_sha=base),
+                      "head_sha": run_head, "status": "completed", "conclusion": "success",
+                      "created_at": "2026-08-30T07:00:00Z", "updated_at": "2026-08-30T07:00:00Z"}
+            marker.pop(malformed_field)
+            evidence[path].append(m.WorkflowEvidence(run, [marker]))
+            assert _decide_with_evidence(m, evidence, pr_number=pr).state == "failure"

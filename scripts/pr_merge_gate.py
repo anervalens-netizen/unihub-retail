@@ -336,9 +336,14 @@ def _trusted_marker_state(
                 malformed_exact = True
             else:
                 exact.append((item.run, matching))
+    # A malformed job carrying the exact current marker is attributable to
+    # this certification attempt even when an older exact marker is valid.
+    # Never let the older evidence win merely because the newer job failed
+    # provenance validation. Stale/wrong-input marker names are nonmatching
+    # and remain safely ignorable.
+    if malformed_exact:
+        return "failure", f"malformed-trusted-workflow:{prefix}"
     if not exact:
-        if malformed_exact:
-            return "failure", f"malformed-trusted-workflow:{prefix}"
         return "pending", f"missing-trusted-marker:{prefix}"
     exact.sort(
         key=lambda item: _sort_key(item[0]) or (
