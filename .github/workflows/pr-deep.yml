@@ -69,9 +69,8 @@ name: pr-deep
 #   even if HEAD did not move.
 #
 # On SUCCESS: sets `retail/pr-deep` AND `retail/pr-deep-policy` =
-# success on the exact expected_head_sha so the trusted policy's
-# previous `pending` state becomes certified without requiring a
-# workflow rerun.
+# success on the exact expected_head_sha for visibility. The exact
+# Actions certification-marker job below is the merge-gate authority.
 #
 # On FAILURE: sets `retail/pr-deep` = failure on the exact expected
 # head. The cleanup step only runs after a successful preflight
@@ -140,6 +139,26 @@ jobs:
           fi
           test -S /var/run/docker.sock
           test "$(docker info --format '{{.Name}}')" = "dell-standby"
+
+  certification-marker:
+    name: pr-deep marker pr=${{ inputs.pr_number }} head=${{ inputs.expected_head_sha }} base=${{ inputs.expected_base_sha }}
+    needs: backend-deep
+    if: needs.backend-deep.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Validate trusted certification marker inputs
+        env:
+          REF: ${{ github.ref }}
+          PR_NUMBER: ${{ inputs.pr_number }}
+          HEAD_SHA: ${{ inputs.expected_head_sha }}
+          BASE_SHA: ${{ inputs.expected_base_sha }}
+        run: |
+          set -euo pipefail
+          test "$REF" = "refs/heads/main"
+          printf '%s' "$PR_NUMBER" | grep -Eq '^[0-9]+$'
+          printf '%s' "$HEAD_SHA" | grep -Eq '^[0-9a-f]{40}$'
+          printf '%s' "$BASE_SHA" | grep -Eq '^[0-9a-f]{40}$'
 
   backend-deep:
     name: backend-deep

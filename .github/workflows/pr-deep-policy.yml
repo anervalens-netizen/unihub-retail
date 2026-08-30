@@ -6,7 +6,8 @@ name: pr-deep-policy
 # This workflow only consults the BASE branch's selector logic; it
 # never executes candidate code. It exists solely to publish the
 # SHA-bound commit-status context `retail/pr-deep-policy` so the
-# trusted policy lifecycle is observable per exact PR HEAD + BASE.
+# trusted policy lifecycle is observable per exact PR HEAD + BASE. The
+# status is visibility-only; the exact Actions marker job below is authority.
 #
 # Narrow, accurate claim (DO NOT over-claim):
 #
@@ -76,6 +77,8 @@ permissions:
 jobs:
   policy:
     name: pr-deep-policy
+    outputs:
+      policy_state: ${{ steps.decide-policy.outputs.policy_state }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -191,6 +194,7 @@ jobs:
       # step below consumes ONLY this file. Do NOT reconstruct the
       # decision from selector state at publish time.
       - name: Decide policy
+        id: decide-policy
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
@@ -210,11 +214,12 @@ jobs:
           cat "$POLICY_FILE"
           # Validate the decision file before publishing it.
           POLICY_STATE_VAL="$(/usr/bin/python3.12 -c 'import json,sys; print(json.load(open(sys.argv[1]))["policy_state"])' "$POLICY_FILE")"
-          if [ -z "$POLICY_STATE_VAL" ] || [ "$POLICY_STATE_VAL" = "null" ]; then
-            echo "::error::policy decision missing policy_state"
+          if ! /usr/bin/python3.12 -c 'import sys; sys.exit(0 if sys.argv[1] in {"success", "pending", "failure"} else 1)' "$POLICY_STATE_VAL"; then
+            echo "::error::policy decision missing or noncanonical policy_state"
             exit 1
           fi
-          echo "POLICY_STATE=$POLICY_STATE_VAL" >> "$GITHUB_ENV"
+          printf 'policy_state=%s\n' "$POLICY_STATE_VAL" >> "$GITHUB_OUTPUT"
+           echo "POLICY_STATE=$POLICY_STATE_VAL" >> "$GITHUB_ENV"
 
       # Compute the publication payload as explicit Python argv.
       # NEVER depend on unexported shell locals — Python reads the
@@ -251,3 +256,26 @@ jobs:
             "https://api.github.com/repos/${REPO}/statuses/${HEAD_SHA}" \
             -d @/tmp/publish-status.json
           echo "retail/pr-deep-policy state=${STATE_VAL} published"
+
+  # The status above is visibility only. This trusted job is the authority
+  # consumed by the aggregate gate; its name binds every identity and the
+  # canonical state emitted by POLICY_FILE.
+  marker:
+    name: pr-deep-policy marker state=${{ needs.policy.outputs.policy_state }} head=${{ github.event.pull_request.head.sha }} base=${{ github.event.pull_request.base.sha }}
+    needs: policy
+    if: needs.policy.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Validate canonical policy marker inputs
+        env:
+          POLICY_STATE: ${{ needs.policy.outputs.policy_state }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$HEAD_SHA" | grep -Eq '^[0-9a-f]{40}$'
+          printf '%s' "$BASE_SHA" | grep -Eq '^[0-9a-f]{40}$'
+          case "$POLICY_STATE" in success|pending|failure) ;; *)
+            echo "::error::policy marker state is not canonical"; exit 1;;
+          esac

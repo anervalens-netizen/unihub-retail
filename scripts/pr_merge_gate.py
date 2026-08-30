@@ -20,9 +20,32 @@ DEEP_CONTEXT = "retail/pr-deep"
 DOCS_CHECK = "Validate release authority and docs"
 PR_FAST_CHECK = "pr-fast"
 HIGH_RISK_CHECK = "Validate high-risk PR governance"
-GITHUB_ACTIONS_APP = "github-actions"
 PAGE_SIZE = 100
 MAX_PR_FILES = 3000
+
+# Required checks are accepted only from the immutable workflow files below.
+# A display name/context is deliberately insufficient evidence: the Actions
+# run and job metadata must bind the result to this repository, workflow path,
+# event, PR, and exact PR identities.
+DOCS_WORKFLOW_PATH = ".github/workflows/docs-contract.yml"
+PR_FAST_WORKFLOW_PATH = ".github/workflows/ci.yml"
+HIGH_RISK_WORKFLOW_PATH = ".github/workflows/high-risk-governance.yml"
+POLICY_WORKFLOW_PATH = ".github/workflows/pr-deep-policy.yml"
+DEEP_WORKFLOW_PATH = ".github/workflows/pr-deep.yml"
+POLICY_MARKER_PREFIX = "pr-deep-policy marker"
+DEEP_MARKER_PREFIX = "pr-deep marker"
+
+_REQUIRED_WORKFLOWS = {
+    DOCS_CHECK: (DOCS_WORKFLOW_PATH, "pull_request"),
+    PR_FAST_CHECK: (PR_FAST_WORKFLOW_PATH, "pull_request"),
+    HIGH_RISK_CHECK: (HIGH_RISK_WORKFLOW_PATH, "pull_request_target"),
+}
+
+
+@dataclass(frozen=True)
+class WorkflowEvidence:
+    run: dict[str, Any]
+    jobs: list[dict[str, Any]]
 
 
 class GateError(RuntimeError):
@@ -99,80 +122,166 @@ def _latest(items: list[dict[str, Any]]) -> dict[str, Any] | None:
     return keyed[0][1]
 
 
-def _required_check_state(
-    checks: list[dict[str, Any]], *, expected_name: str, head_sha: str
+def _marker_name(prefix: str, *, state: str | None, pr_number: int, head_sha: str, base_sha: str) -> str:
+    if prefix == POLICY_MARKER_PREFIX:
+        return f"{prefix} state={state} head={head_sha} base={base_sha}"
+    return f"{prefix} pr={pr_number} head={head_sha} base={base_sha}"
+
+
+def _run_repo(run: dict[str, Any], key: str) -> str | None:
+    value = run.get(key)
+    return value.get("full_name") if isinstance(value, dict) else None
+
+
+def _run_has_pr(run: dict[str, Any], pr_number: int) -> bool:
+    pull_requests = run.get("pull_requests")
+    if not isinstance(pull_requests, list):
+        return False
+    return any(
+        isinstance(pr, dict)
+        and pr.get("number") == pr_number
+        and not isinstance(pr.get("number"), bool)
+        for pr in pull_requests
+    )
+
+
+def _run_has_base(run: dict[str, Any], base_sha: str) -> bool:
+    # The workflow-run PR association must carry the base SHA. Without it,
+    # this API response cannot distinguish a same-head run from a run created
+    # before the PR base advanced, so fail closed.
+    explicit = run.get("base_sha")
+    if explicit is not None:
+        return explicit == base_sha
+    pull_requests = run.get("pull_requests")
+    if isinstance(pull_requests, list):
+        for pr in pull_requests:
+            if not isinstance(pr, dict):
+                continue
+            base = pr.get("base")
+            if isinstance(base, dict) and "sha" in base:
+                return base.get("sha") == base_sha
+    # A workflow run without a base identity cannot prove it was created for
+    # the current PR base. Fail closed rather than accepting a stale run.
+    return False
+
+
+def _run_matches(
+    run: dict[str, Any], *, repo: str, workflow_path: str, event: str,
+    pr_number: int | None, head_sha: str | None, base_sha: str | None,
+    workflow_dispatch: bool = False,
+) -> bool:
+    if run.get("path") != workflow_path or run.get("event") != event:
+        return False
+    if _run_repo(run, "repository") != repo or _run_repo(run, "head_repository") != repo:
+        return False
+    if workflow_dispatch:
+        if run.get("head_branch") != "main" or run.get("ref") != "refs/heads/main":
+            return False
+    elif pr_number is None or not _run_has_pr(run, pr_number):
+        return False
+    if head_sha is not None and run.get("head_sha") != head_sha:
+        return False
+    if base_sha is not None and not _run_has_base(run, base_sha):
+        return False
+    return True
+
+
+def _workflow_job_state(
+    evidence: list[WorkflowEvidence], *, job_name: str, expected_head: str,
 ) -> tuple[str, str]:
-    latest = _latest([c for c in checks if c.get("name") == expected_name])
-    if latest is None:
-        return "pending", f"missing-check:{expected_name}"
-    if latest.get("head_sha") != head_sha:
-        return "failure", f"stale-check-head:{expected_name}"
-    app = latest.get("app")
-    if not isinstance(app, dict) or app.get("slug") != GITHUB_ACTIONS_APP:
-        return "failure", f"untrusted-check-app:{expected_name}"
-    if latest.get("status") != "completed":
-        return "pending", f"check-pending:{expected_name}"
-    if latest.get("conclusion") == "success":
-        return "success", f"check-success:{expected_name}"
-    return "failure", f"check-{latest.get('conclusion') or 'unknown'}:{expected_name}"
+    if not evidence:
+        return "pending", f"missing-trusted-workflow:{job_name}"
+    runs = [e.run for e in evidence]
+    latest_run = _latest(runs)
+    if latest_run is None:
+        return "failure", f"malformed-trusted-workflow:{job_name}"
+    selected = next(e for e in evidence if e.run is latest_run)
+    if any(not isinstance(job, dict) for job in selected.jobs):
+        return "failure", f"malformed-trusted-job:{job_name}"
+    jobs = [job for job in selected.jobs if job.get("name") == job_name]
+    if not jobs:
+        return "pending", f"missing-trusted-job:{job_name}"
+    latest_job = _latest(jobs)
+    if latest_job is None:
+        return "failure", f"malformed-trusted-job:{job_name}"
+    if latest_job.get("run_id") is not None and latest_job.get("run_id") != latest_run.get("id"):
+        return "failure", f"untrusted-job-run:{job_name}"
+    if latest_job.get("head_sha") is not None and latest_job.get("head_sha") != expected_head:
+        return "failure", f"stale-check-head:{job_name}"
+    if latest_job.get("status") != "completed":
+        return "pending", f"check-pending:{job_name}"
+    if latest_job.get("conclusion") == "success":
+        return "success", f"check-success:{job_name}"
+    return "failure", f"check-{latest_job.get('conclusion') or 'unknown'}:{job_name}"
 
 
-def _latest_status_for(
-    statuses: list[dict[str, Any]], *, context: str, head_sha: str
-) -> dict[str, Any] | None:
-    candidates = []
-    for status in statuses:
-        if not isinstance(status, dict):
-            return None
-        if status.get("context") != context:
+def _trusted_marker_state(
+    evidence: list[WorkflowEvidence], *, prefix: str, pr_number: int,
+    head_sha: str, base_sha: str,
+) -> tuple[str, str]:
+    """Read only an exact marker, ignoring unrelated dispatch runs.
+
+    A workflow_dispatch listing can contain runs for many PRs. Selecting the
+    newest run before matching its deterministic marker would let an unrelated
+    run mask an older exact certification. Conversely, a failure is actionable
+    only when the exact marker identifies this PR/head/base in that run.
+    """
+    if not evidence:
+        return "pending", f"missing-trusted-marker:{prefix}"
+    expected_names = {
+        _marker_name(prefix, state=state, pr_number=pr_number, head_sha=head_sha, base_sha=base_sha)
+        for state in ("success", "pending", "failure")
+    }
+    exact: list[tuple[dict[str, Any], list[dict[str, Any]]]] = []
+    malformed_exact = False
+    for item in evidence:
+        if any(not isinstance(job, dict) for job in item.jobs):
             continue
-        if status.get("sha") is not None and status.get("sha") != head_sha:
-            return None
-        candidates.append(status)
-    return _latest(candidates)
+        matching = [job for job in item.jobs if job.get("name") in expected_names]
+        if matching:
+            if _sort_key(item.run) is None:
+                malformed_exact = True
+            else:
+                exact.append((item.run, matching))
+    if not exact:
+        if malformed_exact:
+            return "failure", f"malformed-trusted-workflow:{prefix}"
+        return "pending", f"missing-trusted-marker:{prefix}"
+    exact.sort(
+        key=lambda item: _sort_key(item[0]) or (
+            dt.datetime.min.replace(tzinfo=dt.timezone.utc),
+            dt.datetime.min.replace(tzinfo=dt.timezone.utc),
+            -1,
+        ),
+        reverse=True,
+    )
+    latest_run, matching = exact[0]
+    if len(matching) > 1:
+        return "failure", f"ambiguous-trusted-marker:{prefix}"
+    marker = matching[0]
+    if marker.get("run_id") is not None and marker.get("run_id") != latest_run.get("id"):
+        return "failure", f"untrusted-marker-run:{prefix}"
+    if marker.get("status") != "completed":
+        return "pending", f"marker-pending:{prefix}"
+    if marker.get("conclusion") != "success":
+        return "failure", f"marker-{marker.get('conclusion') or 'unknown'}:{prefix}"
+    name = marker["name"]
+    if prefix == POLICY_MARKER_PREFIX:
+        state = next(state for state in ("success", "pending", "failure") if f" state={state} " in name)
+        return state, f"trusted-{prefix}-{state}"
+    return "success", f"trusted-{prefix}-passed"
 
 
-def _policy_state(
-    statuses: list[dict[str, Any]], *, head_sha: str, base_sha: str
+def _trusted_policy_state(
+    evidence: list[WorkflowEvidence], *, pr_number: int, head_sha: str, base_sha: str
 ) -> tuple[str, str]:
-    latest = _latest_status_for(statuses, context=POLICY_CONTEXT, head_sha=head_sha)
-    if latest is None:
-        return "pending", "missing-pr-deep-policy"
-    state = latest.get("state")
-    description = latest.get("description")
-    if state == "pending":
-        return "pending", "pr-deep-policy-pending"
-    if state in {"failure", "error"}:
-        return "failure", f"pr-deep-policy-{state}"
-    if state != "success" or not isinstance(description, str):
-        return "failure", "malformed-pr-deep-policy"
-
-    pass_desc = f"PASS base={base_sha}"
-    no_deep = f"PR-DEEP not required head={head_sha[:12]} base={base_sha[:12]}"
-    if description == no_deep:
-        return "success", "pr-deep-not-required"
-    if description != pass_desc:
-        if description.startswith("PASS base=") or description.startswith(
-            "PR-DEEP not required head="
-        ):
-            return "pending", "stale-pr-deep-policy-base"
-        return "failure", "malformed-pr-deep-policy-success"
-
-    deep = _latest_status_for(statuses, context=DEEP_CONTEXT, head_sha=head_sha)
-    if deep is None:
-        return "pending", "missing-pr-deep"
-    if deep.get("state") == "pending":
-        return "pending", "pr-deep-pending"
-    if deep.get("state") in {"failure", "error"}:
-        return "failure", f"pr-deep-{deep.get('state')}"
-    if deep.get("state") != "success":
-        return "failure", "malformed-pr-deep"
-    if deep.get("description") != pass_desc:
-        desc = deep.get("description")
-        if isinstance(desc, str) and desc.startswith("PASS base="):
-            return "pending", "stale-pr-deep-base"
-        return "failure", "malformed-pr-deep-success"
-    return "success", "pr-deep-passed"
+    return _trusted_marker_state(
+        evidence,
+        prefix=POLICY_MARKER_PREFIX,
+        pr_number=pr_number,
+        head_sha=head_sha,
+        base_sha=base_sha,
+    )
 
 
 def decide(
@@ -183,21 +292,57 @@ def decide(
     docs_only: bool,
     checks: list[dict[str, Any]],
     statuses: list[dict[str, Any]],
+    workflow_evidence: dict[str, list[WorkflowEvidence]] | None = None,
 ) -> Decision:
+    """Evaluate only Actions run/job evidence.
+
+    ``checks`` and ``statuses`` are retained as visibility inputs for callers
+    and compatibility with the status publisher, but are intentionally never
+    consulted for authority.  Omitting trusted evidence therefore fails
+    closed as pending rather than allowing a candidate-controlled check or
+    status to certify the PR.
+    """
+    del checks, statuses
     if not isinstance(pr_number, int) or isinstance(pr_number, bool) or pr_number < 1:
         raise GateError("invalid PR number")
     if not _valid_sha(head_sha) or not _valid_sha(base_sha):
         raise GateError("invalid head/base SHA")
+    evidence = workflow_evidence or {}
     mode = "docs-only" if docs_only else "runtime"
     required = [DOCS_CHECK] if docs_only else [DOCS_CHECK, PR_FAST_CHECK, HIGH_RISK_CHECK]
     for name in required:
-        state, reason = _required_check_state(checks, expected_name=name, head_sha=head_sha)
+        path, _event = _REQUIRED_WORKFLOWS[name]
+        state, reason = _workflow_job_state(
+            evidence.get(path, []), job_name=name, expected_head=head_sha
+        )
         if state != "success":
             return Decision(state, reason, mode, head_sha, base_sha, pr_number)
     if docs_only:
         return Decision("success", "docs-authority-passed", mode, head_sha, base_sha, pr_number)
-    state, reason = _policy_state(statuses, head_sha=head_sha, base_sha=base_sha)
-    return Decision(state, reason, mode, head_sha, base_sha, pr_number)
+
+    state, reason = _trusted_policy_state(
+        evidence.get(POLICY_WORKFLOW_PATH, []),
+        pr_number=pr_number,
+        head_sha=head_sha,
+        base_sha=base_sha,
+    )
+    if state == "success":
+        return Decision("success", "pr-deep-not-required", mode, head_sha, base_sha, pr_number)
+    if state == "failure":
+        return Decision(state, reason, mode, head_sha, base_sha, pr_number)
+
+    deep_state, deep_reason = _trusted_marker_state(
+        evidence.get(DEEP_WORKFLOW_PATH, []),
+        prefix=DEEP_MARKER_PREFIX,
+        pr_number=pr_number,
+        head_sha=head_sha,
+        base_sha=base_sha,
+    )
+    if deep_state == "success":
+        return Decision("success", "pr-deep-passed", mode, head_sha, base_sha, pr_number)
+    if deep_state == "failure":
+        return Decision("failure", deep_reason, mode, head_sha, base_sha, pr_number)
+    return Decision("pending", "pr-deep-pending", mode, head_sha, base_sha, pr_number)
 
 
 def _api_json(url: str, token: str) -> Any:
@@ -361,6 +506,45 @@ def _statuses(repo: str, token: str, head_sha: str) -> list[dict[str, Any]]:
     return data
 
 
+def _workflow_evidence(
+    repo: str, token: str, *, workflow_path: str, event: str,
+    pr_number: int | None, head_sha: str | None, base_sha: str | None,
+    workflow_dispatch: bool = False,
+) -> list[WorkflowEvidence]:
+    workflow_id = urllib.parse.quote(workflow_path, safe="")
+    query = urllib.parse.urlencode({"event": event, "per_page": PAGE_SIZE})
+    data = _api_json(_repo_url(repo, f"/actions/workflows/{workflow_id}/runs?{query}"), token)
+    runs = data.get("workflow_runs") if isinstance(data, dict) else None
+    if not isinstance(runs, list) or any(not isinstance(run, dict) for run in runs):
+        raise GateError(f"workflow runs response malformed: {workflow_path}")
+    candidates = [
+        run for run in runs
+        if _run_matches(
+            run,
+            repo=repo,
+            workflow_path=workflow_path,
+            event=event,
+            pr_number=pr_number,
+            head_sha=None if workflow_dispatch else head_sha,
+            base_sha=None if workflow_dispatch else base_sha,
+            workflow_dispatch=workflow_dispatch,
+        )
+    ]
+    evidence: list[WorkflowEvidence] = []
+    for run in candidates:
+        run_id = run.get("id")
+        if isinstance(run_id, bool) or not isinstance(run_id, int):
+            raise GateError(f"trusted workflow run id malformed: {workflow_path}")
+        jobs_data = _api_json(
+            _repo_url(repo, f"/actions/runs/{run_id}/jobs?per_page={PAGE_SIZE}") , token
+        )
+        jobs = jobs_data.get("jobs") if isinstance(jobs_data, dict) else None
+        if not isinstance(jobs, list) or any(not isinstance(job, dict) for job in jobs):
+            raise GateError(f"workflow jobs response malformed: {workflow_path}")
+        evidence.append(WorkflowEvidence(run=run, jobs=jobs))
+    return evidence
+
+
 def _description(decision: Decision) -> str:
     prefix = "PASS" if decision.state == "success" else ("WAIT" if decision.state == "pending" else "FAIL")
     return f"{prefix} {decision.mode} {decision.reason} base={decision.base_sha[:12]}"
@@ -382,13 +566,43 @@ def _candidate_sha(event_name: str, event: dict[str, Any]) -> str | None:
 def _evaluate_one(*, repo: str, token: str, target_url: str, pr: dict[str, Any], expected_head: str | None) -> Decision:
     number, head_sha, base_sha = _validate_current_pr(pr, repo=repo, expected_head=expected_head)
     files = _changed_files(repo, token, number)
+    docs_only = _files_are_docs_only(files)
+    # These endpoints remain visibility-only. Authority is fetched from the
+    # Actions workflow-run/job API below and never inferred from names alone.
+    checks = _check_runs(repo, token, head_sha)
+    statuses = _statuses(repo, token, head_sha)
+    evidence: dict[str, list[WorkflowEvidence]] = {}
+    required = [DOCS_CHECK] if docs_only else [DOCS_CHECK, PR_FAST_CHECK, HIGH_RISK_CHECK]
+    for check_name in required:
+        path, event = _REQUIRED_WORKFLOWS[check_name]
+        evidence[path] = _workflow_evidence(
+            repo, token, workflow_path=path, event=event,
+            pr_number=number, head_sha=head_sha, base_sha=base_sha,
+        )
+    if not docs_only:
+        evidence[POLICY_WORKFLOW_PATH] = _workflow_evidence(
+            repo, token, workflow_path=POLICY_WORKFLOW_PATH,
+            event="pull_request_target", pr_number=number,
+            head_sha=head_sha, base_sha=base_sha,
+        )
+        policy_state, _ = _trusted_policy_state(
+            evidence[POLICY_WORKFLOW_PATH], pr_number=number,
+            head_sha=head_sha, base_sha=base_sha,
+        )
+        if policy_state == "pending":
+            evidence[DEEP_WORKFLOW_PATH] = _workflow_evidence(
+                repo, token, workflow_path=DEEP_WORKFLOW_PATH,
+                event="workflow_dispatch", pr_number=None,
+                head_sha=None, base_sha=base_sha, workflow_dispatch=True,
+            )
     decision = decide(
         pr_number=number,
         head_sha=head_sha,
         base_sha=base_sha,
-        docs_only=_files_are_docs_only(files),
-        checks=_check_runs(repo, token, head_sha),
-        statuses=_statuses(repo, token, head_sha),
+        docs_only=docs_only,
+        checks=checks,
+        statuses=statuses,
+        workflow_evidence=evidence,
     )
     _post_status(repo=repo, token=token, sha=head_sha, state=decision.state, description=_description(decision), target_url=target_url)
     return decision
