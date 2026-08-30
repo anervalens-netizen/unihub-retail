@@ -21,6 +21,8 @@ DOCS_CHECK = "Validate release authority and docs"
 PR_FAST_CHECK = "pr-fast"
 HIGH_RISK_CHECK = "Validate high-risk PR governance"
 PAGE_SIZE = 100
+MAX_WORKFLOW_RUN_PAGES = 100
+MAX_WORKFLOW_JOB_PAGES = 100
 MAX_PR_FILES = 3000
 
 # Required checks are accepted only from the immutable workflow files below.
@@ -133,6 +135,10 @@ def _run_repo(run: dict[str, Any], key: str) -> str | None:
     return value.get("full_name") if isinstance(value, dict) else None
 
 
+def _valid_run_id(value: Any) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool) and value > 0
+
+
 def _run_has_pr(run: dict[str, Any], pr_number: int) -> bool:
     pull_requests = run.get("pull_requests")
     if not isinstance(pull_requests, list):
@@ -151,15 +157,16 @@ def _run_has_base(run: dict[str, Any], base_sha: str) -> bool:
     # before the PR base advanced, so fail closed.
     explicit = run.get("base_sha")
     if explicit is not None:
-        return explicit == base_sha
+        return _valid_sha(explicit) and explicit == base_sha
     pull_requests = run.get("pull_requests")
     if isinstance(pull_requests, list):
         for pr in pull_requests:
             if not isinstance(pr, dict):
                 continue
             base = pr.get("base")
-            if isinstance(base, dict) and "sha" in base:
-                return base.get("sha") == base_sha
+            if isinstance(base, dict) and _valid_sha(base.get("sha")):
+                if base.get("sha") == base_sha:
+                    return True
     # A workflow run without a base identity cannot prove it was created for
     # the current PR base. Fail closed rather than accepting a stale run.
     return False
@@ -170,20 +177,99 @@ def _run_matches(
     pr_number: int | None, head_sha: str | None, base_sha: str | None,
     workflow_dispatch: bool = False,
 ) -> bool:
+    if not isinstance(run, dict):
+        return False
     if run.get("path") != workflow_path or run.get("event") != event:
         return False
     if _run_repo(run, "repository") != repo or _run_repo(run, "head_repository") != repo:
         return False
+    if not _valid_run_id(run.get("id")) or not _valid_sha(run.get("head_sha")):
+        return False
     if workflow_dispatch:
         if run.get("head_branch") != "main" or run.get("ref") != "refs/heads/main":
             return False
-    elif pr_number is None or not _run_has_pr(run, pr_number):
+    elif (
+        pr_number is None
+        or not _run_has_pr(run, pr_number)
+        or not _run_has_base(run, base_sha or "")
+    ):
         return False
     if head_sha is not None and run.get("head_sha") != head_sha:
         return False
-    if base_sha is not None and not _run_has_base(run, base_sha):
+    return True
+
+
+def _run_provenance_valid(
+    run: Any, *, repo: str, workflow_path: str, event: str,
+    pr_number: int, head_sha: str, base_sha: str,
+    workflow_dispatch: bool = False,
+) -> bool:
+    """Validate run identity again at the authority boundary.
+
+    The API fetch filters runs, but ``decide`` also accepts injected evidence
+    from callers and must never trust the dictionary key as provenance.
+    """
+    if not _run_matches(
+        run,
+        repo=repo,
+        workflow_path=workflow_path,
+        event=event,
+        pr_number=None if workflow_dispatch else pr_number,
+        head_sha=None if workflow_dispatch else head_sha,
+        base_sha=base_sha if workflow_dispatch else base_sha,
+        workflow_dispatch=workflow_dispatch,
+    ):
+        return False
+    pull_requests = run.get("pull_requests")
+    if not isinstance(pull_requests, list):
+        return False
+    if workflow_dispatch:
+        # Dispatch runs normally have no PR association. If GitHub provides
+        # one, it must not contradict the exact certification inputs.
+        for pr in pull_requests:
+            if not isinstance(pr, dict):
+                return False
+            if pr.get("number") != pr_number or isinstance(pr.get("number"), bool):
+                return False
+            base = pr.get("base")
+            if not isinstance(base, dict) or not _valid_sha(base.get("sha")) or base.get("sha") != base_sha:
+                return False
+            associated_head = pr.get("head", {}).get("sha") if isinstance(pr.get("head"), dict) else None
+            if associated_head is not None and associated_head != head_sha:
+                return False
+    else:
+        # Every PR association returned for a pull_request run must be
+        # structurally complete; accepting one good association beside a
+        # malformed one would make provenance dependent on API ordering.
+        matching = []
+        for pr in pull_requests:
+            if not isinstance(pr, dict) or not isinstance(pr.get("number"), int) or isinstance(pr.get("number"), bool):
+                return False
+            pr_base = pr.get("base")
+            if not isinstance(pr_base, dict) or not _valid_sha(pr_base.get("sha")):
+                return False
+            if pr.get("number") == pr_number:
+                matching.append(pr)
+        if len(matching) != 1 or matching[0]["base"]["sha"] != base_sha:
+            return False
+    explicit_base = run.get("base_sha")
+    if explicit_base is not None and (not _valid_sha(explicit_base) or explicit_base != base_sha):
         return False
     return True
+
+
+def _job_provenance_valid(job: Any, *, run: dict[str, Any]) -> bool:
+    if not isinstance(job, dict):
+        return False
+    run_id = run.get("id")
+    return (
+        _valid_run_id(run_id)
+        and _valid_run_id(job.get("run_id"))
+        and job.get("run_id") == run_id
+        and _valid_sha(run.get("head_sha"))
+        and _valid_sha(job.get("head_sha"))
+        and job.get("head_sha") == run.get("head_sha")
+    )
 
 
 def _workflow_job_state(
@@ -204,9 +290,13 @@ def _workflow_job_state(
     latest_job = _latest(jobs)
     if latest_job is None:
         return "failure", f"malformed-trusted-job:{job_name}"
-    if latest_job.get("run_id") is not None and latest_job.get("run_id") != latest_run.get("id"):
-        return "failure", f"untrusted-job-run:{job_name}"
-    if latest_job.get("head_sha") is not None and latest_job.get("head_sha") != expected_head:
+    if not _job_provenance_valid(latest_job, run=latest_run):
+        if latest_job.get("run_id") != latest_run.get("id"):
+            return "failure", f"untrusted-job-run:{job_name}"
+        if latest_job.get("head_sha") != expected_head:
+            return "failure", f"stale-check-head:{job_name}"
+        return "failure", f"malformed-trusted-job:{job_name}"
+    if latest_job.get("head_sha") != expected_head:
         return "failure", f"stale-check-head:{job_name}"
     if latest_job.get("status") != "completed":
         return "pending", f"check-pending:{job_name}"
@@ -235,11 +325,14 @@ def _trusted_marker_state(
     exact: list[tuple[dict[str, Any], list[dict[str, Any]]]] = []
     malformed_exact = False
     for item in evidence:
-        if any(not isinstance(job, dict) for job in item.jobs):
+        if not isinstance(item.run, dict) or any(not isinstance(job, dict) for job in item.jobs):
+            malformed_exact = True
             continue
         matching = [job for job in item.jobs if job.get("name") in expected_names]
         if matching:
-            if _sort_key(item.run) is None:
+            if _sort_key(item.run) is None or any(
+                not _job_provenance_valid(job, run=item.run) for job in matching
+            ):
                 malformed_exact = True
             else:
                 exact.append((item.run, matching))
@@ -259,8 +352,10 @@ def _trusted_marker_state(
     if len(matching) > 1:
         return "failure", f"ambiguous-trusted-marker:{prefix}"
     marker = matching[0]
-    if marker.get("run_id") is not None and marker.get("run_id") != latest_run.get("id"):
-        return "failure", f"untrusted-marker-run:{prefix}"
+    if not _job_provenance_valid(marker, run=latest_run):
+        if marker.get("run_id") != latest_run.get("id"):
+            return "failure", f"untrusted-marker-run:{prefix}"
+        return "failure", f"malformed-trusted-marker:{prefix}"
     if marker.get("status") != "completed":
         return "pending", f"marker-pending:{prefix}"
     if marker.get("conclusion") != "success":
@@ -284,6 +379,35 @@ def _trusted_policy_state(
     )
 
 
+def _validated_workflow_evidence(
+    evidence: Any, *, repo: str, workflow_path: str, event: str,
+    pr_number: int, head_sha: str, base_sha: str,
+    workflow_dispatch: bool = False,
+) -> tuple[list[WorkflowEvidence], str | None]:
+    """Revalidate caller-supplied evidence independently of its map key."""
+    if evidence is None:
+        return [], None
+    if not isinstance(evidence, list):
+        return [], f"malformed-trusted-workflow:{workflow_path}"
+    for item in evidence:
+        if not isinstance(item, WorkflowEvidence):
+            return [], f"malformed-trusted-workflow:{workflow_path}"
+        if not _run_provenance_valid(
+            item.run,
+            repo=repo,
+            workflow_path=workflow_path,
+            event=event,
+            pr_number=pr_number,
+            head_sha=head_sha,
+            base_sha=base_sha,
+            workflow_dispatch=workflow_dispatch,
+        ):
+            return [], f"malformed-trusted-workflow:{workflow_path}"
+        if any(not isinstance(job, dict) for job in item.jobs):
+            return [], f"malformed-trusted-job:{workflow_path}"
+    return evidence, None
+
+
 def decide(
     *,
     pr_number: int,
@@ -293,6 +417,7 @@ def decide(
     checks: list[dict[str, Any]],
     statuses: list[dict[str, Any]],
     workflow_evidence: dict[str, list[WorkflowEvidence]] | None = None,
+    repo: str | None = None,
 ) -> Decision:
     """Evaluate only Actions run/job evidence.
 
@@ -307,21 +432,38 @@ def decide(
         raise GateError("invalid PR number")
     if not _valid_sha(head_sha) or not _valid_sha(base_sha):
         raise GateError("invalid head/base SHA")
-    evidence = workflow_evidence or {}
     mode = "docs-only" if docs_only else "runtime"
+    if not isinstance(repo, str) or not repo:
+        return Decision("failure", "missing-trusted-repository", mode, head_sha, base_sha, pr_number)
+    evidence = workflow_evidence if isinstance(workflow_evidence, dict) else {}
     required = [DOCS_CHECK] if docs_only else [DOCS_CHECK, PR_FAST_CHECK, HIGH_RISK_CHECK]
+    validated: dict[str, list[WorkflowEvidence]] = {}
     for name in required:
-        path, _event = _REQUIRED_WORKFLOWS[name]
+        path, event = _REQUIRED_WORKFLOWS[name]
+        trusted, error = _validated_workflow_evidence(
+            evidence.get(path), repo=repo, workflow_path=path, event=event,
+            pr_number=pr_number, head_sha=head_sha, base_sha=base_sha,
+        )
+        if error:
+            return Decision("failure", error, mode, head_sha, base_sha, pr_number)
+        validated[path] = trusted
         state, reason = _workflow_job_state(
-            evidence.get(path, []), job_name=name, expected_head=head_sha
+            trusted, job_name=name, expected_head=head_sha
         )
         if state != "success":
             return Decision(state, reason, mode, head_sha, base_sha, pr_number)
     if docs_only:
         return Decision("success", "docs-authority-passed", mode, head_sha, base_sha, pr_number)
 
+    policy_evidence, error = _validated_workflow_evidence(
+        evidence.get(POLICY_WORKFLOW_PATH), repo=repo,
+        workflow_path=POLICY_WORKFLOW_PATH, event="pull_request_target",
+        pr_number=pr_number, head_sha=head_sha, base_sha=base_sha,
+    )
+    if error:
+        return Decision("failure", error, mode, head_sha, base_sha, pr_number)
     state, reason = _trusted_policy_state(
-        evidence.get(POLICY_WORKFLOW_PATH, []),
+        policy_evidence,
         pr_number=pr_number,
         head_sha=head_sha,
         base_sha=base_sha,
@@ -331,8 +473,16 @@ def decide(
     if state == "failure":
         return Decision(state, reason, mode, head_sha, base_sha, pr_number)
 
+    deep_evidence, error = _validated_workflow_evidence(
+        evidence.get(DEEP_WORKFLOW_PATH), repo=repo,
+        workflow_path=DEEP_WORKFLOW_PATH, event="workflow_dispatch",
+        pr_number=pr_number, head_sha=head_sha, base_sha=base_sha,
+        workflow_dispatch=True,
+    )
+    if error:
+        return Decision("failure", error, mode, head_sha, base_sha, pr_number)
     deep_state, deep_reason = _trusted_marker_state(
-        evidence.get(DEEP_WORKFLOW_PATH, []),
+        deep_evidence,
         prefix=DEEP_MARKER_PREFIX,
         pr_number=pr_number,
         head_sha=head_sha,
@@ -512,11 +662,19 @@ def _workflow_evidence(
     workflow_dispatch: bool = False,
 ) -> list[WorkflowEvidence]:
     workflow_id = urllib.parse.quote(workflow_path, safe="")
-    query = urllib.parse.urlencode({"event": event, "per_page": PAGE_SIZE})
-    data = _api_json(_repo_url(repo, f"/actions/workflows/{workflow_id}/runs?{query}"), token)
-    runs = data.get("workflow_runs") if isinstance(data, dict) else None
-    if not isinstance(runs, list) or any(not isinstance(run, dict) for run in runs):
-        raise GateError(f"workflow runs response malformed: {workflow_path}")
+    runs: list[dict[str, Any]] = []
+    for page in range(1, MAX_WORKFLOW_RUN_PAGES + 1):
+        query = urllib.parse.urlencode({"event": event, "per_page": PAGE_SIZE, "page": page})
+        data = _api_json(_repo_url(repo, f"/actions/workflows/{workflow_id}/runs?{query}"), token)
+        page_runs = data.get("workflow_runs") if isinstance(data, dict) else None
+        if not isinstance(page_runs, list) or any(not isinstance(run, dict) for run in page_runs):
+            raise GateError(f"workflow runs response malformed: {workflow_path}")
+        runs.extend(page_runs)
+        if len(page_runs) < PAGE_SIZE:
+            break
+    else:
+        raise GateError(f"workflow runs pagination exceeded safe bound: {workflow_path}")
+
     candidates = [
         run for run in runs
         if _run_matches(
@@ -533,14 +691,22 @@ def _workflow_evidence(
     evidence: list[WorkflowEvidence] = []
     for run in candidates:
         run_id = run.get("id")
-        if isinstance(run_id, bool) or not isinstance(run_id, int):
+        if not _valid_run_id(run_id):
             raise GateError(f"trusted workflow run id malformed: {workflow_path}")
-        jobs_data = _api_json(
-            _repo_url(repo, f"/actions/runs/{run_id}/jobs?per_page={PAGE_SIZE}") , token
-        )
-        jobs = jobs_data.get("jobs") if isinstance(jobs_data, dict) else None
-        if not isinstance(jobs, list) or any(not isinstance(job, dict) for job in jobs):
-            raise GateError(f"workflow jobs response malformed: {workflow_path}")
+        jobs: list[dict[str, Any]] = []
+        for page in range(1, MAX_WORKFLOW_JOB_PAGES + 1):
+            jobs_data = _api_json(
+                _repo_url(repo, f"/actions/runs/{run_id}/jobs?per_page={PAGE_SIZE}&page={page}"),
+                token,
+            )
+            page_jobs = jobs_data.get("jobs") if isinstance(jobs_data, dict) else None
+            if not isinstance(page_jobs, list) or any(not isinstance(job, dict) for job in page_jobs):
+                raise GateError(f"workflow jobs response malformed: {workflow_path}")
+            jobs.extend(page_jobs)
+            if len(page_jobs) < PAGE_SIZE:
+                break
+        else:
+            raise GateError(f"workflow jobs pagination exceeded safe bound: {workflow_path}")
         evidence.append(WorkflowEvidence(run=run, jobs=jobs))
     return evidence
 
@@ -603,6 +769,7 @@ def _evaluate_one(*, repo: str, token: str, target_url: str, pr: dict[str, Any],
         checks=checks,
         statuses=statuses,
         workflow_evidence=evidence,
+        repo=repo,
     )
     _post_status(repo=repo, token=token, sha=head_sha, state=decision.state, description=_description(decision), target_url=target_url)
     return decision

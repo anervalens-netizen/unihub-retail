@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import sys
+import urllib.parse
 from pathlib import Path
 
 import yaml
@@ -22,9 +23,10 @@ def _load_helper():
     return module
 
 
-def _check(name: str, head: str, *, conclusion: str = "success", status: str = "completed", ident: int = 1):
+def _check(name: str, head: str, *, conclusion: str = "success", status: str = "completed", ident: int = 1, run_id: int = 1):
     return {
         "id": ident,
+        "run_id": run_id,
         "name": name,
         "head_sha": head,
         "status": status,
@@ -113,6 +115,7 @@ def test_docs_only_succeeds_with_docs_authority_only():
         docs_only=True,
         checks=[_check(m.DOCS_CHECK, head)],
         statuses=[],
+        repo="repo",
         workflow_evidence=_trusted_evidence(
             m, pr_number=1, head=head, base=base, docs=True
         ),
@@ -138,6 +141,7 @@ def test_runtime_not_required_path_succeeds_only_on_current_head_and_base():
         docs_only=False,
         checks=_runtime_checks(m, head),
         statuses=statuses,
+        repo="repo",
         workflow_evidence=_trusted_evidence(
             m, pr_number=2, head=head, base=base, policy_state="success"
         ),
@@ -160,6 +164,7 @@ def test_runtime_required_and_deep_passed_succeeds():
         docs_only=False,
         checks=_runtime_checks(m, head),
         statuses=statuses,
+        repo="repo",
         workflow_evidence=_trusted_evidence(
             m, pr_number=3, head=head, base=base, policy_state="pending", deep=True
         ),
@@ -172,7 +177,7 @@ def test_stale_old_head_check_cannot_certify():
     m = _load_helper()
     head, base = "a" * 40, "b" * 40
     checks = _runtime_checks(m, head)
-    checks[1] = _check(m.PR_FAST_CHECK, "c" * 40, ident=20)
+    checks[1] = _check(m.PR_FAST_CHECK, "c" * 40, ident=20, run_id=2)
     evidence = _trusted_evidence(
         m, pr_number=4, head=head, base=base, policy_state="success"
     )
@@ -185,6 +190,7 @@ def test_stale_old_head_check_cannot_certify():
         docs_only=False,
         checks=checks,
         statuses=[],
+        repo="repo",
         workflow_evidence=evidence,
     )
     assert decision.state == "failure"
@@ -209,6 +215,7 @@ def test_missing_normal_ci_stays_pending():
         docs_only=False,
         checks=checks,
         statuses=[],
+        repo="repo",
         workflow_evidence=evidence,
     )
     assert decision.state == "pending"
@@ -225,6 +232,7 @@ def test_pending_policy_stays_pending():
         docs_only=False,
         checks=_runtime_checks(m, head),
         statuses=[_status(m.POLICY_CONTEXT, "pending", "PR-DEEP certification required")],
+        repo="repo",
         workflow_evidence=_trusted_evidence(
             m, pr_number=6, head=head, base=base, policy_state="pending"
         ),
@@ -243,6 +251,7 @@ def test_required_deep_missing_stays_pending():
         docs_only=False,
         checks=_runtime_checks(m, head),
         statuses=[_status(m.POLICY_CONTEXT, "success", f"PASS base={base}")],
+        repo="repo",
         workflow_evidence=_trusted_evidence(
             m, pr_number=7, head=head, base=base, policy_state="pending"
         ),
@@ -261,6 +270,7 @@ def test_mismatched_policy_base_cannot_certify():
         docs_only=False,
         checks=_runtime_checks(m, head),
         statuses=[_status(m.POLICY_CONTEXT, "success", f"PASS base={old_base}")],
+        repo="repo",
         workflow_evidence=_trusted_evidence(
             m, pr_number=8, head=head, base=base, policy_state="pending"
         ),
@@ -288,6 +298,7 @@ def test_old_base_deep_success_cannot_certify_current_base():
             _status(m.POLICY_CONTEXT, "success", f"PASS base={base}", ident=2),
             _status(m.DEEP_CONTEXT, "success", f"PASS base={old_base}", ident=3),
         ],
+        repo="repo",
         workflow_evidence=evidence,
     )
     assert decision.state == "pending"
@@ -316,40 +327,45 @@ def _trusted_evidence(m, *, pr_number, head, base, docs=True,
     if docs:
         p = path or m.DOCS_WORKFLOW_PATH
         e = event or "pull_request"
-        jobs = [_check(m.DOCS_CHECK, head)]
-        evidence[p] = [m.WorkflowEvidence(
-            _trusted_run(m, p, e, pr_number, head, base), jobs)]
+        run = _trusted_run(m, p, e, pr_number, head, base)
+        jobs = [_check(m.DOCS_CHECK, head, run_id=run["id"])]
+        evidence[p] = [m.WorkflowEvidence(run, jobs)]
     for name, p, e in ((m.PR_FAST_CHECK, m.PR_FAST_WORKFLOW_PATH, "pull_request"),
                        (m.HIGH_RISK_CHECK, m.HIGH_RISK_WORKFLOW_PATH, "pull_request_target")):
-        jobs = [_check(name, head, ident=2)]
-        evidence[p] = [m.WorkflowEvidence(_trusted_run(m, p, e, pr_number, head, base), jobs)]
+        run = _trusted_run(m, p, e, pr_number, head, base, run_id=2)
+        jobs = [_check(name, head, ident=2, run_id=run["id"])]
+        evidence[p] = [m.WorkflowEvidence(run, jobs)]
     if policy_state is not None:
         p = m.POLICY_WORKFLOW_PATH
         name = m._marker_name(m.POLICY_MARKER_PREFIX, state=policy_state,
                               pr_number=pr_number, head_sha=head, base_sha=base)
+        run = _trusted_run(m, p, "pull_request_target", pr_number, head, base, run_id=10)
         evidence[p] = [m.WorkflowEvidence(
-            _trusted_run(m, p, "pull_request_target", pr_number, head, base, run_id=10),
-            [{"id": 10, "name": name, "status": "completed", "conclusion": "success",
+            run,
+            [{"id": 10, "run_id": 10, "name": name, "head_sha": head,
+              "status": "completed", "conclusion": "success",
               "created_at": "2026-08-30T06:00:00Z", "updated_at": "2026-08-30T06:00:00Z"}])]
     if deep:
         p = m.DEEP_WORKFLOW_PATH
+        run = _trusted_run(m, p, "workflow_dispatch", pr_number, "d" * 40, base,
+                           run_id=20, head_branch="main", ref="refs/heads/main",
+                           pull_requests=[])
         evidence[p] = [m.WorkflowEvidence(
-            _trusted_run(m, p, "workflow_dispatch", pr_number, "d" * 40, base,
-                         run_id=20, head_branch="main", ref="refs/heads/main",
-                         pull_requests=[]),
-            [{"id": 20, "name": m._marker_name(m.DEEP_MARKER_PREFIX, state=None,
-                                                   pr_number=pr_number, head_sha=head, base_sha=base),
-              "status": "completed", "conclusion": "success",
+            run,
+            [{"id": 20, "run_id": 20,
+              "name": m._marker_name(m.DEEP_MARKER_PREFIX, state=None,
+                                      pr_number=pr_number, head_sha=head, base_sha=base),
+              "head_sha": "d" * 40, "status": "completed", "conclusion": "success",
               "created_at": "2026-08-30T06:00:00Z", "updated_at": "2026-08-30T06:00:00Z"}])]
     return evidence
 
 
 def _decide_with_evidence(m, evidence, *, docs_only=False, head="a" * 40,
-                          base="b" * 40, pr_number=42, statuses=None):
+                          base="b" * 40, pr_number=42, statuses=None, repo="repo"):
     return m.decide(pr_number=pr_number, head_sha=head, base_sha=base,
                     docs_only=docs_only,
                     checks=_runtime_checks(m, head),
-                    statuses=statuses or [], workflow_evidence=evidence)
+                    statuses=statuses or [], workflow_evidence=evidence, repo=repo)
 
 
 def test_provenance_adversarial_required_cases():
@@ -360,29 +376,24 @@ def test_provenance_adversarial_required_cases():
     assert _decide_with_evidence(m, _trusted_evidence(m, pr_number=pr, head=head, base=base,
                                                        policy_state=None), docs_only=True).state == "success"
     assert _decide_with_evidence(m, {}, docs_only=True).state == "pending"
-    # 3 wrong path and 4 wrong event are not trusted runs.
-    assert not m._run_matches(_trusted_run(m, "evil.yml", "pull_request", pr, head, base),
-                              repo="repo", workflow_path=m.DOCS_WORKFLOW_PATH,
-                              event="pull_request", pr_number=pr, head_sha=head, base_sha=base)
-    assert not m._run_matches(_trusted_run(m, m.DOCS_WORKFLOW_PATH, "push", pr, head, base),
-                              repo="repo", workflow_path=m.DOCS_WORKFLOW_PATH,
-                              event="pull_request", pr_number=pr, head_sha=head, base_sha=base)
-    # 5 wrong repository, 6 stale head, 7 stale base fail to match.
-    assert not m._run_matches(_trusted_run(m, m.DOCS_WORKFLOW_PATH, "pull_request", pr, head, base,
-                                           repository={"full_name": "attacker/repo"}),
-                              repo="repo", workflow_path=m.DOCS_WORKFLOW_PATH,
-                              event="pull_request", pr_number=pr, head_sha=head, base_sha=base)
-    assert not m._run_matches(_trusted_run(m, m.DOCS_WORKFLOW_PATH, "pull_request", pr, "c" * 40, base),
-                              repo="repo", workflow_path=m.DOCS_WORKFLOW_PATH,
-                              event="pull_request", pr_number=pr, head_sha=head, base_sha=base)
-    assert not m._run_matches(_trusted_run(m, m.DOCS_WORKFLOW_PATH, "pull_request", pr, head, base,
-                                           base_sha="c" * 40),
-                              repo="repo", workflow_path=m.DOCS_WORKFLOW_PATH,
-                              event="pull_request", pr_number=pr, head_sha=head, base_sha=base)
-    assert not m._run_matches(_trusted_run(m, m.DOCS_WORKFLOW_PATH, "pull_request", pr, head, base,
-                                           pull_requests=[{"number": pr}]),
-                              repo="repo", workflow_path=m.DOCS_WORKFLOW_PATH,
-                              event="pull_request", pr_number=pr, head_sha=head, base_sha=base)
+    # 3–7 canonical-key evidence with wrong path/event/repository/head/base/PR
+    # metadata must be rejected by production decide(), not just a helper.
+    bad_runs = [
+        _trusted_run(m, "evil.yml", "pull_request", pr, head, base),
+        _trusted_run(m, m.DOCS_WORKFLOW_PATH, "push", pr, head, base),
+        _trusted_run(m, m.DOCS_WORKFLOW_PATH, "pull_request", pr, head, base,
+                     repository={"full_name": "attacker/repo"}),
+        _trusted_run(m, m.DOCS_WORKFLOW_PATH, "pull_request", pr, "c" * 40, base),
+        _trusted_run(m, m.DOCS_WORKFLOW_PATH, "pull_request", pr, head, base,
+                     base_sha="c" * 40),
+        _trusted_run(m, m.DOCS_WORKFLOW_PATH, "pull_request", pr, head, base,
+                     pull_requests=[{"number": pr}]),
+    ]
+    for bad_run in bad_runs:
+        bad = _trusted_evidence(m, pr_number=pr, head=head, base=base, policy_state=None)
+        bad[m.DOCS_WORKFLOW_PATH][0] = m.WorkflowEvidence(
+            bad_run, [_check(m.DOCS_CHECK, head, run_id=bad_run["id"])])
+        assert _decide_with_evidence(m, bad, docs_only=True).state != "success"
     # 8 runtime no-DEEP and 9 runtime exact trusted DEEP success.
     assert _decide_with_evidence(m, _trusted_evidence(m, pr_number=pr, head=head, base=base,
                                                        policy_state="success")).state == "success"
@@ -392,14 +403,11 @@ def test_provenance_adversarial_required_cases():
     assert _decide_with_evidence(m, {}, statuses=[_status(m.POLICY_CONTEXT, "success", "forged")]).state == "pending"
     # 11–14 exact marker identity rejects wrong path/event/head/base.
     for kwargs in ({"path": "wrong.yml"}, {"event": "push"}):
-        deep_run = _trusted_run(m, m.DEEP_WORKFLOW_PATH, "workflow_dispatch", pr,
-                                "d" * 40, base, head_branch="main",
-                                ref="refs/heads/main", pull_requests=[])
+        deep = _trusted_evidence(m, pr_number=pr, head=head, base=base,
+                                 policy_state="pending", deep=True)
+        deep_run = deep[m.DEEP_WORKFLOW_PATH][0].run
         deep_run.update(kwargs)
-        assert not m._run_matches(
-            deep_run, repo="repo", workflow_path=m.DEEP_WORKFLOW_PATH,
-            event="workflow_dispatch", pr_number=None, head_sha=None,
-            base_sha=base, workflow_dispatch=True)
+        assert _decide_with_evidence(m, deep).state != "success"
     for bad_name in (m._marker_name(m.DEEP_MARKER_PREFIX, state=None, pr_number=pr, head_sha="c" * 40, base_sha=base),
                      m._marker_name(m.DEEP_MARKER_PREFIX, state=None, pr_number=pr, head_sha=head, base_sha="c" * 40)):
         evidence = _trusted_evidence(m, pr_number=pr, head=head, base=base, policy_state="pending", deep=True)
@@ -477,9 +485,77 @@ def test_not_required_status_with_wrong_head_prefix_cannot_certify():
                 f"PR-DEEP not required head={'c' * 12} base={base[:12]}",
             )
         ],
+        repo="repo",
         workflow_evidence=_trusted_evidence(
             m, pr_number=10, head=head, base=base, policy_state="pending"
         ),
     )
     assert decision.state == "pending"
     assert decision.reason == "pr-deep-pending"
+
+
+def test_missing_job_and_marker_provenance_cannot_grant_success():
+    m = _load_helper()
+    head, base, pr = "a" * 40, "b" * 40, 42
+    missing_job = _trusted_evidence(m, pr_number=pr, head=head, base=base, policy_state=None)
+    del missing_job[m.DOCS_WORKFLOW_PATH][0].jobs[0]["run_id"]
+    assert _decide_with_evidence(m, missing_job, docs_only=True).state != "success"
+
+    missing_marker = _trusted_evidence(
+        m, pr_number=pr, head=head, base=base, policy_state="pending", deep=True
+    )
+    del missing_marker[m.DEEP_WORKFLOW_PATH][0].jobs[0]["head_sha"]
+    assert _decide_with_evidence(m, missing_marker).state != "success"
+
+
+def test_workflow_evidence_paginates_all_run_pages_before_filtering(monkeypatch):
+    m = _load_helper()
+    head, base, pr = "a" * 40, "b" * 40, 42
+    exact = _trusted_run(m, m.DOCS_WORKFLOW_PATH, "pull_request", pr, head, base, run_id=500)
+    filler = [
+        _trusted_run(m, m.DOCS_WORKFLOW_PATH, "pull_request", pr, "c" * 40, base, run_id=i)
+        for i in range(1, 101)
+    ]
+    calls = []
+
+    def fake_api(url, token):
+        del token
+        calls.append(url)
+        query = urllib.parse.parse_qs(urllib.parse.urlsplit(url).query)
+        page = int(query["page"][0])
+        if "/runs?" in url:
+            return {"workflow_runs": filler if page == 1 else [exact]}
+        assert "/jobs?" in url
+        return {"jobs": [_check(m.DOCS_CHECK, head, run_id=500)]}
+
+    monkeypatch.setattr(m, "_api_json", fake_api)
+    evidence = m._workflow_evidence(
+        "repo", "token", workflow_path=m.DOCS_WORKFLOW_PATH,
+        event="pull_request", pr_number=pr, head_sha=head, base_sha=base,
+    )
+    assert len(evidence) == 1
+    assert any("page=2" in url for url in calls)
+
+
+def test_older_exact_marker_survives_newer_stale_marker():
+    m = _load_helper()
+    head, base, pr = "a" * 40, "b" * 40, 42
+    evidence = _trusted_evidence(
+        m, pr_number=pr, head=head, base=base, policy_state="pending", deep=True
+    )
+    newer = _trusted_run(
+        m, m.DEEP_WORKFLOW_PATH, "workflow_dispatch", pr, "d" * 40, base,
+        run_id=21, head_branch="main", ref="refs/heads/main", pull_requests=[],
+        updated_at="2026-08-30T07:00:00Z",
+    )
+    evidence[m.DEEP_WORKFLOW_PATH].append(m.WorkflowEvidence(
+        newer,
+        [{"id": 21, "run_id": 21,
+          "name": m._marker_name(m.DEEP_MARKER_PREFIX, state=None, pr_number=pr,
+                                  head_sha="c" * 40, base_sha=base),
+          "head_sha": "d" * 40, "status": "completed", "conclusion": "success",
+          "created_at": "2026-08-30T07:00:00Z", "updated_at": "2026-08-30T07:00:00Z"}],
+    ))
+    decision = _decide_with_evidence(m, evidence, pr_number=pr)
+    assert decision.state == "success"
+    assert decision.reason == "pr-deep-passed"
