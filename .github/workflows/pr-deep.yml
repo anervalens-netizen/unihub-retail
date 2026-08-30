@@ -69,9 +69,8 @@ name: pr-deep
 #   even if HEAD did not move.
 #
 # On SUCCESS: sets `retail/pr-deep` AND `retail/pr-deep-policy` =
-# success on the exact expected_head_sha so the trusted policy's
-# previous `pending` state becomes certified without requiring a
-# workflow rerun.
+# success on the exact expected_head_sha for visibility. The exact
+# Actions certification-marker job below is the merge-gate authority.
 #
 # On FAILURE: sets `retail/pr-deep` = failure on the exact expected
 # head. The cleanup step only runs after a successful preflight
@@ -140,6 +139,77 @@ jobs:
           fi
           test -S /var/run/docker.sock
           test "$(docker info --format '{{.Name}}')" = "dell-standby"
+
+  certification-marker:
+    name: pr-deep marker pr=${{ inputs.pr_number }} head=${{ inputs.expected_head_sha }} base=${{ inputs.expected_base_sha }}
+    needs: backend-deep
+    if: needs.backend-deep.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Validate trusted certification marker inputs
+        env:
+          REF: ${{ github.ref }}
+          PR_NUMBER: ${{ inputs.pr_number }}
+          HEAD_SHA: ${{ inputs.expected_head_sha }}
+          BASE_SHA: ${{ inputs.expected_base_sha }}
+        run: |
+          set -euo pipefail
+          test "$REF" = "refs/heads/main"
+          printf '%s' "$PR_NUMBER" | grep -Eq '^[0-9]+$'
+          printf '%s' "$HEAD_SHA" | grep -Eq '^[0-9a-f]{40}$'
+          printf '%s' "$BASE_SHA" | grep -Eq '^[0-9a-f]{40}$'
+
+  # Trusted post-marker signal: runs ONLY after the authoritative
+  # certification-marker has succeeded, on a GitHub-hosted runner, never
+  # executing candidate code. Its sole job is to re-publish the
+  # retail/pr-deep status on the exact candidate HEAD supplied through
+  # the trusted workflow_dispatch inputs, so the existing
+  # pr-merge-gate `status` trigger can resolve the PR by candidate SHA
+  # and reach the already-completed trusted marker. The status itself is
+  # NOT merge authority; the marker run/job evidence remains authority.
+  certification-signal:
+    name: pr-deep signal pr=${{ inputs.pr_number }} head=${{ inputs.expected_head_sha }} base=${{ inputs.expected_base_sha }}
+    needs: certification-marker
+    if: needs.certification-marker.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Validate trusted signal inputs
+        env:
+          REF: ${{ github.ref }}
+          PR_NUMBER: ${{ inputs.pr_number }}
+          HEAD_SHA: ${{ inputs.expected_head_sha }}
+          BASE_SHA: ${{ inputs.expected_base_sha }}
+        run: |
+          set -euo pipefail
+          test "$REF" = "refs/heads/main"
+          printf '%s' "$PR_NUMBER" | grep -Eq '^[0-9]+$'
+          printf '%s' "$HEAD_SHA" | grep -Eq '^[0-9a-f]{40}$'
+          printf '%s' "$BASE_SHA" | grep -Eq '^[0-9a-f]{40}$'
+
+      - name: Re-publish retail/pr-deep = success on candidate head
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          HEAD_SHA: ${{ inputs.expected_head_sha }}
+          BASE_SHA: ${{ inputs.expected_base_sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          # Build the JSON body entirely from explicit argv. Do NOT
+          # depend on unexported shell locals; pass BASE_SHA + RUN_URL
+          # to the inline Python script which constructs the description
+          # string itself. The status is published against the trusted
+          # dispatch input HEAD, NOT the workflow run's `github.sha`
+          # (which is the workflow run's commit on main).
+          BODY="$(/usr/bin/python3.12 -c 'import json, sys; print(json.dumps({"state": "success", "description": "PASS base=" + sys.argv[1], "context": "retail/pr-deep", "target_url": sys.argv[2]}))' "${BASE_SHA}" "${RUN_URL}")"
+          curl --silent --show-error --noproxy '*' --max-time 10 --fail \
+            -X POST \
+            -H "Authorization: token ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${REPO}/statuses/${HEAD_SHA}" \
+            -d "$BODY"
 
   backend-deep:
     name: backend-deep

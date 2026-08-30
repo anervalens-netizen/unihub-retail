@@ -1,0 +1,58 @@
+name: pr-merge-gate
+
+on:
+  pull_request_target:
+    branches: [main]
+    types: [opened, reopened, synchronize, edited, ready_for_review]
+  workflow_run:
+    workflows: [CI, docs-contract, high-risk-governance, pr-deep-policy, pr-deep]
+    types: [completed]
+  status:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: read
+  actions: read
+  checks: read
+  statuses: write
+
+concurrency:
+  group: >-
+    pr-merge-gate-${{
+      github.event.pull_request.number ||
+      github.event.workflow_run.head_sha ||
+      github.event.sha ||
+      github.sha
+    }}
+  cancel-in-progress: true
+
+jobs:
+  evaluate:
+    if: >-
+      github.event_name != 'status' ||
+      github.event.context == 'retail/pr-deep-policy' ||
+      github.event.context == 'retail/pr-deep'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout trusted PR base
+        if: github.event_name == 'pull_request_target'
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          persist-credentials: false
+
+      - name: Checkout trusted current main
+        if: github.event_name != 'pull_request_target'
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          ref: main
+          persist-credentials: false
+
+      - name: Evaluate exact-HEAD merge gate
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GATE_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: python3 scripts/pr_merge_gate.py
