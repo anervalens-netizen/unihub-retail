@@ -51,8 +51,24 @@ jobs:
           ref: main
           persist-credentials: false
 
+      - name: Resolve trusted PR-DEEP workflow_run candidate
+        if: github.event_name == 'workflow_run'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BRIDGE_EVENT_PATH: /tmp/pr-merge-gate-candidate-event.json
+        run: python3 .github/governance/pr_merge_gate_workflow_run_bridge.py
+
       - name: Evaluate exact-HEAD merge gate
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GATE_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        run: python3 scripts/pr_merge_gate.py
+          BRIDGE_EVENT_PATH: /tmp/pr-merge-gate-candidate-event.json
+        run: |
+          set -euo pipefail
+          if [ -f "$BRIDGE_EVENT_PATH" ]; then
+            GITHUB_EVENT_NAME=status \
+              GITHUB_EVENT_PATH="$BRIDGE_EVENT_PATH" \
+              python3 scripts/pr_merge_gate.py
+          else
+            python3 scripts/pr_merge_gate.py
+          fi
