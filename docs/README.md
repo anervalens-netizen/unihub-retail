@@ -21,9 +21,10 @@ nu este autoritate. Rendererul nu descoperă și nu selectează un release
 `current`/`latest`. `releases/v*.md` sunt exclusiv note istorice și nu pot
 redeclara o identitate canonică de production.
 
-GitHub Issue #159 rămâne cronologia/evidence log al programului de remediere, nu
-sursa machine-readable pentru statusul documentelor, release identity sau live
-health.
+GitHub Issue #159 rămâne cronologia/evidence log al programului de remediere
+istoric finalizat. GitHub Issue #226 este trackerul activ pentru programul
+post-audit v2 (K1-K10); niciun issue nu înlocuiește sursa machine-readable pentru
+statusul documentelor, release identity sau live health.
 
 ## Autoritate activă
 
@@ -50,9 +51,16 @@ health.
 
 ## Tracking și evidence
 
-- Issue #159: audit/remediation chronology și evidence; nu este status authority;
+- **Issue #226:** tracker activ și protocol de reluare pentru audit follow-up v2;
+- **Issues #227-#236:** cele zece workstream-uri K1-K10; fiecare deține scope-ul,
+  guardrail-urile, Definition of Done și checkpoint evidence pentru obiectivul său;
+- Issue #159: cronologia/evidence programului de remediere anterior, finalizat;
 - Issue #170: guardrail de portabilitate pentru refactorizări; regulă de design,
   nu task separat și nu justifică abstracții speculative.
+
+Pentru o sesiune ChatGPT nouă: citește mai întâi current `main`, apoi Issue #226
+și primul issue K1-K10 deschis/neblocat. SHA-urile și statusurile din issue-uri
+sunt snapshot-uri de evidence; GitHub current state rămâne sursa de adevăr.
 
 ## Evidence istoric
 
