@@ -43,6 +43,26 @@ _REQUIRED_WORKFLOWS = {
     HIGH_RISK_CHECK: (HIGH_RISK_WORKFLOW_PATH, "pull_request_target"),
 }
 
+# These authority workflows are ``pull_request`` workflows whose definition
+# itself executes the candidate code. A PR that mutates one of them can
+# trivially replace the trusted check with a self-certifying no-op while
+# keeping the workflow path, event, and check display name intact.
+#
+# The aggregate gate MUST refuse to treat a successful run of any workflow
+# in this set as merge authority when the candidate's own diff modifies it.
+# Any future change to these authority workflows must go through an explicit
+# control-plane maintenance procedure rather than allowing the changed
+# workflow to certify itself.
+#
+# High-risk-governance, pr-deep-policy, and pr-deep are trusted
+# ``pull_request_target`` / ``workflow_dispatch`` control-plane workflows
+# defined on the base branch and are NOT in this set; their trust model is
+# different.
+CANDIDATE_CONTROLLED_AUTHORITY_WORKFLOWS = frozenset({
+    DOCS_WORKFLOW_PATH,
+    PR_FAST_WORKFLOW_PATH,
+})
+
 
 @dataclass(frozen=True)
 class WorkflowEvidence:
@@ -431,6 +451,7 @@ def decide(
     statuses: list[dict[str, Any]],
     workflow_evidence: dict[str, list[WorkflowEvidence]] | None = None,
     repo: str | None = None,
+    changed_paths: set[str] | list[str] | tuple[str, ...] | None = None,
 ) -> Decision:
     """Evaluate only Actions run/job evidence.
 
@@ -439,6 +460,15 @@ def decide(
     consulted for authority.  Omitting trusted evidence therefore fails
     closed as pending rather than allowing a candidate-controlled check or
     status to certify the PR.
+
+    ``changed_paths`` is the rename-aware set of paths the candidate PR
+    touches. When a candidate-controlled authority workflow
+    (``.github/workflows/ci.yml`` or ``.github/workflows/docs-contract.yml``)
+    is modified, deleted, renamed away, or replaced by a rename target,
+    the corresponding check cannot grant merge authority — the workflow
+    itself was candidate-controlled. This is a fail-closed provenance
+    violation, not missing evidence, so the decision state is ``failure``
+    with reason ``candidate-modifies-authority-workflow:<path>``.
     """
     del checks, statuses
     if not isinstance(pr_number, int) or isinstance(pr_number, bool) or pr_number < 1:
@@ -448,11 +478,28 @@ def decide(
     mode = "docs-only" if docs_only else "runtime"
     if not isinstance(repo, str) or not repo:
         return Decision("failure", "missing-trusted-repository", mode, head_sha, base_sha, pr_number)
+    if isinstance(changed_paths, (set, list, tuple)):
+        changed_path_set = {p for p in changed_paths if isinstance(p, str) and p}
+    else:
+        changed_path_set = set()
     evidence = workflow_evidence if isinstance(workflow_evidence, dict) else {}
     required = [DOCS_CHECK] if docs_only else [DOCS_CHECK, PR_FAST_CHECK, HIGH_RISK_CHECK]
     validated: dict[str, list[WorkflowEvidence]] = {}
     for name in required:
         path, event = _REQUIRED_WORKFLOWS[name]
+        # Fail-closed provenance guard: a candidate-controlled ``pull_request``
+        # authority workflow cannot certify itself. Reject the check before
+        # consulting workflow-run evidence so a successful self-modifying run
+        # is never accepted as merge authority.
+        if path in CANDIDATE_CONTROLLED_AUTHORITY_WORKFLOWS and path in changed_path_set:
+            return Decision(
+                "failure",
+                f"candidate-modifies-authority-workflow:{path}",
+                mode,
+                head_sha,
+                base_sha,
+                pr_number,
+            )
         trusted, error = _validated_workflow_evidence(
             evidence.get(path), repo=repo, workflow_path=path, event=event,
             pr_number=pr_number, head_sha=head_sha, base_sha=base_sha,
@@ -654,6 +701,30 @@ def _files_are_docs_only(files: list[dict[str, Any]]) -> bool:
     return True
 
 
+def _normalize_changed_paths(files: list[dict[str, Any]] | None) -> set[str]:
+    """Return the rename-aware set of paths that the candidate PR touches.
+
+    A rename counts as both an old-path mutation and a new-path mutation,
+    so modifying ``.github/workflows/ci.yml`` (even by deleting it,
+    renaming it away, or having any other file renamed into it) is
+    observable here.
+    """
+    if not isinstance(files, list):
+        return set()
+    paths: set[str] = set()
+    for item in files:
+        if not isinstance(item, dict):
+            continue
+        filename = item.get("filename")
+        if isinstance(filename, str) and filename:
+            paths.add(filename)
+        if item.get("status") == "renamed":
+            previous = item.get("previous_filename")
+            if isinstance(previous, str) and previous:
+                paths.add(previous)
+    return paths
+
+
 def _check_runs(repo: str, token: str, head_sha: str) -> list[dict[str, Any]]:
     data = _api_json(_repo_url(repo, f"/commits/{head_sha}/check-runs?per_page=100&filter=latest"), token)
     runs = data.get("check_runs") if isinstance(data, dict) else None
@@ -746,6 +817,7 @@ def _evaluate_one(*, repo: str, token: str, target_url: str, pr: dict[str, Any],
     number, head_sha, base_sha = _validate_current_pr(pr, repo=repo, expected_head=expected_head)
     files = _changed_files(repo, token, number)
     docs_only = _files_are_docs_only(files)
+    changed_paths = _normalize_changed_paths(files)
     # These endpoints remain visibility-only. Authority is fetched from the
     # Actions workflow-run/job API below and never inferred from names alone.
     checks = _check_runs(repo, token, head_sha)
@@ -783,6 +855,7 @@ def _evaluate_one(*, repo: str, token: str, target_url: str, pr: dict[str, Any],
         statuses=statuses,
         workflow_evidence=evidence,
         repo=repo,
+        changed_paths=changed_paths,
     )
     _post_status(repo=repo, token=token, sha=head_sha, state=decision.state, description=_description(decision), target_url=target_url)
     return decision

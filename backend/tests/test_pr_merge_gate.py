@@ -361,11 +361,13 @@ def _trusted_evidence(m, *, pr_number, head, base, docs=True,
 
 
 def _decide_with_evidence(m, evidence, *, docs_only=False, head="a" * 40,
-                          base="b" * 40, pr_number=42, statuses=None, repo="repo"):
+                          base="b" * 40, pr_number=42, statuses=None, repo="repo",
+                          changed_paths=None):
     return m.decide(pr_number=pr_number, head_sha=head, base_sha=base,
                     docs_only=docs_only,
                     checks=_runtime_checks(m, head),
-                    statuses=statuses or [], workflow_evidence=evidence, repo=repo)
+                    statuses=statuses or [], workflow_evidence=evidence, repo=repo,
+                    changed_paths=changed_paths)
 
 
 def test_provenance_adversarial_required_cases():
@@ -672,3 +674,221 @@ def test_pr_merge_gate_workflow_run_trusted_sources_include_marker_workflows():
     assert "pr-deep" in sources
     # Sanity check: the existing sources are preserved.
     assert {"CI", "docs-contract", "high-risk-governance"} <= sources
+
+
+def test_candidate_modifying_pr_fast_authority_workflow_fails_closed():
+    """A PR that touches ``.github/workflows/ci.yml`` cannot use the
+    ``pr-fast`` check as merge authority — the workflow itself would be
+    candidate-controlled. The gate must fail closed with a deterministic
+    reason rather than invent a self-certification fallback."""
+    m = _load_helper()
+    head, base, pr = "a" * 40, "b" * 40, 42
+    evidence = _trusted_evidence(
+        m, pr_number=pr, head=head, base=base, policy_state="success"
+    )
+    decision = _decide_with_evidence(
+        m, evidence,
+        changed_paths={m.PR_FAST_WORKFLOW_PATH, "backend/foo.py"},
+    )
+    assert decision.state == "failure"
+    assert decision.reason == f"candidate-modifies-authority-workflow:{m.PR_FAST_WORKFLOW_PATH}"
+
+
+def test_candidate_modifying_docs_authority_workflow_fails_closed():
+    """Same guarantee for ``.github/workflows/docs-contract.yml``: the
+    docs-authority check must not be granted when the candidate owns the
+    workflow definition itself."""
+    m = _load_helper()
+    head, base, pr = "a" * 40, "b" * 40, 42
+    evidence = _trusted_evidence(m, pr_number=pr, head=head, base=base)
+    decision = _decide_with_evidence(
+        m, evidence,
+        docs_only=True,
+        changed_paths={"docs/runtime.md", m.DOCS_WORKFLOW_PATH},
+    )
+    assert decision.state == "failure"
+    assert decision.reason == f"candidate-modifies-authority-workflow:{m.DOCS_WORKFLOW_PATH}"
+
+
+def test_candidate_renaming_pr_fast_authority_workflow_away_fails_closed():
+    m = _load_helper()
+    head, base, pr = "a" * 40, "b" * 40, 42
+    evidence = _trusted_evidence(
+        m, pr_number=pr, head=head, base=base, policy_state="success"
+    )
+    # previous_filename == authority path → rename-away must still trip guard.
+    decision = _decide_with_evidence(
+        m, evidence,
+        changed_paths={m.PR_FAST_WORKFLOW_PATH, "backend/renamed_ci.yml"},
+    )
+    assert decision.state == "failure"
+    assert decision.reason == f"candidate-modifies-authority-workflow:{m.PR_FAST_WORKFLOW_PATH}"
+
+
+def test_candidate_renaming_into_pr_fast_authority_workflow_fails_closed():
+    m = _load_helper()
+    head, base, pr = "a" * 40, "b" * 40, 42
+    evidence = _trusted_evidence(
+        m, pr_number=pr, head=head, base=base, policy_state="success"
+    )
+    # filename == authority path → rename-into must trip the guard.
+    decision = _decide_with_evidence(
+        m, evidence,
+        changed_paths={m.PR_FAST_WORKFLOW_PATH},
+    )
+    assert decision.state == "failure"
+    assert decision.reason == f"candidate-modifies-authority-workflow:{m.PR_FAST_WORKFLOW_PATH}"
+
+
+def test_candidate_renaming_docs_authority_workflow_away_fails_closed():
+    m = _load_helper()
+    head, base, pr = "a" * 40, "b" * 40, 42
+    evidence = _trusted_evidence(m, pr_number=pr, head=head, base=base)
+    # previous_filename == authority path → rename-away must still trip guard.
+    decision = _decide_with_evidence(
+        m, evidence,
+        docs_only=True,
+        changed_paths={m.DOCS_WORKFLOW_PATH, "backend/old_docs.yml"},
+    )
+    assert decision.state == "failure"
+    assert decision.reason == f"candidate-modifies-authority-workflow:{m.DOCS_WORKFLOW_PATH}"
+
+
+def test_candidate_renaming_into_docs_authority_workflow_fails_closed():
+    m = _load_helper()
+    head, base, pr = "a" * 40, "b" * 40, 42
+    evidence = _trusted_evidence(m, pr_number=pr, head=head, base=base)
+    # filename == authority path → rename-into must trip the guard.
+    decision = _decide_with_evidence(
+        m, evidence,
+        docs_only=True,
+        changed_paths={m.DOCS_WORKFLOW_PATH},
+    )
+    assert decision.state == "failure"
+    assert decision.reason == f"candidate-modifies-authority-workflow:{m.DOCS_WORKFLOW_PATH}"
+
+
+def test_candidate_authority_guard_uses_rename_aware_normalization():
+    """End-to-end: pass raw PR-file dicts through ``_normalize_changed_paths``
+    so a rename-away (previous_filename = authority path) surfaces in the
+    guard, even though the new filename is something benign."""
+    m = _load_helper()
+    head, base, pr = "a" * 40, "b" * 40, 42
+    evidence = _trusted_evidence(
+        m, pr_number=pr, head=head, base=base, policy_state="success"
+    )
+    files = [
+        {"filename": "backend/renamed.yml", "status": "renamed",
+         "previous_filename": m.PR_FAST_WORKFLOW_PATH},
+    ]
+    changed_paths = m._normalize_changed_paths(files)
+    assert m.PR_FAST_WORKFLOW_PATH in changed_paths
+    decision = _decide_with_evidence(m, evidence, changed_paths=changed_paths)
+    assert decision.state == "failure"
+    assert decision.reason == f"candidate-modifies-authority-workflow:{m.PR_FAST_WORKFLOW_PATH}"
+
+
+def test_candidate_modifying_high_risk_workflow_does_not_fail_on_authority_rule():
+    """``high-risk-governance`` is a trusted ``pull_request_target`` workflow
+    that runs against the base checkout, so changing it on the candidate
+    must not trigger the candidate-controlled authority guard."""
+    m = _load_helper()
+    head, base, pr = "a" * 40, "b" * 40, 42
+    evidence = _trusted_evidence(
+        m, pr_number=pr, head=head, base=base, policy_state="success"
+    )
+    decision = _decide_with_evidence(
+        m, evidence,
+        changed_paths={m.HIGH_RISK_WORKFLOW_PATH, "backend/foo.py"},
+    )
+    assert decision.state == "success"
+
+
+def test_candidate_modifying_pr_deep_policy_does_not_fail_on_authority_rule():
+    m = _load_helper()
+    head, base, pr = "a" * 40, "b" * 40, 42
+    evidence = _trusted_evidence(
+        m, pr_number=pr, head=head, base=base, policy_state="pending", deep=True
+    )
+    decision = _decide_with_evidence(
+        m, evidence,
+        changed_paths={m.POLICY_WORKFLOW_PATH, "scripts/x.py"},
+    )
+    assert decision.state == "success"
+    assert decision.reason == "pr-deep-passed"
+
+
+def test_candidate_modifying_pr_deep_does_not_fail_on_authority_rule():
+    m = _load_helper()
+    head, base, pr = "a" * 40, "b" * 40, 42
+    evidence = _trusted_evidence(
+        m, pr_number=pr, head=head, base=base, policy_state="pending", deep=True
+    )
+    decision = _decide_with_evidence(
+        m, evidence,
+        changed_paths={m.DEEP_WORKFLOW_PATH, "scripts/x.py"},
+    )
+    assert decision.state == "success"
+    assert decision.reason == "pr-deep-passed"
+
+
+def test_normalize_changed_paths_is_rename_aware():
+    m = _load_helper()
+    files = [
+        {"filename": "backend/x.py"},
+        {"filename": "backend/y.py", "status": "renamed",
+         "previous_filename": ".github/workflows/ci.yml"},
+        {"filename": ".github/workflows/docs-contract.yml", "status": "renamed",
+         "previous_filename": "docs/old.md"},
+        {"filename": "docs/k.md"},
+    ]
+    normalized = m._normalize_changed_paths(files)
+    assert ".github/workflows/ci.yml" in normalized
+    assert ".github/workflows/docs-contract.yml" in normalized
+    assert "backend/x.py" in normalized
+    assert "backend/y.py" in normalized
+    assert "docs/old.md" in normalized
+    assert "docs/k.md" in normalized
+
+
+def test_normalize_changed_paths_handles_none_or_empty_input():
+    m = _load_helper()
+    assert m._normalize_changed_paths(None) == set()
+    assert m._normalize_changed_paths([]) == set()
+
+
+def test_existing_pr_fast_success_with_unchanged_authority_workflow_preserved():
+    m = _load_helper()
+    head, base, pr = "a" * 40, "b" * 40, 42
+    evidence = _trusted_evidence(
+        m, pr_number=pr, head=head, base=base, policy_state="success"
+    )
+    decision = _decide_with_evidence(
+        m, evidence, changed_paths={"backend/foo.py"}
+    )
+    assert decision.state == "success"
+    assert decision.reason == "pr-deep-not-required"
+
+
+def test_existing_docs_authority_success_with_unchanged_authority_workflow_preserved():
+    m = _load_helper()
+    head, base, pr = "a" * 40, "b" * 40, 42
+    evidence = _trusted_evidence(m, pr_number=pr, head=head, base=base, policy_state=None)
+    decision = _decide_with_evidence(
+        m, evidence, docs_only=True, changed_paths={"docs/x.md"}
+    )
+    assert decision.state == "success"
+    assert decision.reason == "docs-authority-passed"
+
+
+def test_candidate_authority_rule_only_blocks_candidate_controlled_paths():
+    m = _load_helper()
+    # Sanity: the exact set the guard relies on must contain the two
+    # candidate-controlled authority workflows and nothing else.
+    assert m.CANDIDATE_CONTROLLED_AUTHORITY_WORKFLOWS == frozenset({
+        m.DOCS_WORKFLOW_PATH,
+        m.PR_FAST_WORKFLOW_PATH,
+    })
+    assert m.HIGH_RISK_WORKFLOW_PATH not in m.CANDIDATE_CONTROLLED_AUTHORITY_WORKFLOWS
+    assert m.POLICY_WORKFLOW_PATH not in m.CANDIDATE_CONTROLLED_AUTHORITY_WORKFLOWS
+    assert m.DEEP_WORKFLOW_PATH not in m.CANDIDATE_CONTROLLED_AUTHORITY_WORKFLOWS
