@@ -22,6 +22,11 @@ concurrency:
   group: >-
     pr-merge-gate-${{
       github.event.pull_request.number ||
+      (
+        github.event_name == 'workflow_run' &&
+        github.event.workflow_run.name == 'pr-deep' &&
+        format('pr-deep-run-{0}', github.event.workflow_run.id)
+      ) ||
       github.event.workflow_run.head_sha ||
       github.event.sha ||
       github.sha
