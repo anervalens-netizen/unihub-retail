@@ -75,3 +75,5 @@ sunt snapshot-uri de evidence; GitHub current state rămâne sursa de adevăr.
   [`operations/AUDIT_REMEDIATION_5cbaae0_2026-08-11.md`](operations/AUDIT_REMEDIATION_5cbaae0_2026-08-11.md);
 - handoff Retail 9.5:
   [`operations/RETAIL_9_5_FINAL_HANDOFF.md`](operations/RETAIL_9_5_FINAL_HANDOFF.md).
+
+<!-- K1 live-gate probe only; PR #239 is not intended to merge. -->
