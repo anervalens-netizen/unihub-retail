@@ -305,8 +305,8 @@ def _validate_current_pr(pr: dict[str, Any], *, repo: str, expected_head: str | 
     return number, head_sha, base_sha
 
 
-def _changed_files(repo: str, token: str, number: int) -> list[str]:
-    files = []
+def _changed_files(repo: str, token: str, number: int) -> list[dict[str, Any]]:
+    files: list[dict[str, Any]] = []
     for page in range(1, 31):
         query = urllib.parse.urlencode({"per_page": PAGE_SIZE, "page": page})
         data = _api_json(_repo_url(repo, f"/pulls/{number}/files?{query}"), token)
@@ -316,7 +316,9 @@ def _changed_files(repo: str, token: str, number: int) -> list[str]:
             path = item.get("filename")
             if not isinstance(path, str) or not path:
                 raise GateError("invalid PR filename")
-            files.append(path)
+            if item.get("status") == "renamed" and not isinstance(item.get("previous_filename"), str):
+                raise GateError("renamed PR file is missing previous_filename")
+            files.append(item)
             if len(files) >= MAX_PR_FILES:
                 raise GateError("3000-file completeness ceiling reached")
         if len(data) < PAGE_SIZE:
@@ -324,6 +326,24 @@ def _changed_files(repo: str, token: str, number: int) -> list[str]:
     if not files:
         raise GateError("open PR has no changed files")
     return files
+
+
+def _docs_path(path: str) -> bool:
+    return path.endswith(".md") or path.startswith("docs/")
+
+
+def _files_are_docs_only(files: list[dict[str, Any]]) -> bool:
+    if not files:
+        return False
+    for item in files:
+        path = item.get("filename")
+        if not isinstance(path, str) or not _docs_path(path):
+            return False
+        if item.get("status") == "renamed":
+            previous = item.get("previous_filename")
+            if not isinstance(previous, str) or not _docs_path(previous):
+                return False
+    return True
 
 
 def _check_runs(repo: str, token: str, head_sha: str) -> list[dict[str, Any]]:
@@ -366,7 +386,7 @@ def _evaluate_one(*, repo: str, token: str, target_url: str, pr: dict[str, Any],
         pr_number=number,
         head_sha=head_sha,
         base_sha=base_sha,
-        docs_only=all(p.endswith(".md") or p.startswith("docs/") for p in files),
+        docs_only=_files_are_docs_only(files),
         checks=_check_runs(repo, token, head_sha),
         statuses=_statuses(repo, token, head_sha),
     )
