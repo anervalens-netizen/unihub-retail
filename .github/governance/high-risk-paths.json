@@ -35,6 +35,7 @@
         ".github/workflows/",
         ".github/governance/",
         "scripts/check_high_risk_pr_governance.py",
+        "scripts/pr_merge_gate.py",
         "scripts/is_high_risk_category_touched.py",
         "scripts/check_python_complexity_contract.py",
         "scripts/_python_complexity.py",
