@@ -92,6 +92,15 @@ def test_workflow_wires_trusted_bridge_before_evaluator():
     assert 'GITHUB_EVENT_PATH="$BRIDGE_EVENT_PATH"' in text
 
 
+def test_pr_deep_workflow_run_concurrency_is_isolated_by_unique_run_id():
+    data = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
+    group = data["concurrency"]["group"]
+    assert "github.event.workflow_run.name == 'pr-deep'" in group
+    assert "format('pr-deep-run-{0}', github.event.workflow_run.id)" in group
+    assert "github.event.workflow_run.head_sha" in group
+    assert data["concurrency"]["cancel-in-progress"] is True
+
+
 def test_valid_trusted_pr_deep_completion_bridges_exact_candidate(monkeypatch):
     m = _load_helper()
     calls = _install_api(monkeypatch, m)
