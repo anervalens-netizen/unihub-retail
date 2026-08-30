@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import importlib.util
 import sys
-import urllib.parse
 from pathlib import Path
 
 import yaml
@@ -510,35 +509,115 @@ def test_missing_job_and_marker_provenance_cannot_grant_success():
     assert _decide_with_evidence(m, missing_marker).state != "success"
 
 
-def test_workflow_evidence_paginates_all_run_pages_before_filtering(monkeypatch):
+def test_workflow_evidence_resolves_only_current_check_hint(monkeypatch):
     m = _load_helper()
     head, base, pr = "a" * 40, "b" * 40, 42
-    exact = _trusted_run(m, m.DOCS_WORKFLOW_PATH, "pull_request", pr, head, base, run_id=500)
-    filler = [
-        _trusted_run(m, m.DOCS_WORKFLOW_PATH, "pull_request", pr, "c" * 40, base, run_id=i)
-        for i in range(1, 101)
-    ]
+    exact = _trusted_run(
+        m, m.DOCS_WORKFLOW_PATH, "pull_request", pr, head, base, run_id=500,
+        repository={"full_name": "owner/repo"},
+        head_repository={"full_name": "owner/repo"},
+    )
     calls = []
 
     def fake_api(url, token):
         del token
         calls.append(url)
-        query = urllib.parse.parse_qs(urllib.parse.urlsplit(url).query)
-        page = int(query["page"][0])
-        if "/runs?" in url:
-            return {"workflow_runs": filler if page == 1 else [exact]}
-        assert "/jobs?" in url
+        if url.endswith("/actions/runs/500"):
+            return exact
+        assert url.endswith("/actions/runs/500/jobs?per_page=100&page=1")
         return {"jobs": [_check(m.DOCS_CHECK, head, run_id=500)]}
 
     monkeypatch.setattr(m, "_api_json", fake_api)
     evidence = m._workflow_evidence(
-        "repo", "token", workflow_path=m.DOCS_WORKFLOW_PATH,
+        "owner/repo", "token", workflow_path=m.DOCS_WORKFLOW_PATH,
         event="pull_request", pr_number=pr, head_sha=head, base_sha=base,
+        hints=[{"name": m.DOCS_CHECK, "head_sha": head,
+                "details_url": "https://github.com/owner/repo/actions/runs/500/job/9"}],
     )
     assert len(evidence) == 1
-    assert any("page=2" in url for url in calls)
+    assert len(calls) == 2
+    assert not any("workflows/" in url for url in calls)
 
 
+def test_workflow_evidence_rejects_malformed_external_and_wrong_repo_hints(monkeypatch):
+    m = _load_helper()
+    head, base, pr = "a" * 40, "b" * 40, 42
+    calls = []
+    monkeypatch.setattr(m, "_api_json", lambda url, token: calls.append(url))
+    hints = [
+        {"head_sha": head, "details_url": "https://evil.example/repo/actions/runs/1"},
+        {"head_sha": head, "details_url": "https://github.com/other/repo/actions/runs/2"},
+        {"head_sha": head, "details_url": "https://github.com/owner/repo/actions/runs/not-a-number"},
+        {"head_sha": head, "details_url": "https://github.com/owner/repo/actions/runs/3?redirect=evil"},
+        {"head_sha": "c" * 40, "details_url": "https://github.com/owner/repo/actions/runs/4"},
+    ]
+    assert m._workflow_evidence(
+        "owner/repo", "token", workflow_path=m.DOCS_WORKFLOW_PATH,
+        event="pull_request", pr_number=pr, head_sha=head, base_sha=base,
+        hints=hints,
+    ) == []
+    assert calls == []
+
+
+def test_workflow_evidence_has_small_hint_bound_without_history_fallback(monkeypatch):
+    m = _load_helper()
+    head, base, pr = "a" * 40, "b" * 40, 42
+    calls = []
+
+    def fake_api(url, token):
+        del token
+        calls.append(url)
+        return _trusted_run(m, "wrong.yml", "pull_request", pr, head, base, run_id=1)
+
+    monkeypatch.setattr(m, "_api_json", fake_api)
+    hints = [
+        {"head_sha": head,
+         "details_url": f"https://github.com/owner/repo/actions/runs/{i}"}
+        for i in range(1, 10_001)
+    ]
+    assert m._workflow_evidence(
+        "owner/repo", "token", workflow_path=m.DOCS_WORKFLOW_PATH,
+        event="pull_request", pr_number=pr, head_sha=head, base_sha=base,
+        hints=hints,
+    ) == []
+    assert len(calls) == m.MAX_WORKFLOW_HINTS
+    assert not any("workflows/" in url for url in calls)
+
+
+def test_workflow_dispatch_evidence_uses_exact_candidate_status_url(monkeypatch):
+    m = _load_helper()
+    head, base, pr = "a" * 40, "b" * 40, 42
+    run = _trusted_run(
+        m, m.DEEP_WORKFLOW_PATH, "workflow_dispatch", pr, "d" * 40, base,
+        run_id=700, head_branch="main", pull_requests=[],
+        repository={"full_name": "owner/repo"},
+        head_repository={"full_name": "owner/repo"},
+    )
+    calls = []
+
+    def fake_api(url, token):
+        del token
+        calls.append(url)
+        if url.endswith("/actions/runs/700"):
+            return run
+        return {"jobs": [{"id": 1, "run_id": 700, "head_sha": "d" * 40,
+                          "name": m._marker_name(m.DEEP_MARKER_PREFIX, state=None,
+                                                   pr_number=pr, head_sha=head, base_sha=base),
+                          "status": "completed", "conclusion": "success",
+                          "created_at": "2026-08-30T06:00:00Z",
+                          "updated_at": "2026-08-30T06:00:00Z"}]}
+
+    monkeypatch.setattr(m, "_api_json", fake_api)
+    evidence = m._workflow_evidence(
+        "owner/repo", "token", workflow_path=m.DEEP_WORKFLOW_PATH,
+        event="workflow_dispatch", pr_number=pr, head_sha=head, base_sha=base,
+        workflow_dispatch=True, hint_context=m.DEEP_CONTEXT,
+        hints=[{"context": m.DEEP_CONTEXT, "sha": head, "state": "failure",
+                 "target_url": "https://github.com/owner/repo/actions/runs/700"}],
+    )
+    assert len(evidence) == 1
+    assert calls == ["https://api.github.com/repos/owner/repo/actions/runs/700",
+                     "https://api.github.com/repos/owner/repo/actions/runs/700/jobs?per_page=100&page=1"]
 def test_older_exact_marker_survives_newer_stale_marker():
     m = _load_helper()
     head, base, pr = "a" * 40, "b" * 40, 42

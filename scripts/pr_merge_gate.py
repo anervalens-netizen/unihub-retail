@@ -21,8 +21,12 @@ DOCS_CHECK = "Validate release authority and docs"
 PR_FAST_CHECK = "pr-fast"
 HIGH_RISK_CHECK = "Validate high-risk PR governance"
 PAGE_SIZE = 100
-MAX_WORKFLOW_RUN_PAGES = 100
-MAX_WORKFLOW_JOB_PAGES = 100
+# Evidence resolution is deliberately driven by current candidate metadata. A
+# hint can identify at most one run and is never trusted without fetching and
+# validating the run itself. Keep these caps small and deterministic so a
+# growing Actions history cannot turn one gate evaluation into a history scan.
+MAX_WORKFLOW_HINTS = 20
+MAX_WORKFLOW_JOB_PAGES = 10
 MAX_PR_FILES = 3000
 
 # Required checks are accepted only from the immutable workflow files below.
@@ -740,29 +744,147 @@ def _statuses(repo: str, token: str, head_sha: str) -> list[dict[str, Any]]:
     return data
 
 
+def _current_status_hints(
+    statuses: Any, *, context: str, head_sha: str
+) -> list[dict[str, Any]]:
+    """Mark statuses returned by the exact-head endpoint as locator hints.
+
+    GitHub's commit-status response does not consistently include a ``sha``
+    field; the endpoint's ``/commits/<head_sha>/statuses`` path is the exact
+    head binding. If a response does include ``sha``, it must agree rather
+    than weakening that binding. The status state/description remains unused.
+    """
+    if not isinstance(statuses, list):
+        return []
+    hints: list[dict[str, Any]] = []
+    for status in statuses:
+        if not isinstance(status, dict) or status.get("context") != context:
+            continue
+        status_sha = status.get("sha")
+        if status_sha is not None and status_sha != head_sha:
+            continue
+        hint = dict(status)
+        hint["sha"] = head_sha
+        hints.append(hint)
+    return hints
+
+
+def _actions_run_id_from_url(value: Any, *, repo: str) -> int | None:
+    """Extract a run id from a GitHub-produced Actions URL, structurally.
+
+    Check ``details_url`` can point at either a workflow run or one of its
+    jobs.  The URL is only a locator: the run endpoint is fetched and all
+    provenance is checked again before its jobs can become evidence.  In
+    particular, do not accept a display name, context, arbitrary URL, query
+    string, or a URL for another repository as a run hint.
+    """
+    if not isinstance(value, str) or not isinstance(repo, str):
+        return None
+    owner_name = repo.split("/")
+    if len(owner_name) != 2 or not all(owner_name):
+        return None
+    parsed = urllib.parse.urlsplit(value)
+    if (
+        parsed.scheme != "https"
+        or parsed.netloc != "github.com"
+        or parsed.query
+        or parsed.fragment
+        or parsed.username is not None
+        or parsed.password is not None
+    ):
+        return None
+    parts = parsed.path.split("/")
+    if len(parts) < 6 or parts[0] != "" or parts[1:5] != [*owner_name, "actions", "runs"]:
+        return None
+    raw_id = parts[5]
+    if not raw_id.isdigit():
+        return None
+    run_id = int(raw_id)
+    if not _valid_run_id(run_id):
+        return None
+    # GitHub's check details URL is either /actions/runs/<id> or
+    # /actions/runs/<id>/job/<job-id> (some API fixtures use /jobs/...).
+    if len(parts) == 6:
+        return run_id
+    if len(parts) == 8 and parts[6] in {"job", "jobs"} and parts[7].isdigit() and int(parts[7]) > 0:
+        return run_id
+    return None
+
+
+def _hint_run_ids(hints: Any, *, repo: str, expected_head: str | None,
+                  context: str | None = None) -> list[int]:
+    """Return a bounded, deduplicated list of untrusted run-id hints."""
+    if not isinstance(hints, (list, tuple)):
+        return []
+    run_ids: list[int] = []
+    seen: set[int] = set()
+    for hint in hints:
+        if not isinstance(hint, dict):
+            continue
+        if context is not None and hint.get("context") != context:
+            continue
+        hint_sha = hint.get("head_sha")
+        if hint_sha is None:
+            hint_sha = hint.get("sha")
+        if expected_head is not None and hint_sha != expected_head:
+            continue
+        url_fields = ("details_url", "target_url")
+        run_id = next(
+            (candidate for field in url_fields
+             if (candidate := _actions_run_id_from_url(hint.get(field), repo=repo)) is not None),
+            None,
+        )
+        if run_id is None or run_id in seen:
+            continue
+        seen.add(run_id)
+        run_ids.append(run_id)
+        if len(run_ids) >= MAX_WORKFLOW_HINTS:
+            break
+    return run_ids
+
+
+def _workflow_jobs(repo: str, token: str, *, run_id: int, workflow_path: str) -> list[dict[str, Any]]:
+    jobs: list[dict[str, Any]] = []
+    for page in range(1, MAX_WORKFLOW_JOB_PAGES + 1):
+        jobs_data = _api_json(
+            _repo_url(repo, f"/actions/runs/{run_id}/jobs?per_page={PAGE_SIZE}&page={page}"),
+            token,
+        )
+        page_jobs = jobs_data.get("jobs") if isinstance(jobs_data, dict) else None
+        if not isinstance(page_jobs, list) or any(not isinstance(job, dict) for job in page_jobs):
+            raise GateError(f"workflow jobs response malformed: {workflow_path}")
+        jobs.extend(page_jobs)
+        if len(page_jobs) < PAGE_SIZE:
+            return jobs
+    raise GateError(f"workflow jobs pagination exceeded safe bound: {workflow_path}")
+
+
 def _workflow_evidence(
     repo: str, token: str, *, workflow_path: str, event: str,
     pr_number: int | None, head_sha: str | None, base_sha: str | None,
-    workflow_dispatch: bool = False,
+    workflow_dispatch: bool = False, hints: Any = None,
+    hint_context: str | None = None,
 ) -> list[WorkflowEvidence]:
-    workflow_id = urllib.parse.quote(workflow_path, safe="")
-    runs: list[dict[str, Any]] = []
-    for page in range(1, MAX_WORKFLOW_RUN_PAGES + 1):
-        query = urllib.parse.urlencode({"event": event, "per_page": PAGE_SIZE, "page": page})
-        data = _api_json(_repo_url(repo, f"/actions/workflows/{workflow_id}/runs?{query}"), token)
-        page_runs = data.get("workflow_runs") if isinstance(data, dict) else None
-        if not isinstance(page_runs, list) or any(not isinstance(run, dict) for run in page_runs):
-            raise GateError(f"workflow runs response malformed: {workflow_path}")
-        runs.extend(page_runs)
-        if len(page_runs) < PAGE_SIZE:
-            break
-    else:
-        raise GateError(f"workflow runs pagination exceeded safe bound: {workflow_path}")
+    """Resolve only exact Actions runs named by current untrusted hints.
 
-    candidates = [
-        run for run in runs
-        if _run_matches(
-            run,
+    This intentionally has no workflow-history fallback.  A missing or stale
+    hint is ordinary pending evidence, while every usable hint is independently
+    bound to the requested workflow, event, repository, PR/base, and SHA
+    before any jobs are fetched.
+    """
+    run_ids = _hint_run_ids(
+        hints,
+        repo=repo,
+        expected_head=head_sha,
+        context=hint_context,
+    )
+    evidence: list[WorkflowEvidence] = []
+    for run_id in run_ids:
+        run_data = _api_json(_repo_url(repo, f"/actions/runs/{run_id}"), token)
+        if not isinstance(run_data, dict) or run_data.get("id") != run_id:
+            continue
+        if not _run_matches(
+            run_data,
             repo=repo,
             workflow_path=workflow_path,
             event=event,
@@ -770,28 +892,10 @@ def _workflow_evidence(
             head_sha=None if workflow_dispatch else head_sha,
             base_sha=None if workflow_dispatch else base_sha,
             workflow_dispatch=workflow_dispatch,
-        )
-    ]
-    evidence: list[WorkflowEvidence] = []
-    for run in candidates:
-        run_id = run.get("id")
-        if not _valid_run_id(run_id):
-            raise GateError(f"trusted workflow run id malformed: {workflow_path}")
-        jobs: list[dict[str, Any]] = []
-        for page in range(1, MAX_WORKFLOW_JOB_PAGES + 1):
-            jobs_data = _api_json(
-                _repo_url(repo, f"/actions/runs/{run_id}/jobs?per_page={PAGE_SIZE}&page={page}"),
-                token,
-            )
-            page_jobs = jobs_data.get("jobs") if isinstance(jobs_data, dict) else None
-            if not isinstance(page_jobs, list) or any(not isinstance(job, dict) for job in page_jobs):
-                raise GateError(f"workflow jobs response malformed: {workflow_path}")
-            jobs.extend(page_jobs)
-            if len(page_jobs) < PAGE_SIZE:
-                break
-        else:
-            raise GateError(f"workflow jobs pagination exceeded safe bound: {workflow_path}")
-        evidence.append(WorkflowEvidence(run=run, jobs=jobs))
+        ):
+            continue
+        jobs = _workflow_jobs(repo, token, run_id=run_id, workflow_path=workflow_path)
+        evidence.append(WorkflowEvidence(run=run_data, jobs=jobs))
     return evidence
 
 
@@ -826,25 +930,50 @@ def _evaluate_one(*, repo: str, token: str, target_url: str, pr: dict[str, Any],
     required = [DOCS_CHECK] if docs_only else [DOCS_CHECK, PR_FAST_CHECK, HIGH_RISK_CHECK]
     for check_name in required:
         path, event = _REQUIRED_WORKFLOWS[check_name]
+        # A check run's name only selects a locator. The fetched Actions run
+        # below remains the sole authority for path/event/repository/PR/SHA.
+        check_hints = [
+            check for check in checks
+            if isinstance(check, dict)
+            and check.get("name") == check_name
+            and check.get("head_sha") == head_sha
+        ]
         evidence[path] = _workflow_evidence(
             repo, token, workflow_path=path, event=event,
             pr_number=number, head_sha=head_sha, base_sha=base_sha,
+            hints=check_hints,
         )
     if not docs_only:
+        # Policy normally exposes a current-head check run, but retain its
+        # exact-head status target URL as a bounded locator when available.
+        policy_hints = [
+            check for check in checks
+            if isinstance(check, dict) and check.get("head_sha") == head_sha
+        ] + _current_status_hints(
+            statuses, context=POLICY_CONTEXT, head_sha=head_sha
+        )
         evidence[POLICY_WORKFLOW_PATH] = _workflow_evidence(
             repo, token, workflow_path=POLICY_WORKFLOW_PATH,
             event="pull_request_target", pr_number=number,
-            head_sha=head_sha, base_sha=base_sha,
+            head_sha=head_sha, base_sha=base_sha, hints=policy_hints,
         )
         policy_state, _ = _trusted_policy_state(
             evidence[POLICY_WORKFLOW_PATH], pr_number=number,
             head_sha=head_sha, base_sha=base_sha,
         )
         if policy_state == "pending":
+            # workflow_dispatch runs execute on main, so their check head is
+            # not the candidate SHA. Only the candidate-head status is a
+            # locator; its state/description is never consulted.
+            deep_hints = _current_status_hints(
+                statuses, context=DEEP_CONTEXT, head_sha=head_sha
+            )
             evidence[DEEP_WORKFLOW_PATH] = _workflow_evidence(
                 repo, token, workflow_path=DEEP_WORKFLOW_PATH,
-                event="workflow_dispatch", pr_number=None,
-                head_sha=None, base_sha=base_sha, workflow_dispatch=True,
+                event="workflow_dispatch", pr_number=number,
+                head_sha=head_sha, base_sha=base_sha,
+                workflow_dispatch=True, hints=deep_hints,
+                hint_context=DEEP_CONTEXT,
             )
     decision = decide(
         pr_number=number,
