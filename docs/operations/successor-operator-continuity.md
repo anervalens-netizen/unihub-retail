@@ -67,19 +67,27 @@ STATE=deployed
 NEW_SHA=<current production git HEAD>
 ```
 
-For every record matching those two predicates, require the repository D2 validator to accept the complete record before accepting it as release identity. The validation must execute on the production host `server` against the exact production checkout (`/opt/Mobiup/unihub-retail`) and against the exact candidate handle already selected by the `STATE=deployed` + `NEW_SHA=<live production HEAD>` discovery above. Keep the privilege boundary narrow: only the exact root-protected `release.env` read is privileged; repository-controlled validator code must execute as the normal Production Host Operator, never as root.
+For every record matching those two predicates, require the repository D2 validator to accept the complete record before accepting it as release identity. The validation must execute on the production host `server` against the exact production checkout (`/opt/Mobiup/unihub-retail`) and against the exact candidate handle already selected by the `STATE=deployed` + `NEW_SHA=<live production HEAD>` discovery above. Keep the privilege boundary narrow: fixed-system privileged metadata must first establish that the exact root-protected candidate is a regular non-symlink file; only then may that exact file be read with privilege. Repository-controlled validator code must execute as the normal Production Host Operator, never as root.
 
 ```bash
 EXACT_RELEASE_ENV="/opt/Mobiup/ops/backups/retail-deploy/<exact-handle>/release.env"
 
 ssh -o BatchMode=yes server \
-  "cd /opt/Mobiup/unihub-retail &&
+  "cd /opt/Mobiup/unihub-retail || exit 1
+   D2_MODE=\$(sudo --non-interactive /usr/bin/stat --format='%A' -- '$EXACT_RELEASE_ENV') || exit 1
+   case \"\$D2_MODE\" in
+     -*) ;;
+     *)
+       printf 'unsafe D2 candidate type for %s\n' '$EXACT_RELEASE_ENV' >&2
+       exit 1
+       ;;
+   esac
    sudo --non-interactive /bin/cat -- '$EXACT_RELEASE_ENV' |
    /usr/bin/python3 -c '
 import sys
 from scripts.render_production_release_notes import parse_release_env, validate_deployed_promotion
 
-class BrokeredRelease:
+class PrevalidatedBrokeredRelease:
     def is_file(self):
         return True
     def is_symlink(self):
@@ -89,11 +97,11 @@ class BrokeredRelease:
     def __str__(self):
         return \"<brokered-release.env>\"
 
-validate_deployed_promotion(parse_release_env(BrokeredRelease()))
+validate_deployed_promotion(parse_release_env(PrevalidatedBrokeredRelease()))
 '"
 ```
 
-`EXACT_RELEASE_ENV` is the exact candidate handle already selected by the preceding `STATE=deployed` + `NEW_SHA=<live production HEAD>` discovery; it must never be substituted with a different handle, a glob, or a relative path. The privileged command above is limited to reading that exact promotion record. The repository module is imported and executed by the unprivileged SSH operator, so an operator-writable checkout is never executed as root. The D2 bytes flow only through the validator's stdin and are not printed or persisted by this procedure. If authorized read privilege for the exact D2 path cannot be obtained, stop and report the privilege gap rather than broadening sudo, copying the record, weakening permissions, or running repository code as root.
+`EXACT_RELEASE_ENV` is the exact candidate handle already selected by the preceding `STATE=deployed` + `NEW_SHA=<live production HEAD>` discovery; it must never be substituted with a different handle, a glob, or a relative path. The privileged `stat` uses the exact path without dereferencing symlinks; its `%A` type marker must begin with `-`, which is the regular-file marker, before any bytes are emitted. Missing or unreadable paths retain the fixed-system command's native failure rather than being reclassified. The selected namespace is root-protected, so the normal Production Host Operator cannot replace the candidate between metadata validation and the privileged read. The repository module is imported and executed by the unprivileged SSH operator, and the D2 bytes flow only through the validator's stdin; they are not printed or persisted by this procedure. If authorized metadata/read privilege for the exact D2 path cannot be obtained, stop and report the privilege gap rather than broadening sudo, copying the record, weakening permissions, or running repository code as root.
 
 The validator requires all schema-v1 fields and checks SHA/SHA-256 formats, canonical timestamps, migration filename, `NEW_SHA=SOURCE_SHA`, and predecessor/rollback release relationships. A matching record that fails validation is invalid; stop rather than treating it as the current release. After full validation, there must still be exactly one valid record matching the live HEAD.
 
@@ -244,19 +252,19 @@ ssh -o BatchMode=yes server '
     /opt/Mobiup/unihub-retail/.env.salary-export-worker \
     /opt/Mobiup/unihub-retail/.env.migrations
   do
-    if [[ ! -e "$f" ]]; then
-      printf "%s MISSING\n" "$f"
-      continue
-    fi
-    if ! sudo --non-interactive stat -c "%n %U:%G %a" "$f"; then
-      printf "%s METADATA_UNREADABLE_OR_PRIVILEGE_DENIED\n" "$f" >&2
-      exit 1
-    fi
+    metadata="$(sudo --non-interactive /usr/bin/stat --format="%A|%n|%U:%G|%a" -- "$f")" || exit 1
+    case "$metadata" in
+      -*) printf "%s\n" "${metadata#*|}" ;;
+      *)
+        printf "UNSAFE_NONREGULAR %s\n" "$f" >&2
+        exit 1
+        ;;
+    esac
   done
 '
 ```
 
-A `MISSING` result means the path check itself established that the expected file does not exist. A failed privileged `stat` is a distinct authorization/readability problem and must be reported as such; do not reinterpret it as a missing configuration file, copy the file elsewhere, or weaken permissions to make inspection succeed.
+The privileged fixed-system `stat` is the sole authority for path existence and type in this check. Because it is used without dereference, symbolic links—including dangling links—produce non-regular metadata and fail closed. A missing path, inaccessible path or unavailable authorized sudo operation retains the native command failure instead of being rewritten as `MISSING`. On success the snippet prints only path, owner/group and mode; it never reads environment-file contents. Do not copy a file elsewhere or weaken permissions to make inspection succeed.
 
 The service-identity contract can be verified read-only with:
 
