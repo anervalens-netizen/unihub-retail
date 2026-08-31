@@ -13,6 +13,7 @@ from services.sales_artifacts import (
     retain_sales_import_spool_file,
     verify_sales_import_artifact,
 )
+from services.sales_generation import SalesPolicyValidationError
 
 
 def _validate_request(
@@ -236,6 +237,10 @@ async def run_sales_import_job(
             async with pool.acquire() as pooled_conn:
                 result = await execute(pooled_conn)
         return asdict(result)
+    except SalesPolicyValidationError as exc:
+        # ARQ pickles terminal exceptions. Expose the safe domain message via
+        # a built-in exception that round-trips across the result boundary.
+        raise RuntimeError(str(exc)) from None
     finally:
         # A failed ARQ attempt must retain the exact queued bytes for retry.
         # Success atomically moves them into the retained content-addressed

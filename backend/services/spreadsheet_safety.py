@@ -51,7 +51,7 @@ class SpreadsheetUploadStats:
 SALES_SPREADSHEET_LIMITS = SpreadsheetUploadLimits(
     max_source_bytes=32 * 1024 * 1024,
     max_members=2_048,
-    max_member_bytes=128 * 1024 * 1024,
+    max_member_bytes=64 * 1024 * 1024,
     max_uncompressed_bytes=256 * 1024 * 1024,
     max_compression_ratio=100,
     max_cells=2_000_000,

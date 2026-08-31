@@ -3,6 +3,7 @@ from __future__ import annotations
 import errno
 import hashlib
 import os
+import pickle
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
@@ -17,7 +18,10 @@ import services.sales_generation_flow as sales_generation_flow
 import services.sales_import_worker as sales_import_worker
 import worker
 from db.connection import close_db_pool, get_pool
-from services.sales_generation import SalesGenerationValidationError
+from services.sales_generation import (
+    SalesGenerationValidationError,
+    SalesPolicyValidationError,
+)
 from services.sales_generation_flow import promote_sales_generation
 from services.importer import _reconcile_sales_artifacts, reserve_snapshot
 
@@ -210,6 +214,42 @@ async def test_worker_retry_repairs_post_move_db_failure_without_restart(
     assert find_recovery.await_args.kwargs["retained_path"] == str(retained)
     mark_retained.assert_awaited_once()
     parse_and_stage.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_worker_returns_pickle_safe_sales_policy_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source, digest = _artifact(tmp_path)
+    failure = SalesPolicyValidationError(
+        {
+            "code": "invalid_workbook",
+            "classification": "structural_contradiction",
+            "blocking": True,
+            "message": "Fișierul de vânzări este invalid",
+        }
+    )
+    monkeypatch.setattr(
+        sales_import_worker,
+        "_execute_import",
+        AsyncMock(side_effect=failure),
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="Fișierul de vânzări este invalid",
+    ) as caught:
+        await sales_import_worker.run_sales_import_job(
+            {"db_conn": MagicMock()},
+            str(source),
+            digest,
+            12,
+            "sales.xlsx",
+        )
+
+    restored = pickle.loads(pickle.dumps(caught.value))
+    assert str(restored) == str(caught.value)
+    assert caught.value.__cause__ is None
 
 
 @pytest.mark.asyncio

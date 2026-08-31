@@ -75,13 +75,6 @@ class SalesPolicyValidationError(ValueError):
         self.anomalies = tuple(values)
         super().__init__("; ".join(str(item["message"]) for item in values))
 
-    def __reduce__(
-        self,
-    ) -> tuple[type[SalesPolicyValidationError], tuple[list[dict[str, Any]]]]:
-        """Preserve structured validation errors across the ARQ pickle boundary."""
-
-        return SalesPolicyValidationError, ([dict(item) for item in self.anomalies],)
-
 
 class SalesGenerationConflictError(RuntimeError):
     """The caller no longer owns the generation/head it attempted to mutate."""
