@@ -230,10 +230,19 @@ ssh -o BatchMode=yes server '
     /opt/Mobiup/unihub-retail/.env.salary-export-worker \
     /opt/Mobiup/unihub-retail/.env.migrations
   do
-    sudo stat -c "%n %U:%G %a" "$f" 2>/dev/null || printf "%s MISSING\n" "$f"
+    if [[ ! -e "$f" ]]; then
+      printf "%s MISSING\n" "$f"
+      continue
+    fi
+    if ! sudo --non-interactive stat -c "%n %U:%G %a" "$f"; then
+      printf "%s METADATA_UNREADABLE_OR_PRIVILEGE_DENIED\n" "$f" >&2
+      exit 1
+    fi
   done
 '
 ```
+
+A `MISSING` result means the path check itself established that the expected file does not exist. A failed privileged `stat` is a distinct authorization/readability problem and must be reported as such; do not reinterpret it as a missing configuration file, copy the file elsewhere, or weaken permissions to make inspection succeed.
 
 The service-identity contract can be verified read-only with:
 
