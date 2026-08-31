@@ -220,6 +220,7 @@ async def test_worker_retry_repairs_post_move_db_failure_without_restart(
 async def test_worker_returns_pickle_safe_sales_policy_failure(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    monkeypatch.setenv("SALES_IMPORT_SPOOL_DIR", str(tmp_path))
     source, digest = _artifact(tmp_path)
     failure = SalesPolicyValidationError(
         {
