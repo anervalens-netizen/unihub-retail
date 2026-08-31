@@ -52,73 +52,58 @@ ssh -o BatchMode=yes server '
 
 Expected normal shape is branch `main` and a clean worktree. Do not fix divergence by `pull`, `reset`, `checkout` or direct edits. First collect evidence and determine whether a formal release/deploy/recovery path is required.
 
-### 1.3 Production D2 release identity
+### 1.3 Production release identity and D2 boundary
 
-Promotion records are under:
+For routine read-only orientation, bind the exact production HEAD from 1.2 to its exact D3 promotion tag. D3 is GitHub-hosted promotion history; it does **not** replace the signed CI manifest or D2 promotion state.
+
+```bash
+PROD_HEAD="<40-char production HEAD from 1.2>"
+D3_TAG="production/retail-release-$PROD_HEAD"
+D3_OBJECT_SHA="$(
+  gh api \
+    "repos/anervalens-netizen/unihub-retail/git/matching-refs/tags/$D3_TAG" \
+    --jq 'if length == 1 then .[0].object.sha else error("expected one exact D3 tag") end'
+)"
+
+gh api "repos/anervalens-netizen/unihub-retail/git/tags/$D3_OBJECT_SHA" |
+  jq -e --arg head "$PROD_HEAD" --arg tag "$D3_TAG" '
+    .tag == $tag and
+    .object.type == "commit" and
+    .object.sha == $head and
+    ((.message | fromjson) as $p |
+      $p.schemaVersion == 1 and
+      $p.kind == "unihub-retail-production-promotion" and
+      $p.sourceSha == $head and
+      $p.releaseId == ("retail-release-" + $head) and
+      ($p.artifactSha256 | test("^[0-9a-f]{64}$")) and
+      ($p.sbomSha256 | test("^[0-9a-f]{64}$")) and
+      (($p.ciRunId | tostring) | test("^[0-9]+$")) and
+      (($p.deployRunId | tostring) | test("^[0-9]+$")) and
+      (($p.migrationHead | type) == "string") and
+      (($p.migrationHead | length) > 0)
+    )
+  '
+```
+
+A success establishes that the exact live checkout SHA has a structurally valid D3 promotion-history record pointing to the same commit. The D3 message also exposes non-secret evidence such as release ID, CI/deploy run IDs, artifact/SBOM digests and migration head. Follow those exact run/artifact identities when deeper certification evidence is required; never rebuild or substitute an artifact.
+
+D2 promotion records remain under:
 
 ```text
 /opt/Mobiup/ops/backups/retail-deploy/*/release.env
 ```
 
-There may be many historical records whose `STATE=deployed` reflects their completed historical deployment. Therefore **do not require exactly one `STATE=deployed` record globally**. The current record is the unique valid record for which:
+D2 remains promotion-state authority. `scripts/render_production_release_notes.py` validates the complete D2 schema/relationships for an exact file supplied through a safe mechanism; it does not discover or select a `current`/`latest` handle.
 
-```text
-STATE=deployed
-NEW_SHA=<current production git HEAD>
-```
+Do **not** construct an ad-hoc privileged D2 reader from separate `stat`/`cat`, `find`, temporary copies or a generic privileged interpreter. The current root-owned release entrypoint exposes deploy, artifact validation and rollback operations, but no standalone least-privilege read-only D2 inspection mode that atomically opens one exact handle with no-follow semantics and validates bytes from that same opened object. A split path-check/read sequence is insufficient because another privileged release operation can replace `release.env` between the two operations, and leaf-only checks do not validate the handle directory chain.
 
-For every record matching those two predicates, require the repository D2 validator to accept the complete record before accepting it as release identity. The validation must execute on the production host `server` against the exact production checkout (`/opt/Mobiup/unihub-retail`) and against the exact candidate handle already selected by the `STATE=deployed` + `NEW_SHA=<live production HEAD>` discovery above. Keep the privilege boundary narrow: fixed-system privileged metadata must first establish that the exact root-protected candidate is a regular non-symlink file; only then may that exact file be read with privilege. Repository-controlled validator code must execute as the normal Production Host Operator, never as root.
+Therefore:
 
-```bash
-EXACT_RELEASE_ENV="/opt/Mobiup/ops/backups/retail-deploy/<exact-handle>/release.env"
-
-ssh -o BatchMode=yes server \
-  "cd /opt/Mobiup/unihub-retail || exit 1
-   D2_MODE=\$(sudo --non-interactive /usr/bin/stat --format='%A' -- '$EXACT_RELEASE_ENV') || exit 1
-   case \"\$D2_MODE\" in
-     -*) ;;
-     *)
-       printf 'unsafe D2 candidate type for %s\n' '$EXACT_RELEASE_ENV' >&2
-       exit 1
-       ;;
-   esac
-   sudo --non-interactive /bin/cat -- '$EXACT_RELEASE_ENV' |
-   /usr/bin/python3 -c '
-import sys
-from scripts.render_production_release_notes import parse_release_env, validate_deployed_promotion
-
-class PrevalidatedBrokeredRelease:
-    def is_file(self):
-        return True
-    def is_symlink(self):
-        return False
-    def read_text(self, encoding=\"utf-8\"):
-        return sys.stdin.read()
-    def __str__(self):
-        return \"<brokered-release.env>\"
-
-validate_deployed_promotion(parse_release_env(PrevalidatedBrokeredRelease()))
-'"
-```
-
-`EXACT_RELEASE_ENV` is the exact candidate handle already selected by the preceding `STATE=deployed` + `NEW_SHA=<live production HEAD>` discovery; it must never be substituted with a different handle, a glob, or a relative path. The privileged `stat` uses the exact path without dereferencing symlinks; its `%A` type marker must begin with `-`, which is the regular-file marker, before any bytes are emitted. Missing or unreadable paths retain the fixed-system command's native failure rather than being reclassified. The selected namespace is root-protected, so the normal Production Host Operator cannot replace the candidate between metadata validation and the privileged read. The repository module is imported and executed by the unprivileged SSH operator, and the D2 bytes flow only through the validator's stdin; they are not printed or persisted by this procedure. If authorized metadata/read privilege for the exact D2 path cannot be obtained, stop and report the privilege gap rather than broadening sudo, copying the record, weakening permissions, or running repository code as root.
-
-The validator requires all schema-v1 fields and checks SHA/SHA-256 formats, canonical timestamps, migration filename, `NEW_SHA=SOURCE_SHA`, and predecessor/rollback release relationships. A matching record that fails validation is invalid; stop rather than treating it as the current release. After full validation, there must still be exactly one valid record matching the live HEAD.
-
-For that validated matching record, the non-secret identity fields useful for orientation include:
-
-```text
-PROMOTION_SCHEMA_VERSION
-RELEASE_ID
-SOURCE_SHA
-MIGRATION_HEAD
-STATE
-DEPLOYED_AT_UTC
-OLD_SHA
-NEW_SHA
-```
-
-Do not read approval identities or credential-bearing files merely to identify a release. If zero or multiple fully validated records match the live HEAD, stop and treat release identity as ambiguous; do not choose the newest filename by time.
+- use production HEAD plus its exact D3 tag for routine non-mutating release orientation;
+- do not treat D3 as a substitute for D2 when a deploy/rollback decision specifically depends on current promotion state;
+- if independently validated D2 state is required, use an already approved root-owned atomic read/validation mechanism if one exists at execution time; otherwise report `D2 promotion state not independently verified` and stop the operation that depends on it;
+- never choose a D2 handle by newest filename, glob ordering or an old issue comment;
+- never broaden sudo, weaken permissions, execute repository checkout code as root or persist protected D2 bytes merely to inspect release state.
 
 ### 1.4 Health
 
@@ -241,36 +226,23 @@ Production uses root-protected, service-specific environment files. The versione
 /opt/Mobiup/unihub-retail/.env.migrations
 ```
 
-They are expected to be owned by `root:<service-group>` with mode `0640`. Verify without reading values:
+They are expected to be owned by `root:<service-group>` with mode `0640`. Do not duplicate that path/ownership contract with a per-file metadata loop. First verify that the fixed Retail live-root path canonicalizes to itself, which rejects symlink traversal in its path chain, then invoke the existing root-owned service-identity verifier that owns the environment-leaf contract:
 
 ```bash
 ssh -o BatchMode=yes server '
-  for f in \
-    /opt/Mobiup/unihub-retail/.env \
-    /opt/Mobiup/unihub-retail/.env.worker \
-    /opt/Mobiup/unihub-retail/.env.import-worker \
-    /opt/Mobiup/unihub-retail/.env.salary-export-worker \
-    /opt/Mobiup/unihub-retail/.env.migrations
-  do
-    metadata="$(sudo --non-interactive /usr/bin/stat --format="%A|%n|%U:%G|%a" -- "$f")" || exit 1
-    case "$metadata" in
-      -*) printf "%s\n" "${metadata#*|}" ;;
-      *)
-        printf "UNSAFE_NONREGULAR %s\n" "$f" >&2
-        exit 1
-        ;;
-    esac
-  done
+  live_root=/opt/Mobiup/unihub-retail
+  resolved="$(sudo --non-interactive /usr/bin/realpath -e -- "$live_root")" || exit 1
+  if [[ "$resolved" != "$live_root" ]]; then
+    printf "unsafe Retail live-root resolution: %s\n" "$resolved" >&2
+    exit 1
+  fi
+  sudo --non-interactive /opt/Mobiup/ops/scripts/provision-retail-service-identities.sh verify
 '
 ```
 
-The privileged fixed-system `stat` is the sole authority for path existence and type in this check. Because it is used without dereference, symbolic links—including dangling links—produce non-regular metadata and fail closed. A missing path, inaccessible path or unavailable authorized sudo operation retains the native command failure instead of being rewritten as `MISSING`. On success the snippet prints only path, owner/group and mode; it never reads environment-file contents. Do not copy a file elsewhere or weaken permissions to make inspection succeed.
+The versioned source `ops/provision-retail-service-identities.sh` requires root, rejects an unavailable or symlinked Retail live root, rejects each required environment leaf that is missing, non-regular or a symlink, and verifies exact `root:<service-group>:640` ownership/mode together with the expected service users/groups. The installed production copy is part of the root-owned operations boundary described in `ops/README.md`.
 
-The service-identity contract can be verified read-only with:
-
-```bash
-ssh -o BatchMode=yes server 'sudo /opt/Mobiup/ops/scripts/provision-retail-service-identities.sh verify'
-```
+This check reads no environment-file values. If canonical live-root resolution, sudo authorization, the installed verifier or its provenance cannot be established, report that exact gap and stop; do not downgrade to an unprivileged existence test, copy protected files elsewhere, weaken permissions or run `apply` merely to investigate.
 
 Never run `apply` merely to investigate a discrepancy.
 
@@ -419,14 +391,15 @@ Break-glass remains limited by ADR-006 and is not a convenience path.
 
 | Symptom | First evidence to collect | Do not do first |
 | --- | --- | --- |
-| GitHub `main` differs from production HEAD | both SHAs, live branch, worktree cleanliness, matching D2 release record | `git pull`/`reset` |
+| GitHub `main` differs from production HEAD | both SHAs, live branch, worktree cleanliness, exact D3 tag state | `git pull`/`reset` |
+| live HEAD has no valid exact D3 promotion tag | exact production HEAD plus D3 tag ref/object evidence | invent/select a D2 handle or create a tag |
+| a task requires D2 state but no approved atomic read path exists | task scope and formal release-tooling boundary | `sudo cat`, temp copies or generic privileged interpreters |
 | `/livez` fails | backend unit state and bounded logs | restart repeatedly |
 | `/livez` works but `/readyz` fails | PostgreSQL/Valkey state, `jwks_readiness_state`, readiness logs | edit auth/DB config |
 | local `/readyz` works but public `/readyz` fails | blackbox signal, Cloudflared state, Caddy state | mutate DNS/tunnel/proxy |
 | one worker is down | exact unit state, recent journal, queue/backlog metrics for that worker | restart every worker |
 | backup gate fails/stale | `status`, `checksum_ok`, `completed_at`, backup script/log evidence | rerun deploy or weaken gate |
-| release record is ambiguous | live HEAD plus all records matching that exact SHA/state | select newest directory by timestamp |
-| service identity verifier fails | exact missing user/group/file ownership result | run provisioning `apply` automatically |
+| service identity verifier fails | exact verifier error plus live-root canonicalization result | run provisioning `apply` automatically |
 | CI/check fails | exact run → job → step → log/root cause | blind rerun |
 | restore is requested | required data scope, verified backup evidence, K5 status | improvise `pg_restore` on production |
 
@@ -490,7 +463,8 @@ A successor who can complete the following without private memory has enough ori
 
 - [ ] determine GitHub `main` SHA;
 - [ ] determine production branch/HEAD and clean/dirty state;
-- [ ] identify the D2 release record matching production HEAD, validate its complete D2 schema/relationships, and avoid assuming globally unique `STATE=deployed`;
+- [ ] bind the observed production HEAD to the exact structurally valid D3 promotion tag and explain why D3 does not replace independently validated D2 state;
+- [ ] explain when D2 must be independently verified and stop if no approved atomic read/validation path exists;
 - [ ] run local `/livez`, local `/readyz` and public `/readyz`;
 - [ ] inspect Retail systemd units and distinguish the migration one-shot from long-running services;
 - [ ] explain that PostgreSQL, Valkey and usable JWKS state gate readiness;
