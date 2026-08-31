@@ -71,16 +71,19 @@ gh api "repos/anervalens-netizen/unihub-retail/git/tags/$D3_OBJECT_SHA" |
     .object.type == "commit" and
     .object.sha == $head and
     ((.message | fromjson) as $p |
+      ($p | keys | sort) == (["artifactSha256","ciRunId","deployRunId","kind","migrationHead","releaseId","sbomSha256","schemaVersion","sourceSha"] | sort) and
       $p.schemaVersion == 1 and
       $p.kind == "unihub-retail-production-promotion" and
       $p.sourceSha == $head and
       $p.releaseId == ("retail-release-" + $head) and
       ($p.artifactSha256 | test("^[0-9a-f]{64}$")) and
       ($p.sbomSha256 | test("^[0-9a-f]{64}$")) and
-      (($p.ciRunId | tostring) | test("^[0-9]+$")) and
-      (($p.deployRunId | tostring) | test("^[0-9]+$")) and
+      (($p.ciRunId | type) == "string") and
+      ($p.ciRunId | test("^[0-9]+$")) and
+      (($p.deployRunId | type) == "string") and
+      ($p.deployRunId | test("^[0-9]+$")) and
       (($p.migrationHead | type) == "string") and
-      (($p.migrationHead | length) > 0)
+      ($p.migrationHead | test("^[0-9]{3}_[A-Za-z0-9_]+\\.sql$"))
     )
   '
 ```
