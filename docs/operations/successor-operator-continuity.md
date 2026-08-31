@@ -67,7 +67,16 @@ STATE=deployed
 NEW_SHA=<current production git HEAD>
 ```
 
-For that matching record, the non-secret identity fields are:
+For every record matching those two predicates, require the repository D2 validator to accept the complete record before accepting it as release identity. From the exact production checkout, this is a read-only validation:
+
+```bash
+cd /opt/Mobiup/unihub-retail
+python3 scripts/render_production_release_notes.py <exact-release.env> >/dev/null
+```
+
+The validator requires all schema-v1 fields and checks SHA/SHA-256 formats, canonical timestamps, migration filename, `NEW_SHA=SOURCE_SHA`, and predecessor/rollback release relationships. A matching record that fails validation is invalid; stop rather than treating it as the current release. After full validation, there must still be exactly one valid record matching the live HEAD.
+
+For that validated matching record, the non-secret identity fields useful for orientation include:
 
 ```text
 PROMOTION_SCHEMA_VERSION
@@ -80,7 +89,7 @@ OLD_SHA
 NEW_SHA
 ```
 
-Do not read approval identities or credential-bearing files merely to identify a release. If zero or multiple records match the live HEAD, stop and treat release identity as ambiguous; do not choose the newest filename by time.
+Do not read approval identities or credential-bearing files merely to identify a release. If zero or multiple fully validated records match the live HEAD, stop and treat release identity as ambiguous; do not choose the newest filename by time.
 
 ### 1.4 Health
 
@@ -117,7 +126,7 @@ Repository-owned systemd roles:
 - `unihub-retail-migrate.service` — one-shot migration identity `unihub-migrate`;
 - `unihub-legacy-worker.service` — legacy tombstone/compatibility unit, not a normal active worker.
 
-Versioned unit sources live under `ops/systemd/`. Never reconstruct a unit from memory when the repository source exists.
+Versioned unit sources are `ops/systemd/` **plus repository-root `unihub-worker.service`** for the operations worker; `ops/systemd/README.md` documents this source-of-truth split. Never reconstruct a unit from memory when the repository source exists.
 
 ### Data and session dependencies
 
@@ -229,7 +238,7 @@ Never run `apply` merely to investigate a discrepancy.
 
 Logical secret/configuration categories are documented with empty/non-secret placeholders in `.env.example`, including database/migration DSNs, OIDC client secret, session encryption key, Valkey URLs, rate-limit HMAC material, salary identity HMAC material and monitoring DSNs.
 
-There is no repository-supported instruction to copy secret values into GitHub, chat, handoffs or local notes. An authorized administrator who must rotate a value should use the existing root-controlled production process for the relevant service, preserve ownership/mode, validate configuration through the owning security/runtime contract, and perform any restart/deploy only when separately authorized. If the authorized retrieval/rotation path for a particular credential is unclear, stop rather than invent a new secret-management path.
+There is no repository-supported instruction to copy secret values into GitHub, chat, handoffs or local notes. An authorized administrator who must rotate a value should use the existing root-controlled production process for the relevant service, preserve ownership/mode, validate configuration through the owning security/runtime contract, and perform any restart/deploy only when it is within the existing task authorization and all technical gates are satisfied. If the authorized task does not cover that mutation, obtain explicit authorization first. If the authorized retrieval/rotation path for a particular credential is unclear, stop rather than invent a new secret-management path.
 
 ## 5. Normal deploy and rollback
 
@@ -405,7 +414,7 @@ Do not delegate remote GitHub operations to Dell merely because a shell can run 
 
 Use Dell only for operations that require the local filesystem, local test/build tools, a workflow dispatch not exposed by the connector, or the real server/runtime. Every handoff must bind the exact repo/branch/HEAD/base, allowed surfaces, commands, stop conditions and evidence to return.
 
-A server handoff is not permission to mutate production. If the task is read-only, commands must remain read-only. Deploy, restart, migration, backup execution, restore, identity mutation, DNS/tunnel changes and active security testing require their own explicit authorization at execution time.
+A Dell/server handoff grants **no new mutation scope by itself**. If the task is read-only, commands must remain read-only. If the underlying operational request already explicitly authorizes an end-to-end PR or mutation scope, that authorization remains valid through the covered merge, post-merge CI, deploy/restart and live verification steps without repeated approval, while every technical gate and scope boundary still applies. Any mutation outside the existing authorized scope requires new explicit authorization.
 
 ## 11. Emergency ownership roles
 
@@ -443,7 +452,7 @@ A successor who can complete the following without private memory has enough ori
 
 - [ ] determine GitHub `main` SHA;
 - [ ] determine production branch/HEAD and clean/dirty state;
-- [ ] identify the D2 release record matching production HEAD without assuming globally unique `STATE=deployed`;
+- [ ] identify the D2 release record matching production HEAD, validate its complete D2 schema/relationships, and avoid assuming globally unique `STATE=deployed`;
 - [ ] run local `/livez`, local `/readyz` and public `/readyz`;
 - [ ] inspect Retail systemd units and distinguish the migration one-shot from long-running services;
 - [ ] explain that PostgreSQL, Valkey and usable JWKS state gate readiness;
