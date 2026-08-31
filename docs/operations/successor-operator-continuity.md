@@ -46,7 +46,20 @@ ssh -o BatchMode=yes server '
   cd /opt/Mobiup/unihub-retail &&
   printf "branch=" && git branch --show-current &&
   printf "head=" && git rev-parse HEAD &&
-  printf "dirty_count=" && git status --porcelain=v1 --untracked-files=all | wc -l
+  {
+    worktree_status="$(git status --porcelain=v1 --untracked-files=all)" || {
+      printf "git status failed\n" >&2
+      exit 1
+    }
+
+    if [ -n "$worktree_status" ]; then
+      dirty_count="$(printf "%s\n" "$worktree_status" | wc -l)"
+    else
+      dirty_count=0
+    fi
+
+    printf "dirty_count=%s\n" "$dirty_count"
+  }
 '
 ```
 
