@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import date
 from hashlib import sha256
 import math
@@ -53,6 +54,10 @@ IMPORT_PEAK_RSS_BYTES = Gauge(
     "sales_import_peak_rss_bytes",
     "Peak RSS observed by the sales import loader.",
 )
+SALES_IMPORT_SPREADSHEET_LIMITS = replace(
+    SALES_SPREADSHEET_LIMITS,
+    max_member_bytes=128 * 1024 * 1024,
+)
 
 
 def _raise_structural_contradiction(
@@ -96,7 +101,7 @@ def _read_sales_sheet(
         stats = validate_spreadsheet_upload(
             content,
             suffix,
-            limits=SALES_SPREADSHEET_LIMITS,
+            limits=SALES_IMPORT_SPREADSHEET_LIMITS,
         )
     except SpreadsheetUploadError as exc:
         _raise_structural_contradiction("invalid_workbook", str(exc))
@@ -105,7 +110,7 @@ def _read_sales_sheet(
         content,
         suffix=suffix,
         header=None,
-        limits=limits_from_upload_policy(SALES_SPREADSHEET_LIMITS),
+        limits=limits_from_upload_policy(SALES_IMPORT_SPREADSHEET_LIMITS),
     )
     if sheet.empty:
         _raise_structural_contradiction(

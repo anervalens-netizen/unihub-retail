@@ -11,6 +11,7 @@ import pytest
 from openpyxl import Workbook
 
 import services.importer as importer_module
+import services.sales_import_parsing as sales_import_parsing
 import services.spreadsheet_readers as spreadsheet_readers
 from services.importer import (
     SALES_COLUMNS,
@@ -27,6 +28,13 @@ def sales_workbook(rows: list[dict]) -> bytes:
     output = BytesIO()
     pd.DataFrame(rows, columns=SALES_COLUMNS).to_excel(output, index=False)
     return output.getvalue()
+
+
+def test_sales_import_has_bounded_headroom_for_growing_erp_worksheet() -> None:
+    limits = sales_import_parsing.SALES_IMPORT_SPREADSHEET_LIMITS
+
+    assert limits.max_member_bytes == 128 * 1024 * 1024
+    assert limits.max_member_bytes <= limits.max_uncompressed_bytes
 
 
 def sales_row(**overrides: object) -> dict:
