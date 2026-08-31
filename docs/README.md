@@ -33,6 +33,8 @@ statusul documentelor, release identity sau live health.
 - livrare exact-SHA și rollback/DR:
   [`adr/006-verified-runtime-delivery.md`](adr/006-verified-runtime-delivery.md),
   [`../ops/README.md`](../ops/README.md);
+- continuitate / successor operator:
+  [`operations/successor-operator-continuity.md`](operations/successor-operator-continuity.md);
 - view-ul narativ de release este derivat din D2 promotion state prin
   `scripts/render_production_release_notes.py`; nu este o sursă de stare;
 - contracte de date: [`adr/003-receipt-identity.md`](adr/003-receipt-identity.md),
