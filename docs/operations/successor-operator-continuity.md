@@ -61,8 +61,8 @@ PROD_HEAD="<40-char production HEAD from 1.2>"
 D3_TAG="production/retail-release-$PROD_HEAD"
 D3_OBJECT_SHA="$(
   gh api \
-    "repos/anervalens-netizen/unihub-retail/git/matching-refs/tags/$D3_TAG" \
-    --jq 'if length == 1 then .[0].object.sha else error("expected one exact D3 tag") end'
+    "repos/anervalens-netizen/unihub-retail/git/ref/tags/$D3_TAG" \
+    --jq '.object.sha'
 )"
 
 gh api "repos/anervalens-netizen/unihub-retail/git/tags/$D3_OBJECT_SHA" |
