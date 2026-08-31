@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import pickle
 from datetime import date
 from uuid import uuid4
 from unittest.mock import AsyncMock
@@ -152,6 +153,24 @@ def test_structural_manifest_contradiction_is_explicit() -> None:
     anomaly = exc_info.value.anomalies[0]
     assert anomaly["code"] == "cutoff_month_mismatch"
     assert anomaly["classification"] == SalesAnomalyClassification.STRUCTURAL_CONTRADICTION.value
+
+
+def test_sales_policy_validation_error_round_trips_through_arq_pickle() -> None:
+    original = SalesPolicyValidationError(
+        {
+            "code": "invalid_workbook",
+            "classification": (
+                SalesAnomalyClassification.STRUCTURAL_CONTRADICTION.value
+            ),
+            "blocking": True,
+            "message": "Un membru XLSX depășește limita permisă",
+        }
+    )
+
+    restored = pickle.loads(pickle.dumps(original))
+
+    assert str(restored) == str(original)
+    assert restored.anomalies == original.anomalies
 
 
 async def cleanup_generation_data(conn: object) -> None:

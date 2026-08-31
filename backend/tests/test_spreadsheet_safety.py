@@ -111,6 +111,11 @@ def test_import_policies_are_explicit_and_parser_measurement_is_finite() -> None
             HISTORY_SPREADSHEET_LIMITS.max_cells,
         }
     ) == 5
+    assert SALES_SPREADSHEET_LIMITS.max_member_bytes == 128 * 1024 * 1024
+    assert (
+        SALES_SPREADSHEET_LIMITS.max_member_bytes
+        <= SALES_SPREADSHEET_LIMITS.max_uncompressed_bytes
+    )
     content = workbook_bytes(2)
     measurement = SpreadsheetParserMeasurement("test_parser")
     with measurement:
