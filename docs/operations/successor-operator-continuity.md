@@ -67,12 +67,19 @@ STATE=deployed
 NEW_SHA=<current production git HEAD>
 ```
 
-For every record matching those two predicates, require the repository D2 validator to accept the complete record before accepting it as release identity. From the exact production checkout, this is a read-only validation:
+For every record matching those two predicates, require the repository D2 validator to accept the complete record before accepting it as release identity. The validation must execute on the production host `server` against the exact production checkout (`/opt/Mobiup/unihub-retail`) and against the exact candidate handle already selected by the `STATE=deployed` + `NEW_SHA=<live production HEAD>` discovery above. This is a read-only validation; the renderer does not write to the database, the repository, or any release record.
 
 ```bash
-cd /opt/Mobiup/unihub-retail
-python3 scripts/render_production_release_notes.py <exact-release.env> >/dev/null
+EXACT_RELEASE_ENV="/opt/Mobiup/ops/backups/retail-deploy/<exact-handle>/release.env"
+
+ssh -o BatchMode=yes server \
+  "cd /opt/Mobiup/unihub-retail &&
+   sudo --non-interactive /usr/bin/python3 \
+     scripts/render_production_release_notes.py \
+     '$EXACT_RELEASE_ENV' >/dev/null"
 ```
+
+`EXACT_RELEASE_ENV` is the exact candidate handle already selected by the preceding `STATE=deployed` + `NEW_SHA=<live production HEAD>` discovery; it must never be substituted with a different handle, a glob, or a relative path. The validation runs on host `server`, against the exact production checkout at `/opt/Mobiup/unihub-retail`. `sudo --non-interactive` is required only for read access to the root-protected D2 handle under `/opt/Mobiup/ops/backups/retail-deploy/...`; the renderer itself remains read-only and does not require additional privileges. If authorized read privilege cannot be obtained on `server`, stop and report the privilege gap rather than copying, `chmod`-ing, or otherwise weakening the permissions of the release record.
 
 The validator requires all schema-v1 fields and checks SHA/SHA-256 formats, canonical timestamps, migration filename, `NEW_SHA=SOURCE_SHA`, and predecessor/rollback release relationships. A matching record that fails validation is invalid; stop rather than treating it as the current release. After full validation, there must still be exactly one valid record matching the live HEAD.
 
