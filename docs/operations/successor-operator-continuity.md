@@ -89,14 +89,14 @@ gh api "repos/anervalens-netizen/unihub-retail/git/tags/$D3_OBJECT_SHA" |
       $p.kind == "unihub-retail-production-promotion" and
       $p.sourceSha == $head and
       $p.releaseId == ("retail-release-" + $head) and
-      ($p.artifactSha256 | test("^[0-9a-f]{64}$")) and
-      ($p.sbomSha256 | test("^[0-9a-f]{64}$")) and
+      ($p.artifactSha256 | test("^[0-9a-f]{64}\\z")) and
+      ($p.sbomSha256 | test("^[0-9a-f]{64}\\z")) and
       (($p.ciRunId | type) == "string") and
-      ($p.ciRunId | test("^[0-9]+$")) and
+      ($p.ciRunId | test("^[0-9]+\\z")) and
       (($p.deployRunId | type) == "string") and
-      ($p.deployRunId | test("^[0-9]+$")) and
+      ($p.deployRunId | test("^[0-9]+\\z")) and
       (($p.migrationHead | type) == "string") and
-      ($p.migrationHead | test("^[0-9]{3}_[A-Za-z0-9_]+\\.sql$"))
+      ($p.migrationHead | test("^[0-9]{3}_[A-Za-z0-9_]+\\.sql\\z"))
     )
   '
 ```
