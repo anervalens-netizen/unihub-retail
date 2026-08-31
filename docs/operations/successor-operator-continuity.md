@@ -67,19 +67,33 @@ STATE=deployed
 NEW_SHA=<current production git HEAD>
 ```
 
-For every record matching those two predicates, require the repository D2 validator to accept the complete record before accepting it as release identity. The validation must execute on the production host `server` against the exact production checkout (`/opt/Mobiup/unihub-retail`) and against the exact candidate handle already selected by the `STATE=deployed` + `NEW_SHA=<live production HEAD>` discovery above. This is a read-only validation; the renderer does not write to the database, the repository, or any release record.
+For every record matching those two predicates, require the repository D2 validator to accept the complete record before accepting it as release identity. The validation must execute on the production host `server` against the exact production checkout (`/opt/Mobiup/unihub-retail`) and against the exact candidate handle already selected by the `STATE=deployed` + `NEW_SHA=<live production HEAD>` discovery above. Keep the privilege boundary narrow: only the exact root-protected `release.env` read is privileged; repository-controlled validator code must execute as the normal Production Host Operator, never as root.
 
 ```bash
 EXACT_RELEASE_ENV="/opt/Mobiup/ops/backups/retail-deploy/<exact-handle>/release.env"
 
 ssh -o BatchMode=yes server \
   "cd /opt/Mobiup/unihub-retail &&
-   sudo --non-interactive /usr/bin/python3 \
-     scripts/render_production_release_notes.py \
-     '$EXACT_RELEASE_ENV' >/dev/null"
+   sudo --non-interactive /bin/cat -- '$EXACT_RELEASE_ENV' |
+   /usr/bin/python3 -c '
+import sys
+from scripts.render_production_release_notes import parse_release_env, validate_deployed_promotion
+
+class BrokeredRelease:
+    def is_file(self):
+        return True
+    def is_symlink(self):
+        return False
+    def read_text(self, encoding=\"utf-8\"):
+        return sys.stdin.read()
+    def __str__(self):
+        return \"<brokered-release.env>\"
+
+validate_deployed_promotion(parse_release_env(BrokeredRelease()))
+'"
 ```
 
-`EXACT_RELEASE_ENV` is the exact candidate handle already selected by the preceding `STATE=deployed` + `NEW_SHA=<live production HEAD>` discovery; it must never be substituted with a different handle, a glob, or a relative path. The validation runs on host `server`, against the exact production checkout at `/opt/Mobiup/unihub-retail`. `sudo --non-interactive` is required only for read access to the root-protected D2 handle under `/opt/Mobiup/ops/backups/retail-deploy/...`; the renderer itself remains read-only and does not require additional privileges. If authorized read privilege cannot be obtained on `server`, stop and report the privilege gap rather than copying, `chmod`-ing, or otherwise weakening the permissions of the release record.
+`EXACT_RELEASE_ENV` is the exact candidate handle already selected by the preceding `STATE=deployed` + `NEW_SHA=<live production HEAD>` discovery; it must never be substituted with a different handle, a glob, or a relative path. The privileged command above is limited to reading that exact promotion record. The repository module is imported and executed by the unprivileged SSH operator, so an operator-writable checkout is never executed as root. The D2 bytes flow only through the validator's stdin and are not printed or persisted by this procedure. If authorized read privilege for the exact D2 path cannot be obtained, stop and report the privilege gap rather than broadening sudo, copying the record, weakening permissions, or running repository code as root.
 
 The validator requires all schema-v1 fields and checks SHA/SHA-256 formats, canonical timestamps, migration filename, `NEW_SHA=SOURCE_SHA`, and predecessor/rollback release relationships. A matching record that fails validation is invalid; stop rather than treating it as the current release. After full validation, there must still be exactly one valid record matching the live HEAD.
 
