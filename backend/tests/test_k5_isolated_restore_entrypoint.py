@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import hashlib
 import subprocess
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[2]
 ENTRYPOINT = ROOT / "ops" / "k5-isolated-restore.sh"
+EXPECTED_ENTRYPOINT_SHA256 = (
+    "eca6b387773cadca3a6da3e9fd7a097d0133e2c8ef89597e5ecf63eb5f52b8d2"
+)
 
 
 def test_k5_restore_entrypoint_has_valid_bash_syntax() -> None:
@@ -16,6 +20,10 @@ def test_k5_restore_entrypoint_has_valid_bash_syntax() -> None:
         text=True,
     )
     assert completed.returncode == 0, completed.stderr
+
+
+def test_k5_restore_entrypoint_digest_is_bound() -> None:
+    assert hashlib.sha256(ENTRYPOINT.read_bytes()).hexdigest() == EXPECTED_ENTRYPOINT_SHA256
 
 
 def test_k5_restore_entrypoint_requires_explicit_execution_acknowledgement() -> None:
