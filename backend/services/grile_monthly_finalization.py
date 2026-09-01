@@ -152,22 +152,18 @@ def _coverage(
         processed_agents,
         errors,
         ports.control_totals(rows),
-        _source_issues(rows),
+        [
+            {
+                "site_code": row.site_code,
+                "store": row.store,
+                "slot": row.slot,
+                "code": row.error_code or "store_read_failed",
+                "field": row.error_field or None,
+            }
+            for row in rows
+            if row.status != "OK"
+        ],
     )
-
-
-def _source_issues(rows: list[ExtractedAgentRow]) -> list[dict[str, Any]]:
-    return [
-        {
-            "site_code": row.site_code,
-            "store": row.store,
-            "slot": row.slot,
-            "code": row.error_code or "store_read_failed",
-            "field": row.error_field or None,
-        }
-        for row in rows
-        if row.status != "OK"
-    ]
 
 
 def _require_complete(
