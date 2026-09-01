@@ -12,6 +12,7 @@ from services.grile_monthly_artifacts import resolve_output_path
 from services.grile_monthly_integrity import (
     MonthlyIntegrityError,
     base_manifest,
+    finalize_manifest,
     relative_artifact,
     validate_verified_manifest,
     verify_artifacts,
@@ -62,6 +63,7 @@ class FinalizationCoverage:
     processed_agents: int
     errors: list[str]
     totals: dict[str, str]
+    issues: list[dict[str, Any]]
 
 
 async def execute_finalization(
@@ -150,7 +152,22 @@ def _coverage(
         processed_agents,
         errors,
         ports.control_totals(rows),
+        _source_issues(rows),
     )
+
+
+def _source_issues(rows: list[ExtractedAgentRow]) -> list[dict[str, Any]]:
+    return [
+        {
+            "site_code": row.site_code,
+            "store": row.store,
+            "slot": row.slot,
+            "code": row.error_code or "store_read_failed",
+            "field": row.error_field or None,
+        }
+        for row in rows
+        if row.status != "OK"
+    ]
 
 
 def _require_complete(
@@ -214,7 +231,7 @@ def _manifest(
     errors: list[str] | None = None,
     status: str = "verified",
 ) -> dict[str, Any]:
-    return base_manifest(
+    manifest = base_manifest(
         month=request.month_key,
         operation="finalize",
         requested_by_sub=request.requested_by_sub,
@@ -227,3 +244,5 @@ def _manifest(
         errors=errors or (),
         status=status,
     )
+    manifest["issues"] = coverage.issues
+    return finalize_manifest(manifest)

@@ -184,6 +184,7 @@ def public_manifest_payload(record: dict[str, Any]) -> dict[str, Any]:
         "expected": manifest.get("expected", {}),
         "processed": manifest.get("processed", {}),
         "error_count": record.get("error_count", 0),
+        "issues": _public_manifest_issues(manifest),
         "manifest_sha256": record.get("manifest_sha256"),
         "approved": bool(record.get("approved_by_sub")),
         "created_at": timestamp(record.get("created_at")),
@@ -191,6 +192,41 @@ def public_manifest_payload(record: dict[str, Any]) -> dict[str, Any]:
         "approved_at": timestamp(record.get("approved_at")),
         "consumed_at": timestamp(record.get("consumed_at")),
     }
+
+
+def _public_manifest_issues(manifest: dict[str, Any]) -> list[dict[str, Any]]:
+    raw_issues = manifest.get("issues")
+    if not isinstance(raw_issues, list):
+        return []
+    issues: list[dict[str, Any]] = []
+    for raw in raw_issues[:200]:
+        if not isinstance(raw, dict):
+            continue
+        site_code = raw.get("site_code")
+        store = raw.get("store")
+        slot = raw.get("slot")
+        code = raw.get("code")
+        field = raw.get("field")
+        if (
+            not isinstance(site_code, str)
+            or not isinstance(store, str)
+            or not isinstance(slot, int)
+            or isinstance(slot, bool)
+            or slot < 0
+            or not isinstance(code, str)
+            or (field is not None and not isinstance(field, str))
+        ):
+            continue
+        issues.append(
+            {
+                "site_code": site_code,
+                "store": store,
+                "slot": slot,
+                "code": code,
+                "field": field,
+            }
+        )
+    return issues
 
 
 async def approve_manifest(

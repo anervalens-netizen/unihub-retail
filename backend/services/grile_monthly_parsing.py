@@ -65,6 +65,7 @@ def error_row(
     *,
     slot: int,
     code: str,
+    field: str = "",
 ) -> ExtractedAgentRow:
     return ExtractedAgentRow(
         site_code=entry.site_code,
@@ -82,6 +83,7 @@ def error_row(
         error_code=code,
         error=code,
         sheet_id=entry.sheet_id,
+        error_field=field,
     )
 
 
@@ -118,7 +120,12 @@ def _parsed_row(
     try:
         values = _numeric_slot_values(slot_ranges, slot_values)
     except MonthlyIntegrityError as exc:
-        return error_row(entry, slot=slot, code=exc.code)
+        field = ""
+        suffix = " is not a valid number"
+        message = str(exc)
+        if exc.code == "invalid_numeric_value" and message.endswith(suffix):
+            field = message[: -len(suffix)]
+        return error_row(entry, slot=slot, code=exc.code, field=field)
     return ExtractedAgentRow(
         site_code=entry.site_code,
         company=entry.company,
