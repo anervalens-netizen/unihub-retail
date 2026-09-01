@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { createElement } from 'react';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { GrileMonthlyPanelModel } from './useGrileMonthlyPanel';
@@ -40,9 +40,15 @@ describe('grileMonthlyIssueLabel', () => {
       permissions: { data: { can_run: true } },
       open: true,
       setOpen: vi.fn(),
-      job: null,
+      job: { jobId: 'grile-monthly:11', op: 'finalize', dryRun: false },
       running: false,
-      result: null,
+      result: {
+        op: 'finalize',
+        month_label: 'August 2026',
+        status: 'failed',
+        output: 'finalization_incomplete',
+        exit_code: -1,
+      },
       error: null,
       manifest: {
         id: 8,
@@ -58,7 +64,7 @@ describe('grileMonthlyIssueLabel', () => {
       },
       approveManifest: vi.fn(),
       approving: false,
-      approvedManifestId: null,
+      approvedManifestId: 10,
       trigger: vi.fn(),
       downloading: null,
       download: vi.fn(),
@@ -69,5 +75,36 @@ describe('grileMonthlyIssueLabel', () => {
     expect(screen.getByText(/Manifest finalizare \(failed\): 66\/71 magazine/)).toBeTruthy();
     expect(screen.getByText('SITE1 · Magazin 1 · agent 1 · ore lucrate')).toBeTruthy();
     expect(screen.getByText('+ 1 probleme suplimentare')).toBeTruthy();
+    expect(screen.getByText('finalization_incomplete')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: /Finalizeaza salarii/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Exporta arhiva/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Reset \(simulare\)/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Reset LIVE/ }));
+    expect(model.trigger).toHaveBeenNthCalledWith(1, 'finalize', false);
+    expect(model.trigger).toHaveBeenNthCalledWith(2, 'archive', false);
+    expect(model.trigger).toHaveBeenNthCalledWith(3, 'reset', true);
+    expect(model.trigger).toHaveBeenNthCalledWith(4, 'reset', false);
+
+    fireEvent.click(screen.getByRole('button', { name: /Descarca Excel final/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Descarca arhiva ZIP/ }));
+    expect(model.download).toHaveBeenNthCalledWith(1, 'final');
+    expect(model.download).toHaveBeenNthCalledWith(2, 'archive');
+
+    fireEvent.click(screen.getByRole('button', { name: /Inchidere luna/ }));
+    expect(model.setOpen).toHaveBeenCalledWith(false);
+  });
+
+  it('hides the panel when the authenticated user cannot run monthly operations', () => {
+    const model = {
+      permissions: { data: { can_run: false } },
+    } as unknown as GrileMonthlyPanelModel;
+
+    const { container } = render(createElement(GrileMonthlyPanelView, {
+      month: '2026-08',
+      model,
+    }));
+
+    expect(container).toBeEmptyDOMElement();
   });
 });
