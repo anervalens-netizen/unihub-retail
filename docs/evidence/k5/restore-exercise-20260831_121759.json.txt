@@ -1,0 +1,210 @@
+{
+  "schemaVersion": "k5/1",
+  "kind": "restore-exercise-evidence",
+  "exerciseId": "k5-20260831_121759-20260831T201926Z-701630",
+  "githubMainAtStart": "d5b26807d9c4ea0a5832c75bba3d36801b92cb23",
+  "sourceReleaseSha": "2ef24fd86a4ade08e185a42bc50173a839becf1e",
+  "sourceMigrationHead": "069_ai_cohort_and_transactional_outbox.sql",
+  "sourceBackupId": "20260831_121759",
+  "backupStartedAt": "2026-08-31T09:17:59Z",
+  "backupCompletedAt": "2026-08-31T09:19:01Z",
+  "sourceIntegrityStatus": "verified",
+  "sourceComponentCount": 8,
+  "sourceChecksums": {
+    "unihub": "41b6d1b498bf00198e13e32aab8110b0deb5797d3e845fc3b8d7d474481bfea6",
+    "mobiup_dwh": "fc8aacde9a3b736f1b05dac1f9f33ad1dcaaa1aec2eaf300a25701019e7c1eb1",
+    "unihub_identity": "2ad2ab3b2016cd5061a0c94462379ff1dbe0b4913b90b3397302b5dca5b265be",
+    "unihub_retail": "eec5d0c68d0324c811e6196b24f7d499983d3185bb00f2f1ecc86bc7a6228e99",
+    "unihub_learning": "00e77b35b6af00090713b3c9b13b1a8690f0d2b5cb9fd0b342749374881dbcc7",
+    "authentik": "69e591c28df6269def1ccbac060f29e0660aae051caf57d8abde564a1db7461c",
+    "glitchtip": "1b0b12bab055afbb50a0f2c8f122615d9cd346fcec7880bab3a11211fcad4baa",
+    "visits": "68ed344b48fc0a4fd001ec135cc4372d845b0c35bce59644ad944bacf792e5ff"
+  },
+  "crossDatabaseSnapshotAtomic": false,
+  "referenceFailureAt": "2026-08-31T20:20:58Z",
+  "rpoDefinition": "conservative-generation-age-upper-bound",
+  "rpoUpperBoundSeconds": 39779,
+  "completedGenerationAgeSeconds": 39717,
+  "restoreStartedAt": "2026-08-31T20:20:58Z",
+  "readyAt": "2026-08-31T20:28:27Z",
+  "rtoDefinition": "wall-clock-from-payload-transfer-start-to-restored-service-acceptance",
+  "rtoSeconds": 449,
+  "restoreTargetType": "disposable-docker-on-dell",
+  "restoreTargetHost": "dell-standby",
+  "postgresImage": "postgres:18-alpine",
+  "postgresImageDigest": "sha256:9a8afca54e7861fd90fab5fdf4c42477a6b1cb7d293595148e674e0a3181de15",
+  "postgresMajorVersion": 18,
+  "postgresContainerName": "k5-20260831_121759-20260831T201926Z-701630-pg",
+  "postgresPort": 55433,
+  "referenceDrillSha256": "a5de3ed7803253abcbde0aa66885de5380279f133ee01bd20fd4db5bf19599af",
+  "rolePrecreationApproach": "extract TO unihub_* from schema-only pg_restore, CREATE ROLE without privileges",
+  "precreatedRoles": [
+    "unihub_business_write",
+    "unihub_operations",
+    "unihub_salary_export",
+    "unihub_web_read"
+  ],
+  "postgresRestoreStatus": {
+    "overall": "pass",
+    "databases": [
+      {
+        "label": "unihub",
+        "database": "dr_unihub",
+        "exitCode": 0,
+        "startedAt": "2026-08-31T20:23:25Z",
+        "completedAt": "2026-08-31T20:24:30Z",
+        "durationSeconds": 65,
+        "relationCount": 363,
+        "status": "pass"
+      },
+      {
+        "label": "mobiup_dwh",
+        "database": "dr_mobiup_dwh",
+        "exitCode": 0,
+        "startedAt": "2026-08-31T20:24:30Z",
+        "completedAt": "2026-08-31T20:24:53Z",
+        "durationSeconds": 23,
+        "relationCount": 237,
+        "status": "pass"
+      },
+      {
+        "label": "unihub_identity",
+        "database": "dr_unihub_identity",
+        "exitCode": 0,
+        "startedAt": "2026-08-31T20:24:53Z",
+        "completedAt": "2026-08-31T20:24:54Z",
+        "durationSeconds": 1,
+        "relationCount": 215,
+        "status": "pass"
+      },
+      {
+        "label": "unihub_retail",
+        "database": "dr_unihub_retail",
+        "exitCode": 0,
+        "startedAt": "2026-08-31T20:24:54Z",
+        "completedAt": "2026-08-31T20:24:56Z",
+        "durationSeconds": 2,
+        "relationCount": 250,
+        "status": "pass"
+      },
+      {
+        "label": "unihub_learning",
+        "database": "dr_unihub_learning",
+        "exitCode": 0,
+        "startedAt": "2026-08-31T20:24:57Z",
+        "completedAt": "2026-08-31T20:24:57Z",
+        "durationSeconds": 1,
+        "relationCount": 247,
+        "status": "pass"
+      },
+      {
+        "label": "authentik",
+        "database": "dr_authentik",
+        "exitCode": 0,
+        "startedAt": "2026-08-31T20:24:57Z",
+        "completedAt": "2026-08-31T20:25:05Z",
+        "durationSeconds": 8,
+        "relationCount": 428,
+        "status": "pass"
+      },
+      {
+        "label": "glitchtip",
+        "database": "dr_glitchtip",
+        "exitCode": 0,
+        "startedAt": "2026-08-31T20:25:05Z",
+        "completedAt": "2026-08-31T20:25:59Z",
+        "durationSeconds": 54,
+        "relationCount": 2313,
+        "status": "pass"
+      }
+    ]
+  },
+  "visitsRestoreStatus": {
+    "checksumMatch": true,
+    "integrityCheck": "ok",
+    "tableCount": 1
+  },
+  "migrationVerificationStatus": {
+    "manifestVersion": 2,
+    "migrationHead": "069_ai_cohort_and_transactional_outbox.sql",
+    "migrationCount": 69,
+    "allChecksumsMatch": true,
+    "noMigrationExecuted": true
+  },
+  "businessIntegritySampleStatus": {
+    "tableCounts": {
+      "stores": 121,
+      "agent_targets": 192,
+      "historical_monthly_sales": 5292,
+      "grile_runs": 176,
+      "incentive_campaigns": 6
+    },
+    "fingerprintSha256": "1d5d07eea03cfadce933cad5d7ba345201c62d794738395ad03fc6328f413e93",
+    "repeatFingerprintMatch": true
+  },
+  "applicationStartStatus": {
+    "status": "pass",
+    "sourceSha": "2ef24fd86a4ade08e185a42bc50173a839becf1e",
+    "environmentMode": "development",
+    "databaseAuthorityScope": "development/no-process-authority",
+    "externalIdentityDependenciesEnabled": false,
+    "pythonRuntime": "Python 3.12.3",
+    "environmentCategoriesUsed": [
+      "UNIHUB_ENV=development",
+      "DATABASE_URL=postgresql://postgres:[REDACTED]@127.0.0.1:55433/dr_unihub",
+      "DB_POOL_MIN_SIZE=1",
+      "DB_POOL_MAX_SIZE=3",
+      "DASHBOARD_GLOBAL_COMPONENT_CONCURRENCY=1",
+      "RETAIL_VISITS_READ_SOURCE=postgres",
+      "RETAIL_VISITS_SHADOW_COMPARE_ENABLED=false",
+      "HOST=127.0.0.1",
+      "PORT=9899"
+    ],
+    "excludedEnvironmentVariables": [
+      "OIDC_ISSUER",
+      "OIDC_JWKS_URL",
+      "OIDC_AUDIENCE",
+      "OIDC_CLIENT_ID",
+      "OIDC_CLIENT_SECRET",
+      "SESSION_ENCRYPTION_KEY",
+      "SESSION_VALKEY_URL",
+      "RATE_LIMIT_VALKEY_URL",
+      "RATE_LIMIT_KEY_HMAC_SECRET",
+      "BACKEND_SENTRY_DSN",
+      "SENTRY_DSN",
+      "UNIHUB_DB_PROCESS_AUTHORITY"
+    ]
+  },
+  "livezStatus": {
+    "httpCode": 200,
+    "body": {
+      "status": "alive"
+    }
+  },
+  "healthStatus": {
+    "httpCode": 200,
+    "body": {
+      "status": "ok"
+    }
+  },
+  "readinessStatus": {
+    "httpCode": 200,
+    "body": {
+      "status": "ok"
+    },
+    "dependencyScope": {
+      "postgresqlRestoredDbExercised": true,
+      "sessionBackendDisabled": true,
+      "oidcJwksDisabled": true,
+      "productionValkeySessionSemanticsNotExercised": true,
+      "productionDbProcessAuthoritySemanticsNotExercised": true
+    }
+  },
+  "productionMutation": false,
+  "sourceBackupMutation": false,
+  "migrationExecution": false,
+  "cleanupStatus": "pass",
+  "result": "pass",
+  "failurePhase": null,
+  "failureReason": null
+}
