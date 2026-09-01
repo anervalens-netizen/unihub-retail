@@ -226,7 +226,7 @@ This runbook stores roles, never credentials.
 | DNS/Tunnel Administrator | Cloudflare DNS/tunnel | Usually no | Required for DNS/tunnel changes |
 | Reverse Proxy Administrator | Caddy routing/topology | Usually no | Required for proxy changes |
 | Monitoring Administrator | Prometheus/Alertmanager/Grafana/GlitchTip configuration | Usually no | Required for monitoring configuration changes |
-| Backup / Disaster Recovery Administrator | Backup retention and restore/recovery | Verification only | Real restore is separately authorized and currently owned by K5 |
+| Backup / Disaster Recovery Administrator | Backup retention and restore/recovery | Verification only | Any restore that reads protected backup payloads or mutates a target requires explicit DR authorization; production recovery has an additional coordinated-production boundary |
 
 If an account or credential is unavailable, do not bypass the boundary. Escalate to the corresponding role owner.
 
@@ -333,20 +333,62 @@ ssh -o BatchMode=yes server "sudo awk -F= '\
 
 The current externally installed backup implementation has been verified to cover the PostgreSQL service portfolio plus the visits SQLite data and to maintain local copies plus off-host NAS replication. Retention is handled by `/opt/Mobiup/ops/scripts/backup-retention.sh` and is based on complete/checksum-verified generations. Treat these as external operational facts and revalidate the installed scripts before relying on them for a destructive operation.
 
-### Restore boundary — intentional fail-closed gap
+### Canonical isolated full-data restore verification procedure
 
-**There is currently no canonical maintained full database restore runbook/entrypoint.** The server contains recovery/probe helpers, but they do not constitute a full PostgreSQL + visits restore procedure.
+K5 established and exercised a maintained procedure for restoring the complete observed backup generation into an **isolated non-production target**. The reference evidence is:
 
-Therefore this K3 runbook does **not** provide guessed `pg_restore`, drop/create, service-quiesce or in-place restore commands. A real restore is potentially destructive and belongs to **Issue #231 / K5 — real disaster-recovery restore exercise and evidence** under the **Backup / Disaster Recovery Administrator** role and explicit execution authorization.
+```text
+docs/evidence/k5/restore-exercise-20260831_121759.json
+```
 
-If a restore is required before K5 closes:
+Reference evidence identity:
 
-1. preserve the failing state and evidence;
-2. identify the required data scope and last known verified backup generation;
-3. do not overwrite production based on an improvised procedure;
-4. escalate for an explicitly authorized DR operation.
+```text
+source backup id: 20260831_121759
+source release: 2ef24fd86a4ade08e185a42bc50173a839becf1e
+source migration head: 069_ai_cohort_and_transactional_outbox.sql
+generation manifest SHA-256: 40ee5cc7e25d51b26e688b90f2da7b2873d8642dd7536a035a1e1cdb1b4ec597
+source migration manifest SHA-256: 875c83480cc87feba6cc09dad644c2b9f897fa0a95f4ba55c560245a7b68b544
+evidence JSON SHA-256: aad9f86b3f6095b2adcdd393bc685b48b7d3cf195efb36cacd0151388d70fbf7
+```
 
-A non-destructive NAS sample restore probe is evidence about backup availability, not evidence that the complete application can be restored.
+The observed recoverable generation contains seven PostgreSQL custom-format database dumps plus one visits SQLite component. PostgreSQL dumps are produced serially, so the generation is **not** an atomic cross-database snapshot.
+
+The supported isolated verification sequence is:
+
+1. **Revalidate authority and scope.** Read current GitHub `main`, the exact restore request, and the applicable authorization. An isolated drill may read/copy protected backup payloads only when explicitly authorized. A production restore requires separate coordinated-production authorization.
+2. **Bind the source generation.** Select one exact completed/checksum-verified generation by immutable identifier, record `backupStartedAt` and `backupCompletedAt`, bind it to the release that was live when that generation was taken, and record the source release migration manifest/head. Never infer source release from a later deploy merely because timestamps are close.
+3. **Verify source integrity before use.** Verify the selected generation manifest and each component checksum without altering source artifacts. Record the generation-manifest digest. Stop on any mismatch, missing component or ambiguous generation identity.
+4. **Copy only the selected generation to isolated storage.** Preserve source artifacts unchanged. The destination must be disposable/non-production and must not reuse a production or streaming-standby PostgreSQL target.
+5. **Create an isolated PostgreSQL target of the required major version.** The K5 reference exercise used PostgreSQL 18. If schema-only restore inspection shows required `unihub_*` owner/grantee roles, pre-create only those role names without production credentials or privileges needed outside the isolated target.
+6. **Restore every PostgreSQL component independently.** Use the custom-format restore path with fail-closed semantics equivalent to `pg_restore --no-owner --no-acl --exit-on-error`. Each component gets its own isolated database. Record start/end, exit code and a bounded relation-count sanity result for each database. Any non-zero restore exits the exercise as failed.
+7. **Restore and validate visits SQLite.** Verify the copied component checksum, open only the isolated copy, and require `PRAGMA integrity_check` to return `ok`.
+8. **Verify migration/history coherence without executing migrations.** Against the restored Retail database, compare restored `schema_migrations` with `backend/db/migrations/manifest.json` from the exact source release: manifest version, migration count, head and every migration checksum must match. Do not run migrations merely to make the exercise pass.
+9. **Run a bounded business-integrity sample.** Use non-sensitive aggregate counts or equivalent stable checks from restored copies only. Record a deterministic fingerprint and repeat it; the repeated fingerprint must match. Do not store row-level business/customer/salary data in evidence.
+10. **Boot the exact source application against the restored Retail database in isolation.** Use localhost-only development/runtime settings and a non-secret isolated DSN. Production OIDC, Valkey/session, Sentry and DB-process-authority configuration are not required for this acceptance gate unless the exercise explicitly isolates and tests them.
+11. **Record acceptance probes separately.** `/livez` proves process liveness. `/health` and `/readyz` prove only the dependencies configured in the isolated runtime. Evidence must explicitly state which production dependency semantics were not exercised.
+12. **Measure RPO/RTO from timestamps, not estimates.** Because the database dumps are serial, the conservative generation-age RPO upper bound is `referenceFailureAt - backupStartedAt`; also record `referenceFailureAt - backupCompletedAt` as completed-generation age. RTO is wall-clock `readyAt - restoreStartedAt`, where `restoreStartedAt` includes payload transfer into the authorized isolated exercise and `readyAt` is the first successful defined acceptance gate.
+13. **Write sanitized machine-readable evidence.** Record source identity/digests, target type, per-component restore outcomes, migration verification, bounded business sample, readiness scope, RPO/RTO, mutation flags, cleanup status and final PASS/FAIL. No passwords, tokens, credential-bearing DSNs, personal data, salary values, row-level customer/business data or private backup payload paths belong in Git.
+14. **Clean up the isolated target.** Remove disposable containers/volumes/workdirs after evidence capture and verify no exercise-named resources remain. Cleanup occurs after the service-recovery RTO measurement.
+
+The K5 reference exercise passed this sequence with eight components, seven successful PostgreSQL restores, visits integrity `ok`, 69/69 migration checksum matches, a repeated bounded business fingerprint match, localhost application start, `/livez`/`/health`/`/readyz` HTTP 200 within the disclosed isolated dependency scope, conservative RPO upper bound `39779` seconds and wall-clock RTO `449` seconds. The evidence explicitly records `productionMutation=false`, `sourceBackupMutation=false` and `migrationExecution=false`.
+
+### Production recovery boundary
+
+The isolated procedure above proves that the complete observed PostgreSQL + visits backup generation can be restored and accepted without private operator memory. It is **not** an automatic or in-place production restore command.
+
+A real production recovery must additionally define and authorize, for the exact incident:
+
+- affected services/consumers and required write quiescence;
+- the exact recovery reference point and acceptable data-loss window;
+- cross-database consistency implications because the generation is not atomic across databases;
+- treatment of writes that occurred after the selected backup began;
+- target topology and cutover/rollback plan;
+- service restart/start ordering and post-cutover production readiness/observability acceptance.
+
+Do not execute an in-place production restore, stop services, mutate mounts, run migrations, alter backup retention or delete/replace source artifacts merely because this runbook exists. Those are separate production mutations and require explicit authorization at execution time.
+
+A non-destructive NAS sample restore probe remains evidence about backup availability only; it is not a substitute for the complete isolated procedure above.
 
 ## 7. Worker and dependency verification
 
@@ -398,7 +440,7 @@ Without a separately authorized, documented exception:
 - no secret copied into GitHub, chat, logs or documentation;
 - no permission weakening (`chmod 777`, broad sudo, Docker access, shared credentials) to bypass an ownership problem;
 - no Cloudflare/Caddy/Authentik/monitoring mutation merely because a downstream health probe failed;
-- no improvised full restore until a reviewed DR procedure exists and the operation is explicitly authorized;
+- no in-place/full production restore merely because the isolated DR procedure exists; production recovery requires incident-specific authorization and coordination;
 - no squash/rebase merge for repository changes; the repository policy requires merge commits.
 
 Break-glass remains limited by ADR-006 and is not a convenience path.
@@ -417,7 +459,8 @@ Break-glass remains limited by ADR-006 and is not a convenience path.
 | backup gate fails/stale | `status`, `checksum_ok`, `completed_at`, backup script/log evidence | rerun deploy or weaken gate |
 | service identity verifier fails | exact verifier error plus live-root canonicalization result | run provisioning `apply` automatically |
 | CI/check fails | exact run → job → step → log/root cause | blind rerun |
-| restore is requested | required data scope, verified backup evidence, K5 status | improvise `pg_restore` on production |
+| isolated restore verification is requested | exact source generation/release, explicit DR authorization, section 6 procedure | improvise against production or a streaming standby |
+| production restore is requested | incident data scope, verified backup generation, write/quiescence/cross-database plan, explicit production authorization | execute the isolated drill steps in-place |
 
 For any new commit, old SHA-bound CI/review evidence is stale. For an unchanged SHA/tree, do not rerun expensive verification ritualistically.
 
@@ -487,7 +530,7 @@ A successor who can complete the following without private memory has enough ori
 - [ ] identify the credential-free Prometheus readiness/JWKS signals;
 - [ ] verify service identities and env-file ownership without reading secret values;
 - [ ] verify backup completion manifest fields without executing backup;
-- [ ] explain why a full restore is blocked on the K5 canonical DR procedure rather than improvising one;
+- [ ] locate the canonical K5 isolated restore evidence, explain the non-atomic cross-database RPO definition, and distinguish isolated restore verification from separately authorized production recovery;
 - [ ] identify the administrator role for GitHub, host, Authentik, DNS/tunnel, proxy, monitoring and backup/DR;
 - [ ] explain ChatGPT vs Dell/server execution ownership;
 - [ ] resume Issue #226 and select the first open, unblocked child.
