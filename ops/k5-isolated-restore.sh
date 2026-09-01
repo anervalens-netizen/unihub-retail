@@ -44,6 +44,18 @@ RESULT="fail"
 FAILURE_REASON=""
 CLEANUP_STATUS="pending"
 SOURCE_BACKUP_MUTATION="false"
+EVIDENCE_CREATED=0
+EVIDENCE_DEVICE=""
+EVIDENCE_INODE=""
+CONTAINER_CREATED=0
+VOLUME_CREATED=0
+DOCKER_RM_STATUS="not-created"
+DOCKER_VOLUME_RM_STATUS="not-created"
+DOCKER_PS_STATUS="not-run"
+DOCKER_VOLUME_LS_STATUS="not-run"
+REFERENCE_FAILURE_AT=""
+RESTORE_STARTED_MONOTONIC_NS=""
+READY_MONOTONIC_NS=""
 
 usage() {
   cat <<'EOF'
@@ -74,12 +86,61 @@ EOF
 }
 
 die() {
+  FAILURE_REASON="$*"
+  RESULT="fail"
   printf 'K5 isolated restore: %s\n' "$*" >&2
   exit 1
 }
 
 require_cmd() {
   command -v "$1" >/dev/null 2>&1 || die "required command not found: $1"
+}
+
+write_initial_evidence() {
+  local parent
+  parent="$(dirname -- "$EVIDENCE_OUT")"
+  mkdir -p -- "$parent" || die "cannot create evidence parent: $parent"
+  [ "$(realpath -e -- "$parent")" = "$parent" ] ||
+    die "evidence parent must not be a symlink: $parent"
+  python3 - "$EVIDENCE_OUT" "$EXERCISE_ID" "$GITHUB_MAIN_SHA" "$SOURCE_SHA" \
+    "$STAMP" "$BACKUP_STARTED_AT" "$BACKUP_COMPLETED_AT" "$REFERENCE_FAILURE_AT" <<'PY'
+import json
+import os
+import sys
+from pathlib import Path
+path, exercise_id, github_main, source_sha, stamp, backup_started, backup_completed, reference_failure = sys.argv[1:]
+payload = {
+    "schemaVersion": "k5/1",
+    "kind": "restore-exercise-evidence",
+    "exerciseId": exercise_id,
+    "githubMainAtStart": github_main,
+    "sourceReleaseSha": source_sha,
+    "sourceBackupId": stamp,
+    "backupStartedAt": backup_started,
+    "backupCompletedAt": backup_completed,
+    "referenceFailureAt": reference_failure,
+    "sourceIntegrityStatus": "not-verified",
+    "productionMutation": False,
+    "sourceBackupMutation": False,
+    "migrationExecution": False,
+    "cleanupStatus": "pending",
+    "result": "fail",
+    "failurePhase": "preflight",
+    "failureReason": "exercise did not complete",
+}
+data = (json.dumps(payload, indent=2) + "\n").encode("utf-8")
+flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW
+fd = os.open(path, flags, 0o600)
+try:
+    with os.fdopen(fd, "wb") as output:
+        output.write(data)
+    fd = -1
+finally:
+    if fd != -1:
+        os.close(fd)
+PY
+  EVIDENCE_CREATED=1
+  read -r EVIDENCE_DEVICE EVIDENCE_INODE < <(stat -c '%d %i' -- "$EVIDENCE_OUT")
 }
 
 while [ "$#" -gt 0 ]; do
@@ -112,14 +173,21 @@ done
 [ -n "$BACKUP_STARTED_AT" ] || die "--backup-started-at is required"
 [ -n "$BACKUP_COMPLETED_AT" ] || die "--backup-completed-at is required"
 [ -n "$EVIDENCE_OUT" ] || die "--evidence-out is required"
+if [ -e "$EVIDENCE_OUT" ] || [ -L "$EVIDENCE_OUT" ]; then
+  die "--evidence-out must not already exist or be a symlink"
+fi
 
 [[ "$STAMP" =~ ^[0-9]{8}_[0-9]{6}$ ]] || die "--stamp must be YYYYMMDD_HHMMSS"
 [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]] || die "--source-sha must be a lowercase 40-char SHA"
 [[ "$GITHUB_MAIN_SHA" =~ ^[0-9a-f]{40}$ ]] || die "--github-main-sha must be a lowercase 40-char SHA"
 [[ "$PG_PORT" =~ ^[0-9]+$ ]] || die "--pg-port must be numeric"
 [[ "$APP_PORT" =~ ^[0-9]+$ ]] || die "--app-port must be numeric"
-[ "$PG_PORT" -ge 1024 ] && [ "$PG_PORT" -le 65535 ] || die "--pg-port out of range"
-[ "$APP_PORT" -ge 1024 ] && [ "$APP_PORT" -le 65535 ] || die "--app-port out of range"
+if [ "$PG_PORT" -lt 1024 ] || [ "$PG_PORT" -gt 65535 ]; then
+  die "--pg-port out of range"
+fi
+if [ "$APP_PORT" -lt 1024 ] || [ "$APP_PORT" -gt 65535 ]; then
+  die "--app-port out of range"
+fi
 [ "$PG_PORT" -ne "$APP_PORT" ] || die "PostgreSQL and application ports must differ"
 
 for command_name in bash python3 git sha256sum realpath stat cp docker openssl curl \
@@ -127,10 +195,19 @@ for command_name in bash python3 git sha256sum realpath stat cp docker openssl c
   require_cmd "$command_name"
 done
 
+EVIDENCE_OUT_INPUT="$EVIDENCE_OUT"
+EVIDENCE_PARENT_INPUT="$(dirname -- "$EVIDENCE_OUT_INPUT")"
+if [ -e "$EVIDENCE_PARENT_INPUT" ] &&
+  [ "$(realpath -e -- "$EVIDENCE_PARENT_INPUT")" != "$(realpath -m -- "$EVIDENCE_PARENT_INPUT")" ]; then
+  die "evidence parent must not traverse a symlink"
+fi
 BACKUP_ROOT="$(realpath -e -- "$BACKUP_ROOT")"
 SOURCE_REPO="$(realpath -e -- "$SOURCE_REPO")"
 WORK_ROOT="$(realpath -e -- "$WORK_ROOT")"
 EVIDENCE_OUT="$(realpath -m -- "$EVIDENCE_OUT")"
+if [ -e "$EVIDENCE_OUT" ] || [ -L "$EVIDENCE_OUT" ]; then
+  die "--evidence-out must not already exist or be a symlink"
+fi
 readonly BACKUP_ROOT SOURCE_REPO WORK_ROOT EVIDENCE_OUT
 
 case "$WORK_ROOT/" in
@@ -142,6 +219,58 @@ case "$EVIDENCE_OUT" in
     ;;
 esac
 
+EXERCISE_ID="k5-${STAMP}-$(date -u +%Y%m%dT%H%M%SZ)-$$"
+CONTAINER="${EXERCISE_ID}-pg"
+VOLUME="${EXERCISE_ID}-pgdata"
+REFERENCE_FAILURE_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+readonly EXERCISE_ID CONTAINER VOLUME REFERENCE_FAILURE_AT
+write_initial_evidence
+
+update_early_failure_evidence() {
+  [ "$EVIDENCE_CREATED" -eq 1 ] || return 0
+  python3 - "$EVIDENCE_OUT" "$EVIDENCE_DEVICE" "$EVIDENCE_INODE" \
+    "$CURRENT_PHASE" "$FAILURE_REASON" <<'PY'
+import json
+import os
+import stat
+import sys
+from pathlib import Path
+path = Path(sys.argv[1])
+expected_device, expected_inode = int(sys.argv[2]), int(sys.argv[3])
+def verify_owned_path():
+    if not path.exists():
+        raise SystemExit("evidence output is missing during early failure")
+    current = os.lstat(path)
+    if stat.S_ISLNK(current.st_mode) or (current.st_dev, current.st_ino) != (expected_device, expected_inode):
+        raise SystemExit("evidence output was replaced during early failure")
+
+verify_owned_path()
+with path.open("r", encoding="utf-8") as source:
+    payload = json.load(source)
+payload["result"] = "fail"
+payload["failurePhase"] = sys.argv[4] or "preflight"
+payload["failureReason"] = sys.argv[5] or f"phase {payload['failurePhase']} failed"
+temporary = path.with_name(f".{path.name}.early.{os.getpid()}.tmp")
+try:
+    temporary.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    os.chmod(temporary, 0o600)
+    verify_owned_path()
+    temporary.replace(path)
+finally:
+    temporary.unlink(missing_ok=True)
+PY
+}
+
+early_failure_cleanup() {
+  local exit_rc=$?
+  set +e
+  if [ "$exit_rc" -ne 0 ]; then
+    update_early_failure_evidence || true
+  fi
+  exit "$exit_rc"
+}
+trap early_failure_cleanup EXIT
+
 [ -d "$BACKUP_ROOT" ] || die "backup root is not a directory"
 [ -d "$SOURCE_REPO/.git" ] || die "source repo is not a git checkout"
 [ -d "$WORK_ROOT" ] || die "work root is not a directory"
@@ -149,7 +278,8 @@ esac
 git -C "$SOURCE_REPO" cat-file -e "${SOURCE_SHA}^{commit}" 2>/dev/null ||
   die "source release commit is not available locally: $SOURCE_SHA"
 
-python3 - "$BACKUP_STARTED_AT" "$BACKUP_COMPLETED_AT" <<'PY'
+CURRENT_PHASE="timestamp-validation"
+if ! timestamp_error="$(python3 - "$BACKUP_STARTED_AT" "$BACKUP_COMPLETED_AT" "$REFERENCE_FAILURE_AT" 2>&1 <<'PY'
 import datetime as dt
 import sys
 values = []
@@ -158,10 +288,19 @@ for raw in sys.argv[1:]:
     if value.tzinfo is None:
         raise SystemExit("timestamps must include timezone")
     values.append(value.astimezone(dt.timezone.utc))
-if values[1] < values[0]:
+started, completed, reference = values
+if completed < started:
     raise SystemExit("backup completion precedes backup start")
+if completed > reference:
+    raise SystemExit("backup completion follows reference failure")
 PY
+)"; then
+  FAILURE_REASON="$timestamp_error"
+  printf '%s\n' "$timestamp_error" >&2
+  exit 1
+fi
 
+CURRENT_PHASE="port-validation"
 python3 - "$PG_PORT" "$APP_PORT" <<'PY'
 import socket
 import sys
@@ -174,27 +313,15 @@ for raw in sys.argv[1:]:
             raise SystemExit(f"loopback port {port} is not free: {exc}")
 PY
 
-MANIFEST="$BACKUP_ROOT/manifests/generation_${STAMP}.sha256"
-[ -f "$MANIFEST" ] || die "generation manifest not found: $MANIFEST"
-readonly MANIFEST
-
 WORK="$(mktemp -d -p "$WORK_ROOT" k5-isolated-restore-XXXXXXXX)"
 SOURCE_DIR="$WORK/source"
 mkdir -p "$WORK/in/postgres" "$WORK/in/visits" "$WORK/out" "$WORK/home" "$SOURCE_DIR"
 readonly WORK SOURCE_DIR
 
-EXERCISE_ID="k5-${STAMP}-$(date -u +%Y%m%dT%H%M%SZ)-$$"
-CONTAINER="${EXERCISE_ID}-pg"
-VOLUME="${EXERCISE_ID}-pgdata"
 PASSWORD="$(openssl rand -hex 24)"
-readonly EXERCISE_ID CONTAINER VOLUME PASSWORD
+readonly PASSWORD
 
-if docker ps -a --format '{{.Names}}' | grep -Fxq "$CONTAINER"; then
-  die "refusing to reuse existing container: $CONTAINER"
-fi
-if docker volume ls --format '{{.Name}}' | grep -Fxq "$VOLUME"; then
-  die "refusing to reuse existing volume: $VOLUME"
-fi
+trap - EXIT
 
 record_failure() {
   local rc=$?
@@ -205,27 +332,56 @@ record_failure() {
 }
 trap record_failure ERR
 
+capture_evidence_identity() {
+  [ -e "$EVIDENCE_OUT" ] && [ ! -L "$EVIDENCE_OUT" ] || return 1
+  read -r EVIDENCE_DEVICE EVIDENCE_INODE < <(stat -c '%d %i' -- "$EVIDENCE_OUT")
+}
+
 update_final_evidence() {
-  [ -f "$EVIDENCE_OUT" ] || return 0
-  python3 - "$EVIDENCE_OUT" "$CLEANUP_STATUS" "$SOURCE_BACKUP_MUTATION" "$RESULT" \
-    "$CURRENT_PHASE" "$FAILURE_REASON" <<'PY'
+  [ "$EVIDENCE_CREATED" -eq 1 ] || return 0
+  python3 - "$EVIDENCE_OUT" "$EVIDENCE_DEVICE" "$EVIDENCE_INODE" \
+    "$CLEANUP_STATUS" "$SOURCE_BACKUP_MUTATION" "$RESULT" \
+    "$CURRENT_PHASE" "$FAILURE_REASON" "$DOCKER_RM_STATUS" "$DOCKER_VOLUME_RM_STATUS" \
+    "$DOCKER_PS_STATUS" "$DOCKER_VOLUME_LS_STATUS" <<'PY'
 import json
 import os
+import stat
 import sys
 from pathlib import Path
 path = Path(sys.argv[1])
-payload = json.loads(path.read_text(encoding="utf-8"))
-payload["cleanupStatus"] = sys.argv[2]
-payload["sourceBackupMutation"] = sys.argv[3] == "true"
-payload["result"] = sys.argv[4]
+expected = (int(sys.argv[2]), int(sys.argv[3]))
+def verify_owned_path():
+    if not path.exists():
+        raise SystemExit("evidence output is missing during cleanup")
+    current = os.lstat(path)
+    if stat.S_ISLNK(current.st_mode) or (current.st_dev, current.st_ino) != expected:
+        raise SystemExit("evidence output was replaced during cleanup")
+
+verify_owned_path()
+with path.open("r", encoding="utf-8") as source:
+    payload = json.load(source)
+payload["cleanupStatus"] = sys.argv[4]
+payload["sourceBackupMutation"] = sys.argv[5] == "true"
+payload["result"] = sys.argv[6]
+payload["dockerCleanup"] = {
+    "containerRemoval": sys.argv[9],
+    "volumeRemoval": sys.argv[10],
+    "containerListing": sys.argv[11],
+    "volumeListing": sys.argv[12],
+}
 if payload["result"] != "pass":
-    payload["failurePhase"] = payload.get("failurePhase") or sys.argv[5]
-    payload["failureReason"] = payload.get("failureReason") or sys.argv[6] or "exercise failed"
-temporary = path.with_name(path.name + ".tmp")
-temporary.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
-os.chmod(temporary, 0o600)
-temporary.replace(path)
+    payload["failurePhase"] = sys.argv[7] or payload.get("failurePhase") or "unknown"
+    payload["failureReason"] = sys.argv[8] or "exercise failed"
+temporary = path.with_name(f".{path.name}.final.{os.getpid()}.tmp")
+try:
+    temporary.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    os.chmod(temporary, 0o600)
+    verify_owned_path()
+    temporary.replace(path)
+finally:
+    temporary.unlink(missing_ok=True)
 PY
+  capture_evidence_identity
 }
 
 cleanup() {
@@ -241,23 +397,42 @@ cleanup() {
     kill -KILL "$APP_PID" >/dev/null 2>&1 || true
   fi
 
-  docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
-  docker volume rm "$VOLUME" >/dev/null 2>&1 || true
-
-  local source_after="$WORK/source-after.tsv"
-  : >"$source_after"
-  if [ -f "$WORK/source-paths.txt" ]; then
-    while IFS= read -r source_path; do
-      [ -n "$source_path" ] || continue
-      if [ -e "$source_path" ]; then
-        stat -c '%n\t%s\t%Y' -- "$source_path" >>"$source_after" || true
-      else
-        printf '%s\tMISSING\tMISSING\n' "$source_path" >>"$source_after"
-      fi
-    done <"$WORK/source-paths.txt"
+  if [ "$CONTAINER_CREATED" -eq 1 ]; then
+    if docker rm -f "$CONTAINER" >/dev/null 2>&1; then
+      DOCKER_RM_STATUS="pass"
+    else
+      DOCKER_RM_STATUS="fail"
+    fi
+  else
+    DOCKER_RM_STATUS="not-created"
+  fi
+  if [ "$VOLUME_CREATED" -eq 1 ]; then
+    if docker volume rm "$VOLUME" >/dev/null 2>&1; then
+      DOCKER_VOLUME_RM_STATUS="pass"
+    else
+      DOCKER_VOLUME_RM_STATUS="fail"
+    fi
+  else
+    DOCKER_VOLUME_RM_STATUS="not-created"
   fi
 
-  if [ -f "$WORK/source-before.tsv" ] &&
+  local source_after=""
+  if [ -n "$WORK" ] && [ -d "$WORK" ]; then
+    source_after="$WORK/source-after.tsv"
+    : >"$source_after"
+    if [ -f "$WORK/source-paths.txt" ]; then
+      while IFS= read -r source_path; do
+        [ -n "$source_path" ] || continue
+        if [ -e "$source_path" ]; then
+          stat -c '%n\t%s\t%Y' -- "$source_path" >>"$source_after" || true
+        else
+          printf '%s\tMISSING\tMISSING\n' "$source_path" >>"$source_after"
+        fi
+      done <"$WORK/source-paths.txt"
+    fi
+  fi
+
+  if [ -z "$source_after" ] || [ ! -f "$WORK/source-before.tsv" ] ||
     cmp -s "$WORK/source-before.tsv" "$source_after"; then
     SOURCE_BACKUP_MUTATION="false"
   else
@@ -266,16 +441,46 @@ cleanup() {
     [ -n "$FAILURE_REASON" ] || FAILURE_REASON="source backup metadata changed"
   fi
 
-  if ! docker ps -a --format '{{.Names}}' | grep -Fxq "$CONTAINER" &&
-    ! docker volume ls --format '{{.Name}}' | grep -Fxq "$VOLUME"; then
+  local docker_ps_output=""
+  local docker_volume_output=""
+  if [ -n "$WORK" ] && [ -d "$WORK" ]; then
+    docker_ps_output="$WORK/docker-ps-cleanup.txt"
+    docker_volume_output="$WORK/docker-volume-cleanup.txt"
+  else
+    docker_ps_output="$(mktemp)"
+    docker_volume_output="$(mktemp)"
+  fi
+  if docker ps -a --format '{{.Names}}' >"$docker_ps_output" 2>/dev/null; then
+    DOCKER_PS_STATUS="pass"
+  else
+    DOCKER_PS_STATUS="fail"
+  fi
+  if docker volume ls --format '{{.Name}}' >"$docker_volume_output" 2>/dev/null; then
+    DOCKER_VOLUME_LS_STATUS="pass"
+  else
+    DOCKER_VOLUME_LS_STATUS="fail"
+  fi
+  if [[ "$DOCKER_RM_STATUS" = "pass" || "$DOCKER_RM_STATUS" = "not-created" ]] &&
+    [[ "$DOCKER_VOLUME_RM_STATUS" = "pass" || "$DOCKER_VOLUME_RM_STATUS" = "not-created" ]] &&
+    [ "$DOCKER_PS_STATUS" = "pass" ] &&
+    [ "$DOCKER_VOLUME_LS_STATUS" = "pass" ] &&
+    ! grep -Fxq "$CONTAINER" "$docker_ps_output" &&
+    ! grep -Fxq "$VOLUME" "$docker_volume_output"; then
     CLEANUP_STATUS="pass"
   else
     CLEANUP_STATUS="fail"
     RESULT="fail"
     [ -n "$FAILURE_REASON" ] || FAILURE_REASON="disposable Docker cleanup failed"
   fi
+  if [ -z "$WORK" ] || [ ! -d "$WORK" ]; then
+    rm -f -- "$docker_ps_output" "$docker_volume_output"
+  fi
 
-  update_final_evidence || true
+  if ! update_final_evidence; then
+    CLEANUP_STATUS="fail"
+    RESULT="fail"
+    [ -n "$FAILURE_REASON" ] || FAILURE_REASON="evidence output identity changed during cleanup"
+  fi
 
   if [ -n "$WORK" ] && [ -d "$WORK" ] &&
     [ "$(dirname "$WORK")" = "$WORK_ROOT" ] &&
@@ -293,7 +498,11 @@ cleanup() {
     [ -n "$FAILURE_REASON" ] || FAILURE_REASON="workdir cleanup failed"
   fi
 
-  update_final_evidence || true
+  if ! update_final_evidence; then
+    CLEANUP_STATUS="fail"
+    RESULT="fail"
+    [ -n "$FAILURE_REASON" ] || FAILURE_REASON="evidence output identity changed during cleanup"
+  fi
 
   if [ "$RESULT" = "pass" ] && [ "$CLEANUP_STATUS" = "pass" ] &&
     [ "$SOURCE_BACKUP_MUTATION" = "false" ]; then
@@ -304,7 +513,26 @@ cleanup() {
 }
 trap cleanup EXIT
 
+MANIFEST="$BACKUP_ROOT/manifests/generation_${STAMP}.sha256"
+readonly MANIFEST
+CURRENT_PHASE="docker-preflight"
+if docker ps -a --format '{{.Names}}' >"$WORK/docker-ps-preflight.txt" 2>"$WORK/docker-ps-preflight.err"; then
+  if grep -Fxq "$CONTAINER" "$WORK/docker-ps-preflight.txt"; then
+    die "refusing to reuse existing container: $CONTAINER"
+  fi
+else
+  die "Docker container query failed during preflight"
+fi
+if docker volume ls --format '{{.Name}}' >"$WORK/docker-volume-preflight.txt" 2>"$WORK/docker-volume-preflight.err"; then
+  if grep -Fxq "$VOLUME" "$WORK/docker-volume-preflight.txt"; then
+    die "refusing to reuse existing volume: $VOLUME"
+  fi
+else
+  die "Docker volume query failed during preflight"
+fi
+
 CURRENT_PHASE="generation-manifest"
+[ -f "$MANIFEST" ] || die "generation manifest not found: $MANIFEST"
 python3 - "$MANIFEST" "$STAMP" "$WORK/expected.tsv" <<'PY'
 import re
 import sys
@@ -433,8 +661,8 @@ PY
 readonly POSTGRES_IMAGE_ID POSTGRES_DIGEST
 
 CURRENT_PHASE="payload-stage"
-REFERENCE_FAILURE_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-RESTORE_STARTED_AT="$REFERENCE_FAILURE_AT"
+RESTORE_STARTED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+RESTORE_STARTED_MONOTONIC_NS="$(python3 -c 'import time; print(time.monotonic_ns())')"
 read -r RPO_UPPER_SECONDS COMPLETED_GENERATION_AGE_SECONDS < <(
   python3 - "$REFERENCE_FAILURE_AT" "$BACKUP_STARTED_AT" "$BACKUP_COMPLETED_AT" <<'PY'
 import datetime as dt
@@ -442,8 +670,10 @@ import sys
 def parse(raw):
     return dt.datetime.fromisoformat(raw.replace("Z", "+00:00")).astimezone(dt.timezone.utc)
 reference, started, completed = map(parse, sys.argv[1:])
-print(max(0, int((reference-started).total_seconds())),
-      max(0, int((reference-completed).total_seconds())))
+if completed > reference or started > completed:
+    raise SystemExit("invalid backup timestamp ordering")
+print(int((reference-started).total_seconds()),
+      int((reference-completed).total_seconds()))
 PY
 )
 readonly REFERENCE_FAILURE_AT RESTORE_STARTED_AT RPO_UPPER_SECONDS COMPLETED_GENERATION_AGE_SECONDS
@@ -460,16 +690,24 @@ while IFS=$'\t' read -r relative expected_sha; do
 done <"$WORK/expected.tsv"
 
 CURRENT_PHASE="postgres-target"
-docker volume create "$VOLUME" >/dev/null
+if docker volume create "$VOLUME" >/dev/null; then
+  VOLUME_CREATED=1
+else
+  die "failed to create disposable PostgreSQL volume"
+fi
 printf 'POSTGRES_PASSWORD=%s\n' "$PASSWORD" >"$WORK/postgres.env"
 chmod 0600 "$WORK/postgres.env"
-docker run -d \
+if docker run -d \
   --name "$CONTAINER" \
   -p "127.0.0.1:${PG_PORT}:5432" \
   --env-file "$WORK/postgres.env" \
   -v "$VOLUME:/var/lib/postgresql/data" \
   -v "$WORK/in/postgres:/backups:ro" \
-  "$POSTGRES_IMAGE" >/dev/null
+  "$POSTGRES_IMAGE" >/dev/null; then
+  CONTAINER_CREATED=1
+else
+  die "failed to create disposable PostgreSQL container"
+fi
 
 for _ in $(seq 1 60); do
   if docker exec "$CONTAINER" pg_isready -U postgres -q >/dev/null 2>&1; then
@@ -627,7 +865,7 @@ else
     PIP_NO_INPUT=1 \
     PYTHONNOUSERSITE=1 \
     "$APP_PYTHON" -m pip install --disable-pip-version-check \
-      -r "$SOURCE_DIR/backend/requirements.txt" >"$WORK/pip.log" 2>&1
+      --require-hashes -r "$SOURCE_DIR/backend/requirements.lock" >"$WORK/pip.log" 2>&1
 fi
 env -i \
   HOME="$WORK/home" \
@@ -690,14 +928,15 @@ for _ in $(seq 1 60); do
 done
 [ "$ready" -eq 1 ] || die "application readiness timeout"
 READY_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-RTO_SECONDS="$(
-  python3 - "$RESTORE_STARTED_AT" "$READY_AT" <<'PY'
-import datetime as dt
+READY_MONOTONIC_NS="$(python3 -c 'import time; print(time.monotonic_ns())')"
+RTO_SECONDS="$(python3 - "$RESTORE_STARTED_MONOTONIC_NS" "$READY_MONOTONIC_NS" <<'PY'
 import sys
-def parse(raw):
-    return dt.datetime.fromisoformat(raw.replace("Z", "+00:00")).astimezone(dt.timezone.utc)
-started, ready = map(parse, sys.argv[1:])
-print(max(0, int((ready-started).total_seconds())))
+started_ns, ready_ns = map(int, sys.argv[1:])
+elapsed_ns = ready_ns - started_ns
+if elapsed_ns < 0:
+    raise SystemExit("monotonic RTO elapsed time was negative")
+# Round up to a whole second so an observed sub-second tail is not hidden.
+print((elapsed_ns + 999_999_999) // 1_000_000_000)
 PY
 )"
 APP_PYTHON_VERSION="$("$APP_PYTHON" --version 2>&1 | head -1)"
@@ -705,7 +944,8 @@ readonly READY_AT RTO_SECONDS APP_PYTHON_VERSION
 
 CURRENT_PHASE="evidence"
 python3 - \
-  "$EVIDENCE_OUT" "$EXERCISE_ID" "$GITHUB_MAIN_SHA" "$SOURCE_SHA" "$STAMP" \
+  "$EVIDENCE_OUT" "$EVIDENCE_DEVICE" "$EVIDENCE_INODE" \
+  "$EXERCISE_ID" "$GITHUB_MAIN_SHA" "$SOURCE_SHA" "$STAMP" \
   "$BACKUP_STARTED_AT" "$BACKUP_COMPLETED_AT" "$GENERATION_MANIFEST_SHA256" \
   "$REFERENCE_WEEKLY_DRILL_SHA256" "$REFERENCE_FAILURE_AT" "$RPO_UPPER_SECONDS" \
   "$COMPLETED_GENERATION_AGE_SECONDS" "$RESTORE_STARTED_AT" "$READY_AT" "$RTO_SECONDS" \
@@ -715,12 +955,14 @@ python3 - \
   "$BUSINESS_FINGERPRINT" "$APP_PYTHON_VERSION" "$APP_PORT" <<'PY'
 import json
 import os
+import stat
 import sys
 from pathlib import Path
 
 (
-    evidence_path, exercise_id, github_main, source_sha, stamp,
-    backup_started, backup_completed, generation_manifest_sha, reference_drill_sha,
+    evidence_path, expected_device, expected_inode, exercise_id, github_main,
+    source_sha, stamp, backup_started, backup_completed, generation_manifest_sha,
+    reference_drill_sha,
     reference_failure, rpo_upper, completed_age, restore_started, ready_at, rto,
     postgres_image, postgres_digest, container, pg_port, expected_path,
     migration_meta_path, roles_path, restores_path, visits_table_count,
@@ -779,7 +1021,7 @@ payload = {
     "completedGenerationAgeSeconds": int(completed_age),
     "restoreStartedAt": restore_started,
     "readyAt": ready_at,
-    "rtoDefinition": "wall-clock-from-payload-transfer-start-to-restored-service-acceptance",
+    "rtoDefinition": "monotonic-from-payload-transfer-start-to-restored-service-acceptance",
     "rtoSeconds": int(rto),
     "restoreTargetType": "disposable-docker-local",
     "restoreTargetHost": os.uname().nodename,
@@ -855,12 +1097,24 @@ payload = {
     "failureReason": None,
 }
 path = Path(evidence_path)
-path.parent.mkdir(parents=True, exist_ok=True)
-temporary = path.with_name(path.name + ".tmp")
-temporary.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
-os.chmod(temporary, 0o600)
-temporary.replace(path)
+expected = (int(expected_device), int(expected_inode))
+def verify_owned_path():
+    if not path.exists():
+        raise SystemExit("evidence output is missing before successful replacement")
+    current = os.lstat(path)
+    if stat.S_ISLNK(current.st_mode) or (current.st_dev, current.st_ino) != expected:
+        raise SystemExit("evidence output was replaced before successful replacement")
+
+temporary = path.with_name(f".{path.name}.success.{os.getpid()}.tmp")
+try:
+    temporary.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    os.chmod(temporary, 0o600)
+    verify_owned_path()
+    temporary.replace(path)
+finally:
+    temporary.unlink(missing_ok=True)
 PY
+capture_evidence_identity
 
 RESULT="pass"
 CURRENT_PHASE=""

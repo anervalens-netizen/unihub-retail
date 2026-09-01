@@ -339,7 +339,7 @@ K5 exercised the complete observed backup generation in an isolated non-producti
 
 ```text
 ops/k5-isolated-restore.sh
-SHA-256: eca6b387773cadca3a6da3e9fd7a097d0133e2c8ef89597e5ecf63eb5f52b8d2
+SHA-256: 5b63364fc6bbc2a40c75b6be77372d022f9b1515377da8a543716caaebc699fb
 ```
 
 The recovered pre-existing weekly restore-mechanics helper is provenance only, not the complete K5 entrypoint:
@@ -410,7 +410,7 @@ The entrypoint implements this fail-closed sequence:
 11. **Run a bounded non-sensitive business-integrity sample twice.** At least three approved aggregate table counts must be available; the repeated counts must be identical and are serialized into a deterministic SHA-256 fingerprint. No row contents are stored.
 12. **Boot the exact source application in a clean isolated development environment.** It points only at restored `dr_unihub`, binds the app to `127.0.0.1`, excludes production OIDC/session/Valkey/Sentry/process-authority settings and never loads production environment files.
 13. **Require service acceptance.** `/livez` must return `alive`; `/health` and `/readyz` must return `ok`. Evidence states explicitly that production OIDC/JWKS, Valkey/session and DB-process-authority semantics were not exercised.
-14. **Measure generation-age RPO and wall-clock RTO from timestamps.** With serial dumps, conservative RPO upper bound is `referenceFailureAt - backupStartedAt`, completed-generation age is `referenceFailureAt - backupCompletedAt`, and RTO is `readyAt - restoreStartedAt` including staging through service acceptance.
+14. **Measure generation-age RPO from ordered timestamps and RTO with monotonic elapsed time.** With serial dumps, conservative RPO upper bound is `referenceFailureAt - backupStartedAt`, completed-generation age is `referenceFailureAt - backupCompletedAt`, and RTO retains UTC `restoreStartedAt`/`readyAt` event timestamps while deriving elapsed seconds from monotonic time, including staging through service acceptance.
 15. **Emit sanitized machine-readable evidence and clean up.** Evidence contains no password or credential-bearing DSN. The entrypoint removes only its unique app/container/volume/workdir, compares source backup size/mtime metadata before/after, and marks cleanup/source-mutation status fail-closed.
 
 The K5 reference exercise passed the same substantive acceptance sequence with eight components, seven successful PostgreSQL restores, visits integrity `ok`, 69/69 migration checksum matches, a repeated bounded business fingerprint match, localhost application start, `/livez`/`/health`/`/readyz` HTTP 200 within the disclosed isolated dependency scope, conservative RPO upper bound `39779` seconds and wall-clock RTO `449` seconds. The canonical payload explicitly records `productionMutation=false`, `sourceBackupMutation=false` and `migrationExecution=false`.
