@@ -22,8 +22,6 @@ async def list_reset_items_for_reconciliation(
             f"""
             SELECT {_RESET_ITEM_COLUMNS}
             FROM grile_monthly_reset_items AS item
-            JOIN grile_monthly_operations AS operation
-              ON operation.id = item.operation_id
             WHERE item.operation_id = $1
               AND (
                   item.status = 'uncertain'
@@ -31,7 +29,15 @@ async def list_reset_items_for_reconciliation(
                   OR item.recovery_code = 'recovery_required'
                   OR (
                       item.checkpoint_phase = 'clear_verified'
-                      AND (item.status <> 'completed' OR operation.status = 'running')
+                      AND (
+                          item.status <> 'completed'
+                          OR EXISTS (
+                              SELECT 1
+                              FROM grile_monthly_operations AS operation
+                              WHERE operation.id = item.operation_id
+                                AND operation.status = 'running'
+                          )
+                      )
                   )
               )
             ORDER BY id

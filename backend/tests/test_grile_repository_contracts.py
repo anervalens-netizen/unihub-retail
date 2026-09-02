@@ -48,8 +48,9 @@ def test_reconciliation_does_not_rollback_successful_completed_clears() -> None:
     source = (REPOSITORY_ROOT / "grile_monthly_reconciliation.py").read_text(
         encoding="utf-8"
     )
-    assert "JOIN grile_monthly_operations AS operation" in source
-    assert "item.status <> 'completed' OR operation.status = 'running'" in source
+    assert "FROM grile_monthly_operations AS operation" in source
+    assert "item.status <> 'completed'" in source
+    assert "operation.status = 'running'" in source
 
 
 def test_reset_rollback_can_recover_uncertain_checkpoint() -> None:
