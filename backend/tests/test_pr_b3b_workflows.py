@@ -2376,30 +2376,90 @@ def test_pr_deep_replaces_authenticated_fetch_with_cat_file():
 
 
 def test_pr_fast_other_authenticated_fetches_audit_documented():
-    """Audit assertion: there are pre-existing pr-fast authenticated
-    fetches. We document that they are belt-and-suspenders only
-    (the base SHAs they consult are already reachable after
-    fetch-depth:0), so the candidate checkout's
-    persist-credentials:false is safe."""
-    text = CI_YML.read_text(encoding="utf-8")
-    # Identify pr-fast block by header.
-    start = text.find("  pr-fast:")
-    assert start != -1
-    end = text.find("  backend-check:")
-    body = text[start:end if end != -1 else len(text)]
-    # Pre-existing authenticated fetches use the same shape:
-    # git fetch --no-tags --depth=1 origin "$COMPLEXITY_BASE_SHA"
-    # git fetch --no-tags --depth=1 origin "$PR_BASE_SHA"
-    # git fetch --no-tags --depth=1 origin "$MERGE_BASE"
-    # All three should still appear (we do not modify them per the
-    # brief) and the brief explicitly audits them as redundant
-    # after fetch-depth:0.
-    assert "git fetch --no-tags --depth=1 origin \"$COMPLEXITY_BASE_SHA\"" in body, (
-        "audit: pre-existing COMPLEXITY_BASE_SHA fetch expected"
+    """Audit assertion: pr-fast runs with
+    ``persist-credentials: false`` after a ``fetch-depth: 0``
+    checkout, which already pulls every branch and tag reachable from
+    any local ref. Therefore the three historical post-checkout
+    ``git fetch --no-tags --depth=1 origin`` calls in pr-fast are
+    redundant: their target commits are already reachable from the
+    local object store and the Python checkers that follow them only
+    need the commits to be present. To stay credentialless the
+    pr-fast block replaces each redundant fetch with a fail-closed
+    ``git cat-file -e`` assertion that proves the commit is locally
+    available and aborts the step otherwise."""
+    yaml = _yaml()
+    data = yaml.safe_load(CI_YML.read_text(encoding="utf-8"))
+    assert "jobs" in data
+    pr_fast = data["jobs"]["pr-fast"]
+
+    # 1. The pr-fast checkout still uses fetch-depth:0 and never
+    #    persists the workflow token.
+    checkout = next(
+        step for step in pr_fast["steps"]
+        if step.get("uses", "").startswith("actions/checkout@")
     )
-    assert "git fetch --no-tags --depth=1 origin \"$MERGE_BASE\"" in body, (
-        "audit: pre-existing MERGE_BASE fetch expected"
+    checkout_with = checkout.get("with", {})
+    assert checkout_with.get("fetch-depth") == 0
+    assert checkout_with.get("fetch-tags") is True
+    assert checkout_with.get("persist-credentials") is False
+
+    # 2. No pr-fast step may contain any of the three credential-
+    #    requiring fetch forms.
+    forbidden_fetch_lines = {
+        "COMPLEXITY_BASE_SHA": (
+            'git fetch --no-tags --depth=1 origin "$COMPLEXITY_BASE_SHA"'
+        ),
+        "PR_BASE_SHA": (
+            'git fetch --no-tags --depth=1 origin "$PR_BASE_SHA"'
+        ),
+        "MERGE_BASE": (
+            'git fetch --no-tags --depth=1 origin "$MERGE_BASE"'
+        ),
+    }
+    for step in pr_fast["steps"]:
+        run = step.get("run") or ""
+        for label, line in forbidden_fetch_lines.items():
+            assert line not in run, (
+                f"pr-fast step {step.get('name')!r} must not re-fetch "
+                f"{label}; persist-credentials:false forbids network "
+                f"authentication in this job."
+            )
+
+    # 3. The corresponding local commit-object assertions are
+    #    present so a missing base commit still fails the step
+    #    closed (instead of silently no-op'ing inside the Python
+    #    checker).
+    expected_local_assertions = {
+        "COMPLEXITY_BASE_SHA": "${COMPLEXITY_BASE_SHA}^{commit}",
+        "PR_BASE_SHA": "${PR_BASE_SHA}^{commit}",
+        "MERGE_BASE": "${MERGE_BASE}^{commit}",
+    }
+    all_runs = "\n".join(
+        step.get("run") or "" for step in pr_fast["steps"]
     )
+    for label, marker in expected_local_assertions.items():
+        assert marker in all_runs, (
+            f"pr-fast must fail-closed on a missing {label} commit "
+            f"via a local 'git cat-file -e {marker}' assertion."
+        )
+
+    # 4. The credential-isolation invariant is still pinned: this
+    #    test enforces it on the structural checkout settings and
+    #    on every step's run block, and must not relax or remove it.
+    #    Also verify no step injects a token / disables
+    #    persist-credentials=false.
+    forbidden_token_injection_markers = (
+        "persist-credentials: true",
+        "GITHUB_TOKEN",
+        "git config --global credential.helper",
+    )
+    for step in pr_fast["steps"]:
+        step_text = step.get("run") or ""
+        for marker in forbidden_token_injection_markers:
+            assert marker not in step_text, (
+                f"pr-fast step {step.get('name')!r} introduces a "
+                f"credential injection marker {marker!r}."
+            )
 
 
 # ---------------------------------------------------------------------------
