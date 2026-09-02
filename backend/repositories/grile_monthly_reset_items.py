@@ -365,7 +365,7 @@ async def prepare_reset_rollback(
                 updated_at = now()
             WHERE item.operation_id = $1
               AND item.site_code = $2
-              AND item.checkpoint_phase IN ('clear_intent', 'clear_verified')
+              AND item.checkpoint_phase IN ('clear_intent', 'clear_verified', 'recovery_required')
               AND item.status IN ('running', 'completed', 'uncertain')
               AND item.backup_path IS NOT NULL
               AND item.backup_sha256 ~ '^[0-9a-f]{{64}}$'

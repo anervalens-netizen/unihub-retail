@@ -44,6 +44,26 @@ def test_reconciliation_update_qualifies_returning_columns() -> None:
     assert "RETURNING {_OPERATION_COLUMNS}" not in claim_source
 
 
+def test_reconciliation_does_not_rollback_successful_completed_clears() -> None:
+    source = (REPOSITORY_ROOT / "grile_monthly_reconciliation.py").read_text(
+        encoding="utf-8"
+    )
+    assert "FROM grile_monthly_operations AS operation" in source
+    assert "item.status <> 'completed'" in source
+    assert "operation.status = 'running'" in source
+
+
+def test_reset_rollback_can_recover_uncertain_checkpoint() -> None:
+    source = (REPOSITORY_ROOT / "grile_monthly_reset_items.py").read_text(
+        encoding="utf-8"
+    )
+    start = source.index("async def prepare_reset_rollback")
+    end = source.index("async def confirm_reset_rollback", start)
+    prepare_source = source[start:end]
+
+    assert "checkpoint_phase IN ('clear_intent', 'clear_verified', 'recovery_required')" in prepare_source
+
+
 def test_monthly_transition_table_has_one_authority() -> None:
     backend_root = REPOSITORY_ROOT.parent
     authorities = [

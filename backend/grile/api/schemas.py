@@ -229,6 +229,14 @@ class GrileAgentTargetOperationEnvelope(GrileApiModel):
 GrileMonthlyOp = Literal["finalize", "archive", "reset"]
 
 
+class GrileMonthlyIssue(GrileApiModel):
+    site_code: str
+    store: str
+    slot: NonNegativeInt
+    code: str
+    field: str | None = None
+
+
 class GrileMonthlyManifestResponse(GrileApiModel):
     id: int
     operation_id: int
@@ -246,6 +254,7 @@ class GrileMonthlyManifestResponse(GrileApiModel):
     expected: dict[str, Any] = Field(default_factory=dict)
     processed: dict[str, Any] = Field(default_factory=dict)
     error_count: NonNegativeInt
+    issues: list[GrileMonthlyIssue] = Field(default_factory=list)
     manifest_sha256: str | None = None
     approved: bool
     created_at: datetime | None = None
