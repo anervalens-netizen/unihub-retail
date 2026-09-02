@@ -42,7 +42,9 @@ function MonthlyActions({ month, model }: { month: string; model: GrileMonthlyPa
 }
 
 function ManifestState({ model }: { model: GrileMonthlyPanelModel }) {
-  const manifest = model.manifest;
+  const manifest = model.result?.status === 'failed' && model.result.manifest
+    ? model.result.manifest
+    : model.manifest;
   if (!manifest) return null;
   const operationLabel = manifest.operation === 'finalize' ? 'finalizare' : manifest.operation === 'archive' ? 'arhiva' : 'reset';
   return <div className="mt-3 rounded-lg border border-slate-200 px-3 py-2 text-xs dark:border-slate-700"><div className="flex flex-wrap items-center justify-between gap-2">
