@@ -8,6 +8,7 @@ import stat as stat_module
 import subprocess
 import sys
 import time
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -15,7 +16,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 ENTRYPOINT = ROOT / "ops" / "k5-isolated-restore.sh"
-EXPECTED_ENTRYPOINT_SHA256 = "4e6464eea299a014ea8b2bbef5b8c89b0427bfb577632f929de6d91cc6ef06be"
+EXPECTED_ENTRYPOINT_SHA256 = "d2876627a145f8f7fb4d4a2522ad6b83b1d6ea2cfc37caa924f2b65434bdef42"
 
 FUTURE_STAMP = "20260903_010203"
 COMPONENT_LABELS = (
@@ -223,12 +224,13 @@ def _run_python(program: str, args: list[str], env: dict[str, str] | None = None
     )
 
 
-METADATA_PROGRAM = None
-LOCK_PROGRAM = None
-DURATION_PROGRAM = None
-EARLY_WRITER_PROGRAM = None
-FINAL_WRITER_PROGRAM = None
-ACCEPTANCE_PROGRAM = None
+METADATA_PROGRAM: str | None = None
+LOCK_PROGRAM: str | None = None
+DURATION_PROGRAM: str | None = None
+EARLY_WRITER_PROGRAM: str | None = None
+FINAL_WRITER_PROGRAM: str | None = None
+ACCEPTANCE_PROGRAM: str | None = None
+METADATA_IDENTITY_PROGRAM: str | None = None
 
 
 def _metadata_program() -> str:
@@ -280,7 +282,8 @@ def _run_metadata_program(
     stamp: str = FUTURE_STAMP,
     reference: str = "2026-09-03T02:00:00Z",
     manifest_entries: int = 8,
-):
+) -> subprocess.CompletedProcess[str]:
+    tmp_path.mkdir(parents=True, exist_ok=True)
     metadata = tmp_path / "generation.result"
     metadata.write_text(result_text, encoding="utf-8")
     expected = tmp_path / "expected.tsv"
@@ -288,7 +291,34 @@ def _run_metadata_program(
         "".join(f"postgres/component{i}_x.dump\t{'a' * 64}\n" for i in range(manifest_entries)),
         encoding="utf-8",
     )
-    return _run_python(_metadata_program(), [str(metadata), stamp, reference, str(expected)])
+    staged = tmp_path / "staged.result"
+    identity = tmp_path / "identity.tsv"
+    return _run_python(
+        _metadata_program(),
+        [str(metadata), stamp, reference, str(expected), str(staged), str(identity)],
+    )
+
+
+def _metadata_identity_program() -> str:
+    global METADATA_IDENTITY_PROGRAM
+    if METADATA_IDENTITY_PROGRAM is None:
+        METADATA_IDENTITY_PROGRAM = _heredoc_python_after(
+            '[ -f "$WORK/generation-metadata-identity.tsv" ]; then'
+        )
+    return METADATA_IDENTITY_PROGRAM
+
+
+def _write_metadata_with_identity(tmp_path: Path) -> None:
+    completed = _run_metadata_program(
+        tmp_path, "\n".join(_valid_result_lines(FUTURE_STAMP)) + "\n"
+    )
+    assert completed.returncode == 0, completed.stderr
+
+
+def _run_metadata_identity_check(tmp_path: Path) -> subprocess.CompletedProcess[str]:
+    metadata = tmp_path / "generation.result"
+    identity = tmp_path / "identity.tsv"
+    return _run_python(_metadata_identity_program(), [str(metadata), str(identity)])
 
 
 def _run_termination_probe(tmp_path: Path, scenario: str) -> subprocess.CompletedProcess[str]:
@@ -318,7 +348,7 @@ def _run_cleanup_probe(
     mutate_source: bool = False,
     workdir_removal_fails: bool = False,
     final_write_fails: bool = False,
-) -> tuple[subprocess.CompletedProcess[str], list[str]]:
+) -> tuple[subprocess.CompletedProcess[str], list[list[str]]]:
     docker = tmp_path / "docker"
     docker.write_text(
         """#!/usr/bin/env bash
@@ -796,18 +826,124 @@ def test_finding1_metadata_and_manifest_digests_are_derived_deterministically(
     tmp_path: Path,
 ) -> None:
     result_text = "\n".join(_valid_result_lines(FUTURE_STAMP)) + "\n"
-    first = _run_metadata_program(tmp_path, result_text)
-    second = _run_metadata_program(tmp_path, result_text)
+    first = _run_metadata_program(tmp_path / "run-a", result_text)
+    second = _run_metadata_program(tmp_path / "run-b", result_text)
     assert first.returncode == 0
     assert first.stdout == second.stdout
-    metadata = tmp_path / "generation.result"
+    metadata = tmp_path / "run-a" / "generation.result"
     digests = {
         hashlib.sha256(metadata.read_bytes()).hexdigest() for _ in range(2)
     }
     assert len(digests) == 1
+    # The reported metadata digest is the SHA of the exact parsed bytes.
+    reported_sha = first.stdout.strip().split("\t")[2]
+    assert reported_sha == hashlib.sha256(metadata.read_bytes()).hexdigest()
     text = ENTRYPOINT.read_text(encoding="utf-8")
-    assert 'GENERATION_RESULT_SHA256="$(sha256sum "$GENERATION_RESULT"' in text
+    assert "metadata_sha256 = hashlib.sha256(metadata_bytes).hexdigest()" in text
     assert 'GENERATION_MANIFEST_SHA256="$(sha256sum "$MANIFEST"' in text
+
+
+def test_finding1_metadata_is_opened_once_and_staged_byte_identical(
+    tmp_path: Path,
+) -> None:
+    result_text = "\n".join(_valid_result_lines(FUTURE_STAMP)) + "\n"
+    completed = _run_metadata_program(tmp_path, result_text)
+    assert completed.returncode == 0, completed.stderr
+    metadata = tmp_path / "generation.result"
+    staged = tmp_path / "staged.result"
+    identity = tmp_path / "identity.tsv"
+    # Staged bytes are exactly the validated snapshot bytes.
+    assert staged.read_bytes() == metadata.read_bytes()
+    reported_sha = completed.stdout.strip().split("\t")[2]
+    assert reported_sha == hashlib.sha256(metadata.read_bytes()).hexdigest()
+    # Identity captured from the same descriptor is persisted for cleanup.
+    identity_values = dict(
+        line.split("=", 1) for line in identity.read_text(encoding="utf-8").splitlines()
+    )
+    assert identity_values["sha256"] == reported_sha
+    assert identity_values["size"] == str(metadata.stat().st_size)
+    assert identity_values["inode"] == str(metadata.stat().st_ino)
+    assert identity_values["device"] == str(metadata.stat().st_dev)
+
+
+def test_finding1_no_second_authoritative_metadata_read() -> None:
+    text = ENTRYPOINT.read_text(encoding="utf-8")
+    assert 'sha256sum "$GENERATION_RESULT"' not in text
+    assert "os.O_RDONLY | os.O_NOFOLLOW" in text
+
+
+def test_finding1_symlink_generation_result_is_refused(tmp_path: Path) -> None:
+    real = tmp_path / "real.result"
+    real.write_text("\n".join(_valid_result_lines(FUTURE_STAMP)) + "\n", encoding="utf-8")
+    metadata = tmp_path / "generation.result"
+    metadata.symlink_to(real)
+    expected = tmp_path / "expected.tsv"
+    expected.write_text(
+        "".join(f"postgres/component{i}_x.dump\t{'a' * 64}\n" for i in range(8)),
+        encoding="utf-8",
+    )
+    completed = _run_python(
+        _metadata_program(),
+        [
+            str(metadata),
+            FUTURE_STAMP,
+            "2026-09-03T02:00:00Z",
+            str(expected),
+            str(tmp_path / "staged.result"),
+            str(tmp_path / "identity.tsv"),
+        ],
+    )
+    assert completed.returncode != 0
+    assert "unable to open generation metadata safely" in completed.stderr
+    assert not (tmp_path / "staged.result").exists()
+
+
+def test_finding1_metadata_source_identity_recheck_passes_when_unchanged(
+    tmp_path: Path,
+) -> None:
+    _write_metadata_with_identity(tmp_path)
+    completed = _run_metadata_identity_check(tmp_path)
+    assert completed.returncode == 0, completed.stderr
+    assert "generation-metadata-source-identity-ok" in completed.stdout
+
+
+def test_finding1_metadata_source_replacement_fails_recheck(tmp_path: Path) -> None:
+    _write_metadata_with_identity(tmp_path)
+    metadata = tmp_path / "generation.result"
+    metadata.unlink()
+    metadata.write_text(
+        "\n".join(_valid_result_lines(FUTURE_STAMP)) + "\n", encoding="utf-8"
+    )
+    completed = _run_metadata_identity_check(tmp_path)
+    assert completed.returncode != 0
+    assert "changed during exercise" in completed.stderr
+
+
+def test_finding1_same_size_metadata_replacement_is_caught(tmp_path: Path) -> None:
+    _write_metadata_with_identity(tmp_path)
+    metadata = tmp_path / "generation.result"
+    original_size = metadata.stat().st_size
+    replacement = "stamp=20260903_010203\n" + "x" * (original_size - len("stamp=20260903_010203\n"))
+    assert len(replacement.encode("utf-8")) == original_size
+    metadata.unlink()
+    metadata.write_text(replacement, encoding="utf-8")
+    assert metadata.stat().st_size == original_size
+    completed = _run_metadata_identity_check(tmp_path)
+    assert completed.returncode != 0
+    assert "changed during exercise" in completed.stderr
+
+
+def test_finding1_symlink_swapped_metadata_source_fails_recheck(tmp_path: Path) -> None:
+    _write_metadata_with_identity(tmp_path)
+    metadata = tmp_path / "generation.result"
+    original_bytes = metadata.read_bytes()
+    twin = tmp_path / "twin.result"
+    twin.write_bytes(original_bytes)
+    metadata.unlink()
+    metadata.symlink_to(twin)
+    completed = _run_metadata_identity_check(tmp_path)
+    assert completed.returncode != 0
+    assert "unable to reopen generation metadata safely" in completed.stderr
 
 
 # ---------------------------------------------------------------------------
@@ -820,7 +956,8 @@ def test_finding7_non_zero_offset_canonicalizes_to_z(tmp_path: Path) -> None:
         tmp_path, "\n".join(_valid_result_lines(FUTURE_STAMP)) + "\n"
     )
     assert completed.returncode == 0, completed.stderr
-    assert completed.stdout.strip() == "2026-08-31T09:17:59Z\t2026-08-31T09:19:01Z"
+    started, finished, _sha = completed.stdout.strip().split("\t")
+    assert (started, finished) == ("2026-08-31T09:17:59Z", "2026-08-31T09:19:01Z")
 
 
 def test_finding7_utc_values_keep_the_same_instant(tmp_path: Path) -> None:
@@ -831,7 +968,8 @@ def test_finding7_utc_values_keep_the_same_instant(tmp_path: Path) -> None:
     )
     completed = _run_metadata_program(tmp_path, "\n".join(lines) + "\n")
     assert completed.returncode == 0, completed.stderr
-    assert completed.stdout.strip() == "2026-09-03T01:02:03Z\t2026-09-03T01:03:05Z"
+    started, finished, _sha = completed.stdout.strip().split("\t")
+    assert (started, finished) == ("2026-09-03T01:02:03Z", "2026-09-03T01:03:05Z")
 
 
 def test_finding7_naive_timestamp_is_rejected(tmp_path: Path) -> None:
@@ -904,20 +1042,54 @@ def test_finding2_term_ignored_then_kill_succeeds(tmp_path: Path) -> None:
     assert "status=kill-terminated" in completed.stdout
 
 
-def test_finding2_still_alive_after_kill_sequence_fails(tmp_path: Path) -> None:
+def test_finding2_still_alive_after_kill_sequence_fails_without_wait(
+    tmp_path: Path,
+) -> None:
     completed = _run_termination_probe(
         tmp_path,
         """
 kill() { return 0; }
 app_process_alive() { return 0; }
+WAIT_CALLED=0
+wait() { WAIT_CALLED=1; return 0; }
 APP_PID=424242
 APP_PROCESS_STATUS=running
 if terminate_application; then printf 'rc=0\\n'; else printf 'rc=1\\n'; fi
+printf 'wait_called=%s\\n' "$WAIT_CALLED"
 """,
     )
     assert completed.returncode == 0, completed.stderr
     assert "rc=1" in completed.stdout
     assert "status=fail" in completed.stdout
+    # The failure decision precedes any reap: wait must never run for a
+    # still-live process.
+    assert "wait_called=0" in completed.stdout
+
+
+def test_finding2_ambiguous_proc_state_fails_closed_as_alive(tmp_path: Path) -> None:
+    completed = _run_termination_probe(
+        tmp_path,
+        """
+bash -c 'exec sleep 30' & APP_PID=$!
+cat() { return 1; }
+if app_process_alive; then printf 'verdict=alive\\n'; else printf 'verdict=dead\\n'; fi
+kill -KILL "$APP_PID" >/dev/null 2>&1 || true
+wait "$APP_PID" >/dev/null 2>&1 || true
+""",
+    )
+    assert completed.returncode == 0, completed.stderr
+    # An unreadable /proc state for an existing process must never be
+    # interpreted as dead.
+    assert "verdict=alive" in completed.stdout
+
+
+def test_finding2_final_liveness_proof_precedes_reap() -> None:
+    function_source = _shell_function_source(
+        "terminate_application", chr(10) + "write_initial_evidence"
+    )
+    assert function_source.index('APP_PROCESS_STATUS="fail"') < function_source.index(
+        'wait "$APP_PID"'
+    )
 
 
 def test_finding2_evidence_records_app_termination_status() -> None:
@@ -1092,7 +1264,7 @@ def test_finding5_replaced_destination_identity_is_protected(tmp_path: Path) -> 
 
 
 def _run_writer_with_fixed_urandom(
-    tmp_path: Path, evidence: Path, candidate_precreator
+    tmp_path: Path, evidence: Path, candidate_precreator: Callable[[Path], None]
 ) -> subprocess.CompletedProcess[str]:
     identity = os.stat(evidence)
     args = [str(evidence), str(identity.st_dev), str(identity.st_ino), "probe", "probe failure"]
@@ -1346,10 +1518,14 @@ def test_k5_restore_entrypoint_covers_certified_acceptance_contract() -> None:
         WEEKLY_HELPER_SHA256,
         "importlib.metadata",
         "O_NOFOLLOW",
+        "os.O_RDONLY | os.O_NOFOLLOW",
         "appTerminationStatus",
         "generationMetadataSha256",
         "monotonic restore duration was negative",
         "per-generation-metadata-artifact",
+        "generation-metadata-staged.result",
+        "generation-metadata-identity.tsv",
+        "generation metadata source changed during exercise",
     )
     for marker in required_markers:
         assert marker in text, marker
@@ -1367,6 +1543,7 @@ def test_k5_restore_entrypoint_covers_certified_acceptance_contract() -> None:
         "started_epoch",
         ".early.{os.getpid()}.tmp",
         "temporary.write_text",
+        'sha256sum "$GENERATION_RESULT"',
     )
     for marker in forbidden_markers:
         assert marker not in text, marker

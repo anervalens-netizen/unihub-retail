@@ -12,10 +12,16 @@
 #   started_at, completed_at, file_count. Timestamps must carry an explicit
 #   UTC offset and are canonicalized to YYYY-MM-DDTHH:MM:SSZ before any
 #   downstream use. Rolling last-run metadata, filesystem mtimes, log lines
-#   and filename inference are never used as RPO authority. Persisting
-#   per-generation timing into the external backup contract is tracked
-#   separately (GitHub issue #251); until that ships, historical generations
-#   without per-generation timing metadata simply cannot be exercised.
+#   and filename inference are never used as RPO authority. The metadata
+#   artifact is opened once without following symlinks; its digest, parsed
+#   values and staged copy all derive from that single byte snapshot, and the
+#   source identity (device/inode/size/mtime/sha256) is revalidated before a
+#   PASS may be published. Application reaping happens only after a final
+#   liveness proof; a still-live process fails cleanup without any wait.
+#   Persisting per-generation timing into the external backup contract is
+#   tracked separately (GitHub issue #251); until that ships, historical
+#   generations without per-generation timing metadata simply cannot be
+#   exercised.
 #
 # Provenance: the weekly restore-mechanics helper recovered during K5 has
 # SHA-256 a5de3ed7803253abcbde0aa66885de5380279f133ee01bd20fd4db5bf19599af.
@@ -69,6 +75,7 @@ RESTORE_STARTED_MONOTONIC_NS=""
 READY_MONOTONIC_NS=""
 BACKUP_STARTED_AT=""
 BACKUP_COMPLETED_AT=""
+GENERATION_RESULT=""
 GENERATION_RESULT_SHA256=""
 GENERATION_METADATA_STATUS=""
 REQUIREMENTS_LOCK_SHA256=""
@@ -127,11 +134,19 @@ require_cmd() {
 
 app_process_alive() {
   [ -n "$APP_PID" ] || return 1
-  [ -d "/proc/$APP_PID" ] || return 1
+  if ! kill -0 "$APP_PID" >/dev/null 2>&1; then
+    # The kernel reports the process as gone.
+    return 1
+  fi
+  # The process exists. An ambiguous /proc state must never be interpreted as
+  # death, so an unreadable state file fails closed as alive.
   local stat_line rest state
-  stat_line="$(cat "/proc/$APP_PID/stat" 2>/dev/null)" || return 1
+  if ! stat_line="$(cat "/proc/$APP_PID/stat" 2>/dev/null)"; then
+    return 0
+  fi
   rest="${stat_line##*) }"
   state="${rest%% *}"
+  # A zombie is terminated for reap purposes; any other state is alive.
   [ "$state" != "Z" ]
 }
 
@@ -160,14 +175,17 @@ terminate_application() {
     fi
   fi
 
-  # Reap the terminated child without indefinite blocking: after a delivered
-  # TERM/KILL the child is gone or a zombie, so wait returns immediately.
-  wait "$APP_PID" >/dev/null 2>&1 || true
-
+  # FINAL liveness proof before any reap: a still-live process fails the
+  # cleanup immediately and is never handed to wait, which could block
+  # indefinitely on an uninterruptible child.
   if app_process_alive; then
     APP_PROCESS_STATUS="fail"
     return 1
   fi
+
+  # The process is proven absent or zombie; only now may the shell reap it.
+  wait "$APP_PID" >/dev/null 2>&1 || true
+
   if [ "$used_kill" -eq 1 ]; then
     APP_PROCESS_STATUS="kill-terminated"
   else
@@ -691,6 +709,62 @@ cleanup() {
     [ -n "$FAILURE_REASON" ] || FAILURE_REASON="source backup metadata changed"
   fi
 
+  # Source-integrity tracking surface: the generation metadata source must be
+  # byte-identical to the single snapshot validated at the start. A replaced
+  # or modified source (including a same-size replacement) fails the cleanup.
+  if [ -n "${GENERATION_RESULT:-}" ] && [ -f "$WORK/generation-metadata-identity.tsv" ]; then
+    if ! python3 - "$GENERATION_RESULT" "$WORK/generation-metadata-identity.tsv" <<'PY'
+import hashlib
+import os
+import stat
+import sys
+
+source_path, identity_path = sys.argv[1], sys.argv[2]
+expected = {}
+with open(identity_path, encoding="utf-8") as identity:
+    for raw in identity:
+        key, value = raw.strip().split("=", 1)
+        expected[key] = value
+try:
+    fd = os.open(source_path, os.O_RDONLY | os.O_NOFOLLOW)
+except OSError as exc:
+    raise SystemExit(f"unable to reopen generation metadata safely: {exc}")
+try:
+    current = os.fstat(fd)
+    if not stat.S_ISREG(current.st_mode):
+        raise SystemExit("generation metadata source is no longer a regular file")
+    chunks = []
+    while True:
+        chunk = os.read(fd, 1048576)
+        if not chunk:
+            break
+        chunks.append(chunk)
+finally:
+    os.close(fd)
+data = b"".join(chunks)
+problems = []
+if str(current.st_dev) != expected["device"]:
+    problems.append("device")
+if str(current.st_ino) != expected["inode"]:
+    problems.append("inode")
+if str(current.st_size) != expected["size"]:
+    problems.append("size")
+if hashlib.sha256(data).hexdigest() != expected["sha256"]:
+    problems.append("sha256")
+if str(current.st_mtime_ns) != expected["mtime_ns"]:
+    problems.append("mtime_ns")
+if problems:
+    raise SystemExit(f"generation metadata source changed during exercise: {problems}")
+print("generation-metadata-source-identity-ok")
+PY
+    then
+      SOURCE_BACKUP_MUTATION="true"
+      RESULT="fail"
+      CLEANUP_STATUS="fail"
+      [ -n "$FAILURE_REASON" ] || FAILURE_REASON="generation metadata source changed during exercise"
+    fi
+  fi
+
   local docker_ps_output=""
   local docker_volume_output=""
   if [ -n "$WORK" ] && [ -d "$WORK" ]; then
@@ -851,22 +925,52 @@ CURRENT_PHASE="generation-metadata"
 [ -f "$GENERATION_RESULT" ] ||
   die "per-generation result metadata not found for stamp $STAMP (rolling last-run metadata is never used as RPO authority)"
 GENERATION_METADATA_OUTPUT="$(python3 - "$GENERATION_RESULT" "$STAMP" \
-  "$REFERENCE_FAILURE_AT" "$WORK/expected.tsv" 2>&1 <<'PY'
+  "$REFERENCE_FAILURE_AT" "$WORK/expected.tsv" \
+  "$WORK/generation-metadata-staged.result" \
+  "$WORK/generation-metadata-identity.tsv" 2>&1 <<'PY'
 import datetime as dt
+import hashlib
+import os
 import re
+import stat
 import sys
 from pathlib import Path
 
-metadata_path = Path(sys.argv[1])
+metadata_path = sys.argv[1]
 expected_stamp = sys.argv[2]
 reference_raw = sys.argv[3]
 expected_tsv = Path(sys.argv[4])
+staged_path = sys.argv[5]
+identity_path = sys.argv[6]
+
+# Open the generation metadata exactly once, without following symlinks, and
+# capture identity and bytes from the same descriptor. Every authoritative
+# value (digest, parsed fields, staged copy) derives from this single byte
+# snapshot; the path is never re-read to establish the evidence digest.
+try:
+    source_fd = os.open(metadata_path, os.O_RDONLY | os.O_NOFOLLOW)
+except OSError as exc:
+    raise SystemExit(f"unable to open generation metadata safely: {exc}")
+try:
+    source_stat = os.fstat(source_fd)
+    if not stat.S_ISREG(source_stat.st_mode):
+        raise SystemExit("generation metadata is not a regular file")
+    chunks = []
+    while True:
+        chunk = os.read(source_fd, 1048576)
+        if not chunk:
+            break
+        chunks.append(chunk)
+finally:
+    os.close(source_fd)
+metadata_bytes = b"".join(chunks)
+metadata_sha256 = hashlib.sha256(metadata_bytes).hexdigest()
 
 REQUIRED_KEYS = ("stamp", "status", "started_at", "completed_at", "file_count")
 KEY_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 values = {}
-for raw_line in metadata_path.read_text(encoding="utf-8").splitlines():
+for raw_line in metadata_bytes.decode("utf-8").splitlines():
     line = raw_line.strip()
     if not line or line.startswith("#"):
         continue
@@ -926,12 +1030,36 @@ if started > completed:
     raise SystemExit("backup completion precedes backup start")
 if completed > reference:
     raise SystemExit("backup completion follows reference failure")
-print(f"{format_utc(started)}\t{format_utc(completed)}")
+
+# Validation passed: stage the exact snapshot bytes with exclusive no-follow
+# creation and persist the source identity captured from the same descriptor,
+# so cleanup can prove the metadata source was not replaced during the
+# exercise. All later parsing/evidence references use these snapshot values.
+staged_fd = os.open(
+    staged_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600
+)
+try:
+    with os.fdopen(staged_fd, "wb") as staged:
+        staged.write(metadata_bytes)
+        staged.flush()
+        os.fsync(staged.fileno())
+    staged_fd = -1
+finally:
+    if staged_fd != -1:
+        os.close(staged_fd)
+with open(identity_path, "w", encoding="utf-8") as identity:
+    identity.write(f"device={source_stat.st_dev}\n")
+    identity.write(f"inode={source_stat.st_ino}\n")
+    identity.write(f"size={source_stat.st_size}\n")
+    identity.write(f"mtime_ns={source_stat.st_mtime_ns}\n")
+    identity.write(f"sha256={metadata_sha256}\n")
+print(f"{format_utc(started)}\t{format_utc(completed)}\t{metadata_sha256}")
 PY
 )" || die "generation metadata validation failed for $STAMP: $GENERATION_METADATA_OUTPUT"
 BACKUP_STARTED_AT="${GENERATION_METADATA_OUTPUT%%$'\t'*}"
-BACKUP_COMPLETED_AT="${GENERATION_METADATA_OUTPUT#*$'\t'}"
-GENERATION_RESULT_SHA256="$(sha256sum "$GENERATION_RESULT" | awk '{print $1}')"
+GENERATION_METADATA_REST="${GENERATION_METADATA_OUTPUT#*$'\t'}"
+BACKUP_COMPLETED_AT="${GENERATION_METADATA_REST%%$'\t'*}"
+GENERATION_RESULT_SHA256="${GENERATION_METADATA_REST#*$'\t'}"
 GENERATION_METADATA_STATUS="verified"
 readonly BACKUP_STARTED_AT BACKUP_COMPLETED_AT GENERATION_RESULT_SHA256 \
   GENERATION_METADATA_STATUS
