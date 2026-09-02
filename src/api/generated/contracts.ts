@@ -1,5 +1,5 @@
 /* GENERATED FILE. Run npm run contracts:generate; do not edit manually. */
-export const RETAIL_OPENAPI_SHA256 = 'b6bf0abbc538f1f5d3a9a2ed3089aa4129e3a3947f25b2d7054574f6e7b9ceb4' as const; // pragma: allowlist secret
+export const RETAIL_OPENAPI_SHA256 = '99f5f29edb6daf2876cc30ae25cf73327b3f38f85caefebc6e3371e490913c20' as const; // pragma: allowlist secret
 
 export type RetailDecimal = string & { readonly __retailDecimal: unique symbol };
 
@@ -863,6 +863,14 @@ export interface RetailGrileManagerResponse {
   "team_leaders": Array<RetailGrileTeamLeaderResponse>;
 }
 
+export interface RetailGrileMonthlyIssue {
+  "code": string;
+  "field"?: string | null;
+  "site_code": string;
+  "slot": number;
+  "store": string;
+}
+
 export interface RetailGrileMonthlyJobResponse {
   "error"?: string | null;
   "job_id": string;
@@ -882,6 +890,7 @@ export interface RetailGrileMonthlyManifestResponse {
   "error_count": number;
   "expected"?: Record<string, unknown>;
   "id": number;
+  "issues"?: Array<RetailGrileMonthlyIssue>;
   "manifest_sha256"?: string | null;
   "month": string;
   "operation": "finalize" | "archive" | "reset";

@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, Download, FileSpreadsheet, FolderArchive, Loader2, RotateCcw, Trash2 } from 'lucide-react';
 
-import type { GrileMonthlyOp } from '../../api/grile';
+import type { GrileMonthlyManifest, GrileMonthlyOp } from '../../api/grile';
 import { cn } from '../../lib/utils';
 import { grileMonthLabel, nextGrileMonthLabel, type GrileMonthlyPanelModel } from './useGrileMonthlyPanel';
 
@@ -42,14 +42,30 @@ function MonthlyActions({ month, model }: { month: string; model: GrileMonthlyPa
 }
 
 function ManifestState({ model }: { model: GrileMonthlyPanelModel }) {
-  const manifest = model.manifest;
+  const manifest = model.result?.status === 'failed' && model.result.manifest
+    ? model.result.manifest
+    : model.manifest;
   if (!manifest) return null;
+  const operationLabel = manifest.operation === 'finalize' ? 'finalizare' : manifest.operation === 'archive' ? 'arhiva' : 'reset';
   return <div className="mt-3 rounded-lg border border-slate-200 px-3 py-2 text-xs dark:border-slate-700"><div className="flex flex-wrap items-center justify-between gap-2">
-    <div className="text-slate-600 dark:text-slate-300">Manifest arhiva: {manifest.processed.stores ?? 0}/{manifest.expected.stores ?? 0} magazine · {manifest.processed.agents ?? 0}/{manifest.expected.agents ?? 0} agenti · {manifest.error_count} erori</div>
+    <div className="text-slate-600 dark:text-slate-300">Manifest {operationLabel} ({manifest.status}): {manifest.processed.stores ?? 0}/{manifest.expected.stores ?? 0} magazine · {manifest.processed.agents ?? 0}/{manifest.expected.agents ?? 0} agenti · {manifest.error_count} erori</div>
     {manifest.status === 'verified' && <button type="button" onClick={model.approveManifest} disabled={model.running} className="inline-flex items-center gap-1 rounded-md bg-emerald-600 px-2 py-1 font-semibold text-white disabled:opacity-50">{model.approving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}Aproba manifest</button>}
     {manifest.status === 'approved' && <span className="font-semibold text-emerald-600 dark:text-emerald-400">Aprobat pentru reset</span>}
     {manifest.status === 'consumed' && <span className="font-semibold text-slate-500">Reset consumat</span>}
-  </div></div>;
+  </div>{manifest.issues.length > 0 && <ul className="mt-2 space-y-1 text-rose-600 dark:text-rose-300">{manifest.issues.slice(0, 12).map((issue) => <li key={`${issue.site_code}-${issue.slot}-${issue.code}-${issue.field ?? ''}`}>{grileMonthlyIssueLabel(issue)}</li>)}{manifest.issues.length > 12 && <li>+ {manifest.issues.length - 12} probleme suplimentare</li>}</ul>}</div>;
+}
+
+export function grileMonthlyIssueLabel(issue: GrileMonthlyManifest['issues'][number]): string {
+  const fields: Record<string, string> = {
+    base_salary: 'salariu de baza',
+    sales_commission: 'comision vanzari',
+    extra_location_commission: 'comision locatie suplimentara',
+    extra_hours_pay: 'plata ore suplimentare',
+    meal_vouchers: 'bonuri',
+    worked_hours: 'ore lucrate',
+  };
+  const field = issue.field ? fields[issue.field] ?? issue.field : issue.code;
+  return `${issue.site_code} · ${issue.store} · agent ${issue.slot || '?'} · ${field}`;
 }
 
 function Downloads({ month, model }: { month: string; model: GrileMonthlyPanelModel }) {

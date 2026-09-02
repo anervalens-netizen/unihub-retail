@@ -5323,6 +5323,47 @@ export const RETAIL_COMPONENT_SCHEMAS = {
     "title": "GrileManagerResponse",
     "type": "object"
   },
+  "GrileMonthlyIssue": {
+    "additionalProperties": false,
+    "properties": {
+      "code": {
+        "title": "Code",
+        "type": "string"
+      },
+      "field": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Field"
+      },
+      "site_code": {
+        "title": "Site Code",
+        "type": "string"
+      },
+      "slot": {
+        "minimum": 0.0,
+        "title": "Slot",
+        "type": "integer"
+      },
+      "store": {
+        "title": "Store",
+        "type": "string"
+      }
+    },
+    "required": [
+      "site_code",
+      "store",
+      "slot",
+      "code"
+    ],
+    "title": "GrileMonthlyIssue",
+    "type": "object"
+  },
   "GrileMonthlyJobResponse": {
     "additionalProperties": false,
     "properties": {
@@ -5444,6 +5485,13 @@ export const RETAIL_COMPONENT_SCHEMAS = {
       "id": {
         "title": "Id",
         "type": "integer"
+      },
+      "issues": {
+        "items": {
+          "$ref": "#/components/schemas/GrileMonthlyIssue"
+        },
+        "title": "Issues",
+        "type": "array"
       },
       "manifest_sha256": {
         "anyOf": [

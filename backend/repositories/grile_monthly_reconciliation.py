@@ -21,12 +21,24 @@ async def list_reset_items_for_reconciliation(
         rows = await conn.fetch(
             f"""
             SELECT {_RESET_ITEM_COLUMNS}
-            FROM grile_monthly_reset_items
-            WHERE operation_id = $1
+            FROM grile_monthly_reset_items AS item
+            WHERE item.operation_id = $1
               AND (
-                  status = 'uncertain'
-                  OR checkpoint_phase IN ('legacy_unknown', 'clear_intent', 'clear_verified', 'rollback_intent')
-                  OR recovery_code = 'recovery_required'
+                  item.status = 'uncertain'
+                  OR item.checkpoint_phase IN ('legacy_unknown', 'clear_intent', 'rollback_intent')
+                  OR item.recovery_code = 'recovery_required'
+                  OR (
+                      item.checkpoint_phase = 'clear_verified'
+                      AND (
+                          item.status <> 'completed'
+                          OR EXISTS (
+                              SELECT 1
+                              FROM grile_monthly_operations AS operation
+                              WHERE operation.id = item.operation_id
+                                AND operation.status = 'running'
+                          )
+                      )
+                  )
               )
             ORDER BY id
             """,
@@ -63,8 +75,12 @@ async def claim_reconciliation_candidates(
                         WHERE item.operation_id = operation.id
                           AND (
                               item.status = 'uncertain'
-                              OR item.checkpoint_phase IN ('legacy_unknown', 'clear_intent', 'clear_verified', 'rollback_intent')
+                              OR item.checkpoint_phase IN ('legacy_unknown', 'clear_intent', 'rollback_intent')
                               OR item.recovery_code = 'recovery_required'
+                              OR (
+                                  item.checkpoint_phase = 'clear_verified'
+                                  AND (item.status <> 'completed' OR operation.status = 'running')
+                              )
                           )
                         AND operation.status <> 'running'
                     )

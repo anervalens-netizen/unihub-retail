@@ -80,6 +80,7 @@ def extracted(*, status: str = "OK", error: str = "") -> ExtractedAgentRow:
         sheet_id="sheet-1",
         site_code="SITE01",
         error_code="" if status == "OK" else (error or "test_error"),
+        error_field="worked_hours" if status != "OK" else "",
     )
 
 
@@ -509,7 +510,19 @@ def test_public_manifest_payload_serializes_database_timestamps() -> None:
             "closing_month": "2026-07",
             "operation": "finalize",
             "status": "failed",
-            "manifest": {"expected": {}, "processed": {}},
+            "manifest": {
+                "expected": {},
+                "processed": {},
+                "issues": [
+                    {
+                        "site_code": "SITE01",
+                        "store": "Park Lake",
+                        "slot": 1,
+                        "code": "invalid_numeric_value",
+                        "field": "worked_hours",
+                    }
+                ],
+            },
             "created_at": timestamp,
             "verified_at": None,
             "approved_at": None,
@@ -518,6 +531,15 @@ def test_public_manifest_payload_serializes_database_timestamps() -> None:
     )
 
     assert payload["created_at"] == timestamp.isoformat()
+    assert payload["issues"] == [
+        {
+            "site_code": "SITE01",
+            "store": "Park Lake",
+            "slot": 1,
+            "code": "invalid_numeric_value",
+            "field": "worked_hours",
+        }
+    ]
     json.dumps(payload)
 
 
@@ -564,6 +586,15 @@ async def test_finalize_month_rejects_errors_without_official_output(
     with pytest.raises(grile.MonthlyManifestError) as exc_info:
         await grile.finalize_month(MagicMock(), "Iunie 2026", only="test", delay=0)
     assert exc_info.value.code == "finalization_incomplete"
+    assert exc_info.value.manifest["issues"] == [
+        {
+            "site_code": "SITE01",
+            "store": "Park Lake",
+            "slot": 1,
+            "code": "bad",
+            "field": "worked_hours",
+        }
+    ]
     assert not grile.resolve_output_path("Iunie 2026", "test", tmp_path).exists()
 
 
@@ -1382,6 +1413,7 @@ def test_extract_store_rows_rejects_incomplete_invalid_empty_and_duplicate() -> 
         )
     invalid = grile.extract_store_rows(make_sheets_value_service(invalid_values), entry())
     assert invalid[0].error_code == "invalid_numeric_value"
+    assert invalid[0].error_field == "base_salary"
 
     empty_values: list[dict[str, Any]] = [{"values": []} for _ in range(22)]
     empty = grile.extract_store_rows(make_sheets_value_service(empty_values), entry())

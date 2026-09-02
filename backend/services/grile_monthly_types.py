@@ -150,6 +150,7 @@ class ExtractedAgentRow:
     sheet_id: str
     site_code: str = ""
     error_code: str = ""
+    error_field: str = ""
 
 
 @dataclass(frozen=True)
