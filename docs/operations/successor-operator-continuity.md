@@ -339,7 +339,7 @@ K5 exercised the complete observed backup generation in an isolated non-producti
 
 ```text
 ops/k5-isolated-restore.sh
-SHA-256: 5b63364fc6bbc2a40c75b6be77372d022f9b1515377da8a543716caaebc699fb
+SHA-256: 4e6464eea299a014ea8b2bbef5b8c89b0427bfb577632f929de6d91cc6ef06be
 ```
 
 The recovered pre-existing weekly restore-mechanics helper is provenance only, not the complete K5 entrypoint:
@@ -378,6 +378,8 @@ source migration manifest SHA-256: 875c83480cc87feba6cc09dad644c2b9f897fa0a95f4b
 
 The observed recoverable generation contains seven PostgreSQL custom-format database dumps plus one visits SQLite component. PostgreSQL dumps are produced serially, so the generation is **not** an atomic cross-database snapshot.
 
+**Historical RPO timestamp provenance disclosure.** The 2026-08-31 exercise retains its exact recovered payload byte-for-byte, and its recorded backup start/completion values and the RPO numbers derived from them are historical observed exercise values. Later review demonstrated that the external backup system did not preserve those start/completion timestamps in generation-specific metadata: they existed only in a rolling last-run record that subsequent generations overwrote, while the per-generation result artifact for that generation carries no timing keys. After this discovered retention gap, those historical RPO numbers are NOT used as proof that the maintained future procedure has generation-authoritative RPO binding, and the restore itself is not thereby implicated: the limitation is specifically RPO timestamp provenance, not the verified restore mechanics. Future executions require generation-specific metadata under the maintained verifier contract described below, and the external backup-contract remediation that persists per-generation timing is tracked separately by GitHub issue #251.
+
 A future authorized isolated exercise invokes the maintained entrypoint with immutable inputs; never substitute `latest` for the generation or infer the source release from a later deploy:
 
 ```bash
@@ -387,17 +389,17 @@ bash ops/k5-isolated-restore.sh \
   --source-repo <local git checkout containing the exact source commit> \
   --source-sha <40-char source release SHA> \
   --github-main-sha <40-char GitHub main observed immediately before execution> \
-  --backup-started-at <ISO-8601 UTC> \
-  --backup-completed-at <ISO-8601 UTC> \
   --evidence-out <non-secret path outside the source backup root> \
   --execute-isolated-restore
 ```
 
-`--app-python <isolated interpreter>` may be supplied when an already-prepared compatible runtime exists; otherwise the entrypoint creates a disposable virtual environment under its own work directory. The command itself is not authorization: reading/copying protected backup payloads and creating disposable restore targets still requires the applicable DR authorization before execution.
+The entrypoint derives backup start/completion exclusively from the per-generation metadata artifact `<backup-root>/manifests/generation_<stamp>.result`. That artifact must carry the required keys `stamp` (exactly the selected stamp), `status` (exactly `verified`; no other truthy value is accepted), `started_at`, `completed_at` (ISO-8601 with an explicit UTC offset, canonicalized to `YYYY-MM-DDTHH:MM:SSZ` before any evidence or RPO use) and a numeric `file_count` equal to the generation checksum-manifest entry count. The artifact and `generation_<stamp>.sha256` must belong to the same exact stamp. Rolling last-run records, filesystem mtimes, log lines, filename inference and arbitrary CLI timestamps are never accepted as RPO authority; a generation without a conforming per-generation metadata artifact simply cannot be exercised. Generations published before the external contract tracked by #251 persists timing do not satisfy this contract, including the historical `20260831_121759` generation.
+
+`--app-python <isolated interpreter>` may be supplied when an already-prepared compatible runtime exists; the entrypoint then performs no package installation and instead validates that interpreter's installed distributions against every exact `package==version` pin of the source release `backend/requirements.lock` through `importlib.metadata` (PEP-503-normalized names), recording the lock SHA-256, validation status and a deterministic runtime dependency fingerprint. Otherwise the entrypoint creates a disposable virtual environment under its own work directory and installs the hashed lock. The command itself is not authorization: reading/copying protected backup payloads and creating disposable restore targets still requires the applicable DR authorization before execution.
 
 The entrypoint implements this fail-closed sequence:
 
-1. **Require explicit isolated execution and immutable identity.** It rejects missing acknowledgement, malformed stamp/SHA/timestamps, occupied loopback ports, work/evidence paths inside the source backup root, unavailable source commits, and pre-existing exercise-named Docker resources.
+1. **Require explicit isolated execution and immutable identity.** It rejects missing acknowledgement, malformed stamp/SHA, missing or malformed per-generation metadata (stamp mismatch, a status other than exactly `verified`, missing/duplicate/malformed keys, naive or malformed timestamps, `file_count` mismatch), occupied loopback ports, work/evidence paths inside the source backup root, unavailable source commits, and pre-existing exercise-named Docker resources.
 2. **Bind and verify exactly one generation.** It accepts only the eight expected components for the requested stamp and verifies each SHA-256 against the exact generation manifest before staging anything.
 3. **Export the exact source release.** It uses `git archive` for the supplied source SHA into a disposable work directory and never modifies the source checkout.
 4. **Verify source migration authority before restore.** It checks manifest v2, every migration file checksum, execution-class coverage and the frozen baseline checksum. It records the source migration-manifest digest and never executes a migration.
@@ -410,8 +412,8 @@ The entrypoint implements this fail-closed sequence:
 11. **Run a bounded non-sensitive business-integrity sample twice.** At least three approved aggregate table counts must be available; the repeated counts must be identical and are serialized into a deterministic SHA-256 fingerprint. No row contents are stored.
 12. **Boot the exact source application in a clean isolated development environment.** It points only at restored `dr_unihub`, binds the app to `127.0.0.1`, excludes production OIDC/session/Valkey/Sentry/process-authority settings and never loads production environment files.
 13. **Require service acceptance.** `/livez` must return `alive`; `/health` and `/readyz` must return `ok`. Evidence states explicitly that production OIDC/JWKS, Valkey/session and DB-process-authority semantics were not exercised.
-14. **Measure generation-age RPO from ordered timestamps and RTO with monotonic elapsed time.** With serial dumps, conservative RPO upper bound is `referenceFailureAt - backupStartedAt`, completed-generation age is `referenceFailureAt - backupCompletedAt`, and RTO retains UTC `restoreStartedAt`/`readyAt` event timestamps while deriving elapsed seconds from monotonic time, including staging through service acceptance.
-15. **Emit sanitized machine-readable evidence and clean up.** Evidence contains no password or credential-bearing DSN. The entrypoint removes only its unique app/container/volume/workdir, compares source backup size/mtime metadata before/after, and marks cleanup/source-mutation status fail-closed.
+14. **Measure generation-age RPO from ordered, generation-authoritative timestamps and RTO with monotonic elapsed time.** Backup start/completion are derived exclusively from the per-generation metadata artifact and canonicalized to UTC before any ordering or RPO use. With serial dumps, conservative RPO upper bound is `referenceFailureAt - backupStartedAt` and completed-generation age is `referenceFailureAt - backupCompletedAt`; RTO retains UTC `restoreStartedAt`/`readyAt` event timestamps while deriving elapsed seconds from monotonic time, including staging through service acceptance. Per-database restore durations also use monotonic elapsed time, never wall-clock subtraction.
+15. **Emit sanitized machine-readable evidence and clean up.** Evidence contains no password or credential-bearing DSN and no absolute private backup paths. Service acceptance is recorded while the durable result remains non-pass; the first durable full PASS is written only after application termination is proven (TERM, bounded grace, KILL when required, bounded post-KILL verification and reap), disposable Docker resources are removed and listed absent, the source backup size/mtime metadata compares unchanged, and the workdir is removed and verified absent. Evidence replacement uses exclusive no-follow unpredictable temporary files inside a current-user-owned, non-group/world-writable evidence parent, and cleanup/source-mutation/app-termination status are marked fail-closed.
 
 The K5 reference exercise passed the same substantive acceptance sequence with eight components, seven successful PostgreSQL restores, visits integrity `ok`, 69/69 migration checksum matches, a repeated bounded business fingerprint match, localhost application start, `/livez`/`/health`/`/readyz` HTTP 200 within the disclosed isolated dependency scope, conservative RPO upper bound `39779` seconds and wall-clock RTO `449` seconds. The canonical payload explicitly records `productionMutation=false`, `sourceBackupMutation=false` and `migrationExecution=false`.
 
@@ -572,7 +574,7 @@ A successor who can complete the following without private memory has enough ori
 - [ ] identify the credential-free Prometheus readiness/JWKS signals;
 - [ ] verify service identities and env-file ownership without reading secret values;
 - [ ] verify backup completion manifest fields without executing backup;
-- [ ] locate the canonical K5 isolated restore evidence payload, verify its digest through the descriptor, locate the versioned isolated restore entrypoint, explain the non-atomic cross-database RPO definition, and distinguish isolated restore verification from separately authorized production recovery;
+- [ ] locate the canonical K5 isolated restore evidence payload, verify its digest through the descriptor, locate the versioned isolated restore entrypoint, explain the non-atomic cross-database RPO definition, the per-generation metadata RPO authority contract and the historical RPO provenance disclosure, and distinguish isolated restore verification from separately authorized production recovery;
 - [ ] identify the administrator role for GitHub, host, Authentik, DNS/tunnel, proxy, monitoring and backup/DR;
 - [ ] explain ChatGPT vs Dell/server execution ownership;
 - [ ] resume Issue #226 and select the first open, unblocked child.

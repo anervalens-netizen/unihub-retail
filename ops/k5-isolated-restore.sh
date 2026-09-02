@@ -5,6 +5,18 @@
 # immutable backup generation and source release, restores only into disposable
 # local targets, never runs migrations, emits sanitized evidence, and cleans up.
 #
+# RPO timestamp authority contract (future-safe):
+#   Backup start/completion are derived EXCLUSIVELY from the per-generation
+#   metadata artifact <backup-root>/manifests/generation_<stamp>.result.
+#   The required metadata keys are: stamp, status (exactly "verified"),
+#   started_at, completed_at, file_count. Timestamps must carry an explicit
+#   UTC offset and are canonicalized to YYYY-MM-DDTHH:MM:SSZ before any
+#   downstream use. Rolling last-run metadata, filesystem mtimes, log lines
+#   and filename inference are never used as RPO authority. Persisting
+#   per-generation timing into the external backup contract is tracked
+#   separately (GitHub issue #251); until that ships, historical generations
+#   without per-generation timing metadata simply cannot be exercised.
+#
 # Provenance: the weekly restore-mechanics helper recovered during K5 has
 # SHA-256 a5de3ed7803253abcbde0aa66885de5380279f133ee01bd20fd4db5bf19599af.
 # This entrypoint extends that proven foundation with the full K5 acceptance
@@ -23,8 +35,6 @@ STAMP=""
 SOURCE_REPO=""
 SOURCE_SHA=""
 GITHUB_MAIN_SHA=""
-BACKUP_STARTED_AT=""
-BACKUP_COMPLETED_AT=""
 EVIDENCE_OUT=""
 WORK_ROOT="$DEFAULT_WORK_ROOT"
 POSTGRES_IMAGE="$DEFAULT_POSTGRES_IMAGE"
@@ -39,6 +49,7 @@ CONTAINER=""
 VOLUME=""
 PASSWORD=""
 APP_PID=""
+APP_PROCESS_STATUS="not-started"
 CURRENT_PHASE="preflight"
 RESULT="fail"
 FAILURE_REASON=""
@@ -56,6 +67,14 @@ DOCKER_VOLUME_LS_STATUS="not-run"
 REFERENCE_FAILURE_AT=""
 RESTORE_STARTED_MONOTONIC_NS=""
 READY_MONOTONIC_NS=""
+BACKUP_STARTED_AT=""
+BACKUP_COMPLETED_AT=""
+GENERATION_RESULT_SHA256=""
+GENERATION_METADATA_STATUS=""
+REQUIREMENTS_LOCK_SHA256=""
+RUNTIME_DEPENDENCY_VALIDATION=""
+RUNTIME_DEPENDENCY_FINGERPRINT=""
+APP_PYTHON_SOURCE=""
 
 usage() {
   cat <<'EOF'
@@ -66,8 +85,6 @@ Usage:
     --source-repo <local git repo containing source commit> \
     --source-sha <40-char source release sha> \
     --github-main-sha <40-char main sha observed immediately before exercise> \
-    --backup-started-at <ISO-8601 UTC> \
-    --backup-completed-at <ISO-8601 UTC> \
     --evidence-out <sanitized JSON output path> \
     [--work-root /tmp] \
     [--postgres-image postgres:18-alpine] \
@@ -76,12 +93,24 @@ Usage:
     [--app-python /path/to/isolated/python] \
     --execute-isolated-restore
 
+Backup timing authority:
+  Backup start/completion are derived exclusively from the per-generation
+  metadata artifact <backup-root>/manifests/generation_<stamp>.result.
+  Required metadata keys: stamp, status (exactly "verified"), started_at,
+  completed_at, file_count. Timestamps must carry an explicit UTC offset and
+  are canonicalized to YYYY-MM-DDTHH:MM:SSZ before any evidence/RPO use.
+  Rolling last-run metadata, filesystem mtimes, log lines and filename
+  inference are never accepted as RPO authority, and arbitrary CLI
+  timestamps no longer exist on this interface.
+
 Safety:
   - This command is isolated-only. It does not implement production cutover.
   - It never runs migrations.
   - It never writes to the source backup root.
   - It creates/removes only exercise-named disposable Docker resources.
   - The PostgreSQL and application ports bind to 127.0.0.1 only.
+  - Evidence is written through exclusive no-follow temporary files inside a
+    current-user-owned, non-group/world-writable evidence parent.
 EOF
 }
 
@@ -96,19 +125,92 @@ require_cmd() {
   command -v "$1" >/dev/null 2>&1 || die "required command not found: $1"
 }
 
+app_process_alive() {
+  [ -n "$APP_PID" ] || return 1
+  [ -d "/proc/$APP_PID" ] || return 1
+  local stat_line rest state
+  stat_line="$(cat "/proc/$APP_PID/stat" 2>/dev/null)" || return 1
+  rest="${stat_line##*) }"
+  state="${rest%% *}"
+  [ "$state" != "Z" ]
+}
+
+terminate_application() {
+  if [ -z "$APP_PID" ] || [ "$APP_PROCESS_STATUS" = "not-started" ]; then
+    APP_PROCESS_STATUS="not-started"
+    return 0
+  fi
+  local grace_iterations="${K5_APP_TERM_GRACE_ITERATIONS:-10}"
+  local grace_sleep="${K5_APP_TERM_SLEEP_SECONDS:-0.3}"
+  local used_kill=0
+
+  if app_process_alive; then
+    kill -TERM "$APP_PID" >/dev/null 2>&1 || true
+    for _ in $(seq 1 "$grace_iterations"); do
+      app_process_alive || break
+      sleep "$grace_sleep"
+    done
+    if app_process_alive; then
+      kill -KILL "$APP_PID" >/dev/null 2>&1 || true
+      used_kill=1
+      for _ in $(seq 1 "$grace_iterations"); do
+        app_process_alive || break
+        sleep "$grace_sleep"
+      done
+    fi
+  fi
+
+  # Reap the terminated child without indefinite blocking: after a delivered
+  # TERM/KILL the child is gone or a zombie, so wait returns immediately.
+  wait "$APP_PID" >/dev/null 2>&1 || true
+
+  if app_process_alive; then
+    APP_PROCESS_STATUS="fail"
+    return 1
+  fi
+  if [ "$used_kill" -eq 1 ]; then
+    APP_PROCESS_STATUS="kill-terminated"
+  else
+    APP_PROCESS_STATUS="terminated"
+  fi
+  return 0
+}
+
 write_initial_evidence() {
   local parent
   parent="$(dirname -- "$EVIDENCE_OUT")"
-  mkdir -p -- "$parent" || die "cannot create evidence parent: $parent"
+  if [ ! -d "$parent" ]; then
+    mkdir -p -- "$parent" || die "cannot create evidence parent: $parent"
+    chmod 0700 -- "$parent" || die "cannot secure newly created evidence parent: $parent"
+  fi
   [ "$(realpath -e -- "$parent")" = "$parent" ] ||
     die "evidence parent must not be a symlink: $parent"
   python3 - "$EVIDENCE_OUT" "$EXERCISE_ID" "$GITHUB_MAIN_SHA" "$SOURCE_SHA" \
-    "$STAMP" "$BACKUP_STARTED_AT" "$BACKUP_COMPLETED_AT" "$REFERENCE_FAILURE_AT" <<'PY'
+    "$STAMP" "$REFERENCE_FAILURE_AT" <<'PY'
 import json
 import os
+import stat
 import sys
 from pathlib import Path
-path, exercise_id, github_main, source_sha, stamp, backup_started, backup_completed, reference_failure = sys.argv[1:]
+path, exercise_id, github_main, source_sha, stamp, reference_failure = sys.argv[1:]
+target = Path(path)
+
+def fail(message):
+    raise SystemExit(message)
+
+def verify_parent():
+    parent = target.parent
+    current = os.lstat(parent)
+    if stat.S_ISLNK(current.st_mode):
+        fail("evidence parent is a symlink")
+    if os.path.realpath(parent) != str(parent):
+        fail("evidence parent is not canonical")
+    if current.st_uid != os.geteuid():
+        fail("evidence parent is not owned by the current user")
+    if current.st_mode & 0o022:
+        fail("evidence parent is group or world writable")
+
+verify_parent()
 payload = {
     "schemaVersion": "k5/1",
     "kind": "restore-exercise-evidence",
@@ -116,9 +218,11 @@ payload = {
     "githubMainAtStart": github_main,
     "sourceReleaseSha": source_sha,
     "sourceBackupId": stamp,
-    "backupStartedAt": backup_started,
-    "backupCompletedAt": backup_completed,
+    "backupStartedAt": None,
+    "backupCompletedAt": None,
     "referenceFailureAt": reference_failure,
+    "generationMetadataSha256": None,
+    "generationMetadataStatus": None,
     "sourceIntegrityStatus": "not-verified",
     "productionMutation": False,
     "sourceBackupMutation": False,
@@ -150,8 +254,6 @@ while [ "$#" -gt 0 ]; do
     --source-repo) SOURCE_REPO="${2:-}"; shift 2 ;;
     --source-sha) SOURCE_SHA="${2:-}"; shift 2 ;;
     --github-main-sha) GITHUB_MAIN_SHA="${2:-}"; shift 2 ;;
-    --backup-started-at) BACKUP_STARTED_AT="${2:-}"; shift 2 ;;
-    --backup-completed-at) BACKUP_COMPLETED_AT="${2:-}"; shift 2 ;;
     --evidence-out) EVIDENCE_OUT="${2:-}"; shift 2 ;;
     --work-root) WORK_ROOT="${2:-}"; shift 2 ;;
     --postgres-image) POSTGRES_IMAGE="${2:-}"; shift 2 ;;
@@ -170,8 +272,6 @@ done
 [ -n "$SOURCE_REPO" ] || die "--source-repo is required"
 [ -n "$SOURCE_SHA" ] || die "--source-sha is required"
 [ -n "$GITHUB_MAIN_SHA" ] || die "--github-main-sha is required"
-[ -n "$BACKUP_STARTED_AT" ] || die "--backup-started-at is required"
-[ -n "$BACKUP_COMPLETED_AT" ] || die "--backup-completed-at is required"
 [ -n "$EVIDENCE_OUT" ] || die "--evidence-out is required"
 if [ -e "$EVIDENCE_OUT" ] || [ -L "$EVIDENCE_OUT" ]; then
   die "--evidence-out must not already exist or be a symlink"
@@ -236,28 +336,74 @@ import stat
 import sys
 from pathlib import Path
 path = Path(sys.argv[1])
-expected_device, expected_inode = int(sys.argv[2]), int(sys.argv[3])
-def verify_owned_path():
-    if not path.exists():
-        raise SystemExit("evidence output is missing during early failure")
-    current = os.lstat(path)
-    if stat.S_ISLNK(current.st_mode) or (current.st_dev, current.st_ino) != (expected_device, expected_inode):
-        raise SystemExit("evidence output was replaced during early failure")
+expected = (int(sys.argv[2]), int(sys.argv[3]))
 
-verify_owned_path()
+def fail(message):
+    raise SystemExit(message)
+
+def verify_parent():
+    parent = path.parent
+    current = os.lstat(parent)
+    if stat.S_ISLNK(current.st_mode):
+        fail("evidence parent is a symlink")
+    if os.path.realpath(parent) != str(parent):
+        fail("evidence parent is not canonical")
+    if current.st_uid != os.geteuid():
+        fail("evidence parent is not owned by the current user")
+    if current.st_mode & 0o022:
+        fail("evidence parent is group or world writable")
+
+def verify_destination():
+    try:
+        current = os.lstat(path)
+    except FileNotFoundError:
+        fail("evidence output is missing during early failure")
+    if stat.S_ISLNK(current.st_mode):
+        fail("evidence output is a symlink during early failure")
+    if (current.st_dev, current.st_ino) != expected:
+        fail("evidence output was replaced during early failure")
+
+def secure_replace(payload_bytes):
+    verify_parent()
+    verify_destination()
+    temporary = None
+    fd = -1
+    for _attempt in range(8):
+        candidate = path.with_name(f".{path.name}.{os.urandom(8).hex()}.tmp")
+        try:
+            fd = os.open(candidate, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+        except OSError:
+            # Fail closed on any creation race (existing leaf, symlinked
+            # candidate, or permission anomaly): try another random leaf.
+            continue
+        temporary = candidate
+        break
+    if temporary is None:
+        fail("unable to allocate a secure temporary evidence file")
+    try:
+        os.fchmod(fd, 0o600)
+        with os.fdopen(fd, "wb") as output:
+            output.write(payload_bytes)
+            output.flush()
+            os.fsync(output.fileno())
+        fd = -1
+        verify_destination()
+        os.replace(temporary, path)
+    finally:
+        if fd != -1:
+            os.close(fd)
+        try:
+            os.unlink(temporary)
+        except (FileNotFoundError, TypeError):
+            pass
+
+verify_destination()
 with path.open("r", encoding="utf-8") as source:
     payload = json.load(source)
 payload["result"] = "fail"
 payload["failurePhase"] = sys.argv[4] or "preflight"
 payload["failureReason"] = sys.argv[5] or f"phase {payload['failurePhase']} failed"
-temporary = path.with_name(f".{path.name}.early.{os.getpid()}.tmp")
-try:
-    temporary.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
-    os.chmod(temporary, 0o600)
-    verify_owned_path()
-    temporary.replace(path)
-finally:
-    temporary.unlink(missing_ok=True)
+secure_replace((json.dumps(payload, indent=2) + "\n").encode("utf-8"))
 PY
 }
 
@@ -277,28 +423,6 @@ trap early_failure_cleanup EXIT
 
 git -C "$SOURCE_REPO" cat-file -e "${SOURCE_SHA}^{commit}" 2>/dev/null ||
   die "source release commit is not available locally: $SOURCE_SHA"
-
-CURRENT_PHASE="timestamp-validation"
-if ! timestamp_error="$(python3 - "$BACKUP_STARTED_AT" "$BACKUP_COMPLETED_AT" "$REFERENCE_FAILURE_AT" 2>&1 <<'PY'
-import datetime as dt
-import sys
-values = []
-for raw in sys.argv[1:]:
-    value = dt.datetime.fromisoformat(raw.replace("Z", "+00:00"))
-    if value.tzinfo is None:
-        raise SystemExit("timestamps must include timezone")
-    values.append(value.astimezone(dt.timezone.utc))
-started, completed, reference = values
-if completed < started:
-    raise SystemExit("backup completion precedes backup start")
-if completed > reference:
-    raise SystemExit("backup completion follows reference failure")
-PY
-)"; then
-  FAILURE_REASON="$timestamp_error"
-  printf '%s\n' "$timestamp_error" >&2
-  exit 1
-fi
 
 CURRENT_PHASE="port-validation"
 python3 - "$PG_PORT" "$APP_PORT" <<'PY'
@@ -337,12 +461,84 @@ capture_evidence_identity() {
   read -r EVIDENCE_DEVICE EVIDENCE_INODE < <(stat -c '%d %i' -- "$EVIDENCE_OUT")
 }
 
+validate_runtime_dependencies() {
+  local interpreter="$1"
+  local lock_file="$SOURCE_DIR/backend/requirements.lock"
+  [ -f "$lock_file" ] || die "backend/requirements.lock is missing from the source release"
+  REQUIREMENTS_LOCK_SHA256="$(sha256sum "$lock_file" | awk '{print $1}')"
+  local validation_output
+  validation_output="$(env -i \
+    HOME="$WORK/home" \
+    PATH="${PATH:-/usr/bin:/bin}" \
+    PYTHONNOUSERSITE=1 \
+    "$interpreter" - "$lock_file" 2>&1 <<'PY'
+import hashlib
+import importlib.metadata as metadata
+import re
+import sys
+from pathlib import Path
+
+lock_path = Path(sys.argv[1])
+EXEMPT_TOOLING = {"pip", "setuptools", "wheel"}
+
+def normalize(name):
+    return re.sub(r"[-_.]+", "-", name).lower()
+
+pins = {}
+for raw_line in lock_path.read_text(encoding="utf-8").splitlines():
+    line = raw_line.strip()
+    if not line or line.startswith("#") or line.startswith("--"):
+        continue
+    token = line.split()[0]
+    if "==" not in token:
+        raise SystemExit(f"unparseable requirements.lock line: {raw_line!r}")
+    name, version = token.split("==", 1)
+    name = name.split("[", 1)[0]
+    normalized = normalize(name)
+    if not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", normalized):
+        raise SystemExit(f"unsafe distribution name in requirements.lock: {name!r}")
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9.+-]*", version):
+        raise SystemExit(f"unsafe version in requirements.lock: {version!r}")
+    if normalized in pins:
+        raise SystemExit(f"duplicate locked distribution: {normalized}")
+    pins[normalized] = version
+if not pins:
+    raise SystemExit("requirements.lock contains no pinned distributions")
+
+installed = {}
+for distribution in metadata.distributions():
+    raw_name = (distribution.metadata.get("Name") if distribution.metadata else "") or ""
+    installed.setdefault(normalize(raw_name), set()).add(distribution.version)
+
+missing = sorted(
+    name for name in pins if name not in EXEMPT_TOOLING and name not in installed
+)
+mismatched = sorted(
+    f"{name} locked={pins[name]} installed={'|'.join(sorted(installed[name]))}"
+    for name in pins
+    if name not in EXEMPT_TOOLING and name in installed and pins[name] not in installed[name]
+)
+if missing or mismatched:
+    raise SystemExit(
+        f"runtime dependency validation failed missing={missing} mismatched={mismatched}"
+    )
+fingerprint_source = "\n".join(f"{name}=={pins[name]}" for name in sorted(pins))
+fingerprint = hashlib.sha256(fingerprint_source.encode("utf-8")).hexdigest()
+print(f"pass\t{fingerprint}")
+PY
+  )" || die "runtime dependency validation failed: $validation_output"
+  RUNTIME_DEPENDENCY_VALIDATION="${validation_output%%$'\t'*}"
+  RUNTIME_DEPENDENCY_FINGERPRINT="${validation_output#*$'\t'}"
+  [ "$RUNTIME_DEPENDENCY_VALIDATION" = "pass" ] ||
+    die "runtime dependency validation did not pass: $validation_output"
+}
+
 update_final_evidence() {
   [ "$EVIDENCE_CREATED" -eq 1 ] || return 0
   python3 - "$EVIDENCE_OUT" "$EVIDENCE_DEVICE" "$EVIDENCE_INODE" \
     "$CLEANUP_STATUS" "$SOURCE_BACKUP_MUTATION" "$RESULT" \
     "$CURRENT_PHASE" "$FAILURE_REASON" "$DOCKER_RM_STATUS" "$DOCKER_VOLUME_RM_STATUS" \
-    "$DOCKER_PS_STATUS" "$DOCKER_VOLUME_LS_STATUS" <<'PY'
+    "$DOCKER_PS_STATUS" "$DOCKER_VOLUME_LS_STATUS" "$APP_PROCESS_STATUS" <<'PY'
 import json
 import os
 import stat
@@ -350,19 +546,73 @@ import sys
 from pathlib import Path
 path = Path(sys.argv[1])
 expected = (int(sys.argv[2]), int(sys.argv[3]))
-def verify_owned_path():
-    if not path.exists():
-        raise SystemExit("evidence output is missing during cleanup")
-    current = os.lstat(path)
-    if stat.S_ISLNK(current.st_mode) or (current.st_dev, current.st_ino) != expected:
-        raise SystemExit("evidence output was replaced during cleanup")
 
-verify_owned_path()
+def fail(message):
+    raise SystemExit(message)
+
+def verify_parent():
+    parent = path.parent
+    current = os.lstat(parent)
+    if stat.S_ISLNK(current.st_mode):
+        fail("evidence parent is a symlink")
+    if os.path.realpath(parent) != str(parent):
+        fail("evidence parent is not canonical")
+    if current.st_uid != os.geteuid():
+        fail("evidence parent is not owned by the current user")
+    if current.st_mode & 0o022:
+        fail("evidence parent is group or world writable")
+
+def verify_destination():
+    try:
+        current = os.lstat(path)
+    except FileNotFoundError:
+        fail("evidence output is missing during cleanup")
+    if stat.S_ISLNK(current.st_mode):
+        fail("evidence output is a symlink during cleanup")
+    if (current.st_dev, current.st_ino) != expected:
+        fail("evidence output was replaced during cleanup")
+
+def secure_replace(payload_bytes):
+    verify_parent()
+    verify_destination()
+    temporary = None
+    fd = -1
+    for _attempt in range(8):
+        candidate = path.with_name(f".{path.name}.{os.urandom(8).hex()}.tmp")
+        try:
+            fd = os.open(candidate, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+        except OSError:
+            # Fail closed on any creation race (existing leaf, symlinked
+            # candidate, or permission anomaly): try another random leaf.
+            continue
+        temporary = candidate
+        break
+    if temporary is None:
+        fail("unable to allocate a secure temporary evidence file")
+    try:
+        os.fchmod(fd, 0o600)
+        with os.fdopen(fd, "wb") as output:
+            output.write(payload_bytes)
+            output.flush()
+            os.fsync(output.fileno())
+        fd = -1
+        verify_destination()
+        os.replace(temporary, path)
+    finally:
+        if fd != -1:
+            os.close(fd)
+        try:
+            os.unlink(temporary)
+        except (FileNotFoundError, TypeError):
+            pass
+
+verify_destination()
 with path.open("r", encoding="utf-8") as source:
     payload = json.load(source)
 payload["cleanupStatus"] = sys.argv[4]
 payload["sourceBackupMutation"] = sys.argv[5] == "true"
 payload["result"] = sys.argv[6]
+payload["appTerminationStatus"] = sys.argv[13]
 payload["dockerCleanup"] = {
     "containerRemoval": sys.argv[9],
     "volumeRemoval": sys.argv[10],
@@ -372,14 +622,10 @@ payload["dockerCleanup"] = {
 if payload["result"] != "pass":
     payload["failurePhase"] = sys.argv[7] or payload.get("failurePhase") or "unknown"
     payload["failureReason"] = sys.argv[8] or "exercise failed"
-temporary = path.with_name(f".{path.name}.final.{os.getpid()}.tmp")
-try:
-    temporary.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
-    os.chmod(temporary, 0o600)
-    verify_owned_path()
-    temporary.replace(path)
-finally:
-    temporary.unlink(missing_ok=True)
+else:
+    payload["failurePhase"] = None
+    payload["failureReason"] = None
+secure_replace((json.dumps(payload, indent=2) + "\n").encode("utf-8"))
 PY
   capture_evidence_identity
 }
@@ -388,13 +634,11 @@ cleanup() {
   local exit_rc=$?
   set +e
 
-  if [ -n "$APP_PID" ] && kill -0 "$APP_PID" >/dev/null 2>&1; then
-    kill -TERM "$APP_PID" >/dev/null 2>&1
-    for _ in $(seq 1 10); do
-      kill -0 "$APP_PID" >/dev/null 2>&1 || break
-      sleep 1
-    done
-    kill -KILL "$APP_PID" >/dev/null 2>&1 || true
+  terminate_application || true
+  if [ "$APP_PROCESS_STATUS" = "fail" ]; then
+    RESULT="fail"
+    CLEANUP_STATUS="fail"
+    [ -n "$FAILURE_REASON" ] || FAILURE_REASON="application process termination could not be proven"
   fi
 
   if [ "$CONTAINER_CREATED" -eq 1 ]; then
@@ -414,6 +658,11 @@ cleanup() {
     fi
   else
     DOCKER_VOLUME_RM_STATUS="not-created"
+  fi
+  if [ "$DOCKER_RM_STATUS" = "fail" ] || [ "$DOCKER_VOLUME_RM_STATUS" = "fail" ]; then
+    RESULT="fail"
+    CLEANUP_STATUS="fail"
+    [ -n "$FAILURE_REASON" ] || FAILURE_REASON="disposable Docker resource removal failed"
   fi
 
   local source_after=""
@@ -438,6 +687,7 @@ cleanup() {
   else
     SOURCE_BACKUP_MUTATION="true"
     RESULT="fail"
+    CLEANUP_STATUS="fail"
     [ -n "$FAILURE_REASON" ] || FAILURE_REASON="source backup metadata changed"
   fi
 
@@ -460,22 +710,21 @@ cleanup() {
   else
     DOCKER_VOLUME_LS_STATUS="fail"
   fi
-  if [[ "$DOCKER_RM_STATUS" = "pass" || "$DOCKER_RM_STATUS" = "not-created" ]] &&
+  if ! { [[ "$DOCKER_RM_STATUS" = "pass" || "$DOCKER_RM_STATUS" = "not-created" ]] &&
     [[ "$DOCKER_VOLUME_RM_STATUS" = "pass" || "$DOCKER_VOLUME_RM_STATUS" = "not-created" ]] &&
     [ "$DOCKER_PS_STATUS" = "pass" ] &&
     [ "$DOCKER_VOLUME_LS_STATUS" = "pass" ] &&
     ! grep -Fxq "$CONTAINER" "$docker_ps_output" &&
-    ! grep -Fxq "$VOLUME" "$docker_volume_output"; then
-    CLEANUP_STATUS="pass"
-  else
-    CLEANUP_STATUS="fail"
+    ! grep -Fxq "$VOLUME" "$docker_volume_output"; }; then
     RESULT="fail"
+    CLEANUP_STATUS="fail"
     [ -n "$FAILURE_REASON" ] || FAILURE_REASON="disposable Docker cleanup failed"
   fi
   if [ -z "$WORK" ] || [ ! -d "$WORK" ]; then
     rm -f -- "$docker_ps_output" "$docker_volume_output"
   fi
 
+  # Intermediate durable state: records cleanup progress but never a PASS.
   if ! update_final_evidence; then
     CLEANUP_STATUS="fail"
     RESULT="fail"
@@ -487,34 +736,40 @@ cleanup() {
     [[ "$(basename "$WORK")" == k5-isolated-restore-* ]]; then
     rm -rf -- "$WORK"
   else
-    CLEANUP_STATUS="fail"
     RESULT="fail"
+    CLEANUP_STATUS="fail"
     [ -n "$FAILURE_REASON" ] || FAILURE_REASON="unsafe workdir cleanup boundary"
   fi
 
   if [ -d "$WORK" ]; then
-    CLEANUP_STATUS="fail"
     RESULT="fail"
+    CLEANUP_STATUS="fail"
     [ -n "$FAILURE_REASON" ] || FAILURE_REASON="workdir cleanup failed"
   fi
 
-  if ! update_final_evidence; then
-    CLEANUP_STATUS="fail"
-    RESULT="fail"
-    [ -n "$FAILURE_REASON" ] || FAILURE_REASON="evidence output identity changed during cleanup"
+  if [ "$exit_rc" -ne 0 ] || [ -n "$FAILURE_REASON" ]; then
+    update_final_evidence || true
+    [ "$exit_rc" -ne 0 ] && exit "$exit_rc"
+    exit 1
   fi
 
-  if [ "$RESULT" = "pass" ] && [ "$CLEANUP_STATUS" = "pass" ] &&
-    [ "$SOURCE_BACKUP_MUTATION" = "false" ]; then
-    exit 0
+  # Every cleanup verification succeeded: publish the FIRST durable full PASS.
+  CLEANUP_STATUS="pass"
+  RESULT="pass"
+  if ! update_final_evidence; then
+    RESULT="fail"
+    CLEANUP_STATUS="fail"
+    FAILURE_REASON="final evidence publication failed; durable evidence remains non-pass"
+    [ "$exit_rc" -ne 0 ] && exit "$exit_rc"
+    exit 1
   fi
-  [ "$exit_rc" -ne 0 ] && exit "$exit_rc"
-  exit 1
+  exit 0
 }
 trap cleanup EXIT
 
 MANIFEST="$BACKUP_ROOT/manifests/generation_${STAMP}.sha256"
-readonly MANIFEST
+GENERATION_RESULT="$BACKUP_ROOT/manifests/generation_${STAMP}.result"
+readonly MANIFEST GENERATION_RESULT
 CURRENT_PHASE="docker-preflight"
 if docker ps -a --format '{{.Names}}' >"$WORK/docker-ps-preflight.txt" 2>"$WORK/docker-ps-preflight.err"; then
   if grep -Fxq "$CONTAINER" "$WORK/docker-ps-preflight.txt"; then
@@ -532,7 +787,7 @@ else
 fi
 
 CURRENT_PHASE="generation-manifest"
-[ -f "$MANIFEST" ] || die "generation manifest not found: $MANIFEST"
+[ -f "$MANIFEST" ] || die "generation manifest not found for stamp $STAMP"
 python3 - "$MANIFEST" "$STAMP" "$WORK/expected.tsv" <<'PY'
 import re
 import sys
@@ -591,6 +846,95 @@ done <"$WORK/expected.tsv"
 while IFS= read -r source_path; do
   stat -c '%n\t%s\t%Y' -- "$source_path" >>"$WORK/source-before.tsv"
 done <"$WORK/source-paths.txt"
+
+CURRENT_PHASE="generation-metadata"
+[ -f "$GENERATION_RESULT" ] ||
+  die "per-generation result metadata not found for stamp $STAMP (rolling last-run metadata is never used as RPO authority)"
+GENERATION_METADATA_OUTPUT="$(python3 - "$GENERATION_RESULT" "$STAMP" \
+  "$REFERENCE_FAILURE_AT" "$WORK/expected.tsv" 2>&1 <<'PY'
+import datetime as dt
+import re
+import sys
+from pathlib import Path
+
+metadata_path = Path(sys.argv[1])
+expected_stamp = sys.argv[2]
+reference_raw = sys.argv[3]
+expected_tsv = Path(sys.argv[4])
+
+REQUIRED_KEYS = ("stamp", "status", "started_at", "completed_at", "file_count")
+KEY_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+values = {}
+for raw_line in metadata_path.read_text(encoding="utf-8").splitlines():
+    line = raw_line.strip()
+    if not line or line.startswith("#"):
+        continue
+    if "=" not in line:
+        raise SystemExit(f"malformed generation metadata line: {raw_line!r}")
+    key, value = line.split("=", 1)
+    if not KEY_PATTERN.fullmatch(key):
+        raise SystemExit(f"malformed generation metadata key: {key!r}")
+    if key in values:
+        raise SystemExit(f"duplicate generation metadata key: {key}")
+    values[key] = value
+
+missing = [key for key in REQUIRED_KEYS if key not in values]
+if missing:
+    raise SystemExit(f"missing required generation metadata keys: {missing}")
+
+if values["stamp"] != expected_stamp:
+    raise SystemExit(
+        f"generation metadata stamp {values['stamp']!r} does not match "
+        f"selected generation {expected_stamp!r}"
+    )
+if values["status"] != "verified":
+    raise SystemExit(
+        f"generation metadata status must be exactly 'verified', got {values['status']!r}"
+    )
+if not values["file_count"].isdigit():
+    raise SystemExit(f"generation metadata file_count is not numeric: {values['file_count']!r}")
+
+manifest_entries = [
+    line for line in expected_tsv.read_text(encoding="utf-8").splitlines() if line
+]
+if int(values["file_count"]) != len(manifest_entries):
+    raise SystemExit(
+        f"generation metadata file_count {values['file_count']} does not match "
+        f"manifest entry count {len(manifest_entries)}"
+    )
+
+def canonicalize(raw, label):
+    try:
+        parsed = dt.datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError:
+        raise SystemExit(f"{label} is not a valid ISO-8601 timestamp: {raw!r}")
+    if parsed.tzinfo is None:
+        raise SystemExit(f"{label} must include an explicit UTC offset: {raw!r}")
+    utc = parsed.astimezone(dt.timezone.utc)
+    if utc.microsecond != 0:
+        raise SystemExit(f"{label} must have whole-second precision: {raw!r}")
+    return utc
+
+def format_utc(value):
+    return value.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+started = canonicalize(values["started_at"], "started_at")
+completed = canonicalize(values["completed_at"], "completed_at")
+reference = canonicalize(reference_raw, "referenceFailureAt")
+if started > completed:
+    raise SystemExit("backup completion precedes backup start")
+if completed > reference:
+    raise SystemExit("backup completion follows reference failure")
+print(f"{format_utc(started)}\t{format_utc(completed)}")
+PY
+)" || die "generation metadata validation failed for $STAMP: $GENERATION_METADATA_OUTPUT"
+BACKUP_STARTED_AT="${GENERATION_METADATA_OUTPUT%%$'\t'*}"
+BACKUP_COMPLETED_AT="${GENERATION_METADATA_OUTPUT#*$'\t'}"
+GENERATION_RESULT_SHA256="$(sha256sum "$GENERATION_RESULT" | awk '{print $1}')"
+GENERATION_METADATA_STATUS="verified"
+readonly BACKUP_STARTED_AT BACKUP_COMPLETED_AT GENERATION_RESULT_SHA256 \
+  GENERATION_METADATA_STATUS
 
 CURRENT_PHASE="source-release-export"
 git -C "$SOURCE_REPO" archive --format=tar "$SOURCE_SHA" >"$WORK/source.tar"
@@ -741,14 +1085,24 @@ CURRENT_PHASE="postgres-restore"
 for label in unihub mobiup_dwh unihub_identity unihub_retail unihub_learning authentik glitchtip; do
   database="dr_${label}"
   started_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-  started_epoch="$(date -u +%s)"
+  restore_started_monotonic_ns="$(python3 -c 'import time; print(time.monotonic_ns())')"
   docker exec -e PGPASSWORD="$PASSWORD" "$CONTAINER" \
     createdb -U postgres --template=template0 "$database" >/dev/null
   docker exec -e PGPASSWORD="$PASSWORD" "$CONTAINER" \
     pg_restore -U postgres --no-owner --no-acl --exit-on-error \
     -d "$database" "/backups/${label}_${STAMP}.dump" >/dev/null
   completed_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-  duration="$(( $(date -u +%s) - started_epoch ))"
+  duration="$(python3 - "$restore_started_monotonic_ns" <<'PY'
+import sys
+import time
+started_ns = int(sys.argv[1])
+elapsed_ns = time.monotonic_ns() - started_ns
+if elapsed_ns < 0:
+    raise SystemExit("monotonic restore duration was negative")
+# Round up to a whole second so an observed sub-second tail is not hidden.
+print((elapsed_ns + 999_999_999) // 1_000_000_000)
+PY
+)"
   relations="$(
     docker exec -e PGPASSWORD="$PASSWORD" "$CONTAINER" \
       psql -U postgres -d "$database" -Atc \
@@ -846,9 +1200,14 @@ readonly BUSINESS_FINGERPRINT
 
 CURRENT_PHASE="application-runtime"
 if [ -n "$APP_PYTHON" ]; then
+  # Explicit interpreter path: validate against the source release lock via
+  # importlib.metadata only. This branch performs no package installation and
+  # no network mutation.
   APP_PYTHON="$(realpath -e -- "$APP_PYTHON")"
+  APP_PYTHON_SOURCE="explicit"
 else
   APP_PYTHON="$WORK/venv/bin/python"
+  APP_PYTHON_SOURCE="default-venv"
   env -i \
     HOME="$WORK/home" \
     PATH="${PATH:-/usr/bin:/bin}" \
@@ -867,6 +1226,7 @@ else
     "$APP_PYTHON" -m pip install --disable-pip-version-check \
       --require-hashes -r "$SOURCE_DIR/backend/requirements.lock" >"$WORK/pip.log" 2>&1
 fi
+validate_runtime_dependencies "$APP_PYTHON"
 env -i \
   HOME="$WORK/home" \
   PATH="${PATH:-/usr/bin:/bin}" \
@@ -894,6 +1254,7 @@ CURRENT_PHASE="application-start"
       --host 127.0.0.1 --port "$APP_PORT"
 ) >"$WORK/app.log" 2>&1 &
 APP_PID=$!
+APP_PROCESS_STATUS="running"
 
 CURRENT_PHASE="application-readiness"
 probe_json() {
@@ -942,17 +1303,20 @@ PY
 APP_PYTHON_VERSION="$("$APP_PYTHON" --version 2>&1 | head -1)"
 readonly READY_AT RTO_SECONDS APP_PYTHON_VERSION
 
-CURRENT_PHASE="evidence"
+CURRENT_PHASE="service-acceptance"
 python3 - \
   "$EVIDENCE_OUT" "$EVIDENCE_DEVICE" "$EVIDENCE_INODE" \
   "$EXERCISE_ID" "$GITHUB_MAIN_SHA" "$SOURCE_SHA" "$STAMP" \
   "$BACKUP_STARTED_AT" "$BACKUP_COMPLETED_AT" "$GENERATION_MANIFEST_SHA256" \
+  "$GENERATION_RESULT_SHA256" "$GENERATION_METADATA_STATUS" \
   "$REFERENCE_WEEKLY_DRILL_SHA256" "$REFERENCE_FAILURE_AT" "$RPO_UPPER_SECONDS" \
   "$COMPLETED_GENERATION_AGE_SECONDS" "$RESTORE_STARTED_AT" "$READY_AT" "$RTO_SECONDS" \
   "$POSTGRES_IMAGE" "$POSTGRES_DIGEST" "$CONTAINER" "$PG_PORT" \
   "$WORK/expected.tsv" "$WORK/migration-meta.json" "$WORK/roles.txt" \
   "$WORK/postgres-restores.tsv" "$VISITS_TABLE_COUNT" "$WORK/business-1.tsv" \
-  "$BUSINESS_FINGERPRINT" "$APP_PYTHON_VERSION" "$APP_PORT" <<'PY'
+  "$BUSINESS_FINGERPRINT" "$APP_PYTHON_VERSION" "$APP_PORT" \
+  "$REQUIREMENTS_LOCK_SHA256" "$RUNTIME_DEPENDENCY_VALIDATION" \
+  "$RUNTIME_DEPENDENCY_FINGERPRINT" "$APP_PYTHON_SOURCE" <<'PY'
 import json
 import os
 import stat
@@ -962,12 +1326,76 @@ from pathlib import Path
 (
     evidence_path, expected_device, expected_inode, exercise_id, github_main,
     source_sha, stamp, backup_started, backup_completed, generation_manifest_sha,
-    reference_drill_sha,
+    generation_metadata_sha, generation_metadata_status, reference_drill_sha,
     reference_failure, rpo_upper, completed_age, restore_started, ready_at, rto,
     postgres_image, postgres_digest, container, pg_port, expected_path,
     migration_meta_path, roles_path, restores_path, visits_table_count,
     business_path, business_fingerprint, python_version, app_port,
+    requirements_lock_sha, runtime_dependency_validation,
+    runtime_dependency_fingerprint, app_python_source,
 ) = sys.argv[1:]
+
+path = Path(evidence_path)
+expected = (int(expected_device), int(expected_inode))
+
+def fail(message):
+    raise SystemExit(message)
+
+def verify_parent():
+    parent = path.parent
+    current = os.lstat(parent)
+    if stat.S_ISLNK(current.st_mode):
+        fail("evidence parent is a symlink")
+    if os.path.realpath(parent) != str(parent):
+        fail("evidence parent is not canonical")
+    if current.st_uid != os.geteuid():
+        fail("evidence parent is not owned by the current user")
+    if current.st_mode & 0o022:
+        fail("evidence parent is group or world writable")
+
+def verify_destination():
+    try:
+        current = os.lstat(path)
+    except FileNotFoundError:
+        fail("evidence output is missing before successful replacement")
+    if stat.S_ISLNK(current.st_mode):
+        fail("evidence output is a symlink before successful replacement")
+    if (current.st_dev, current.st_ino) != expected:
+        fail("evidence output was replaced before successful replacement")
+
+def secure_replace(payload_bytes):
+    verify_parent()
+    verify_destination()
+    temporary = None
+    fd = -1
+    for _attempt in range(8):
+        candidate = path.with_name(f".{path.name}.{os.urandom(8).hex()}.tmp")
+        try:
+            fd = os.open(candidate, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+        except OSError:
+            # Fail closed on any creation race (existing leaf, symlinked
+            # candidate, or permission anomaly): try another random leaf.
+            continue
+        temporary = candidate
+        break
+    if temporary is None:
+        fail("unable to allocate a secure temporary evidence file")
+    try:
+        os.fchmod(fd, 0o600)
+        with os.fdopen(fd, "wb") as output:
+            output.write(payload_bytes)
+            output.flush()
+            os.fsync(output.fileno())
+        fd = -1
+        verify_destination()
+        os.replace(temporary, path)
+    finally:
+        if fd != -1:
+            os.close(fd)
+        try:
+            os.unlink(temporary)
+        except (FileNotFoundError, TypeError):
+            pass
 
 checksums = {}
 for raw in Path(expected_path).read_text(encoding="utf-8").splitlines():
@@ -990,6 +1418,7 @@ for raw in Path(restores_path).read_text(encoding="utf-8").splitlines():
         "startedAt": started,
         "completedAt": completed,
         "durationSeconds": int(duration),
+        "durationAuthority": "monotonic-ns",
         "relationCount": int(relations),
         "status": "pass",
     })
@@ -1008,6 +1437,9 @@ payload = {
     "sourceBackupId": stamp,
     "backupStartedAt": backup_started,
     "backupCompletedAt": backup_completed,
+    "backupTimestampAuthority": "per-generation-metadata-artifact",
+    "generationMetadataSha256": generation_metadata_sha,
+    "generationMetadataStatus": generation_metadata_status,
     "sourceIntegrityStatus": "verified",
     "sourceComponentCount": len(checksums),
     "sourceChecksums": checksums,
@@ -1057,6 +1489,10 @@ payload = {
         "databaseAuthorityScope": "development/no-process-authority",
         "externalIdentityDependenciesEnabled": False,
         "pythonRuntime": python_version,
+        "appPythonSource": app_python_source,
+        "requirementsLockSha256": requirements_lock_sha,
+        "runtimeDependencyValidation": runtime_dependency_validation,
+        "runtimeDependencyFingerprint": runtime_dependency_fingerprint,
         "environmentCategoriesUsed": [
             "UNIHUB_ENV=development",
             f"DATABASE_URL=postgresql://postgres:[REDACTED]@127.0.0.1:{pg_port}/dr_unihub",
@@ -1088,34 +1524,20 @@ payload = {
             "productionDbProcessAuthoritySemanticsNotExercised": True,
         },
     },
+    "serviceAcceptanceRecorded": True,
+    "appTerminationStatus": "pending",
     "productionMutation": False,
     "sourceBackupMutation": False,
     "migrationExecution": False,
     "cleanupStatus": "pending",
-    "result": "pass",
+    "result": "fail",
     "failurePhase": None,
-    "failureReason": None,
+    "failureReason": "cleanup verification pending",
 }
-path = Path(evidence_path)
-expected = (int(expected_device), int(expected_inode))
-def verify_owned_path():
-    if not path.exists():
-        raise SystemExit("evidence output is missing before successful replacement")
-    current = os.lstat(path)
-    if stat.S_ISLNK(current.st_mode) or (current.st_dev, current.st_ino) != expected:
-        raise SystemExit("evidence output was replaced before successful replacement")
-
-temporary = path.with_name(f".{path.name}.success.{os.getpid()}.tmp")
-try:
-    temporary.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
-    os.chmod(temporary, 0o600)
-    verify_owned_path()
-    temporary.replace(path)
-finally:
-    temporary.unlink(missing_ok=True)
+secure_replace((json.dumps(payload, indent=2) + "\n").encode("utf-8"))
 PY
 capture_evidence_identity
 
-RESULT="pass"
 CURRENT_PHASE=""
-printf 'K5 isolated restore acceptance passed; evidence=%s\n' "$EVIDENCE_OUT"
+printf '%s\n' \
+  "K5 isolated restore service acceptance recorded; overall pass is published only after complete verified cleanup; evidence=$EVIDENCE_OUT"
