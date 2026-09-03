@@ -2436,14 +2436,73 @@ def _iter_dollar_brace_expressions(value):
             i += 1
 
 
+# Credential property access patterns, matched ANYWHERE inside a
+# ``${{ ... }}`` expression. Whitespace tolerance: ``github . token``
+# and ``github[ 'token' ]`` are recognised. The lookbehind
+# ``(?<![A-Za-z0-9_])`` ensures the root identifier is not preceded
+# by another identifier character so that namespaced identifiers
+# such as ``mysecrets.X`` or ``my_github.token`` are NOT mistakenly
+# treated as GitHub credentials.
+_GITHUB_CREDENTIAL_ACCESS_RE = re.compile(
+    r"(?<![A-Za-z0-9_])github\s*"
+    r"(?:\.\s*(?:token|action_token)\b"
+    r"|\[\s*(?:'(?:token|action_token)'|\"(?:token|action_token)\")\s*\])"
+)
+_SECRETS_DOT_ACCESS_RE = re.compile(
+    r"(?<![A-Za-z0-9_])secrets\s*\.\s*([A-Za-z_][A-Za-z0-9_]*)\b"
+)
+_SECRETS_BRACKET_ACCESS_RE = re.compile(
+    r"(?<![A-Za-z0-9_])secrets\s*\[\s*"
+    r"(?:'[^']*'|\"[^\"]*\"|[A-Za-z_][A-Za-z0-9_]*)"
+    r"\s*\]"
+)
+
+
+def _expr_contains_credential_property(expr: str) -> bool:
+    """Return True iff ``expr`` contains a GitHub credential
+    property access anywhere in the expression.
+
+    Searches for:
+
+    * ``github.token`` / ``github.action_token`` (dot form, with
+      reasonable whitespace tolerance);
+    * ``github['token']`` / ``github["token"]`` /
+      ``github['action_token']`` / ``github["action_token"]``
+      (bracket form, single or double quotes, whitespace-tolerant);
+    * ``secrets.<NAME>`` (dot form, where ``<NAME>`` matches the
+      safe identifier grammar);
+    * ``secrets['<NAME>']`` / ``secrets["<NAME>"]`` (bracket form).
+
+    The reference may appear at the beginning, middle or end of the
+    expression, including inside compound expressions
+    (``... || ...`` / ``... && ...``) and function calls
+    (``format(..., secrets.API_KEY)``).
+
+    Pure string matching only; does NOT evaluate the expression and
+    does NOT mistake non-credential GitHub contexts such as
+    ``github.event.pull_request.base.sha`` or ``github.workspace``
+    for credentials.
+    """
+    if _GITHUB_CREDENTIAL_ACCESS_RE.search(expr):
+        return True
+    if _SECRETS_DOT_ACCESS_RE.search(expr):
+        return True
+    if _SECRETS_BRACKET_ACCESS_RE.search(expr):
+        return True
+    return False
+
+
 def _contains_credential_context(value: str) -> bool:
     """Return True iff ``value`` contains a GitHub credential
-    expression.
+    expression anywhere inside any ``${{ ... }}`` span.
 
     Detects both the dot property form (``github.token`` /
     ``secrets.<NAME>``) and the bracket property form
     (``github['token']`` / ``secrets['<NAME>']`` / same with double
-    quotes) inside ``${{ ... }}`` interpolations.
+    quotes) inside ``${{ ... }}`` interpolations, including
+    references that appear anywhere in a compound expression
+    (``... || ...`` / ``... && ...``) or function call
+    (``format(..., secrets.X)``).
 
     Pure string matching only; does NOT evaluate Jinja or YAML, and
     does NOT mistake non-credential GitHub contexts such as
@@ -2454,65 +2513,8 @@ def _contains_credential_context(value: str) -> bool:
         return False
     for _start, _end, inner in _iter_dollar_brace_expressions(value):
         expr = inner.strip()
-        # GitHub credential tokens: ``github.token``,
-        # ``github['token']``, ``github["token"]``,
-        # ``github.action_token``, ``github['action_token']``,
-        # ``github["action_token"]``.
-        if "." in expr or "[" in expr:
-            # Bracket form detection. The expression may be either
-            # ``root[PROP]`` / ``root["PROP"]`` / ``root['PROP']``
-            # (root = ``github`` or ``secrets``) or a dot form
-            # ``root.PROP``. Split into head + tail and decide.
-            head = ""
-            tail = expr
-            for prefix in ("github", "secrets"):
-                prefix_with_bracket = prefix + "["
-                if tail.startswith(prefix_with_bracket) and tail.endswith("]"):
-                    head = prefix
-                    tail = tail[len(prefix):]  # ``[PROP]``
-                    break
-                if tail.startswith(prefix + ".") and "." not in tail[len(prefix)+1:]:
-                    head = prefix
-                    tail = tail[len(prefix):]  # ``.PROP``
-                    break
-            if not head:
-                # Not a recognised credential-property expression.
-                continue
-            # ``tail`` is now ``[PROP]`` or ``.PROP`` (with possible quotes).
-            prop = tail
-            if prop.startswith("[") and prop.endswith("]"):
-                inner_prop = prop[1:-1].strip()
-                if (inner_prop.startswith("'") and inner_prop.endswith("'")) or \
-                   (inner_prop.startswith('"') and inner_prop.endswith('"')):
-                    prop = inner_prop[1:-1]
-                else:
-                    continue
-            elif prop.startswith("."):
-                prop = prop[1:]
-            if head == "github":
-                if prop in _GITHUB_CREDENTIAL_NAMES:
-                    return True
-            elif head == "secrets":
-                if _SECRETS_NAME_RE.match(prop):
-                    return True
-        else:
-            # secrets.<NAME> form.
-            # Walk the expression looking for a leading "secrets" root with
-            # either a dot or bracket property.
-            m = re.match(
-                r"^secrets\s*(?:\.|\[)\s*"
-                r"(?:'([^']+)'|\"([^\"]+)\"|([A-Za-z_][A-Za-z0-9_]*))\s*"
-                r"(?:\]|$)",
-                expr,
-            )
-            if not m:
-                # bare secrets?<NAME> (no dot, no bracket) is also recognised
-                # because GitHub allows ``secretsNAME`` only via dot/bracket
-                # forms; bare ``secretsNAME`` does not exist. So skip.
-                continue
-            name = m.group(1) or m.group(2) or m.group(3)
-            if name and _SECRETS_NAME_RE.match(name):
-                return True
+        if _expr_contains_credential_property(expr):
+            return True
     return False
 
 
@@ -2561,6 +2563,19 @@ def _validate_pr_fast_structure(
             )
             allowed_secret_bindings = frozenset()
             break
+
+    # Track how many times each allowlist entry is consumed. The
+    # unique-match contract requires EXACTLY ONE consumption per entry:
+    # 0 matches  -> binding absent (FAIL)
+    # 1 match    -> PASS
+    # 2+ matches -> duplicate (FAIL)
+    # Step names are not guaranteed unique; tracking consumption by
+    # exact (step_name, container, env_key, env_value) tuple is the
+    # only way to prove uniqueness without coupling the validator to
+    # step indices.
+    allowlist_consumed: dict[tuple, int] = {
+        entry: 0 for entry in allowed_secret_bindings
+    }
 
     checkouts = [
         step for step in steps
@@ -2674,13 +2689,15 @@ def _validate_pr_fast_structure(
     def _record(prefix, message):
         errors.append(f"{prefix}: {message}")
 
-    def _walk_dict_for_env(env, *, prefix, container):
+    def _walk_dict_for_env(env, *, prefix, container, step_name):
         # Walk a mapping (env or with block) and reject credential
         # expressions. ``step.env`` and ``pr_fast.env`` honour the
         # allowlist (matched on step_name, container, env_key, value);
         # ``step.with`` only matches the allowlist when the action is
         # NOT a checkout (handled below). Workflow-level env never
-        # honours the allowlist.
+        # honours the allowlist. Each allowlist entry is consumed at
+        # most once per validator run; the unique-match post-check
+        # below rejects duplicates.
         allowlist_active = container in ("step.env", "pr_fast.env")
         if not isinstance(env, dict):
             return
@@ -2699,15 +2716,18 @@ def _validate_pr_fast_structure(
                 and _contains_credential_context(value)
             ):
                 if allowlist_active:
-                    triple = (step_name or "", container, key)
-                    entry_value = next(
+                    matched = next(
                         (
-                            v for (s, c, k, v) in allowed_secret_bindings
-                            if (s, c, k) == triple
+                            entry for entry in allowed_secret_bindings
+                            if entry[0] == step_name
+                            and entry[1] == container
+                            and entry[2] == key
+                            and entry[3] == value
                         ),
                         None,
                     )
-                    if entry_value is not None and entry_value == value:
+                    if matched is not None:
+                        allowlist_consumed[matched] += 1
                         continue
                 _record(
                     prefix,
@@ -2720,6 +2740,7 @@ def _validate_pr_fast_structure(
             node,
             prefix=f"{basename}.steps[{idx}] ({step_name or ''}).env",
             container="step.env",
+            step_name=step_name or "",
         )
 
     def _walk_step_with(node, step):
@@ -2745,20 +2766,26 @@ def _validate_pr_fast_structure(
         # Other with-block keys: scan for credential expressions via the
         # allowlist-aware helper. ``step.with`` honors the allowlist so
         # that the exact real-workflow binding semantics stay uniform.
+        # Each allowlist entry is consumed at most once per validator
+        # run; the unique-match post-check below rejects duplicates.
+        step_name_for_allowlist = step.get("name") or ""
         for key, value in node.items():
             if key == "token" and is_checkout:
                 # Already handled above (checkout token is always rejected).
                 continue
             if isinstance(value, str) and _contains_credential_context(value):
-                triple = (step.get("name") or "", "step.with", key)
-                entry_value = next(
+                matched = next(
                     (
-                        v for (s, c, k, v) in allowed_secret_bindings
-                        if (s, c, k) == triple
+                        entry for entry in allowed_secret_bindings
+                        if entry[0] == step_name_for_allowlist
+                        and entry[1] == "step.with"
+                        and entry[2] == key
+                        and entry[3] == value
                     ),
                     None,
                 )
-                if entry_value is not None and entry_value == value:
+                if matched is not None:
+                    allowlist_consumed[matched] += 1
                     continue
                 _record(
                     f"{basename}.steps[{idx}] ({step.get('name') or ''}).with",
@@ -2841,6 +2868,35 @@ def _validate_pr_fast_structure(
                         f"credential expression in pr_fast.env.{key!r} "
                         f"value {value!r} is not in the allowlist",
                     )
+
+    # Unique-match contract: each allowlist entry must be consumed
+    # EXACTLY ONCE.
+    #   0 matches  -> binding absent (FAIL)
+    #   1 match    -> PASS
+    #   2+ matches -> duplicate (FAIL)
+    # Step names are not guaranteed unique; an arbitrary future
+    # addition of a second step with the exact same (step_name,
+    # container, env_key, env_value) tuple would otherwise slip past
+    # the allowlist. Pinning the count to exactly 1 is the structural
+    # way to prove uniqueness without coupling to step indices.
+    for entry, count in allowlist_consumed.items():
+        entry_step, entry_container, entry_key, entry_value = entry
+        if count == 0:
+            _record(
+                f"{basename} allowlist",
+                f"expected allowlist binding for step {entry_step!r} "
+                f"container {entry_container!r} key {entry_key!r} "
+                f"value {entry_value!r} was not consumed "
+                f"(binding absent)",
+            )
+        elif count > 1:
+            _record(
+                f"{basename} allowlist",
+                f"allowlist binding for step {entry_step!r} container "
+                f"{entry_container!r} key {entry_key!r} value "
+                f"{entry_value!r} was consumed {count} times "
+                f"(must be exactly 1)",
+            )
 
     return (not errors), errors
 
@@ -5115,9 +5171,13 @@ def test_finding3_step_env_bracket_harmless_github_passes():
             },
         ],
     }
+    # Empty allowlist so the unique-match post-check does not flag
+    # the absent DSN binding. This test only exercises that the
+    # harmless ``workspace`` bracket expression is NOT detected as a
+    # credential context.
     ok, errors = _validate_pr_fast_structure(
         pr_fast,
-        allowed_secret_bindings=PR_FAST_FRONTEND_DSN_ALLOWLIST,
+        allowed_secret_bindings=frozenset(),
     )
     assert ok, errors
 
@@ -5190,4 +5250,326 @@ def test_finding3_run_double_bracket_secrets_rejected():
     assert not ok
     assert any(
         'run contains a GitHub credential context expression' in e for e in errors
+    ), errors
+
+
+# ===========================================================================
+# PR252 CODEX P2 FINAL CORRECTION PASS
+#
+# Findings addressed:
+#   1. credential references may appear ANYWHERE inside a compound
+#      expression, not only as the expression's primary property
+#      access. The previous primary-property detector missed valid
+#      credential references such as ``secrets.X || github.token``
+#      because a later dot in the expression broke the
+#      ``head + tail`` match.
+#   2. each allowlist entry must be consumed EXACTLY ONCE.
+#      0 matches -> binding absent (FAIL).
+#      1 match   -> PASS.
+#      2+ matches -> duplicate (FAIL).
+#      Step names are not guaranteed unique; tracking consumption by
+#      exact (step_name, container, env_key, env_value) tuple proves
+#      uniqueness without coupling to step indices.
+#
+# These tests are the synthetic-fixture regression coverage required
+# by the principal's exact-HEAD review brief. They do NOT modify
+# any production workflow file.
+# ===========================================================================
+
+
+# ---------------------------------------------------------------------------
+# FINDING 1: compound-expression credential detection
+# ---------------------------------------------------------------------------
+
+
+def test_finding_p2_1_run_compound_secrets_or_github_token_rejected():
+    """``run: ${{ secrets.API_KEY || github.token }}`` MUST be
+    rejected: a compound ``||`` expression hides a credential
+    reference that the previous primary-property detector missed."""
+    pr_fast = _run_with_extra(
+        'tool --password "${{ secrets.API_KEY || github.token }}"'
+    )
+    ok, errors = _validate_pr_fast_structure(pr_fast)
+    assert not ok
+    assert any(
+        "run contains a GitHub credential context expression" in e
+        for e in errors
+    ), errors
+
+
+def test_finding_p2_2_step_env_github_workspace_or_secrets_rejected():
+    """``step.env.X: ${{ github.workspace || secrets.API_KEY }}`` MUST
+    be rejected: the secrets reference sits at the END of the
+    compound expression; a primary-property detector would miss it
+    because the expression starts with a non-credential context."""
+    checkout = _checkout_step(persist_credentials=False)
+    step = {
+        "name": "Build",
+        "run": _RUN_BASE,
+        "env": {
+            "SOME_KEY":
+                "${{ github.workspace || secrets.API_KEY }}",
+        },
+    }
+    pr_fast = {"steps": [checkout, step]}
+    ok, errors = _validate_pr_fast_structure(pr_fast)
+    assert not ok
+    assert any(
+        "credential expression in step.env." in e for e in errors
+    ), errors
+
+
+def test_finding_p2_3_step_with_format_bracket_secret_rejected():
+    """``step.with.x: ${{ format('{0}', secrets['API_KEY']) }}`` MUST
+    be rejected: a bracket secrets reference nested inside a
+    function call is a credential access. No allowlist applies
+    because the legitimate allowlist container is ``step.env``,
+    not ``step.with``."""
+    checkout = _checkout_step(persist_credentials=False)
+    step = {
+        "name": "Build",
+        "uses": "actions/upload-artifact@deadbeef",
+        "with": {
+            "name": "${{ format('{0}', secrets['API_KEY']) }}",
+        },
+        "run": "echo done",
+    }
+    pr_fast = {"steps": [checkout, step]}
+    ok, errors = _validate_pr_fast_structure(pr_fast)
+    assert not ok
+    assert any(
+        "credential expression in step.with." in e for e in errors
+    ), errors
+
+
+def test_finding_p2_4_workflow_env_bracket_github_token_neq_rejected():
+    """Workflow env with ``${{ github['token'] != '' }}`` MUST be
+    rejected: a bracket github token reference used in a comparison
+    is still a credential access; workflow-level env has no
+    allowlist."""
+    workflow_env = {"SOME_KEY": "${{ github['token'] != '' }}"}
+    pr_fast = {"steps": [_checkout_step_with(False)]}
+    ok, errors = _validate_pr_fast_structure(
+        pr_fast, workflow_env=workflow_env,
+    )
+    assert not ok
+    assert any(
+        "credential expression in workflow env." in e for e in errors
+    ), errors
+
+
+def test_finding_p2_5_harmless_compound_workspace_or_runner_temp_passes():
+    """``${{ github.workspace || runner.temp }}`` MUST remain
+    harmless: neither operand is a GitHub credential context."""
+    pr_fast = _run_with_extra(
+        'echo ${{ github.workspace || runner.temp }}'
+    )
+    ok, errors = _validate_pr_fast_structure(pr_fast)
+    assert ok, errors
+
+
+def test_finding_p2_6_harmless_pull_request_sha_context_passes():
+    """``${{ github.event.pull_request.base.sha }}`` MUST remain
+    harmless: this is the real pull-request SHA context that the
+    real pr-fast uses, and it is NOT a credential context. Both
+    base.sha and head.sha are checked to prove the
+    non-credential property path is not over-rejected."""
+    pr_fast = _run_with_extra(
+        'echo BASE=${{ github.event.pull_request.base.sha }} '
+        'HEAD=${{ github.event.pull_request.head.sha }}'
+    )
+    ok, errors = _validate_pr_fast_structure(pr_fast)
+    assert ok, errors
+
+
+# Extra Finding-1 coverage: function-call github token, workflow-level
+# compound bracket secret, and ``&&`` compound with secrets trailing.
+def test_finding_p2_extra_compound_contains_github_token_rejected():
+    """``${{ contains('x', github.token) }}`` MUST be rejected: a
+    github token reference inside a function call is a credential
+    access."""
+    pr_fast = _run_with_extra(
+        '${{ contains("x", github.token) }}'
+    )
+    ok, errors = _validate_pr_fast_structure(pr_fast)
+    assert not ok
+    assert any(
+        "run contains a GitHub credential context expression" in e
+        for e in errors
+    ), errors
+
+
+def test_finding_p2_extra_workflow_env_double_bracket_secret_compound_rejected():
+    """Workflow env with ``${{ secrets["API_KEY"] || env.OTHER }}``
+    MUST be rejected: a double-bracket secret reference in a
+    compound expression at the workflow level is still a credential
+    access."""
+    workflow_env = {
+        "X": '${{ secrets["API_KEY"] || env.OTHER }}',
+    }
+    pr_fast = {"steps": [_checkout_step_with(False)]}
+    ok, errors = _validate_pr_fast_structure(
+        pr_fast, workflow_env=workflow_env,
+    )
+    assert not ok
+    assert any(
+        "credential expression in workflow env." in e for e in errors
+    ), errors
+
+
+def test_finding_p2_extra_compound_github_workspace_and_secret_rejected():
+    """``${{ github.workspace && secrets.X }}`` MUST be rejected:
+    the github workspace reference does NOT shield a subsequent
+    secrets reference; both must be checked."""
+    pr_fast = _run_with_extra(
+        'if ${{ github.workspace && secrets.X }}; then echo; fi'
+    )
+    ok, errors = _validate_pr_fast_structure(pr_fast)
+    assert not ok
+    assert any(
+        "run contains a GitHub credential context expression" in e
+        for e in errors
+    ), errors
+
+
+def test_finding_p2_extra_whitespace_tolerance_secrets_with_space_rejected():
+    """``${{ secrets . X }}`` (whitespace around the dot) MUST be
+    rejected: the detector tolerates whitespace inside the access
+    expression so callers cannot bypass it with formatting tweaks."""
+    pr_fast = _run_with_extra(
+        'echo ${{ secrets . X }}'
+    )
+    ok, errors = _validate_pr_fast_structure(pr_fast)
+    assert not ok
+    assert any(
+        "run contains a GitHub credential context expression" in e
+        for e in errors
+    ), errors
+
+
+def test_finding_p2_extra_whitespace_tolerance_bracket_secret_rejected():
+    """``${{ github[ 'token' ] }}`` (whitespace inside the bracket)
+    MUST be rejected: the detector tolerates whitespace inside the
+    bracket access expression."""
+    pr_fast = _run_with_extra(
+        "echo ${{ github[ 'token' ] }}"
+    )
+    ok, errors = _validate_pr_fast_structure(pr_fast)
+    assert not ok
+    assert any(
+        "run contains a GitHub credential context expression" in e
+        for e in errors
+    ), errors
+
+
+# ---------------------------------------------------------------------------
+# FINDING 2: unique-match allowlist contract
+# ---------------------------------------------------------------------------
+
+
+def test_finding_p2_7_exact_single_dsn_binding_passes():
+    """Exact current legitimate single binding PASSES the
+    unique-match contract (consumed exactly once)."""
+    pr_fast = _build_dsn_pr_fast(step_name="Build")
+    ok, errors = _validate_pr_fast_structure(
+        pr_fast,
+        allowed_secret_bindings=PR_FAST_FRONTEND_DSN_ALLOWLIST,
+    )
+    assert ok, errors
+
+
+def test_finding_p2_8_duplicate_exact_dsn_binding_rejected():
+    """Two ``Build`` steps each containing the exact legitimate
+    binding MUST be rejected (consumed twice, must be exactly
+    once). Step names are not unique; this proves the
+    unique-match contract still holds under name reuse — the
+    exact-allowlist tuple is what binds the entry to a single
+    structural location."""
+    checkout = _checkout_step(persist_credentials=False)
+    common_run = _RUN_BASE + "\necho $VITE_FRONTEND_GLITCHTIP_DSN"
+    common_env = {
+        "VITE_FRONTEND_GLITCHTIP_DSN":
+            "${{ secrets.VITE_GLITCHTIP_DSN }}",
+    }
+    build1 = {"name": "Build", "run": common_run, "env": dict(common_env)}
+    build2 = {"name": "Build", "run": common_run, "env": dict(common_env)}
+    pr_fast = {"steps": [checkout, build1, build2]}
+    ok, errors = _validate_pr_fast_structure(
+        pr_fast,
+        allowed_secret_bindings=PR_FAST_FRONTEND_DSN_ALLOWLIST,
+    )
+    assert not ok
+    assert any(
+        "was consumed" in e
+        and "times" in e
+        and "must be exactly 1" in e
+        for e in errors
+    ), errors
+
+
+def test_finding_p2_9_allowlist_supplied_but_dsn_binding_absent_rejected():
+    """Allowlist supplied but the legitimate binding is absent
+    MUST be rejected (consumed zero times). The structural
+    contract pins the exact binding; any removal is a fail-closed
+    regression."""
+    pr_fast = {
+        "steps": [
+            _checkout_step(persist_credentials=False),
+            {"name": "Build", "run": _RUN_BASE},
+        ],
+    }
+    ok, errors = _validate_pr_fast_structure(
+        pr_fast,
+        allowed_secret_bindings=PR_FAST_FRONTEND_DSN_ALLOWLIST,
+    )
+    assert not ok
+    assert any(
+        "was not consumed" in e and "binding absent" in e
+        for e in errors
+    ), errors
+
+
+# Extra Finding-2 coverage: a third Build with name "Build" still has
+# only one legitimate binding, so it passes (the third Build has NO
+# DSN binding, no credential at all). And one Build with the
+# legitimate binding + extra non-credential env passes.
+def test_finding_p2_extra_same_name_third_build_no_credential_passes():
+    """Three ``Build`` steps total but only ONE carries the
+    legitimate binding MUST pass: count = 1, the other two carry
+    no credential expression."""
+    checkout = _checkout_step(persist_credentials=False)
+    legit = _build_dsn_pr_fast(step_name="Build")["steps"][1]
+    other1 = {"name": "Build", "run": _RUN_BASE + "\necho no-binding-1"}
+    other2 = {"name": "Build", "run": _RUN_BASE + "\necho no-binding-2"}
+    pr_fast = {"steps": [checkout, legit, other1, other2]}
+    ok, errors = _validate_pr_fast_structure(
+        pr_fast,
+        allowed_secret_bindings=PR_FAST_FRONTEND_DSN_ALLOWLIST,
+    )
+    assert ok, errors
+
+
+def test_finding_p2_extra_existing_mutation_still_rejects_wrong_key():
+    """Regression guard: the existing wrong-key mutation still
+    rejects after the unique-match contract is in place (it must
+    appear as both a ``not in the allowlist`` error AND a
+    ``binding absent`` error since the legitimate value is no
+    longer present)."""
+    pr_fast = _build_dsn_pr_fast(step_name="Build")
+    build_step = pr_fast["steps"][1]
+    # Move the legitimate value to a different env key.
+    del build_step["env"]["VITE_FRONTEND_GLITCHTIP_DSN"]
+    build_step["env"]["SOME_OTHER_KEY"] = (
+        "${{ secrets.VITE_GLITCHTIP_DSN }}"
+    )
+    ok, errors = _validate_pr_fast_structure(
+        pr_fast,
+        allowed_secret_bindings=PR_FAST_FRONTEND_DSN_ALLOWLIST,
+    )
+    assert not ok
+    assert any(
+        "is not in the allowlist" in e for e in errors
+    ), errors
+    assert any(
+        "was not consumed" in e for e in errors
     ), errors
