@@ -2456,6 +2456,25 @@ _SECRETS_BRACKET_ACCESS_RE = re.compile(
     r"(?:'[^']*'|\"[^\"]*\"|[A-Za-z_][A-Za-z0-9_]*)"
     r"\s*\]"
 )
+# Bare ``secrets`` context identifier, matched inside ``${{ ... }}``
+# AFTER string-literal masking. Detects serialisation / direct-context
+# references such as ``${{ secrets }}``, ``${{ toJSON(secrets) }}``,
+# ``${{ fromJSON(toJSON(secrets)) }}``, ``${{ secrets && github.workspace }}``
+# and ``${{ github.workspace || secrets }}``. The lookbehind /
+# lookahead ensure that namespaced identifiers such as
+# ``mysecrets``, ``secrets_backup`` or ``not_secrets`` are NOT
+# mistakenly classified as the GitHub ``secrets`` context.
+_BARE_SECRETS_RE = re.compile(
+    r"(?<![A-Za-z0-9_.])secrets(?![A-Za-z0-9_])"
+)
+# Quoted-string literal masker: a string-literal occurrence of the
+# text ``secrets`` (e.g. ``format('secrets')``) is NOT a context
+# access. We replace single- and double-quoted literals with empty
+# quoted placeholders BEFORE applying the bare-secrets regex so
+# harmless quoted occurrences do not flip the detector to a hit.
+_STRING_LITERAL_RE = re.compile(
+    r"'(?:[^'\\]|\\.)*'|\"(?:[^\"\\]|\\.)*\""
+)
 
 
 def _expr_contains_credential_property(expr: str) -> bool:
@@ -2471,7 +2490,14 @@ def _expr_contains_credential_property(expr: str) -> bool:
       (bracket form, single or double quotes, whitespace-tolerant);
     * ``secrets.<NAME>`` (dot form, where ``<NAME>`` matches the
       safe identifier grammar);
-    * ``secrets['<NAME>']`` / ``secrets["<NAME>"]`` (bracket form).
+    * ``secrets['<NAME>']`` / ``secrets["<NAME>"]`` (bracket form);
+    * the bare ``secrets`` context identifier itself, anywhere it
+      appears as an operand (``${{ secrets }}``,
+      ``${{ toJSON(secrets) }}``, ``${{ secrets || github.workspace }}``
+      and similar compound / nested usages). String-literal
+      occurrences are masked out first so harmless quoted text such
+      as ``format('secrets')`` is NOT classified as a credential
+      reference.
 
     The reference may appear at the beginning, middle or end of the
     expression, including inside compound expressions
@@ -2488,6 +2514,11 @@ def _expr_contains_credential_property(expr: str) -> bool:
     if _SECRETS_DOT_ACCESS_RE.search(expr):
         return True
     if _SECRETS_BRACKET_ACCESS_RE.search(expr):
+        return True
+    # Bare ``secrets`` identifier (after masking quoted string
+    # literals so harmless quoted text is ignored).
+    masked = _STRING_LITERAL_RE.sub('""', expr)
+    if _BARE_SECRETS_RE.search(masked):
         return True
     return False
 
@@ -2678,6 +2709,32 @@ def _validate_pr_fast_structure(
                 f"{prefix}: run contains a GitHub credential "
                 f"context expression (run is candidate-visible; no "
                 f"allowlist applies)"
+            )
+
+    # Step ``shell:`` credential scan. GitHub Actions expands
+    # ``${{ ... }}`` expressions inside a custom ``shell`` definition
+    # before the runner interprets the resulting string, so the shell
+    # template is part of the execution surface and therefore
+    # candidate-visible. NO allowlist applies: any credential
+    # reference embedded directly in a custom shell is unconditionally
+    # fail-closed. Harmless shell declarations such as
+    # ``shell: bash`` or ``shell: bash --noprofile --norc -eo pipefail {0}``
+    # pass because they contain no ``${{ ... }}`` expression at all.
+    for idx, step in enumerate(steps, start=1):
+        if not isinstance(step, dict):
+            continue
+        step_name = step.get("name") or ""
+        prefix = f"{basename}.steps[{idx}] ({step_name!r})"
+        shell_text = step.get("shell")
+        if (
+            isinstance(shell_text, str)
+            and shell_text
+            and _contains_credential_context(shell_text)
+        ):
+            errors.append(
+                f"{prefix}: shell contains a GitHub credential "
+                f"context expression (custom shell is "
+                f"candidate-visible; no allowlist applies)"
             )
 
     # Structured-field credential isolation. Walk every candidate-visible
@@ -5572,4 +5629,369 @@ def test_finding_p2_extra_existing_mutation_still_rejects_wrong_key():
     ), errors
     assert any(
         "was not consumed" in e for e in errors
+    ), errors
+
+
+# ===========================================================================
+# PR252 CODEX P3 FINAL CORRECTION PASS
+#
+# Findings addressed (PRRT_kwDOR19uYs6fAHtR / PRRT_kwDOR19uYs6fAHtV):
+#   A. BARE-SECRETS CONTEXT IDENTIFIER.
+#      The previous property-access detector recognised
+#      ``secrets.<NAME>`` / ``secrets['<NAME>']`` / ``secrets["<NAME>"]``
+#      but missed the bare ``secrets`` context identifier itself.
+#      ``${{ toJSON(secrets) }}`` and similar serialisation
+#      expressions serialise the COMPLETE secrets context into a
+#      candidate-visible field, which is a credential exposure.
+#      The detector now treats the bare ``secrets`` identifier as
+#      credential-bearing anywhere inside ``${{ ... }}``.
+#   B. STEP ``shell:`` CREDENTIAL EXPRESSION.
+#      GitHub Actions expands ``${{ ... }}`` inside a custom shell
+#      definition, so the shell template is part of the execution
+#      surface. The previous validator scanned ``run`` / ``env`` /
+#      ``with`` / job env / workflow env but NOT step ``shell``.
+#      Custom shells now FAIL when they carry a credential context
+#      expression; NO allowlist applies.
+#
+# These tests are the synthetic-fixture regression coverage required
+# by the principal's exact-HEAD review brief. They do NOT modify
+# any production workflow file.
+# ===========================================================================
+
+
+# ---------------------------------------------------------------------------
+# FINDING A: bare ``secrets`` identifier detection
+# ---------------------------------------------------------------------------
+
+
+def test_finding_p3_a_step_env_tojson_secrets_rejected():
+    """``step.env.ALL_SECRETS: "${{ toJSON(secrets) }}"`` MUST be
+    rejected: serialising the COMPLETE secrets context into an env
+    var is a credential exposure regardless of the env key."""
+    checkout = _checkout_step(persist_credentials=False)
+    step = {
+        "name": "leak",
+        "run": _RUN_BASE,
+        "env": {"ALL_SECRETS": "${{ toJSON(secrets) }}"},
+    }
+    pr_fast = {"steps": [checkout, step]}
+    ok, errors = _validate_pr_fast_structure(pr_fast)
+    assert not ok
+    assert any(
+        "credential expression in step.env." in e for e in errors
+    ), errors
+
+
+def test_finding_p3_a_run_tojson_secrets_rejected():
+    """``run: ${{ toJSON(secrets) }}`` MUST be rejected: the entire
+    secrets context would be serialised into the script body, which
+    is interpreted by bash on the runner."""
+    pr_fast = _run_with_extra('echo ${{ toJSON(secrets) }}')
+    ok, errors = _validate_pr_fast_structure(pr_fast)
+    assert not ok
+    assert any(
+        "run contains a GitHub credential context expression" in e
+        for e in errors
+    ), errors
+
+
+def test_finding_p3_a_step_with_tojson_secrets_rejected():
+    """``step.with.x: "${{ toJSON(secrets) }}"`` MUST be rejected:
+    serialising the secrets context into a structured with-block
+    key is a credential exposure."""
+    checkout = _checkout_step(persist_credentials=False)
+    step = {
+        "name": "leak",
+        "uses": "actions/upload-artifact@deadbeef",
+        "with": {"name": "${{ toJSON(secrets) }}"},
+        "run": "echo done",
+    }
+    pr_fast = {"steps": [checkout, step]}
+    ok, errors = _validate_pr_fast_structure(pr_fast)
+    assert not ok
+    assert any(
+        "credential expression in step.with." in e for e in errors
+    ), errors
+
+
+def test_finding_p3_a_workflow_env_tojson_secrets_rejected():
+    """Workflow-level ``env: X: "${{ toJSON(secrets) }}"`` MUST be
+    rejected: workflow env is inherited into pr-fast and is not
+    candidate-visible at the step level, so no allowlist applies."""
+    workflow_env = {"X": "${{ toJSON(secrets) }}"}
+    pr_fast = {"steps": [_checkout_step_with(False)]}
+    ok, errors = _validate_pr_fast_structure(
+        pr_fast, workflow_env=workflow_env,
+    )
+    assert not ok
+    assert any(
+        "credential expression in workflow env." in e for e in errors
+    ), errors
+
+
+def test_finding_p3_a_pr_fast_job_env_tojson_secrets_rejected():
+    """pr-fast job-level ``env: X: "${{ toJSON(secrets) }}"`` MUST
+    be rejected: pr-fast job env is candidate-visible; no allowlist
+    applies because the legitimate binding is fixed to the Build
+    step's ``step.env.VITE_FRONTEND_GLITCHTIP_DSN``."""
+    pr_fast = {
+        "env": {"X": "${{ toJSON(secrets) }}"},
+        "steps": [_checkout_step_with(False)],
+    }
+    ok, errors = _validate_pr_fast_structure(pr_fast)
+    assert not ok
+    assert any(
+        "credential expression in pr_fast.env." in e for e in errors
+    ), errors
+
+
+def test_finding_p3_a_compound_workspace_or_secrets_rejected():
+    """``${{ github.workspace || secrets }}`` MUST be rejected: a
+    bare ``secrets`` operand at the END of a compound expression
+    serialises / forwards the secrets context, regardless of which
+    other operand appears first."""
+    pr_fast = _run_with_extra(
+        'echo ${{ github.workspace || secrets }}'
+    )
+    ok, errors = _validate_pr_fast_structure(pr_fast)
+    assert not ok
+    assert any(
+        "run contains a GitHub credential context expression" in e
+        for e in errors
+    ), errors
+
+
+def test_finding_p3_a_compound_secrets_and_workspace_rejected():
+    """``${{ secrets && github.workspace }}`` MUST be rejected: a
+    bare ``secrets`` operand at the START of a compound expression
+    is also credential-bearing."""
+    pr_fast = _run_with_extra(
+        'echo ${{ secrets && github.workspace }}'
+    )
+    ok, errors = _validate_pr_fast_structure(pr_fast)
+    assert not ok
+    assert any(
+        "run contains a GitHub credential context expression" in e
+        for e in errors
+    ), errors
+
+
+def test_finding_p3_a_compound_fromjson_tojson_secrets_rejected():
+    """``${{ fromJSON(toJSON(secrets)) }}`` MUST be rejected: a
+    bare ``secrets`` operand nested inside nested function calls
+    is still credential-bearing."""
+    pr_fast = _run_with_extra(
+        'echo ${{ fromJSON(toJSON(secrets)) }}'
+    )
+    ok, errors = _validate_pr_fast_structure(pr_fast)
+    assert not ok
+    assert any(
+        "run contains a GitHub credential context expression" in e
+        for e in errors
+    ), errors
+
+
+def test_finding_p3_a_harmless_namespaced_identifiers_pass():
+    """``mysecrets``, ``secrets_backup`` and ``not_secrets`` MUST
+    NOT be classified as the bare ``secrets`` context: the
+    lookbehind / lookahead ensure namespaced identifiers are
+    ignored. We exercise both step.env and run surfaces so the
+    non-matching behaviour is pinned on both fields."""
+    pr_fast = {
+        "steps": [
+            _checkout_step_with(False),
+            {
+                "name": "harmless",
+                "env": {
+                    "MY_KEY": "${{ mysecrets }}",
+                    "OTHER_KEY": "${{ secrets_backup }}",
+                    "ANOTHER": "${{ not_secrets }}",
+                },
+                "run": (
+                    _RUN_BASE
+                    + "\necho ${{ mysecrets }}"
+                    + "\necho ${{ secrets_backup }}"
+                    + "\necho ${{ not_secrets }}"
+                ),
+            },
+        ],
+    }
+    ok, errors = _validate_pr_fast_structure(pr_fast)
+    assert ok, errors
+
+
+def test_finding_p3_a_harmless_quoted_string_literal_passes():
+    """``${{ format('secrets') }}`` MUST remain harmless: a
+    string-literal occurrence of the text ``secrets`` is NOT a
+    context access. The detector masks quoted literals BEFORE
+    applying the bare-secrets regex. Same shape tested for both
+    single- and double-quoted string literals."""
+    pr_fast = {
+        "steps": [
+            _checkout_step_with(False),
+            {
+                "name": "harmless",
+                "env": {
+                    "A": "${{ format('secrets') }}",
+                    "B": '${{ format("secrets") }}',
+                },
+                "run": (
+                    _RUN_BASE
+                    + "\necho ${{ format('secrets') }}"
+                    + "\necho ${{ format(\"secrets\") }}"
+                ),
+            },
+        ],
+    }
+    ok, errors = _validate_pr_fast_structure(pr_fast)
+    assert ok, errors
+
+
+def test_finding_p3_a_existing_dsn_allowlist_still_consumed_exactly_once():
+    """The exact real-workflow binding ``${{ secrets.VITE_GLITCHTIP_DSN }}``
+    MUST still be recognised and consumed exactly once via the
+    allowlist. Bare-secrets detection must not regress the
+    unique-match contract on the single legitimate DSN binding."""
+    pr_fast = _build_dsn_pr_fast(step_name="Build")
+    ok, errors = _validate_pr_fast_structure(
+        pr_fast,
+        allowed_secret_bindings=PR_FAST_FRONTEND_DSN_ALLOWLIST,
+    )
+    assert ok, errors
+
+
+# ---------------------------------------------------------------------------
+# FINDING B: step ``shell:`` credential expression scan
+# ---------------------------------------------------------------------------
+
+
+def _shell_step_pr_fast(shell_value):
+    """Return a minimal pr-fast mapping whose Build step declares
+    the supplied ``shell`` value. The Build step otherwise carries
+    no credential expression."""
+    return {
+        "steps": [
+            {
+                "name": "checkout",
+                "uses": "actions/checkout@deadbeef",
+                "with": {"fetch-depth": 0, "fetch-tags": True,
+                          "persist-credentials": False},
+            },
+            {
+                "name": "Build",
+                "run": _RUN_BASE,
+                "shell": shell_value,
+            },
+        ],
+    }
+
+
+def test_finding_p3_b_shell_github_token_rejected():
+    """``shell: "bash -c '${{ github.token }}' {0}"`` MUST be
+    rejected: GitHub expands the credential expression inside the
+    shell template; the shell is part of the execution surface."""
+    pr_fast = _shell_step_pr_fast("bash -c '${{ github.token }}' {0}")
+    ok, errors = _validate_pr_fast_structure(pr_fast)
+    assert not ok
+    assert any(
+        "shell contains a GitHub credential context expression" in e
+        for e in errors
+    ), errors
+
+
+def test_finding_p3_b_shell_dot_secret_rejected():
+    """``shell: "bash -c '${{ secrets.API_KEY }}' {0}"`` MUST be
+    rejected."""
+    pr_fast = _shell_step_pr_fast("bash -c '${{ secrets.API_KEY }}' {0}")
+    ok, errors = _validate_pr_fast_structure(pr_fast)
+    assert not ok
+    assert any(
+        "shell contains a GitHub credential context expression" in e
+        for e in errors
+    ), errors
+
+
+def test_finding_p3_b_shell_bracket_secret_rejected():
+    """``shell: "bash -c '${{ secrets['API_KEY'] }}' {0}"`` MUST be
+    rejected."""
+    pr_fast = _shell_step_pr_fast(
+        "bash -c '${{ secrets[' + chr(39) + 'API_KEY' + chr(39) + '] }}' {0}"
+    )
+    ok, errors = _validate_pr_fast_structure(pr_fast)
+    assert not ok
+    assert any(
+        "shell contains a GitHub credential context expression" in e
+        for e in errors
+    ), errors
+
+
+def test_finding_p3_b_shell_tojson_secrets_rejected():
+    """``shell: "bash -c '${{ toJSON(secrets) }}' {0}"`` MUST be
+    rejected: the bare ``secrets`` identifier inside the shell
+    template is credential-bearing."""
+    pr_fast = _shell_step_pr_fast("bash -c '${{ toJSON(secrets) }}' {0}")
+    ok, errors = _validate_pr_fast_structure(pr_fast)
+    assert not ok
+    assert any(
+        "shell contains a GitHub credential context expression" in e
+        for e in errors
+    ), errors
+
+
+def test_finding_p3_b_shell_ordinary_bash_passes():
+    """``shell: bash`` MUST remain harmless: no ``${{ ... }}``
+    expression is present, so no credential context can leak."""
+    pr_fast = _shell_step_pr_fast("bash")
+    ok, errors = _validate_pr_fast_structure(pr_fast)
+    assert ok, errors
+
+
+def test_finding_p3_b_shell_bash_with_noprofile_passes():
+    """``shell: bash --noprofile --norc -eo pipefail {0}`` MUST
+    remain harmless: the ``{0}`` is a positional placeholder, not a
+    ``${{ ... }}`` GitHub expression, and no credential context is
+    present."""
+    pr_fast = _shell_step_pr_fast(
+        "bash --noprofile --norc -eo pipefail {0}"
+    )
+    ok, errors = _validate_pr_fast_structure(pr_fast)
+    assert ok, errors
+
+
+def test_finding_p3_b_shell_harmless_github_context_passes():
+    """``shell: "bash -c '${{ github.workspace }}' {0}"`` MUST
+    remain harmless: ``github.workspace`` is NOT a GitHub
+    credential context (no ``token`` / ``action_token`` property;
+    not the ``secrets`` identifier), so a custom shell that
+    expands it stays a non-credential surface."""
+    pr_fast = _shell_step_pr_fast(
+        "bash -c '${{ github.workspace }}' {0}"
+    )
+    ok, errors = _validate_pr_fast_structure(pr_fast)
+    assert ok, errors
+
+
+def test_finding_p3_b_shell_no_allowlist_escape_for_credential():
+    """Even when the legitimate DSN allowlist is supplied, a
+    ``shell`` containing a credential expression MUST be rejected.
+    The shell surface is unconditional: no allowlist applies to
+    step ``shell``, mirroring the contract for ``run``."""
+    pr_fast = _shell_step_pr_fast(
+        "bash -c '${{ secrets.VITE_GLITCHTIP_DSN }}' {0}"
+    )
+    ok, errors = _validate_pr_fast_structure(
+        pr_fast,
+        allowed_secret_bindings=PR_FAST_FRONTEND_DSN_ALLOWLIST,
+    )
+    assert not ok
+    assert any(
+        "shell contains a GitHub credential context expression" in e
+        for e in errors
+    ), errors
+    # The legitimate Build binding is still absent in this
+    # synthetic fixture, so the unique-match contract also flags
+    # the absent binding.
+    assert any(
+        "was not consumed" in e and "binding absent" in e
+        for e in errors
     ), errors
