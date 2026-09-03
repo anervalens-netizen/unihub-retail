@@ -2375,12 +2375,11 @@ def test_pr_deep_replaces_authenticated_fetch_with_cat_file():
     )
 
 
-_CREDENTIAL_PATTERN = re.compile(
-    r"\$\{\{\s*github\.token\s*\}\}"
-    r"|"
-    r"\$\{\{\s*secrets\.[A-Za-z_][A-Za-z0-9_]*\s*\}\}"
-)
 _FORBIDDEN_TOKEN_ENV_KEYS = frozenset({"GH_TOKEN", "GITHUB_TOKEN"})
+# GitHub authentication credential context names recognized by the
+# validator. Recognised in both dot and bracket property forms inside
+# ``${{ ... }}`` expressions.
+_GITHUB_CREDENTIAL_NAMES = frozenset({"token", "action_token"})
 # The exact semantic identity of the single pr-fast secret binding
 # authorized by the principal after independent exact-HEAD review.
 # No other binding -- on any other step, key, container or value --
@@ -2396,51 +2395,143 @@ PR_FAST_FRONTEND_DSN_ALLOWLIST = frozenset({
     ),
 })
 
+# Recognised shell variable name inside a GitHub secrets context.
+# ``secrets.<NAME>`` is matched only if NAME matches this safe
+# identifier shape. Matches the standard GitHub Actions identifier
+# grammar used for context names.
+_SECRETS_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+def _iter_dollar_brace_expressions(value):
+    """Yield ``(start, end, inner)`` for every ``${{ ... }}`` span in
+    ``value``.
+
+    Performs simple bracket matching and does NOT evaluate Jinja or
+    YAML. Whitespace inside the braces is captured verbatim so the
+    caller can normalise it.
+    """
+    i = 0
+    n = len(value)
+    while i < n - 1:
+        if value[i] == "$" and value[i + 1] == "{" and i + 2 < n and value[i + 2] == "{":
+            # find matching "}}"
+            depth = 1
+            j = i + 3
+            while j < n - 1:
+                if value[j] == "}" and value[j + 1] == "}":
+                    depth -= 1
+                    if depth == 0:
+                        yield i, j + 2, value[i + 3:j]
+                        i = j + 2
+                        break
+                    # else nested {{ ... }}, not really possible in YAML
+                elif value[j] == "{" and j + 1 < n and value[j + 1] == "{":
+                    depth += 1
+                    j += 2
+                else:
+                    j += 1
+            else:
+                return
+        else:
+            i += 1
+
+
+def _contains_credential_context(value: str) -> bool:
+    """Return True iff ``value`` contains a GitHub credential
+    expression.
+
+    Detects both the dot property form (``github.token`` /
+    ``secrets.<NAME>``) and the bracket property form
+    (``github['token']`` / ``secrets['<NAME>']`` / same with double
+    quotes) inside ``${{ ... }}`` interpolations.
+
+    Pure string matching only; does NOT evaluate Jinja or YAML, and
+    does NOT mistake non-credential GitHub contexts such as
+    ``github.event.pull_request.base.sha`` or ``github.workspace``
+    for credentials.
+    """
+    if not isinstance(value, str):
+        return False
+    for _start, _end, inner in _iter_dollar_brace_expressions(value):
+        expr = inner.strip()
+        # GitHub credential tokens: ``github.token``,
+        # ``github['token']``, ``github["token"]``,
+        # ``github.action_token``, ``github['action_token']``,
+        # ``github["action_token"]``.
+        if "." in expr or "[" in expr:
+            # Bracket form detection. The expression may be either
+            # ``root[PROP]`` / ``root["PROP"]`` / ``root['PROP']``
+            # (root = ``github`` or ``secrets``) or a dot form
+            # ``root.PROP``. Split into head + tail and decide.
+            head = ""
+            tail = expr
+            for prefix in ("github", "secrets"):
+                prefix_with_bracket = prefix + "["
+                if tail.startswith(prefix_with_bracket) and tail.endswith("]"):
+                    head = prefix
+                    tail = tail[len(prefix):]  # ``[PROP]``
+                    break
+                if tail.startswith(prefix + ".") and "." not in tail[len(prefix)+1:]:
+                    head = prefix
+                    tail = tail[len(prefix):]  # ``.PROP``
+                    break
+            if not head:
+                # Not a recognised credential-property expression.
+                continue
+            # ``tail`` is now ``[PROP]`` or ``.PROP`` (with possible quotes).
+            prop = tail
+            if prop.startswith("[") and prop.endswith("]"):
+                inner_prop = prop[1:-1].strip()
+                if (inner_prop.startswith("'") and inner_prop.endswith("'")) or \
+                   (inner_prop.startswith('"') and inner_prop.endswith('"')):
+                    prop = inner_prop[1:-1]
+                else:
+                    continue
+            elif prop.startswith("."):
+                prop = prop[1:]
+            if head == "github":
+                if prop in _GITHUB_CREDENTIAL_NAMES:
+                    return True
+            elif head == "secrets":
+                if _SECRETS_NAME_RE.match(prop):
+                    return True
+        else:
+            # secrets.<NAME> form.
+            # Walk the expression looking for a leading "secrets" root with
+            # either a dot or bracket property.
+            m = re.match(
+                r"^secrets\s*(?:\.|\[)\s*"
+                r"(?:'([^']+)'|\"([^\"]+)\"|([A-Za-z_][A-Za-z0-9_]*))\s*"
+                r"(?:\]|$)",
+                expr,
+            )
+            if not m:
+                # bare secrets?<NAME> (no dot, no bracket) is also recognised
+                # because GitHub allows ``secretsNAME`` only via dot/bracket
+                # forms; bare ``secretsNAME`` does not exist. So skip.
+                continue
+            name = m.group(1) or m.group(2) or m.group(3)
+            if name and _SECRETS_NAME_RE.match(name):
+                return True
+    return False
+
 
 def _validate_pr_fast_structure(
     pr_fast,
     *,
     basename: str = "pr-fast",
     allowed_secret_bindings: frozenset = frozenset(),
+    workflow_env: dict | None = None,
 ):
     """Structural validation of the ``jobs.pr-fast`` mapping.
 
-    Returns ``(ok, errors)``. ``ok`` is True iff every rule passes.
-
-    Rules enforced:
-
-    1. At least one ``actions/checkout@*`` step must exist. Every such
-       step must declare ``with.persist-credentials: false`` (an omitted
-       value is rejected because the GitHub default persists credentials).
-       A step that overrides ``with.token`` is rejected. These checks
-       are unconditional: no allowlist entry may override them.
-    2. The primary checkout (the first one declaring ``fetch-depth``)
-       additionally requires ``fetch-depth: 0`` and ``fetch-tags: true``.
-    3. No step may perform a post-checkout credential-requiring fetch
-       of the three known base SHAs (``COMPLEXITY_BASE_SHA``,
-       ``PR_BASE_SHA``, ``MERGE_BASE``).
-    4. The corresponding fail-closed local commit-object assertions
-       must still be present.
-    5. No candidate-visible structured field (``step.env``,
-       ``step.with``, ``pr_fast.env``) may contain the GitHub workflow
-       token ``${{ github.token }}`` or ``${{ secrets.<NAME> }}``
-       references UNLESS the exact four-tuple
-       ``(step_name, container, env_key, env_value)`` matches an entry
-       in ``allowed_secret_bindings``. The allowlist is structural:
-       it must match the step name, the container (``"step.env"``,
-       ``"step.with"`` or ``"pr_fast.env"``), the env/with key, AND the
-       exact value. The literal env keys ``GH_TOKEN`` and
-       ``GITHUB_TOKEN`` are always forbidden.
-    6. For non-checkout actions, an explicit ``with.token`` value
-       resolving to a credential expression is rejected (rule D). The
-       checkout itself allows implicit auth via
-       ``persist-credentials: false``; explicit checkout ``with.token``
-       overrides are always rejected.
-
-    This helper is intentionally narrow in scope: it inspects the
-    parsed ``pr-fast`` mapping structurally rather than by source-line
-    matching, so the invariant cannot be silently bypassed by
-    reformatting or by adding a credential outside an existing step.
+    ``workflow_env`` is the top-level workflow ``env:`` mapping,
+    which GitHub Actions inherits into every job including
+    ``pr-fast``. The same credential-isolation contract that applies
+    to ``step.env`` / ``step.with`` also applies to workflow-level
+    env, with NO allowlist: workflow-level env is not a
+    candidate-visible step, so any GitHub credential expression there
+    is a fail-closed violation regardless of the pr-fast allowlist.
     """
     errors: list[str] = []
     if not isinstance(pr_fast, dict):
@@ -2448,11 +2539,11 @@ def _validate_pr_fast_structure(
     steps = pr_fast.get("steps")
     if not isinstance(steps, list) or not steps:
         return False, [f"{basename}.steps must be a non-empty list"]
+    if workflow_env is None:
+        workflow_env = {}
+    if not isinstance(workflow_env, dict):
+        return False, [f"{basename} top-level env must be a mapping"]
 
-    # The allowlist must be a frozenset of 4-tuples
-    # (step_name, container, env_key, env_value). Any other shape is
-    # rejected up-front so callers cannot accidentally pass a
-    # malformed allowlist.
     if not isinstance(allowed_secret_bindings, frozenset):
         errors.append(
             "internal: allowed_secret_bindings must be a frozenset"
@@ -2470,10 +2561,6 @@ def _validate_pr_fast_structure(
             )
             allowed_secret_bindings = frozenset()
             break
-    allowed_lookups = frozenset(
-        (step, container, key) for (step, container, key, _value)
-        in allowed_secret_bindings
-    )
 
     checkouts = [
         step for step in steps
@@ -2493,8 +2580,6 @@ def _validate_pr_fast_structure(
         if not isinstance(with_block, dict):
             errors.append(f"{prefix}: with must be a mapping")
             with_block = {}
-        # Checkouts have UNCONDITIONAL credential-isolation rules that
-        # no allowlist entry may override.
         if "persist-credentials" not in with_block:
             errors.append(
                 f"{prefix}: persist-credentials must be set explicitly "
@@ -2509,9 +2594,6 @@ def _validate_pr_fast_structure(
             errors.append(
                 f"{prefix}: explicit with.token override is forbidden"
             )
-        # Primary-checkout contract: the first checkout declaring
-        # fetch-depth must be the full fetch-depth:0 / fetch-tags:true
-        # credential-isolated checkout.
         if "fetch-depth" in with_block and not primary_checkout_seen:
             primary_checkout_seen = True
             if with_block.get("fetch-depth") != 0:
@@ -2524,15 +2606,11 @@ def _validate_pr_fast_structure(
                     f"{prefix}: fetch-tags must be True "
                     f"(got {with_block.get('fetch-tags')!r})"
                 )
-
-    # If there was no checkout declaring fetch-depth, the primary
-    # checkout contract was never satisfied.
     if checkouts and not primary_checkout_seen:
         errors.append(
             f"{basename}: no actions/checkout step declares fetch-depth"
         )
 
-    # 3. The three forbidden credential-requiring fetch forms.
     forbidden_fetch_lines = {
         "COMPLEXITY_BASE_SHA": (
             'git fetch --no-tags --depth=1 origin "$COMPLEXITY_BASE_SHA"'
@@ -2556,7 +2634,6 @@ def _validate_pr_fast_structure(
                     f"post-checkout fetch of {label} (line {line!r})"
                 )
 
-    # 4. The corresponding local commit-object assertions are present.
     expected_local_assertions = (
         "${COMPLEXITY_BASE_SHA}^{commit}",
         "${PR_BASE_SHA}^{commit}",
@@ -2571,32 +2648,58 @@ def _validate_pr_fast_structure(
                 f"assertion {marker!r}"
             )
 
-    # 5/6. Structured credential isolation. Walk every candidate-visible
-    # structured field (step.env, step.with, pr_fast.env). Track the
-    # current container label so the allowlist can match by structure.
-    # GitHub authentication credentials are NEVER allowlisted.
+    # Step ``run:`` credential scan. The run string is candidate-visible
+    # because the script is interpreted by bash on the runner. NO
+    # allowlist applies: a credential reference embedded directly in a
+    # shell command is unconditionally fail-closed.
+    for idx, step in enumerate(steps, start=1):
+        if not isinstance(step, dict):
+            continue
+        step_name = step.get("name") or ""
+        prefix = f"{basename}.steps[{idx}] ({step_name!r})"
+        run_text = step.get("run") or ""
+        if run_text and _contains_credential_context(run_text):
+            errors.append(
+                f"{prefix}: run contains a GitHub credential "
+                f"context expression (run is candidate-visible; no "
+                f"allowlist applies)"
+            )
+
+    # Structured-field credential isolation. Walk every candidate-visible
+    # structured field (step.env, step.with, pr_fast.env) and the
+    # workflow-level env. Track the current container label so the
+    # allowlist can match by structure. GitHub authentication credentials
+    # are NEVER allowlisted.
 
     def _record(prefix, message):
         errors.append(f"{prefix}: {message}")
 
-    def _walk(node, prefix, *, step_name, container):
-        if isinstance(node, dict):
-            for key, value in node.items():
-                # Literal token env keys are unconditionally forbidden.
-                if (
-                    isinstance(key, str)
-                    and key in _FORBIDDEN_TOKEN_ENV_KEYS
-                ):
-                    _record(
-                        prefix,
-                        f"credential env key {key!r} is forbidden"
-                    )
-                if (
-                    isinstance(key, str)
-                    and isinstance(value, str)
-                    and _CREDENTIAL_PATTERN.search(value)
-                ):
-                    triple = (step_name, container, key)
+    def _walk_dict_for_env(env, *, prefix, container):
+        # Walk a mapping (env or with block) and reject credential
+        # expressions. ``step.env`` and ``pr_fast.env`` honour the
+        # allowlist (matched on step_name, container, env_key, value);
+        # ``step.with`` only matches the allowlist when the action is
+        # NOT a checkout (handled below). Workflow-level env never
+        # honours the allowlist.
+        allowlist_active = container in ("step.env", "pr_fast.env")
+        if not isinstance(env, dict):
+            return
+        for key, value in env.items():
+            if (
+                isinstance(key, str)
+                and key in _FORBIDDEN_TOKEN_ENV_KEYS
+            ):
+                _record(
+                    prefix,
+                    f"credential env key {key!r} is forbidden"
+                )
+            if (
+                isinstance(key, str)
+                and isinstance(value, str)
+                and _contains_credential_context(value)
+            ):
+                if allowlist_active:
+                    triple = (step_name or "", container, key)
                     entry_value = next(
                         (
                             v for (s, c, k, v) in allowed_secret_bindings
@@ -2605,60 +2708,139 @@ def _validate_pr_fast_structure(
                         None,
                     )
                     if entry_value is not None and entry_value == value:
-                        # Exact structural allowlist match: skip.
                         continue
-                    _record(
-                        prefix,
-                        f"credential expression in {container}.{key!r} "
-                        f"value {value!r} is not in the allowlist"
-                    )
-                _walk(value, f"{prefix}.{key}",
-                      step_name=step_name, container=container)
-        elif isinstance(node, list):
-            for i, item in enumerate(node):
-                _walk(item, f"{prefix}[{i}]",
-                      step_name=step_name, container=container)
-        elif isinstance(node, str):
-            if _CREDENTIAL_PATTERN.search(node):
-                # Bare string at this position: it isn't an env binding,
-                # so no allowlist triple applies. Reject.
-                _record(prefix, f"credential expression in string {node!r}")
+                _record(
+                    prefix,
+                    f"credential expression in {container}.{key!r} "
+                    f"value {value!r} is not in the allowlist"
+                )
 
-    for idx, step in enumerate(steps, start=1):
+    def _walk_step_env(node, *, step_name):
+        _walk_dict_for_env(
+            node,
+            prefix=f"{basename}.steps[{idx}] ({step_name or ''}).env",
+            container="step.env",
+        )
+
+    def _walk_step_with(node, step):
+        if not isinstance(node, dict):
+            return
+        uses = step.get("uses") if isinstance(step, dict) else None
+        is_checkout = (
+            isinstance(uses, str) and uses.startswith("actions/checkout@")
+        )
+        # Non-checkout actions: explicit with.token resolving to a
+        # credential expression is unconditionally rejected.
+        if (
+            not is_checkout
+            and "token" in node
+            and isinstance(node["token"], str)
+            and _contains_credential_context(node["token"])
+        ):
+            _record(
+                f"{basename}.steps[{idx}] ({step.get('name') or ''}).with",
+                "non-checkout with.token must not reference "
+                "credentials/secrets",
+            )
+        # Other with-block keys: scan for credential expressions via the
+        # allowlist-aware helper. ``step.with`` honors the allowlist so
+        # that the exact real-workflow binding semantics stay uniform.
+        for key, value in node.items():
+            if key == "token" and is_checkout:
+                # Already handled above (checkout token is always rejected).
+                continue
+            if isinstance(value, str) and _contains_credential_context(value):
+                triple = (step.get("name") or "", "step.with", key)
+                entry_value = next(
+                    (
+                        v for (s, c, k, v) in allowed_secret_bindings
+                        if (s, c, k) == triple
+                    ),
+                    None,
+                )
+                if entry_value is not None and entry_value == value:
+                    continue
+                _record(
+                    f"{basename}.steps[{idx}] ({step.get('name') or ''}).with",
+                    f"credential expression in step.with.{key!r} value "
+                    f"{value!r} is not in the allowlist",
+                )
+
+    for idx, step in enumerate(steps):
         if not isinstance(step, dict):
             continue
         step_name = step.get("name") or ""
-        prefix = f"{basename}.steps[{idx}] ({step_name!r})"
         if "env" in step:
-            _walk(step["env"], f"{prefix}.env",
-                  step_name=step_name, container="step.env")
+            _walk_step_env(step["env"], step_name=step_name)
         if "with" in step:
-            step_with = step.get("with") or {}
-            # Non-checkout actions whose explicit with.token resolves
-            # to a credential expression are unconditionally rejected.
-            # The checkout itself is handled above (with.token override
-            # is always rejected regardless of allowlist).
-            uses = step.get("uses")
-            is_checkout = (
-                isinstance(uses, str) and uses.startswith("actions/checkout@")
+            _walk_step_with(step["with"], step)
+
+    # Workflow-level env: GitHub credential expressions are
+    # unconditionally forbidden here. NO allowlist applies because
+    # workflow-level env is not candidate-visible in a single step's
+    # scope.
+    workflow_walk_prefix = f"{basename} top-level env"
+    if workflow_env:
+        if not isinstance(workflow_env, dict):
+            errors.append(
+                f"{basename} top-level env must be a mapping"
             )
-            if (
-                not is_checkout
-                and isinstance(step_with, dict)
-                and "token" in step_with
-                and isinstance(step_with["token"], str)
-                and _CREDENTIAL_PATTERN.search(step_with["token"])
-            ):
-                _record(
-                    prefix,
-                    "non-checkout with.token must not reference "
-                    "credentials/secrets"
-                )
-            _walk(step_with, f"{prefix}.with",
-                  step_name=step_name, container="step.with")
-    if "env" in pr_fast:
-        _walk(pr_fast["env"], f"{basename}.env",
-              step_name="", container="pr_fast.env")
+        else:
+            for key, value in workflow_env.items():
+                if (
+                    isinstance(key, str)
+                    and key in _FORBIDDEN_TOKEN_ENV_KEYS
+                ):
+                    _record(
+                        workflow_walk_prefix,
+                        f"credential env key {key!r} is forbidden",
+                    )
+                if (
+                    isinstance(key, str)
+                    and isinstance(value, str)
+                    and _contains_credential_context(value)
+                ):
+                    _record(
+                        workflow_walk_prefix,
+                        f"credential expression in workflow env.{key!r} "
+                        f"value {value!r} is forbidden",
+                    )
+
+    # Bare-string credential scan inside nested list values: also
+    # handled by ``_contains_credential_context`` via the env/with walk
+    # above (every leaf string is tested). No separate bare-string walk
+    # needed.
+
+    # pr-fast job-level ``env:`` (the pr-fast mapping's own ``env``
+    # field) is inherited by every pr-fast step and is therefore
+    # candidate-visible. NO allowlist applies here: pr-fast job env
+    # cannot substitute for the explicit Build/step-env binding.
+    pr_fast_env = pr_fast.get("env")
+    if pr_fast_env is not None:
+        if not isinstance(pr_fast_env, dict):
+            errors.append(
+                f"{basename}.env must be a mapping"
+            )
+        else:
+            for key, value in pr_fast_env.items():
+                if (
+                    isinstance(key, str)
+                    and key in _FORBIDDEN_TOKEN_ENV_KEYS
+                ):
+                    _record(
+                        f"{basename}.env",
+                        f"credential env key {key!r} is forbidden",
+                    )
+                if (
+                    isinstance(key, str)
+                    and isinstance(value, str)
+                    and _contains_credential_context(value)
+                ):
+                    _record(
+                        f"{basename}.env",
+                        f"credential expression in pr_fast.env.{key!r} "
+                        f"value {value!r} is not in the allowlist",
+                    )
 
     return (not errors), errors
 
@@ -2688,10 +2870,12 @@ def test_pr_fast_credential_isolation_is_structural():
     data = yaml.safe_load(CI_YML.read_text(encoding="utf-8"))
     assert "jobs" in data
     pr_fast = data["jobs"]["pr-fast"]
+    workflow_env = data.get("env") or {}
 
     ok, errors = _validate_pr_fast_structure(
         pr_fast,
         allowed_secret_bindings=PR_FAST_FRONTEND_DSN_ALLOWLIST,
+        workflow_env=workflow_env,
     )
     assert ok, (
         "real pr-fast job does not satisfy credential-isolation "
@@ -2826,7 +3010,7 @@ def test_pr_fast_credential_isolation_arbitrary_secret_reference_rejected():
     step["env"] = {"SOME_OTHER_SECRET": "${{ secrets.SOME_OTHER_SECRET }}"}
     _assert_validator_rejects(
         step,
-        expect_message_substring="credential expression in string",
+        expect_message_substring="credential expression in",
     )
 
 
@@ -2861,7 +3045,7 @@ def test_pr_fast_credential_isolation_pr_fast_job_level_env_secret_rejected():
     ok, errors = _validate_pr_fast_structure(pr_fast)
     assert not ok
     assert any(
-        "credential expression in string" in e for e in errors
+        "credential expression in pr_fast.env." in e for e in errors
     )
 
 
@@ -4571,4 +4755,439 @@ def test_pr_fast_credential_isolation_real_dsn_binding_rejected_at_job_level_env
     assert any(
         "pr_fast.env." in e and "VITE_FRONTEND_GLITCHTIP_DSN" in e
         for e in errors
+    ), errors
+# Final credential-surface review batch (PR252 Codex P4)
+# ---------------------------------------------------------------------------
+#
+# Findings:
+# 1. credential expressions inside run: blocks (no allowlist applies).
+# 2. top-level workflow-level env: inherited by pr-fast.
+# 3. bracket GitHub context syntax: "${{ github['token'] }}" /
+#    "${{ github["token"] }}" / "${{ secrets['NAME'] }}" /
+#    "${{ secrets["NAME"] }}".
+# ---------------------------------------------------------------------------
+
+_DQ = ""
+_SQ = ''
+def cred_dot(prop):
+    return _DQ + '$' + _DQ + '{' + _DQ + '{' + prop + _DQ + '}' + _DQ + '}'
+def cred_sb(root, prop, q):
+    return _DQ + '$' + _DQ + '{' + _DQ + '{' + root + _DQ + '[' + q + prop + q + _DQ + ']' + _DQ + '}' + _DQ + '}'
+def gh_dot(token):
+    return cred_dot('github.' + token)
+def gh_sb(prop, q):
+    return cred_sb('github', prop, q)
+def secrets_dot(name):
+    return cred_dot('secrets.' + name)
+def secrets_sb(prop, q):
+    return cred_sb('secrets', prop, q)
+
+_RUN_BASE = 'if ! git cat-file -e "${COMPLEXITY_BASE_SHA}^{commit}" 2>/dev/null; then exit 1; fi\nif ! git cat-file -e "${PR_BASE_SHA}^{commit}" 2>/dev/null; then exit 1; fi\nif ! git cat-file -e "${MERGE_BASE}^{commit}" 2>/dev/null; then exit 1; fi'
+def _run_with_extra(extra_run_line):
+    """Return a minimal pr-fast mapping whose Build step run adds
+    the supplied extra run-line after the three fail-closed
+    local commit-object assertions."""
+    return {
+        "steps": [
+            {
+                "name": "checkout",
+                "uses": "actions/checkout@deadbeef",
+                "with": {"fetch-depth": 0, "fetch-tags": True,
+                          "persist-credentials": False},
+            },
+            {
+                "name": "Build",
+                "run": _RUN_BASE + "\n" + extra_run_line,
+            },
+        ],
+    }
+def _use_context_pr_fast():
+    """A minimal pr-fast mapping with the three
+    required commit-object guards and no credential expression.
+    """
+    return {
+        "steps": [
+            {
+                "name": "checkout",
+                "uses": "actions/checkout@deadbeef",
+                "with": {"fetch-depth": 0, "fetch-tags": True,
+                          "persist-credentials": False},
+            },
+            {
+                "name": "use-context",
+                "run": _RUN_BASE,
+            },
+        ],
+    }
+def _checkout_step_with(persist_credentials):
+    return {
+        "name": "checkout",
+        "uses": "actions/checkout@deadbeef",
+        "with": {"fetch-depth": 0, "fetch-tags": True,
+                  "persist-credentials": persist_credentials},
+    }
+
+def test_finding1_run_with_dot_github_token_rejected():
+    pr_fast = _run_with_extra('curl -H "Authorization: Bearer ${{ github.token }}" https://example.invalid/')
+    ok, errors = _validate_pr_fast_structure(pr_fast)
+    assert not ok
+    assert any(
+        'run contains a GitHub credential context expression' in e for e in errors
+    ), errors
+
+
+def test_finding1_run_with_dot_secrets_rejected():
+    pr_fast = _run_with_extra('tool --password "${{ secrets.API_KEY }}"')
+    ok, errors = _validate_pr_fast_structure(pr_fast)
+    assert not ok
+    assert any(
+        'run contains a GitHub credential context expression' in e for e in errors
+    ), errors
+
+
+def test_finding1_run_with_bracket_github_token_rejected():
+    pr_fast = _run_with_extra("echo 'token=${{ github['token'] }}'")
+    ok, errors = _validate_pr_fast_structure(pr_fast)
+    assert not ok
+    assert any(
+        'run contains a GitHub credential context expression' in e for e in errors
+    ), errors
+
+
+def test_finding1_run_with_double_bracket_github_token_rejected():
+    pr_fast = _run_with_extra('echo "token=${{ github["token"] }}"')
+    ok, errors = _validate_pr_fast_structure(pr_fast)
+    assert not ok
+    assert any(
+        'run contains a GitHub credential context expression' in e for e in errors
+    ), errors
+
+
+def test_finding1_run_with_bracket_secrets_rejected():
+    pr_fast = _run_with_extra("echo '${{ secrets['API_KEY'] }}'")
+    ok, errors = _validate_pr_fast_structure(pr_fast)
+    assert not ok
+    assert any(
+        'run contains a GitHub credential context expression' in e for e in errors
+    ), errors
+
+
+def test_finding1_run_with_double_bracket_secrets_rejected():
+    pr_fast = _run_with_extra('echo "${{ secrets["API_KEY"] }}"')
+    ok, errors = _validate_pr_fast_structure(pr_fast)
+    assert not ok
+    assert any(
+        'run contains a GitHub credential context expression' in e for e in errors
+    ), errors
+
+
+def test_finding1_run_with_only_harmless_contexts_passes():
+    pr_fast = _run_with_extra('echo ${{ github.workspace }} ${{ github.event_pull_request.base.sha }}')
+    ok, errors = _validate_pr_fast_structure(pr_fast)
+    assert ok, errors
+
+
+def test_finding1_run_with_bracket_github_workspace_passes():
+    pr_fast = _run_with_extra("echo ${{ github['workspace'] }} ${{ github.event_pull_request.head.sha }}")
+    ok, errors = _validate_pr_fast_structure(pr_fast)
+    assert ok, errors
+
+
+def test_finding1_run_with_dsn_allowlist_still_rejected():
+    pr_fast = _build_dsn_pr_fast(step_name="Build")
+    build_step = pr_fast["steps"][1]
+    build_step["run"] = _RUN_BASE + '\\ncurl --header X-DSN: ${{ secrets.VITE_GLITCHTIP_DSN }} https://example.invalid/'
+    ok, errors = _validate_pr_fast_structure(
+        pr_fast,
+        allowed_secret_bindings=PR_FAST_FRONTEND_DSN_ALLOWLIST,
+    )
+    assert not ok
+    assert any(
+        "run contains a GitHub credential context expression" in e
+        for e in errors
+    ), errors
+
+
+def test_finding2_workflow_env_secret_dot_rejected():
+    workflow_env = {'API_KEY': cred_dot('secrets.API_KEY')}
+    pr_fast = {"steps": [_checkout_step_with(False)]}
+    ok, errors = _validate_pr_fast_structure(
+        pr_fast, workflow_env=workflow_env,
+    )
+    assert not ok
+    assert any(
+        'credential expression in workflow env.' in e for e in errors
+    ), errors
+
+
+def test_finding2_workflow_env_bracket_secrets_rejected():
+    workflow_env = {'API_KEY': cred_sb('secrets', 'API_KEY', "'")}
+    pr_fast = {"steps": [_checkout_step_with(False)]}
+    ok, errors = _validate_pr_fast_structure(
+        pr_fast, workflow_env=workflow_env,
+    )
+    assert not ok
+    assert any(
+        'credential expression in workflow env.' in e for e in errors
+    ), errors
+
+
+def test_finding2_workflow_env_double_bracket_secrets_rejected():
+    workflow_env = {'API_KEY': cred_sb('secrets', 'API_KEY', '"')}
+    pr_fast = {"steps": [_checkout_step_with(False)]}
+    ok, errors = _validate_pr_fast_structure(
+        pr_fast, workflow_env=workflow_env,
+    )
+    assert not ok
+    assert any(
+        'credential expression in workflow env.' in e for e in errors
+    ), errors
+
+
+def test_finding2_workflow_env_gh_token_rejected():
+    workflow_env = {'GH_TOKEN': cred_dot('github.token')}
+    pr_fast = {"steps": [_checkout_step_with(False)]}
+    ok, errors = _validate_pr_fast_structure(
+        pr_fast, workflow_env=workflow_env,
+    )
+    assert not ok
+    assert any(
+        "credential env key 'GH_TOKEN' is forbidden" in e for e in errors
+    ), errors
+
+
+def test_finding2_workflow_env_github_token_secret_rejected():
+    workflow_env = {'GITHUB_TOKEN': cred_dot('secrets.GITHUB_TOKEN')}
+    pr_fast = {"steps": [_checkout_step_with(False)]}
+    ok, errors = _validate_pr_fast_structure(
+        pr_fast, workflow_env=workflow_env,
+    )
+    assert not ok
+    assert any(
+        "credential env key 'GITHUB_TOKEN' is forbidden" in e for e in errors
+    ), errors
+
+
+def test_finding2_workflow_env_bracket_github_token_rejected():
+    workflow_env = {'GITHUB_TOKEN': cred_sb('github', 'token', "'")}
+    pr_fast = {"steps": [_checkout_step_with(False)]}
+    ok, errors = _validate_pr_fast_structure(
+        pr_fast, workflow_env=workflow_env,
+    )
+    assert not ok
+    assert any(
+        "credential env key 'GITHUB_TOKEN' is forbidden" in e for e in errors
+    ), errors
+
+
+def test_finding2_workflow_env_harmless_literals_pass():
+    workflow_env = {
+        'PYTHONNOUSERSITE': '1',
+        'PYTHONSAFEPATH': '1',
+        'PYTHONDONTWRITEBYTECODE': '1',
+        'MYPYPATH': '',
+        'NODE_OPTIONS': '',
+        'BASH_ENV': '',
+        'ENV': '',
+        'CDPATH': '',
+        'GLOBIGNORE': '',
+    }
+    pr_fast = _use_context_pr_fast()
+    ok, errors = _validate_pr_fast_structure(
+        pr_fast, workflow_env=workflow_env,
+    )
+    assert ok, errors
+
+
+def test_finding2_workflow_env_harmless_github_context_passes():
+    workflow_env = {
+        'WORKDIR_REF': '${{ github.workspace }}',
+        'HEAD_SHA_REF': '${{ github.event_pull_request.head.sha }}',
+        'BASE_SHA_REF': '${{ github.event_pull_request.base.sha }}',
+    }
+    pr_fast = _use_context_pr_fast()
+    ok, errors = _validate_pr_fast_structure(
+        pr_fast, workflow_env=workflow_env,
+    )
+    assert ok, errors
+
+
+def test_finding3_step_env_bracket_github_token_rejected():
+    pr_fast = {
+        'steps': [
+            {
+                'name': 'checkout',
+                'uses': 'actions/checkout@deadbeef',
+                'with': {'fetch-depth': 0, 'fetch-tags': True, 'persist-credentials': False},
+            },
+            {
+                'name': 'test-step',
+                'run': _RUN_BASE,
+                'env': {'X': cred_sb('github', 'token', "'")},
+            },
+        ],
+    }
+    ok, errors = _validate_pr_fast_structure(pr_fast)
+    assert not ok
+    assert any(
+        'credential expression' in e for e in errors
+    ), errors
+
+
+def test_finding3_step_env_double_bracket_github_token_rejected():
+    pr_fast = {
+        'steps': [
+            {
+                'name': 'checkout',
+                'uses': 'actions/checkout@deadbeef',
+                'with': {'fetch-depth': 0, 'fetch-tags': True, 'persist-credentials': False},
+            },
+            {
+                'name': 'test-step',
+                'run': _RUN_BASE,
+                'env': {'X': cred_sb('github', 'token', '"')},
+            },
+        ],
+    }
+    ok, errors = _validate_pr_fast_structure(pr_fast)
+    assert not ok
+    assert any(
+        'credential expression' in e for e in errors
+    ), errors
+
+
+def test_finding3_step_env_bracket_secrets_rejected():
+    pr_fast = {
+        'steps': [
+            {
+                'name': 'checkout',
+                'uses': 'actions/checkout@deadbeef',
+                'with': {'fetch-depth': 0, 'fetch-tags': True, 'persist-credentials': False},
+            },
+            {
+                'name': 'test-step',
+                'run': _RUN_BASE,
+                'env': {'X': cred_sb('secrets', 'API_KEY', "'")},
+            },
+        ],
+    }
+    ok, errors = _validate_pr_fast_structure(pr_fast)
+    assert not ok
+    assert any(
+        'credential expression' in e for e in errors
+    ), errors
+
+
+def test_finding3_step_env_double_bracket_secrets_rejected():
+    pr_fast = {
+        'steps': [
+            {
+                'name': 'checkout',
+                'uses': 'actions/checkout@deadbeef',
+                'with': {'fetch-depth': 0, 'fetch-tags': True, 'persist-credentials': False},
+            },
+            {
+                'name': 'test-step',
+                'run': _RUN_BASE,
+                'env': {'X': cred_sb('secrets', 'API_KEY', '"')},
+            },
+        ],
+    }
+    ok, errors = _validate_pr_fast_structure(pr_fast)
+    assert not ok
+    assert any(
+        'credential expression' in e for e in errors
+    ), errors
+
+
+def test_finding3_step_env_bracket_harmless_github_passes():
+    pr_fast = {
+        'steps': [
+            {
+                'name': 'checkout',
+                'uses': 'actions/checkout@deadbeef',
+                'with': {'fetch-depth': 0, 'fetch-tags': True, 'persist-credentials': False},
+            },
+            {
+                'name': 'test-step',
+                'run': _RUN_BASE,
+                'env': {'X': cred_sb('workspace', 'ignored', "'")},
+            },
+        ],
+    }
+    ok, errors = _validate_pr_fast_structure(
+        pr_fast,
+        allowed_secret_bindings=PR_FAST_FRONTEND_DSN_ALLOWLIST,
+    )
+    assert ok, errors
+
+
+def test_finding3_step_with_bracket_github_token_rejected():
+    pr_fast = {
+        'steps': [
+            {
+                'name': 'checkout',
+                'uses': 'actions/checkout@deadbeef',
+                'with': {'fetch-depth': 0, 'fetch-tags': True, 'persist-credentials': False},
+            },
+            {
+                'name': 'upload',
+                'uses': 'actions/upload-artifact@deadbeef',
+                'with': {'name': cred_sb('github', 'token', "'")},
+                'run': 'echo done',
+            },
+        ],
+    }
+    ok, errors = _validate_pr_fast_structure(pr_fast)
+    assert not ok
+    assert any(
+        'credential expression' in e for e in errors
+    ), errors
+
+
+def test_finding3_workflow_env_bracket_github_token_explicit_rejected():
+    workflow_env = {'X': cred_sb('github', 'token', "'")}
+    pr_fast = {"steps": [_checkout_step_with(False)]}
+    ok, errors = _validate_pr_fast_structure(
+        pr_fast, workflow_env=workflow_env,
+    )
+    assert not ok
+    assert any(
+        'credential expression in workflow env.' in e for e in errors
+    ), errors
+
+
+def test_finding3_run_bracket_github_token_rejected():
+    pr_fast = _run_with_extra("echo 'token=${{ github['token'] }}'")
+    ok, errors = _validate_pr_fast_structure(pr_fast)
+    assert not ok
+    assert any(
+        'run contains a GitHub credential context expression' in e for e in errors
+    ), errors
+
+
+def test_finding3_run_double_bracket_github_token_rejected():
+    pr_fast = _run_with_extra('echo "token=${{ github["token"] }}"')
+    ok, errors = _validate_pr_fast_structure(pr_fast)
+    assert not ok
+    assert any(
+        'run contains a GitHub credential context expression' in e for e in errors
+    ), errors
+
+
+def test_finding3_run_bracket_secrets_rejected():
+    pr_fast = _run_with_extra("echo '${{ secrets['API_KEY'] }}'")
+    ok, errors = _validate_pr_fast_structure(pr_fast)
+    assert not ok
+    assert any(
+        'run contains a GitHub credential context expression' in e for e in errors
+    ), errors
+
+
+def test_finding3_run_double_bracket_secrets_rejected():
+    pr_fast = _run_with_extra('echo "${{ secrets["API_KEY"] }}"')
+    ok, errors = _validate_pr_fast_structure(pr_fast)
+    assert not ok
+    assert any(
+        'run contains a GitHub credential context expression' in e for e in errors
     ), errors
