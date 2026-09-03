@@ -2380,10 +2380,29 @@ _CREDENTIAL_PATTERN = re.compile(
     r"|"
     r"\$\{\{\s*secrets\.[A-Za-z_][A-Za-z0-9_]*\s*\}\}"
 )
-_FETCH_DEPTH_PRIMARY = "pr-fast primary checkout"
+_FORBIDDEN_TOKEN_ENV_KEYS = frozenset({"GH_TOKEN", "GITHUB_TOKEN"})
+# The exact semantic identity of the single pr-fast secret binding
+# authorized by the principal after independent exact-HEAD review.
+# No other binding -- on any other step, key, container or value --
+# may be allowlisted.
+PR_FAST_FRONTEND_DSN_ALLOWLIST = frozenset({
+    (
+        "Build",                 # step name
+        "step.env",              # structured container
+        "VITE_FRONTEND_GLITCHTIP_DSN",  # env key (frontend telemetry DSN)
+        # Secret-name in the workflow is VITE_GLITCHTIP_DSN
+        # (the env-var name is VITE_FRONTEND_GLITCHTIP_DSN).
+        "${{ secrets.VITE_GLITCHTIP_DSN }}",  # exact value
+    ),
+})
 
 
-def _validate_pr_fast_structure(pr_fast, *, basename: str = "pr-fast"):
+def _validate_pr_fast_structure(
+    pr_fast,
+    *,
+    basename: str = "pr-fast",
+    allowed_secret_bindings: frozenset = frozenset(),
+):
     """Structural validation of the ``jobs.pr-fast`` mapping.
 
     Returns ``(ok, errors)``. ``ok`` is True iff every rule passes.
@@ -2393,7 +2412,8 @@ def _validate_pr_fast_structure(pr_fast, *, basename: str = "pr-fast"):
     1. At least one ``actions/checkout@*`` step must exist. Every such
        step must declare ``with.persist-credentials: false`` (an omitted
        value is rejected because the GitHub default persists credentials).
-       A step that overrides ``with.token`` is rejected.
+       A step that overrides ``with.token`` is rejected. These checks
+       are unconditional: no allowlist entry may override them.
     2. The primary checkout (the first one declaring ``fetch-depth``)
        additionally requires ``fetch-depth: 0`` and ``fetch-tags: true``.
     3. No step may perform a post-checkout credential-requiring fetch
@@ -2403,16 +2423,24 @@ def _validate_pr_fast_structure(pr_fast, *, basename: str = "pr-fast"):
        must still be present.
     5. No candidate-visible structured field (``step.env``,
        ``step.with``, ``pr_fast.env``) may contain the GitHub workflow
-       token or any ``secrets.*`` reference. The literal env keys
-       ``GH_TOKEN`` and ``GITHUB_TOKEN`` are also forbidden in those
-       fields.
+       token ``${{ github.token }}`` or ``${{ secrets.<NAME> }}``
+       references UNLESS the exact four-tuple
+       ``(step_name, container, env_key, env_value)`` matches an entry
+       in ``allowed_secret_bindings``. The allowlist is structural:
+       it must match the step name, the container (``"step.env"``,
+       ``"step.with"`` or ``"pr_fast.env"``), the env/with key, AND the
+       exact value. The literal env keys ``GH_TOKEN`` and
+       ``GITHUB_TOKEN`` are always forbidden.
     6. For non-checkout actions, an explicit ``with.token`` value
-       resolving to credentials is rejected.
+       resolving to a credential expression is rejected (rule D). The
+       checkout itself allows implicit auth via
+       ``persist-credentials: false``; explicit checkout ``with.token``
+       overrides are always rejected.
 
     This helper is intentionally narrow in scope: it inspects the
     parsed ``pr-fast`` mapping structurally rather than by source-line
     matching, so the invariant cannot be silently bypassed by
-    reformatting or adding a credential outside an existing step.
+    reformatting or by adding a credential outside an existing step.
     """
     errors: list[str] = []
     if not isinstance(pr_fast, dict):
@@ -2420,6 +2448,32 @@ def _validate_pr_fast_structure(pr_fast, *, basename: str = "pr-fast"):
     steps = pr_fast.get("steps")
     if not isinstance(steps, list) or not steps:
         return False, [f"{basename}.steps must be a non-empty list"]
+
+    # The allowlist must be a frozenset of 4-tuples
+    # (step_name, container, env_key, env_value). Any other shape is
+    # rejected up-front so callers cannot accidentally pass a
+    # malformed allowlist.
+    if not isinstance(allowed_secret_bindings, frozenset):
+        errors.append(
+            "internal: allowed_secret_bindings must be a frozenset"
+        )
+        allowed_secret_bindings = frozenset()
+    for entry in allowed_secret_bindings:
+        if (
+            not isinstance(entry, tuple)
+            or len(entry) != 4
+            or not all(isinstance(item, str) for item in entry)
+        ):
+            errors.append(
+                f"internal: allowed entry {entry!r} is not a "
+                f"(step_name, container, env_key, env_value) 4-tuple"
+            )
+            allowed_secret_bindings = frozenset()
+            break
+    allowed_lookups = frozenset(
+        (step, container, key) for (step, container, key, _value)
+        in allowed_secret_bindings
+    )
 
     checkouts = [
         step for step in steps
@@ -2432,9 +2486,6 @@ def _validate_pr_fast_structure(pr_fast, *, basename: str = "pr-fast"):
             f"{basename} must contain at least one actions/checkout step"
         )
 
-    def _record(prefix, message):
-        errors.append(f"{prefix}: {message}")
-
     primary_checkout_seen = False
     for idx, checkout in enumerate(checkouts, start=1):
         prefix = f"{basename}.steps[{idx}] ({checkout.get('name')!r})"
@@ -2442,6 +2493,8 @@ def _validate_pr_fast_structure(pr_fast, *, basename: str = "pr-fast"):
         if not isinstance(with_block, dict):
             errors.append(f"{prefix}: with must be a mapping")
             with_block = {}
+        # Checkouts have UNCONDITIONAL credential-isolation rules that
+        # no allowlist entry may override.
         if "persist-credentials" not in with_block:
             errors.append(
                 f"{prefix}: persist-credentials must be set explicitly "
@@ -2518,45 +2571,80 @@ def _validate_pr_fast_structure(pr_fast, *, basename: str = "pr-fast"):
                 f"assertion {marker!r}"
             )
 
-    # 5. No candidate-visible structured credential reference. Inspect
-    # step.env, step.with, and pr_fast.env recursively.
-    forbidden_token_env_keys = {"GH_TOKEN", "GITHUB_TOKEN"}
+    # 5/6. Structured credential isolation. Walk every candidate-visible
+    # structured field (step.env, step.with, pr_fast.env). Track the
+    # current container label so the allowlist can match by structure.
+    # GitHub authentication credentials are NEVER allowlisted.
 
-    def _walk(node, prefix):
+    def _record(prefix, message):
+        errors.append(f"{prefix}: {message}")
+
+    def _walk(node, prefix, *, step_name, container):
         if isinstance(node, dict):
             for key, value in node.items():
-                if isinstance(key, str) and key in forbidden_token_env_keys:
+                # Literal token env keys are unconditionally forbidden.
+                if (
+                    isinstance(key, str)
+                    and key in _FORBIDDEN_TOKEN_ENV_KEYS
+                ):
                     _record(
                         prefix,
                         f"credential env key {key!r} is forbidden"
                     )
-                _walk(value, f"{prefix}.{key}")
+                if (
+                    isinstance(key, str)
+                    and isinstance(value, str)
+                    and _CREDENTIAL_PATTERN.search(value)
+                ):
+                    triple = (step_name, container, key)
+                    entry_value = next(
+                        (
+                            v for (s, c, k, v) in allowed_secret_bindings
+                            if (s, c, k) == triple
+                        ),
+                        None,
+                    )
+                    if entry_value is not None and entry_value == value:
+                        # Exact structural allowlist match: skip.
+                        continue
+                    _record(
+                        prefix,
+                        f"credential expression in {container}.{key!r} "
+                        f"value {value!r} is not in the allowlist"
+                    )
+                _walk(value, f"{prefix}.{key}",
+                      step_name=step_name, container=container)
         elif isinstance(node, list):
             for i, item in enumerate(node):
-                _walk(item, f"{prefix}[{i}]")
+                _walk(item, f"{prefix}[{i}]",
+                      step_name=step_name, container=container)
         elif isinstance(node, str):
             if _CREDENTIAL_PATTERN.search(node):
+                # Bare string at this position: it isn't an env binding,
+                # so no allowlist triple applies. Reject.
                 _record(prefix, f"credential expression in string {node!r}")
 
     for idx, step in enumerate(steps, start=1):
         if not isinstance(step, dict):
             continue
-        prefix = f"{basename}.steps[{idx}] ({step.get('name')!r})"
+        step_name = step.get("name") or ""
+        prefix = f"{basename}.steps[{idx}] ({step_name!r})"
         if "env" in step:
-            _walk(step["env"], f"{prefix}.env")
+            _walk(step["env"], f"{prefix}.env",
+                  step_name=step_name, container="step.env")
         if "with" in step:
-            # For non-checkout actions, an explicit with.token resolving
-            # to credentials is forbidden (rule D). The non-checkout case
-            # is the only concern here: checkouts already reject any
-            # with.token above. Match the inverse: non-checkout with.token
-            # must not contain a credential expression.
             step_with = step.get("with") or {}
+            # Non-checkout actions whose explicit with.token resolves
+            # to a credential expression are unconditionally rejected.
+            # The checkout itself is handled above (with.token override
+            # is always rejected regardless of allowlist).
+            uses = step.get("uses")
+            is_checkout = (
+                isinstance(uses, str) and uses.startswith("actions/checkout@")
+            )
             if (
-                isinstance(step_with, dict)
-                and not (
-                    isinstance(step.get("uses"), str)
-                    and step["uses"].startswith("actions/checkout@")
-                )
+                not is_checkout
+                and isinstance(step_with, dict)
                 and "token" in step_with
                 and isinstance(step_with["token"], str)
                 and _CREDENTIAL_PATTERN.search(step_with["token"])
@@ -2566,79 +2654,53 @@ def _validate_pr_fast_structure(pr_fast, *, basename: str = "pr-fast"):
                     "non-checkout with.token must not reference "
                     "credentials/secrets"
                 )
+            _walk(step_with, f"{prefix}.with",
+                  step_name=step_name, container="step.with")
     if "env" in pr_fast:
-        _walk(pr_fast["env"], f"{basename}.env")
+        _walk(pr_fast["env"], f"{basename}.env",
+              step_name="", container="pr_fast.env")
 
     return (not errors), errors
 
 
 def test_pr_fast_credential_isolation_is_structural():
-    """Structural invariants for the pr-fast credentialless fetch fix.
+    """Bind credential isolation to the REAL pr-fast job.
 
-    The original demonstrated failure (CI run ``33683583271``,
-    Changed-function complexity gate) was that pr-fast checkout
-    deliberately used ``fetch-depth: 0`` and ``persist-credentials:
-    false``, but a downstream ``git fetch --no-tags --depth=1 origin
-    "$COMPLEXITY_BASE_SHA"`` (and two siblings) re-introduced a
-    credential-requiring network call. This fix replaces those
-    fetches with local ``git cat-file -e`` fail-closed assertions.
+    The principal independently reviewed exact HEAD ``ci.yml`` and
+    authorised exactly ONE pr-fast secret binding:
 
-    This test pins the parts of the pr-fast contract directly
-    demonstrated and fixed here:
+      step.name = Build
+      container = step.env
+      key = VITE_FRONTEND_GLITCHTIP_DSN
+      value = ${{ secrets.VITE_GLITCHTIP_DSN }}
 
-      * every ``actions/checkout`` step declares
-        ``with.persist-credentials: false`` (an omitted value is
-        rejected because the GitHub default persists credentials);
-      * the primary checkout is ``fetch-depth: 0`` with
-        ``fetch-tags: true``;
-      * no step performs any of the three removed
-        ``git fetch --no-tags --depth=1 origin`` calls;
-      * the corresponding local commit-object assertions are
-        still present.
-
-    Broader candidate-visible credential-isolation invariants
-    (e.g. ``${{ github.token }}`` / ``${{ secrets.<NAME> }}``
-    injection through ``step.env`` / ``step.with`` / ``pr_fast.env``)
-    are validated by the synthetic ``test_pr_fast_credential_isolation_*``
-    tests against the helper directly, not against the current
-    workflow file (which legitimately references a non-credential
-    secret such as ``secrets.VITE_FRONTEND_GLITCHTIP_DSN`` for the
-    frontend telemetry pipeline)."""
+    Everything else must be credential-clean. The previous
+    implementation filtered credential errors out of the real-workflow
+    assertion, which would silently let a future modification that
+    introduces a new credential (for example ``GH_TOKEN:
+    ${{ github.token }}`` or ``SOME_TOKEN:
+    ${{ secrets.SOME_NEW_SECRET }}``) keep the test green. The
+    replacement pins the validator to the real workflow's parsed
+    ``jobs.pr-fast`` mapping using a narrow structural allowlist, so
+    any new credential binding other than the explicit authorised one
+    now flips the real-workflow test red."""
     yaml = _yaml()
     data = yaml.safe_load(CI_YML.read_text(encoding="utf-8"))
     assert "jobs" in data
     pr_fast = data["jobs"]["pr-fast"]
-    ok, errors = _validate_pr_fast_structure(pr_fast)
 
-    # Filter out secret-injection findings: those are exercised by
-    # the synthetic helper tests below so this test stays focused on
-    # the demonstrated credentialless-fetch-bug invariants.
-    fetch_bug_errors = [
-        e for e in errors
-        if "credential" not in e or "credential expression" in e and False
-    ]
-    # A more explicit and safer filter: keep only errors that are
-    # about the fetch-bug invariants (checkout contract, network
-    # fetches, marker presence).
-    relevant_keywords = (
-        "actions/checkout",
-        "persist-credentials",
-        "fetch-depth",
-        "fetch-tags",
-        "explicit with.token",
-        "fetch of COMPLEXITY_BASE_SHA",
-        "fetch of PR_BASE_SHA",
-        "fetch of MERGE_BASE",
-        "fail-closed local commit-object",
+    ok, errors = _validate_pr_fast_structure(
+        pr_fast,
+        allowed_secret_bindings=PR_FAST_FRONTEND_DSN_ALLOWLIST,
     )
-    relevant_errors = [
-        e for e in errors
-        if any(keyword in e for keyword in relevant_keywords)
-    ]
-
-    assert ok or not relevant_errors, (
-        "pr-fast credentialless-fetch invariants failed:\n"
-        + "\n".join(f"  - {e}" for e in relevant_errors)
+    assert ok, (
+        "real pr-fast job does not satisfy credential-isolation "
+        "contract; validator errors:\n"
+        + "\n".join(f"  - {e}" for e in errors)
+    )
+    assert errors == [], (
+        "real pr-fast job validator returned errors:\n"
+        + "\n".join(f"  - {e}" for e in errors)
     )
 
 
@@ -2672,9 +2734,24 @@ def _run_step(name, run):
     return {"name": name, "run": run}
 
 
-def _assert_validator_rejects(step, *, expect_message_substring):
-    pr_fast = _minimal_pr_fast(step)
-    ok, errors = _validate_pr_fast_structure(pr_fast)
+def _assert_validator_rejects(
+    step,
+    *,
+    expect_message_substring,
+    allowed_secret_bindings=frozenset(),
+    pr_fast=None,
+):
+    """Assert the validator rejects the given step / mapping.
+
+    The optional ``pr_fast`` argument lets callers pass a complete
+    pr-fast mapping (for tests that need more than one step).
+    """
+    if pr_fast is None:
+        pr_fast = _minimal_pr_fast(step)
+    ok, errors = _validate_pr_fast_structure(
+        pr_fast,
+        allowed_secret_bindings=allowed_secret_bindings,
+    )
     assert not ok, "validator should have rejected the synthetic fixture"
     joined = "\n".join(errors)
     assert any(
@@ -4280,3 +4357,218 @@ def test_caddy_validation_trusted_prefix_rejects_ordering_mutations(parsed_workf
         "W", _caddy_normalize_prefix(_job_steps(cwf, "pr-fast")[:2]) != canonical_prefix["pr-fast"],
         "moving Caddy off index 1 was not caught",
     )
+
+
+def _build_dsn_step(name="Build"):
+    """Return only the Build-shaped step dict. Most tests want a
+    complete pr-fast mapping, so prefer ``_build_dsn_pr_fast``."""
+    return {
+        "name": name,
+        "uses": None,
+        "run": "echo $VITE_FRONTEND_GLITCHTIP_DSN",
+        "env": {
+            "VITE_FRONTEND_GLITCHTIP_DSN": "${{ secrets.VITE_GLITCHTIP_DSN }}",
+        },
+    }
+
+
+def _build_dsn_pr_fast(step_name="Build"):
+    """Build a minimal pr-fast mapping that includes the three local
+    commit-object assertions, a credentialless primary checkout, and
+    a Build-shaped step with the legitimate DSN binding.
+
+    The mapping satisfies every invariant of the validator except the
+    structural secret binding, so each mutation test can isolate a
+    single allowlist deviation."""
+    checkout = {
+        "name": "checkout",
+        "uses": "actions/checkout@deadbeef",
+        "with": {"fetch-depth": 0, "fetch-tags": True,
+                  "persist-credentials": False},
+    }
+    build = _build_dsn_step(name=step_name)
+    # Inject the three fail-closed local commit-object assertions into
+    # the Build step's run so the validator's network-fetch and marker
+    # invariants pass for these mutation tests.
+    build["run"] = (
+        "if ! git cat-file -e \"${COMPLEXITY_BASE_SHA}^{commit}\" "
+        "2>/dev/null; then exit 1; fi\n"
+        "if ! git cat-file -e \"${PR_BASE_SHA}^{commit}\" "
+        "2>/dev/null; then exit 1; fi\n"
+        "if ! git cat-file -e \"${MERGE_BASE}^{commit}\" "
+        "2>/dev/null; then exit 1; fi\n"
+        "echo $VITE_FRONTEND_GLITCHTIP_DSN"
+    )
+    return {"steps": [checkout, build]}
+
+
+# ---------------------------------------------------------------------------
+# Real-job allowlist binding tests (PR252 Codex P3 real-job credential gap)
+#
+# These tests pin the structural validator to the exact semantic identity
+# of the ONE pr-fast secret binding authorised by the principal after
+# independent exact-HEAD review:
+#
+#     step.name = Build
+#     container = step.env
+#     env key   = VITE_FRONTEND_GLITCHTIP_DSN
+#     value     = ${{ secrets.VITE_GLITCHTIP_DSN }}
+#
+# Every other variation must fail closed.
+
+
+def test_pr_fast_credential_isolation_real_dsn_binding_passes_with_allowlist():
+    """The exact real-workflow binding passes when (and only when) the
+    matching allowlist entry is supplied."""
+    pr_fast = _build_dsn_pr_fast(step_name="Build")
+    ok, errors = _validate_pr_fast_structure(
+        pr_fast,
+        allowed_secret_bindings=PR_FAST_FRONTEND_DSN_ALLOWLIST,
+    )
+    assert ok, (
+        "exact real-workflow binding should pass with the matching "
+        f"allowlist entry; errors: {errors}"
+    )
+
+
+def test_pr_fast_credential_isolation_real_dsn_binding_fails_without_allowlist():
+    """The same binding rejects without any allowlist (default synthetic
+    helper calls default to zero allowed secrets)."""
+    pr_fast = _build_dsn_pr_fast(step_name="Build")
+    ok, errors = _validate_pr_fast_structure(pr_fast)
+    assert not ok
+    assert any(
+        "is not in the allowlist" in e for e in errors
+    ), (
+        "without an allowlist the binding should be rejected as "
+        f"unauthorised; errors: {errors}"
+    )
+
+
+def test_pr_fast_credential_isolation_real_dsn_binding_rejected_in_wrong_step():
+    """The exact env key/value in a step whose name is NOT ``Build``
+    is rejected. The allowlist entry pins step name as part of the
+    semantic triple."""
+    pr_fast = _build_dsn_pr_fast(step_name="Frontend dependency policy")
+    ok, errors = _validate_pr_fast_structure(
+        pr_fast,
+        allowed_secret_bindings=PR_FAST_FRONTEND_DSN_ALLOWLIST,
+    )
+    assert not ok
+    assert any(
+        "is not in the allowlist" in e for e in errors
+    ), errors
+
+
+def test_pr_fast_credential_isolation_real_dsn_binding_rejected_with_different_secret():
+    """``Build`` + same env key but a different ``secrets.*`` value is
+    rejected. The allowlist entry pins the exact value as part of the
+    semantic triple."""
+    pr_fast = _build_dsn_pr_fast(step_name="Build")
+    # Swap the legitimate value for a different secrets reference.
+    build_step = pr_fast["steps"][1]
+    build_step["env"]["VITE_FRONTEND_GLITCHTIP_DSN"] = (
+        "${{ secrets.OTHER_SECRET }}"
+    )
+    ok, errors = _validate_pr_fast_structure(
+        pr_fast,
+        allowed_secret_bindings=PR_FAST_FRONTEND_DSN_ALLOWLIST,
+    )
+    assert not ok
+    assert any(
+        "is not in the allowlist" in e for e in errors
+    ), errors
+
+
+def test_pr_fast_credential_isolation_real_dsn_binding_rejected_under_different_key():
+    """``Build`` + same secret reference under a different env key is
+    rejected. The allowlist entry pins the env key as part of the
+    semantic triple."""
+    pr_fast = _build_dsn_pr_fast(step_name="Build")
+    build_step = pr_fast["steps"][1]
+    # Remove the legitimate key, add a different env key with the
+    # legitimate value reference.
+    del build_step["env"]["VITE_FRONTEND_GLITCHTIP_DSN"]
+    build_step["env"]["SOME_OTHER_ENV"] = (
+        "${{ secrets.VITE_GLITCHTIP_DSN }}"
+    )
+    ok, errors = _validate_pr_fast_structure(
+        pr_fast,
+        allowed_secret_bindings=PR_FAST_FRONTEND_DSN_ALLOWLIST,
+    )
+    assert not ok
+    assert any(
+        "is not in the allowlist" in e for e in errors
+    ), errors
+
+
+def test_pr_fast_credential_isolation_real_dsn_binding_rejected_with_extra_secret():
+    """The legitimate binding PLUS another secret on the same ``Build``
+    step is rejected (only one entry may match)."""
+    pr_fast = _build_dsn_pr_fast(step_name="Build")
+    build_step = pr_fast["steps"][1]
+    build_step["env"]["SOMETHING_ELSE"] = (
+        "${{ secrets.SOMETHING_ELSE }}"
+    )
+    ok, errors = _validate_pr_fast_structure(
+        pr_fast,
+        allowed_secret_bindings=PR_FAST_FRONTEND_DSN_ALLOWLIST,
+    )
+    assert not ok
+    assert any(
+        "is not in the allowlist" in e for e in errors
+    ), errors
+
+
+def test_pr_fast_credential_isolation_real_dsn_binding_rejected_in_with_block():
+    """The legitimate value placed in ``step.with`` instead of
+    ``step.env`` is rejected. The allowlist only matches ``step.env``."""
+    checkout = {
+        "name": "checkout",
+        "uses": "actions/checkout@deadbeef",
+        "with": {"fetch-depth": 0, "fetch-tags": True,
+                  "persist-credentials": False},
+    }
+    build_step = {
+        "name": "Build",
+        "uses": "actions/upload-artifact@deadbeef",
+        "with": {
+            "name": "dsn-${{ secrets.VITE_GLITCHTIP_DSN }}",
+        },
+        "run": "echo done",
+    }
+    pr_fast = {"steps": [checkout, build_step]}
+    ok, errors = _validate_pr_fast_structure(
+        pr_fast,
+        allowed_secret_bindings=PR_FAST_FRONTEND_DSN_ALLOWLIST,
+    )
+    assert not ok
+    # The error reports the structural container, which must be
+    # ``step.with``, not ``step.env``.
+    assert any(
+        "step.with." in e and "VITE_GLITCHTIP_DSN" in e for e in errors
+    ), errors
+
+
+def test_pr_fast_credential_isolation_real_dsn_binding_rejected_at_job_level_env():
+    """The legitimate value placed in ``pr_fast.env`` (job-level env) is
+    rejected. The allowlist only matches the ``step.env`` container
+    of the ``Build`` step."""
+    pr_fast = _build_dsn_pr_fast(step_name="Build")
+    # Move the legitimate env value from the Build step's env to the
+    # job-level env.
+    build_step = pr_fast["steps"][1]
+    pr_fast["env"] = {
+        "VITE_FRONTEND_GLITCHTIP_DSN":
+            build_step["env"]["VITE_FRONTEND_GLITCHTIP_DSN"],
+    }
+    del build_step["env"]["VITE_FRONTEND_GLITCHTIP_DSN"]
+    ok, errors = _validate_pr_fast_structure(
+        pr_fast,
+        allowed_secret_bindings=PR_FAST_FRONTEND_DSN_ALLOWLIST,
+    )
+    assert not ok
+    assert any(
+        "pr_fast.env." in e and "VITE_FRONTEND_GLITCHTIP_DSN" in e
+        for e in errors
+    ), errors
