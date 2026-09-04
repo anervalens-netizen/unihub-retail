@@ -291,7 +291,10 @@ jobs:
         env:
           COMPLEXITY_BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
-          git fetch --no-tags --depth=1 origin "$COMPLEXITY_BASE_SHA"
+          if ! git cat-file -e "${COMPLEXITY_BASE_SHA}^{commit}" 2>/dev/null; then
+            echo "::error::complexity base commit is unavailable after fetch-depth:0 checkout: $COMPLEXITY_BASE_SHA"
+            exit 1
+          fi
           backend/venv/bin/python -I scripts/check_changed_function_complexity.py \
             --base "$COMPLEXITY_BASE_SHA" --maximum 20
 
@@ -303,7 +306,10 @@ jobs:
           PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           set -euo pipefail
-          git fetch --no-tags --depth=1 origin "$PR_BASE_SHA"
+          if ! git cat-file -e "${PR_BASE_SHA}^{commit}" 2>/dev/null; then
+            echo "::error::previous-contract base commit is unavailable after fetch-depth:0 checkout: $PR_BASE_SHA"
+            exit 1
+          fi
           PREVIOUS="$(mktemp -t release-b-prev-XXXXXX.json)"
           if ! git show "$PR_BASE_SHA:scripts/python-complexity-contract-v2.json" >"$PREVIOUS" 2>/tmp/release-b-prev.err; then
             cat /tmp/release-b-prev.err >&2 || true
@@ -622,7 +628,10 @@ jobs:
         run: |
           set -euo pipefail
           MERGE_BASE="$(git -C "$GITHUB_WORKSPACE" merge-base "$PR_BASE_SHA" HEAD)"
-          git fetch --no-tags --depth=1 origin "$MERGE_BASE"
+          if ! git cat-file -e "${MERGE_BASE}^{commit}" 2>/dev/null; then
+            echo "::error::merge base commit is unavailable after fetch-depth:0 checkout: $MERGE_BASE"
+            exit 1
+          fi
           LCOV_PATH="coverage/frontend/lcov.info"
           if [[ ! -s "$LCOV_PATH" ]]; then
             # Vitest with --changed may run zero tests when no eligible
