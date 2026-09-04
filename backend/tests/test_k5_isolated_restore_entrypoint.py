@@ -18,7 +18,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 ENTRYPOINT = ROOT / "ops" / "k5-isolated-restore.sh"
-EXPECTED_ENTRYPOINT_SHA256 = "4de86fbf43157c72dcf4c707d3a30238e0e0691b77551016a6dd364d6485706b"
+EXPECTED_ENTRYPOINT_SHA256 = "4de86fbf43157c72dcf4c707d3a30238e0e0691b77551016a6dd364d6485706b"  # pragma: allowlist secret
 
 FUTURE_STAMP = "20260903_010203"
 COMPONENT_LABELS = (
