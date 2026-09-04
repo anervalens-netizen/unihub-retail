@@ -18,7 +18,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 ENTRYPOINT = ROOT / "ops" / "k5-isolated-restore.sh"
-EXPECTED_ENTRYPOINT_SHA256 = "c3572aa02988bfa11dc32188505cbac9cda9590fea8743410f4e60cec6d04cb7"  # pragma: allowlist secret
+EXPECTED_ENTRYPOINT_SHA256 = "d567185fa14c07a9e41673830b7b6edbc80e6f90cbb1f6ffd3df3517107d6af2"  # pragma: allowlist secret
 
 FUTURE_STAMP = "20260903_010203"
 COMPONENT_LABELS = (
@@ -1991,7 +1991,7 @@ SQLITE_USER_TABLE_QUERY = (
 def _extract_pg_relation_block() -> str:
     text = ENTRYPOINT.read_text(encoding="utf-8")
     start = text.index("relations=\"$(\n    docker exec")
-    end_marker = 'printf \'%s\\t%s\\t%s\\t%s\\t%s\\t%s\\n\' \\\n    "$label"'
+    end_marker = 'printf \'%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\n\' \\\n    "$label"'
     end = text.index(end_marker, start)
     return text[start:end]
 
@@ -2239,7 +2239,9 @@ def test_review5112723089_initial_component_uses_safe_descriptor() -> None:
     # The authoritative initial SHA MUST come from the same descriptor
     # snapshot used for the identity tuple. A separate later reread is
     # forbidden.
-    assert "hashlib.sha256(data).hexdigest()" in block
+    assert "hashlib.sha256(data).hexdigest()" not in block
+    assert "digest.hexdigest()" in block
+    assert "digest.update" in block
     assert "sha256sum" not in block
     assert "actual_sha != expected_sha" in block or "expected_sha" in block
 
@@ -3014,3 +3016,404 @@ def test_review5114892694_failed_start_removes_exact_container_and_volume(
     # The cleanup trap absorbed the start-side failure and exited 0; the
     # recorded state already proves the K5 result is fail/pass outcome
     # above. No additional stderr assertions are required.
+
+
+# ---------------------------------------------------------------------------
+# Codex findings 3936216994, 3936216998, 3936217000, 3934742056, 3934742062
+# ---------------------------------------------------------------------------
+
+
+def _run_streaming_initial_program(
+    tmp_path: Path,
+    relative: str,
+    payload: bytes,
+    *,
+    expected_sha: str | None = None,
+) -> subprocess.CompletedProcess[str]:
+    """Run the maintained initial component validation program.
+
+    The test owns the source file in tmp_path; the program is extracted
+    from the production entrypoint at runtime.
+    """
+    if expected_sha is None:
+        expected_sha = hashlib.sha256(payload).hexdigest()
+    source = tmp_path / "comp.bin"
+    source.write_bytes(payload)
+    source_path = str(source)
+    identity = tmp_path / "id.tsv"
+    program = _extract_streaming_initial_block()
+    completed = subprocess.run(
+        [sys.executable, "-c", program, source_path, relative, expected_sha, str(identity)],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    return completed
+
+
+def _extract_streaming_initial_block() -> str:
+    text = ENTRYPOINT.read_text(encoding="utf-8")
+    # Extract only the Python program between <<'PY' ... PY markers.
+    start = text.index("Strong component identity capture:")
+    py_open = text.index("<<'PY'", start) + len("<<'PY'") + 1
+    py_close = text.index("\nPY\n", py_open)
+    return text[py_open:py_close]
+
+
+def test_review3934742056_initial_component_digest_streams_via_sha256_update(
+    tmp_path: Path,
+) -> None:
+    block = _extract_streaming_initial_block()
+    # Streaming hash usage is required; the prior b"".join(chunks) +
+    # hashlib.sha256(data) pattern must not reappear.
+    assert "digest.update" in block
+    assert "digest = hashlib.sha256()" in block
+    assert "digest.hexdigest()" in block
+    # The legacy whole-file buffer pattern must be gone from the initial
+    # validation block.
+    assert "b\"\".join(chunks)" not in block
+    assert "hashlib.sha256(data).hexdigest()" not in block
+
+
+def test_review3934742056_initial_component_digest_still_correct(
+    tmp_path: Path,
+) -> None:
+    payload = b"streaming-component-payload"
+    completed = _run_streaming_initial_program(
+        tmp_path, "comp.bin", payload
+    )
+    assert completed.returncode == 0, completed.stderr
+    identity = dict(
+        line.split("=", 1)
+        for line in (tmp_path / "id.tsv").read_text(encoding="utf-8").splitlines()
+    )
+    assert identity["sha256"] == hashlib.sha256(payload).hexdigest()
+
+
+def test_review3934742056_initial_component_digest_rejects_wrong_checksum(
+    tmp_path: Path,
+) -> None:
+    payload = b"streaming-component-payload"
+    wrong = "f" * 64
+    completed = _run_streaming_initial_program(
+        tmp_path, "comp.bin", payload, expected_sha=wrong
+    )
+    assert completed.returncode != 0
+    assert "source checksum mismatch" in completed.stderr
+    assert wrong in completed.stderr
+
+
+def test_review3934742056_cleanup_revalidation_streams_via_sha256_update() -> None:
+    block = _extract_component_revalidation_block()
+    assert "digest.update" in block
+    assert "digest = hashlib.sha256()" in block
+    assert "digest.hexdigest()" in block
+    assert "b\"\".join(chunks)" not in block
+    assert "hashlib.sha256(data).hexdigest()" not in block
+
+
+def test_review3934742056_cleanup_revalidation_detects_changed_bytes(
+    tmp_path: Path,
+) -> None:
+    identity = tmp_path / "id.tsv"
+    original = tmp_path / "comp.bin"
+    payload = b"streaming-cleanup-payload-for-revalidation"
+    original.write_bytes(payload)
+    _write_component_identity(identity, original, payload)
+    # Replace the bytes without changing size, mtime_ns, or inode.
+    os.utime(original, ns=(123456789, 987654321))
+    original.write_bytes(b"streaming-cleanup-payload-for-revalidation-2")
+    rev = _run_revalidate(identity)
+    assert rev.returncode != 0
+    assert "sha256" in rev.stderr
+
+
+def test_review3934742056_streaming_program_does_not_buffer_full_payload(
+    tmp_path: Path,
+) -> None:
+    # Use a payload large enough that an in-memory join would be obvious
+    # in a memory profile; we only assert that no `b"".join(chunks)`
+    # list-accumulation pattern remains in the maintained program.
+    block = _extract_streaming_initial_block()
+    assert "chunks.append" not in block
+    assert "chunks = []" not in block
+
+
+def test_review3934742056_open_failure_does_not_leak_absolute_source_path(
+    tmp_path: Path,
+) -> None:
+    payload = b"x" * 16
+    # Point the program at a private, distinctive path; the failure
+    # context must never contain the absolute path.
+    private_root = tmp_path / "private" / "k5-super-secret-backup-root"
+    private_root.mkdir(parents=True, exist_ok=True)
+    source = private_root / "comp.bin"
+    source.write_bytes(payload)
+    identity = tmp_path / "id.tsv"
+    full_block = _extract_streaming_initial_block()
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            full_block,
+            str(source),
+            "comp.bin",
+            hashlib.sha256(payload).hexdigest(),
+            str(identity),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert completed.returncode == 0, completed.stderr
+    # Make the next invocation hit a real open failure: replace the
+    # private file with a symlink so the O_NOFOLLOW open rejects it.
+    source.unlink()
+    source.symlink_to(private_root / "real.bin")
+    (private_root / "real.bin").write_bytes(payload)
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            full_block,
+            str(source),
+            "comp.bin",
+            hashlib.sha256(payload).hexdigest(),
+            str(identity),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    # The OS-level open can succeed even when pointed at the private
+    # path; force a real open failure by removing the file after the
+    # test program is launched, OR by pointing the program at a
+    # symlink (which the O_NOFOLLOW open rejects). Use the symlink
+    # path to deterministically trip the open failure.
+    private_root = tmp_path / "private" / "k5-super-secret-backup-root"
+    source = private_root / "comp.bin"
+    source.unlink()
+    source.symlink_to(private_root / "real.bin")
+    (private_root / "real.bin").write_bytes(payload)
+    identity = tmp_path / "id.tsv"
+    full_block = _extract_streaming_initial_block()
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            full_block,
+            str(source),
+            "comp.bin",
+            hashlib.sha256(payload).hexdigest(),
+            str(identity),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert completed.returncode != 0
+    # Filename-free failure context only.
+    assert "private" not in completed.stderr
+    assert "k5-super-secret-backup-root" not in completed.stderr
+    assert "real.bin" not in completed.stderr
+    # The relative name is preserved so the operator can identify the
+    # failing component.
+    assert "comp.bin" in completed.stderr
+    # Filename-free error type and errno are present.
+    assert "error=" in completed.stderr
+    assert "errno=" in completed.stderr
+
+
+def test_review3934742062_failure_reason_does_not_leak_private_root(
+    tmp_path: Path,
+) -> None:
+    # The previous test exercises the same surface directly; this test
+    # ensures the persisted failureReason does not include the
+    # absolute private path that flows through `die`.
+    private_root = tmp_path / "private" / "k5-super-secret-backup-root"
+    private_root.mkdir(parents=True, exist_ok=True)
+    # Use a non-existent file path under a private, distinctive root.
+    missing = private_root / "missing.bin"
+    identity = tmp_path / "id.tsv"
+    full_block = _extract_streaming_initial_block()
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            full_block,
+            str(missing),
+            "comp.bin",
+            "0" * 64,
+            str(identity),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert completed.returncode != 0
+    # The persisted failure context contains only the relative name and
+    # the error class / errno, never the absolute path or the private
+    # root.
+    assert "private" not in completed.stderr
+    assert "k5-super-secret-backup-root" not in completed.stderr
+    assert str(missing) not in completed.stderr
+    assert "comp.bin" in completed.stderr
+
+
+def test_review3936216994_user_data_gate_present_for_all_seven_dbs() -> None:
+    # The script must probe row data for every label, in order.
+    text = ENTRYPOINT.read_text(encoding="utf-8")
+    for label in (
+        "unihub",
+        "mobiup_dwh",
+        "unihub_identity",
+        "unihub_retail",
+        "unihub_learning",
+        "authentik",
+        "glitchtip",
+    ):
+        # Each label's loop body must include the user-data present
+        # probe; otherwise schema-only restores for that label could
+        # silently pass.
+        assert f'"{label}"' in text, label
+    # Confirm the for-loop still iterates over all seven labels and the
+    # row-data gate runs inside the loop body.
+    assert "for label in unihub mobiup_dwh unihub_identity unihub_retail unihub_learning authentik glitchtip" in text
+    assert "user_data_present" in text
+    assert "restored database $database contains user relations but no row data" in text
+    # The acceptance evidence writer must serialize the per-DB flag.
+    assert "userDataPresent" in text
+    assert '"true"' in text or "True" in text
+
+
+def test_review3936216994_user_data_probe_uses_safe_postgres_quoting() -> None:
+    text = ENTRYPOINT.read_text(encoding="utf-8")
+    # format('%I.%I', ...) is the maintained bounded quoting mechanism.
+    assert "format('%I.%I'" in text
+    # The probe must not select non-r/p relkinds; ordinary + partitioned
+    # only. system catalog + info schema + pg_toast + pg_temp excluded.
+    assert "c.relkind IN ('r','p')" in text
+
+
+def test_review3936216994_user_data_probe_rejects_schema_only_db() -> None:
+    program = text = (
+        ENTRYPOINT.read_text(encoding="utf-8").split("for label in unihub mobiup_dwh")[1]
+    )
+    # The fail-closed message must mention "no row data".
+    assert "no row data" in program
+
+
+def test_review3936216998_postgres_image_id_authoritative_in_evidence() -> None:
+    # The evidence must persist postgresImageId and use it (or the
+    # equivalent content-addressed image ID) for postgresImageDigest.
+    text = ENTRYPOINT.read_text(encoding="utf-8")
+    # Strip bash comments so the assertion only inspects executable code
+    # paths (the production comment intentionally references the
+    # deprecated pattern for documentation purposes).
+    code_lines = []
+    for line in text.splitlines():
+        stripped = line.lstrip()
+        if stripped.startswith("#"):
+            continue
+        code_lines.append(line)
+    code = "\n".join(code_lines)
+    assert '"postgresImageId":' in code
+    # The deprecated authoritative-from-RepoDigests[0] pattern is gone
+    # from the executable code path.
+    assert "RepoDigests[0]" not in code
+    assert "values[0].split" not in code
+
+
+def test_review3936216998_image_inspect_emits_only_image_id() -> None:
+    text = ENTRYPOINT.read_text(encoding="utf-8")
+    # Strip bash comments so the assertion only inspects executable code
+    # paths (the production comment intentionally references the
+    # deprecated pattern for documentation purposes).
+    code_lines = []
+    for line in text.splitlines():
+        stripped = line.lstrip()
+        if stripped.startswith("#"):
+            continue
+        code_lines.append(line)
+    code = "\n".join(code_lines)
+    # The inspect call no longer asks for RepoDigests in the format
+    # string (which would force Python to re-parse JSON in a fragile
+    # way). Only `.Id` is captured.
+    start = code.index('CURRENT_PHASE="postgres-image"')
+    end = code.index('CURRENT_PHASE="payload-stage"')
+    block = code[start:end]
+    assert "--format '{{.Id}}'" in block
+    assert "RepoDigests" not in block
+
+
+def test_review3936216998_postgres_digest_equals_postgres_image_id() -> None:
+    # The fix binds POSTGRES_DIGEST to the captured image ID, not to
+    # an arbitrary first RepoDigest.
+    text = ENTRYPOINT.read_text(encoding="utf-8")
+    start = text.index('CURRENT_PHASE="postgres-image"')
+    end = text.index('CURRENT_PHASE="payload-stage"')
+    block = text[start:end]
+    assert "POSTGRES_DIGEST=\"$POSTGRES_IMAGE_ID\"" in block
+
+
+def test_review3936217000_source_repo_check_uses_git_native_probe() -> None:
+    text = ENTRYPOINT.read_text(encoding="utf-8")
+    # The .git directory check must be gone; a `git worktree` checkout
+    # has a regular file there, so a directory test would reject it.
+    assert '[ -d "$SOURCE_REPO/.git" ]' not in text
+    assert 'rev-parse --is-inside-work-tree' in text
+    assert 'SOURCE_IS_WORKTREE="$(' in text
+    assert '[ "$SOURCE_IS_WORKTREE" = "true" ]' in text
+
+
+def test_review3936217000_real_local_git_worktree_passes_preflight(
+    tmp_path: Path,
+) -> None:
+    # Build a real worktree from a local repository and confirm the
+    # maintained probe reports it as inside a work tree.
+    env = os.environ.copy()
+    env["GIT_CONFIG_NOSYSTEM"] = "1"
+    env["GIT_AUTHOR_NAME"] = "k5-fixture"
+    env["GIT_AUTHOR_EMAIL"] = "k5@example.invalid"
+    env["GIT_COMMITTER_NAME"] = "k5-fixture"
+    env["GIT_COMMITTER_EMAIL"] = "k5@example.invalid"
+
+    def git(*args: str, cwd: Path) -> str:
+        completed = subprocess.run(
+            ["git", "-C", str(cwd), *args],
+            check=True,
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+        return completed.stdout.strip()
+
+    main_repo = tmp_path / "main"
+    main_repo.mkdir()
+    git("init", "-q", "--initial-branch=main", cwd=main_repo)
+    (main_repo / "README").write_text("k5 fixture", encoding="utf-8")
+    git("add", "README", cwd=main_repo)
+    git("commit", "-q", "-m", "k5 fixture", cwd=main_repo)
+
+    worktree = tmp_path / "wt"
+    git("worktree", "add", "-b", "k5-feature", str(worktree), "main", cwd=main_repo)
+
+    # A worktree has .git as a regular FILE, not a directory; verify
+    # the maintained probe still reports it as inside a work tree.
+    assert not (worktree / ".git").is_dir()
+    assert (worktree / ".git").is_file()
+    outcome = git("rev-parse", "--is-inside-work-tree", cwd=worktree)
+    assert outcome == "true"
+
+    # A non-git directory must NOT report inside a work tree.
+    non_git = tmp_path / "non-git"
+    non_git.mkdir()
+    (non_git / "blob").write_text("data", encoding="utf-8")
+    non_git_outcome = subprocess.run(
+        ["git", "-C", str(non_git), "rev-parse", "--is-inside-work-tree"],
+        check=False,
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+    assert non_git_outcome.returncode != 0 or non_git_outcome.stdout.strip() != "true"

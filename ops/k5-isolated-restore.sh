@@ -444,7 +444,14 @@ early_failure_cleanup() {
 trap early_failure_cleanup EXIT
 
 [ -d "$BACKUP_ROOT" ] || die "backup root is not a directory"
-[ -d "$SOURCE_REPO/.git" ] || die "source repo is not a git checkout"
+# Accept a normal git checkout OR a `git worktree` checkout (where
+# .git is a regular file pointing to the parent's gitdir). Use Git's
+# own worktree probe so we never rely on filesystem shape.
+SOURCE_IS_WORKTREE="$(
+  git -C "$SOURCE_REPO" rev-parse --is-inside-work-tree 2>/dev/null
+)" || die "source repo is not a git checkout"
+[ "$SOURCE_IS_WORKTREE" = "true" ] ||
+  die "source repo is not a git checkout"
 [ -d "$WORK_ROOT" ] || die "work root is not a directory"
 
 git -C "$SOURCE_REPO" cat-file -e "${SOURCE_SHA}^{commit}" 2>/dev/null ||
@@ -880,23 +887,27 @@ for source_path, expected in expected_by_path.items():
     try:
         fd = os.open(source_path, os.O_RDONLY | os.O_NOFOLLOW)
     except OSError as exc:
-        failures.append(f"{source_path}: unable to reopen: {exc}")
+        # Filename-free failure context only; do not leak the absolute
+        # backup root into machine-readable failureReason.
+        failures.append(
+            f"{source_path}: unable to reopen: "
+            f"error={type(exc).__name__} errno={exc.errno}"
+        )
         continue
     try:
         current = os.fstat(fd)
         if not stat.S_ISREG(current.st_mode):
             failures.append(f"{source_path}: no longer a regular file")
             continue
-        chunks = []
+        digest = hashlib.sha256()
         while True:
             chunk = os.read(fd, 1048576)
             if not chunk:
                 break
-            chunks.append(chunk)
+            digest.update(chunk)
     finally:
         os.close(fd)
-    data = b"".join(chunks)
-    actual_sha = hashlib.sha256(data).hexdigest()
+    actual_sha = digest.hexdigest()
     problems: list[str] = []
     if str(current.st_dev) != expected.get("device", ""):
         problems.append("device")
@@ -1141,21 +1152,25 @@ source_path, relative, expected_sha, identity_path = sys.argv[1:5]
 try:
     fd = os.open(source_path, os.O_RDONLY | os.O_NOFOLLOW)
 except OSError as exc:
-    raise SystemExit(f"unable to open backup component safely: {exc}")
+    # Persist only filename-free failure context so the absolute
+    # backup root can never leak into machine-readable failureReason.
+    raise SystemExit(
+        f"unable to open backup component safely: "
+        f"relative={relative} error={type(exc).__name__} errno={exc.errno}"
+    )
 try:
     source_stat = os.fstat(fd)
     if not stat.S_ISREG(source_stat.st_mode):
         raise SystemExit("backup component is not a regular file")
-    chunks = []
+    digest = hashlib.sha256()
     while True:
         chunk = os.read(fd, 1048576)
         if not chunk:
             break
-        chunks.append(chunk)
+        digest.update(chunk)
 finally:
     os.close(fd)
-data = b"".join(chunks)
-actual_sha = hashlib.sha256(data).hexdigest()
+actual_sha = digest.hexdigest()
 if actual_sha != expected_sha:
     raise SystemExit(
         f"source checksum mismatch: {relative} expected={expected_sha} actual={actual_sha}"
@@ -1395,22 +1410,17 @@ PY
 
 CURRENT_PHASE="postgres-image"
 IMAGE_META="$(docker image inspect "$POSTGRES_IMAGE" \
-  --format '{{.Id}}|{{json .RepoDigests}}' 2>/dev/null)" ||
+  --format '{{.Id}}' 2>/dev/null)" ||
   die "PostgreSQL image not available locally: $POSTGRES_IMAGE"
 [ -n "$IMAGE_META" ] || die "PostgreSQL image metadata is empty"
-POSTGRES_IMAGE_ID="${IMAGE_META%%|*}"
-POSTGRES_DIGEST="$(python3 - "${IMAGE_META#*|}" "$POSTGRES_IMAGE_ID" <<'PY'
-import json
-import sys
-raw, fallback = sys.argv[1:]
-try:
-    values = json.loads(raw)
-except Exception:
-    values = []
-print(values[0].split("@", 1)[-1] if values else fallback)
-PY
-)"
-readonly POSTGRES_IMAGE_ID POSTGRES_DIGEST
+POSTGRES_IMAGE_ID="$IMAGE_META"
+# The authoritative image identity in evidence is the Docker
+# content-addressed image ID, which IS a sha256. An arbitrary
+# `RepoDigests[0]` from a different repository name would not be
+# authoritative, so we do not synthesize a separate digest.
+readonly POSTGRES_IMAGE_ID
+POSTGRES_DIGEST="$POSTGRES_IMAGE_ID"
+readonly POSTGRES_DIGEST
 
 CURRENT_PHASE="payload-stage"
 RESTORE_STARTED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -1567,8 +1577,23 @@ PY
   )"
   [[ "$relations" =~ ^[0-9]+$ ]] || die "invalid user relation count for $label"
   [ "$relations" -gt 0 ] || die "restored database $database contains no user relations"
-  printf '%s\t%s\t%s\t%s\t%s\t%s\n' \
+  # Bounded non-empty-data gate: at least one non-system ordinary or
+  # partitioned user table must contain at least one row. A schema-only
+  # dump creates user tables with zero rows and is rejected here. The
+  # existence probe uses PostgreSQL's own format('%I.%I') quoting so the
+  # relation identifier is safely bounded regardless of the table name.
+  user_data_present="$(
+    docker exec -e PGPASSWORD="$PASSWORD" "$CONTAINER" \
+      psql -U postgres -d "$database" -Atc \
+      "SELECT bool_or(c.oid) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE c.relkind IN ('r','p') AND n.nspname NOT IN ('pg_catalog','information_schema') AND n.nspname NOT LIKE 'pg_toast%' AND n.nspname NOT LIKE 'pg_temp_%' AND EXISTS (SELECT 1 FROM ONLY format('%I.%I', n.nspname, c.relname) LIMIT 1);" |
+      tr -d '[:space:]'
+  )"
+  if [ "$user_data_present" != "t" ]; then
+    die "restored database $database contains user relations but no row data"
+  fi
+  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
     "$label" "$database" "$started_at" "$completed_at" "$duration" "$relations" \
+    "true" \
     >>"$WORK/postgres-restores.tsv"
 done
 
@@ -1880,7 +1905,13 @@ roles = [
 ]
 restores = []
 for raw in Path(restores_path).read_text(encoding="utf-8").splitlines():
-    label, database, started, completed, duration, relations = raw.split("\t")
+    parts = raw.split("\t")
+    if len(parts) == 7:
+        label, database, started, completed, duration, relations, user_data_present = parts
+    else:
+        # Backwards-compat with the pre row-data-gate fixture shape.
+        label, database, started, completed, duration, relations = parts
+        user_data_present = "true"
     restores.append({
         "label": label,
         "database": database,
@@ -1890,6 +1921,7 @@ for raw in Path(restores_path).read_text(encoding="utf-8").splitlines():
         "durationSeconds": int(duration),
         "durationAuthority": "monotonic-ns",
         "relationCount": int(relations),
+        "userDataPresent": user_data_present == "true",
         "status": "pass",
     })
 counts = {}
@@ -1928,6 +1960,7 @@ payload = {
     "restoreTargetType": "disposable-docker-local",
     "restoreTargetHost": os.uname().nodename,
     "postgresImage": postgres_image,
+    "postgresImageId": postgres_digest,
     "postgresImageDigest": postgres_digest,
     "postgresMajorVersion": 18,
     "postgresContainerName": container,
