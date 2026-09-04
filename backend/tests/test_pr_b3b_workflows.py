@@ -2375,30 +2375,122 @@ def test_pr_deep_replaces_authenticated_fetch_with_cat_file():
     )
 
 
-def test_pr_fast_other_authenticated_fetches_audit_documented():
-    """Audit assertion: there are pre-existing pr-fast authenticated
-    fetches. We document that they are belt-and-suspenders only
-    (the base SHAs they consult are already reachable after
-    fetch-depth:0), so the candidate checkout's
-    persist-credentials:false is safe."""
-    text = CI_YML.read_text(encoding="utf-8")
-    # Identify pr-fast block by header.
-    start = text.find("  pr-fast:")
-    assert start != -1
-    end = text.find("  backend-check:")
-    body = text[start:end if end != -1 else len(text)]
-    # Pre-existing authenticated fetches use the same shape:
-    # git fetch --no-tags --depth=1 origin "$COMPLEXITY_BASE_SHA"
-    # git fetch --no-tags --depth=1 origin "$PR_BASE_SHA"
-    # git fetch --no-tags --depth=1 origin "$MERGE_BASE"
-    # All three should still appear (we do not modify them per the
-    # brief) and the brief explicitly audits them as redundant
-    # after fetch-depth:0.
-    assert "git fetch --no-tags --depth=1 origin \"$COMPLEXITY_BASE_SHA\"" in body, (
-        "audit: pre-existing COMPLEXITY_BASE_SHA fetch expected"
+def _pr_fast_checkout_step(steps):
+    for step in steps:
+        uses = step.get("uses") or ""
+        if uses.startswith("actions/checkout@"):
+            return step
+    raise AssertionError("pr-fast job is missing an actions/checkout step")
+
+
+def _pr_fast_step_by_name(steps, name):
+    matches = [s for s in steps if s.get("name") == name]
+    assert matches, f"pr-fast step named {name!r} not found"
+    assert len(matches) == 1, (
+        f"pr-fast step named {name!r} must be unique, found {len(matches)}"
     )
-    assert "git fetch --no-tags --depth=1 origin \"$MERGE_BASE\"" in body, (
-        "audit: pre-existing MERGE_BASE fetch expected"
+    return matches[0]
+
+
+def test_pr_fast_uses_local_base_objects_without_authenticated_refetch():
+    """The pr-fast job must rely on the fetch-depth:0 checkout for
+    base objects and must not perform authenticated ``git fetch
+    origin "$..._BASE_SHA"`` refetches for the three base objects it
+    consults. Each of the three gates that previously refetched must
+    instead assert the local commit object is present via
+    ``git cat-file -e "${..._BASE_SHA}^{commit}"`` and then proceed
+    against the local object store. This pins the demonstrated
+    production fix: the candidate checkout's
+    ``persist-credentials: false`` is now sufficient because no step
+    issues a post-checkout authenticated fetch for an already-known
+    base SHA.
+    """
+    data = _yaml().safe_load(CI_YML.read_text(encoding="utf-8"))
+    pr_fast = data["jobs"]["pr-fast"]
+    steps = pr_fast["steps"]
+
+    # A. Demonstrated checkout prerequisite
+    checkout = _pr_fast_checkout_step(steps)
+    with_block = checkout.get("with") or {}
+    assert with_block.get("fetch-depth") == 0, (
+        "pr-fast checkout must use fetch-depth: 0 so base objects are local; "
+        f"got {with_block.get('fetch-depth')!r}"
+    )
+    assert with_block.get("fetch-tags") is True, (
+        "pr-fast checkout must keep fetch-tags: true; "
+        f"got {with_block.get('fetch-tags')!r}"
+    )
+    assert with_block.get("persist-credentials") is False, (
+        "pr-fast checkout must set persist-credentials: false; "
+        f"got {with_block.get('persist-credentials')!r}"
+    )
+
+    # B. Exact Changed-function complexity step
+    complexity_step = _pr_fast_step_by_name(
+        steps, "Changed-function complexity gate"
+    )
+    complexity_run = complexity_step.get("run") or ""
+    assert "git fetch --no-tags --depth=1 origin \"$COMPLEXITY_BASE_SHA\"" not in complexity_run, (
+        "Changed-function complexity gate must not perform authenticated "
+        "fetch of $COMPLEXITY_BASE_SHA; use cat-file -e on the local "
+        "object instead"
+    )
+    assert "${COMPLEXITY_BASE_SHA}^{commit}" in complexity_run, (
+        "Changed-function complexity gate must assert the local commit "
+        "object via ${COMPLEXITY_BASE_SHA}^{commit}"
+    )
+    assert "git cat-file -e" in complexity_run, (
+        "Changed-function complexity gate must use git cat-file -e to "
+        "check the local base object"
+    )
+    assert "--maximum 20" in complexity_run, (
+        "Changed-function complexity threshold --maximum 20 must be preserved"
+    )
+
+    # C. Exact v2 complexity contract step
+    contract_step = _pr_fast_step_by_name(
+        steps, "v2 complexity contract gate (PR)"
+    )
+    contract_run = contract_step.get("run") or ""
+    assert "git fetch --no-tags --depth=1 origin \"$PR_BASE_SHA\"" not in contract_run, (
+        "v2 complexity contract gate must not perform authenticated "
+        "fetch of $PR_BASE_SHA; use cat-file -e on the local object "
+        "instead"
+    )
+    assert "${PR_BASE_SHA}^{commit}" in contract_run, (
+        "v2 complexity contract gate must assert the local commit "
+        "object via ${PR_BASE_SHA}^{commit}"
+    )
+    assert "git cat-file -e" in contract_run, (
+        "v2 complexity contract gate must use git cat-file -e to "
+        "check the local base object"
+    )
+    assert "git show \"$PR_BASE_SHA:scripts/python-complexity-contract-v2.json\"" in contract_run, (
+        "v2 complexity contract gate must keep the existing git show "
+        "of the previous v2 contract blob at $PR_BASE_SHA"
+    )
+
+    # D. Exact frontend changed-line coverage step
+    coverage_step = _pr_fast_step_by_name(
+        steps, "Frontend changed-line coverage gate"
+    )
+    coverage_run = coverage_step.get("run") or ""
+    assert "git fetch --no-tags --depth=1 origin \"$MERGE_BASE\"" not in coverage_run, (
+        "Frontend changed-line coverage gate must not perform "
+        "authenticated fetch of $MERGE_BASE; use cat-file -e on the "
+        "local object instead"
+    )
+    assert "${MERGE_BASE}^{commit}" in coverage_run, (
+        "Frontend changed-line coverage gate must assert the local "
+        "merge-base commit object via ${MERGE_BASE}^{commit}"
+    )
+    assert "git cat-file -e" in coverage_run, (
+        "Frontend changed-line coverage gate must use git cat-file -e "
+        "to check the local merge-base object"
+    )
+    assert "--minimum 80" in coverage_run, (
+        "Frontend changed-line coverage threshold --minimum 80 must "
+        "be preserved"
     )
 
 
