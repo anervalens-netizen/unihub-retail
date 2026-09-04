@@ -339,7 +339,7 @@ K5 exercised the complete observed backup generation in an isolated non-producti
 
 ```text
 ops/k5-isolated-restore.sh
-SHA-256: db80defaa19a0c6f6e87ed67e36db85b4d1a3c301ebbd783ce1d4ddd2ace6fa6
+SHA-256: 986218e1014afe574e46e1704474bc2e4a04f124c3c6dee05c35e2eaf9767ffa
 ```
 
 The recovered pre-existing weekly restore-mechanics helper is provenance only, not the complete K5 entrypoint:

@@ -18,7 +18,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 ENTRYPOINT = ROOT / "ops" / "k5-isolated-restore.sh"
-EXPECTED_ENTRYPOINT_SHA256 = "db80defaa19a0c6f6e87ed67e36db85b4d1a3c301ebbd783ce1d4ddd2ace6fa6"  # pragma: allowlist secret
+EXPECTED_ENTRYPOINT_SHA256 = "986218e1014afe574e46e1704474bc2e4a04f124c3c6dee05c35e2eaf9767ffa"  # pragma: allowlist secret
 
 FUTURE_STAMP = "20260903_010203"
 COMPONENT_LABELS = (
@@ -2126,7 +2126,7 @@ def _extract_business_integrity_block() -> str:
 def _extract_initial_component_block() -> str:
     text = ENTRYPOINT.read_text(encoding="utf-8")
     start = text.index("Strong component identity capture:")
-    end = text.index("readonly COMPONENT_IDENTITY_TSV=", start)
+    end = text.index(': >"$WORK/source-before.tsv"', start)
     return text[start:end]
 
 

@@ -1155,7 +1155,6 @@ PY
   )" || die "backup component validation failed for $relative: $IDENTITY_OUT"
   printf '%s\n' "$source_path" >>"$WORK/source-paths.txt"
 done <"$WORK/expected.tsv"
-readonly COMPONENT_IDENTITY_TSV="$WORK/component-identity.tsv"
 
 : >"$WORK/source-before.tsv"
 while IFS= read -r source_path; do
