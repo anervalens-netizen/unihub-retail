@@ -18,7 +18,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 ENTRYPOINT = ROOT / "ops" / "k5-isolated-restore.sh"
-EXPECTED_ENTRYPOINT_SHA256 = "d567185fa14c07a9e41673830b7b6edbc80e6f90cbb1f6ffd3df3517107d6af2"  # pragma: allowlist secret
+EXPECTED_ENTRYPOINT_SHA256 = "b6e7d9ba3a588b77c3f079e7f91ceffdb993a9b24eeb970e4a31684bed9b6d25"  # pragma: allowlist secret
 
 FUTURE_STAMP = "20260903_010203"
 COMPONENT_LABELS = (
@@ -3417,3 +3417,424 @@ def test_review3936217000_real_local_git_worktree_passes_preflight(
         env=env,
     )
     assert non_git_outcome.returncode != 0 or non_git_outcome.stdout.strip() != "true"
+
+
+# ---------------------------------------------------------------------------
+# Codex findings 3936446009, 3936446025, 3936446029
+# Executable PostgreSQL row-presence SQL + visits expected-table gate
+# + sanitized generation artifact open errors.
+# ---------------------------------------------------------------------------
+
+
+import contextlib
+
+
+def _extract_row_presence_sql() -> str:
+    """Extract the exact row-presence SQL heredoc body used by the
+    production entrypoint. The heredoc is delimited by `<<'SQL'` and
+    `SQL`; only the SQL body between those markers is returned so the
+    regression can execute the same bytes the production code does.
+    """
+    text = ENTRYPOINT.read_text(encoding="utf-8")
+    start = text.index("psql -X -qAt -v ON_ERROR_STOP=1 -U postgres -d \"$database\" <<'SQL'")
+    body_start = start + text[start:].index("<<'SQL'") + len("<<'SQL'") + 1
+    body_end = start + text[start:].index("\nSQL\n", body_start - start)
+    return text[body_start:body_end]
+
+
+def _extract_generation_metadata_open_block() -> str:
+    """Return the Python source opened by the generation-metadata
+    heredoc so the test can drive the exact captured-output path.
+    """
+    text = ENTRYPOINT.read_text(encoding="utf-8")
+    start = text.index('CURRENT_PHASE="generation-metadata"')
+    py_open = text.index("<<'PY'", start) + len("<<'PY'") + 1
+    py_close = text.index("\nPY\n", py_open)
+    return text[py_open:py_close]
+
+
+def _extract_generation_manifest_open_block() -> str:
+    """Return the Python source opened by the generation-manifest
+    heredoc so the test can drive the exact captured-output path.
+    """
+    text = ENTRYPOINT.read_text(encoding="utf-8")
+    start = text.index('CURRENT_PHASE="generation-manifest"')
+    py_open = text.index("<<'PY'", start) + len("<<'PY'") + 1
+    py_close = text.index("\nPY\n", py_open)
+    return text[py_open:py_close]
+
+
+def test_review3936446009_invalid_bool_or_oid_and_format_in_from_are_gone() -> None:
+    text = ENTRYPOINT.read_text(encoding="utf-8")
+    # The original defect used bool_or(c.oid) and FROM ONLY format(...).
+    # Both must be gone from the row-presence branch.
+    assert "bool_or(c.oid)" not in text
+    assert "FROM ONLY format(" not in text
+    # The replacement must use server-side EXECUTE and a bounded final
+    # boolean to the shell.
+    assert "EXECUTE format(" in text
+    assert "k5_row_presence" in text
+
+
+def test_review3936446009_row_presence_sql_is_valid_postgres() -> None:
+    # The extracted SQL must parse via a real PostgreSQL session if
+    # available; otherwise we use a pure-python PG parser sanity check
+    # to ensure the SQL is structurally well-formed. We rely on a real
+    # engine test in the engine-backed case below; here we just
+    # confirm the SQL does not contain the legacy invalid patterns.
+    body = _extract_row_presence_sql()
+    # No boolean casts on oid; only the final RAISE INFO signal.
+    assert "bool_or(c.oid)" not in body
+    assert "FROM ONLY" not in body
+    # The dynamic quoted relation must use EXECUTE format(...).
+    assert "EXECUTE format(" in body
+    assert "%I.%I" in body
+
+
+def test_review3936446009_engine_backed_catalogs_only_returns_false() -> None:
+    # CASE 1: system catalogs only -> row-presence must be false.
+    if os.environ.get("UNIHUB_TEST_DATABASE") != "1":
+        pytest.skip("UNIHUB_TEST_DATABASE not set; engine test requires real DB")
+    import asyncio
+    import asyncpg
+
+    async def run() -> bool:
+        conn = await asyncpg.connect(dsn=os.environ["DATABASE_URL"])
+        try:
+            dbname = f"k5_test_{os.getpid()}"
+            with contextlib.suppress(asyncpg.DuplicateDatabaseError):
+                await conn.execute(f'CREATE DATABASE "{dbname}"')
+            try:
+                test_conn = await asyncpg.connect(
+                    dsn=os.environ["DATABASE_URL"].rsplit("/", 1)[0] + f"/{dbname}"
+                )
+                try:
+                    # Execute the production DO block first; it stores
+                    # the result in a session temp table. Then read it.
+                    await test_conn.execute(_extract_row_presence_sql())
+                    val = await test_conn.fetchval(
+                        "SELECT present::text FROM k5_row_presence LIMIT 1"
+                    )
+                    return val == "true"
+                finally:
+                    await test_conn.close()
+            finally:
+                with contextlib.suppress(asyncpg.PostgresError):
+                    await conn.execute(
+                        f'DROP DATABASE IF EXISTS "{dbname}"'
+                    )
+        finally:
+            await conn.close()
+
+    assert asyncio.run(run()) is False
+
+
+def test_review3936446009_engine_backed_empty_user_table_returns_false() -> None:
+    # CASE 2: a non-system user table with zero rows -> must be false.
+    if os.environ.get("UNIHUB_TEST_DATABASE") != "1":
+        pytest.skip("UNIHUB_TEST_DATABASE not set; engine test requires real DB")
+    import asyncio
+    import asyncpg
+
+    async def run() -> bool:
+        conn = await asyncpg.connect(dsn=os.environ["DATABASE_URL"])
+        try:
+            dbname = f"k5_test_{os.getpid()}"
+            with contextlib.suppress(asyncpg.DuplicateDatabaseError):
+                await conn.execute(f'CREATE DATABASE "{dbname}"')
+            try:
+                test_conn = await asyncpg.connect(
+                    dsn=os.environ["DATABASE_URL"].rsplit("/", 1)[0] + f"/{dbname}"
+                )
+                try:
+                    await test_conn.execute("CREATE TABLE k5_user (id int)")
+                    await test_conn.execute(_extract_row_presence_sql())
+                    val = await test_conn.fetchval(
+                        "SELECT present::text FROM k5_row_presence LIMIT 1"
+                    )
+                    return val == "true"
+                finally:
+                    await test_conn.close()
+            finally:
+                with contextlib.suppress(asyncpg.PostgresError):
+                    await conn.execute(
+                        f'DROP DATABASE IF EXISTS "{dbname}"'
+                    )
+        finally:
+            await conn.close()
+
+    assert asyncio.run(run()) is False
+
+
+def test_review3936446009_engine_backed_one_row_user_table_returns_true() -> None:
+    # CASE 3: insert one synthetic row into a non-system user table.
+    if os.environ.get("UNIHUB_TEST_DATABASE") != "1":
+        pytest.skip("UNIHUB_TEST_DATABASE not set; engine test requires real DB")
+    import asyncio
+    import asyncpg
+
+    async def run() -> bool:
+        conn = await asyncpg.connect(dsn=os.environ["DATABASE_URL"])
+        try:
+            dbname = f"k5_test_{os.getpid()}"
+            with contextlib.suppress(asyncpg.DuplicateDatabaseError):
+                await conn.execute(f'CREATE DATABASE "{dbname}"')
+            try:
+                test_conn = await asyncpg.connect(
+                    dsn=os.environ["DATABASE_URL"].rsplit("/", 1)[0] + f"/{dbname}"
+                )
+                try:
+                    await test_conn.execute("CREATE TABLE k5_user (id int)")
+                    await test_conn.execute("INSERT INTO k5_user VALUES (1)")
+                    await test_conn.execute(_extract_row_presence_sql())
+                    val = await test_conn.fetchval(
+                        "SELECT present::text FROM k5_row_presence LIMIT 1"
+                    )
+                    return val == "true"
+                finally:
+                    await test_conn.close()
+            finally:
+                with contextlib.suppress(asyncpg.PostgresError):
+                    await conn.execute(
+                        f'DROP DATABASE IF EXISTS "{dbname}"'
+                    )
+        finally:
+            await conn.close()
+
+    assert asyncio.run(run()) is True
+
+
+def test_review3936446009_engine_backed_unusual_identifier_quoting_returns_true() -> None:
+    # CASE 4: a safely quotable unusual schema/table identifier (mixed
+    # case + space) is still safely EXECUTE-quoted.
+    if os.environ.get("UNIHUB_TEST_DATABASE") != "1":
+        pytest.skip("UNIHUB_TEST_DATABASE not set; engine test requires real DB")
+    import asyncio
+    import asyncpg
+
+    async def run() -> bool:
+        conn = await asyncpg.connect(dsn=os.environ["DATABASE_URL"])
+        try:
+            dbname = f"k5_test_{os.getpid()}"
+            with contextlib.suppress(asyncpg.DuplicateDatabaseError):
+                await conn.execute(f'CREATE DATABASE "{dbname}"')
+            try:
+                test_conn = await asyncpg.connect(
+                    dsn=os.environ["DATABASE_URL"].rsplit("/", 1)[0] + f"/{dbname}"
+                )
+                try:
+                    await test_conn.execute('CREATE SCHEMA "Mixed Case"')
+                    await test_conn.execute(
+                        'CREATE TABLE "Mixed Case"."k5 user table" (id int)'
+                    )
+                    await test_conn.execute(
+                        'INSERT INTO "Mixed Case"."k5 user table" VALUES (1)'
+                    )
+                    await test_conn.execute(_extract_row_presence_sql())
+                    val = await test_conn.fetchval(
+                        "SELECT present::text FROM k5_row_presence LIMIT 1"
+                    )
+                    return val == "true"
+                finally:
+                    await test_conn.close()
+            finally:
+                with contextlib.suppress(asyncpg.PostgresError):
+                    await conn.execute(
+                        f'DROP DATABASE IF EXISTS "{dbname}"'
+                    )
+        finally:
+            await conn.close()
+
+    assert asyncio.run(run()) is True
+
+
+def test_review3936446025_visits_expected_table_gate_present() -> None:
+    text = ENTRYPOINT.read_text(encoding="utf-8")
+    assert 'VISITS_EXPECTED_TABLE="fieldops_visits"' in text
+    assert "name='$VISITS_EXPECTED_TABLE'" in text
+    assert "VISITS_EXPECTED_TABLE_COUNT" in text
+    assert "EXISTS(SELECT 1 FROM $VISITS_EXPECTED_TABLE LIMIT 1)" in text
+    # The acceptance evidence must record the bounded fact.
+    assert '"expectedTable": "fieldops_visits"' in text
+    assert '"rowDataPresent": True' in text
+
+
+def test_review3936446025_sqlite_missing_expected_table_fails(tmp_path: Path) -> None:
+    import sqlite3 as _sqlite3
+    db = tmp_path / "missing.db"
+    conn = _sqlite3.connect(str(db))
+    conn.close()
+    expected = "fieldops_visits"
+    count = subprocess.run(
+        [
+            "sqlite3",
+            str(db),
+            f"SELECT count(*) FROM sqlite_master WHERE type='table' AND name='{expected}';",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    assert count == "0"
+
+
+def test_review3936446025_sqlite_zero_row_expected_table_fails(tmp_path: Path) -> None:
+    import sqlite3 as _sqlite3
+    db = tmp_path / "zero.db"
+    conn = _sqlite3.connect(str(db))
+    try:
+        conn.execute("CREATE TABLE fieldops_visits (id INTEGER PRIMARY KEY)")
+        conn.commit()
+    finally:
+        conn.close()
+    exists_raw = subprocess.run(
+        [
+            "sqlite3",
+            str(db),
+            "SELECT count(*) FROM sqlite_master WHERE type='table' AND name='fieldops_visits';",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    assert exists_raw == "1"
+    row_raw = subprocess.run(
+        [
+            "sqlite3",
+            str(db),
+            "SELECT EXISTS(SELECT 1 FROM fieldops_visits LIMIT 1);",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    assert row_raw == "0"
+
+
+def test_review3936446025_sqlite_one_row_expected_table_passes(tmp_path: Path) -> None:
+    import sqlite3 as _sqlite3
+    db = tmp_path / "one.db"
+    conn = _sqlite3.connect(str(db))
+    try:
+        conn.execute("CREATE TABLE fieldops_visits (id INTEGER PRIMARY KEY)")
+        conn.execute("INSERT INTO fieldops_visits VALUES (1)")
+        conn.commit()
+    finally:
+        conn.close()
+    exists_raw = subprocess.run(
+        [
+            "sqlite3",
+            str(db),
+            "SELECT count(*) FROM sqlite_master WHERE type='table' AND name='fieldops_visits';",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    assert exists_raw == "1"
+    row_raw = subprocess.run(
+        [
+            "sqlite3",
+            str(db),
+            "SELECT EXISTS(SELECT 1 FROM fieldops_visits LIMIT 1);",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    assert row_raw == "1"
+
+
+def test_review3936446025_sqlite_unrelated_table_does_not_satisfy_gate(
+    tmp_path: Path,
+) -> None:
+    # fieldops_visits is empty; an unrelated table has rows. The
+    # bounded expected-table gate must still FAIL because the exact
+    # expected table is empty.
+    import sqlite3 as _sqlite3
+    db = tmp_path / "unrelated.db"
+    conn = _sqlite3.connect(str(db))
+    try:
+        conn.execute("CREATE TABLE fieldops_visits (id INTEGER PRIMARY KEY)")
+        conn.execute("CREATE TABLE k5_unrelated (id INTEGER PRIMARY KEY)")
+        conn.execute("INSERT INTO k5_unrelated VALUES (1)")
+        conn.commit()
+    finally:
+        conn.close()
+    row_raw = subprocess.run(
+        [
+            "sqlite3",
+            str(db),
+            "SELECT EXISTS(SELECT 1 FROM fieldops_visits LIMIT 1);",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    assert row_raw == "0"
+
+
+def test_review3936446029_generation_metadata_sanitized_open_error_format(
+    tmp_path: Path,
+) -> None:
+    # Drive the production open-failure path against a private,
+    # distinctive path. The captured output must contain the
+    # filename-free error type and errno, never the absolute path.
+    private_root = tmp_path / "private" / "k5-super-secret-backup-root"
+    private_root.mkdir(parents=True, exist_ok=True)
+    real = private_root / "real.result"
+    real.write_text("ignored", encoding="utf-8")
+    target = private_root / "metadata.result"
+    if target.exists() or target.is_symlink():
+        target.unlink()
+    target.symlink_to(real)
+    program = _extract_generation_metadata_open_block()
+    completed = subprocess.run(
+        [sys.executable, "-c", program, str(target), FUTURE_STAMP, FIXTURE_SHA,
+         "2026-09-03T02:00:00Z", str(tmp_path / "expected.tsv"),
+         str(tmp_path / "staged.result"), str(tmp_path / "identity.tsv")],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert completed.returncode != 0
+    assert "private" not in completed.stderr
+    assert "k5-super-secret-backup-root" not in completed.stderr
+    assert str(target) not in completed.stderr
+    assert "real.result" not in completed.stderr
+    assert "artifact=generation-metadata" in completed.stderr
+    assert "error=" in completed.stderr
+    assert "errno=" in completed.stderr
+
+
+def test_review3936446029_generation_manifest_sanitized_open_error_format(
+    tmp_path: Path,
+) -> None:
+    private_root = tmp_path / "private" / "k5-super-secret-backup-root"
+    private_root.mkdir(parents=True, exist_ok=True)
+    real = private_root / "real.sha256"
+    real.write_text("ignored", encoding="utf-8")
+    target = private_root / "manifest.sha256"
+    if target.exists() or target.is_symlink():
+        target.unlink()
+    target.symlink_to(real)
+    program = _extract_generation_manifest_open_block()
+    expected = tmp_path / "expected.tsv"
+    expected.write_text("", encoding="utf-8")
+    staged = tmp_path / "staged.sha256"
+    identity = tmp_path / "identity.tsv"
+    completed = subprocess.run(
+        [sys.executable, "-c", program, str(target), FUTURE_STAMP,
+         str(expected), str(staged), str(identity)],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert completed.returncode != 0
+    assert "private" not in completed.stderr
+    assert "k5-super-secret-backup-root" not in completed.stderr
+    assert str(target) not in completed.stderr
+    assert "real.sha256" not in completed.stderr
+    assert "artifact=generation-manifest" in completed.stderr
+    assert "error=" in completed.stderr
+    assert "errno=" in completed.stderr

@@ -1056,7 +1056,13 @@ identity_path = Path(sys.argv[5])
 try:
     source_fd = os.open(manifest_path, os.O_RDONLY | os.O_NOFOLLOW)
 except OSError as exc:
-    raise SystemExit(f"unable to open generation manifest safely: {exc}")
+    # Filename-free failure context only; do not leak the absolute
+    # backup root into machine-readable failureReason.
+    raise SystemExit(
+        "unable to open generation manifest safely: "
+        f"artifact=generation-manifest "
+        f"error={type(exc).__name__} errno={exc.errno}"
+    )
 try:
     source_stat = os.fstat(source_fd)
     if not stat.S_ISREG(source_stat.st_mode):
@@ -1226,7 +1232,13 @@ identity_path = sys.argv[7]
 try:
     source_fd = os.open(metadata_path, os.O_RDONLY | os.O_NOFOLLOW)
 except OSError as exc:
-    raise SystemExit(f"unable to open generation metadata safely: {exc}")
+    # Filename-free failure context only; do not leak the absolute
+    # backup root into machine-readable failureReason.
+    raise SystemExit(
+        "unable to open generation metadata safely: "
+        f"artifact=generation-metadata "
+        f"error={type(exc).__name__} errno={exc.errno}"
+    )
 try:
     source_stat = os.fstat(source_fd)
     if not stat.S_ISREG(source_stat.st_mode):
@@ -1580,14 +1592,50 @@ PY
   # Bounded non-empty-data gate: at least one non-system ordinary or
   # partitioned user table must contain at least one row. A schema-only
   # dump creates user tables with zero rows and is rejected here. The
-  # existence probe uses PostgreSQL's own format('%I.%I') quoting so the
-  # relation identifier is safely bounded regardless of the table name.
-  user_data_present="$(
+  # probe is server-side dynamic SQL via EXECUTE with PostgreSQL's own
+  # format('%I.%I') safe identifier quoting; the final SELECT returns
+  # exactly one boolean to the shell and never serializes row contents.
+  if ! user_data_present="$(
     docker exec -e PGPASSWORD="$PASSWORD" "$CONTAINER" \
-      psql -U postgres -d "$database" -Atc \
-      "SELECT bool_or(c.oid) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE c.relkind IN ('r','p') AND n.nspname NOT IN ('pg_catalog','information_schema') AND n.nspname NOT LIKE 'pg_toast%' AND n.nspname NOT LIKE 'pg_temp_%' AND EXISTS (SELECT 1 FROM ONLY format('%I.%I', n.nspname, c.relname) LIMIT 1);" |
-      tr -d '[:space:]'
-  )"
+      psql -X -qAt -v ON_ERROR_STOP=1 -U postgres -d "$database" <<'SQL'
+DO $k5$
+DECLARE
+  r record;
+  has_rows boolean := false;
+BEGIN
+  FOR r IN
+    SELECT n.nspname, c.relname
+    FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE c.relkind IN ('r','p')
+      AND n.nspname NOT IN ('pg_catalog','information_schema')
+      AND n.nspname NOT LIKE 'pg_toast%'
+      AND n.nspname NOT LIKE 'pg_temp_%'
+    ORDER BY n.nspname, c.relname
+  LOOP
+    EXECUTE format(
+      'SELECT EXISTS (SELECT 1 FROM %I.%I LIMIT 1)',
+      r.nspname,
+      r.relname
+    ) INTO has_rows;
+    IF has_rows THEN
+      EXIT;
+    END IF;
+  END LOOP;
+  CREATE TEMP TABLE IF NOT EXISTS k5_row_presence (present boolean);
+  DELETE FROM k5_row_presence;
+  INSERT INTO k5_row_presence(present) VALUES (has_rows);
+END
+$k5$;
+SELECT CASE WHEN EXISTS (SELECT 1 FROM k5_row_presence WHERE present) THEN 't' ELSE 'f' END;
+SQL
+  )"; then
+    die "restored database $database row-presence validation failed"
+  fi
+  user_data_present="${user_data_present//[[:space:]]/}"
+  if [ "$user_data_present" != "t" ] && [ "$user_data_present" != "f" ]; then
+    die "restored database $database row-presence validation did not report a boolean"
+  fi
   if [ "$user_data_present" != "t" ]; then
     die "restored database $database contains user relations but no row data"
   fi
@@ -1610,6 +1658,25 @@ VISITS_INTEGRITY="$(sqlite3 "$VISITS_COPY" 'PRAGMA integrity_check;')"
 VISITS_TABLE_COUNT="$(sqlite3 "$VISITS_COPY" "SELECT count(*) FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%';")"
 [[ "$VISITS_TABLE_COUNT" =~ ^[0-9]+$ ]] || die "invalid visits user table count"
 [ "$VISITS_TABLE_COUNT" -gt 0 ] || die "restored visits database contains no user tables"
+# Bounded expected-table gate: the FieldOps visits table must exist and
+# must contain at least one row. This rejects an empty expected table
+# while the integrity_check + general user-table count above already
+# approve of a structurally valid sqlite file. Row contents are never
+# serialized; only the bounded fact is recorded in evidence.
+VISITS_EXPECTED_TABLE="fieldops_visits"
+VISITS_EXPECTED_TABLE_COUNT="$(
+  sqlite3 "$VISITS_COPY" \
+    "SELECT count(*) FROM sqlite_master WHERE type='table' AND name='$VISITS_EXPECTED_TABLE';"
+)"
+[[ "$VISITS_EXPECTED_TABLE_COUNT" =~ ^[0-9]+$ ]] || die "invalid expected visits table presence"
+[ "$VISITS_EXPECTED_TABLE_COUNT" = "1" ] \
+  || die "restored visits database does not contain expected table $VISITS_EXPECTED_TABLE"
+VISITS_ROW_PRESENT="$(
+  sqlite3 "$VISITS_COPY" "SELECT EXISTS(SELECT 1 FROM $VISITS_EXPECTED_TABLE LIMIT 1);"
+)"
+[[ "$VISITS_ROW_PRESENT" =~ ^[01]$ ]] || die "invalid expected visits table row presence"
+[ "$VISITS_ROW_PRESENT" = "1" ] \
+  || die "restored visits expected table $VISITS_EXPECTED_TABLE contains no rows"
 
 CURRENT_PHASE="migration-verification"
 docker exec -e PGPASSWORD="$PASSWORD" "$CONTAINER" \
@@ -1972,6 +2039,8 @@ payload = {
         "checksumMatch": True,
         "integrityCheck": "ok",
         "tableCount": int(visits_table_count),
+        "expectedTable": "fieldops_visits",
+        "rowDataPresent": True,
     },
     "migrationVerificationStatus": {
         "manifestVersion": 2,
