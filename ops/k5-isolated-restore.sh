@@ -1377,10 +1377,11 @@ PY
   relations="$(
     docker exec -e PGPASSWORD="$PASSWORD" "$CONTAINER" \
       psql -U postgres -d "$database" -Atc \
-      "SELECT count(*) FROM pg_class WHERE relkind IN ('r','p','v','m');" |
+      "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE c.relkind IN ('r','p','v','m') AND n.nspname NOT IN ('pg_catalog','information_schema') AND n.nspname NOT LIKE 'pg_toast%' AND n.nspname NOT LIKE 'pg_temp_%';" |
       tr -d '[:space:]'
   )"
-  [[ "$relations" =~ ^[0-9]+$ ]] || die "invalid relation count for $label"
+  [[ "$relations" =~ ^[0-9]+$ ]] || die "invalid user relation count for $label"
+  [ "$relations" -gt 0 ] || die "restored database $database contains no user relations"
   printf '%s\t%s\t%s\t%s\t%s\t%s\n' \
     "$label" "$database" "$started_at" "$completed_at" "$duration" "$relations" \
     >>"$WORK/postgres-restores.tsv"
@@ -1396,8 +1397,9 @@ VISITS_EXPECTED_SHA="$(awk -F'\t' -v p="visits/visits_${STAMP}.db" '$1==p {print
 require_cmd sqlite3
 VISITS_INTEGRITY="$(sqlite3 "$VISITS_COPY" 'PRAGMA integrity_check;')"
 [ "$VISITS_INTEGRITY" = "ok" ] || die "visits integrity_check failed: $VISITS_INTEGRITY"
-VISITS_TABLE_COUNT="$(sqlite3 "$VISITS_COPY" "SELECT count(*) FROM sqlite_master WHERE type='table';")"
-[[ "$VISITS_TABLE_COUNT" =~ ^[0-9]+$ ]] || die "invalid visits table count"
+VISITS_TABLE_COUNT="$(sqlite3 "$VISITS_COPY" "SELECT count(*) FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%';")"
+[[ "$VISITS_TABLE_COUNT" =~ ^[0-9]+$ ]] || die "invalid visits user table count"
+[ "$VISITS_TABLE_COUNT" -gt 0 ] || die "restored visits database contains no user tables"
 
 CURRENT_PHASE="migration-verification"
 docker exec -e PGPASSWORD="$PASSWORD" "$CONTAINER" \

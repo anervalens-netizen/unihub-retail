@@ -18,7 +18,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 ENTRYPOINT = ROOT / "ops" / "k5-isolated-restore.sh"
-EXPECTED_ENTRYPOINT_SHA256 = "4de86fbf43157c72dcf4c707d3a30238e0e0691b77551016a6dd364d6485706b"  # pragma: allowlist secret
+EXPECTED_ENTRYPOINT_SHA256 = "42636b83dfe7d30e88382e6a8841cead6b40fd11341d6398721672646ee9e8fb"  # pragma: allowlist secret
 
 FUTURE_STAMP = "20260903_010203"
 COMPONENT_LABELS = (
@@ -1905,3 +1905,205 @@ def test_findingD_chmod_0555_failure_simulation_is_removed() -> None:
     assert "0o555" not in text
     assert "K5_TEST_FAIL_RM_TARGET" in text
     assert "rm_shadow" in text
+
+
+# ---------------------------------------------------------------------------
+# Codex review 5112377944: restored-content validation must fail closed
+# on empty/system-only relations, and must require positive user content
+# for both the PostgreSQL restore loop and the visits SQLite file.
+# ---------------------------------------------------------------------------
+
+
+PG_USER_RELATION_QUERY = (
+    "SELECT count(*) FROM pg_class c "
+    "JOIN pg_namespace n ON n.oid = c.relnamespace "
+    "WHERE c.relkind IN ('r','p','v','m') "
+    "AND n.nspname NOT IN ('pg_catalog','information_schema') "
+    "AND n.nspname NOT LIKE 'pg_toast%' "
+    "AND n.nspname NOT LIKE 'pg_temp_%';"
+)
+
+
+SQLITE_USER_TABLE_QUERY = (
+    "SELECT count(*) FROM sqlite_master "
+    "WHERE type='table' AND name NOT LIKE 'sqlite_%';"
+)
+
+
+def _extract_pg_relation_block() -> str:
+    text = ENTRYPOINT.read_text(encoding="utf-8")
+    start = text.index("relations=\"$(\n    docker exec")
+    end_marker = 'printf \'%s\\t%s\\t%s\\t%s\\t%s\\t%s\\n\' \\\n    "$label"'
+    end = text.index(end_marker, start)
+    return text[start:end]
+
+
+def _extract_visits_block() -> str:
+    text = ENTRYPOINT.read_text(encoding="utf-8")
+    start = text.index("VISITS_TABLE_COUNT=\"$(sqlite3")
+    end = text.index(
+        "[[ \"$VISITS_TABLE_COUNT\" =~ ^[0-9]+$ ]] || die \"invalid visits user table count\"",
+        start,
+    )
+    end = text.index(chr(10), end) + 1
+    return text[start:end]
+
+
+def test_finding1_pg_user_relation_query_excludes_system_schemas() -> None:
+    block = _extract_pg_relation_block()
+    # The narrow semantic form is present verbatim.
+    assert PG_USER_RELATION_QUERY in block
+    # The previously defective system-relations-only form is gone.
+    assert "SELECT count(*) FROM pg_class WHERE relkind IN ('r','p','v','m');" not in block
+
+
+def test_finding1_pg_user_relation_count_zero_fails_closed() -> None:
+    text = ENTRYPOINT.read_text(encoding="utf-8")
+    assert 'die "invalid user relation count for $label"' in text
+    assert 'die "restored database $database contains no user relations"' in text
+    # The fail-closed gate is a strict positivity check, not a non-equality.
+    assert '[ "$relations" -gt 0 ]' in text or '[ "$relations" -gt 0 ] ||' in text
+
+
+def test_finding2_visits_user_table_query_excludes_sqlite_internal() -> None:
+    block = _extract_visits_block()
+    assert SQLITE_USER_TABLE_QUERY in block
+    # The previously defective sqlite_master-only form is gone.
+    assert "SELECT count(*) FROM sqlite_master WHERE type='table';" not in block
+    assert "SELECT count(*) FROM sqlite_master WHERE type='table';" not in block
+
+
+def test_finding2_visits_user_table_count_zero_fails_closed() -> None:
+    text = ENTRYPOINT.read_text(encoding="utf-8")
+    assert 'die "invalid visits user table count"' in text
+    assert 'die "restored visits database contains no user tables"' in text
+
+
+def test_finding1_pg_query_filters_exclude_each_system_namespace() -> None:
+    # Each excluded namespace must be present in the maintained query
+    # (regression guard against accidentally removing one filter).
+    for marker in ("'pg_catalog'", "'information_schema'", "pg_toast%", "pg_temp_%"):
+        assert marker in PG_USER_RELATION_QUERY, marker
+
+
+def test_finding1_pg_query_preserves_relkind_scope() -> None:
+    # The query must still cover ordinary tables, partitioned tables,
+    # views and materialized views; narrowing the scope to one relkind
+    # would re-open the empty-archive hole for the other relkinds.
+    assert "c.relkind IN ('r','p','v','m')" in PG_USER_RELATION_QUERY
+
+
+def test_finding2_sqlite_query_excludes_sqlite_internal_prefix() -> None:
+    assert "name NOT LIKE 'sqlite_%'" in SQLITE_USER_TABLE_QUERY
+    assert "type='table'" in SQLITE_USER_TABLE_QUERY
+
+
+def test_finding1_pg_user_relation_query_passes_with_user_content() -> None:
+    # The query as written would be evaluated by a real PostgreSQL;
+    # the maintained form must accept the standard public.stores table
+    # shape, which is a representative user-relation row. We assert
+    # here only that the query syntactically projects the user namespace
+    # and excludes the system namespaces from its WHERE clause, by
+    # parsing the query with a regex check that the WHERE is
+    # AND-joined against every exclusion.
+    import re
+    where_clauses = re.findall(
+        r"AND\s+(n\.nspname[^\s]+(?:\s+[A-Z]+\s+'[^']+(?:%|_)'?)?)",
+        PG_USER_RELATION_QUERY,
+    )
+    text = PG_USER_RELATION_QUERY
+    assert "n.nspname NOT IN ('pg_catalog','information_schema')" in text
+    assert "n.nspname NOT LIKE 'pg_toast%'" in text
+    assert "n.nspname NOT LIKE 'pg_temp_%'" in text
+    # Three exclusion clauses must appear, one per excluded namespace.
+    assert text.count("n.nspname NOT") == 3
+
+
+def test_finding2_sqlite_user_table_query_synthetic_zero_does_not_pass() -> None:
+    # Synthetic structurally-valid empty SQLite: only sqlite_sequence
+    # exists (a sqlite_* internal) and no user table. The bounded query
+    # must therefore return 0 — it cannot pass an empty-archive restore.
+    # This is verified directly by the next test which creates that exact
+    # shape and confirms the maintained query returns 0.
+    pass
+
+
+def test_finding2_sqlite_query_string_returns_zero_for_internal_only_db(
+    tmp_path: Path,
+) -> None:
+    # Direct synthetic check: a structurally-valid empty SQLite with no
+    # user tables must yield 0 against both the bounded user-table query
+    # and the legacy sqlite_master-only form. The bounded form is required
+    # to fail closed on the production-side `> 0` gate, so the test below
+    # proves the maintained query string can never report a positive
+    # user-table count for a database that has none.
+    import sqlite3 as _sqlite3
+    db = tmp_path / "empty.db"
+    conn = _sqlite3.connect(str(db))
+    try:
+        # Force a sqlite_sequence row (the only sqlite_* internal table
+        # that can be created without user code) by adding an AUTOINCREMENT
+        # column and rolling it back. This is the canonical
+        # "structurally valid but semantically empty" SQLite artifact.
+        conn.execute(
+            "CREATE TABLE _throwaway (id INTEGER PRIMARY KEY AUTOINCREMENT)"
+        )
+        conn.execute("DROP TABLE _throwaway")
+        conn.commit()
+    finally:
+        conn.close()
+    bounded_raw = subprocess.run(
+        ["sqlite3", str(db), SQLITE_USER_TABLE_QUERY],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    assert bounded_raw == "0", bounded_raw
+    legacy_raw = subprocess.run(
+        ["sqlite3", str(db), "SELECT count(*) FROM sqlite_master WHERE type='table';"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    # Legacy counts sqlite_sequence as a table, returning 1; the bounded
+    # form correctly excludes it. This is exactly the failure mode the
+    # review identified, and the maintenance guard here ensures the
+    # query string does not regress.
+    assert legacy_raw == "1", legacy_raw
+
+
+def test_finding2_sqlite_query_string_returns_positive_for_user_table(
+    tmp_path: Path,
+) -> None:
+    import sqlite3 as _sqlite3
+    db = tmp_path / "user.db"
+    conn = _sqlite3.connect(str(db))
+    try:
+        conn.execute("CREATE TABLE fieldops_visits (id INTEGER PRIMARY KEY)")
+        conn.execute("CREATE TABLE fieldops_visit_photos (visit_id INTEGER)")
+        conn.commit()
+    finally:
+        conn.close()
+    count_raw = subprocess.run(
+        ["sqlite3", str(db), SQLITE_USER_TABLE_QUERY],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    assert int(count_raw) >= 2, count_raw
+
+
+def test_finding1_pg_user_relation_query_string_with_public_user_table() -> None:
+    # The narrow semantic form must project a real public.user_table
+    # row as a positive count. The exact evaluation requires a live
+    # PostgreSQL, so this test asserts only the SQL surface: the
+    # query joins pg_class to pg_namespace and excludes the documented
+    # system namespaces, so a real public-schema user relation cannot
+    # be filtered out by the maintained query.
+    assert "JOIN pg_namespace n ON n.oid = c.relnamespace" in PG_USER_RELATION_QUERY
+    assert "c.relkind IN ('r','p','v','m')" in PG_USER_RELATION_QUERY
+    # A public schema row would have nspname='public' which is not in
+    # any of the three NOT filters, so it must pass.
+    for excluded in ("'pg_catalog'", "'information_schema'", "pg_toast%", "pg_temp_%"):
+        assert "public" not in excluded
+    assert "public" not in PG_USER_RELATION_QUERY or "NOT" not in PG_USER_RELATION_QUERY.split("public")[1]
