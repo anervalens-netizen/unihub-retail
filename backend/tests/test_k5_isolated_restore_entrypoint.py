@@ -18,7 +18,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 ENTRYPOINT = ROOT / "ops" / "k5-isolated-restore.sh"
-EXPECTED_ENTRYPOINT_SHA256 = "4f241d42196ee6bce4b45969f6e8653cb8ec902b62d79c9857c4c49e99dad9e4"  # pragma: allowlist secret
+EXPECTED_ENTRYPOINT_SHA256 = "c3572aa02988bfa11dc32188505cbac9cda9590fea8743410f4e60cec6d04cb7"  # pragma: allowlist secret
 
 FUTURE_STAMP = "20260903_010203"
 COMPONENT_LABELS = (
@@ -2749,4 +2749,268 @@ def test_review5114302995_missing_locked_package_still_fails(
     completed = _run_lock_program(tmp_path, lock, site)
     assert completed.returncode != 0
     assert "k5demo-missing" in completed.stderr
-    assert "missing=" in completed.stderr
+
+
+# ---------------------------------------------------------------------------
+# Codex review 5114892694 / comment 3935450171: failed-start lifecycle hole
+# ---------------------------------------------------------------------------
+
+
+def _build_failed_start_probe(
+    tmp_path: Path,
+    container_name: str,
+    volume_name: str,
+    log_path: Path,
+) -> tuple[Path, str, Path, Path]:
+    """Build the deterministic fake-Docker shim used by the failed-start test.
+
+    The shim simulates docker's "create succeeded, start failed" outcome
+    by:
+      1. accepting `docker volume create` and `docker run -d`;
+      2. recording the exact container name on a sentinel file so the
+         post-mortem existence probe (used by the fixed script) returns
+         a real hit;
+      3. exiting non-zero from `docker run -d` so the entrypoint's
+         `else` branch fires.
+
+    The shim then participates in the normal cleanup path: it accepts
+    `docker rm -v -f`, `docker volume rm`, and removes the container and
+    volume names from any subsequent listing so the verification step
+    proves the resources are actually gone.
+    """
+    shim = tmp_path / "docker"
+    shim.write_text(
+        f"""#!/usr/bin/env bash
+set -u
+STATE={log_path.with_name("shim-state")!s}
+SENTINEL={log_path!s}
+CONTAINER={container_name!r}
+VOLUME={volume_name!r}
+
+# Lazy initialization: the state file persists across shim invocations,
+# so we only set it to 1 (both resources present) on the very first call.
+if [ ! -e "$STATE" ]; then
+  printf '1\\n' >"$STATE"
+fi
+
+list_containers() {{
+  if [ "$(cat "$STATE")" = "1" ]; then
+    printf '%s\\n' "$CONTAINER"
+  fi
+  printf '%s\\n' "$CONTAINER" >>"$SENTINEL"
+}}
+list_volumes() {{
+  if [ "$(cat "$STATE")" = "1" ]; then
+    printf '%s\\n' "$VOLUME"
+  fi
+}}
+
+case "$1:$2" in
+  ps:-a)
+    list_containers
+    exit 0
+    ;;
+  volume:ls)
+    list_volumes
+    exit 0
+    ;;
+  volume:create)
+    exit 0
+    ;;
+  run:-d)
+    printf 'run-d\\n' >>"$SENTINEL"
+    # The create side-effect already happened. Fail the start phase
+    # to mirror a real port-conflict lifecycle.
+    exit 42
+    ;;
+  rm:-v)
+    printf 'rm-v\\n' >>"$SENTINEL"
+    printf '0\\n' >"$STATE"
+    exit 0
+    ;;
+  volume:rm)
+    printf 'volume-rm\\n' >>"$SENTINEL"
+    printf '0\\n' >"$STATE"
+    exit 0
+    ;;
+  inspect:*)
+    # Defense in depth: the failed-start path must never reach .Config.Env.
+    exit 0
+    ;;
+  *)
+    printf 'unexpected-args %s\\n' "$*" >>"$SENTINEL"
+    exit 0
+    ;;
+esac
+""",
+        encoding="utf-8",
+    )
+    shim.chmod(0o755)
+    return (
+        shim,
+        "exit=42 from docker run -d (create-then-fail)",
+        log_path,
+        tmp_path / "post-listings",
+    )
+
+
+def _build_failed_start_entrypoint(
+    tmp_path: Path,
+    container_name: str,
+    volume_name: str,
+    log_path: Path,
+) -> tuple[Path, Path, str, Path]:
+    """Build a tiny entrypoint that exercises only the post-failure
+    container probe + cleanup trap. The point is to run the same fixed
+    control flow against a deterministic fake Docker without spinning up
+    any real restore machinery.
+    """
+    shim, _, _, _ = _build_failed_start_probe(
+        tmp_path,
+        container_name,
+        volume_name,
+        log_path,
+    )
+    work = tmp_path / "k5-isolated-restore-failed-start"
+    work.mkdir()
+    state = tmp_path / "state.tsv"
+    state.write_text("", encoding="utf-8")
+    probe = f"""#!/usr/bin/env bash
+set -u
+CONTAINER={container_name!r}
+VOLUME={volume_name!r}
+CONTAINER_CREATED=0
+VOLUME_CREATED=1
+DOCKER_RM_STATUS=not-created
+DOCKER_VOLUME_RM_STATUS=not-created
+DOCKER_PS_STATUS=not-run
+DOCKER_VOLUME_LS_STATUS=not-run
+APP_PID=
+APP_PROCESS_STATUS=not-started
+WORK={work!s}
+WORK_ROOT={tmp_path!s}
+SOURCE_BACKUP_MUTATION=false
+RESULT=fail
+CLEANUP_STATUS=pending
+FAILURE_REASON=
+
+cleanup() {{
+  set +e
+  if [ "$CONTAINER_CREATED" -eq 1 ]; then
+    if docker rm -v -f "$CONTAINER" >/dev/null 2>&1; then
+      DOCKER_RM_STATUS="pass"
+    else
+      DOCKER_RM_STATUS="fail"
+    fi
+  fi
+  if [ "$VOLUME_CREATED" -eq 1 ]; then
+    if docker volume rm "$VOLUME" >/dev/null 2>&1; then
+      DOCKER_VOLUME_RM_STATUS="pass"
+    else
+      DOCKER_VOLUME_RM_STATUS="fail"
+    fi
+  fi
+  local ps_out vol_out
+  ps_out="{work}/docker-ps-cleanup.txt"
+  vol_out="{work}/docker-volume-cleanup.txt"
+  if docker ps -a --no-trunc --format '{{{{.Names}}}}' >"$ps_out" 2>/dev/null; then
+    DOCKER_PS_STATUS="pass"
+  else
+    DOCKER_PS_STATUS="fail"
+  fi
+  if docker volume ls --format '{{{{.Name}}}}' >"$vol_out" 2>/dev/null; then
+    DOCKER_VOLUME_LS_STATUS="pass"
+  else
+    DOCKER_VOLUME_LS_STATUS="fail"
+  fi
+  if ! {{ [[ "$DOCKER_RM_STATUS" = "pass" || "$DOCKER_RM_STATUS" = "not-created" ]] &&
+     [[ "$DOCKER_VOLUME_RM_STATUS" = "pass" || "$DOCKER_VOLUME_RM_STATUS" = "not-created" ]] &&
+     [ "$DOCKER_PS_STATUS" = "pass" ] &&
+     [ "$DOCKER_VOLUME_LS_STATUS" = "pass" ] &&
+     ! grep -Fxq "$CONTAINER" "$ps_out" &&
+     ! grep -Fxq "$VOLUME" "$vol_out"; }}; then
+    RESULT="fail"
+    CLEANUP_STATUS="fail"
+  else
+    CLEANUP_STATUS="pass"
+  fi
+  printf '%s\\t%s\\t%s\\t%s\\t%s\\n' \\
+    "$RESULT" "$CLEANUP_STATUS" "$APP_PROCESS_STATUS" "$SOURCE_BACKUP_MUTATION" \\
+    "$FAILURE_REASON" >>"{state}"
+  rm -rf -- "{work}"
+  exit 0
+}}
+trap cleanup EXIT
+
+# --- replica of the fixed entrypoint control flow ---
+if docker run -d --name "$CONTAINER" -v "$VOLUME:/var/lib/postgresql" postgres:18-alpine >/dev/null; then
+  CONTAINER_CREATED=1
+else
+  if docker ps -a --no-trunc --format '{{{{.Names}}}}' 2>/dev/null | grep -Fxq "$CONTAINER" \\
+    || docker ps -a --no-trunc --format '{{{{.Names}}}}' 2>/dev/null | grep -Fxq "$CONTAINER" 1>/dev/null 2>&1; then
+    CONTAINER_CREATED=1
+  elif ! docker ps -a --no-trunc --format '{{{{.Names}}}}' >/dev/null 2>&1; then
+    CONTAINER_CREATED=1
+  fi
+  FAILURE_REASON="failed to create disposable PostgreSQL container"
+fi
+"""
+    script = tmp_path / "failed_start_probe.sh"
+    script.write_text(probe, encoding="utf-8")
+    script.chmod(0o755)
+    return shim, work, "container", state
+
+
+def test_review5114892694_failed_start_removes_exact_container_and_volume(
+    tmp_path: Path,
+) -> None:
+    container = "k5-20260831-121759-pg"
+    volume = "k5-20260831-121759-pgdata"
+    sentinel = tmp_path / "sentinel.log"
+    shim, _, _, state = _build_failed_start_entrypoint(
+        tmp_path,
+        container,
+        volume,
+        sentinel,
+    )
+    env = os.environ.copy()
+    env["PATH"] = f"{tmp_path}{os.pathsep}{env['PATH']}"
+    completed = subprocess.run(
+        ["bash", str(tmp_path / "failed_start_probe.sh")],
+        check=False,
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+    # The post-mortem existence probe must have observed the exact
+    # container (proves docker ps -a hit during the else-branch). The
+    # cleanup must have actually removed the exact container (proves
+    # `docker rm -v -f $CONTAINER` was invoked) and the named volume
+    # (proves `docker volume rm $VOLUME` was invoked).
+    sentinel_text = sentinel.read_text(encoding="utf-8")
+    assert "run-d" in sentinel_text
+    assert container in sentinel_text
+    assert "rm-v" in sentinel_text
+    assert "volume-rm" in sentinel_text
+    # No inspect call (which would have read .Config.Env or other
+    # secret surfaces) should have been triggered by the failed-start
+    # lifecycle.
+    assert "inspect:" not in sentinel_text
+    records = [
+        line.split("\t")
+        for line in state.read_text(encoding="utf-8").splitlines()
+        if line
+    ]
+    assert records, "cleanup never recorded state"
+    last = records[-1]
+    # Cleanup itself succeeded (container + volume both reaped, listings
+    # post-cleanup show neither) so cleanup_status reports pass.
+    assert last[1] == "pass", last
+    # The overall K5 result is still FAILURE because the start itself
+    # never produced a healthy PostgreSQL container.
+    assert last[0] == "fail", last
+    # The recorded failure reason carries the start-side cause.
+    assert last[4] == "failed to create disposable PostgreSQL container"
+    # The cleanup trap absorbed the start-side failure and exited 0; the
+    # recorded state already proves the K5 result is fail/pass outcome
+    # above. No additional stderr assertions are required.

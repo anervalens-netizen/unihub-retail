@@ -1463,6 +1463,25 @@ if docker run -d \
   "$POSTGRES_IMAGE_ID" >/dev/null; then
   CONTAINER_CREATED=1
 else
+  # docker run -d may CREATE the named container and then fail while
+  # starting it (e.g. port publication). In that case the existing
+  # container must still be reaped on the cleanup path, otherwise the
+  # attached named volume is also blocked. Probe existence of the exact
+  # exercise container with a metadata-only Docker query; if the
+  # existence probe itself cannot establish a definite answer, treat the
+  # container as created so cleanup always attempts the exact-name
+  # removal. Never inspect .Config.Env or any other secret surface.
+  if docker ps -a --no-trunc --format '{{.Names}}' 2>/dev/null \
+      | grep -Fxq "$CONTAINER" \
+    || docker ps -a --no-trunc --format '{{.Names}}' 2>/dev/null \
+      | grep -Fxq "$CONTAINER" 1>/dev/null 2>&1; then
+    CONTAINER_CREATED=1
+  elif ! docker ps -a --no-trunc --format '{{.Names}}' >/dev/null 2>&1; then
+    # The existence query itself failed; fail closed by treating the
+    # container as created so cleanup MUST attempt the exact-name
+    # removal rather than silently skip it.
+    CONTAINER_CREATED=1
+  fi
   die "failed to create disposable PostgreSQL container"
 fi
 # Confirm the running container is bound to the exact captured image ID,
