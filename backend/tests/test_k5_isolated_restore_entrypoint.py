@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import hashlib
+import inspect
 import json
 import os
 import re
+import shlex
 import stat as stat_module
 import subprocess
 import sys
@@ -16,7 +18,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 ENTRYPOINT = ROOT / "ops" / "k5-isolated-restore.sh"
-EXPECTED_ENTRYPOINT_SHA256 = "d2876627a145f8f7fb4d4a2522ad6b83b1d6ea2cfc37caa924f2b65434bdef42"
+EXPECTED_ENTRYPOINT_SHA256 = "4de86fbf43157c72dcf4c707d3a30238e0e0691b77551016a6dd364d6485706b"
 
 FUTURE_STAMP = "20260903_010203"
 COMPONENT_LABELS = (
@@ -228,6 +230,8 @@ METADATA_PROGRAM: str | None = None
 LOCK_PROGRAM: str | None = None
 DURATION_PROGRAM: str | None = None
 EARLY_WRITER_PROGRAM: str | None = None
+MANIFEST_PROGRAM: str | None = None
+MANIFEST_IDENTITY_PROGRAM: str | None = None
 FINAL_WRITER_PROGRAM: str | None = None
 ACCEPTANCE_PROGRAM: str | None = None
 METADATA_IDENTITY_PROGRAM: str | None = None
@@ -308,6 +312,22 @@ def _metadata_identity_program() -> str:
     return METADATA_IDENTITY_PROGRAM
 
 
+def _manifest_program() -> str:
+    global MANIFEST_PROGRAM
+    if MANIFEST_PROGRAM is None:
+        MANIFEST_PROGRAM = _heredoc_python_after('CURRENT_PHASE="generation-manifest"')
+    return MANIFEST_PROGRAM
+
+
+def _manifest_identity_program() -> str:
+    global MANIFEST_IDENTITY_PROGRAM
+    if MANIFEST_IDENTITY_PROGRAM is None:
+        MANIFEST_IDENTITY_PROGRAM = _heredoc_python_after(
+            '[ -f "$WORK/generation-manifest-identity.tsv" ]; then'
+        )
+    return MANIFEST_IDENTITY_PROGRAM
+
+
 def _write_metadata_with_identity(tmp_path: Path) -> None:
     completed = _run_metadata_program(
         tmp_path, "\n".join(_valid_result_lines(FUTURE_STAMP)) + "\n"
@@ -386,8 +406,42 @@ esac
     log = tmp_path / "docker.log"
     log.write_text("", encoding="utf-8")
     work_root = tmp_path
-    if workdir_removal_fails:
-        work_root.chmod(0o555)
+    # Deterministic TEST-ONLY rm shadow: placed in tmp_path so it shadows the
+    # system `rm` on PATH for the probe, forwards every other invocation to
+    # the real /usr/bin/rm, and only fails when the exact workdir path is
+    # passed as an argument. Production cleanup behavior is untouched.
+    rm_shadow = tmp_path / "rm"
+    rm_shadow.write_text(
+        """#!/usr/bin/env bash
+set -u
+SELF_DIR="$(cd -- "$(dirname -- "$0")" && pwd)"
+REAL_RM=""
+IFS=':' read -ra _dirs <<<"${PATH:-}"
+for d in "${_dirs[@]}"; do
+  [ "$d" = "$SELF_DIR" ] && continue
+  if [ -x "$d/rm" ]; then
+    REAL_RM="$d/rm"
+    break
+  fi
+done
+if [ -z "$REAL_RM" ]; then
+  printf 'k5-test-rm-shadow: cannot locate real rm\\n' >&2
+  exit 127
+fi
+TARGET="${K5_TEST_FAIL_RM_TARGET:-}"
+if [ -n "$TARGET" ]; then
+  for arg in "$@"; do
+    if [ "$arg" = "$TARGET" ]; then
+      printf 'k5-test-rm-shadow: refusing to remove workdir %s\\n' "$arg" >&2
+      exit 1
+    fi
+  done
+fi
+exec "$REAL_RM" "$@"
+""",
+        encoding="utf-8",
+    )
+    rm_shadow.chmod(0o755)
     final_stub = ""
     if final_write_fails:
         # Simulate a durable-write failure: the PASS payload is rejected before
@@ -434,13 +488,14 @@ cleanup
     env["DOCKER_CONTAINER_NAME"] = "test-container"
     env["DOCKER_VOLUME_NAME"] = "test-volume"
     env["STATE_FILE"] = str(state)
+    if workdir_removal_fails:
+        env["K5_TEST_FAIL_RM_TARGET"] = str(work)
     try:
         completed = subprocess.run(
             ["bash", "-c", probe], check=False, capture_output=True, text=True, env=env
         )
     finally:
-        if workdir_removal_fails:
-            work_root.chmod(0o755)
+        pass
     records = [
         line.split(chr(9)) for line in state.read_text(encoding="utf-8").splitlines() if line
     ]
@@ -840,7 +895,12 @@ def test_finding1_metadata_and_manifest_digests_are_derived_deterministically(
     assert reported_sha == hashlib.sha256(metadata.read_bytes()).hexdigest()
     text = ENTRYPOINT.read_text(encoding="utf-8")
     assert "metadata_sha256 = hashlib.sha256(metadata_bytes).hexdigest()" in text
-    assert 'GENERATION_MANIFEST_SHA256="$(sha256sum "$MANIFEST"' in text
+    # The manifest digest is derived from the same single snapshot bytes that
+    # are parsed and staged; a separate authoritative `sha256sum` reread of
+    # the manifest file is forbidden because it would re-open a TOCTOU window.
+    assert "manifest_sha256 = hashlib.sha256(manifest_bytes).hexdigest()" in text
+    assert 'sha256sum "$MANIFEST"' not in text
+    assert 'GENERATION_MANIFEST_SHA256="$(sha256sum "$MANIFEST"' not in text
 
 
 def test_finding1_metadata_is_opened_once_and_staged_byte_identical(
@@ -1544,6 +1604,304 @@ def test_k5_restore_entrypoint_covers_certified_acceptance_contract() -> None:
         ".early.{os.getpid()}.tmp",
         "temporary.write_text",
         'sha256sum "$GENERATION_RESULT"',
+        'sha256sum "$MANIFEST"',
     )
     for marker in forbidden_markers:
         assert marker not in text, marker
+
+
+# ---------------------------------------------------------------------------
+# K5 follow-up: PG18 volume boundary, manifest TOCTOU, immutable image,
+# deterministic workdir-removal-failure test
+# ---------------------------------------------------------------------------
+
+
+def _run_manifest_program(
+    tmp_path: Path,
+    manifest_text: str,
+    *,
+    stamp: str = FUTURE_STAMP,
+) -> subprocess.CompletedProcess[str]:
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    manifest = tmp_path / "generation.sha256"
+    manifest.write_text(manifest_text, encoding="utf-8")
+    expected = tmp_path / "expected.tsv"
+    expected.write_text("", encoding="utf-8")
+    staged = tmp_path / "staged.sha256"
+    identity = tmp_path / "identity.tsv"
+    return _run_python(
+        _manifest_program(),
+        [str(manifest), stamp, str(expected), str(staged), str(identity)],
+    )
+
+
+def _valid_manifest_text(stamp: str = FUTURE_STAMP) -> str:
+    components = list(_component_relatives(stamp))
+    lines = []
+    for relative in components:
+        digest = hashlib.sha256(f"synthetic {relative}\n".encode("utf-8")).hexdigest()
+        lines.append(f"{digest}  {relative}")
+    return "\n".join(lines) + "\n"
+
+
+def test_findingA_pg18_volume_mounts_at_postgres_base_directory() -> None:
+    text = ENTRYPOINT.read_text(encoding="utf-8")
+    # The narrow contract: the exercise-owned named volume owns PG18's
+    # actual persistent data boundary at /var/lib/postgresql, not the
+    # deeper PGDATA sub-path.
+    assert '"$VOLUME:/var/lib/postgresql"' in text
+    assert '"$VOLUME:/var/lib/postgresql/data"' not in text
+    # Volume attachment must be revalidated after the container starts so
+    # a stale/swap cannot masquerade as a clean run.
+    assert "/var/lib/postgresql" in text
+    assert "disposable PostgreSQL volume is not attached" in text
+
+
+def test_findingA_cleanup_uses_docker_rm_v_for_anonymous_volumes() -> None:
+    text = ENTRYPOINT.read_text(encoding="utf-8")
+    assert "docker rm -v -f \"$CONTAINER\"" in text
+
+
+def test_findingB_manifest_is_opened_with_nofollow_and_is_regular_file(
+    tmp_path: Path,
+) -> None:
+    real = tmp_path / "real.sha256"
+    real.write_text(_valid_manifest_text(), encoding="utf-8")
+    manifest = tmp_path / "generation.sha256"
+    manifest.symlink_to(real)
+    expected = tmp_path / "expected.tsv"
+    expected.write_text("", encoding="utf-8")
+    completed = _run_python(
+        _manifest_program(),
+        [str(manifest), FUTURE_STAMP, str(expected),
+         str(tmp_path / "staged.sha256"), str(tmp_path / "identity.tsv")],
+    )
+    assert completed.returncode != 0
+    assert "unable to open generation manifest safely" in completed.stderr
+    assert not (tmp_path / "staged.sha256").exists()
+
+
+def test_findingB_manifest_is_opened_once_and_staged_byte_identical(
+    tmp_path: Path,
+) -> None:
+    completed = _run_manifest_program(tmp_path, _valid_manifest_text())
+    assert completed.returncode == 0, completed.stderr
+    manifest = tmp_path / "generation.sha256"
+    staged = tmp_path / "staged.sha256"
+    identity = tmp_path / "identity.tsv"
+    # Staged bytes are exactly the validated snapshot bytes.
+    assert staged.read_bytes() == manifest.read_bytes()
+    reported_sha = completed.stdout.strip()
+    assert reported_sha == hashlib.sha256(manifest.read_bytes()).hexdigest()
+    # Identity captured from the same descriptor is persisted for cleanup.
+    identity_values = dict(
+        line.split("=", 1) for line in identity.read_text(encoding="utf-8").splitlines()
+    )
+    assert identity_values["sha256"] == reported_sha
+    assert identity_values["size"] == str(manifest.stat().st_size)
+    assert identity_values["inode"] == str(manifest.stat().st_ino)
+    assert identity_values["device"] == str(manifest.stat().st_dev)
+
+
+def test_findingB_no_separate_authoritative_manifest_reread() -> None:
+    text = ENTRYPOINT.read_text(encoding="utf-8")
+    assert 'sha256sum "$MANIFEST"' not in text
+    assert "manifest_sha256 = hashlib.sha256(manifest_bytes).hexdigest()" in text
+    # The manifest source open is single, no-follow, regular-file, one-shot.
+    program = _manifest_program()
+    assert "os.O_RDONLY | os.O_NOFOLLOW" in program
+    assert "S_ISREG" in program
+    assert program.count("os.read(") == 1
+
+
+def test_findingB_manifest_identity_recheck_passes_when_unchanged(
+    tmp_path: Path,
+) -> None:
+    completed = _run_manifest_program(tmp_path, _valid_manifest_text())
+    assert completed.returncode == 0
+    completed = _run_python(
+        _manifest_identity_program(),
+        [str(tmp_path / "generation.sha256"), str(tmp_path / "identity.tsv")],
+    )
+    assert completed.returncode == 0, completed.stderr
+    assert "generation-manifest-source-identity-ok" in completed.stdout
+
+
+def test_findingB_manifest_replacement_fails_recheck(tmp_path: Path) -> None:
+    _run_manifest_program(tmp_path, _valid_manifest_text())
+    manifest = tmp_path / "generation.sha256"
+    manifest.unlink()
+    manifest.write_text(_valid_manifest_text(), encoding="utf-8")
+    completed = _run_python(
+        _manifest_identity_program(),
+        [str(manifest), str(tmp_path / "identity.tsv")],
+    )
+    assert completed.returncode != 0
+    assert "changed during exercise" in completed.stderr
+
+
+def test_findingB_manifest_symlink_swap_fails_recheck(tmp_path: Path) -> None:
+    _run_manifest_program(tmp_path, _valid_manifest_text())
+    manifest = tmp_path / "generation.sha256"
+    twin = tmp_path / "twin.sha256"
+    twin.write_bytes(manifest.read_bytes())
+    manifest.unlink()
+    manifest.symlink_to(twin)
+    completed = _run_python(
+        _manifest_identity_program(),
+        [str(manifest), str(tmp_path / "identity.tsv")],
+    )
+    assert completed.returncode != 0
+    assert "unable to reopen generation manifest safely" in completed.stderr
+
+
+def test_findingC_container_runs_under_captured_image_id_with_no_pull() -> None:
+    text = ENTRYPOINT.read_text(encoding="utf-8")
+    # Strip comments so the assertion only inspects executable code paths.
+    code_lines = []
+    for line in text.splitlines():
+        stripped = line.lstrip()
+        if stripped.startswith("#"):
+            continue
+        code_lines.append(line)
+    code = "\n".join(code_lines)
+    # The container is started with the captured immutable image ID, never
+    # the mutable POSTGRES_IMAGE tag, and never with --pull=always.
+    assert '--pull=never' in code
+    assert '"$POSTGRES_IMAGE_ID"' in code
+    # Image equality is verified immediately after start; a refresh could
+    # only occur between POSTGRES_IMAGE capture and container create, so
+    # a post-create inspect is the only way to close the window.
+    assert "RUNNING_IMAGE_ID" in code
+    assert "disposable PostgreSQL container is not running the captured immutable image" in code
+    # Inspect is metadata-only; never output Config.Env or any secret.
+    assert "docker inspect --format '{{.Image}}' \"$CONTAINER\"" in code
+    assert "{{.Config.Env}}" not in code
+    assert "Config.Env" not in code
+
+
+def test_findingD_test_rm_shadow_forwards_unrelated_calls(tmp_path: Path) -> None:
+    # Build a temp tree the shadow must remove without refusal: nothing
+    # about these paths matches K5_TEST_FAIL_RM_TARGET.
+    target_a = tmp_path / "alpha.txt"
+    target_a.write_text("a", encoding="utf-8")
+    target_b = tmp_path / "beta.txt"
+    target_b.write_text("b", encoding="utf-8")
+    shadow_dir = tmp_path / "shadow-bin"
+    shadow_dir.mkdir()
+    shadow = shadow_dir / "rm"
+    shadow.write_text(
+        """#!/usr/bin/env bash
+set -u
+SELF_DIR="$(cd -- "$(dirname -- "$0")" && pwd)"
+REAL_RM=""
+IFS=':' read -ra _dirs <<<"${PATH:-}"
+for d in "${_dirs[@]}"; do
+  [ "$d" = "$SELF_DIR" ] && continue
+  if [ -x "$d/rm" ]; then
+    REAL_RM="$d/rm"
+    break
+  fi
+done
+[ -n "$REAL_RM" ] || { echo "no real rm" >&2; exit 127; }
+TARGET="${K5_TEST_FAIL_RM_TARGET:-}"
+if [ -n "$TARGET" ]; then
+  for arg in "$@"; do
+    if [ "$arg" = "$TARGET" ]; then
+      echo "refuse $arg" >&2
+      exit 1
+    fi
+  done
+fi
+exec "$REAL_RM" "$@"
+""",
+        encoding="utf-8",
+    )
+    shadow.chmod(0o755)
+    env = os.environ.copy()
+    env["PATH"] = f"{shadow_dir}{os.pathsep}{env['PATH']}"
+    env["K5_TEST_FAIL_RM_TARGET"] = "/some/other/path/that/never/appears"
+    completed = subprocess.run(
+        ["bash", "-c", f"rm -f -- {shlex.quote(str(target_a))} {shlex.quote(str(target_b))}"],
+        check=False,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert completed.returncode == 0, completed.stderr
+    assert not target_a.exists()
+    assert not target_b.exists()
+
+
+def test_findingD_test_rm_shadow_fails_only_for_exact_workdir_target(
+    tmp_path: Path,
+) -> None:
+    shadow_dir = tmp_path / "shadow-bin"
+    shadow_dir.mkdir()
+    shadow = shadow_dir / "rm"
+    shadow.write_text(
+        """#!/usr/bin/env bash
+set -u
+SELF_DIR="$(cd -- "$(dirname -- "$0")" && pwd)"
+REAL_RM=""
+IFS=':' read -ra _dirs <<<"${PATH:-}"
+for d in "${_dirs[@]}"; do
+  [ "$d" = "$SELF_DIR" ] && continue
+  if [ -x "$d/rm" ]; then
+    REAL_RM="$d/rm"
+    break
+  fi
+done
+[ -n "$REAL_RM" ] || { echo "no real rm" >&2; exit 127; }
+TARGET="${K5_TEST_FAIL_RM_TARGET:-}"
+if [ -n "$TARGET" ]; then
+  for arg in "$@"; do
+    if [ "$arg" = "$TARGET" ]; then
+      echo "refuse $arg" >&2
+      exit 1
+    fi
+  done
+fi
+exec "$REAL_RM" "$@"
+""",
+        encoding="utf-8",
+    )
+    shadow.chmod(0o755)
+    env = os.environ.copy()
+    env["PATH"] = f"{shadow_dir}{os.pathsep}{env['PATH']}"
+    workdir = tmp_path / "k5-isolated-restore-probe"
+    env["K5_TEST_FAIL_RM_TARGET"] = str(workdir)
+    # Unrelated rm call still succeeds.
+    safe = tmp_path / "safe.txt"
+    safe.write_text("safe", encoding="utf-8")
+    completed = subprocess.run(
+        ["bash", "-c", f"rm -f -- {shlex.quote(str(safe))}"],
+        check=False,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert completed.returncode == 0, completed.stderr
+    assert not safe.exists()
+    # The exact workdir target fails and never reaches the real binary.
+    workdir.mkdir()
+    completed = subprocess.run(
+        ["bash", "-c", f"rm -rf -- {shlex.quote(str(workdir))}"],
+        check=False,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert completed.returncode != 0
+    assert "refuse" in completed.stderr
+    assert workdir.exists()
+
+
+def test_findingD_chmod_0555_failure_simulation_is_removed() -> None:
+    # Review finding #5111506619 is valid: the chmod-0o555 simulation
+    # depended on filesystem permission side effects and is replaced by
+    # the deterministic TEST-ONLY rm shadow.
+    text = inspect.getsource(_run_cleanup_probe)
+    assert "0o555" not in text
+    assert "K5_TEST_FAIL_RM_TARGET" in text
+    assert "rm_shadow" in text

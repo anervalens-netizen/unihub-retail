@@ -660,7 +660,7 @@ cleanup() {
   fi
 
   if [ "$CONTAINER_CREATED" -eq 1 ]; then
-    if docker rm -f "$CONTAINER" >/dev/null 2>&1; then
+    if docker rm -v -f "$CONTAINER" >/dev/null 2>&1; then
       DOCKER_RM_STATUS="pass"
     else
       DOCKER_RM_STATUS="fail"
@@ -765,6 +765,63 @@ PY
     fi
   fi
 
+  # Manifest identity recheck: the same single snapshot is compared to the
+  # captured dev/inode/size/sha256 to prove the manifest source was not
+  # replaced (including a same-size replacement) between start and cleanup.
+  # PASS is impossible while a revalidated-at-start identity no longer holds.
+  if [ -n "${MANIFEST:-}" ] && [ -f "$WORK/generation-manifest-identity.tsv" ]; then
+    if ! python3 - "$MANIFEST" "$WORK/generation-manifest-identity.tsv" <<'PY'
+import hashlib
+import os
+import stat
+import sys
+
+source_path, identity_path = sys.argv[1], sys.argv[2]
+expected = {}
+with open(identity_path, encoding="utf-8") as identity:
+    for raw in identity:
+        key, value = raw.strip().split("=", 1)
+        expected[key] = value
+try:
+    fd = os.open(source_path, os.O_RDONLY | os.O_NOFOLLOW)
+except OSError as exc:
+    raise SystemExit(f"unable to reopen generation manifest safely: {exc}")
+try:
+    current = os.fstat(fd)
+    if not stat.S_ISREG(current.st_mode):
+        raise SystemExit("generation manifest is no longer a regular file")
+    chunks = []
+    while True:
+        chunk = os.read(fd, 1048576)
+        if not chunk:
+            break
+        chunks.append(chunk)
+finally:
+    os.close(fd)
+data = b"".join(chunks)
+problems = []
+if str(current.st_dev) != expected["device"]:
+    problems.append("device")
+if str(current.st_ino) != expected["inode"]:
+    problems.append("inode")
+if str(current.st_size) != expected["size"]:
+    problems.append("size")
+if hashlib.sha256(data).hexdigest() != expected["sha256"]:
+    problems.append("sha256")
+if str(current.st_mtime_ns) != expected["mtime_ns"]:
+    problems.append("mtime_ns")
+if problems:
+    raise SystemExit(f"generation manifest changed during exercise: {problems}")
+print("generation-manifest-source-identity-ok")
+PY
+    then
+      SOURCE_BACKUP_MUTATION="true"
+      RESULT="fail"
+      CLEANUP_STATUS="fail"
+      [ -n "$FAILURE_REASON" ] || FAILURE_REASON="generation manifest source changed during exercise"
+    fi
+  fi
+
   local docker_ps_output=""
   local docker_volume_output=""
   if [ -n "$WORK" ] && [ -d "$WORK" ]; then
@@ -861,15 +918,48 @@ else
 fi
 
 CURRENT_PHASE="generation-manifest"
-[ -f "$MANIFEST" ] || die "generation manifest not found for stamp $STAMP"
-python3 - "$MANIFEST" "$STAMP" "$WORK/expected.tsv" <<'PY'
+[ -e "$MANIFEST" ] && [ ! -L "$MANIFEST" ] ||
+  die "generation manifest not found for stamp $STAMP"
+# Open the manifest exactly once, without following symlinks, capture the
+# device/inode/size identity from the same descriptor, parse the entries
+# from those bytes, SHA-256 those same bytes, and stage the exact snapshot
+# for later revalidation. No second authoritative reread is performed.
+GENERATION_MANIFEST_OUTPUT="$(python3 - "$MANIFEST" "$STAMP" \
+  "$WORK/expected.tsv" \
+  "$WORK/generation-manifest-staged.sha256" \
+  "$WORK/generation-manifest-identity.tsv" 2>&1 <<'PY'
+import hashlib
+import os
 import re
+import stat
 import sys
 from pathlib import Path
 
-manifest = Path(sys.argv[1])
+manifest_path = sys.argv[1]
 stamp = sys.argv[2]
 output = Path(sys.argv[3])
+staged_path = Path(sys.argv[4])
+identity_path = Path(sys.argv[5])
+
+try:
+    source_fd = os.open(manifest_path, os.O_RDONLY | os.O_NOFOLLOW)
+except OSError as exc:
+    raise SystemExit(f"unable to open generation manifest safely: {exc}")
+try:
+    source_stat = os.fstat(source_fd)
+    if not stat.S_ISREG(source_stat.st_mode):
+        raise SystemExit("generation manifest is not a regular file")
+    chunks = []
+    while True:
+        chunk = os.read(source_fd, 1048576)
+        if not chunk:
+            break
+        chunks.append(chunk)
+finally:
+    os.close(source_fd)
+manifest_bytes = b"".join(chunks)
+manifest_sha256 = hashlib.sha256(manifest_bytes).hexdigest()
+
 databases = (
     "unihub", "mobiup_dwh", "unihub_identity", "unihub_retail",
     "unihub_learning", "authentik", "glitchtip",
@@ -879,7 +969,7 @@ expected = {
     f"visits/visits_{stamp}.db",
 }
 parsed = {}
-for raw in manifest.read_text(encoding="utf-8").splitlines():
+for raw in manifest_bytes.decode("utf-8").splitlines():
     line = raw.strip()
     if not line:
         continue
@@ -901,9 +991,33 @@ output.write_text(
     "".join(f"{name}\t{parsed[name]}\n" for name in sorted(parsed)),
     encoding="utf-8",
 )
-PY
 
-GENERATION_MANIFEST_SHA256="$(sha256sum "$MANIFEST" | awk '{print $1}')"
+# Validation passed: stage the exact snapshot bytes with exclusive no-follow
+# creation and persist the source identity captured from the same descriptor,
+# so cleanup can prove the manifest source was not replaced during the
+# exercise. All later parsing/evidence references use these snapshot values.
+staged_fd = os.open(
+    staged_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600
+)
+try:
+    with os.fdopen(staged_fd, "wb") as staged:
+        staged.write(manifest_bytes)
+        staged.flush()
+        os.fsync(staged.fileno())
+    staged_fd = -1
+finally:
+    if staged_fd != -1:
+        os.close(staged_fd)
+with open(identity_path, "w", encoding="utf-8") as identity:
+    identity.write(f"device={source_stat.st_dev}\n")
+    identity.write(f"inode={source_stat.st_ino}\n")
+    identity.write(f"size={source_stat.st_size}\n")
+    identity.write(f"mtime_ns={source_stat.st_mtime_ns}\n")
+    identity.write(f"sha256={manifest_sha256}\n")
+print(manifest_sha256)
+PY
+)" || die "generation manifest validation failed for $STAMP: $GENERATION_MANIFEST_OUTPUT"
+GENERATION_MANIFEST_SHA256="$GENERATION_MANIFEST_OUTPUT"
 readonly GENERATION_MANIFEST_SHA256
 
 : >"$WORK/source-paths.txt"
@@ -1162,6 +1276,10 @@ while IFS=$'\t' read -r relative expected_sha; do
 done <"$WORK/expected.tsv"
 
 CURRENT_PHASE="postgres-target"
+# PG18's actual persistent data boundary is /var/lib/postgresql; the named
+# exercise volume owns that boundary so a stale volume can never be mistaken
+# for a clean run. PGDATA still resolves to /var/lib/postgresql/data inside
+# the volume because that path is created on first initdb.
 if docker volume create "$VOLUME" >/dev/null; then
   VOLUME_CREATED=1
 else
@@ -1170,16 +1288,41 @@ fi
 printf 'POSTGRES_PASSWORD=%s\n' "$PASSWORD" >"$WORK/postgres.env"
 chmod 0600 "$WORK/postgres.env"
 if docker run -d \
+  --pull=never \
   --name "$CONTAINER" \
   -p "127.0.0.1:${PG_PORT}:5432" \
   --env-file "$WORK/postgres.env" \
-  -v "$VOLUME:/var/lib/postgresql/data" \
+  -v "$VOLUME:/var/lib/postgresql" \
   -v "$WORK/in/postgres:/backups:ro" \
-  "$POSTGRES_IMAGE" >/dev/null; then
+  "$POSTGRES_IMAGE_ID" >/dev/null; then
   CONTAINER_CREATED=1
 else
   die "failed to create disposable PostgreSQL container"
 fi
+# Confirm the running container is bound to the exact captured image ID,
+# not a refreshed tag. Any divergence here means we executed a mutable
+# reference and the immutable-image contract is broken. Inspect is
+# metadata-only and never touches Config.Env or any other secret surface.
+RUNNING_IMAGE_ID="$(docker inspect --format '{{.Image}}' "$CONTAINER" 2>/dev/null || true)"
+if [ -z "$RUNNING_IMAGE_ID" ]; then
+  die "disposable PostgreSQL container image is not inspectable"
+fi
+if [ "$RUNNING_IMAGE_ID" != "$POSTGRES_IMAGE_ID" ]; then
+  die "disposable PostgreSQL container is not running the captured immutable image"
+fi
+# Confirm the exercise volume is actually attached at the data boundary
+# (and not at the deeper PGDATA path). A surviving volume here would let
+# the next run inherit restored data, so the verifier must prove the
+# bind survives the start sequence before any restore work proceeds.
+if ! docker inspect --format '{{range .Mounts}}{{if eq .Name "'"$VOLUME"'"}}{{.Destination}}{{end}}{{end}}' \
+    "$CONTAINER" 2>/dev/null | grep -Fxq "/var/lib/postgresql"; then
+  die "disposable PostgreSQL volume is not attached at /var/lib/postgresql"
+fi
+# Any anonymous volume created by the start sequence must be cleaned
+# alongside the named exercise volume; `docker rm -v` (used in cleanup)
+# is the only path that drops them, so record that intent here.
+docker inspect --format '{{range .Mounts}}{{if and (eq .Type "volume") (eq .Name "")}}{{.Name}}|{{.Destination}}{{println}}{{end}}{{end}}' \
+  "$CONTAINER" >"$WORK/postgres-anonymous-volumes.tsv" 2>/dev/null || true
 
 for _ in $(seq 1 60); do
   if docker exec "$CONTAINER" pg_isready -U postgres -q >/dev/null 2>&1; then
