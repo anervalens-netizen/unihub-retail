@@ -9,12 +9,16 @@
 #   Backup start/completion are derived EXCLUSIVELY from the per-generation
 #   metadata artifact <backup-root>/manifests/generation_<stamp>.result.
 #   The required metadata keys are: stamp, status (exactly "verified"),
-#   started_at, completed_at, file_count. Timestamps must carry an explicit
-#   UTC offset and are canonicalized to YYYY-MM-DDTHH:MM:SSZ before any
-#   downstream use. Rolling last-run metadata, filesystem mtimes, log lines
-#   and filename inference are never used as RPO authority. The metadata
-#   artifact is opened once without following symlinks; its digest, parsed
-#   values and staged copy all derive from that single byte snapshot, and the
+#   source_release_sha (exactly 40 lowercase hex), started_at, completed_at,
+#   file_count. Timestamps must carry an explicit UTC offset and are
+#   canonicalized to YYYY-MM-DDTHH:MM:SSZ before any downstream use. The
+#   source_release_sha must equal the --source-sha argument supplied to the
+#   entrypoint; no other source of truth (migration manifest, current main,
+#   filesystem timestamps, filenames) is accepted. Rolling last-run
+#   metadata, filesystem mtimes, log lines and filename inference are never
+#   used as RPO authority. The metadata artifact is opened once without
+#   following symlinks; its digest, parsed values and staged copy all derive
+#   from that single byte snapshot, and the
 #   source identity (device/inode/size/mtime/sha256) is revalidated before a
 #   PASS may be published. Application reaping happens only after a final
 #   liveness proof; a still-live process fails cleanup without any wait.
@@ -103,11 +107,15 @@ Usage:
 Backup timing authority:
   Backup start/completion are derived exclusively from the per-generation
   metadata artifact <backup-root>/manifests/generation_<stamp>.result.
-  Required metadata keys: stamp, status (exactly "verified"), started_at,
-  completed_at, file_count. Timestamps must carry an explicit UTC offset and
-  are canonicalized to YYYY-MM-DDTHH:MM:SSZ before any evidence/RPO use.
-  Rolling last-run metadata, filesystem mtimes, log lines and filename
-  inference are never accepted as RPO authority, and arbitrary CLI
+  Required metadata keys: stamp, status (exactly "verified"),
+  source_release_sha (exactly 40 lowercase hex), started_at, completed_at,
+  file_count. Timestamps must carry an explicit UTC offset and are
+  canonicalized to YYYY-MM-DDTHH:MM:SSZ before any evidence/RPO use.
+  source_release_sha must equal the --source-sha argument; no other source
+  of truth (migration manifest, current main, filesystem timestamps,
+  filenames) is accepted. Rolling last-run metadata, filesystem mtimes,
+  log lines and filename inference are never accepted as RPO authority,
+  and arbitrary CLI
   timestamps no longer exist on this interface.
 
 Safety:
@@ -531,10 +539,22 @@ for distribution in metadata.distributions():
 missing = sorted(
     name for name in pins if name not in EXEMPT_TOOLING and name not in installed
 )
+# Bounded strict-equality acceptance: for every non-exempt locked package
+# there must be exactly one observed installed version AND that single
+# version must equal the locked pin. Multiple installed versions, even
+# if the locked one is present, fail closed.
 mismatched = sorted(
-    f"{name} locked={pins[name]} installed={'|'.join(sorted(installed[name]))}"
-    for name in pins
-    if name not in EXEMPT_TOOLING and name in installed and pins[name] not in installed[name]
+    (
+        f"{name} locked={pins[name]} installed={','.join(sorted(installed[name]))}"
+        for name in pins
+        if name not in EXEMPT_TOOLING
+        and name in installed
+        and (
+            len(installed[name]) != 1
+            or pins[name] not in installed[name]
+        )
+    ),
+    key=lambda entry: entry.split(" ", 1)[0],
 )
 if missing or mismatched:
     raise SystemExit(
@@ -1165,7 +1185,7 @@ CURRENT_PHASE="generation-metadata"
 [ -f "$GENERATION_RESULT" ] ||
   die "per-generation result metadata not found for stamp $STAMP (rolling last-run metadata is never used as RPO authority)"
 GENERATION_METADATA_OUTPUT="$(python3 - "$GENERATION_RESULT" "$STAMP" \
-  "$REFERENCE_FAILURE_AT" "$WORK/expected.tsv" \
+  "$SOURCE_SHA" "$REFERENCE_FAILURE_AT" "$WORK/expected.tsv" \
   "$WORK/generation-metadata-staged.result" \
   "$WORK/generation-metadata-identity.tsv" 2>&1 <<'PY'
 import datetime as dt
@@ -1178,10 +1198,11 @@ from pathlib import Path
 
 metadata_path = sys.argv[1]
 expected_stamp = sys.argv[2]
-reference_raw = sys.argv[3]
-expected_tsv = Path(sys.argv[4])
-staged_path = sys.argv[5]
-identity_path = sys.argv[6]
+expected_source_release_sha = sys.argv[3]
+reference_raw = sys.argv[4]
+expected_tsv = Path(sys.argv[5])
+staged_path = sys.argv[6]
+identity_path = sys.argv[7]
 
 # Open the generation metadata exactly once, without following symlinks, and
 # capture identity and bytes from the same descriptor. Every authoritative
@@ -1206,8 +1227,16 @@ finally:
 metadata_bytes = b"".join(chunks)
 metadata_sha256 = hashlib.sha256(metadata_bytes).hexdigest()
 
-REQUIRED_KEYS = ("stamp", "status", "started_at", "completed_at", "file_count")
+REQUIRED_KEYS = (
+    "stamp",
+    "status",
+    "source_release_sha",
+    "started_at",
+    "completed_at",
+    "file_count",
+)
 KEY_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+SOURCE_RELEASE_SHA_PATTERN = re.compile(r"^[0-9a-f]{40}$")
 
 values = {}
 for raw_line in metadata_bytes.decode("utf-8").splitlines():
@@ -1235,6 +1264,17 @@ if values["stamp"] != expected_stamp:
 if values["status"] != "verified":
     raise SystemExit(
         f"generation metadata status must be exactly 'verified', got {values['status']!r}"
+    )
+if not SOURCE_RELEASE_SHA_PATTERN.fullmatch(values["source_release_sha"]):
+    raise SystemExit(
+        "generation metadata source_release_sha is not exactly 40 lowercase "
+        f"hexadecimal characters: {values['source_release_sha']!r}"
+    )
+if values["source_release_sha"] != expected_source_release_sha:
+    raise SystemExit(
+        "generation metadata source_release_sha does not match the supplied "
+        f"--source-sha expected={expected_source_release_sha} "
+        f"observed={values['source_release_sha']!r}"
     )
 if not values["file_count"].isdigit():
     raise SystemExit(f"generation metadata file_count is not numeric: {values['file_count']!r}")
