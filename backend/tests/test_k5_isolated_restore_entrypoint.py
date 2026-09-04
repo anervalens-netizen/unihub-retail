@@ -18,7 +18,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 ENTRYPOINT = ROOT / "ops" / "k5-isolated-restore.sh"
-EXPECTED_ENTRYPOINT_SHA256 = "42636b83dfe7d30e88382e6a8841cead6b40fd11341d6398721672646ee9e8fb"  # pragma: allowlist secret
+EXPECTED_ENTRYPOINT_SHA256 = "db80defaa19a0c6f6e87ed67e36db85b4d1a3c301ebbd783ce1d4ddd2ace6fa6"  # pragma: allowlist secret
 
 FUTURE_STAMP = "20260903_010203"
 COMPONENT_LABELS = (
@@ -2107,3 +2107,389 @@ def test_finding1_pg_user_relation_query_string_with_public_user_table() -> None
     for excluded in ("'pg_catalog'", "'information_schema'", "pg_toast%", "pg_temp_%"):
         assert "public" not in excluded
     assert "public" not in PG_USER_RELATION_QUERY or "NOT" not in PG_USER_RELATION_QUERY.split("public")[1]
+
+
+# ---------------------------------------------------------------------------
+# Codex review 5112723089: rejected restored content
+# - mandatory bounded stores business control
+# - strong per-component identity/hash revalidation
+# ---------------------------------------------------------------------------
+
+
+def _extract_business_integrity_block() -> str:
+    text = ENTRYPOINT.read_text(encoding="utf-8")
+    start = text.index('CURRENT_PHASE="business-integrity"')
+    end = text.index('BUSINESS_FINGERPRINT="$(\n  python3 -', start)
+    return text[start:end]
+
+
+def _extract_initial_component_block() -> str:
+    text = ENTRYPOINT.read_text(encoding="utf-8")
+    start = text.index("Strong component identity capture:")
+    end = text.index("readonly COMPONENT_IDENTITY_TSV=", start)
+    return text[start:end]
+
+
+def _extract_component_revalidation_block() -> str:
+    text = ENTRYPOINT.read_text(encoding="utf-8")
+    start = text.index("Strong per-component identity revalidation:")
+    end = text.index(
+        'local docker_ps_output=""',
+        start,
+    )
+    return text[start:end]
+
+
+def test_review5112723089_stores_mandatory_existence_check() -> None:
+    block = _extract_business_integrity_block()
+    assert 'die "mandatory business control public.stores is missing"' in block
+
+
+def test_review5112723089_stores_mandatory_strict_positivity() -> None:
+    block = _extract_business_integrity_block()
+    # The narrow check: stores must be present, numeric, AND strictly > 0.
+    assert 'die "mandatory business control stores is empty"' in block
+    assert '[ "$count" -gt 0 ] || die "mandatory business control stores is empty"' in block
+
+
+def test_review5112723089_stores_zero_does_not_pass_through_sample_loop() -> None:
+    block = _extract_business_integrity_block()
+    # The `continue` path for a non-existent table must NOT bypass the
+    # strict stores gate. The `stores_ok` flag accumulates only after a
+    # positive count is observed, and the [ "$stores_ok" -eq 1 ] gate
+    # fires even if three other sample tables succeed.
+    assert "stores_ok=1" in block
+    assert '[ "$stores_ok" -eq 1 ]' in block
+
+
+def test_review5112723089_stores_positive_count_passes_bounded_gate() -> None:
+    block = _extract_business_integrity_block()
+    # The bounded gate is a strict positivity check, not equality to
+    # any pinned historical value.
+    assert "stores_ok=1" in block
+    assert "=121" not in block
+    # The sample-count and reproducibility rules are preserved.
+    assert '[ "$selected" -ge 3 ]' in block
+    assert "business-integrity counts are not reproducible" in block
+
+
+def test_review5112723089_initial_component_uses_safe_descriptor() -> None:
+    block = _extract_initial_component_block()
+    assert "os.O_RDONLY | os.O_NOFOLLOW" in block
+    assert "S_ISREG" in block
+    assert "fstat" in block or "fstat(fd)" in block
+    # The authoritative initial SHA MUST come from the same descriptor
+    # snapshot used for the identity tuple. A separate later reread is
+    # forbidden.
+    assert "hashlib.sha256(data).hexdigest()" in block
+    assert "sha256sum" not in block
+    assert "actual_sha != expected_sha" in block or "expected_sha" in block
+
+
+def test_review5112723089_initial_component_captures_full_identity_tuple() -> None:
+    block = _extract_initial_component_block()
+    for field in ("device", "inode", "size", "mtime_ns", "sha256", "path"):
+        assert f"{field}=" in block, field
+
+
+def test_review5112723089_revalidation_uses_safe_descriptor_per_component() -> None:
+    block = _extract_component_revalidation_block()
+    assert "os.O_RDONLY | os.O_NOFOLLOW" in block
+    assert "S_ISREG" in block
+    assert "fstat(fd)" in block or "os.fstat(fd)" in block
+    # Each problem class must be a fail-closed signal.
+    for problem in ("device", "inode", "size", "mtime_ns", "sha256"):
+        assert problem in block, problem
+
+
+def test_review5112723089_revalidation_fails_cleanup_on_any_drift() -> None:
+    text = ENTRYPOINT.read_text(encoding="utf-8")
+    assert 'FAILURE_REASON="backup component identity changed during exercise"' in text
+    # The fail-closed chain must set every required field.
+    for marker in (
+        'SOURCE_BACKUP_MUTATION="true"',
+        'RESULT="fail"',
+        'CLEANUP_STATUS="fail"',
+    ):
+        assert marker in text, marker
+
+
+def test_review5112723089_initial_validation_rejects_mismatched_component(
+    tmp_path: Path,
+) -> None:
+    # Synthetic: the manifest promises a SHA but the actual file differs.
+    # The exact validation script must die with a checksum-mismatch
+    # message; the catch-all in the shell wrapper turns the die into a
+    # script-level failure.
+    import textwrap
+    backup = tmp_path / "backup"
+    backup.mkdir()
+    component = backup / "comp.bin"
+    component.write_bytes(b"actual payload")
+    expected_sha = "0" * 64
+    completed = subprocess.run(
+        [
+            "bash",
+            "-c",
+            textwrap.dedent(
+                f"""
+                set -Eeuo pipefail
+                trap '' EXIT
+                IDENTITY_OUT="$(python3 - "{component}" "comp.bin" "{expected_sha}" "{tmp_path / "id.tsv"}" 2>&1 <<'PY'
+                import hashlib
+                import os
+                import stat
+                import sys
+                source_path, relative, expected_sha, identity_path = sys.argv[1:5]
+                try:
+                    fd = os.open(source_path, os.O_RDONLY | os.O_NOFOLLOW)
+                except OSError as exc:
+                    raise SystemExit(f"unable to open backup component safely: {{exc}}")
+                try:
+                    source_stat = os.fstat(fd)
+                    if not stat.S_ISREG(source_stat.st_mode):
+                        raise SystemExit("backup component is not a regular file")
+                    chunks = []
+                    while True:
+                        chunk = os.read(fd, 1048576)
+                        if not chunk:
+                            break
+                        chunks.append(chunk)
+                finally:
+                    os.close(fd)
+                data = b"".join(chunks)
+                actual_sha = hashlib.sha256(data).hexdigest()
+                if actual_sha != expected_sha:
+                    raise SystemExit(
+                        f"source checksum mismatch: {{relative}} expected={{expected_sha}} actual={{actual_sha}}"
+                    )
+                with open(identity_path, "a", encoding="utf-8") as identity:
+                    identity.write(
+                        f"path={{source_path}}\\n"
+                        f"relative={{relative}}\\n"
+                        f"device={{source_stat.st_dev}}\\n"
+                        f"inode={{source_stat.st_ino}}\\n"
+                        f"size={{source_stat.st_size}}\\n"
+                        f"mtime_ns={{source_stat.st_mtime_ns}}\\n"
+                        f"sha256={{actual_sha}}\\n"
+                    )
+                print(actual_sha)
+                PY
+                )" || echo "DIED"
+                printf '%s' "$IDENTITY_OUT"
+                """
+            ),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert "source checksum mismatch" in completed.stdout
+    assert "DIED" in completed.stdout
+    assert not (tmp_path / "id.tsv").exists()
+
+
+def _write_component_identity(identity_path: Path, source_path: Path, payload: bytes) -> None:
+    """Capture a strong identity tuple for a synthetic test component.
+
+    Mirrors the maintained production capture exactly: same descriptor,
+    same byte snapshot, same tuple fields. The relative field is
+    recorded for parity with the production block.
+    """
+    fd = os.open(str(source_path), os.O_RDONLY | os.O_NOFOLLOW)
+    try:
+        ss = os.fstat(fd)
+        chunks = []
+        while True:
+            chunk = os.read(fd, 1048576)
+            if not chunk:
+                break
+            chunks.append(chunk)
+    finally:
+        os.close(fd)
+    data = b"".join(chunks)
+    assert data == payload  # synthetic invariant
+    identity_path.write_text(
+        f"path={source_path}\nrelative=comp.bin\n"
+        f"device={ss.st_dev}\ninode={ss.st_ino}\n"
+        f"size={ss.st_size}\nmtime_ns={ss.st_mtime_ns}\n"
+        f"sha256={hashlib.sha256(data).hexdigest()}\n",
+        encoding="utf-8",
+    )
+
+
+_REVALIDATE_PROGRAM = """
+import os, sys, hashlib, stat
+identity_path = sys.argv[1]
+expected_by_path = {}
+current_path = None
+with open(identity_path, encoding='utf-8') as identity:
+    for raw in identity:
+        line = raw.strip()
+        if not line:
+            current_path = None
+            continue
+        key, value = line.split('=', 1)
+        if key == 'path':
+            current_path = value
+            expected_by_path.setdefault(current_path, {})
+        if current_path is not None:
+            expected_by_path[current_path][key] = value
+failures = []
+for source_path, expected in expected_by_path.items():
+    try:
+        fd = os.open(source_path, os.O_RDONLY | os.O_NOFOLLOW)
+    except OSError as exc:
+        failures.append(f'{source_path}: unable to reopen: {exc}')
+        continue
+    try:
+        current = os.fstat(fd)
+        if not stat.S_ISREG(current.st_mode):
+            failures.append(f'{source_path}: no longer a regular file')
+            continue
+        chunks = []
+        while True:
+            chunk = os.read(fd, 1048576)
+            if not chunk:
+                break
+            chunks.append(chunk)
+    finally:
+        os.close(fd)
+    data = b''.join(chunks)
+    actual_sha = hashlib.sha256(data).hexdigest()
+    problems = []
+    if str(current.st_dev) != expected.get('device', ''):
+        problems.append('device')
+    if str(current.st_ino) != expected.get('inode', ''):
+        problems.append('inode')
+    if str(current.st_size) != expected.get('size', ''):
+        problems.append('size')
+    if str(current.st_mtime_ns) != expected.get('mtime_ns', ''):
+        problems.append('mtime_ns')
+    if actual_sha != expected.get('sha256', ''):
+        problems.append('sha256')
+    if problems:
+        failures.append(f'{source_path}: {problems}')
+if failures:
+    raise SystemExit('; '.join(failures))
+print('ok')
+"""
+
+
+def _run_revalidate(identity_path: Path) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [sys.executable, "-c", _REVALIDATE_PROGRAM, str(identity_path)],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+
+def test_review5112723089_revalidation_detects_same_size_replacement(
+    tmp_path: Path,
+) -> None:
+    # Synthetic: a same-size byte replacement must be caught by SHA drift.
+    identity = tmp_path / "id.tsv"
+    original = tmp_path / "comp.bin"
+    payload = b"original bytes 12345"
+    original.write_bytes(payload)
+    _write_component_identity(identity, original, payload)
+    # Same-length byte replacement.
+    original.write_bytes(b"replaced bytes 999XY")
+    assert original.stat().st_size == len(payload)
+    rev = _run_revalidate(identity)
+    assert rev.returncode != 0
+    assert "sha256" in rev.stderr
+
+
+def test_review5112723089_revalidation_detects_inode_swap(
+    tmp_path: Path,
+) -> None:
+    # Inode replacement: the file at the same path is unlinked and
+    # replaced with a new inode containing identical bytes. The captured
+    # inode must not match anymore. To guarantee a new inode we create
+    # the replacement in a fresh subdirectory and rename it over the
+    # captured path; this forces the kernel to allocate a new inode
+    # rather than reuse the freshly freed one.
+    identity = tmp_path / "id.tsv"
+    original = tmp_path / "comp.bin"
+    payload = b"original content for inode swap test"
+    original.write_bytes(payload)
+    captured_inode = original.stat().st_ino
+    _write_component_identity(identity, original, payload)
+    original.unlink()
+    other_dir = tmp_path / "other"
+    other_dir.mkdir()
+    staging = other_dir / "comp.bin"
+    staging.write_bytes(payload)
+    assert staging.stat().st_ino != captured_inode
+    staging.rename(original)
+    rev = _run_revalidate(identity)
+    assert rev.returncode != 0
+    assert "inode" in rev.stderr
+
+
+def test_review5112723089_revalidation_detects_mtime_ns_shift(
+    tmp_path: Path,
+) -> None:
+    # mtime_ns drift alone (no byte change, no inode swap) must still
+    # fail the revalidation, because a same-second re-touch on the
+    # underlying file is a credible backup-side mutation signal.
+    identity = tmp_path / "id.tsv"
+    target = tmp_path / "comp.bin"
+    payload = b"stable content for mtime_ns test"
+    target.write_bytes(payload)
+    _write_component_identity(identity, target, payload)
+    # Bump only mtime_ns while keeping bytes identical.
+    os.utime(target, ns=(123456789, 987654321))
+    rev = _run_revalidate(identity)
+    assert rev.returncode != 0
+    assert "mtime_ns" in rev.stderr
+
+
+def test_review5112723089_revalidation_passes_unchanged_component(
+    tmp_path: Path,
+) -> None:
+    identity = tmp_path / "id.tsv"
+    target = tmp_path / "comp.bin"
+    payload = b"untouched component bytes for revalidation"
+    target.write_bytes(payload)
+    _write_component_identity(identity, target, payload)
+    rev = _run_revalidate(identity)
+    assert rev.returncode == 0, rev.stderr
+    assert "ok" in rev.stdout
+
+
+def test_review5112723089_revalidation_missing_component_fails(
+    tmp_path: Path,
+) -> None:
+    # Missing component (component deleted between start and cleanup)
+    # must produce a fail-closed signal during revalidation.
+    identity = tmp_path / "id.tsv"
+    target = tmp_path / "comp.bin"
+    payload = b"transient component for missing test"
+    target.write_bytes(payload)
+    _write_component_identity(identity, target, payload)
+    target.unlink()
+    rev = _run_revalidate(identity)
+    assert rev.returncode != 0
+    assert "unable to reopen" in rev.stderr
+
+
+def test_review5112723089_revalidation_non_regular_component_fails(
+    tmp_path: Path,
+) -> None:
+    # Replacing a regular component with a directory at the same path
+    # must be detected as a non-regular file at revalidation time. A
+    # directory is openable with O_RDONLY but is not S_ISREG, so the
+    # open succeeds and the regular-file check fires.
+    identity = tmp_path / "id.tsv"
+    target = tmp_path / "comp.bin"
+    payload = b"regular component for non-regular test"
+    target.write_bytes(payload)
+    _write_component_identity(identity, target, payload)
+    target.unlink()
+    target.mkdir()
+    rev = _run_revalidate(identity)
+    assert rev.returncode != 0
+    assert "no longer a regular file" in rev.stderr

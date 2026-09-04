@@ -822,6 +822,87 @@ PY
     fi
   fi
 
+  # Strong per-component identity revalidation: every manifest-listed backup
+  # component MUST be re-opened with the same O_RDONLY|O_NOFOLLOW discipline
+  # used at initial validation, and the captured device/inode/size/mtime_ns/
+  # sha256 tuple MUST match. Any divergence (missing, non-regular, swap,
+  # same-size replacement, mtime_ns shift, or sha256 change) fails the
+  # cleanup before PASS can be published. The existing coarse path-size-mtime
+  # check above remains for compatibility; this is the authoritative proof.
+  if [ -f "$WORK/component-identity.tsv" ]; then
+    if ! python3 - "$WORK/component-identity.tsv" <<'PY'
+import hashlib
+import os
+import stat
+import sys
+
+identity_path = sys.argv[1]
+expected_by_path: dict[str, dict[str, str]] = {}
+current_path: str | None = None
+with open(identity_path, encoding="utf-8") as identity:
+    for raw in identity:
+        line = raw.strip()
+        if not line:
+            current_path = None
+            continue
+        key, value = line.split("=", 1)
+        if key == "path":
+            current_path = value
+            expected_by_path.setdefault(current_path, {})
+        if current_path is not None:
+            expected_by_path[current_path][key] = value
+
+if not expected_by_path:
+    raise SystemExit("no captured component identity tuples to revalidate")
+
+failures: list[str] = []
+for source_path, expected in expected_by_path.items():
+    try:
+        fd = os.open(source_path, os.O_RDONLY | os.O_NOFOLLOW)
+    except OSError as exc:
+        failures.append(f"{source_path}: unable to reopen: {exc}")
+        continue
+    try:
+        current = os.fstat(fd)
+        if not stat.S_ISREG(current.st_mode):
+            failures.append(f"{source_path}: no longer a regular file")
+            continue
+        chunks = []
+        while True:
+            chunk = os.read(fd, 1048576)
+            if not chunk:
+                break
+            chunks.append(chunk)
+    finally:
+        os.close(fd)
+    data = b"".join(chunks)
+    actual_sha = hashlib.sha256(data).hexdigest()
+    problems: list[str] = []
+    if str(current.st_dev) != expected.get("device", ""):
+        problems.append("device")
+    if str(current.st_ino) != expected.get("inode", ""):
+        problems.append("inode")
+    if str(current.st_size) != expected.get("size", ""):
+        problems.append("size")
+    if str(current.st_mtime_ns) != expected.get("mtime_ns", ""):
+        problems.append("mtime_ns")
+    if actual_sha != expected.get("sha256", ""):
+        problems.append("sha256")
+    if problems:
+        failures.append(f"{source_path}: changed: {problems}")
+
+if failures:
+    raise SystemExit("backup component revalidation failed: " + "; ".join(failures))
+print("component-identity-revalidation-ok")
+PY
+    then
+      SOURCE_BACKUP_MUTATION="true"
+      RESULT="fail"
+      CLEANUP_STATUS="fail"
+      [ -n "$FAILURE_REASON" ] || FAILURE_REASON="backup component identity changed during exercise"
+    fi
+  fi
+
   local docker_ps_output=""
   local docker_volume_output=""
   if [ -n "$WORK" ] && [ -d "$WORK" ]; then
@@ -1022,13 +1103,59 @@ readonly GENERATION_MANIFEST_SHA256
 
 : >"$WORK/source-paths.txt"
 printf '%s\n' "$MANIFEST" >>"$WORK/source-paths.txt"
+# Strong component identity capture: for every manifest-listed component,
+# the initial checksum AND the identity tuple (device/inode/size/mtime_ns)
+# MUST come from the same safe O_RDONLY|O_NOFOLLOW descriptor snapshot.
+# A separate later reread cannot serve as the authoritative initial digest.
+: >"$WORK/component-identity.tsv"
 while IFS=$'\t' read -r relative expected_sha; do
   source_path="$BACKUP_ROOT/$relative"
-  [ -f "$source_path" ] || die "backup component missing: $relative"
-  actual_sha="$(sha256sum "$source_path" | awk '{print $1}')"
-  [ "$actual_sha" = "$expected_sha" ] || die "source checksum mismatch: $relative"
+  IDENTITY_OUT="$(python3 - "$source_path" "$relative" "$expected_sha" \
+    "$WORK/component-identity.tsv" 2>&1 <<'PY'
+import hashlib
+import os
+import stat
+import sys
+
+source_path, relative, expected_sha, identity_path = sys.argv[1:5]
+try:
+    fd = os.open(source_path, os.O_RDONLY | os.O_NOFOLLOW)
+except OSError as exc:
+    raise SystemExit(f"unable to open backup component safely: {exc}")
+try:
+    source_stat = os.fstat(fd)
+    if not stat.S_ISREG(source_stat.st_mode):
+        raise SystemExit("backup component is not a regular file")
+    chunks = []
+    while True:
+        chunk = os.read(fd, 1048576)
+        if not chunk:
+            break
+        chunks.append(chunk)
+finally:
+    os.close(fd)
+data = b"".join(chunks)
+actual_sha = hashlib.sha256(data).hexdigest()
+if actual_sha != expected_sha:
+    raise SystemExit(
+        f"source checksum mismatch: {relative} expected={expected_sha} actual={actual_sha}"
+    )
+with open(identity_path, "a", encoding="utf-8") as identity:
+    identity.write(
+        f"path={source_path}\n"
+        f"relative={relative}\n"
+        f"device={source_stat.st_dev}\n"
+        f"inode={source_stat.st_ino}\n"
+        f"size={source_stat.st_size}\n"
+        f"mtime_ns={source_stat.st_mtime_ns}\n"
+        f"sha256={actual_sha}\n"
+    )
+print(actual_sha)
+PY
+  )" || die "backup component validation failed for $relative: $IDENTITY_OUT"
   printf '%s\n' "$source_path" >>"$WORK/source-paths.txt"
 done <"$WORK/expected.tsv"
+readonly COMPONENT_IDENTITY_TSV="$WORK/component-identity.tsv"
 
 : >"$WORK/source-before.tsv"
 while IFS= read -r source_path; do
@@ -1429,10 +1556,17 @@ if applied != expected:
 PY
 
 CURRENT_PHASE="business-integrity"
+# Mandatory bounded business-data control: the `stores` table is the
+# canonical retail row source for the K5 exercise. A schema-only or
+# empty-business restore cannot obtain a stable fingerprint without a
+# positive stores row count, so every pass must prove stores exists and
+# is non-empty BEFORE the broader sample set is even considered. This
+# is a bounded control, not a historical row pin.
 : >"$WORK/business-1.tsv"
 : >"$WORK/business-2.tsv"
 for pass_file in "$WORK/business-1.tsv" "$WORK/business-2.tsv"; do
   selected=0
+  stores_ok=0
   for table in stores agent_targets historical_monthly_sales grile_runs incentive_campaigns; do
     [[ "$table" =~ (salary|identity|user|auth|session|token|secret|credential|customer|person) ]] &&
       die "sensitive business-table selection: $table"
@@ -1448,9 +1582,14 @@ for pass_file in "$WORK/business-1.tsv" "$WORK/business-2.tsv"; do
         "SELECT count(*) FROM public.\"${table}\";"
     )"
     [[ "$count" =~ ^[0-9]+$ ]] || die "invalid count for $table"
+    if [ "$table" = "stores" ]; then
+      [ "$count" -gt 0 ] || die "mandatory business control stores is empty"
+      stores_ok=1
+    fi
     printf '%s\t%s\n' "$table" "$count" >>"$pass_file"
     selected=$(( selected + 1 ))
   done
+  [ "$stores_ok" -eq 1 ] || die "mandatory business control public.stores is missing"
   [ "$selected" -ge 3 ] || die "fewer than three approved business tables are available"
 done
 cmp -s "$WORK/business-1.tsv" "$WORK/business-2.tsv" ||
