@@ -1176,8 +1176,14 @@ manifest_bytes = b"".join(chunks)
 manifest_sha256 = hashlib.sha256(manifest_bytes).hexdigest()
 
 databases = (
-    "unihub", "mobiup_dwh", "unihub_identity", "unihub_retail",
-    "unihub_learning", "authentik", "glitchtip",
+    "unihub",
+    "mobiup_dwh",
+    "unihub_identity",
+    "unihub_retail",
+    "unihub_distribution",
+    "unihub_learning",
+    "authentik",
+    "glitchtip",
 )
 expected = {
     *(f"postgres/{name}_{stamp}.dump" for name in databases),

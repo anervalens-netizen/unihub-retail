@@ -18,7 +18,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 ENTRYPOINT = ROOT / "ops" / "k5-isolated-restore.sh"
-EXPECTED_ENTRYPOINT_SHA256 = "9218446f5c987371422669c807b98cec9a75f8c5fafd5c4f16220f5797d204a5"  # pragma: allowlist secret
+EXPECTED_ENTRYPOINT_SHA256 = "f2d00029f9b60e6e1ff09855eb435273234cc621ad7cd032fd32d76625126329"  # pragma: allowlist secret
 
 FUTURE_STAMP = "20260903_010203"
 COMPONENT_LABELS = (
@@ -26,6 +26,7 @@ COMPONENT_LABELS = (
     "mobiup_dwh",
     "unihub_identity",
     "unihub_retail",
+    "unihub_distribution",
     "unihub_learning",
     "authentik",
     "glitchtip",
@@ -93,7 +94,7 @@ def _valid_result_lines(
     started_at: str = "2026-08-31T12:17:59+03:00",
     completed_at: str = "2026-08-31T12:19:01+03:00",
     status: str = "verified",
-    file_count: int = 8,
+    file_count: int = 9,
     source_release_sha: str = FIXTURE_SHA,
 ) -> list[str]:
     return [
@@ -287,7 +288,7 @@ def _run_metadata_program(
     *,
     stamp: str = FUTURE_STAMP,
     reference: str = "2026-09-03T02:00:00Z",
-    manifest_entries: int = 8,
+    manifest_entries: int = 9,
     source_release_sha: str = FIXTURE_SHA,
 ) -> subprocess.CompletedProcess[str]:
     tmp_path.mkdir(parents=True, exist_ok=True)
@@ -996,7 +997,7 @@ def test_finding1_symlink_generation_result_is_refused(tmp_path: Path) -> None:
     metadata.symlink_to(real)
     expected = tmp_path / "expected.tsv"
     expected.write_text(
-        "".join(f"postgres/component{i}_x.dump\t{'a' * 64}\n" for i in range(8)),
+        "".join(f"postgres/component{i}_x.dump\t{'a' * 64}\n" for i in range(9)),
         encoding="utf-8",
     )
     completed = _run_python(
@@ -2570,7 +2571,7 @@ def test_review5114302995_missing_source_release_sha_key_fails(
         # intentionally no source_release_sha
         "started_at=2026-09-03T01:02:03Z",
         "completed_at=2026-09-03T01:03:05Z",
-        "file_count=8",
+        "file_count=9",
     ]
     completed = _run_metadata_program(
         tmp_path, "\n".join(lines) + "\n"
@@ -4321,3 +4322,109 @@ def test_review3938278149_final_cleanup_path_cannot_publish_pass_after_writer_fa
     payload = json.loads(evidence.read_text(encoding="utf-8"))
     assert payload["result"] == "fail"
     assert payload["cleanupStatus"] == "pending"
+
+
+# ---------------------------------------------------------------------------
+# K5 follow-up #251: verifier aligned with backup topology authority
+# (eight PostgreSQL databases + visits = 9 generation components).
+# ---------------------------------------------------------------------------
+
+
+def test_topology251_eight_pg_plus_visits_manifest_passes(tmp_path: Path) -> None:
+    # The maintained verifier accepts exactly the demonstrated real backup
+    # topology: 8 PostgreSQL dumps + 1 visits SQLite = 9 components.
+    components = _component_relatives(FUTURE_STAMP)
+    assert len(components) == 9
+    completed = _run_manifest_program(tmp_path, _valid_manifest_text())
+    assert completed.returncode == 0, completed.stderr
+    manifest = tmp_path / "generation.sha256"
+    assert completed.stdout.strip() == hashlib.sha256(
+        manifest.read_bytes()
+    ).hexdigest()
+
+
+def test_topology251_old_seven_pg_omitting_distribution_is_rejected(
+    tmp_path: Path,
+) -> None:
+    # The pre-#251 consumer accepted exactly 7 PG databases plus visits; the
+    # unihub_distribution dump was treated as an unknown extra component and
+    # the generation was rejected. With the topology correction, the
+    # omission of unihub_distribution is the new failure mode.
+    legacy_labels = (
+        "unihub",
+        "mobiup_dwh",
+        "unihub_identity",
+        "unihub_retail",
+        "unihub_learning",
+        "authentik",
+        "glitchtip",
+    )
+    legacy_components = [
+        *(f"postgres/{label}_{FUTURE_STAMP}.dump" for label in legacy_labels),
+        f"visits/visits_{FUTURE_STAMP}.db",
+    ]
+    assert len(legacy_components) == 8
+    legacy_lines = []
+    for relative in legacy_components:
+        digest = hashlib.sha256(
+            f"synthetic {relative}\n".encode("utf-8")
+        ).hexdigest()
+        legacy_lines.append(f"{digest}  {relative}")
+    completed = _run_manifest_program(
+        tmp_path, "\n".join(legacy_lines) + "\n"
+    )
+    assert completed.returncode != 0
+    assert "manifest component mismatch" in completed.stderr
+    assert "unihub_distribution" in completed.stderr
+    assert not (tmp_path / "staged.sha256").exists()
+
+
+def test_topology251_arbitrary_extra_component_is_rejected(tmp_path: Path) -> None:
+    # The new authority is exactly 8 PG + 1 visits = 9 components. Adding a
+    # tenth arbitrary component (the verifier must not silently accept
+    # arbitrary additional databases) is rejected.
+    extra_component = (
+        f"postgres/unihub_rogue_{FUTURE_STAMP}.dump"
+    )
+    extra_lines = []
+    manifest_text = _valid_manifest_text()
+    # Inject one extra entry after the canonical 9.
+    manifest_lines = manifest_text.rstrip("\n").split("\n")
+    extra_digest = hashlib.sha256(
+        f"synthetic {extra_component}\n".encode("utf-8")
+    ).hexdigest()
+    manifest_lines.append(f"{extra_digest}  {extra_component}")
+    expanded_manifest = "\n".join(manifest_lines) + "\n"
+    completed = _run_manifest_program(tmp_path, expanded_manifest)
+    assert completed.returncode != 0
+    assert "manifest component mismatch" in completed.stderr
+    assert "extra" in completed.stderr
+    assert not (tmp_path / "staged.sha256").exists()
+
+
+def test_topology251_metadata_file_count_nine_matches_nine_entry_manifest(
+    tmp_path: Path,
+) -> None:
+    # Valid metadata with file_count=9 must satisfy the canonical 9-entry
+    # manifest. Both the metadata and the helper default have been aligned.
+    result_text = "\n".join(_valid_result_lines(FUTURE_STAMP)) + "\n"
+    completed = _run_metadata_program(tmp_path, result_text)
+    assert completed.returncode == 0, completed.stderr
+    metadata = tmp_path / "generation.result"
+    staged = tmp_path / "staged.result"
+    assert staged.read_bytes() == metadata.read_bytes()
+
+
+def test_topology251_metadata_file_count_eight_against_nine_entry_manifest_fails(
+    tmp_path: Path,
+) -> None:
+    # A metadata file_count that lags the canonical 9-entry manifest by
+    # one is rejected before any downstream authority is established.
+    result_text = "\n".join(
+        _valid_result_lines(FUTURE_STAMP, file_count=8)
+    ) + "\n"
+    completed = _run_metadata_program(tmp_path, result_text)
+    assert completed.returncode != 0
+    assert "does not match" in completed.stderr
+    assert "manifest entry count" in completed.stderr
+    assert not (tmp_path / "staged.result").exists()
