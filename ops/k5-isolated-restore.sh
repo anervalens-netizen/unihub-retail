@@ -1663,7 +1663,7 @@ done <"$WORK/roles.txt"
 
 CURRENT_PHASE="postgres-restore"
 : >"$WORK/postgres-restores.tsv"
-for label in unihub mobiup_dwh unihub_identity unihub_retail unihub_learning authentik glitchtip; do
+for label in unihub mobiup_dwh unihub_identity unihub_retail unihub_distribution unihub_learning authentik glitchtip; do
   database="dr_${label}"
   started_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   restore_started_monotonic_ns="$(python3 -c 'import time; print(time.monotonic_ns())')"
@@ -2111,6 +2111,28 @@ for raw in Path(restores_path).read_text(encoding="utf-8").splitlines():
         "userDataPresent": user_data_present == "true",
         "status": "pass",
     })
+# Bounded fail-closed evidence invariant: the machine-readable evidence
+# MUST NOT be able to publish postgresRestoreStatus.overall = pass unless
+# the recorded restores contain EXACTLY the eight authoritative
+# PostgreSQL labels in the canonical order. This proves the entire restore
+# surface (8 PG dumps + 1 visits) was exercised, not merely an arbitrary
+# subset of the old seven.
+expected_restore_labels = [
+    "unihub",
+    "mobiup_dwh",
+    "unihub_identity",
+    "unihub_retail",
+    "unihub_distribution",
+    "unihub_learning",
+    "authentik",
+    "glitchtip",
+]
+actual_restore_labels = [item["label"] for item in restores]
+if actual_restore_labels != expected_restore_labels:
+    raise SystemExit(
+        f"postgresRestoreStatus label set mismatch: expected={expected_restore_labels} "
+        f"actual={actual_restore_labels}"
+    )
 counts = {}
 for raw in Path(business_path).read_text(encoding="utf-8").splitlines():
     table, count = raw.split("\t")

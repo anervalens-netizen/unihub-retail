@@ -18,7 +18,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 ENTRYPOINT = ROOT / "ops" / "k5-isolated-restore.sh"
-EXPECTED_ENTRYPOINT_SHA256 = "f2d00029f9b60e6e1ff09855eb435273234cc621ad7cd032fd32d76625126329"  # pragma: allowlist secret
+EXPECTED_ENTRYPOINT_SHA256 = "85e62608c78a741b43937a392a7482ab27d8656395f4ee6773238870ea4e452d"  # pragma: allowlist secret
 
 FUTURE_STAMP = "20260903_010203"
 COMPONENT_LABELS = (
@@ -612,20 +612,30 @@ def _success_evidence_fixture(tmp_path: Path) -> tuple[list[str], Path, tuple[in
     roles = tmp_path / "roles.txt"
     roles.write_text("", encoding="utf-8")
     restores = tmp_path / "restores.tsv"
-    restores.write_text(
-        chr(9).join(
-            [
-                "unihub",
-                "dr_unihub",
-                "2026-09-03T01:05:00Z",
-                "2026-09-03T01:05:02Z",
-                "2",
-                "363",
-            ]
+    restore_lines = []
+    for label in (
+        "unihub",
+        "mobiup_dwh",
+        "unihub_identity",
+        "unihub_retail",
+        "unihub_distribution",
+        "unihub_learning",
+        "authentik",
+        "glitchtip",
+    ):
+        restore_lines.append(
+            chr(9).join(
+                [
+                    label,
+                    f"dr_{label}",
+                    "2026-09-03T01:05:00Z",
+                    "2026-09-03T01:05:02Z",
+                    "2",
+                    "363",
+                ]
+            )
         )
-        + chr(10),
-        encoding="utf-8",
-    )
+    restores.write_text("\n".join(restore_lines) + chr(10), encoding="utf-8")
     business = tmp_path / "business.tsv"
     business.write_text("stores" + chr(9) + "3" + chr(10), encoding="utf-8")
     identity = os.stat(evidence).st_dev, os.stat(evidence).st_ino
@@ -3261,7 +3271,7 @@ def test_review3934742062_failure_reason_does_not_leak_private_root(
     assert "comp.bin" in completed.stderr
 
 
-def test_review3936216994_user_data_gate_present_for_all_seven_dbs() -> None:
+def test_review3936216994_user_data_gate_present_for_all_eight_dbs() -> None:
     # The script must probe row data for every label, in order.
     text = ENTRYPOINT.read_text(encoding="utf-8")
     for label in (
@@ -3269,6 +3279,7 @@ def test_review3936216994_user_data_gate_present_for_all_seven_dbs() -> None:
         "mobiup_dwh",
         "unihub_identity",
         "unihub_retail",
+        "unihub_distribution",
         "unihub_learning",
         "authentik",
         "glitchtip",
@@ -3277,9 +3288,9 @@ def test_review3936216994_user_data_gate_present_for_all_seven_dbs() -> None:
         # probe; otherwise schema-only restores for that label could
         # silently pass.
         assert f'"{label}"' in text, label
-    # Confirm the for-loop still iterates over all seven labels and the
+    # Confirm the for-loop still iterates over all eight labels and the
     # row-data gate runs inside the loop body.
-    assert "for label in unihub mobiup_dwh unihub_identity unihub_retail unihub_learning authentik glitchtip" in text
+    assert "for label in unihub mobiup_dwh unihub_identity unihub_retail unihub_distribution unihub_learning authentik glitchtip" in text
     assert "user_data_present" in text
     assert "restored database $database contains user relations but no row data" in text
     # The acceptance evidence writer must serialize the per-DB flag.
@@ -4386,7 +4397,6 @@ def test_topology251_arbitrary_extra_component_is_rejected(tmp_path: Path) -> No
     extra_component = (
         f"postgres/unihub_rogue_{FUTURE_STAMP}.dump"
     )
-    extra_lines = []
     manifest_text = _valid_manifest_text()
     # Inject one extra entry after the canonical 9.
     manifest_lines = manifest_text.rstrip("\n").split("\n")
@@ -4428,3 +4438,234 @@ def test_topology251_metadata_file_count_eight_against_nine_entry_manifest_fails
     assert "does not match" in completed.stderr
     assert "manifest entry count" in completed.stderr
     assert not (tmp_path / "staged.result").exists()
+
+
+# ---------------------------------------------------------------------------
+# Codex review 5120769319 / comment 3940210418 (P1): the postgres-restore
+# loop in ops/k5-isolated-restore.sh MUST execute exactly the eight
+# authoritative PostgreSQL labels, and the final-evidence writer MUST
+# fail closed if the recorded restore rows do not match that exact set.
+# ---------------------------------------------------------------------------
+
+
+EXPECTED_PG_RESTORE_LABELS = (
+    "unihub",
+    "mobiup_dwh",
+    "unihub_identity",
+    "unihub_retail",
+    "unihub_distribution",
+    "unihub_learning",
+    "authentik",
+    "glitchtip",
+)
+
+
+def _extract_postgres_restore_loop_block() -> str:
+    """Extract the postgres-restore loop body from the entrypoint.
+
+    The extraction is bounded: from the start of the CURRENT_PHASE=
+    "postgres-restore" assignment through the matching `done` that
+    closes the loop. Both bounds are anchored to entrypoint tokens,
+    so a future refactor that renames the phase or the loop terminator
+    will surface here rather than silently passing.
+    """
+    text = ENTRYPOINT.read_text(encoding="utf-8")
+    start = text.index('CURRENT_PHASE="postgres-restore"')
+    end_marker = 'CURRENT_PHASE="visits-restore"'
+    end = text.index(end_marker, start)
+    return text[start:end]
+
+
+def test_distribution_p1_postgres_restore_loop_has_exactly_eight_labels() -> None:
+    # The postgres-restore loop body must iterate EXACTLY the eight
+    # authoritative PostgreSQL labels, in the documented canonical order,
+    # no more and no fewer.
+    block = _extract_postgres_restore_loop_block()
+    # Pull every token after the `for label in` and before the `; do`.
+    match = re.search(
+        r"for label in\s+([^\n]+?)\s*;\s*do",
+        block,
+    )
+    assert match is not None, "postgres-restore loop header missing"
+    raw = match.group(1)
+    actual = tuple(raw.split())
+    assert actual == EXPECTED_PG_RESTORE_LABELS, (
+        f"postgres-restore loop labels diverged: actual={actual} "
+        f"expected={EXPECTED_PG_RESTORE_LABELS}"
+    )
+    assert len(actual) == 8
+
+
+def test_distribution_p1_distribution_uses_same_restore_row_presence_path() -> None:
+    # unihub_distribution must share the EXACT same restore body as
+    # every other label: the same createdb + pg_restore + relation
+    # count + row-presence probe + postgres-restores.tsv write. There
+    # must be no per-label special-casing that would let one label
+    # bypass the row-presence gate.
+    block = _extract_postgres_restore_loop_block()
+    # The bash loop body unconditionally writes one postgres-restores.tsv
+    # row per iteration with the same printf format. Confirm exactly one
+    # such printf exists and that the row-presence probe is inside the
+    # loop body (not gated by any per-label condition).
+    assert block.count(">>\"$WORK/postgres-restores.tsv\"") == 1
+    # The row-presence die() helper appears in two adjacent error paths
+    # (boolean parse failure and absent-row failure); at minimum the
+    # probe MUST be present so unihub_distribution cannot be silently
+    # exempted from the gate.
+    assert block.count('restored database $database row-presence validation') >= 1
+    # The row-presence probe must execute for every iteration, including
+    # the unihub_distribution iteration, because the loop variable
+    # `database` resolves identically and the check is not conditional
+    # on any label.
+    assert "[ \"$user_data_present\" != \"t\" ]" in block
+    # The label variable is consumed by the printf and the dump path,
+    # so unihub_distribution cannot be silently filtered out.
+    assert "${label}_${STAMP}.dump" in block
+    assert '"$label"' in block
+
+
+def _build_evidence_args_with_restores(
+    tmp_path: Path, restore_labels: tuple[str, ...]
+) -> tuple[list[str], Path]:
+    """Build the acceptance-program args for a synthetic restores.tsv
+    containing the supplied labels (in canonical order) and the same
+    otherwise-success arguments as `_success_evidence_fixture`."""
+    evidence = tmp_path / "evidence.json"
+    evidence.write_text("original\n", encoding="utf-8")
+    expected = tmp_path / "expected.tsv"
+    expected.write_text(
+        "postgres/unihub_20260903_010203.dump" + chr(9) + "a" * 64 + chr(10),
+        encoding="utf-8",
+    )
+    migration = tmp_path / "migration-meta.json"
+    migration.write_text(
+        json.dumps(
+            {"head": "001_initial.sql", "manifestSha256": "b" * 64, "count": 0, "migrations": {}}
+        ),
+        encoding="utf-8",
+    )
+    roles = tmp_path / "roles.txt"
+    roles.write_text("", encoding="utf-8")
+    restores = tmp_path / "restores.tsv"
+    lines = []
+    for label in restore_labels:
+        lines.append(
+            chr(9).join(
+                [
+                    label,
+                    f"dr_{label}",
+                    "2026-09-03T01:05:00Z",
+                    "2026-09-03T01:05:02Z",
+                    "2",
+                    "363",
+                ]
+            )
+        )
+    restores.write_text("\n".join(lines) + chr(10), encoding="utf-8")
+    business = tmp_path / "business.tsv"
+    business.write_text("stores" + chr(9) + "3" + chr(10), encoding="utf-8")
+    identity = os.stat(evidence).st_dev, os.stat(evidence).st_ino
+    args = [
+        str(evidence),
+        str(identity[0]),
+        str(identity[1]),
+        "k5-test",
+        FIXTURE_SHA,
+        FIXTURE_SHA,
+        FUTURE_STAMP,
+        "2026-09-03T01:02:03Z",
+        "2026-09-03T01:03:05Z",
+        "c" * 64,
+        "d" * 64,
+        "verified",
+        WEEKLY_HELPER_SHA256,
+        "2026-09-03T02:00:00Z",
+        "3597",
+        "3535",
+        "2026-09-03T01:04:00Z",
+        "2026-09-03T01:06:00Z",
+        "120",
+        "postgres:18-alpine",
+        "sha256:" + "e" * 64,
+        "k5-test-pg",
+        "55433",
+        str(expected),
+        str(migration),
+        str(roles),
+        str(restores),
+        "1",
+        str(business),
+        "f" * 64,
+        "Python 3.12",
+        "9899",
+        "0" * 64,
+        "pass",
+        "1" * 64,
+        "explicit",
+    ]
+    return args, evidence
+
+
+def test_distribution_p1_evidence_writer_accepts_exact_eight_rows(
+    tmp_path: Path,
+) -> None:
+    # The final-evidence writer must successfully record an evidence
+    # payload when the postgres-restore TSV contains EXACTLY the eight
+    # authoritative labels in canonical order.
+    args, evidence = _build_evidence_args_with_restores(
+        tmp_path, EXPECTED_PG_RESTORE_LABELS
+    )
+    completed = _run_python(_acceptance_program(), args)
+    assert completed.returncode == 0, completed.stderr
+    payload = json.loads(evidence.read_text(encoding="utf-8"))
+    # Even on success the maintained overall is still "fail" pending
+    # cleanup verification, but the recorded restores must match the
+    # exact set, in the exact order, with the eight authoritative
+    # labels so the eventual pass can be published.
+    databases = payload["postgresRestoreStatus"]["databases"]
+    assert [item["label"] for item in databases] == list(EXPECTED_PG_RESTORE_LABELS)
+    assert len(databases) == 8
+    # unihub_distribution must be present and follow unihub_retail.
+    assert "unihub_distribution" in [item["label"] for item in databases]
+
+
+def test_distribution_p1_evidence_writer_rejects_old_seven_rows_missing_distribution(
+    tmp_path: Path,
+) -> None:
+    # The pre-#251 restore shape (7 PG labels, no unihub_distribution)
+    # must be rejected at the fail-closed label validation gate. A
+    # PASS may never be published for this set.
+    legacy_labels = (
+        "unihub",
+        "mobiup_dwh",
+        "unihub_identity",
+        "unihub_retail",
+        "unihub_learning",
+        "authentik",
+        "glitchtip",
+    )
+    assert len(legacy_labels) == 7
+    args, evidence = _build_evidence_args_with_restores(tmp_path, legacy_labels)
+    completed = _run_python(_acceptance_program(), args)
+    assert completed.returncode != 0
+    assert "label set mismatch" in completed.stderr
+    assert "unihub_distribution" in completed.stderr
+    # The original evidence payload must remain unchanged.
+    assert evidence.read_text(encoding="utf-8") == "original\n"
+
+
+def test_distribution_p1_evidence_writer_rejects_arbitrary_ninth_pg_label(
+    tmp_path: Path,
+) -> None:
+    # Adding a ninth PostgreSQL restore label beyond the eight
+    # authoritative ones must also fail closed. The exact-set/equal-list
+    # validation has no slack for arbitrary extra databases.
+    extended_labels = EXPECTED_PG_RESTORE_LABELS + ("unihub_rogue",)
+    assert len(extended_labels) == 9
+    args, evidence = _build_evidence_args_with_restores(tmp_path, extended_labels)
+    completed = _run_python(_acceptance_program(), args)
+    assert completed.returncode != 0
+    assert "label set mismatch" in completed.stderr
+    assert "unihub_rogue" in completed.stderr
+    # The original evidence payload must remain unchanged.
+    assert evidence.read_text(encoding="utf-8") == "original\n"
