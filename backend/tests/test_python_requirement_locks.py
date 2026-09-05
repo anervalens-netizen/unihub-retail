@@ -1,6 +1,10 @@
 from __future__ import annotations
 
 import importlib.util
+import json
+import os
+import shutil
+import subprocess
 from pathlib import Path
 from typing import Any, cast
 
@@ -8,6 +12,7 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCRIPT_PATH = REPO_ROOT / "scripts" / "check_python_requirement_locks.py"
+DEPENDENCY_POLICY_PATH = REPO_ROOT / "scripts" / "check_dependency_policy.mjs"
 
 
 def _load_checker() -> Any:
@@ -34,6 +39,72 @@ def _verify(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, source: str, lock: 
     _write(tmp_path, "source.txt", source)
     _write(tmp_path, "lock.txt", lock)
     CHECKER.verify("source.txt", "lock.txt")
+
+
+def _git(repo: Path, *args: str) -> str:
+    completed = subprocess.run(
+        ["git", *args],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return completed.stdout.strip()
+
+
+def _run_pr_diff_policy(tmp_path: Path, changed_paths: list[str]) -> subprocess.CompletedProcess[str]:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _write(repo, "package.json", json.dumps({"overrides": {"nanoid": "3.3.18"}}) + "\n")
+    _write(
+        repo,
+        "package-lock.json",
+        json.dumps({"packages": {"node_modules/nanoid": {"version": "3.3.18"}}}) + "\n",
+    )
+    script_target = repo / "scripts" / "check_dependency_policy.mjs"
+    script_target.parent.mkdir(parents=True)
+    shutil.copy2(DEPENDENCY_POLICY_PATH, script_target)
+
+    requirement_paths = (
+        "backend/requirements.txt",
+        "backend/requirements.lock",
+        "backend/requirements-dev.txt",
+        "backend/requirements-dev.lock",
+    )
+    for rel in requirement_paths:
+        _write(repo, rel, "base\n")
+
+    _git(repo, "init", "-q")
+    _git(repo, "config", "user.email", "dependency-policy-test@example.invalid")
+    _git(repo, "config", "user.name", "dependency-policy-test")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-q", "-m", "base")
+    base_sha = _git(repo, "rev-parse", "HEAD")
+
+    for rel in changed_paths:
+        path = repo / rel
+        path.write_text(path.read_text(encoding="utf-8") + "changed\n", encoding="utf-8")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-q", "-m", "candidate")
+
+    event_path = tmp_path / "event.json"
+    event_path.write_text(
+        json.dumps({"pull_request": {"base": {"sha": base_sha}}}),
+        encoding="utf-8",
+    )
+    node = os.environ.get("RETAIL_NODE") or shutil.which("node")
+    if not node:
+        raise RuntimeError("node runtime is required for dependency-policy subprocess tests")
+    env = os.environ.copy()
+    env["GITHUB_EVENT_PATH"] = str(event_path)
+    return subprocess.run(
+        [node, "scripts/check_dependency_policy.mjs", "--pr-diff-only"],
+        cwd=repo,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
 
 
 def test_source_rejects_nested_requirement_directive(tmp_path: Path) -> None:
@@ -131,3 +202,38 @@ def test_verify_rejects_marker_mismatch(tmp_path: Path, monkeypatch: pytest.Monk
             'demo==1.0; python_version >= "3"\n',
             'demo==1.0 ; python_version >= "2" \\\n',
         )
+
+
+@pytest.mark.parametrize(
+    ("changed_paths", "missing_lock"),
+    [
+        (["backend/requirements.txt"], "backend/requirements.lock"),
+        (
+            ["backend/requirements.txt", "backend/requirements.lock"],
+            "backend/requirements-dev.lock",
+        ),
+        (["backend/requirements-dev.txt"], "backend/requirements-dev.lock"),
+    ],
+)
+def test_pr_diff_policy_rejects_missing_generated_lock(
+    tmp_path: Path,
+    changed_paths: list[str],
+    missing_lock: str,
+) -> None:
+    completed = _run_pr_diff_policy(tmp_path, changed_paths)
+    assert completed.returncode != 0
+    assert missing_lock in completed.stderr
+
+
+def test_pr_diff_policy_accepts_all_required_generated_locks(tmp_path: Path) -> None:
+    completed = _run_pr_diff_policy(
+        tmp_path,
+        [
+            "backend/requirements.txt",
+            "backend/requirements.lock",
+            "backend/requirements-dev.txt",
+            "backend/requirements-dev.lock",
+        ],
+    )
+    assert completed.returncode == 0, completed.stderr
+    assert "Dependency PR diff policy valid" in completed.stdout

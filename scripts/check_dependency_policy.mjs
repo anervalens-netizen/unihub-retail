@@ -50,12 +50,47 @@ if (changed) {
   requireChanged("backend/requirements-dev.txt", "backend/requirements-dev.lock");
 }
 
+if (process.argv.includes("--pr-diff-only")) {
+  process.stdout.write("Dependency PR diff policy valid\n");
+  process.exit(0);
+}
+
 const python = "backend/venv/bin/python";
 if (!fs.existsSync(python)) {
   throw new Error(`${python} is required to validate Python requirement-lock coherence`);
 }
+
+// Keep the new executable dependency-policy logic under focused regression
+// coverage even though generic changed-line coverage excludes scripts/.
+execFileSync(
+  python,
+  ["-I", "-m", "pytest", "-q", "backend/tests/test_python_requirement_locks.py"],
+  { stdio: "inherit" },
+);
+
 execFileSync(python, ["-I", "scripts/check_python_requirement_locks.py"], {
   stdio: "inherit",
 });
+
+// requirements-dev.lock is the CI environment, but production/release installs
+// requirements.lock. Resolve the entire runtime lock from a clean logical state
+// so every transitive requirement and hash must be complete and installable.
+execFileSync(
+  python,
+  [
+    "-I",
+    "-m",
+    "pip",
+    "install",
+    "--disable-pip-version-check",
+    "--quiet",
+    "--dry-run",
+    "--ignore-installed",
+    "--require-hashes",
+    "-r",
+    "backend/requirements.lock",
+  ],
+  { stdio: "inherit" },
+);
 
 process.stdout.write(`Dependency policy valid; nanoid=${installedNanoid}\n`);
