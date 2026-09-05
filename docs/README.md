@@ -64,6 +64,50 @@ Pentru o sesiune ChatGPT nouă: citește mai întâi current `main`, apoi Issue 
 și primul issue K1-K10 deschis/neblocat. SHA-urile și statusurile din issue-uri
 sunt snapshot-uri de evidence; GitHub current state rămâne sursa de adevăr.
 
+## Proveniența evidence-ului tehnic
+
+Pentru audituri, planuri de execuție și rapoarte tehnice noi sau actualizate care
+conțin afirmații empirice, folosește una dintre clasele de mai jos. Clasa spune
+**cum a fost verificată afirmația**, nu lifecycle-ul documentului; lifecycle-ul
+rămâne exclusiv în `catalog.json`.
+
+- `VERIFIED_STATIC` — confirmat direct în sursa/configurația exactă inspectată;
+- `VERIFIED_CI` — confirmat prin evidence CI legat de SHA/run exact;
+- `VERIFIED_RUNTIME` — observat într-un mediu declarat, cu identitate și moment
+  explicit;
+- `VERIFIED_REPRODUCED` — rerulat independent și reprodus;
+- `DECLARED` — afirmație documentată, dar nereprodusă independent în lucrarea
+  curentă;
+- `HISTORICAL` — evidence valabil numai pentru snapshot-ul trecut declarat.
+
+Un checkpoint empiric nou/actualizat trebuie să includă, unde se aplică:
+
+```text
+evidence-class: <VERIFIED_STATIC | VERIFIED_CI | VERIFIED_RUNTIME |
+                 VERIFIED_REPRODUCED | DECLARED | HISTORICAL>
+evidence-identity: <exact SHA / runtime identity / N/A>
+evidence-source: <file:line / CI run+job / command+environment / issue evidence>
+independently-reproduced: <yes | no | N/A>
+```
+
+Nu transforma `DECLARED` în `VERIFIED_*` fără verificarea corespunzătoare și nu
+retrofit-ui mecanic documente istorice. Pentru claims mixte, clasifică afirmația
+relevantă, nu întregul document cu o etichetă ambiguă.
+
+## Navigare: audituri și planuri istorice
+
+Fișierele istorice păstrate direct în `docs/` rămân la path-urile lor stabile
+pentru a evita churn de link-uri. Lista de mai jos este doar navigare; statusul
+curent trebuie citit întotdeauna din `catalog.json`:
+
+- [`AUDIT_TEHNIC_RETAIL_UNIHUB_REAUDIT_2026-07-15.md`](AUDIT_TEHNIC_RETAIL_UNIHUB_REAUDIT_2026-07-15.md);
+- [`PERFORMANCE_REVIEW_2026-07-22.md`](PERFORMANCE_REVIEW_2026-07-22.md);
+- [`PLAN_DEZVOLTARE_RETAIL_UNIHUB_URMATOAREA_VERSIUNE_2026-07-15.md`](PLAN_DEZVOLTARE_RETAIL_UNIHUB_URMATOAREA_VERSIUNE_2026-07-15.md);
+- [`PLAN_PERFORMANTA_OPERATIVITATE_2026-07-21.md`](PLAN_PERFORMANTA_OPERATIVITATE_2026-07-21.md);
+- [`PLAN_DEZVOLTARE_RETAIL_UNIHUB_10_10_2026-08-02.md`](PLAN_DEZVOLTARE_RETAIL_UNIHUB_10_10_2026-08-02.md);
+- [`PLAN_TEHNIC_RETAIL_UNIHUB_2026-08-04.md`](PLAN_TEHNIC_RETAIL_UNIHUB_2026-08-04.md);
+- [`PLAN_UNIC_UNIHUB_RETAIL_PESTE_9_2026-08-06.md`](PLAN_UNIC_UNIHUB_RETAIL_PESTE_9_2026-08-06.md).
+
 ## Evidence istoric
 
 - planul de closure Release B, acum istoric:
