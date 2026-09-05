@@ -18,7 +18,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 ENTRYPOINT = ROOT / "ops" / "k5-isolated-restore.sh"
-EXPECTED_ENTRYPOINT_SHA256 = "b6e7d9ba3a588b77c3f079e7f91ceffdb993a9b24eeb970e4a31684bed9b6d25"  # pragma: allowlist secret
+EXPECTED_ENTRYPOINT_SHA256 = "9218446f5c987371422669c807b98cec9a75f8c5fafd5c4f16220f5797d204a5"  # pragma: allowlist secret
 
 FUTURE_STAMP = "20260903_010203"
 COMPONENT_LABELS = (
@@ -3648,23 +3648,27 @@ def test_review3936446009_engine_backed_unusual_identifier_quoting_returns_true(
     assert asyncio.run(run()) is True
 
 
-def test_review3936446025_visits_expected_table_gate_present() -> None:
+def test_review3938278145_visits_expected_table_gate_present() -> None:
     text = ENTRYPOINT.read_text(encoding="utf-8")
-    assert 'VISITS_EXPECTED_TABLE="fieldops_visits"' in text
+    # The SQLite visits.db archive authority creates exactly `visits`
+    # (see backend/scripts/run_tests_isolated.sh). The gate must use
+    # that exact name and must record the bounded fact in evidence.
+    assert 'VISITS_EXPECTED_TABLE="visits"' in text
+    assert 'VISITS_EXPECTED_TABLE="fieldops_visits"' not in text
     assert "name='$VISITS_EXPECTED_TABLE'" in text
     assert "VISITS_EXPECTED_TABLE_COUNT" in text
     assert "EXISTS(SELECT 1 FROM $VISITS_EXPECTED_TABLE LIMIT 1)" in text
-    # The acceptance evidence must record the bounded fact.
-    assert '"expectedTable": "fieldops_visits"' in text
+    assert '"expectedTable": "visits"' in text
+    assert '"expectedTable": "fieldops_visits"' not in text
     assert '"rowDataPresent": True' in text
 
 
-def test_review3936446025_sqlite_missing_expected_table_fails(tmp_path: Path) -> None:
+def test_review3938278145_sqlite_missing_expected_table_fails(tmp_path: Path) -> None:
     import sqlite3 as _sqlite3
     db = tmp_path / "missing.db"
     conn = _sqlite3.connect(str(db))
     conn.close()
-    expected = "fieldops_visits"
+    expected = "visits"
     count = subprocess.run(
         [
             "sqlite3",
@@ -3678,12 +3682,12 @@ def test_review3936446025_sqlite_missing_expected_table_fails(tmp_path: Path) ->
     assert count == "0"
 
 
-def test_review3936446025_sqlite_zero_row_expected_table_fails(tmp_path: Path) -> None:
+def test_review3938278145_sqlite_zero_row_expected_table_fails(tmp_path: Path) -> None:
     import sqlite3 as _sqlite3
     db = tmp_path / "zero.db"
     conn = _sqlite3.connect(str(db))
     try:
-        conn.execute("CREATE TABLE fieldops_visits (id INTEGER PRIMARY KEY)")
+        conn.execute("CREATE TABLE visits (id INTEGER PRIMARY KEY)")
         conn.commit()
     finally:
         conn.close()
@@ -3691,7 +3695,7 @@ def test_review3936446025_sqlite_zero_row_expected_table_fails(tmp_path: Path) -
         [
             "sqlite3",
             str(db),
-            "SELECT count(*) FROM sqlite_master WHERE type='table' AND name='fieldops_visits';",
+            "SELECT count(*) FROM sqlite_master WHERE type='table' AND name='visits';",
         ],
         check=True,
         capture_output=True,
@@ -3702,7 +3706,7 @@ def test_review3936446025_sqlite_zero_row_expected_table_fails(tmp_path: Path) -
         [
             "sqlite3",
             str(db),
-            "SELECT EXISTS(SELECT 1 FROM fieldops_visits LIMIT 1);",
+            "SELECT EXISTS(SELECT 1 FROM visits LIMIT 1);",
         ],
         check=True,
         capture_output=True,
@@ -3711,13 +3715,13 @@ def test_review3936446025_sqlite_zero_row_expected_table_fails(tmp_path: Path) -
     assert row_raw == "0"
 
 
-def test_review3936446025_sqlite_one_row_expected_table_passes(tmp_path: Path) -> None:
+def test_review3938278145_sqlite_one_row_expected_table_passes(tmp_path: Path) -> None:
     import sqlite3 as _sqlite3
     db = tmp_path / "one.db"
     conn = _sqlite3.connect(str(db))
     try:
-        conn.execute("CREATE TABLE fieldops_visits (id INTEGER PRIMARY KEY)")
-        conn.execute("INSERT INTO fieldops_visits VALUES (1)")
+        conn.execute("CREATE TABLE visits (id INTEGER PRIMARY KEY)")
+        conn.execute("INSERT INTO visits VALUES (1)")
         conn.commit()
     finally:
         conn.close()
@@ -3725,7 +3729,7 @@ def test_review3936446025_sqlite_one_row_expected_table_passes(tmp_path: Path) -
         [
             "sqlite3",
             str(db),
-            "SELECT count(*) FROM sqlite_master WHERE type='table' AND name='fieldops_visits';",
+            "SELECT count(*) FROM sqlite_master WHERE type='table' AND name='visits';",
         ],
         check=True,
         capture_output=True,
@@ -3736,7 +3740,7 @@ def test_review3936446025_sqlite_one_row_expected_table_passes(tmp_path: Path) -
         [
             "sqlite3",
             str(db),
-            "SELECT EXISTS(SELECT 1 FROM fieldops_visits LIMIT 1);",
+            "SELECT EXISTS(SELECT 1 FROM visits LIMIT 1);",
         ],
         check=True,
         capture_output=True,
@@ -3745,17 +3749,46 @@ def test_review3936446025_sqlite_one_row_expected_table_passes(tmp_path: Path) -
     assert row_raw == "1"
 
 
-def test_review3936446025_sqlite_unrelated_table_does_not_satisfy_gate(
+def test_review3938278145_sqlite_fieldops_visits_only_does_not_satisfy_gate(
     tmp_path: Path,
 ) -> None:
-    # fieldops_visits is empty; an unrelated table has rows. The
-    # bounded expected-table gate must still FAIL because the exact
-    # expected table is empty.
+    # visits is missing but fieldops_visits has rows. The bounded
+    # expected-table gate must FAIL because the exact `visits`
+    # expected table is absent, regardless of an unrelated
+    # fieldops_visits presence.
+    import sqlite3 as _sqlite3
+    db = tmp_path / "fieldops_only.db"
+    conn = _sqlite3.connect(str(db))
+    try:
+        conn.execute("CREATE TABLE fieldops_visits (id INTEGER PRIMARY KEY)")
+        conn.execute("INSERT INTO fieldops_visits VALUES (1)")
+        conn.commit()
+    finally:
+        conn.close()
+    visits_count = subprocess.run(
+        [
+            "sqlite3",
+            str(db),
+            "SELECT count(*) FROM sqlite_master WHERE type='table' AND name='visits';",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    assert visits_count == "0"
+
+
+def test_review3938278145_sqlite_unrelated_table_does_not_satisfy_gate(
+    tmp_path: Path,
+) -> None:
+    # visits is empty; an unrelated table has rows. The bounded
+    # expected-table gate must still FAIL because the exact expected
+    # table is empty.
     import sqlite3 as _sqlite3
     db = tmp_path / "unrelated.db"
     conn = _sqlite3.connect(str(db))
     try:
-        conn.execute("CREATE TABLE fieldops_visits (id INTEGER PRIMARY KEY)")
+        conn.execute("CREATE TABLE visits (id INTEGER PRIMARY KEY)")
         conn.execute("CREATE TABLE k5_unrelated (id INTEGER PRIMARY KEY)")
         conn.execute("INSERT INTO k5_unrelated VALUES (1)")
         conn.commit()
@@ -3765,7 +3798,7 @@ def test_review3936446025_sqlite_unrelated_table_does_not_satisfy_gate(
         [
             "sqlite3",
             str(db),
-            "SELECT EXISTS(SELECT 1 FROM fieldops_visits LIMIT 1);",
+            "SELECT EXISTS(SELECT 1 FROM visits LIMIT 1);",
         ],
         check=True,
         capture_output=True,
@@ -3838,3 +3871,453 @@ def test_review3936446029_generation_manifest_sanitized_open_error_format(
     assert "artifact=generation-manifest" in completed.stderr
     assert "error=" in completed.stderr
     assert "errno=" in completed.stderr
+
+
+# ---------------------------------------------------------------------------
+# Codex 3937141403: bind readiness to the exact launched APP_PID
+# ---------------------------------------------------------------------------
+
+
+def _app_owns_loopback_listener_source() -> str:
+    """Extract the exact app_owns_loopback_listener function source from
+    the production entrypoint so the focused regressions execute the
+    same bytes the readiness loop does.
+    """
+    return _shell_function_source(
+        "app_owns_loopback_listener", chr(10) + "terminate_application()"
+    )
+
+
+def _run_app_owns_loopback_listener(pid: str, port: str) -> subprocess.CompletedProcess[str]:
+    source = _app_owns_loopback_listener_source()
+    # Ensure the harness has a newline between the extracted function
+    # source (which ends with `}`) and the call site so bash can parse
+    # the function-definition closer and the call as separate lines.
+    if not source.endswith("\n"):
+        source = source + "\n"
+    # Propagate the helper's exit status out of the subprocess: the
+    # last command must be the helper call, not a printf that masks
+    # its nonzero status.
+    harness = (
+        "set -u\n"
+        + source
+        + f"app_owns_loopback_listener {shlex.quote(pid)} {shlex.quote(port)}\n"
+    )
+    return subprocess.run(
+        ["bash", "-c", harness],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+
+def _spawn_loopback_listener(port: int) -> subprocess.Popen[bytes]:
+    """Start a long-lived Python child that bind/listens on
+    127.0.0.1:<port> so we can verify the ownership check.
+    """
+    script = (
+        "import socket, time, sys\n"
+        "s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)\n"
+        "s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)\n"
+        "s.bind(('127.0.0.1', %d))\n"
+        "s.listen(8)\n"
+        "sys.stdout.write('ready\\n')\n"
+        "sys.stdout.flush()\n"
+        "while True:\n"
+        "    time.sleep(60)\n"
+    ) % port
+    return subprocess.Popen(
+        [sys.executable, "-c", script],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+
+
+def test_review3937141403_app_owns_loopback_listener_helper_is_present() -> None:
+    text = ENTRYPOINT.read_text(encoding="utf-8")
+    assert "app_owns_loopback_listener()" in text
+    assert "/proc/net/tcp" in text
+    assert "0100007F" in text
+    # The check must not lean on lsof/ss/netstat invocations. Comment
+    # prose that names those tools as explicitly forbidden is allowed.
+    for forbidden in ("$(lsof ", " $(ss ", "$(netstat ", "lsof -", " ss -", "netstat -"):
+        assert forbidden not in text, forbidden
+    # A `ss ` or `lsof` substring inside the helper docstring is
+    # permitted; the helper must not invoke those binaries.
+    helper_start = text.index("app_owns_loopback_listener() {")
+    helper_end = text.index(chr(10) + "terminate_application() {", helper_start)
+    helper_body = text[helper_start:helper_end]
+    assert "$(lsof" not in helper_body
+    assert "$(ss" not in helper_body
+    assert "$(netstat" not in helper_body
+
+
+def test_review3937141403_own_listener_for_pid_and_port_passes() -> None:
+    if not Path("/proc/net/tcp").exists():
+        pytest.skip("Linux /proc required")
+    import socket as _socket
+    sock = _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM)
+    sock.bind(("127.0.0.1", 0))
+    port = sock.getsockname()[1]
+    sock.close()
+    proc = _spawn_loopback_listener(port)
+    try:
+        assert proc.stdout is not None
+        assert proc.stdout.readline().strip() == b"ready"
+        completed = _run_app_owns_loopback_listener(str(proc.pid), str(port))
+        assert completed.returncode == 0, completed.stderr
+    finally:
+        proc.terminate()
+        proc.wait(timeout=10)
+
+
+def test_review3937141403_wrong_pid_for_owned_port_fails() -> None:
+    # Process A owns the listener; process B is a different live PID.
+    # The check against (B, A_port) must FAIL.
+    if not Path("/proc/net/tcp").exists():
+        pytest.skip("Linux /proc required")
+    import socket as _socket
+    sock = _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM)
+    sock.bind(("127.0.0.1", 0))
+    port = sock.getsockname()[1]
+    sock.close()
+    owner = _spawn_loopback_listener(port)
+    try:
+        assert owner.stdout is not None
+        assert owner.stdout.readline().strip() == b"ready"
+        # Spawn a sibling that owns no listener.
+        sibling_script = "import time; time.sleep(120)\n"
+        sibling = subprocess.Popen(
+            [sys.executable, "-c", sibling_script]
+        )
+        try:
+            completed = _run_app_owns_loopback_listener(
+                str(sibling.pid), str(port)
+            )
+            assert completed.returncode != 0
+        finally:
+            sibling.terminate()
+            sibling.wait(timeout=10)
+    finally:
+        owner.terminate()
+        owner.wait(timeout=10)
+
+
+def test_review3937141403_correct_pid_wrong_unowned_port_fails() -> None:
+    # A live PID that owns NO listener at all must FAIL the ownership
+    # check, even when supplied with a syntactically valid port.
+    if not Path("/proc/net/tcp").exists():
+        pytest.skip("Linux /proc required")
+    import socket as _socket
+    sock = _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM)
+    sock.bind(("127.0.0.1", 0))
+    occupied_port = sock.getsockname()[1]
+    sock.close()
+    # Take the port down so the orphan port is unowned.
+    temp_listener = _spawn_loopback_listener(occupied_port)
+    try:
+        assert temp_listener.stdout is not None
+        assert temp_listener.stdout.readline().strip() == b"ready"
+    finally:
+        temp_listener.terminate()
+        temp_listener.wait(timeout=10)
+    idle_script = "import time; time.sleep(120)\n"
+    idle = subprocess.Popen([sys.executable, "-c", idle_script])
+    try:
+        completed = _run_app_owns_loopback_listener(
+            str(idle.pid), str(occupied_port)
+        )
+        assert completed.returncode != 0
+    finally:
+        idle.terminate()
+        idle.wait(timeout=10)
+
+
+def test_review3937141403_dead_pid_fails() -> None:
+    # A pid that has already exited must FAIL closed.
+    if not Path("/proc/net/tcp").exists():
+        pytest.skip("Linux /proc required")
+    gone = subprocess.Popen([sys.executable, "-c", "pass"])
+    gone.wait(timeout=10)
+    pid = gone.pid
+    # Confirm the pid is no longer alive (process recycled already).
+    if Path(f"/proc/{pid}").exists():
+        # Wait briefly for the kernel to reap; if the pid is recycled,
+        # the test cannot proceed deterministically.
+        gone.wait()
+        if Path(f"/proc/{pid}").exists():
+            pytest.skip("pid still present; cannot build dead-pid fixture")
+    completed = _run_app_owns_loopback_listener(str(pid), "9899")
+    assert completed.returncode != 0
+
+
+def test_review3937141403_invalid_pid_and_port_fail_closed() -> None:
+    if not Path("/proc/net/tcp").exists():
+        pytest.skip("Linux /proc required")
+    # Non-numeric pid and port must fail closed.
+    for pid_value, port_value in [
+        ("abc", "9899"),
+        ("123", "xyz"),
+        ("123", "0"),
+        ("123", "70000"),
+    ]:
+        completed = _run_app_owns_loopback_listener(pid_value, port_value)
+        assert completed.returncode != 0, (pid_value, port_value)
+
+
+def test_review3937141403_readiness_sequence_prevents_unrelated_acceptance() -> None:
+    # Source/control-flow assertion: the readiness loop must call
+    # app_process_alive, app_owns_loopback_listener (pre-probe),
+    # probe_json for /livez /health /readyz, app_process_alive
+    # (post-probe), and app_owns_loopback_listener (post-probe)
+    # BEFORE assigning ready=1.
+    text = ENTRYPOINT.read_text(encoding="utf-8")
+    ready_section_start = text.index("ready=0\nfor _ in $(seq 1 60)")
+    ready_section_end = text.index("[ \"$ready\" -eq 1 ] || die", ready_section_start)
+    section = text[ready_section_start:ready_section_end]
+
+    pre_probe_ownership = section.index('app_owns_loopback_listener "$APP_PID" "$APP_PORT"')
+    livez_probe = section.index('probe_json /livez')
+    health_probe = section.index('probe_json /health')
+    readyz_probe = section.index('probe_json /readyz')
+    readyz_to_post_probe_ownership = section.index(
+        'app_owns_loopback_listener "$APP_PID" "$APP_PORT"',
+        readyz_probe,
+    )
+    post_probe_liveness = section.index("app_process_alive", readyz_probe)
+    ready_set = section.index("ready=1", readyz_probe)
+
+    assert pre_probe_ownership < livez_probe < health_probe < readyz_probe
+    assert post_probe_liveness < ready_set
+    assert readyz_to_post_probe_ownership < ready_set
+    # Ownership MUST be re-checked AFTER the post-probe liveness check
+    # so a process that died mid-probe cannot satisfy readiness.
+    assert post_probe_liveness < readyz_to_post_probe_ownership
+
+
+# ---------------------------------------------------------------------------
+# Codex 3938278149: propagate final evidence writer failure
+# ---------------------------------------------------------------------------
+
+
+def _update_final_evidence_source() -> str:
+    """Extract the exact update_final_evidence function source so the
+    focused regression runs the same bytes the cleanup trap calls.
+    """
+    text = ENTRYPOINT.read_text(encoding="utf-8")
+    start = text.index("update_final_evidence() {")
+    end = text.index(chr(10) + "cleanup() {", start)
+    return text[start:end]
+
+
+def _shadowed_python_failure(tmp_path: Path) -> Path:
+    """Build a PATH-shadow `python3` that consumes stdin (the
+    heredoc body) and exits nonzero deterministically. The shadowed
+    binary is isolated to the test subprocess so other pytest tests
+    keep using the real interpreter.
+    """
+    shadow = tmp_path / "shadow"
+    shadow.mkdir()
+    wrapper = shadow / "python3"
+    wrapper.write_text(
+        "#!/usr/bin/env bash\n"
+        "# Deterministic failure injection: consume any heredoc body on\n"
+        "# stdin, then exit 42. Other tests do not see this PATH.\n"
+        "cat >/dev/null\n"
+        "exit 42\n",
+        encoding="utf-8",
+    )
+    wrapper.chmod(0o755)
+    return shadow
+
+
+def test_review3938278149_update_final_evidence_propagates_writer_failure(
+    tmp_path: Path,
+) -> None:
+    # The exact regression: an old evidence file is present and
+    # stat-able; the final Python writer fails; capture_evidence_identity
+    # must NOT be reached; update_final_evidence must return nonzero.
+    shadow = _shadowed_python_failure(tmp_path)
+    evidence = tmp_path / "evidence.json"
+    evidence.write_text(
+        json.dumps(
+            {
+                "schemaVersion": "k5/1",
+                "kind": "restore-exercise-evidence",
+                "result": "fail",
+                "cleanupStatus": "pending",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    identity = os.stat(evidence)
+
+    captured_sentinel = tmp_path / "sentinel.txt"
+    function_source = _update_final_evidence_source()
+    if not function_source.endswith("\n"):
+        function_source = function_source + "\n"
+    # Inline the function source verbatim, then run a sentinel
+    # capture_evidence_identity override that records reachability so
+    # we can prove the production helper never calls it on writer
+    # failure. The production source is unmodified: only a same-named
+    # local override shadows it for this regression.
+    harness = (
+        "set +e\n"
+        "EVIDENCE_CREATED=1\n"
+        f"EVIDENCE_OUT={shlex.quote(str(evidence))}\n"
+        f"EVIDENCE_DEVICE={identity.st_dev}\n"
+        f"EVIDENCE_INODE={identity.st_ino}\n"
+        f"CLEANUP_STATUS=pass\n"
+        f"SOURCE_BACKUP_MUTATION=false\n"
+        f"RESULT=pass\n"
+        f"CURRENT_PHASE=\n"
+        f"FAILURE_REASON=\n"
+        f"DOCKER_RM_STATUS=pass\n"
+        f"DOCKER_VOLUME_RM_STATUS=pass\n"
+        f"DOCKER_PS_STATUS=pass\n"
+        f"DOCKER_VOLUME_LS_STATUS=pass\n"
+        f"APP_PROCESS_STATUS=terminated\n"
+        "capture_evidence_identity() {\n"
+        f"  printf 'identity-called\\n' > {shlex.quote(str(captured_sentinel))}\n"
+        "  return 0\n"
+        "}\n"
+        + function_source
+        + "update_final_evidence\n"
+    )
+    env = os.environ.copy()
+    env["PATH"] = f"{shadow}:{env['PATH']}"
+    completed = subprocess.run(
+        ["bash", "-c", harness],
+        check=False,
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+    # The writer failed (exit 42), so the helper must propagate that
+    # exact nonzero status. The bash harness's last command IS the
+    # helper call, so the subprocess returncode mirrors it.
+    assert completed.returncode == 42, completed.stderr
+    # The shadowed capture_evidence_identity must NOT have run.
+    assert not captured_sentinel.exists(), completed.stdout
+    # The old evidence file must remain present and stat-able.
+    assert evidence.exists()
+    after = json.loads(evidence.read_text(encoding="utf-8"))
+    assert after["result"] == "fail"
+    assert after["cleanupStatus"] == "pending"
+
+
+def test_review3938278149_update_final_evidence_source_preserves_writer_status() -> None:
+    # Narrow source/control-flow assertion: the helper must capture
+    # the Python writer's exit code explicitly (NOT via `!`), and
+    # capture_evidence_identity must appear only after the writer
+    # status has been validated as zero.
+    source = _update_final_evidence_source()
+    # The writer status must be captured via $? into a local.
+    assert "writer_rc=$?" in source
+    # The helper must early-return on writer nonzero.
+    assert '[ "$writer_rc" -eq 0 ] || return "$writer_rc"' in source
+    # capture_evidence_identity must appear AFTER the writer-status
+    # guard, never unconditionally after the heredoc.
+    helper_end_idx = source.rindex("capture_evidence_identity")
+    guard_idx = source.index('[ "$writer_rc" -eq 0 ] || return "$writer_rc"')
+    assert guard_idx < helper_end_idx
+    # The anti-pattern `if ! python3` is absent as code (it would
+    # clobber $?); it may only appear inside a comment that names it
+    # as a forbidden pattern.
+    non_comment = chr(10).join(
+        line for line in source.splitlines()
+        if not line.lstrip().startswith("#")
+    )
+    assert "if ! python3" not in non_comment
+    # capture_evidence_identity must NOT appear unconditionally after
+    # the heredoc terminator (i.e., outside the writer-status guard).
+    after_heredoc = source.split("PY\n", 1)[1]
+    # The first capture_evidence_identity call in the post-heredoc
+    # body must be preceded by the writer-status guard.
+    assert "writer_rc" in after_heredoc.split("capture_evidence_identity", 1)[0]
+
+
+def test_review3938278149_final_cleanup_path_cannot_publish_pass_after_writer_failure(
+    tmp_path: Path,
+) -> None:
+    # Drive the production cleanup() control flow with the same writer
+    # failure injection: the final cleanup/PASS path cannot exit 0
+    # and cannot leave result=pass when the Python writer fails. The
+    # harness mirrors the production cleanup() sequence:
+    #   1. Call update_final_evidence; on nonzero, flip RESULT/CLEANUP
+    #      to fail and capture the failure reason.
+    #   2. Only on writer success do we ever set RESULT=CLEANUP=pass.
+    shadow = _shadowed_python_failure(tmp_path)
+    evidence = tmp_path / "evidence.json"
+    evidence.write_text(
+        json.dumps(
+            {
+                "schemaVersion": "k5/1",
+                "kind": "restore-exercise-evidence",
+                "result": "fail",
+                "cleanupStatus": "pending",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    identity = os.stat(evidence)
+    function_source = _update_final_evidence_source()
+    if not function_source.endswith("\n"):
+        function_source = function_source + "\n"
+    captured_sentinel = tmp_path / "identity-was-called.txt"
+    sidecar = tmp_path / "post.txt"
+    harness = (
+        "set +e\n"
+        "RESULT=pass\n"
+        "CLEANUP_STATUS=pass\n"
+        "FAILURE_REASON=\n"
+        "CURRENT_PHASE=service-acceptance\n"
+        "APP_PROCESS_STATUS=terminated\n"
+        "DOCKER_RM_STATUS=pass\n"
+        "DOCKER_VOLUME_RM_STATUS=pass\n"
+        "DOCKER_PS_STATUS=pass\n"
+        "DOCKER_VOLUME_LS_STATUS=pass\n"
+        "SOURCE_BACKUP_MUTATION=false\n"
+        f"EVIDENCE_OUT={shlex.quote(str(evidence))}\n"
+        f"EVIDENCE_DEVICE={identity.st_dev}\n"
+        f"EVIDENCE_INODE={identity.st_ino}\n"
+        f"EVIDENCE_CREATED=1\n"
+        "capture_evidence_identity() {\n"
+        f"  printf '1\\n' > {shlex.quote(str(captured_sentinel))}\n"
+        "  return 0\n"
+        "}\n"
+        + function_source
+        # Mirror the production cleanup() sequencing for the final
+        # evidence publication step. The PASS branch is reachable
+        # ONLY when update_final_evidence returns 0.
+        + "if ! update_final_evidence; then\n"
+        + "  CLEANUP_STATUS=fail\n"
+        + "  RESULT=fail\n"
+        + "  FAILURE_REASON='final evidence publication failed; durable evidence remains non-pass'\n"
+        + "fi\n"
+        + "printf 'final_result=%s\\nfinal_cleanup=%s\\nfinal_reason=%s\\n' \"$RESULT\" \"$CLEANUP_STATUS\" \"$FAILURE_REASON\" > "
+        + shlex.quote(str(sidecar)) + "\n"
+        + "if [ \"$RESULT\" = pass ]; then exit 0; else exit 1; fi\n"
+    )
+    env = os.environ.copy()
+    env["PATH"] = f"{shadow}:{env['PATH']}"
+    completed = subprocess.run(
+        ["bash", "-c", harness],
+        check=False,
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+    assert completed.returncode == 1, completed.stderr
+    sidecar_text = sidecar.read_text(encoding="utf-8")
+    assert "final_result=fail" in sidecar_text
+    assert "final_cleanup=fail" in sidecar_text
+    assert "final_reason=" in sidecar_text
+    # capture_evidence_identity must NOT have been reached.
+    assert not captured_sentinel.exists()
+    assert evidence.exists()
+    payload = json.loads(evidence.read_text(encoding="utf-8"))
+    assert payload["result"] == "fail"
+    assert payload["cleanupStatus"] == "pending"

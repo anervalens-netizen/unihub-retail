@@ -158,6 +158,90 @@ app_process_alive() {
   [ "$state" != "Z" ]
 }
 
+# Verify that the exact launched APP_PID owns the 127.0.0.1 listener on
+# APP_PORT. The check uses only the existing Linux /proc trust boundary
+# (no lsof / ss / netstat / root) and fails closed on any malformed,
+# ambiguous, missing, or unresolvable state. The helper returns 0 ONLY
+# when ALL of the following are simultaneously true for the parsed
+# numeric pid and port:
+#   * /proc/<pid>/fd contains a symlink of the form socket:[<inode>]
+#     whose extracted inode is present in /proc/net/tcp
+#   * the matching /proc/net/tcp row reports state 0A (LISTEN)
+#   * the local IPv4 address column equals 0100007F (127.0.0.1)
+#   * the local port column equals the exact APP_PORT (big-endian hex)
+# Any single deviation fails nonzero; an ambiguous result can never
+# satisfy readiness.
+app_owns_loopback_listener() {
+  local pid="$1"
+  local port="$2"
+  [[ "$pid" =~ ^[0-9]+$ ]] || return 1
+  [[ "$port" =~ ^[0-9]+$ ]] || return 1
+  [ "$port" -ge 1 ] && [ "$port" -le 65535 ] || return 1
+
+  local port_hex
+  port_hex="$(printf '%04X' "$port")"
+
+  python3 - "$pid" "$port" "$port_hex" <<'PY'
+import os
+import sys
+
+pid_str, port_str, port_hex = sys.argv[1], sys.argv[2], sys.argv[3]
+port_hex = port_hex.upper()
+
+# 127.0.0.1 in /proc/net/tcp is little-endian byte order: 127.0.0.1
+# becomes 0100007F (0x01,0x00,0x00,0x7F).
+expected_local = "0100007F:" + port_hex
+
+listening_inodes = set()
+try:
+    with open("/proc/net/tcp", "r", encoding="utf-8") as source:
+        raw_lines = source.readlines()
+except OSError:
+    sys.exit(1)
+
+for line in raw_lines[1:]:
+    parts = line.split()
+    if len(parts) < 10:
+        continue
+    local = parts[1]
+    state = parts[3]
+    inode = parts[9]
+    # 0A is the standard Linux TCP LISTEN state. Anything else is
+    # not an accept-listening socket and cannot satisfy readiness.
+    if state != "0A":
+        continue
+    if local.upper() != expected_local:
+        continue
+    listening_inodes.add(inode)
+
+if not listening_inodes:
+    sys.exit(1)
+
+fd_dir = "/proc/" + pid_str + "/fd"
+try:
+    entries = os.listdir(fd_dir)
+except OSError:
+    sys.exit(1)
+
+matched = False
+for entry in entries:
+    try:
+        target = os.readlink(fd_dir + "/" + entry)
+    except OSError:
+        continue
+    if not (target.startswith("socket:[") and target.endswith("]")):
+        continue
+    candidate = target[len("socket:["):-1]
+    if candidate in listening_inodes:
+        matched = True
+        break
+
+if not matched:
+    sys.exit(1)
+sys.exit(0)
+PY
+}
+
 terminate_application() {
   if [ -z "$APP_PID" ] || [ "$APP_PROCESS_STATUS" = "not-started" ]; then
     APP_PROCESS_STATUS="not-started"
@@ -580,6 +664,15 @@ PY
 
 update_final_evidence() {
   [ "$EVIDENCE_CREATED" -eq 1 ] || return 0
+
+  # Preserve the Python writer's exit status explicitly. The `!`
+  # operator would clobber `$?`, and the cleanup trap runs under
+  # `set +e`, so the helper must propagate nonzero without relying on
+  # `if ! python3 ...`. capture_evidence_identity may run ONLY after
+  # the Python writer has provably succeeded; an old still-stat-able
+  # evidence file must never mask the writer failure.
+  local writer_rc
+
   python3 - "$EVIDENCE_OUT" "$EVIDENCE_DEVICE" "$EVIDENCE_INODE" \
     "$CLEANUP_STATUS" "$SOURCE_BACKUP_MUTATION" "$RESULT" \
     "$CURRENT_PHASE" "$FAILURE_REASON" "$DOCKER_RM_STATUS" "$DOCKER_VOLUME_RM_STATUS" \
@@ -672,6 +765,10 @@ else:
     payload["failureReason"] = None
 secure_replace((json.dumps(payload, indent=2) + "\n").encode("utf-8"))
 PY
+  writer_rc=$?
+
+  [ "$writer_rc" -eq 0 ] || return "$writer_rc"
+
   capture_evidence_identity
 }
 
@@ -1658,12 +1755,16 @@ VISITS_INTEGRITY="$(sqlite3 "$VISITS_COPY" 'PRAGMA integrity_check;')"
 VISITS_TABLE_COUNT="$(sqlite3 "$VISITS_COPY" "SELECT count(*) FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%';")"
 [[ "$VISITS_TABLE_COUNT" =~ ^[0-9]+$ ]] || die "invalid visits user table count"
 [ "$VISITS_TABLE_COUNT" -gt 0 ] || die "restored visits database contains no user tables"
-# Bounded expected-table gate: the FieldOps visits table must exist and
-# must contain at least one row. This rejects an empty expected table
-# while the integrity_check + general user-table count above already
-# approve of a structurally valid sqlite file. Row contents are never
-# serialized; only the bounded fact is recorded in evidence.
-VISITS_EXPECTED_TABLE="fieldops_visits"
+# Bounded expected-table gate: the actual visits table archived by the
+# repository SQLite authority (`CREATE TABLE visits ...` in
+# backend/scripts/run_tests_isolated.sh) must exist and must contain at
+# least one row. This rejects an empty expected table while the
+# integrity_check + general user-table count above already approve of a
+# structurally valid sqlite file. Row contents are never serialized;
+# only the bounded fact is recorded in evidence. The PostgreSQL
+# authority keeps its own `fieldops_visits` table; that is unrelated
+# and not consulted here.
+VISITS_EXPECTED_TABLE="visits"
 VISITS_EXPECTED_TABLE_COUNT="$(
   sqlite3 "$VISITS_COPY" \
     "SELECT count(*) FROM sqlite_master WHERE type='table' AND name='$VISITS_EXPECTED_TABLE';"
@@ -1838,15 +1939,28 @@ PY
 
 ready=0
 for _ in $(seq 1 60); do
-  if ! kill -0 "$APP_PID" >/dev/null 2>&1; then
+  app_process_alive ||
     die "application exited before readiness"
+
+  if ! app_owns_loopback_listener "$APP_PID" "$APP_PORT"; then
+    sleep 1
+    continue
   fi
+
   if probe_json /livez alive "$WORK/livez.json" &&
-    probe_json /health ok "$WORK/health.json" &&
-    probe_json /readyz ok "$WORK/readyz.json"; then
+     probe_json /health ok "$WORK/health.json" &&
+     probe_json /readyz ok "$WORK/readyz.json"; then
+
+    app_process_alive ||
+      die "application exited during readiness probes"
+
+    app_owns_loopback_listener "$APP_PID" "$APP_PORT" ||
+      die "application listener identity changed during readiness probes"
+
     ready=1
     break
   fi
+
   sleep 1
 done
 [ "$ready" -eq 1 ] || die "application readiness timeout"
@@ -2039,7 +2153,7 @@ payload = {
         "checksumMatch": True,
         "integrityCheck": "ok",
         "tableCount": int(visits_table_count),
-        "expectedTable": "fieldops_visits",
+        "expectedTable": "visits",
         "rowDataPresent": True,
     },
     "migrationVerificationStatus": {
