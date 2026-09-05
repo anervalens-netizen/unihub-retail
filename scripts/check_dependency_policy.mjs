@@ -76,7 +76,10 @@ if (!fs.existsSync(python)) {
 execFileSync(
   python,
   ["-I", "-m", "pytest", "-q", "backend/tests/test_python_requirement_locks.py"],
-  { stdio: "inherit" },
+  {
+    stdio: "inherit",
+    env: { ...process.env, RETAIL_NODE: process.execPath },
+  },
 );
 
 execFileSync(python, ["-I", "scripts/check_python_requirement_locks.py"], {
