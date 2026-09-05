@@ -18,7 +18,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
 ENTRYPOINT = ROOT / "ops" / "k5-isolated-restore.sh"
-EXPECTED_ENTRYPOINT_SHA256 = "85e62608c78a741b43937a392a7482ab27d8656395f4ee6773238870ea4e452d"  # pragma: allowlist secret
+EXPECTED_ENTRYPOINT_SHA256 = "157179bbc840687ae43a2dccd8bc6ecd7c03bb554a562123c9ccc517a5602ecf"  # pragma: allowlist secret
 
 FUTURE_STAMP = "20260903_010203"
 COMPONENT_LABELS = (
@@ -26,7 +26,6 @@ COMPONENT_LABELS = (
     "mobiup_dwh",
     "unihub_identity",
     "unihub_retail",
-    "unihub_distribution",
     "unihub_learning",
     "authentik",
     "glitchtip",
@@ -94,7 +93,7 @@ def _valid_result_lines(
     started_at: str = "2026-08-31T12:17:59+03:00",
     completed_at: str = "2026-08-31T12:19:01+03:00",
     status: str = "verified",
-    file_count: int = 9,
+    file_count: int = 8,
     source_release_sha: str = FIXTURE_SHA,
 ) -> list[str]:
     return [
@@ -288,7 +287,7 @@ def _run_metadata_program(
     *,
     stamp: str = FUTURE_STAMP,
     reference: str = "2026-09-03T02:00:00Z",
-    manifest_entries: int = 9,
+    manifest_entries: int = 8,
     source_release_sha: str = FIXTURE_SHA,
 ) -> subprocess.CompletedProcess[str]:
     tmp_path.mkdir(parents=True, exist_ok=True)
@@ -618,7 +617,6 @@ def _success_evidence_fixture(tmp_path: Path) -> tuple[list[str], Path, tuple[in
         "mobiup_dwh",
         "unihub_identity",
         "unihub_retail",
-        "unihub_distribution",
         "unihub_learning",
         "authentik",
         "glitchtip",
@@ -1007,7 +1005,7 @@ def test_finding1_symlink_generation_result_is_refused(tmp_path: Path) -> None:
     metadata.symlink_to(real)
     expected = tmp_path / "expected.tsv"
     expected.write_text(
-        "".join(f"postgres/component{i}_x.dump\t{'a' * 64}\n" for i in range(9)),
+        "".join(f"postgres/component{i}_x.dump\t{'a' * 64}\n" for i in range(8)),
         encoding="utf-8",
     )
     completed = _run_python(
@@ -3271,7 +3269,7 @@ def test_review3934742062_failure_reason_does_not_leak_private_root(
     assert "comp.bin" in completed.stderr
 
 
-def test_review3936216994_user_data_gate_present_for_all_eight_dbs() -> None:
+def test_review3936216994_user_data_gate_present_for_all_seven_dbs() -> None:
     # The script must probe row data for every label, in order.
     text = ENTRYPOINT.read_text(encoding="utf-8")
     for label in (
@@ -3279,7 +3277,6 @@ def test_review3936216994_user_data_gate_present_for_all_eight_dbs() -> None:
         "mobiup_dwh",
         "unihub_identity",
         "unihub_retail",
-        "unihub_distribution",
         "unihub_learning",
         "authentik",
         "glitchtip",
@@ -3288,9 +3285,9 @@ def test_review3936216994_user_data_gate_present_for_all_eight_dbs() -> None:
         # probe; otherwise schema-only restores for that label could
         # silently pass.
         assert f'"{label}"' in text, label
-    # Confirm the for-loop still iterates over all eight labels and the
+    # Confirm the for-loop still iterates over all seven labels and the
     # row-data gate runs inside the loop body.
-    assert "for label in unihub mobiup_dwh unihub_identity unihub_retail unihub_distribution unihub_learning authentik glitchtip" in text
+    assert "for label in unihub mobiup_dwh unihub_identity unihub_retail unihub_learning authentik glitchtip" in text
     assert "user_data_present" in text
     assert "restored database $database contains user relations but no row data" in text
     # The acceptance evidence writer must serialize the per-DB flag.
@@ -4337,15 +4334,17 @@ def test_review3938278149_final_cleanup_path_cannot_publish_pass_after_writer_fa
 
 # ---------------------------------------------------------------------------
 # K5 follow-up #251: verifier aligned with backup topology authority
-# (eight PostgreSQL databases + visits = 9 generation components).
+# (seven authoritative PostgreSQL databases + visits = 8 generation
+# components; unihub_distribution is retired and absent from active
+# production clusters).
 # ---------------------------------------------------------------------------
 
 
-def test_topology251_eight_pg_plus_visits_manifest_passes(tmp_path: Path) -> None:
+def test_topology251_seven_pg_plus_visits_manifest_passes(tmp_path: Path) -> None:
     # The maintained verifier accepts exactly the demonstrated real backup
-    # topology: 8 PostgreSQL dumps + 1 visits SQLite = 9 components.
+    # topology: 7 PostgreSQL dumps + 1 visits SQLite = 8 components.
     components = _component_relatives(FUTURE_STAMP)
-    assert len(components) == 9
+    assert len(components) == 8
     completed = _run_manifest_program(tmp_path, _valid_manifest_text())
     assert completed.returncode == 0, completed.stderr
     manifest = tmp_path / "generation.sha256"
@@ -4354,35 +4353,36 @@ def test_topology251_eight_pg_plus_visits_manifest_passes(tmp_path: Path) -> Non
     ).hexdigest()
 
 
-def test_topology251_old_seven_pg_omitting_distribution_is_rejected(
+def test_topology251_retired_distribution_component_is_rejected(
     tmp_path: Path,
 ) -> None:
-    # The pre-#251 consumer accepted exactly 7 PG databases plus visits; the
-    # unihub_distribution dump was treated as an unknown extra component and
-    # the generation was rejected. With the topology correction, the
-    # omission of unihub_distribution is the new failure mode.
-    legacy_labels = (
+    # Production catalog checks confirmed `unihub_distribution` is absent
+    # from both active PostgreSQL clusters, so a manifest that still lists
+    # the retired unihub_distribution dump is rejected as an unknown extra
+    # component.
+    retired_labels = (
         "unihub",
         "mobiup_dwh",
         "unihub_identity",
         "unihub_retail",
+        "unihub_distribution",
         "unihub_learning",
         "authentik",
         "glitchtip",
     )
-    legacy_components = [
-        *(f"postgres/{label}_{FUTURE_STAMP}.dump" for label in legacy_labels),
+    retired_components = [
+        *(f"postgres/{label}_{FUTURE_STAMP}.dump" for label in retired_labels),
         f"visits/visits_{FUTURE_STAMP}.db",
     ]
-    assert len(legacy_components) == 8
-    legacy_lines = []
-    for relative in legacy_components:
+    assert len(retired_components) == 9
+    retired_lines = []
+    for relative in retired_components:
         digest = hashlib.sha256(
             f"synthetic {relative}\n".encode("utf-8")
         ).hexdigest()
-        legacy_lines.append(f"{digest}  {relative}")
+        retired_lines.append(f"{digest}  {relative}")
     completed = _run_manifest_program(
-        tmp_path, "\n".join(legacy_lines) + "\n"
+        tmp_path, "\n".join(retired_lines) + "\n"
     )
     assert completed.returncode != 0
     assert "manifest component mismatch" in completed.stderr
@@ -4391,14 +4391,14 @@ def test_topology251_old_seven_pg_omitting_distribution_is_rejected(
 
 
 def test_topology251_arbitrary_extra_component_is_rejected(tmp_path: Path) -> None:
-    # The new authority is exactly 8 PG + 1 visits = 9 components. Adding a
-    # tenth arbitrary component (the verifier must not silently accept
+    # The authority is exactly 7 PG + 1 visits = 8 components. Adding a
+    # ninth arbitrary component (the verifier must not silently accept
     # arbitrary additional databases) is rejected.
     extra_component = (
         f"postgres/unihub_rogue_{FUTURE_STAMP}.dump"
     )
     manifest_text = _valid_manifest_text()
-    # Inject one extra entry after the canonical 9.
+    # Inject one extra entry after the canonical 8.
     manifest_lines = manifest_text.rstrip("\n").split("\n")
     extra_digest = hashlib.sha256(
         f"synthetic {extra_component}\n".encode("utf-8")
@@ -4412,10 +4412,10 @@ def test_topology251_arbitrary_extra_component_is_rejected(tmp_path: Path) -> No
     assert not (tmp_path / "staged.sha256").exists()
 
 
-def test_topology251_metadata_file_count_nine_matches_nine_entry_manifest(
+def test_topology251_metadata_file_count_eight_matches_eight_entry_manifest(
     tmp_path: Path,
 ) -> None:
-    # Valid metadata with file_count=9 must satisfy the canonical 9-entry
+    # Valid metadata with file_count=8 must satisfy the canonical 8-entry
     # manifest. Both the metadata and the helper default have been aligned.
     result_text = "\n".join(_valid_result_lines(FUTURE_STAMP)) + "\n"
     completed = _run_metadata_program(tmp_path, result_text)
@@ -4425,13 +4425,14 @@ def test_topology251_metadata_file_count_nine_matches_nine_entry_manifest(
     assert staged.read_bytes() == metadata.read_bytes()
 
 
-def test_topology251_metadata_file_count_eight_against_nine_entry_manifest_fails(
+def test_topology251_metadata_file_count_nine_against_eight_entry_manifest_fails(
     tmp_path: Path,
 ) -> None:
-    # A metadata file_count that lags the canonical 9-entry manifest by
-    # one is rejected before any downstream authority is established.
+    # A metadata file_count value of 9 (the obsolete pre-correction
+    # authority) is rejected against the canonical 8-entry manifest
+    # before any downstream authority is established.
     result_text = "\n".join(
-        _valid_result_lines(FUTURE_STAMP, file_count=8)
+        _valid_result_lines(FUTURE_STAMP, file_count=9)
     ) + "\n"
     completed = _run_metadata_program(tmp_path, result_text)
     assert completed.returncode != 0
@@ -4442,7 +4443,7 @@ def test_topology251_metadata_file_count_eight_against_nine_entry_manifest_fails
 
 # ---------------------------------------------------------------------------
 # Codex review 5120769319 / comment 3940210418 (P1): the postgres-restore
-# loop in ops/k5-isolated-restore.sh MUST execute exactly the eight
+# loop in ops/k5-isolated-restore.sh MUST execute exactly the seven
 # authoritative PostgreSQL labels, and the final-evidence writer MUST
 # fail closed if the recorded restore rows do not match that exact set.
 # ---------------------------------------------------------------------------
@@ -4453,7 +4454,6 @@ EXPECTED_PG_RESTORE_LABELS = (
     "mobiup_dwh",
     "unihub_identity",
     "unihub_retail",
-    "unihub_distribution",
     "unihub_learning",
     "authentik",
     "glitchtip",
@@ -4476,8 +4476,8 @@ def _extract_postgres_restore_loop_block() -> str:
     return text[start:end]
 
 
-def test_distribution_p1_postgres_restore_loop_has_exactly_eight_labels() -> None:
-    # The postgres-restore loop body must iterate EXACTLY the eight
+def test_topology251_postgres_restore_loop_has_exactly_seven_labels() -> None:
+    # The postgres-restore loop body must iterate EXACTLY the seven
     # authoritative PostgreSQL labels, in the documented canonical order,
     # no more and no fewer.
     block = _extract_postgres_restore_loop_block()
@@ -4493,35 +4493,7 @@ def test_distribution_p1_postgres_restore_loop_has_exactly_eight_labels() -> Non
         f"postgres-restore loop labels diverged: actual={actual} "
         f"expected={EXPECTED_PG_RESTORE_LABELS}"
     )
-    assert len(actual) == 8
-
-
-def test_distribution_p1_distribution_uses_same_restore_row_presence_path() -> None:
-    # unihub_distribution must share the EXACT same restore body as
-    # every other label: the same createdb + pg_restore + relation
-    # count + row-presence probe + postgres-restores.tsv write. There
-    # must be no per-label special-casing that would let one label
-    # bypass the row-presence gate.
-    block = _extract_postgres_restore_loop_block()
-    # The bash loop body unconditionally writes one postgres-restores.tsv
-    # row per iteration with the same printf format. Confirm exactly one
-    # such printf exists and that the row-presence probe is inside the
-    # loop body (not gated by any per-label condition).
-    assert block.count(">>\"$WORK/postgres-restores.tsv\"") == 1
-    # The row-presence die() helper appears in two adjacent error paths
-    # (boolean parse failure and absent-row failure); at minimum the
-    # probe MUST be present so unihub_distribution cannot be silently
-    # exempted from the gate.
-    assert block.count('restored database $database row-presence validation') >= 1
-    # The row-presence probe must execute for every iteration, including
-    # the unihub_distribution iteration, because the loop variable
-    # `database` resolves identically and the check is not conditional
-    # on any label.
-    assert "[ \"$user_data_present\" != \"t\" ]" in block
-    # The label variable is consumed by the printf and the dump path,
-    # so unihub_distribution cannot be silently filtered out.
-    assert "${label}_${STAMP}.dump" in block
-    assert '"$label"' in block
+    assert len(actual) == 7
 
 
 def _build_evidence_args_with_restores(
@@ -4606,11 +4578,11 @@ def _build_evidence_args_with_restores(
     return args, evidence
 
 
-def test_distribution_p1_evidence_writer_accepts_exact_eight_rows(
+def test_topology251_evidence_writer_accepts_exact_seven_rows(
     tmp_path: Path,
 ) -> None:
     # The final-evidence writer must successfully record an evidence
-    # payload when the postgres-restore TSV contains EXACTLY the eight
+    # payload when the postgres-restore TSV contains EXACTLY the seven
     # authoritative labels in canonical order.
     args, evidence = _build_evidence_args_with_restores(
         tmp_path, EXPECTED_PG_RESTORE_LABELS
@@ -4620,32 +4592,22 @@ def test_distribution_p1_evidence_writer_accepts_exact_eight_rows(
     payload = json.loads(evidence.read_text(encoding="utf-8"))
     # Even on success the maintained overall is still "fail" pending
     # cleanup verification, but the recorded restores must match the
-    # exact set, in the exact order, with the eight authoritative
+    # exact set, in the exact order, with the seven authoritative
     # labels so the eventual pass can be published.
     databases = payload["postgresRestoreStatus"]["databases"]
     assert [item["label"] for item in databases] == list(EXPECTED_PG_RESTORE_LABELS)
-    assert len(databases) == 8
-    # unihub_distribution must be present and follow unihub_retail.
-    assert "unihub_distribution" in [item["label"] for item in databases]
+    assert len(databases) == 7
 
 
-def test_distribution_p1_evidence_writer_rejects_old_seven_rows_missing_distribution(
+def test_topology251_evidence_writer_rejects_seven_plus_retired_distribution(
     tmp_path: Path,
 ) -> None:
-    # The pre-#251 restore shape (7 PG labels, no unihub_distribution)
-    # must be rejected at the fail-closed label validation gate. A
-    # PASS may never be published for this set.
-    legacy_labels = (
-        "unihub",
-        "mobiup_dwh",
-        "unihub_identity",
-        "unihub_retail",
-        "unihub_learning",
-        "authentik",
-        "glitchtip",
-    )
-    assert len(legacy_labels) == 7
-    args, evidence = _build_evidence_args_with_restores(tmp_path, legacy_labels)
+    # The seven authoritative labels plus the retired unihub_distribution
+    # dump must be rejected at the fail-closed label validation gate.
+    # A PASS may never be published for this set.
+    extended_labels = EXPECTED_PG_RESTORE_LABELS + ("unihub_distribution",)
+    assert len(extended_labels) == 8
+    args, evidence = _build_evidence_args_with_restores(tmp_path, extended_labels)
     completed = _run_python(_acceptance_program(), args)
     assert completed.returncode != 0
     assert "label set mismatch" in completed.stderr
@@ -4654,14 +4616,14 @@ def test_distribution_p1_evidence_writer_rejects_old_seven_rows_missing_distribu
     assert evidence.read_text(encoding="utf-8") == "original\n"
 
 
-def test_distribution_p1_evidence_writer_rejects_arbitrary_ninth_pg_label(
+def test_topology251_evidence_writer_rejects_arbitrary_eighth_pg_label(
     tmp_path: Path,
 ) -> None:
-    # Adding a ninth PostgreSQL restore label beyond the eight
+    # Adding an eighth PostgreSQL restore label beyond the seven
     # authoritative ones must also fail closed. The exact-set/equal-list
     # validation has no slack for arbitrary extra databases.
     extended_labels = EXPECTED_PG_RESTORE_LABELS + ("unihub_rogue",)
-    assert len(extended_labels) == 9
+    assert len(extended_labels) == 8
     args, evidence = _build_evidence_args_with_restores(tmp_path, extended_labels)
     completed = _run_python(_acceptance_program(), args)
     assert completed.returncode != 0

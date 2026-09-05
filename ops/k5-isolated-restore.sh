@@ -1180,7 +1180,6 @@ databases = (
     "mobiup_dwh",
     "unihub_identity",
     "unihub_retail",
-    "unihub_distribution",
     "unihub_learning",
     "authentik",
     "glitchtip",
@@ -1663,7 +1662,7 @@ done <"$WORK/roles.txt"
 
 CURRENT_PHASE="postgres-restore"
 : >"$WORK/postgres-restores.tsv"
-for label in unihub mobiup_dwh unihub_identity unihub_retail unihub_distribution unihub_learning authentik glitchtip; do
+for label in unihub mobiup_dwh unihub_identity unihub_retail unihub_learning authentik glitchtip; do
   database="dr_${label}"
   started_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   restore_started_monotonic_ns="$(python3 -c 'import time; print(time.monotonic_ns())')"
@@ -2113,16 +2112,14 @@ for raw in Path(restores_path).read_text(encoding="utf-8").splitlines():
     })
 # Bounded fail-closed evidence invariant: the machine-readable evidence
 # MUST NOT be able to publish postgresRestoreStatus.overall = pass unless
-# the recorded restores contain EXACTLY the eight authoritative
+# the recorded restores contain EXACTLY the seven authoritative
 # PostgreSQL labels in the canonical order. This proves the entire restore
-# surface (8 PG dumps + 1 visits) was exercised, not merely an arbitrary
-# subset of the old seven.
+# surface (7 PG dumps + 1 visits) was exercised.
 expected_restore_labels = [
     "unihub",
     "mobiup_dwh",
     "unihub_identity",
     "unihub_retail",
-    "unihub_distribution",
     "unihub_learning",
     "authentik",
     "glitchtip",
