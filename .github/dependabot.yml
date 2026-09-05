@@ -1,11 +1,11 @@
-# Version-update PRs are disabled; security-update configuration remains available.
+# Version-update PRs are bounded to one monthly slot per ecosystem; security updates remain distinct.
 version: 2
 updates:
   - package-ecosystem: "npm"
     directory: "/"
     schedule:
       interval: "monthly"
-    open-pull-requests-limit: 0
+    open-pull-requests-limit: 1
     # Private @unihub packages are vendored as integrity-checked tarballs and
     # are upgraded only through the reviewed shared-package release workflow.
     ignore:
@@ -26,7 +26,7 @@ updates:
     directory: "/backend"
     schedule:
       interval: "monthly"
-    open-pull-requests-limit: 0
+    open-pull-requests-limit: 1
     ignore:
       - dependency-name: "*"
         update-types: ["version-update:semver-major"]
@@ -42,4 +42,7 @@ updates:
     directory: "/"
     schedule:
       interval: "monthly"
-    open-pull-requests-limit: 0
+    open-pull-requests-limit: 1
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
