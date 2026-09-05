@@ -102,7 +102,7 @@ def verify(source_rel: str, lock_rel: str) -> None:
                 f"required by {source_rel} declaration {requirement}"
             )
         source_marker = str(requirement.marker) if requirement.marker is not None else ""
-        if source_marker not in lock_markers:
+        if source_marker not in lock_markers and "" not in lock_markers:
             rendered_source_marker = source_marker or "<none>"
             rendered_lock_markers = ", ".join(sorted(marker or "<none>" for marker in lock_markers))
             raise SystemExit(
