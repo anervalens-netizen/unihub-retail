@@ -197,6 +197,18 @@ def test_verify_accepts_matching_active_marker(tmp_path: Path, monkeypatch: pyte
     )
 
 
+def test_verify_accepts_unconditional_lock_for_active_conditional_source(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _verify(
+        tmp_path,
+        monkeypatch,
+        'demo==1.0; python_version >= "3"\n',
+        "demo==1.0 \\\n",
+    )
+
+
 def test_verify_rejects_marker_mismatch(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     with pytest.raises(SystemExit, match="marker mismatch"):
         _verify(
