@@ -37,6 +37,11 @@ class Persona:
 
 PERSONAS: dict[str, Persona] = {
     "admin": Persona("real-e2e-owner", "owner@example.invalid", ("unihub-admin",)),
+    "authentik-admin": Persona(
+        "real-e2e-authentik-admin",
+        "authentik-admin@example.invalid",
+        ("authentik Admins",),
+    ),
     "manager": Persona("real-e2e-manager", "manager@example.invalid", ("unihub-manager",)),
     "hr": Persona("real-e2e-hr", "hr@example.invalid", ("unihub-hr",)),
     "agent": Persona("real-e2e-agent", "agent@example.invalid", ("unihub-agent",)),
