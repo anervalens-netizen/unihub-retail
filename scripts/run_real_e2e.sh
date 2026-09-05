@@ -99,6 +99,8 @@ export OIDC_STUB_REDIRECT_URI="${SESSION_PUBLIC_ORIGIN}/auth/callback"
 export SESSION_TTL_SECONDS=900
 export REAL_E2E_BASE_URL="${SESSION_PUBLIC_ORIGIN}"
 export REAL_E2E_OIDC_ORIGIN="${OIDC_STUB_ORIGIN}"
+# K10 fixture: configured P&L owner allowlist for the isolated stack only.
+export STORE_PNL_ACCESS_GROUPS=pnl-owner
 export BACKEND_SENTRY_DSN=""
 export SENTRY_DSN=""
 export VITE_FRONTEND_GLITCHTIP_DSN=""
