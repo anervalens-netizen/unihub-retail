@@ -400,13 +400,13 @@ The entrypoint derives backup start/completion exclusively from the per-generati
 The entrypoint implements this fail-closed sequence:
 
 1. **Require explicit isolated execution and immutable identity.** It rejects missing acknowledgement, malformed stamp/SHA, missing or malformed per-generation metadata (stamp mismatch, a status other than exactly `verified`, missing/duplicate/malformed keys, naive or malformed timestamps, `file_count` mismatch), occupied loopback ports, work/evidence paths inside the source backup root, unavailable source commits, and pre-existing exercise-named Docker resources.
-2. **Bind and verify exactly one generation.** It accepts only the eight expected components for the requested stamp and verifies each SHA-256 against the exact generation manifest before staging anything.
+2. **Bind and verify exactly one generation.** It accepts only the nine expected components for the requested stamp and verifies each SHA-256 against the exact generation manifest before staging anything.
 3. **Export the exact source release.** It uses `git archive` for the supplied source SHA into a disposable work directory and never modifies the source checkout.
 4. **Verify source migration authority before restore.** It checks manifest v2, every migration file checksum, execution-class coverage and the frozen baseline checksum. It records the source migration-manifest digest and never executes a migration.
-5. **Stage only the selected payloads.** It copies the eight verified components into disposable local storage and re-verifies every checksum.
+5. **Stage only the selected payloads.** It copies the nine verified components into disposable local storage and re-verifies every checksum.
 6. **Create an isolated PostgreSQL 18 target.** It requires a locally available PostgreSQL 18 image, uses a unique container and named volume, and exposes PostgreSQL on `127.0.0.1` only. It never reuses a production or streaming-standby container.
 7. **Pre-create only required restore roles.** It extracts `unihub_*` grantee names from a schema-only restore and creates only those role names inside the disposable target, without production credentials.
-8. **Restore all seven PostgreSQL components.** Each exact dump restores into its own `dr_<label>` database with `--no-owner --no-acl --exit-on-error`; per-database timing and relation counts are captured.
+8. **Restore all eight PostgreSQL components.** Each exact dump restores into its own `dr_<label>` database with `--no-owner --no-acl --exit-on-error`; per-database timing and relation counts are captured.
 9. **Restore and validate visits SQLite.** It checks the staged copy checksum and requires `PRAGMA integrity_check` to return `ok` on the isolated copy.
 10. **Verify migration/history coherence without migration execution.** Restored `schema_migrations` must exactly equal the source-release manifest filenames and checksums.
 11. **Run a bounded non-sensitive business-integrity sample twice.** At least three approved aggregate table counts must be available; the repeated counts must be identical and are serialized into a deterministic SHA-256 fingerprint. No row contents are stored.
