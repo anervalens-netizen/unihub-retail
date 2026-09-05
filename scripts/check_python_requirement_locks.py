@@ -11,7 +11,9 @@ from packaging.utils import canonicalize_name
 from packaging.version import InvalidVersion, Version
 
 ROOT = Path(__file__).resolve().parents[1]
-PIN_RE = re.compile(r"^([A-Za-z0-9][A-Za-z0-9_.-]*)==([^\\\s]+)\s*\\?$")
+PIN_RE = re.compile(
+    r"^([A-Za-z0-9][A-Za-z0-9_.-]*)(?:\[[A-Za-z0-9_.-]+(?:,[A-Za-z0-9_.-]+)*\])?==([^\\\s]+)\s*\\?$"
+)
 
 
 def load_source(path: Path) -> dict[str, Requirement]:
