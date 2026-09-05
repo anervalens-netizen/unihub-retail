@@ -9,9 +9,10 @@ import type { APIRequestContext } from '@playwright/test';
  *      the local OIDC stub (`backend/scripts/oidc_e2e_stub.py`) and the real
  *      backend, seeds deterministic fixture data, then runs this spec.
  *   2. The stub mints deterministic personas (admin, manager, hr, agent,
- *      pnl-owner) through `GET {REAL_E2E_OIDC_ORIGIN}/test-token/{persona}`
- *      (API Bearer flow) and `GET {REAL_E2E_OIDC_ORIGIN}/test-persona/{persona}`
- *      (browser cookie flow). Identities are fake and local-only.
+ *      team-leader, pnl-owner, pnl-owner-only) through
+ *      `GET {REAL_E2E_OIDC_ORIGIN}/test-token/{persona}` (API Bearer flow) and
+ *      `GET {REAL_E2E_OIDC_ORIGIN}/test-persona/{persona}` (browser cookie
+ *      flow). Identities are fake and local-only.
  *   3. Every assertion traverses the real HTTP boundary: real JWKS token
  *      verification, real router permission dependencies (`backend/permissions.py`,
  *      `backend/privileged_access.py`) and the real BFF session + CSRF
@@ -55,19 +56,21 @@ test('K10-A admin boundary: sales-import surface is admin-only', async ({ reques
   const allowed = await request.get('/api/import/history', await asPersona(request, 'admin'));
   expect(allowed.status()).toBe(200);
 
-  for (const persona of ['manager', 'agent']) {
+  for (const persona of ['manager', 'hr', 'agent']) {
     const denied = await request.get('/api/import/history', await asPersona(request, persona));
     expect(denied.status(), `persona=${persona}`).toBe(403);
   }
 });
 
-test('K10-B salary/HR boundary: hr+manager allowed, low-privilege agent denied', async ({ request }) => {
+test('K10-B salary/HR boundary: hr+manager allowed, agent+Team Leader denied', async ({ request }) => {
   const salaryAllowedHr = await request.get('/salarii/summary', await asPersona(request, 'hr'));
   expect(salaryAllowedHr.status()).toBe(200);
   const salaryAllowedManager = await request.get('/salarii/summary', await asPersona(request, 'manager'));
   expect(salaryAllowedManager.status()).toBe(200);
-  const salaryDenied = await request.get('/salarii/summary', await asPersona(request, 'agent'));
-  expect(salaryDenied.status()).toBe(403);
+  for (const persona of ['agent', 'team-leader']) {
+    const salaryDenied = await request.get('/salarii/summary', await asPersona(request, persona));
+    expect(salaryDenied.status(), `persona=${persona}`).toBe(403);
+  }
 
   const hrAllowed = await request.get('/api/hr/leave-requests', await asPersona(request, 'hr'));
   expect(hrAllowed.status()).toBe(200);
@@ -91,11 +94,11 @@ test('K10-C business-write boundary: manager allowed, hr and agent denied', asyn
   }
 });
 
-test('K10-D owner-allowlist boundary: store P&L admits only the configured owner group', async ({ request }) => {
+test('K10-D owner-allowlist boundary: store P&L requires management plus configured owner group', async ({ request }) => {
   const allowed = await request.get('/api/store-pnl/months', await asPersona(request, 'pnl-owner'));
   expect(allowed.status()).toBe(200);
 
-  for (const persona of ['manager', 'agent']) {
+  for (const persona of ['manager', 'agent', 'pnl-owner-only']) {
     const denied = await request.get('/api/store-pnl/months', await asPersona(request, persona));
     expect(denied.status(), `persona=${persona}`).toBe(403);
   }
