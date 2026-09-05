@@ -8,8 +8,8 @@ import type { APIRequestContext } from '@playwright/test';
  *   1. `scripts/run_real_e2e.sh` boots pinned Postgres + Valkey containers,
  *      the local OIDC stub (`backend/scripts/oidc_e2e_stub.py`) and the real
  *      backend, seeds deterministic fixture data, then runs this spec.
- *   2. The stub mints deterministic personas (admin, manager, hr, agent,
- *      team-leader, pnl-owner, pnl-owner-only) through
+ *   2. The stub mints deterministic personas (admin, authentik-admin, manager,
+ *      hr, agent, team-leader, pnl-owner, pnl-owner-only) through
  *      `GET {REAL_E2E_OIDC_ORIGIN}/test-token/{persona}` (API Bearer flow) and
  *      `GET {REAL_E2E_OIDC_ORIGIN}/test-persona/{persona}` (browser cookie
  *      flow). Identities are fake and local-only.
@@ -169,4 +169,26 @@ test('K10-G browser boundary: low-privilege cookie session is denied salaries', 
     return { status: result.status, body: await result.json() };
   });
   expect(salary.status).toBe(403);
+});
+
+test('K10-H Authentik Admins group retains privileged allow paths', async ({ request }) => {
+  const auth = await asPersona(request, 'authentik-admin');
+
+  const importHistory = await request.get('/api/import/history', auth);
+  expect(importHistory.status()).toBe(200);
+
+  const salary = await request.get('/salarii/summary', auth);
+  expect(salary.status()).toBe(200);
+
+  const management = await request.get('/api/hr/leave-requests', auth);
+  expect(management.status()).toBe(200);
+
+  const exports = await request.get('/api/exports/catalog', auth);
+  expect(exports.status()).toBe(200);
+
+  const businessWrite = await request.post('/api/tasks', {
+    ...auth,
+    data: { title: 'K10 Authentik Admins alias probe' },
+  });
+  expect(businessWrite.status()).toBe(200);
 });
