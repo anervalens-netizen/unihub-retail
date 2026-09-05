@@ -50,8 +50,19 @@ if (changed) {
   requireChanged("backend/requirements-dev.txt", "backend/requirements-dev.lock");
 }
 
+const pythonDependencyFiles = new Set([
+  "backend/requirements.txt",
+  "backend/requirements.lock",
+  "backend/requirements-dev.txt",
+  "backend/requirements-dev.lock",
+]);
+const runtimeLockCheckRequired =
+  changed === null || [...pythonDependencyFiles].some((path) => changed.has(path));
+
 if (process.argv.includes("--pr-diff-only")) {
-  process.stdout.write("Dependency PR diff policy valid\n");
+  process.stdout.write(
+    `Dependency PR diff policy valid; runtime-lock-check=${runtimeLockCheckRequired ? "required" : "skipped"}\n`,
+  );
   process.exit(0);
 }
 
@@ -72,25 +83,28 @@ execFileSync(python, ["-I", "scripts/check_python_requirement_locks.py"], {
   stdio: "inherit",
 });
 
-// requirements-dev.lock is the CI environment, but production/release installs
-// requirements.lock. Resolve the entire runtime lock from a clean logical state
-// so every transitive requirement and hash must be complete and installable.
-execFileSync(
-  python,
-  [
-    "-I",
-    "-m",
-    "pip",
-    "install",
-    "--disable-pip-version-check",
-    "--quiet",
-    "--dry-run",
-    "--ignore-installed",
-    "--require-hashes",
-    "-r",
-    "backend/requirements.lock",
-  ],
-  { stdio: "inherit" },
-);
+if (runtimeLockCheckRequired) {
+  // requirements-dev.lock is the CI environment, but production/release installs
+  // requirements.lock. For Python dependency candidates and non-PR release/manual
+  // checkpoints, resolve the full runtime lock from a clean logical state so every
+  // transitive requirement and hash must be complete and installable.
+  execFileSync(
+    python,
+    [
+      "-I",
+      "-m",
+      "pip",
+      "install",
+      "--disable-pip-version-check",
+      "--quiet",
+      "--dry-run",
+      "--ignore-installed",
+      "--require-hashes",
+      "-r",
+      "backend/requirements.lock",
+    ],
+    { stdio: "inherit" },
+  );
+}
 
 process.stdout.write(`Dependency policy valid; nanoid=${installedNanoid}\n`);

@@ -83,7 +83,10 @@ def _run_pr_diff_policy(tmp_path: Path, changed_paths: list[str]) -> subprocess.
 
     for rel in changed_paths:
         path = repo / rel
-        path.write_text(path.read_text(encoding="utf-8") + "changed\n", encoding="utf-8")
+        if path.exists():
+            path.write_text(path.read_text(encoding="utf-8") + "changed\n", encoding="utf-8")
+        else:
+            _write(repo, rel, "changed\n")
     _git(repo, "add", ".")
     _git(repo, "commit", "-q", "-m", "candidate")
 
@@ -236,4 +239,10 @@ def test_pr_diff_policy_accepts_all_required_generated_locks(tmp_path: Path) -> 
         ],
     )
     assert completed.returncode == 0, completed.stderr
-    assert "Dependency PR diff policy valid" in completed.stdout
+    assert "runtime-lock-check=required" in completed.stdout
+
+
+def test_pr_diff_policy_skips_runtime_lock_for_unrelated_change(tmp_path: Path) -> None:
+    completed = _run_pr_diff_policy(tmp_path, ["frontend.ts"])
+    assert completed.returncode == 0, completed.stderr
+    assert "runtime-lock-check=skipped" in completed.stdout
