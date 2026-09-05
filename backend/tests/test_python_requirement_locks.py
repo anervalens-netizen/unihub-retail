@@ -77,6 +77,24 @@ def test_lock_rejects_conflicting_pins(tmp_path: Path) -> None:
         CHECKER.load_lock(path)
 
 
+def test_lock_accepts_active_environment_marker(tmp_path: Path) -> None:
+    path = _write(tmp_path, "requirements.lock", 'demo==1.0 ; python_version >= "3" \\\n')
+    pins = CHECKER.load_lock(path)
+    assert pins["demo"][0] == CHECKER.Version("1.0")
+    assert pins["demo"][2] == frozenset({'python_version >= "3"'})
+
+
+def test_lock_skips_inactive_environment_marker(tmp_path: Path) -> None:
+    path = _write(tmp_path, "requirements.lock", 'demo==1.0 ; python_version < "1" \\\n')
+    assert CHECKER.load_lock(path) == {}
+
+
+def test_lock_rejects_invalid_environment_marker(tmp_path: Path) -> None:
+    path = _write(tmp_path, "requirements.lock", 'demo==1.0 ; python_version >>> "3" \\\n')
+    with pytest.raises(SystemExit, match="invalid environment marker for demo"):
+        CHECKER.load_lock(path)
+
+
 def test_verify_rejects_missing_direct_requirement(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     with pytest.raises(SystemExit, match="missing direct requirement demo"):
         _verify(tmp_path, monkeypatch, "demo==1.0\n", "other==1.0 \\\n")
@@ -94,3 +112,22 @@ def test_verify_rejects_missing_requested_extra(tmp_path: Path, monkeypatch: pyt
 
 def test_verify_accepts_matching_or_superset_extras(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     _verify(tmp_path, monkeypatch, "demo[speed]==1.0\n", "demo[speed,security]==1.0 \\\n")
+
+
+def test_verify_accepts_matching_active_marker(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _verify(
+        tmp_path,
+        monkeypatch,
+        'demo==1.0; python_version >= "3"\n',
+        'demo==1.0 ; python_version >= "3" \\\n',
+    )
+
+
+def test_verify_rejects_marker_mismatch(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    with pytest.raises(SystemExit, match="marker mismatch"):
+        _verify(
+            tmp_path,
+            monkeypatch,
+            'demo==1.0; python_version >= "3"\n',
+            'demo==1.0 ; python_version >= "2" \\\n',
+        )

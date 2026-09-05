@@ -6,13 +6,15 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from packaging.markers import InvalidMarker, Marker
 from packaging.requirements import InvalidRequirement, Requirement
 from packaging.utils import canonicalize_name
 from packaging.version import InvalidVersion, Version
 
 ROOT = Path(__file__).resolve().parents[1]
 PIN_RE = re.compile(
-    r"^([A-Za-z0-9][A-Za-z0-9_.-]*)(?:\[([A-Za-z0-9_.-]+(?:,[A-Za-z0-9_.-]+)*)\])?==([^\\\s]+)\s*\\?$"
+    r'^([A-Za-z0-9][A-Za-z0-9_.-]*)(?:\[([A-Za-z0-9_.-]+(?:,[A-Za-z0-9_.-]+)*)\])?'
+    r'==([^\\\s;]+)(?:\s*;\s*(.+?))?\s*\\?$'
 )
 
 
@@ -43,8 +45,8 @@ def load_source(path: Path) -> dict[str, Requirement]:
     return requirements
 
 
-def load_lock(path: Path) -> dict[str, tuple[Version, frozenset[str]]]:
-    pins: dict[str, tuple[Version, frozenset[str]]] = {}
+def load_lock(path: Path) -> dict[str, tuple[Version, frozenset[str], frozenset[str]]]:
+    pins: dict[str, tuple[Version, frozenset[str], frozenset[str]]] = {}
     for line_number, raw in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
         match = PIN_RE.match(raw.strip())
         if match is None:
@@ -56,13 +58,25 @@ def load_lock(path: Path) -> dict[str, tuple[Version, frozenset[str]]]:
             version = Version(match.group(3))
         except InvalidVersion as exc:
             raise SystemExit(f"{path}:{line_number}: invalid pinned version for {name}: {match.group(3)}") from exc
+        raw_marker = match.group(4)
+        marker_key = ""
+        if raw_marker:
+            try:
+                marker = Marker(raw_marker)
+            except InvalidMarker as exc:
+                raise SystemExit(f"{path}:{line_number}: invalid environment marker for {name}: {raw_marker}") from exc
+            if not marker.evaluate():
+                continue
+            marker_key = str(marker)
         previous = pins.get(name)
+        marker_keys = frozenset({marker_key})
         if previous is not None:
-            previous_version, previous_extras = previous
+            previous_version, previous_extras, previous_markers = previous
             if previous_version != version:
                 raise SystemExit(f"{path}:{line_number}: conflicting pins for {name}: {previous_version} vs {version}")
             extras = previous_extras | extras
-        pins[name] = (version, extras)
+            marker_keys = previous_markers | marker_keys
+        pins[name] = (version, extras, marker_keys)
     return pins
 
 
@@ -75,7 +89,7 @@ def verify(source_rel: str, lock_rel: str) -> None:
         pin = pins.get(name)
         if pin is None:
             raise SystemExit(f"{lock_rel}: missing direct requirement {name} declared by {source_rel}")
-        version, lock_extras = pin
+        version, lock_extras, lock_markers = pin
         if requirement.specifier and not requirement.specifier.contains(version, prereleases=True):
             raise SystemExit(
                 f"{lock_rel}: {name}=={version} does not satisfy {source_rel} declaration {requirement}"
@@ -86,6 +100,14 @@ def verify(source_rel: str, lock_rel: str) -> None:
             raise SystemExit(
                 f"{lock_rel}: {name}=={version} is missing requested extras {missing} "
                 f"required by {source_rel} declaration {requirement}"
+            )
+        source_marker = str(requirement.marker) if requirement.marker is not None else ""
+        if source_marker not in lock_markers:
+            rendered_source_marker = source_marker or "<none>"
+            rendered_lock_markers = ", ".join(sorted(marker or "<none>" for marker in lock_markers))
+            raise SystemExit(
+                f"{lock_rel}: {name}=={version} marker mismatch for {source_rel}: "
+                f"source={rendered_source_marker}; lock={rendered_lock_markers}"
             )
 
 
