@@ -50,4 +50,12 @@ if (changed) {
   requireChanged("backend/requirements-dev.txt", "backend/requirements-dev.lock");
 }
 
+const python = "backend/venv/bin/python";
+if (!fs.existsSync(python)) {
+  throw new Error(`${python} is required to validate Python requirement-lock coherence`);
+}
+execFileSync(python, ["-I", "scripts/check_python_requirement_locks.py"], {
+  stdio: "inherit",
+});
+
 process.stdout.write(`Dependency policy valid; nanoid=${installedNanoid}\n`);
