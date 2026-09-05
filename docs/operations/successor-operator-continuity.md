@@ -185,7 +185,7 @@ The public Retail path uses Caddy as reverse proxy and Cloudflare Tunnel for ext
 
 Administrative ownership roles:
 
-- **DNS/Tunnel Administrator** — Cloudflare/DNS/tunnel configuration;
+- **DNS/Tunnel Administrator** — Cloudflare DNS/tunnel configuration;
 - **Reverse Proxy Administrator** — Caddy configuration/topology.
 
 Read-only discovery:
@@ -226,7 +226,7 @@ This runbook stores roles, never credentials.
 | DNS/Tunnel Administrator | Cloudflare DNS/tunnel | Usually no | Required for DNS/tunnel changes |
 | Reverse Proxy Administrator | Caddy routing/topology | Usually no | Required for proxy changes |
 | Monitoring Administrator | Prometheus/Alertmanager/Grafana/GlitchTip configuration | Usually no | Required for monitoring configuration changes |
-| Backup / Disaster Recovery Administrator | Backup retention and restore/recovery | Verification only | Real restore is separately authorized and currently owned by K5 |
+| Backup / Disaster Recovery Administrator | Backup retention and restore/recovery | Verification only | Any restore that reads protected backup payloads or mutates a target requires explicit DR authorization; production recovery has an additional coordinated-production boundary |
 
 If an account or credential is unavailable, do not bypass the boundary. Escalate to the corresponding role owner.
 
@@ -333,20 +333,106 @@ ssh -o BatchMode=yes server "sudo awk -F= '\
 
 The current externally installed backup implementation has been verified to cover the PostgreSQL service portfolio plus the visits SQLite data and to maintain local copies plus off-host NAS replication. Retention is handled by `/opt/Mobiup/ops/scripts/backup-retention.sh` and is based on complete/checksum-verified generations. Treat these as external operational facts and revalidate the installed scripts before relying on them for a destructive operation.
 
-### Restore boundary — intentional fail-closed gap
+### Canonical isolated full-data restore verification procedure
 
-**There is currently no canonical maintained full database restore runbook/entrypoint.** The server contains recovery/probe helpers, but they do not constitute a full PostgreSQL + visits restore procedure.
+K5 exercised the complete observed backup generation in an isolated non-production target, then versioned the exact procedure that a successor must use for future isolated verification. The maintained executable entrypoint is:
 
-Therefore this K3 runbook does **not** provide guessed `pg_restore`, drop/create, service-quiesce or in-place restore commands. A real restore is potentially destructive and belongs to **Issue #231 / K5 — real disaster-recovery restore exercise and evidence** under the **Backup / Disaster Recovery Administrator** role and explicit execution authorization.
+```text
+ops/k5-isolated-restore.sh
+SHA-256: 9218446f5c987371422669c807b98cec9a75f8c5fafd5c4f16220f5797d204a5
+```
 
-If a restore is required before K5 closes:
+The recovered pre-existing weekly restore-mechanics helper is provenance only, not the complete K5 entrypoint:
 
-1. preserve the failing state and evidence;
-2. identify the required data scope and last known verified backup generation;
-3. do not overwrite production based on an improvised procedure;
-4. escalate for an explicitly authorized DR operation.
+```text
+external helper observed at exercise/recovery time: pg-restore-drill.sh
+SHA-256: a5de3ed7803253abcbde0aa66885de5380279f133ee01bd20fd4db5bf19599af
+```
 
-A non-destructive NAS sample restore probe is evidence about backup availability, not evidence that the complete application can be restored.
+That weekly helper established the proven PostgreSQL/role/SQLite mechanics, but it did not implement the source-release migration-ledger comparison, bounded business fingerprint, exact-source application acceptance, K5 RPO/RTO semantics or K5 evidence schema. `ops/k5-isolated-restore.sh` codifies those exercised K5 phases and preserves the weekly-helper digest as provenance. The versioned entrypoint was created after the reference exercise; do not falsely claim that the historical exercise executed the later repository file byte-for-byte.
+
+The K5 evidence has two deliberately different repository files because tracked release-identity-bearing `.json` payloads are prohibited by the release-authority gate:
+
+```text
+reference descriptor:
+  docs/evidence/k5/restore-exercise-20260831_121759.json
+  SHA-256: c43123163a1594146f0ec42df5007af1e4a9b77f22e884209b64f1a90a4b5cb4
+
+canonical evidence payload — parse and hash THIS file:
+  docs/evidence/k5/restore-exercise-20260831_121759.json.txt
+  content type: application/json
+  SHA-256: aad9f86b3f6095b2adcdd393bc685b48b7d3cf195efb36cacd0151388d70fbf7
+```
+
+The descriptor points to the canonical payload and carries the payload digest. A successor must not compare the payload digest to the descriptor bytes.
+
+Reference evidence identity:
+
+```text
+source backup id: 20260831_121759
+source release: 2ef24fd86a4ade08e185a42bc50173a839becf1e
+source migration head: 069_ai_cohort_and_transactional_outbox.sql
+generation manifest SHA-256: 40ee5cc7e25d51b26e688b90f2da7b2873d8642dd7536a035a1e1cdb1b4ec597
+source migration manifest SHA-256: 875c83480cc87feba6cc09dad644c2b9f897fa0a95f4ba55c560245a7b68b544
+```
+
+The observed recoverable generation contains seven PostgreSQL custom-format database dumps plus one visits SQLite component. PostgreSQL dumps are produced serially, so the generation is **not** an atomic cross-database snapshot.
+
+**Historical RPO timestamp provenance disclosure.** The 2026-08-31 exercise retains its exact recovered payload byte-for-byte, and its recorded backup start/completion values and the RPO numbers derived from them are historical observed exercise values. Later review demonstrated that the external backup system did not preserve those start/completion timestamps in generation-specific metadata: they existed only in a rolling last-run record that subsequent generations overwrote, while the per-generation result artifact for that generation carries no timing keys. After this discovered retention gap, those historical RPO numbers are NOT used as proof that the maintained future procedure has generation-authoritative RPO binding, and the restore itself is not thereby implicated: the limitation is specifically RPO timestamp provenance, not the verified restore mechanics. Future executions require generation-specific metadata under the maintained verifier contract described below, and the external backup-contract remediation that persists per-generation timing is tracked separately by GitHub issue #251.
+
+A future authorized isolated exercise invokes the maintained entrypoint with immutable inputs; never substitute `latest` for the generation or infer the source release from a later deploy:
+
+```bash
+bash ops/k5-isolated-restore.sh \
+  --backup-root <authorized checksum-backed backup root> \
+  --stamp <YYYYMMDD_HHMMSS exact generation> \
+  --source-repo <local git checkout containing the exact source commit> \
+  --source-sha <40-char source release SHA> \
+  --github-main-sha <40-char GitHub main observed immediately before execution> \
+  --evidence-out <non-secret path outside the source backup root> \
+  --execute-isolated-restore
+```
+
+The entrypoint derives backup start/completion exclusively from the per-generation metadata artifact `<backup-root>/manifests/generation_<stamp>.result`. That artifact must carry the required keys `stamp` (exactly the selected stamp), `status` (exactly `verified`; no other truthy value is accepted), `source_release_sha` (exactly 40 lowercase hex characters; must equal the `--source-sha` argument, with no other source of truth such as the migration manifest, current main, filesystem timestamps or filenames accepted), `started_at`, `completed_at` (ISO-8601 with an explicit UTC offset, canonicalized to `YYYY-MM-DDTHH:MM:SSZ` before any evidence or RPO use) and a numeric `file_count` equal to the generation checksum-manifest entry count. The artifact and `generation_<stamp>.sha256` must belong to the same exact stamp. The artifact is opened once without following symlinks and staged into the private work directory; the evidence metadata digest and every validated value are derived from that one byte snapshot, and the source identity (device/inode/size/mtime/sha256) captured from the same descriptor is revalidated before a PASS may be published, so a metadata replacement during the exercise fails the cleanup. Rolling last-run records, filesystem mtimes, log lines, filename inference and arbitrary CLI timestamps are never accepted as RPO authority; a generation without a conforming per-generation metadata artifact simply cannot be exercised. Generations published before the external contract tracked by #251 persists `source_release_sha` do not satisfy this contract, including the historical `20260831_121759` generation.
+
+`--app-python <isolated interpreter>` may be supplied when an already-prepared compatible runtime exists; the entrypoint then performs no package installation and instead validates that interpreter's installed distributions against every exact `package==version` pin of the source release `backend/requirements.lock` through `importlib.metadata` (PEP-503-normalized names), recording the lock SHA-256, validation status and a deterministic runtime dependency fingerprint. Otherwise the entrypoint creates a disposable virtual environment under its own work directory and installs the hashed lock. The command itself is not authorization: reading/copying protected backup payloads and creating disposable restore targets still requires the applicable DR authorization before execution.
+
+The entrypoint implements this fail-closed sequence:
+
+1. **Require explicit isolated execution and immutable identity.** It rejects missing acknowledgement, malformed stamp/SHA, missing or malformed per-generation metadata (stamp mismatch, a status other than exactly `verified`, missing/duplicate/malformed keys, naive or malformed timestamps, `file_count` mismatch), occupied loopback ports, work/evidence paths inside the source backup root, unavailable source commits, and pre-existing exercise-named Docker resources.
+2. **Bind and verify exactly one generation.** It accepts only the eight expected components for the requested stamp and verifies each SHA-256 against the exact generation manifest before staging anything.
+3. **Export the exact source release.** It uses `git archive` for the supplied source SHA into a disposable work directory and never modifies the source checkout.
+4. **Verify source migration authority before restore.** It checks manifest v2, every migration file checksum, execution-class coverage and the frozen baseline checksum. It records the source migration-manifest digest and never executes a migration.
+5. **Stage only the selected payloads.** It copies the eight verified components into disposable local storage and re-verifies every checksum.
+6. **Create an isolated PostgreSQL 18 target.** It requires a locally available PostgreSQL 18 image, uses a unique container and named volume, and exposes PostgreSQL on `127.0.0.1` only. It never reuses a production or streaming-standby container.
+7. **Pre-create only required restore roles.** It extracts `unihub_*` grantee names from a schema-only restore and creates only those role names inside the disposable target, without production credentials.
+8. **Restore all seven PostgreSQL components.** Each exact dump restores into its own `dr_<label>` database with `--no-owner --no-acl --exit-on-error`; per-database timing and relation counts are captured.
+9. **Restore and validate visits SQLite.** It checks the staged copy checksum and requires `PRAGMA integrity_check` to return `ok` on the isolated copy.
+10. **Verify migration/history coherence without migration execution.** Restored `schema_migrations` must exactly equal the source-release manifest filenames and checksums.
+11. **Run a bounded non-sensitive business-integrity sample twice.** At least three approved aggregate table counts must be available; the repeated counts must be identical and are serialized into a deterministic SHA-256 fingerprint. No row contents are stored.
+12. **Boot the exact source application in a clean isolated development environment.** It points only at restored `dr_unihub`, binds the app to `127.0.0.1`, excludes production OIDC/session/Valkey/Sentry/process-authority settings and never loads production environment files.
+13. **Require service acceptance.** `/livez` must return `alive`; `/health` and `/readyz` must return `ok`. Evidence states explicitly that production OIDC/JWKS, Valkey/session and DB-process-authority semantics were not exercised. Application readiness additionally requires that the exact launched `APP_PID` own the `127.0.0.1` listener on the configured `APP_PORT` (verified via `/proc/<pid>/fd` and `/proc/net/tcp`) before any `/livez`/`/health`/`/readyz` probe is issued and again after all three probes succeed, so an unrelated process listening on the same loopback port cannot satisfy the readiness gate.
+14. **Measure generation-age RPO from ordered, generation-authoritative timestamps and RTO with monotonic elapsed time.** Backup start/completion are derived exclusively from the per-generation metadata artifact and canonicalized to UTC before any ordering or RPO use. With serial dumps, conservative RPO upper bound is `referenceFailureAt - backupStartedAt` and completed-generation age is `referenceFailureAt - backupCompletedAt`; RTO retains UTC `restoreStartedAt`/`readyAt` event timestamps while deriving elapsed seconds from monotonic time, including staging through service acceptance. Per-database restore durations also use monotonic elapsed time, never wall-clock subtraction.
+15. **Emit sanitized machine-readable evidence and clean up.** Evidence contains no password or credential-bearing DSN and no absolute private backup paths. Service acceptance is recorded while the durable result remains non-pass; the first durable full PASS is written only after application termination is proven (TERM, bounded grace, KILL when required, bounded post-KILL verification, final liveness proof before any reap, and reap of an absent/zombie child only after that proof), disposable Docker resources are removed and listed absent, the source backup size/mtime metadata and the generation metadata source identity compare unchanged, and the workdir is removed and verified absent. Evidence replacement uses exclusive no-follow unpredictable temporary files inside a current-user-owned, non-group/world-writable evidence parent, and cleanup/source-mutation/app-termination status are marked fail-closed.
+
+The K5 reference exercise passed the same substantive acceptance sequence with eight components, seven successful PostgreSQL restores, visits integrity `ok`, 69/69 migration checksum matches, a repeated bounded business fingerprint match, localhost application start, `/livez`/`/health`/`/readyz` HTTP 200 within the disclosed isolated dependency scope, conservative RPO upper bound `39779` seconds and wall-clock RTO `449` seconds. The canonical payload explicitly records `productionMutation=false`, `sourceBackupMutation=false` and `migrationExecution=false`.
+
+### Production recovery boundary
+
+The isolated procedure above proves that the complete observed PostgreSQL + visits backup generation can be restored and accepted without undocumented private operator memory. It is **not** an automatic or in-place production restore command, and `ops/k5-isolated-restore.sh` must not be pointed at a production database/container as a target.
+
+A real production recovery must additionally define and authorize, for the exact incident:
+
+- affected services/consumers and required write quiescence;
+- the exact recovery reference point and acceptable data-loss window;
+- cross-database consistency implications because the generation is not atomic across databases;
+- treatment of writes that occurred after the selected backup began;
+- target topology and cutover/rollback plan;
+- service restart/start ordering and post-cutover production readiness/observability acceptance.
+
+Do not execute an in-place production restore, stop services, mutate mounts, run migrations, alter backup retention or delete/replace source artifacts merely because this runbook or isolated entrypoint exists. Those are separate production mutations and require explicit authorization at execution time.
+
+A non-destructive NAS sample restore probe remains evidence about backup availability only; it is not a substitute for the complete isolated procedure above.
 
 ## 7. Worker and dependency verification
 
@@ -398,7 +484,7 @@ Without a separately authorized, documented exception:
 - no secret copied into GitHub, chat, logs or documentation;
 - no permission weakening (`chmod 777`, broad sudo, Docker access, shared credentials) to bypass an ownership problem;
 - no Cloudflare/Caddy/Authentik/monitoring mutation merely because a downstream health probe failed;
-- no improvised full restore until a reviewed DR procedure exists and the operation is explicitly authorized;
+- no in-place/full production restore merely because the isolated DR procedure exists; production recovery requires incident-specific authorization and coordination;
 - no squash/rebase merge for repository changes; the repository policy requires merge commits.
 
 Break-glass remains limited by ADR-006 and is not a convenience path.
@@ -417,7 +503,8 @@ Break-glass remains limited by ADR-006 and is not a convenience path.
 | backup gate fails/stale | `status`, `checksum_ok`, `completed_at`, backup script/log evidence | rerun deploy or weaken gate |
 | service identity verifier fails | exact verifier error plus live-root canonicalization result | run provisioning `apply` automatically |
 | CI/check fails | exact run → job → step → log/root cause | blind rerun |
-| restore is requested | required data scope, verified backup evidence, K5 status | improvise `pg_restore` on production |
+| isolated restore verification is requested | exact source generation/release, explicit DR authorization, section 6 procedure | improvise against production or a streaming standby |
+| production restore is requested | incident data scope, verified backup generation, write/quiescence/cross-database plan, explicit production authorization | execute the isolated drill steps in-place |
 
 For any new commit, old SHA-bound CI/review evidence is stale. For an unchanged SHA/tree, do not rerun expensive verification ritualistically.
 
@@ -487,7 +574,7 @@ A successor who can complete the following without private memory has enough ori
 - [ ] identify the credential-free Prometheus readiness/JWKS signals;
 - [ ] verify service identities and env-file ownership without reading secret values;
 - [ ] verify backup completion manifest fields without executing backup;
-- [ ] explain why a full restore is blocked on the K5 canonical DR procedure rather than improvising one;
+- [ ] locate the canonical K5 isolated restore evidence payload, verify its digest through the descriptor, locate the versioned isolated restore entrypoint, explain the non-atomic cross-database RPO definition, the per-generation metadata RPO authority contract and the historical RPO provenance disclosure, and distinguish isolated restore verification from separately authorized production recovery;
 - [ ] identify the administrator role for GitHub, host, Authentik, DNS/tunnel, proxy, monitoring and backup/DR;
 - [ ] explain ChatGPT vs Dell/server execution ownership;
 - [ ] resume Issue #226 and select the first open, unblocked child.
