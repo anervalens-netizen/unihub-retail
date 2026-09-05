@@ -12,8 +12,12 @@ from packaging.version import InvalidVersion, Version
 
 ROOT = Path(__file__).resolve().parents[1]
 PIN_RE = re.compile(
-    r"^([A-Za-z0-9][A-Za-z0-9_.-]*)(?:\[[A-Za-z0-9_.-]+(?:,[A-Za-z0-9_.-]+)*\])?==([^\\\s]+)\s*\\?$"
+    r"^([A-Za-z0-9][A-Za-z0-9_.-]*)(?:\[([A-Za-z0-9_.-]+(?:,[A-Za-z0-9_.-]+)*)\])?==([^\\\s]+)\s*\\?$"
 )
+
+
+def canonical_extras(values: set[str] | frozenset[str] | list[str]) -> frozenset[str]:
+    return frozenset(str(canonicalize_name(value)) for value in values)
 
 
 def load_source(path: Path) -> dict[str, Requirement]:
@@ -39,21 +43,26 @@ def load_source(path: Path) -> dict[str, Requirement]:
     return requirements
 
 
-def load_lock(path: Path) -> dict[str, Version]:
-    pins: dict[str, Version] = {}
+def load_lock(path: Path) -> dict[str, tuple[Version, frozenset[str]]]:
+    pins: dict[str, tuple[Version, frozenset[str]]] = {}
     for line_number, raw in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
         match = PIN_RE.match(raw.strip())
         if match is None:
             continue
         name = str(canonicalize_name(match.group(1)))
+        raw_extras = match.group(2)
+        extras = canonical_extras(raw_extras.split(",")) if raw_extras else frozenset()
         try:
-            version = Version(match.group(2))
+            version = Version(match.group(3))
         except InvalidVersion as exc:
-            raise SystemExit(f"{path}:{line_number}: invalid pinned version for {name}: {match.group(2)}") from exc
+            raise SystemExit(f"{path}:{line_number}: invalid pinned version for {name}: {match.group(3)}") from exc
         previous = pins.get(name)
-        if previous is not None and previous != version:
-            raise SystemExit(f"{path}:{line_number}: conflicting pins for {name}: {previous} vs {version}")
-        pins[name] = version
+        if previous is not None:
+            previous_version, previous_extras = previous
+            if previous_version != version:
+                raise SystemExit(f"{path}:{line_number}: conflicting pins for {name}: {previous_version} vs {version}")
+            extras = previous_extras | extras
+        pins[name] = (version, extras)
     return pins
 
 
@@ -63,12 +72,20 @@ def verify(source_rel: str, lock_rel: str) -> None:
     source = load_source(source_path)
     pins = load_lock(lock_path)
     for name, requirement in sorted(source.items()):
-        version = pins.get(name)
-        if version is None:
+        pin = pins.get(name)
+        if pin is None:
             raise SystemExit(f"{lock_rel}: missing direct requirement {name} declared by {source_rel}")
+        version, lock_extras = pin
         if requirement.specifier and not requirement.specifier.contains(version, prereleases=True):
             raise SystemExit(
                 f"{lock_rel}: {name}=={version} does not satisfy {source_rel} declaration {requirement}"
+            )
+        missing_extras = canonical_extras(requirement.extras) - lock_extras
+        if missing_extras:
+            missing = ",".join(sorted(missing_extras))
+            raise SystemExit(
+                f"{lock_rel}: {name}=={version} is missing requested extras {missing} "
+                f"required by {source_rel} declaration {requirement}"
             )
 
 
