@@ -40,10 +40,20 @@ PERSONAS: dict[str, Persona] = {
     "manager": Persona("real-e2e-manager", "manager@example.invalid", ("unihub-manager",)),
     "hr": Persona("real-e2e-hr", "hr@example.invalid", ("unihub-hr",)),
     "agent": Persona("real-e2e-agent", "agent@example.invalid", ("unihub-agent",)),
+    "team-leader": Persona(
+        "real-e2e-team-leader",
+        "team-leader@example.invalid",
+        ("unihub-team-lead",),
+    ),
     "pnl-owner": Persona(
         "real-e2e-pnl-owner",
         "pnl-owner@example.invalid",
         ("unihub-manager", "pnl-owner"),
+    ),
+    "pnl-owner-only": Persona(
+        "real-e2e-pnl-owner-only",
+        "pnl-owner-only@example.invalid",
+        ("pnl-owner",),
     ),
 }
 
