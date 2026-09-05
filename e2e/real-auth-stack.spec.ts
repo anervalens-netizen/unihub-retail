@@ -171,24 +171,26 @@ test('K10-G browser boundary: low-privilege cookie session is denied salaries', 
   expect(salary.status).toBe(403);
 });
 
-test('K10-H Authentik Admins group retains privileged allow paths', async ({ request }) => {
-  const auth = await asPersona(request, 'authentik-admin');
+test('K10-H administrator group aliases retain privileged allow paths', async ({ request }) => {
+  for (const persona of ['admin', 'authentik-admin']) {
+    const auth = await asPersona(request, persona);
 
-  const importHistory = await request.get('/api/import/history', auth);
-  expect(importHistory.status()).toBe(200);
+    const importHistory = await request.get('/api/import/history', auth);
+    expect(importHistory.status(), `persona=${persona} import`).toBe(200);
 
-  const salary = await request.get('/salarii/summary', auth);
-  expect(salary.status()).toBe(200);
+    const salary = await request.get('/salarii/summary', auth);
+    expect(salary.status(), `persona=${persona} salary`).toBe(200);
 
-  const management = await request.get('/api/hr/leave-requests', auth);
-  expect(management.status()).toBe(200);
+    const management = await request.get('/api/hr/leave-requests', auth);
+    expect(management.status(), `persona=${persona} management`).toBe(200);
 
-  const exports = await request.get('/api/exports/catalog', auth);
-  expect(exports.status()).toBe(200);
+    const exports = await request.get('/api/exports/catalog', auth);
+    expect(exports.status(), `persona=${persona} exports`).toBe(200);
 
-  const businessWrite = await request.post('/api/tasks', {
-    ...auth,
-    data: { title: 'K10 Authentik Admins alias probe' },
-  });
-  expect(businessWrite.status()).toBe(200);
+    const businessWrite = await request.post('/api/tasks', {
+      ...auth,
+      data: { title: `K10 admin alias probe (${persona})` },
+    });
+    expect(businessWrite.status(), `persona=${persona} business write`).toBe(200);
+  }
 });
