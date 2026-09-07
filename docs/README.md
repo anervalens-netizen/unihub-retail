@@ -1,104 +1,94 @@
 # UniHub Retail — catalog canonic
 
-Există trei planuri de adevăr separate și nu trebuie amestecate:
+Acest index separă clar **starea curentă** de evidence-ul istoric.
 
-1. **Lifecycle/status pentru documentația versionată:** singura autoritate
-   machine-readable este [`catalog.json`](catalog.json), câmpul
-   `entries[].status`. Valorile admise sunt `active`, `historical` și
-   `superseded`. Etichetele `Status:` din Markdown-uri vechi sunt snapshot-uri
-   istorice, nu stare curentă.
-2. **Readiness/health live:** starea runtime nu este versionată în Git.
-   Autoritatea este răspunsul `/readyz` împreună cu semnalele Prometheus
-   definite în [`operations/retail-slo-readiness.md`](operations/retail-slo-readiness.md).
-3. **Identitatea livrării:** identitatea candidatului certificat rămâne
-   `RELEASE_MANIFEST.json`, generat și semnat de CI pentru SHA-ul exact; D2
-   păstrează promotion state, iar tag-urile D3
-   `production/retail-release-<SHA>` păstrează istoricul promovărilor.
+## Surse de adevăr
 
-Un view narativ de release se generează numai dintr-un `release.env` D2 exact și
-verificat cu `scripts/render_production_release_notes.py`; Markdown-ul rezultat
-nu este autoritate. Rendererul nu descoperă și nu selectează un release
-`current`/`latest`. `releases/v*.md` sunt exclusiv note istorice și nu pot
-redeclara o identitate canonică de production.
+1. **Lifecycle documentație:** [`catalog.json`](catalog.json), câmpul
+   `entries[].status` (`active`, `historical`, `superseded`). Etichetele vechi
+   din Markdown nu pot suprascrie catalogul.
+2. **Runtime health/readiness:** `/readyz` + semnalele Prometheus documentate în
+   [`operations/retail-slo-readiness.md`](operations/retail-slo-readiness.md).
+3. **Release/deploy identity:** `RELEASE_MANIFEST.json`, `SOURCE_SHA` și
+   provenance-ul generate pentru exact SHA-ul release-ului; production state
+   este dat de mecanismul de promotion, nu de un Markdown „latest”.
+4. **Verification cost/routing:**
+   [`engineering/verification-efficiency-policy.md`](engineering/verification-efficiency-policy.md).
+   Aceasta este autoritatea pentru întrebarea „ce verificare merită rulată și
+   când?”.
 
-GitHub Issue #159 rămâne cronologia/evidence log al programului de remediere
-istoric finalizat. GitHub Issue #226 este trackerul activ pentru programul
-post-audit v2 (K1-K10); niciun issue nu înlocuiește sursa machine-readable pentru
-statusul documentelor, release identity sau live health.
+## Audituri finalizate
+
+- Issue **#159** — audit remediation istoric, finalizat.
+- Issue **#226** — Audit follow-up v2 K1–K10, **finalizat și închis la
+  2026-09-07**.
+- Issues **#227–#236** — workstream-urile istorice K1–K10.
+
+Aceste issue-uri sunt evidence/cronologie. **Nu sunt planuri active, nu se
+reiau automat și nu justifică PR-DEEP/FULL/hardening nou.** Un viitor agent le
+citește numai dacă task-ul cere explicit istoria auditului.
+
+## Start pentru o sesiune nouă
+
+Pentru muncă normală:
+
+1. citește current `main` și task-ul/issue-ul concret;
+2. citește `../AGENTS.md`;
+3. citește documentele de domeniu strict relevante;
+4. aplică verificarea proporțională din
+   `engineering/verification-efficiency-policy.md`;
+5. oprește-te când outcome-ul cerut este demonstrat.
+
+Nu porni de la #159/#226 și nu inventa un „următor audit item” doar pentru că
+acele trackere există.
 
 ## Autoritate activă
 
 - arhitectură și invariante: [`../APP_ARCHITECTURE.md`](../APP_ARCHITECTURE.md);
-- reguli de repository: [`../AGENTS.md`](../AGENTS.md);
-- livrare exact-SHA și rollback/DR:
+- reguli agent/repository: [`../AGENTS.md`](../AGENTS.md);
+- verificare eficientă:
+  [`engineering/verification-efficiency-policy.md`](engineering/verification-efficiency-policy.md);
+- fast/deep CI routing:
+  [`engineering/pr-fast-lane.md`](engineering/pr-fast-lane.md);
+- livrare production și rollback:
   [`adr/006-verified-runtime-delivery.md`](adr/006-verified-runtime-delivery.md),
   [`../ops/README.md`](../ops/README.md);
-- continuitate / successor operator:
+- continuitate operator:
   [`operations/successor-operator-continuity.md`](operations/successor-operator-continuity.md);
-- view-ul narativ de release este derivat din D2 promotion state prin
-  `scripts/render_production_release_notes.py`; nu este o sursă de stare;
-- contracte de date: [`adr/003-receipt-identity.md`](adr/003-receipt-identity.md),
+- contracte date:
+  [`adr/003-receipt-identity.md`](adr/003-receipt-identity.md),
   [`adr/004-sales-row-multiplicity.md`](adr/004-sales-row-multiplicity.md);
-- contracte de securitate și identitate:
+- securitate/identitate:
   [`engineering/h01-salary-identity-privacy.md`](engineering/h01-salary-identity-privacy.md),
   [`engineering/h06-bff-server-session.md`](engineering/h06-bff-server-session.md),
   [`engineering/h08-privileged-access-fail-closed.md`](engineering/h08-privileged-access-fail-closed.md);
-- runbook campanii: [`RUNBOOK-campanii-promo-incentive-concursuri.md`](RUNBOOK-campanii-promo-incentive-concursuri.md);
-- runbook P&L/TVA: [`RUNBOOK-import-pnl-tva-P0.md`](RUNBOOK-import-pnl-tva-P0.md);
-- runbook salarii HR: [`RUNBOOK-import-salarii-HR.md`](RUNBOOK-import-salarii-HR.md);
+- campanii:
+  [`RUNBOOK-campanii-promo-incentive-concursuri.md`](RUNBOOK-campanii-promo-incentive-concursuri.md);
+- P&L/TVA: [`RUNBOOK-import-pnl-tva-P0.md`](RUNBOOK-import-pnl-tva-P0.md);
+- salarii HR: [`RUNBOOK-import-salarii-HR.md`](RUNBOOK-import-salarii-HR.md);
 - Grile: [`grile-integration-plan.md`](grile-integration-plan.md),
   [`engineering/h11-grile-monthly-idempotency.md`](engineering/h11-grile-monthly-idempotency.md);
-- contract SLO/readiness:
+- SLO/readiness:
   [`operations/retail-slo-readiness.md`](operations/retail-slo-readiness.md).
-
-## Tracking și evidence
-
-- **Issue #226:** tracker activ și protocol de reluare pentru audit follow-up v2;
-- **Issues #227-#236:** cele zece workstream-uri K1-K10; fiecare deține scope-ul,
-  guardrail-urile, Definition of Done și checkpoint evidence pentru obiectivul său;
-- Issue #159: cronologia/evidence programului de remediere anterior, finalizat;
-- Issue #170: guardrail de portabilitate pentru refactorizări; regulă de design,
-  nu task separat și nu justifică abstracții speculative.
-
-Pentru o sesiune ChatGPT nouă: citește mai întâi current `main`, apoi Issue #226
-și primul issue K1-K10 deschis/neblocat. SHA-urile și statusurile din issue-uri
-sunt snapshot-uri de evidence; GitHub current state rămâne sursa de adevăr.
 
 ## Proveniența evidence-ului tehnic
 
-Pentru audituri, planuri de execuție și rapoarte tehnice noi sau actualizate care
-conțin afirmații empirice, folosește una dintre clasele de mai jos. Clasa spune
-**cum a fost verificată afirmația**, nu lifecycle-ul documentului; lifecycle-ul
-rămâne exclusiv în `catalog.json`.
+Pentru afirmații empirice noi/actualizate folosește clasa care descrie exact ce
+s-a verificat:
 
-- `VERIFIED_STATIC` — confirmat direct în sursa/configurația exactă inspectată;
-- `VERIFIED_CI` — confirmat prin evidence CI legat de SHA/run exact;
-- `VERIFIED_RUNTIME` — observat într-un mediu declarat, cu identitate și moment
-  explicit;
-- `VERIFIED_REPRODUCED` — rerulat independent și reprodus;
-- `DECLARED` — afirmație documentată, dar nereprodusă independent în lucrarea
-  curentă;
-- `HISTORICAL` — evidence valabil numai pentru snapshot-ul trecut declarat.
+- `VERIFIED_STATIC` — confirmat în sursa/configurația exactă;
+- `VERIFIED_CI` — confirmat prin CI legat de SHA/run exact;
+- `VERIFIED_RUNTIME` — observat într-un mediu declarat;
+- `VERIFIED_REPRODUCED` — reprodus independent;
+- `DECLARED` — documentat, dar nereprodus în lucrarea curentă;
+- `HISTORICAL` — evidence pentru snapshot trecut.
 
-Un checkpoint empiric nou/actualizat trebuie să includă, unde se aplică:
+Nu transforma `DECLARED` în `VERIFIED_*` fără verificare și nu rerula evidence
+valid doar pentru a schimba timestamp-ul.
 
-```text
-evidence-class: <VERIFIED_STATIC | VERIFIED_CI | VERIFIED_RUNTIME |
-                 VERIFIED_REPRODUCED | DECLARED | HISTORICAL>
-evidence-identity: <exact SHA / runtime identity / N/A>
-evidence-source: <file:line / CI run+job / command+environment / issue evidence>
-independently-reproduced: <yes | no | N/A>
-```
+## Documente istorice păstrate pentru navigare
 
-Nu transforma `DECLARED` în `VERIFIED_*` fără verificarea corespunzătoare și nu
-retrofit-ui mecanic documente istorice. Pentru claims mixte, clasifică afirmația
-relevantă, nu întregul document cu o etichetă ambiguă.
-
-## Navigare: audituri și planuri istorice
-
-Fișierele istorice păstrate direct în `docs/` rămân la path-urile lor stabile
-pentru a evita churn de link-uri. Lista de mai jos este doar navigare; statusul
-curent trebuie citit întotdeauna din `catalog.json`:
+Statusul curent se citește întotdeauna din `catalog.json`:
 
 - [`AUDIT_TEHNIC_RETAIL_UNIHUB_REAUDIT_2026-07-15.md`](AUDIT_TEHNIC_RETAIL_UNIHUB_REAUDIT_2026-07-15.md);
 - [`PERFORMANCE_REVIEW_2026-07-22.md`](PERFORMANCE_REVIEW_2026-07-22.md);
@@ -106,18 +96,9 @@ curent trebuie citit întotdeauna din `catalog.json`:
 - [`PLAN_PERFORMANTA_OPERATIVITATE_2026-07-21.md`](PLAN_PERFORMANTA_OPERATIVITATE_2026-07-21.md);
 - [`PLAN_DEZVOLTARE_RETAIL_UNIHUB_10_10_2026-08-02.md`](PLAN_DEZVOLTARE_RETAIL_UNIHUB_10_10_2026-08-02.md);
 - [`PLAN_TEHNIC_RETAIL_UNIHUB_2026-08-04.md`](PLAN_TEHNIC_RETAIL_UNIHUB_2026-08-04.md);
-- [`PLAN_UNIC_UNIHUB_RETAIL_PESTE_9_2026-08-06.md`](PLAN_UNIC_UNIHUB_RETAIL_PESTE_9_2026-08-06.md).
+- [`PLAN_UNIC_UNIHUB_RETAIL_PESTE_9_2026-08-06.md`](PLAN_UNIC_UNIHUB_RETAIL_PESTE_9_2026-08-06.md);
+- completed execution plans under [`exec-plans/completed/`](exec-plans/completed/);
+- release notes under [`releases/`](releases/).
 
-## Evidence istoric
-
-- planul de closure Release B, acum istoric:
-  [`exec-plans/completed/UR-CLOSE-20260812.md`](exec-plans/completed/UR-CLOSE-20260812.md);
-- substreamul PR #153/#158 finalizat:
-  [`exec-plans/completed/UR-PR153-READY-20260814.md`](exec-plans/completed/UR-PR153-READY-20260814.md);
-- release-uri istorice: [`releases/v2.0.0.md`](releases/v2.0.0.md),
-  [`releases/v2.0.1.md`](releases/v2.0.1.md),
-  [`releases/v2.1.0.md`](releases/v2.1.0.md);
-- ultima livrare exactă documentată înaintea obiectivului curent:
-  [`operations/AUDIT_REMEDIATION_5cbaae0_2026-08-11.md`](operations/AUDIT_REMEDIATION_5cbaae0_2026-08-11.md);
-- handoff Retail 9.5:
-  [`operations/RETAIL_9_5_FINAL_HANDOFF.md`](operations/RETAIL_9_5_FINAL_HANDOFF.md).
+Historical documents remain useful evidence, but they never override current
+`main`, active contracts or the verification-efficiency policy.
