@@ -34,7 +34,11 @@ export class ErrorBoundary extends Component<Props, State> {
     if (this.state.hasError) {
       return (
         <div className="flex min-h-[320px] items-center justify-center p-6">
-          <div className="max-w-lg rounded-3xl border border-red-100 bg-white p-6 text-center shadow-lg dark:border-red-900/40 dark:bg-slate-950">
+          <div
+            role="alert"
+            aria-atomic="true"
+            className="max-w-lg rounded-3xl border border-red-100 bg-white p-6 text-center shadow-lg dark:border-red-900/40 dark:bg-slate-950"
+          >
             <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-red-50 text-xl text-red-600 dark:bg-red-950/40">
               !
             </div>

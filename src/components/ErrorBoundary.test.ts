@@ -20,7 +20,7 @@ describe('ErrorBoundary', () => {
     expect(html).toContain('continut normal');
   });
 
-  it('renders the default recovery state after a render error', () => {
+  it('renders an accessible default recovery alert after a render error', () => {
     const boundary = new ErrorBoundary({
       children: createElement('span', null, 'ascuns'),
     });
@@ -30,6 +30,8 @@ describe('ErrorBoundary', () => {
 
     const html = renderToStaticMarkup(boundary.render() as ReactElement);
 
+    expect(html).toContain('role="alert"');
+    expect(html).toContain('aria-atomic="true"');
     expect(html).toContain('Ecranul nu a putut fi incarcat');
     expect(html).toContain('Incearca din nou');
     expect(html).toContain('Reincarca aplicatia');
