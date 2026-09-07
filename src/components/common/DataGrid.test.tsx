@@ -167,14 +167,14 @@ describe('DataGrid', () => {
       .toEqual(['data-grid-header-sales', 'data-grid-header-name']);
 
     fireEvent.click(screen.getByRole('checkbox', { name: 'Afișează Vânzări' }));
-    expect(scren.getAllByTestId(/^data-grid-header-/)).toHaveLength(1);
+    expect(screen.getAllByTestId(/^data-grid-header-/)).toHaveLength(1);
     expect(screen.getByTestId('export-probe')).toHaveAttribute('data-columns', '1');
 
     fireEvent.click(screen.getByRole('button', { name: 'Resetează coloanele' }));
     expect(screen.getAllByTestId(/^data-grid-header-/).map((header: HTMLElement) => header.dataset.testid))
       .toEqual([
         'data-grid-header-name',
-       'data-grid-header-region',
+        'data-grid-header-region',
         'data-grid-header-sales',
       ]);
     expect(screen.getByTestId('export-probe')).toHaveAttribute('data-columns', '3');
@@ -197,11 +197,11 @@ describe('DataGrid', () => {
         rowKey={(row) => row.id}
         exportFilename="gol"
         exportSheetName="Gol"
-        emptyLabel="Fàrã date"
+        emptyLabel="Fără date"
       />,
     );
 
-    expect(screen.getByText('Fàrã date')).toBeInTheDocument();
+    expect(screen.getByText('Fără date')).toBeInTheDocument();
     expect(screen.getByText('0 înregistrări')).toBeInTheDocument();
     expect(screen.queryByRole('searchbox')).not.toBeInTheDocument();
     fireEvent.click(screen.getByText('Coloane'));

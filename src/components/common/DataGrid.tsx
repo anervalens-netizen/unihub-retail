@@ -297,4 +297,26 @@ export function DataGrid<Row, Key extends string>(props: DataGridProps<Row, Key>
         </div>
       </div>
       <div className="max-h-[360px] overflow-auto">
-        <table classNamYOHÈµ™Õ±°µ¥¸µÜµµ…àÑ…‰±”µ…ÕÑ¼Ñ•áÐµáÌˆ…É¥„µ±…‰•°õíÁÉ½ÁÌ¹Ñ¥Ñ±•ôø(€€€€€€€€€€ñ…Ñ…É¥‘!•…(€€€€€€€€€€€½±Õµ¹ÌõíÍÑ…Ñ”¹Ù¥Í¥‰±•½±Õµ¹Íô(€€€€€€€€€€€Í½ÉÑÌõíÍÑ…Ñ”¹Í½ÉÑÍô(€€€€€€€€€€€™¥±Ñ•ÉÌõíÍÑ…Ñ”¹™¥±Ñ•ÉÍô(€€€€€€€€€€€½¹M½ÉÐõì¡­•ä°…ÁÁ•¹¤€ôøÍÑ…Ñ”¹Í•ÑM½ÉÑÌ ¡ÕÉÉ•¹Ð¤€ôø(€€€€€€€€€€€€€¹•áÑ…Ñ…É¥‘M½ÉÑÌ¡ÕÉÉ•¹Ð°­•ä°ì(€€€€€€€€€€€€€€€…ÁÁ•¹°(€€€€€€€€€€€€€€€‘•™…Õ±ÑÍ-•åÌèÍÑ…Ñ”¹‘•™…Õ±ÑÍ-•åÌ°(€€€€€€€€€€€€€ô¤¥ô(€€€€€€€€€€€½¹¥±Ñ•ÈõíÍ•Ñ¥±Ñ•Éô(€€€€€€€€€€¼ø(€€€€€€€€€€ñ…Ñ…É¥‘	½‘ä(€€€€€€€€€€€É½ÝÌõíÍÑ…Ñ”¹Ù¥•ÝI½ÝÍô(€€€€€€€€€€€½±Õµ¹ÌõíÍÑ…Ñ”¹Ù¥Í¥‰±•½±Õµ¹Íô(€€€€€€€€€€€É½Ý-•äõíÁÉ½ÁÌ¹É½Ý-•åô(€€€€€€€€€€€•µÁÑå1…‰•°õíÁÉ½ÁÌ¹•µÁÑå1…‰•°€üü€9Ô•á¥ÍÓÉ•éÕ±Ñ…Ñ”Á•¹ÑÉÔ™¥±ÑÉ•±”Í•±•Ñ…Ñ”¸ô(€€€€€€€€€€¼ø(€€€€€€€€ð½Ñ…‰±”ø(€€€€€€ð½‘¥Øø(€€€€ð½Í•Ñ¥½¸ø(€€¤ì)ô(
+        <table className="w-full min-w-max table-auto text-xs" aria-label={props.title}>
+          <DataGridHead
+            columns={state.visibleColumns}
+            sorts={state.sorts}
+            filters={state.filters}
+            onSort={(key, append) => state.setSorts((current) =>
+              nextDataGridSorts(current, key, {
+                append,
+                defaultAscKeys: state.defaultAscKeys,
+              }))}
+            onFilter={setFilter}
+          />
+          <DataGridBody
+            rows={state.viewRows}
+            columns={state.visibleColumns}
+            rowKey={props.rowKey}
+            emptyLabel={props.emptyLabel ?? 'Nu existÄƒ rezultate pentru filtrele selectate.'}
+          />
+        </table>
+      </div>
+    </section>
+  );
+}

@@ -104,7 +104,7 @@ export function DataGridColumnMenu<Row, Key extends string>({
   hidden: readonly Key[];
   onMove: (key: Key, offset: -1 | 1) => void;
   onToggle: (key: Key) => void;
-  onMeset: () => void;
+  onReset: () => void;
 }) {
   const hiddenSet = new Set(hidden);
   const visibleCount = allKeys.filter((key) => !hiddenSet.has(key)).length;
