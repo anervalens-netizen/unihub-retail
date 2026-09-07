@@ -1,111 +1,132 @@
 # Verification efficiency policy
 
-This document is a persistent operating contract for repository verification.
-It exists to prevent correctness controls from drifting into process overhead
-that delays ordinary software delivery without adding proportional confidence.
+This is the **canonical operating policy for verification cost and routing** in
+UniHub Retail. When another active document appears to require more verification
+than this policy, interpret that requirement narrowly or correct the stale text.
+Historical audit trackers are evidence, not execution authority.
 
-## Core rule
+## Prime directive
 
-**Efficiency is a correctness requirement.** Verification must make false
-completion difficult while remaining proportional to the change. A fast lane
-that routinely behaves like FULL is defective even if every individual check
-is defensible in isolation.
+**Use the smallest authoritative evidence set that can falsify the change at its
+actual risk level. Efficiency is part of correctness.**
 
-## PR-fast invariant
+Before starting any expensive verification step (`PR-DEEP`, `FULL`, replay of a
+large suite, extra independent review), answer both questions:
 
-`pr-fast` is a fast feedback lane, not a miniature FULL run.
+1. **What concrete risk does this step check?**
+2. **What materially new evidence will it produce beyond evidence already valid?**
 
-- Normal target: **under 10 minutes**.
-- Hard workflow timeout: **15 minutes**. This is a guardrail, not an expected
-  runtime and must not be increased merely to fit more work.
-- Ordinary PR work should receive targeted/affected verification.
-- Large affected-backend fan-out belongs in `PR-DEEP`, not `pr-fast`.
-- Exact-main FULL remains independent release/checkpoint authority.
+If question 2 has no meaningful answer, do not run the step.
 
-### Evidence-based affected-test budget
+Time on self-hosted runners, owner waiting time and AI/model usage are engineering
+costs. Do not spend them merely to obtain a newer timestamp or a second copy of
+the same proof.
 
-The initial routing budget is **120 selected backend test files**.
+## Default routing
 
-Live evidence that defines this boundary:
+| Change | Default verification |
+|---|---|
+| docs / Markdown / tracker metadata | cheap docs/native checks only; no code CI, PR-DEEP or FULL |
+| small UI/config/test/refactor with bounded impact | focused local check(s) + repository-native PR fast lane |
+| ordinary application/runtime code | focused local checks + `pr-fast`; let native policy decide whether escalation is required |
+| auth/authz, financial/private data, migrations, destructive operations | relevant focused tests + high-risk governance; PR-DEEP only when native policy requires it or a concrete unresolved risk justifies it |
+| CI/release/control-plane authority | high-risk governance and the exact authority checks activated by the change; avoid unrelated suites |
+| formal production release/deploy | exact-main `FULL` release run because it creates/verifies the deployable artifact, manifests and provenance |
 
-- validation PR #173: `selection_count=111`, exact-head `pr-fast` completed in
-  about **7m35s** and passed;
-- C7 PR #184: `selection_count=133`; the affected-backend step ran **11m38s**
-  and the overall `pr-fast` job hit its 15-minute hard timeout before the
-  selected suite completed.
+The table is a default, not permission to bypass a server-required check. GitHub
+native gates remain authoritative for the exact PR they guard.
 
-Therefore a selector result above 120 selected backend test files must become
-`ESCALATION_REQUIRED` and route to `PR-DEEP`. The threshold may change only
-from measured evidence showing that the normal fast-lane target remains
-satisfied; do not raise the timeout to hide routing failure.
+## PR-DEEP
 
-## Proportional verification
+`PR-DEEP` is an **escalation lane**, not a standard second phase of every PR.
+The trusted selector/policy may require it for unsafe or broad backend changes
+(for example control-plane/dependency/wiring trust surfaces, deletions, changed
+dynamic-import surfaces, or affected-test fan-out above the fast-lane budget).
 
-Use the smallest authoritative evidence set that matches the risk.
+Do not manually dispatch PR-DEEP for docs, snapshots, normal UI work, small
+refactors, or ordinary changes merely because a previous audit once used it.
+Do not run a second PR-DEEP on unchanged candidate content.
 
-- Docs-only / Markdown-only changes are non-runtime and must not launch the
-  heavy CI workflow under the current repository enforcement model.
-- Tracker-only changes require no code CI.
-- Low/medium-risk runtime changes use focused local checks plus the normal
-  affected PR lane.
-- High-risk/control-plane changes use their required governance and deep
-  certification paths.
-- FULL is not a per-PR or per-merge ritual. It is justified only by the master
-  tracker policy: release/promotion, a deliberate checkpoint, material
-  control-plane change whose correctness depends on FULL, unresolved
-  uncertainty, or explicit owner request.
+## FULL
 
-Required cheap controls that protect repository integrity may remain active;
-"proportional" does not mean bypassing a control that the change actually
-activates.
+`FULL` is **not** a per-PR, per-merge or post-PR-DEEP ritual.
 
-## No ceremonial reruns
+Run FULL only when it provides a distinct required output or proof, such as:
 
-- Never rerun an unchanged failed/cancelled candidate until the failure mode is
-  diagnosed.
-- A hard-timeout rerun with the same workflow definition and same candidate is
-  prohibited unless there is evidence the timeout was caused by a transient
-  external condition rather than deterministic workload.
-- Reuse still-valid exact-SHA evidence. Do not repeat lint, mypy, tests, review,
-  or certification on unchanged content merely to create fresh timestamps.
-- When HEAD changes, rerun only evidence invalidated by that change or required
-  by the repository's exact-head authority model.
+- a formal production release/deploy that needs the exact-main immutable release
+  artifact and provenance;
+- an explicitly chosen release/checkpoint certification;
+- a material control-plane change whose unresolved correctness question genuinely
+  depends on FULL lanes not already covered;
+- unresolved cross-lane uncertainty demonstrated by evidence;
+- an explicit owner request.
+
+**Never chain `PR-DEEP -> merge -> FULL` by default.** If PR-DEEP has certified
+the relevant candidate and no formal release is being produced, merge plus the
+required post-merge policy checks is normally the end of that workstream.
+
+## Evidence validity: SHA vs tree/content
+
+Distinguish two concepts:
+
+1. **Server status authority is SHA-bound.** A required GitHub status must refer
+to the exact PR HEAD/base expected by the gate.
+2. **Technical test evidence is content/scope-bound.** A new commit SHA does not
+automatically make every previous test result technically worthless.
+
+Rerun only evidence invalidated by a relevant code/tree/configuration/execution-
+semantic change or required by an exact-SHA server gate.
+
+After a merge commit, compare the resulting tree with the certified candidate
+tree. If the merge tree is identical and the certified base did not drift,
+there is no new application content to retest merely because the merge commit
+has a different SHA. Run exact-main FULL only if a formal release artifact or
+another distinct FULL proof is actually required.
+
+## Failure handling
+
+- No blind reruns.
+- Diagnose job -> step -> log/artifact -> root cause.
+- Fix the smallest demonstrated cause.
+- Do not lower thresholds, broaden snapshots or weaken a gate only to make CI
+  green.
+- A rerun on unchanged content is allowed only when evidence shows a transient
+  external failure and the rerun can materially distinguish that hypothesis.
 
 ## One bounded remediation cycle
 
 For a failing PR:
 
-1. identify the largest real blocking gap;
-2. fix that gap only;
-3. run the smallest focused local checks that can catch an immediate mistake;
+1. identify the largest real blocker;
+2. fix only that blocker;
+3. run the smallest focused local check that can catch an immediate mistake;
 4. push one bounded candidate;
-5. let repository-native exact-head gates decide what additional evidence is
-   required;
-6. do not perform multiple speculative verifier/CI cycles in parallel.
+5. let repository-native exact-head gates determine any required escalation;
+6. stop when the requested outcome is proven.
 
-If a new mechanism adds substantial recurring runtime to ordinary PRs, its
-change must include measured before/after cost and prove that the normal fast
-path still meets the target. Otherwise route that work to `PR-DEEP` or FULL.
+Do not turn a small remediation into a new framework, tracker, audit or hardening
+program.
 
-## Persistent coordinator/agent rules
+## Planning and review proportionality
 
-- Prefer delivery over administration when correctness evidence is already
-  sufficient.
-- Do not create new frameworks, generic verification machinery, temporary
-  environments, or documentation layers solely to satisfy process aesthetics.
-- Do not broaden a task because a verifier can imagine unrelated improvements.
-- A verifier should search for false completion and material regressions, not
-  manufacture extra ceremony.
-- Preserve architecture, governance, security, coverage, release, and
-  irreversible-action boundaries; optimize routing and duplication rather than
-  weakening those authorities.
+- Ordinary bounded work needs no execution plan document.
+- Use a living plan only for genuinely substantial, multi-session, high-risk or
+  coordination-heavy objectives.
+- Independent critique/review is risk-based, not ceremonial.
+- A verifier searches for material false completion; it does not manufacture
+  unrelated follow-up work.
 
-## Relationship to other sources
+## Current authority and history
 
-- GitHub issue #159 remains the audit-remediation master tracker and contains
-  the 2026-08-21 operating-invariant amendment that reopened E2 operationally
-  until the fast-lane regression is corrected and live-proven.
-- `docs/engineering/pr-fast-lane.md` describes the concrete fast-lane design.
-- `AGENTS.md` defines the default agent behavior and GitHub Actions budget.
-- If these sources disagree on verification cost, this policy and the latest
-  tracker amendment take precedence until the stale text is corrected.
+- `AGENTS.md` defines repository behavior and points here for verification cost.
+- `docs/engineering/pr-fast-lane.md` documents the current fast/deep routing
+  mechanism.
+- `docs/adr/006-verified-runtime-delivery.md` governs **production promotion**
+  from verified artifacts; it does not require a production release after every
+  merge.
+- GitHub Issues #159 and #226 (including #227-#236) are **completed historical
+  audit evidence**. They must not be resumed as active programs unless the owner
+  explicitly asks to revisit that history.
+
+Default after a completed task is **return to product development**, not start a
+new audit, certification cycle or speculative hardening stream.

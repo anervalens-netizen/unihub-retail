@@ -1,34 +1,48 @@
 # Retail execution-plan contract
 
-Substantial objectives use exactly one living plan under
-`docs/exec-plans/active/`. The active plan is the authority for scope,
-acceptance, progress, evidence and recovery; audit reports and historical
-handoffs are inputs, not competing trackers.
+Execution plans are a coordination tool, **not a prerequisite for ordinary
+work**.
 
-## Required lifecycle
+## When to create a plan
 
-1. Record the exact Git/runtime baseline and preserve unrelated/user work.
-2. Define observable acceptance criteria. Every criterion starts
-   `UNVERIFIED`; absence of evidence is not `FAIL`.
-3. Obtain an independent contract critique before high-risk implementation.
-4. Build bounded lots locally. Do not use GitHub Actions as an iterative test
-   runner and do not repeat gates against unchanged content.
-5. Obtain an independent acceptance verdict against the integrated artifact.
-6. Deliver runtime changes only through ADR-006 exact-SHA provenance.
-7. Mark `DONE` only after every criterion is `PASS`, production proof is
-   complete and Git/runtime state is reconciled. Move the plan to
-   `docs/exec-plans/completed/` when closed.
+Create exactly one living plan under `docs/exec-plans/active/` only when the
+objective is genuinely substantial: multi-session, high-risk, coordination-
+heavy, difficult to resume safely, or explicitly requested by the owner.
+
+Do **not** create a plan for a bounded bug fix, small feature, UI change,
+documentation update, test adjustment, dependency patch or other task that can
+be understood directly from the issue/PR and repository state.
+
+If a plan is warranted, it is the single authority for scope, acceptance,
+progress and recovery. Audit reports and historical handoffs are inputs, not
+competing trackers.
+
+## Lean lifecycle
+
+1. Record only the baseline needed to avoid acting on stale state.
+2. Define observable acceptance criteria proportional to the requested outcome.
+3. Build bounded lots; do not use GitHub Actions as an iterative test runner.
+4. Use independent critique/review only when risk or uncertainty justifies it.
+5. Apply the smallest authoritative verification set from
+   `docs/engineering/verification-efficiency-policy.md`.
+6. If production delivery is in scope, use ADR-006 exact-artifact provenance.
+7. Mark `DONE` when the requested outcome is proven; do not invent additional
+   audit/hardening work to prolong the plan.
 
 ## Evidence rules
 
-- Evidence is concise, sanitized, reproducible and tied to an exact SHA.
+- Evidence is concise, sanitized and tied to the identity/scope it actually
+  proves.
 - Never persist credentials, CNP, salary values, personal names or raw
   production payloads.
 - User-attested acceptance is recorded as such and is not needlessly replayed.
-- A failed gate is rerun only after a relevant change; after two no-progress
-  cycles, diagnose and replan once instead of looping.
+- A failed gate is rerun only after a relevant change or a demonstrated
+  transient external failure.
+- Reuse still-valid evidence; a new SHA alone is not a reason to replay every
+  technical test when relevant content/semantics are unchanged.
 
-## Active objective
+## Current repository-wide objective
 
-- `UR-CLOSE-20260812` — lean closure of the demonstrated Retail defects through
-  schema 069, focused incident tests, ADR-006 delivery, and live proof.
+**None.** Audit programs #159 and #226 are completed historical evidence. New
+work uses a task-specific issue/PR and creates a living execution plan only when
+the criteria above genuinely require one.
