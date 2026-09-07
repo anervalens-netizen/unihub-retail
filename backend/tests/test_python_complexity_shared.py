@@ -443,8 +443,8 @@ def test_zero_drift_across_all_production_functions(l1):
         )
 
 
-def test_total_production_function_count_is_2990(l1):
-    """Production tree must contain exactly 2990 measured functions.
+def test_total_production_function_count_is_2992(l1):
+    """Production tree must contain exactly 2992 measured functions.
 
     The C6 Target Calculator repository decomposition intentionally
     adds 8 focused helper functions (+2 in target_calculator_sources.py,
@@ -458,11 +458,13 @@ def test_total_production_function_count_is_2990(l1):
     from 2963 to 2989 through F1/F2. F4 adds one focused migration-manifest
     validation helper, backend/db/migration_runner.py::_valid_execution_classes,
     for exhaustive execution-class validation; baseline moves from 2989 to 2990.
+    K10 adds two bounded local OIDC black-box harness helpers in
+    backend/scripts/oidc_e2e_stub.py; baseline moves from 2990 to 2992.
     The exact snapshot rejects unrelated production-function drift.
     """
     metrics = l1.collect_metrics(PR_B1_WORKTREE)
-    assert len(metrics) == 2990, (
-        f"production count drift: expected 2990, got {len(metrics)}"
+    assert len(metrics) == 2992, (
+        f"production count drift: expected 2992, got {len(metrics)}"
     )
 
 
