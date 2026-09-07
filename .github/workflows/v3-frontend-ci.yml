@@ -1,0 +1,106 @@
+name: V3 frontend CI
+
+on:
+  pull_request:
+    branches:
+      - "v3/main"
+    paths:
+      - "src/**"
+      - "vendor/npm/**"
+      - "package.json"
+      - "package-lock.json"
+      - "eslint.config.js"
+      - "tsconfig*.json"
+      - "vite.config.ts"
+      - "vitest.config.ts"
+      - "scripts/check_bundle_budget.mjs"
+      - "scripts/check_changed_line_coverage.py"
+      - "scripts/check_dependency_policy.mjs"
+      - "scripts/check_ts_function_complexity.cjs"
+      - "scripts/ts-function-complexity-ratchet.json"
+      - ".github/workflows/v3-frontend-ci.yml"
+
+concurrency:
+  group: v3-frontend-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  frontend:
+    name: v3-frontend
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, Linux, X64, dell-compute, unihub-build, unihub-retail-build]
+    timeout-minutes: 25
+    env:
+      RETAIL_NODE: /opt/codex-desktop/resources/node-runtime/bin/node
+      RETAIL_NPM_CLI: /opt/codex-desktop/resources/node-runtime/lib/node_modules/npm/bin/npm-cli.js
+      PATH: /opt/codex-desktop/resources/node-runtime/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+      PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      VITE_FRONTEND_GLITCHTIP_DSN: ""
+    steps:
+      - name: Prove isolated build runner
+        run: |
+          set -euo pipefail
+          test "$RUNNER_ENVIRONMENT" = self-hosted
+          test "$RUNNER_NAME" = dell-retail-build
+          test "$(hostname)" = dell-standby
+          test ! -e /run/dell-compute/quiesced
+          test ! -e /var/lib/dell-standby/ACTIVE
+          test ! -r /opt/Mobiup/unihub-retail/.env
+          test ! -r /opt/Mobiup/.ssh/id_ed25519_mobiup_primary_admin
+          test ! -r /home/andrei/.ssh/id_ed25519
+          test ! -e /storage/backups
+          test ! -e /run/tailscale/tailscaled.sock
+
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: false
+
+      - name: Verify pinned Node.js and npm
+        run: |
+          set -euo pipefail
+          test "$(sha256sum "$RETAIL_NODE" | awk '{print $1}')" = 81925c0995b5c1427b5d538e6a90ca2fdc4daffb786b09af749beaf7369d4e90
+          test "$(sha256sum "$RETAIL_NPM_CLI" | awk '{print $1}')" = 8e5f6f3429f8cdbe693cdc29904e9d5a7b127a494bd15c804bd54c7403bfcbe7
+          test "$("$RETAIL_NODE" --version)" = v22.22.2
+          test "$("$RETAIL_NODE" "$RETAIL_NPM_CLI" --version)" = 10.9.7
+
+      - name: Verify vendored packages and dependency policy
+        run: |
+          "$RETAIL_NODE" scripts/verify_vendored_npm_packages.mjs
+          "$RETAIL_NODE" scripts/check_dependency_policy.mjs
+
+      - name: Install frontend dependencies
+        run: "$RETAIL_NODE" "$RETAIL_NPM_CLI" ci --include=dev
+
+      - name: Typecheck, complexity and lint
+        run: |
+          "$RETAIL_NODE" "$RETAIL_NPM_CLI" run typecheck
+          "$RETAIL_NODE" scripts/check_ts_function_complexity.cjs
+          "$RETAIL_NODE" "$RETAIL_NPM_CLI" run lint
+
+      - name: Affected unit tests with changed-line coverage
+        run: |
+          set -euo pipefail
+          MERGE_BASE="$(git merge-base "$PR_BASE_SHA" HEAD)"
+          "$RETAIL_NODE" "$RETAIL_NPM_CLI" run test:coverage -- \
+            --changed="$MERGE_BASE" \
+            --passWithNoTests
+          LCOV_PATH=coverage/frontend/lcov.info
+          if [[ ! -s "$LCOV_PATH" ]]; then
+            LCOV_PATH="$(mktemp -t retail-v3-empty-lcov-XXXXXX.info)"
+            : > "$LCOV_PATH"
+          fi
+          /usr/bin/python3.12 -I -S scripts/check_changed_line_coverage.py \
+            --base "$MERGE_BASE" \
+            --frontend-lcov "$LCOV_PATH" \
+            --minimum 80
+
+      - name: Production build and bundle budget
+        run: |
+          "$RETAIL_NODE" "$RETAIL_NPM_CLI" run build
+          "$RETAIL_NODE" scripts/check_bundle_budget.mjs
