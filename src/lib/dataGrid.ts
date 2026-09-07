@@ -125,7 +125,7 @@ export function nextDataGridSorts<Key extends string>(
   const { append = false, defaultAscKeys = [] } = options;
   const existingIndex = current.findIndex((sort) => sort.key === key);
   if (!append) {
-    const existing = existingIndex === 0 && current.length === 1 ? current[0] : undefined;
+    const existing = existingIndex >= 0 ? current[existingIndex] : undefined;
     return [{
       key,
       direction: existing

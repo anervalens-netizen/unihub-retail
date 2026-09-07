@@ -125,6 +125,15 @@ describe('dataGrid model', () => {
       { key: 'name', direction: 'desc' },
       { key: 'sales', direction: 'desc' },
     ]);
+    expect(nextDataGridSorts(
+      [
+        { key: 'name', direction: 'asc' },
+        { key: 'sales', direction: 'desc' },
+      ],
+      'name',
+    )).toEqual([
+      { key: 'name', direction: 'desc' },
+    ]);
   });
 
   it('normalizes column order and ignores unknown or duplicate keys', () => {
