@@ -90,10 +90,12 @@ hotfixului. Necesită simultan:
 - manifest hash-uit și backup verificat;
 - fără migrări, auth, permissions, importuri, salarii, Grile destructive,
   proxy, secrete sau release tooling;
-- reconciliere ulterioară: push, verificare și egalitate între identitatea live
-  și GitHub.
+- reconciliere ulterioară obligatorie: push, **CI exact-SHA verde pentru commitul
+  de urgență** și egalitate între identitatea live și GitHub.
 
-Break-glass nu este o alternativă de comoditate.
+Break-glass nu este o alternativă de comoditate. Cerința de CI exact-SHA de mai
+sus este reconcilierea excepției după un hotfix live; nu transformă merge-urile
+normale în obligații de FULL post-merge.
 
 ## Regula de eficiență
 
