@@ -5,7 +5,7 @@ set -Eeuo pipefail
 BACKEND_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PYTHON="${BACKEND_DIR}/venv/bin/python"
 PYTHON_BASE="/usr/bin/python3.12"
-PYTHON_BASE_SHA256="1643dacd9feaedc58f3cc581e4d22577dfe25c09b10282936186ccf0f2e61118"
+PYTHON_BASE_SHA256="a92f0f95e883390c7256b2e441484aac06b1002dbe1d924141a77c8d82f96223"
 STAMP="${GITHUB_RUN_ID:-local}-$(date +%s)-$$"
 CONTAINER="unihub-retail-test-${STAMP}"
 VALKEY_CONTAINER="unihub-retail-valkey-test-${STAMP}"

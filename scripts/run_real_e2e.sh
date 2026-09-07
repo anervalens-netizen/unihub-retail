@@ -4,7 +4,7 @@ set -Eeuo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PYTHON="${ROOT_DIR}/backend/venv/bin/python"
 PYTHON_BASE="/usr/bin/python3.12"
-PYTHON_BASE_SHA256="1643dacd9feaedc58f3cc581e4d22577dfe25c09b10282936186ccf0f2e61118"
+PYTHON_BASE_SHA256="a92f0f95e883390c7256b2e441484aac06b1002dbe1d924141a77c8d82f96223"
 NODE="/opt/codex-desktop/resources/node-runtime/bin/node"
 NODE_SHA256="81925c0995b5c1427b5d538e6a90ca2fdc4daffb786b09af749beaf7369d4e90"
 PLAYWRIGHT_CLI="${ROOT_DIR}/node_modules/@playwright/test/cli.js"
