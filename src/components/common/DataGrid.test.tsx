@@ -119,6 +119,11 @@ describe('DataGrid', () => {
       'ascending',
     );
     expect(screen.getByTestId('data-grid-header-sales')).not.toHaveAttribute('aria-sort');
+    expect(screen.getByTestId('data-grid-sort-status')).toHaveTextContent(
+      'Sortare activă: Nume crescător (prioritatea 1), Vânzări descrescător (prioritatea 2).',
+    );
+    expect(screen.getByRole('button', { name: 'Sortează după Nume' }))
+      .toHaveAttribute('aria-describedby', screen.getByTestId('data-grid-sort-status').id);
   });
 
   it('filters text, enum and numeric values and exports only the current view', () => {

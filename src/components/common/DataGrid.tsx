@@ -7,6 +7,7 @@ import {
 import {
   useMemo,
   useState,
+  useId,
   type MouseEvent,
   type ReactNode,
 } from 'react';
@@ -133,9 +134,24 @@ function DataGridHead<Row, Key extends string>({
   onSort: (key: Key, append: boolean) => void;
   onFilter: (key: Key, filter: DataGridFilterValue | undefined) => void;
 }) {
+  const sortStatusId = useId();
   const hasFilters = columns.some((column) => column.filter !== undefined);
+  const sortStatus = sorts.length === 0
+    ? 'Nicio sortare activă.'
+    : `Sortare activă: ${sorts.map((sort, index) => {
+      const column = columns.find((candidate) => candidate.key === sort.key);
+      const direction = sort.direction === 'asc' ? 'crescător' : 'descrescător';
+      return `${column?.label ?? sort.key} ${direction} (prioritatea ${index + 1})`;
+    }).join(', ')}.`;
   return (
     <thead className="sticky top-0 z-10 bg-slate-50 text-slate-500 dark:bg-slate-800/95 dark:text-slate-300">
+      <tr>
+        <th colSpan={columns.length} className="sr-only">
+          <span id={sortStatusId} role="status" data-testid="data-grid-sort-status">
+            {sortStatus}
+          </span>
+        </th>
+      </tr>
       <tr>
         {columns.map((column) => {
           const sortIndex = sorts.findIndex((sort) => sort.key === column.key);
@@ -156,6 +172,7 @@ function DataGridHead<Row, Key extends string>({
                 onClick={(event: MouseEvent<HTMLButtonElement>) =>
                   onSort(column.key, event.shiftKey)}
                 aria-label={`Sortează după ${column.label}`}
+                aria-describedby={sortStatusId}
                 title="Click pentru sortare; Shift+click pentru sortare multiplă"
                 className="flex w-full min-w-0 items-center justify-between gap-1 rounded text-left hover:text-indigo-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:hover:text-indigo-300"
               >
