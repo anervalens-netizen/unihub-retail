@@ -11,7 +11,11 @@ Acest index separă clar **starea curentă** de evidence-ul istoric.
    [`operations/retail-slo-readiness.md`](operations/retail-slo-readiness.md).
 3. **Release/deploy identity:** `RELEASE_MANIFEST.json`, `SOURCE_SHA` și
    provenance-ul generate pentru exact SHA-ul release-ului; production state
-   este dat de mecanismul de promotion, nu de un Markdown „latest”.
+   este dat de mecanismul de promotion, nu de un Markdown „latest”. View-ul
+   narativ se generează numai prin `scripts/render_production_release_notes.py`,
+   iar tag-urile istorice de promotion folosesc prefixul
+   `production/retail-release-`. Nici rendererul, nici release notes nu aleg un
+   release „current/latest” în locul autorității machine-readable.
 4. **Verification cost/routing:**
    [`engineering/verification-efficiency-policy.md`](engineering/verification-efficiency-policy.md).
    Aceasta este autoritatea pentru întrebarea „ce verificare merită rulată și
