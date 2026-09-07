@@ -103,6 +103,12 @@ describe('DataGrid', () => {
       'aria-sort',
       'descending',
     );
+    const sortStatus = screen.getByRole('status');
+    expect(sortStatus).toHaveTextContent('Sortare activă: 1. Vânzări, descrescător.');
+    expect(screen.getByRole('button', { name: 'Sortează după Nume' })).toHaveAttribute(
+      'aria-describedby',
+      sortStatus.id,
+    );
 
     fireEvent.click(screen.getByRole('button', { name: 'Sortează după Nume' }));
     expect(renderedNames()).toEqual(['a:Ana', 'b:Ana', 'd:Mihai', 'c:Ștefan']);
@@ -119,11 +125,13 @@ describe('DataGrid', () => {
       'ascending',
     );
     expect(screen.getByTestId('data-grid-header-sales')).not.toHaveAttribute('aria-sort');
-    expect(screen.getByTestId('data-grid-sort-status')).toHaveTextContent(
-      'Sortare activă: Nume crescător (prioritatea 1), Vânzări descrescător (prioritatea 2).',
+    expect(sortStatus).toHaveTextContent(
+      'Sortare activă: 1. Nume, crescător; 2. Vânzări, descrescător.',
     );
-    expect(screen.getByRole('button', { name: 'Sortează după Nume' }))
-      .toHaveAttribute('aria-describedby', screen.getByTestId('data-grid-sort-status').id);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Sortează după Nume' }));
+    expect(renderedNames()).toEqual(['c:Ștefan', 'd:Mihai', 'a:Ana', 'b:Ana']);
+    expect(sortStatus).toHaveTextContent('Sortare activă: 1. Nume, descrescător.');
   });
 
   it('filters text, enum and numeric values and exports only the current view', () => {

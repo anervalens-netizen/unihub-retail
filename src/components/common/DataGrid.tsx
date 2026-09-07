@@ -5,9 +5,9 @@ import {
   RotateCcw,
 } from 'lucide-react';
 import {
+  useId,
   useMemo,
   useState,
-  useId,
   type MouseEvent,
   type ReactNode,
 } from 'react';
@@ -127,31 +127,18 @@ function DataGridHead<Row, Key extends string>({
   filters,
   onSort,
   onFilter,
+  sortStatusId,
 }: {
   columns: readonly DataGridColumn<Row, Key>[];
   sorts: readonly DataGridSort<Key>[];
   filters: DataGridFilters<Key>;
   onSort: (key: Key, append: boolean) => void;
   onFilter: (key: Key, filter: DataGridFilterValue | undefined) => void;
+  sortStatusId: string;
 }) {
-  const sortStatusId = useId();
   const hasFilters = columns.some((column) => column.filter !== undefined);
-  const sortStatus = sorts.length === 0
-    ? 'Nicio sortare activă.'
-    : `Sortare activă: ${sorts.map((sort, index) => {
-      const column = columns.find((candidate) => candidate.key === sort.key);
-      const direction = sort.direction === 'asc' ? 'crescător' : 'descrescător';
-      return `${column?.label ?? sort.key} ${direction} (prioritatea ${index + 1})`;
-    }).join(', ')}.`;
   return (
     <thead className="sticky top-0 z-10 bg-slate-50 text-slate-500 dark:bg-slate-800/95 dark:text-slate-300">
-      <tr>
-        <th colSpan={columns.length} className="sr-only">
-          <span id={sortStatusId} role="status" data-testid="data-grid-sort-status">
-            {sortStatus}
-          </span>
-        </th>
-      </tr>
       <tr>
         {columns.map((column) => {
           const sortIndex = sorts.findIndex((sort) => sort.key === column.key);
@@ -257,6 +244,14 @@ function DataGridBody<Row, Key extends string>({
 
 export function DataGrid<Row, Key extends string>(props: DataGridProps<Row, Key>) {
   const state = useDataGridState(props);
+  const sortStatusId = useId();
+  const sortStatus = state.sorts.length === 0
+    ? 'Nicio sortare activă.'
+    : `Sortare activă: ${state.sorts.map((sort, index) => {
+      const label = state.columnMap.get(sort.key)?.label ?? sort.key;
+      const direction = sort.direction === 'asc' ? 'crescător' : 'descrescător';
+      return `${index + 1}. ${label}, ${direction}`;
+    }).join('; ')}.`;
   const setFilter = (key: Key, filter: DataGridFilterValue | undefined) => {
     state.setFilters((current) => {
       const next = { ...current };
@@ -313,6 +308,15 @@ export function DataGrid<Row, Key extends string>(props: DataGridProps<Row, Key>
           />
         </div>
       </div>
+      <p
+        id={sortStatusId}
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+        className="sr-only"
+      >
+        {sortStatus}
+      </p>
       <div className="max-h-[360px] overflow-auto">
         <table className="w-full min-w-max table-auto text-xs" aria-label={props.title}>
           <DataGridHead
@@ -325,6 +329,7 @@ export function DataGrid<Row, Key extends string>(props: DataGridProps<Row, Key>
                 defaultAscKeys: state.defaultAscKeys,
               }))}
             onFilter={setFilter}
+            sortStatusId={sortStatusId}
           />
           <DataGridBody
             rows={state.viewRows}
