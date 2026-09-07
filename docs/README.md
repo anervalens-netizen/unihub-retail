@@ -23,7 +23,8 @@ Acest index separă clar **starea curentă** de evidence-ul istoric.
 
 ## Audituri finalizate
 
-- Issue **#159** — audit remediation istoric, finalizat.
+- **Issue #159 is chronology/evidence only** — audit remediation istoric,
+  finalizat.
 - Issue **#226** — Audit follow-up v2 K1–K10, **finalizat și închis la
   2026-09-07**.
 - Issues **#227–#236** — workstream-urile istorice K1–K10.
@@ -59,6 +60,8 @@ acele trackere există.
   [`../ops/README.md`](../ops/README.md);
 - continuitate operator:
   [`operations/successor-operator-continuity.md`](operations/successor-operator-continuity.md);
+- handoff operațional Retail 9.5:
+  [`operations/RETAIL_9_5_FINAL_HANDOFF.md`](operations/RETAIL_9_5_FINAL_HANDOFF.md);
 - contracte date:
   [`adr/003-receipt-identity.md`](adr/003-receipt-identity.md),
   [`adr/004-sales-row-multiplicity.md`](adr/004-sales-row-multiplicity.md);
