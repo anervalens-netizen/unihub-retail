@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PYTHON="$ROOT/backend/venv/bin/python"
 PYTHON_BASE="/usr/bin/python3.12"
-PYTHON_BASE_SHA256="1643dacd9feaedc58f3cc581e4d22577dfe25c09b10282936186ccf0f2e61118"
+PYTHON_BASE_SHA256="a92f0f95e883390c7256b2e441484aac06b1002dbe1d924141a77c8d82f96223"
 POSTGRES_IMAGE="postgres@sha256:9a8afca54e7861fd90fab5fdf4c42477a6b1cb7d293595148e674e0a3181de15"
 [[ -x "$PYTHON" && "$(readlink -f "$PYTHON")" == "$PYTHON_BASE" ]] \
   || { echo "AC-13 pinned Python interpreter is unavailable" >&2; exit 1; }
