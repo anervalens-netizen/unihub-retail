@@ -78,7 +78,7 @@ Rerun only evidence invalidated by a relevant code/tree/configuration/execution-
 semantic change or required by an exact-SHA server gate.
 
 After a merge commit, compare the resulting tree with the certified candidate
- tree. If the merge tree is identical and the certified base did not drift,
+tree. If the merge tree is identical and the certified base did not drift,
 there is no new application content to retest merely because the merge commit
 has a different SHA. Run exact-main FULL only if a formal release artifact or
 another distinct FULL proof is actually required.
