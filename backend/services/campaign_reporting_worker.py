@@ -5,7 +5,6 @@ import re
 from typing import Any
 
 from request_context import bind_request_id, reset_request_id
-import services.grile_pilot_v2_runtime as grile_pilot_v2_runtime
 from services.sales_generation_lineage_guard import (
     guard_sales_generation_lineage_bound,
 )
@@ -48,7 +47,7 @@ async def publish_campaign_reporting_background(
     sales_revision: int,
     request_id: str | None = None,
 ) -> dict[str, Any]:
-    """Publish Campaigns/Contests and enqueue the exact sales projection."""
+    """Publish Campaigns/Contests for the exact sales generation."""
     from services.campaign_reporting import CampaignReportingPublisher
     from services.contest_reporting import ContestReportingPublisher
 
@@ -83,20 +82,12 @@ async def publish_campaign_reporting_background(
             ).publish_month(
                 period, requested_by_sub=requested_by_sub, reason=reason
             )
-            grile_job = await grile_pilot_v2_runtime.enqueue_grile_pilot_v2_sync(
-                month=period,
-                trigger=f"sales_outbox:{generation_hash}:{sales_revision}",
-                generation_hash=generation_hash,
-                sales_revision=sales_revision,
-                campaign_revision=promotion.revision,
-                contest_revision=contest.revision,
-            )
         return {
             "promotion": asdict(promotion),
             "contest": asdict(contest),
             "sales_generation_hash": generation_hash,
             "sales_generation_revision": sales_revision,
-            "grile_v2_job_id": grile_job.job_id,
+            "grile_v2_job_id": None,
         }
     finally:
         if token is not None:

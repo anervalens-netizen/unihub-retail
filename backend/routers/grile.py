@@ -15,7 +15,6 @@ from grile.api.schemas import (
     GrileMonthlyManifestEnvelope,
     GrileMonthlyRunResponse,
     GrileOverviewResponse,
-    GrilePilotV2OverviewResponse,
     GrilePermissionsResponse,
     GrileRunEnqueueResponse,
     GrileRunStatusResponse,
@@ -77,16 +76,16 @@ async def grile_overview(
     return await (await build_grile_query_service(pool=pool)).overview(month)
 
 
-@router.get("/pilot-v2", response_model=GrilePilotV2OverviewResponse)
+@router.get("/pilot-v2", status_code=status.HTTP_410_GONE)
 async def grile_pilot_v2(
     month: MonthStr = "2026-08",
     _claims: AuthClaims = Depends(require_auth),
-    svc: GrileQueryService = Depends(get_grile_query_service),
-) -> dict[str, Any]:
-    try:
-        return await svc.pilot_v2(month)
-    except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+) -> None:
+    del month
+    raise HTTPException(
+        status_code=status.HTTP_410_GONE,
+        detail="Grile V2 August 2026 pilot has been retired",
+    )
 
 
 @router.post("/run", response_model=GrileRunEnqueueResponse)

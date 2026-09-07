@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 from contextlib import asynccontextmanager
 from types import SimpleNamespace
-from typing import TypedDict
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -20,26 +19,11 @@ import services.campaign_reporting
 import services.contest_reporting
 import services.grile_reconciliation_supervisor as grile_supervisor
 import services.imports
-import services.grile_pilot_v2_sync
-import services.grile_pilot_v2_runtime
 import repositories.grile
 import worker
 
 
 GENERATION_HASH = "a" * 64
-class _GrileLineage(TypedDict):
-    generation_hash: str
-    sales_revision: int
-    campaign_revision: int
-    contest_revision: int
-
-
-GRILE_LINEAGE: _GrileLineage = {
-    "generation_hash": GENERATION_HASH,
-    "sales_revision": 9,
-    "campaign_revision": 11,
-    "contest_revision": 5,
-}
 
 
 @pytest.mark.asyncio
@@ -403,79 +387,8 @@ async def test_grile_monthly_reconciler_recovers_after_one_failure(
     failure.assert_called_once()
     success.assert_called_once()
 
-
 @pytest.mark.asyncio
-async def test_grile_v2_sync_once_uses_shared_lock(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    sync = AsyncMock(return_value={"synced": ["SITE"], "skipped": []})
-    monkeypatch.setattr(
-        services.grile_pilot_v2_sync,
-        "sync_pilot_v2_sheets",
-        sync,
-    )
-    pool = object()
-    adapter = object()
-    ctx = {"db_pool": pool, "grile_monthly_google": adapter}
-
-    result = await services.grile_pilot_v2_runtime.sync_grile_pilot_v2_once(
-        ctx,
-        trigger="test",
-        **GRILE_LINEAGE,
-    )
-
-    assert result == {"synced": ["SITE"], "skipped": []}
-    assert isinstance(ctx["grile_pilot_v2_sync_lock"], asyncio.Lock)
-    sync.assert_awaited_once_with(pool, adapter, **GRILE_LINEAGE)
-
-
-@pytest.mark.asyncio
-async def test_grile_v2_startup_recovery_is_outbox_only() -> None:
-    ctx: dict = {}
-
-    services.grile_pilot_v2_runtime.start_grile_pilot_v2_sync(ctx)
-
-    assert "grile_pilot_v2_sync_task" not in ctx
-
-
-@pytest.mark.asyncio
-async def test_grile_v2_background_validates_month_and_request_context(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    sync = AsyncMock(return_value={"synced": ["SITE"]})
-    bind = MagicMock(return_value="token")
-    reset = MagicMock()
-    monkeypatch.setattr(
-        services.grile_pilot_v2_runtime,
-        "sync_grile_pilot_v2_once",
-        sync,
-    )
-    monkeypatch.setattr(services.grile_pilot_v2_runtime, "bind_request_id", bind)
-    monkeypatch.setattr(services.grile_pilot_v2_runtime, "reset_request_id", reset)
-
-    result = await worker.grile_pilot_v2_sync_background(
-        {},
-        "2026-08",
-        "manual",
-        GENERATION_HASH,
-        9,
-        11,
-        5,
-        "request-id",
-    )
-
-    assert result == {"synced": ["SITE"]}
-    sync.assert_awaited_once_with({}, trigger="manual", **GRILE_LINEAGE)
-    bind.assert_called_once_with("request-id")
-    reset.assert_called_once_with("token")
-    with pytest.raises(ValueError, match="August 2026"):
-        await worker.grile_pilot_v2_sync_background(
-            {}, "2026-09", "manual", GENERATION_HASH, 9, 11, 5
-        )
-
-
-@pytest.mark.asyncio
-async def test_campaign_publication_triggers_grile_v2_projection(
+async def test_campaign_publication_does_not_trigger_retired_grile_v2(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     promotion = services.campaign_reporting.CampaignReportingPublication(
@@ -506,13 +419,6 @@ async def test_campaign_publication_triggers_grile_v2_projection(
         "ContestReportingPublisher",
         lambda _pool: SimpleNamespace(publish_month=publish_contest),
     )
-    job_id = f"grile-pilot-v2:2026-08:{GENERATION_HASH}:9"
-    enqueue = AsyncMock(return_value=SimpleNamespace(job_id=job_id))
-    monkeypatch.setattr(
-        services.grile_pilot_v2_runtime,
-        "enqueue_grile_pilot_v2_sync",
-        enqueue,
-    )
 
     @asynccontextmanager
     async def exact_guard(_pool, *, month, generation_hash, sales_revision):
@@ -540,7 +446,7 @@ async def test_campaign_publication_triggers_grile_v2_projection(
     assert result["contest"]["revision"] == 5
     assert result["sales_generation_hash"] == GENERATION_HASH
     assert result["sales_generation_revision"] == 9
-    assert result["grile_v2_job_id"] == job_id
+    assert result["grile_v2_job_id"] is None
     publish_promotion.assert_awaited_once_with(
         "2026-08",
         requested_by_sub="system:test",
@@ -551,14 +457,6 @@ async def test_campaign_publication_triggers_grile_v2_projection(
         requested_by_sub="system:test",
         reason="sales_generation:7",
     )
-    enqueue.assert_awaited_once_with(
-        month="2026-08",
-        trigger=f"sales_outbox:{GENERATION_HASH}:9",
-        generation_hash=GENERATION_HASH,
-        sales_revision=9,
-        campaign_revision=11,
-        contest_revision=5,
-    )
 
 
 @pytest.mark.asyncio
@@ -567,7 +465,6 @@ async def test_delayed_campaign_generation_is_noop_before_publication(
 ) -> None:
     publish_promotion = AsyncMock()
     publish_contest = AsyncMock()
-    enqueue = AsyncMock()
     monkeypatch.setattr(
         services.campaign_reporting,
         "CampaignReportingPublisher",
@@ -577,9 +474,6 @@ async def test_delayed_campaign_generation_is_noop_before_publication(
         services.contest_reporting,
         "ContestReportingPublisher",
         lambda _pool: SimpleNamespace(publish_month=publish_contest),
-    )
-    monkeypatch.setattr(
-        services.grile_pilot_v2_runtime, "enqueue_grile_pilot_v2_sync", enqueue
     )
 
     @asynccontextmanager
@@ -611,7 +505,6 @@ async def test_delayed_campaign_generation_is_noop_before_publication(
     }
     publish_promotion.assert_not_awaited()
     publish_contest.assert_not_awaited()
-    enqueue.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -674,18 +567,7 @@ async def test_worker_shutdown_closes_all_pools(
     close_arq_pool = AsyncMock()
     monkeypatch.setattr(db.connection, "close_db_pool", close_db_pool)
     monkeypatch.setattr(services.jobs, "close_arq_pool", close_arq_pool)
-    stop = asyncio.Event()
-    pending = asyncio.create_task(asyncio.Event().wait())
-
-    await worker.shutdown(
-        {
-            "grile_pilot_v2_sync_stop": stop,
-            "grile_pilot_v2_sync_task": pending,
-        }
-    )
-
-    assert stop.is_set()
-    assert pending.cancelled()
+    await worker.shutdown({})
     close_arq_pool.assert_awaited_once_with()
     close_db_pool.assert_awaited_once_with()
 

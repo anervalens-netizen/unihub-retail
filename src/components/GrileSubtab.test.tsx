@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -9,7 +9,6 @@ import type { GrileOverview, GrileRun, GrileStore } from '../api/grile';
 
 const api = vi.hoisted(() => ({
   getGrileOverview: vi.fn(),
-  getGrilePilotV2: vi.fn(),
   refreshGrileStore: vi.fn(),
   runGrileCheck: vi.fn(),
 }));
@@ -19,7 +18,6 @@ vi.mock('../api/grile', async (importOriginal) => {
   return {
     ...original,
     getGrileOverview: api.getGrileOverview,
-    getGrilePilotV2: api.getGrilePilotV2,
     refreshGrileStore: api.refreshGrileStore,
     runGrileCheck: api.runGrileCheck,
   };
@@ -138,44 +136,9 @@ const overviewWithStore = (): GrileOverview => ({
   }],
 });
 
-const pilotOverview = () => ({
-  month: '2026-08',
-  store_count: 5,
-  managers: [
-    {
-      name: 'Andrei Stancu',
-      stores: [
-        ['PROMEN', 'Mobicell Promenada', 'MobiCell', '1jcVCLHaujv0O2qlTPXG7b1IqGGVq8572p7pJFvEAgdg'], // pragma: allowlist secret
-        ['MCRFBAL', 'Mobiup Carrefour Balotești', 'Mobiup', '1MusUrpTjkFyW2JefvJVdFOdx5ypUbKr1Hs-2SViihEo'], // pragma: allowlist secret
-        ['CRFFEER', 'Mobiup Carrefour Feeria', 'Mobiup', '1bEWiDcg9tqWPeqQdw6hna_lsIIc16ozKMCutkVIAHu0'], // pragma: allowlist secret
-      ].map(([site_code, locatie, firma, sheet_id]) => ({
-        site_code, locatie, firma, sheet_id, manager: 'Andrei Stancu',
-        target_v2: 74000, realized_v2: 13636, realized_pct_v2: 18.4,
-        forecast_v2: 43911, forecast_pct_v2: 59.3, report_cutoff: '2026-08-09',
-        report_check: { status: 'ok', message: 'OK', target: 74000, realized: 13636, target_diff: 0, realized_diff: 0 },
-        v1_check: { status: 'ok', message: 'OK', target: 74000, realized: 13636, target_diff: 0, realized_diff: 0 },
-      })),
-    },
-    {
-      name: 'Bogdana Costan',
-      stores: [
-        ['ORAUCHAN', 'Mobicell Oradea Auchan', 'MobiCell', '1ZxugdHXXhvPSFyxyOh9bipq11J2N872n7isAxRXMxuM'], // pragma: allowlist secret
-        ['ORAUCH', 'Mobiup Oradea Auchan', 'Mobiup', '12ejRCcDRNdQqiz38S7BjTKNb-pSrJWW2UNclhFJUiCI'], // pragma: allowlist secret
-      ].map(([site_code, locatie, firma, sheet_id]) => ({
-        site_code, locatie, firma, sheet_id, manager: 'Bogdana Costan',
-        target_v2: 52000, realized_v2: 12948, realized_pct_v2: 24.9,
-        forecast_v2: 44715, forecast_pct_v2: 86, report_cutoff: '2026-08-09',
-        report_check: { status: 'ok', message: 'OK', target: 52000, realized: 12948, target_diff: 0, realized_diff: 0 },
-        v1_check: { status: 'problem', message: 'Realizat V2 -2 lei', target: 52000, realized: 12950, target_diff: 0, realized_diff: -2 },
-      })),
-    },
-  ],
-});
-
 describe('Grile run authority', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    api.getGrilePilotV2.mockResolvedValue(pilotOverview());
   });
 
   afterEach(() => {
@@ -194,6 +157,7 @@ describe('Grile run authority', () => {
     );
 
     expect(await screen.findByRole('button', { name: 'Rulează…' })).toBeDisabled();
+    expect(screen.queryByRole('tab', { name: 'V2 · pilot' })).not.toBeInTheDocument();
     client.setQueryData(
       ['grile-overview', '2026-08'],
       overview(run({ status: 'failed', active: false, error_message: 'lease expired' })),
@@ -244,44 +208,4 @@ describe('Grile run authority', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('Nu relansa verificarea');
   });
 
-  it('keeps the official workflow separate from the five V2 pilot sheets', async () => {
-    api.getGrileOverview.mockResolvedValue(overviewWithStore());
-    const client = new QueryClient({
-      defaultOptions: { queries: { retry: false, gcTime: 0 } },
-    });
-    const user = userEvent.setup();
-    render(
-      <QueryClientProvider client={client}>
-        <GrileSubtab initialMonth="2026-08" />
-      </QueryClientProvider>,
-    );
-
-    expect(await screen.findByRole('button', { name: 'Rulează verificare' })).toBeInTheDocument();
-    const monthPicker = document.querySelector<HTMLInputElement>('input[type="month"]');
-    expect(monthPicker).not.toBeNull();
-    fireEvent.change(monthPicker!, { target: { value: '2026-07' } });
-    await user.selectOptions(screen.getByLabelText('Stare grilă'), 'ERROR');
-    await user.click(screen.getByRole('tab', { name: 'V2 · pilot' }));
-
-    expect(screen.queryByRole('button', { name: 'Rulează verificare' })).not.toBeInTheDocument();
-    expect(await screen.findByText('Andrei Stancu')).toBeInTheDocument();
-    expect(screen.getByText('Bogdana Costan')).toBeInTheDocument();
-    expect(screen.getAllByText('Vs V1 · temporar')).toHaveLength(2);
-    const links = screen.getAllByRole('link');
-    expect(links).toHaveLength(5);
-    expect(screen.getByRole('link', { name: 'Deschide grila Mobicell Oradea Auchan' })).toHaveAttribute(
-      'href',
-      'https://docs.google.com/spreadsheets/d/1ZxugdHXXhvPSFyxyOh9bipq11J2N872n7isAxRXMxuM',
-    );
-    expect(screen.getByRole('link', { name: 'Deschide grila Mobiup Oradea Auchan' })).toHaveAttribute(
-      'href',
-      'https://docs.google.com/spreadsheets/d/12ejRCcDRNdQqiz38S7BjTKNb-pSrJWW2UNclhFJUiCI',
-    );
-    expect(screen.getByText(/nu recitește Google la schimbarea tabului/i)).toBeInTheDocument();
-
-    await user.click(screen.getByRole('tab', { name: 'Grila actuală' }));
-    expect(await screen.findByRole('button', { name: 'Rulează verificare' })).toBeInTheDocument();
-    expect(monthPicker).toHaveValue('2026-07');
-    expect(screen.getByLabelText('Stare grilă')).toHaveValue('ERROR');
-  });
 });
