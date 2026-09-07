@@ -19,31 +19,29 @@ rescrierea baseline-ului sau a migrărilor aplicate.
 
 ## Contractul verificării
 
-Pilotul V2 din `Agenti -> Grile` rămâne separat de cohorta oficială
-`grile_sheets`. Cohorta August 2026 are 21 de foi active în registrul canonic
-`backend/services/grile_pilot_v2_registry.py`; foile Delia și copiile cu program
-neconfirmat nu fac parte din registrul activ. Endpointul read-only
-`/api/grile/pilot-v2` citește snapshotul JSON atomic produs de worker după o
-sincronizare completă, îl grupează după managerul curent din Retail și compară
-targetul și realizatul cu raportarea Retail și cu ultima proiecție V1. Nu
-apelează Google Sheets, nu rezervă runuri, nu persistă observații și nu
-participă la finalizare, arhivare sau reset.
+### Retragerea pilotului din august și direcția nativă — 2026-09-07
 
-Writerul izolat `grile_pilot_v2_sync` proiectează în foi numai date
-autoritative Retail: vânzări zilnice pe cod agent, target, forecast, SIM și
-incentive. Citirea PostgreSQL este repeatable-read, iar o eroare de sursă sau
-Google păstrează ultima proiecție bună. Writerul actualizează exclusiv `Liste`,
-headerul din `Rezumat & Program` și tabul `Vânzări & Incentive`; programul,
-concediile și selecțiile manuale de zile suplimentare nu sunt rescrise.
-Reviziile sales/Campaigns și revizia schemei writerului fac actualizarea
-idempotentă; o versiune nouă de writer forțează o primă reproiectare completă.
-După succesul tuturor celor 21 de foi, workerul persistă atomic snapshotul
-`backend/outputs/grile/pilot-v2-overview-2026-08.json`; un eșec păstrează ultima
-versiune bună. Workerul încearcă o recuperare la startup. În fluxul normal,
-promovarea raportului de vânzări solicită publicarea Campaigns, iar publicarea
-reușită solicită exact o sincronizare V2; nu există polling orar sau trigger V2
-duplicat direct după import. Toate apelurile Google de scriere sunt serializate
-prin adapterul thread-affine; V1 rămâne neatins.
+Proprietarul a ales construirea Grile V2 direct în Retail. Pilotul anterior din
+`Agenti -> Grile -> V2 pilot` este retras din interfață și din sincronizarea
+Campaigns/importuri. Endpointul vechi este retras; compatibilitatea minimă pentru
+joburi deja în coadă returnează explicit starea de retragere, fără I/O Google.
+Recepția outbox păstrează trasabilitatea generației fără a pretinde sincronizarea
+foilor vechi. V1, verificarea sa, finalizarea, arhivarea și resetul rămân active.
+
+Foile și snapshotul pilotului vechi sunt păstrate ca istoric, nu șterse sau
+reutilizate automat pentru septembrie. Codul și bazele standalone sunt arhivate
+separat; serviciile standalone și timerul său Retail-sync sunt retrase. Workerul
+`unihub-grile-worker.service` aparține Retail/V1 și rămâne activ.
+
+Cerințele și deciziile deschise sunt în `docs/grile-v2-product-contract.md`.
+Planul și statusul curent sunt în
+[trackerul Retail #271](https://github.com/anervalens-netizen/unihub-retail/issues/271).
+Pilotul nou vizează `2026-09` (program de la 1 septembrie): calendar controlat de
+manager, suplimentari identificați prin cod, ore exclusiv în locația lucrată,
+aceleași date pentru ecran/Google/Excel și centralizator unic pe persoană.
+Prima probă folosește două magazine și o suplimentare; nu reprezintă lansarea
+salariilor V2. Refolosim infrastructura Retail și regulile verificate, nu copiem
+aplicația standalone ca dependență runtime.
 
 `POST /api/grile/run` rezervă și pune în coadă exclusiv o verificare read-only.
 Jobul citește valorile și metadatele Google necesare, compară cu starea Retail și
@@ -65,9 +63,9 @@ Scope-urile clientului de verificare V1 sunt strict read-only:
 - `spreadsheets.readonly` pentru valorile grilei;
 - `drive.metadata.readonly` pentru metadatele necesare monitorizării.
 
-Endpointul V2 nu construiește niciun client Google. Writerul V2 folosește
-separat clientul operațional cu drept de scriere `spreadsheets`/`drive`; acest
-client nu este folosit de endpointurile read-only.
+Pilotul V2 retras nu mai construiește clienți Google. Clientul operațional
+existent rămâne destinat operațiilor autorizate Retail; nu este folosit de
+endpointurile read-only.
 Credentialul operațional rămâne `0640`, cu grupul
 `unihub-grile-artifacts`: identitățile `unihub-grile` și `unihub-web` îl pot
 citi, iar workerii de export rămân în afara grupului.

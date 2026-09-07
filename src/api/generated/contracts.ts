@@ -1,5 +1,5 @@
 /* GENERATED FILE. Run npm run contracts:generate; do not edit manually. */
-export const RETAIL_OPENAPI_SHA256 = '99f5f29edb6daf2876cc30ae25cf73327b3f38f85caefebc6e3371e490913c20' as const; // pragma: allowlist secret
+export const RETAIL_OPENAPI_SHA256 = '0d9afd6a08ac5574bcb9741b04683f8762892a45ce15c3fc3273821314ccd8ce' as const; // pragma: allowlist secret
 
 export type RetailDecimal = string & { readonly __retailDecimal: unique symbol };
 
@@ -933,42 +933,6 @@ export interface RetailGrileOverviewSummary {
 
 export interface RetailGrilePermissionsResponse {
   "can_run": boolean;
-}
-
-export interface RetailGrilePilotV2CheckResponse {
-  "message": string;
-  "realized"?: RetailDecimal | null;
-  "realized_diff"?: RetailDecimal | null;
-  "status": "ok" | "problem" | "unavailable";
-  "target"?: RetailDecimal | null;
-  "target_diff"?: RetailDecimal | null;
-}
-
-export interface RetailGrilePilotV2ManagerResponse {
-  "name": string;
-  "stores": Array<RetailGrilePilotV2StoreResponse>;
-}
-
-export interface RetailGrilePilotV2OverviewResponse {
-  "managers": Array<RetailGrilePilotV2ManagerResponse>;
-  "month": string;
-  "store_count": number;
-}
-
-export interface RetailGrilePilotV2StoreResponse {
-  "firma": string;
-  "forecast_pct_v2"?: RetailDecimal | null;
-  "forecast_v2"?: RetailDecimal | null;
-  "locatie": string;
-  "manager": string;
-  "realized_pct_v2"?: RetailDecimal | null;
-  "realized_v2"?: RetailDecimal | null;
-  "report_check": RetailGrilePilotV2CheckResponse;
-  "report_cutoff"?: string | null;
-  "sheet_id": string;
-  "site_code": string;
-  "target_v2"?: RetailDecimal | null;
-  "v1_check": RetailGrilePilotV2CheckResponse;
 }
 
 export interface RetailGrileProviderStatus {
@@ -2849,7 +2813,7 @@ export interface RetailOperationResponses {
   }
 
   'grile_pilot_v2_api_grile_pilot_v2_get': {
-    '200': RetailGrilePilotV2OverviewResponse;
+    '410': unknown;
     '422': RetailHTTPValidationError;
   }
 
@@ -3196,7 +3160,7 @@ export interface RetailOperationSuccesses {
   'grile_monthly_permissions_api_grile_monthly_permissions_get': RetailGrilePermissionsResponse;
   'grile_monthly_run_api_grile_monthly_run_post': RetailGrileMonthlyRunResponse;
   'grile_overview_api_grile_overview_get': RetailGrileOverviewResponse;
-  'grile_pilot_v2_api_grile_pilot_v2_get': RetailGrilePilotV2OverviewResponse;
+  'grile_pilot_v2_api_grile_pilot_v2_get': void;
   'grile_run_api_grile_run_post': RetailGrileRunEnqueueResponse;
   'grile_run_status_api_grile_run_status_get': RetailGrileRunStatusResponse;
   'grile_store_refresh_operation_api_grile_store_refreshes__operation_id__get': RetailGrileStoreRefreshOperationEnvelope;
@@ -3305,7 +3269,7 @@ export interface RetailOperationErrors {
   'grile_monthly_permissions_api_grile_monthly_permissions_get': Record<never, never>;
   'grile_monthly_run_api_grile_monthly_run_post': { '422': RetailHTTPValidationError };
   'grile_overview_api_grile_overview_get': { '422': RetailHTTPValidationError };
-  'grile_pilot_v2_api_grile_pilot_v2_get': { '422': RetailHTTPValidationError };
+  'grile_pilot_v2_api_grile_pilot_v2_get': { '410': unknown; '422': RetailHTTPValidationError };
   'grile_run_api_grile_run_post': { '422': RetailHTTPValidationError };
   'grile_run_status_api_grile_run_status_get': { '422': RetailHTTPValidationError };
   'grile_store_refresh_operation_api_grile_store_refreshes__operation_id__get': { '422': RetailHTTPValidationError };
@@ -3516,6 +3480,7 @@ export const RETAIL_OPERATION_ERROR_STATUSES: { readonly [Id in RetailOperationI
     '422',
   ]),
   'grile_pilot_v2_api_grile_pilot_v2_get': new Set<string>([
+    '410',
     '422',
   ]),
   'grile_run_api_grile_run_post': new Set<string>([
@@ -4698,19 +4663,6 @@ export const RETAIL_DECIMAL_PATHS: { readonly [Id in RetailOperationId]: Readonl
     'managers/*/team_leaders/*/firms/*/stores/*/target_diff',
   ]),
   'grile_pilot_v2_api_grile_pilot_v2_get': new Set<string>([
-    'managers/*/stores/*/forecast_pct_v2',
-    'managers/*/stores/*/forecast_v2',
-    'managers/*/stores/*/realized_pct_v2',
-    'managers/*/stores/*/realized_v2',
-    'managers/*/stores/*/report_check/realized',
-    'managers/*/stores/*/report_check/realized_diff',
-    'managers/*/stores/*/report_check/target',
-    'managers/*/stores/*/report_check/target_diff',
-    'managers/*/stores/*/target_v2',
-    'managers/*/stores/*/v1_check/realized',
-    'managers/*/stores/*/v1_check/realized_diff',
-    'managers/*/stores/*/v1_check/target',
-    'managers/*/stores/*/v1_check/target_diff',
   ]),
   'grile_run_api_grile_run_post': new Set<string>([
   ]),
@@ -5541,7 +5493,6 @@ export const RETAIL_DATE_PATHS: { readonly [Id in RetailOperationId]: ReadonlySe
     'managers/*/team_leaders/*/firms/*/stores/*/db_max_sale_date',
   ]),
   'grile_pilot_v2_api_grile_pilot_v2_get': new Set<string>([
-    'managers/*/stores/*/report_cutoff',
   ]),
   'grile_run_api_grile_run_post': new Set<string>([
   ]),

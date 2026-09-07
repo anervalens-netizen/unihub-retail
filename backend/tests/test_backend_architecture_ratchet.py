@@ -47,8 +47,8 @@ def test_real_contract_matches_pinned_direct_db_baseline(check, contract, baseli
     result = check.evaluate_data_access_ratchet(contract, baseline)
     assert result["violations"] == []
     assert len(result["baseline_modules"]) == 55
-    assert len(result["current_modules"]) == 55
-    assert result["retired_modules"] == []
+    assert len(result["current_modules"]) == 54
+    assert result["retired_modules"] == ["services.grile_pilot_v2_sync"]
 
 
 def test_new_exception_is_rejected(check, contract, baseline):
@@ -70,8 +70,12 @@ def test_same_count_cosmetic_swap_is_rejected(check, contract, baseline):
 
     result = check.evaluate_data_access_ratchet(mutated, baseline)
 
-    assert len(result["current_modules"]) == len(result["baseline_modules"]) == 55
-    assert result["retired_modules"] == ["services.agents"]
+    assert len(result["current_modules"]) == 54
+    assert len(result["baseline_modules"]) == 55
+    assert result["retired_modules"] == [
+        "services.agents",
+        "services.grile_pilot_v2_sync",
+    ]
     assert result["violations"] == [
         "new direct DB architecture exception is not in pinned baseline: services.new_direct_db"
     ]
@@ -101,8 +105,11 @@ def test_retiring_existing_exception_is_allowed_by_ratchet(check, contract, base
     )
 
     assert result["violations"] == []
-    assert len(result["current_modules"]) == 54
-    assert result["retired_modules"] == ["services.agents"]
+    assert len(result["current_modules"]) == 53
+    assert result["retired_modules"] == [
+        "services.agents",
+        "services.grile_pilot_v2_sync",
+    ]
     assert result["retired_since_previous"] == ["services.agents"]
 
 

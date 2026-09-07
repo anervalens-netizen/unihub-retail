@@ -324,7 +324,6 @@
       "files": [
         "src/components/GrileSubtab.tsx",
         "src/components/GrileMonthlyPanel.tsx",
-        "src/components/grile/PilotV2Panel.tsx",
         "src/components/grile/RefreshStatusError.tsx",
         "src/components/grile/grileOverviewFilters.ts"
       ],

@@ -1028,26 +1028,22 @@ grilele salariale. Retail pastreaza Sheet ID-urile in `grile_sheets`, ruleaza
 verificari async in `grile_runs` si salveaza rezultatul per magazin in
 `grile_store_status`.
 
-Pilotul paralel V2 pentru August 2026 este izolat de cohorta permanenta V1.
-Registrul sau canonic contine 21 de foi active si exclude explicit sursele Delia
-sau programele neconfirmate. Readerul `/api/grile/pilot-v2` ramane read-only si
-serveste numai snapshotul JSON atomic produs de worker dupa un sync complet;
-requestul web nu deschide conexiuni Google.
-Writerul `services/grile_pilot_v2_sync.py` citeste intr-un snapshot
-repeatable-read targetele, `reporting_agent_day`, `reporting_cartela_day` si
-proiectia Campaigns, apoi actualizeaza idempotent numai datele calculate din
-`Liste`, header si `Vânzări & Incentive`. Programul, concediile, celulele manuale
-si V1 nu sunt rescrise. Amprenta determinista a intrarilor sales, revizia
-Campaigns si revizia schemei writerului sunt markerii de idempotenta; o
-versiune noua forteaza o prima reproiectare completa. Autoritatea DB a
-workerului este limitata la aceste read-model-uri si la executia digestului
-`planning_forecast_run_sha256`; tabelele Planning raman inaccesibile. Dupa
-succesul tuturor foilor, workerul publica atomic snapshotul pentru reader.
-Workerul Grile ruleaza un self-heal la startup. In fluxul normal, promovarea
-raportului de vanzari solicita publicarea Campaigns, iar publisherul Campaigns
-solicita exact o sincronizare dupa generatia noua; nu exista polling orar sau
-trigger V2 duplicat. O eroare nu transforma lipsa sursei in zero si nu
-inlocuieste ultima proiectie buna.
+Pilotul Sheets V2 pentru August 2026 este retras cu HTTP 410 si nu mai are
+writer Google sau registru activ. Endpointul vechi ramane doar ca tombstone
+explicit pentru compatibilitate, iar joburile legacy deja puse in coada se
+inchid cu starea `retired`, fara I/O Google. Outbox-ul pastreaza receipt-ul
+generatiei pentru trasabilitate, fara sa pretinda sincronizarea foilor retrase.
+Snapshotul si foile vechi raman istoric; nu sunt reutilizate automat pentru
+septembrie.
+
+V1 ramane fluxul activ pentru verificarile read-only, finalizare, arhivare si
+reset lunar. Construirea noului flux se face nativ in Retail pentru septembrie
+2026, conform [contractului de business](docs/grile-v2-product-contract.md) si
+[trackerului Retail #271](https://github.com/anervalens-netizen/unihub-retail/issues/271): calendarul
+este controlat de manager, suplimentarii sunt identificati prin cod, orele
+apartin exclusiv locatiei lucrate, iar ecranul, Google, Excel si centralizatorul
+folosesc aceleasi date. Codul si bazele standalone sunt arhivate separat si nu
+sunt dependinte runtime ale Retail.
 
 Migrarea 035 separa observatia imuabila de proiectia curenta. Fiecare full run
 sau refresh per magazin rezerva si claim-uieste prin CAS generatia

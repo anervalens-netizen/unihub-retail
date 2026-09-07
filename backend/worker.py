@@ -12,7 +12,6 @@ from config import load_runtime_config
 from logging_config import setup_logging
 from request_context import bind_request_id, reset_request_id
 import services.grile_reconciliation_supervisor as grile_supervisor
-import services.grile_pilot_v2_runtime as grile_pilot_v2_runtime
 from services.grile_pilot_v2_runtime import grile_pilot_v2_sync_background
 from services.export_worker import export_heartbeat_loop as _export_heartbeat_loop, remove_export_artifact_background
 from services.jobs import (
@@ -504,7 +503,6 @@ async def shutdown(ctx: dict) -> None:
     if run_reconcile_task is not None:
         run_reconcile_task.cancel()
         await asyncio.gather(run_reconcile_task, return_exceptions=True)
-    await grile_pilot_v2_runtime.stop_grile_pilot_v2_sync(ctx)
     visits_task = ctx.get("visits_snapshot_refresh_task")
     visits_stop = ctx.get("visits_snapshot_refresh_stop")
     if visits_stop is not None:

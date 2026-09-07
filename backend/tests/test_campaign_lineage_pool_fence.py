@@ -118,7 +118,6 @@ async def test_campaign_publication_reuses_lineage_connection_at_pool_size_one(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     pool = _SingleConnectionPool()
-    enqueue = AsyncMock(return_value=SimpleNamespace(job_id="grile-bound"))
     monkeypatch.setattr(
         campaign_reporting_module,
         "CampaignReportingPublisher",
@@ -128,11 +127,6 @@ async def test_campaign_publication_reuses_lineage_connection_at_pool_size_one(
         contest_reporting_module,
         "ContestReportingPublisher",
         _ContestPublisher,
-    )
-    monkeypatch.setattr(
-        worker_module.grile_pilot_v2_runtime,
-        "enqueue_grile_pilot_v2_sync",
-        enqueue,
     )
 
     result = await worker_module.publish_campaign_reporting_background(
@@ -149,12 +143,4 @@ async def test_campaign_publication_reuses_lineage_connection_at_pool_size_one(
     assert result["sales_generation_revision"] == 17
     assert result["promotion"]["revision"] == 3
     assert result["contest"]["revision"] == 4
-    assert result["grile_v2_job_id"] == "grile-bound"
-    enqueue.assert_awaited_once_with(
-        month="2026-08",
-        trigger=f"sales_outbox:{GENERATION_HASH}:17",
-        generation_hash=GENERATION_HASH,
-        sales_revision=17,
-        campaign_revision=3,
-        contest_revision=4,
-    )
+    assert result["grile_v2_job_id"] is None

@@ -74,6 +74,7 @@ acele trackere există.
 - P&L/TVA: [`RUNBOOK-import-pnl-tva-P0.md`](RUNBOOK-import-pnl-tva-P0.md);
 - salarii HR: [`RUNBOOK-import-salarii-HR.md`](RUNBOOK-import-salarii-HR.md);
 - Grile: [`grile-integration-plan.md`](grile-integration-plan.md),
+  [`grile-v2-product-contract.md`](grile-v2-product-contract.md),
   [`engineering/h11-grile-monthly-idempotency.md`](engineering/h11-grile-monthly-idempotency.md);
 - SLO/readiness:
   [`operations/retail-slo-readiness.md`](operations/retail-slo-readiness.md).

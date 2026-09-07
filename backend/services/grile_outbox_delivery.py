@@ -167,97 +167,30 @@ def _validated_effect_receipt(
     }
 
 
-async def _sync_grile_v2_effect(
+async def _retired_grile_v2_effect(
     *,
-    job_id: str | None,
     month: str,
     generation_hash: str,
     sales_revision: int,
     campaign_revision: int,
     contest_revision: int,
 ) -> dict[str, object]:
-    from services.grile_pilot_v2_registry import PILOT_V2_MONTH, PILOT_V2_SHEETS
-
+    """Acknowledge the retired pilot without queue or Google side effects."""
     key = f"grile_v2:{generation_hash}:{sales_revision}"
-    effect: dict[str, object]
-    if month != PILOT_V2_MONTH:
-        effect = {
-            "contract": "grile-v2-not-applicable-v1",
-            "domain_generation_key": key,
-            "generation_hash": generation_hash,
-            "month": month,
-            "sales_revision": sales_revision,
-            "campaign_revision": campaign_revision,
-            "contest_revision": contest_revision,
-        }
-        return {
-            "domain_generation_key": key,
-            "effect_sha256": _canonical_sha256(effect),
-            "store_count": 0,
-            "generation_hash": generation_hash,
-            "sales_revision": sales_revision,
-            "campaign_revision": campaign_revision,
-            "contest_revision": contest_revision,
-        }
-
-    from arq.jobs import Job
-    import services.jobs as jobs_service
-
-    expected_job_id = (
-        f"grile-pilot-v2:{month}:{generation_hash}:{sales_revision}"
-    )
-    if job_id != expected_job_id:
-        raise RuntimeError("Grile V2 job lineage differs from the outbox event")
-    pool = await jobs_service._require_arq_pool()
-    job = Job(
-        job_id,
-        pool,
-        _queue_name=jobs_service.GRILE_QUEUE_NAME,
-    )
-    result = await job.result(timeout=900, poll_delay=0.5)
-    if not isinstance(result, Mapping):
-        raise RuntimeError("Grile V2 worker returned no result")
-    if result.get("status") == "superseded":
-        if (
-            result.get("sales_generation_hash") != generation_hash
-            or result.get("sales_generation_revision") != sales_revision
-            or result.get("campaign_revision") != campaign_revision
-            or result.get("contest_revision") != contest_revision
-            or any(
-                result.get(name) != [] for name in ("synced", "skipped", "failed")
-            )
-        ):
-            raise RuntimeError("superseded Grile V2 lineage differs")
-        return _superseded_effect(
-            month=month,
-            generation_hash=generation_hash,
-            sales_revision=sales_revision,
-        )
-    if (
-        result.get("sales_generation_hash") != generation_hash
-        or result.get("sales_generation_revision") != sales_revision
-        or result.get("campaign_revision") != campaign_revision
-        or result.get("contest_revision") != contest_revision
-    ):
-        raise RuntimeError("Grile V2 worker lineage differs from the outbox event")
-    failed = result.get("failed")
-    store_count = len(result.get("synced", [])) + len(result.get("skipped", []))
-    if failed or store_count != len(PILOT_V2_SHEETS):
-        raise RuntimeError("Grile V2 worker did not complete every pilot store")
     effect = {
-        "contract": "grile-v2-sales-outbox-v1",
+        "contract": "grile-v2-retired-v1",
         "domain_generation_key": key,
         "month": month,
         "sales_generation_hash": generation_hash,
         "sales_revision": sales_revision,
         "campaign_revision": campaign_revision,
         "contest_revision": contest_revision,
-        "store_count": store_count,
+        "outcome": "retired",
     }
     return {
         "domain_generation_key": key,
         "effect_sha256": _canonical_sha256(effect),
-        "store_count": store_count,
+        "outcome": "retired",
         "generation_hash": generation_hash,
         "sales_revision": sales_revision,
         "campaign_revision": campaign_revision,
@@ -399,16 +332,7 @@ def build_sales_generation_consumer(ctx: dict[str, Any]) -> Publisher:
         campaign_revision: int,
         contest_revision: int,
     ) -> dict[str, object]:
-        publication_result = await publication(
-            month,
-            generation_hash,
-            sales_revision,
-        )
-        job_id = publication_result.get("grile_v2_job_id")
-        if job_id is not None and not isinstance(job_id, str):
-            raise RuntimeError("campaign publication Grile V2 job is invalid")
-        return await _sync_grile_v2_effect(
-            job_id=job_id if isinstance(job_id, str) else None,
+        return await _retired_grile_v2_effect(
             month=month,
             generation_hash=generation_hash,
             sales_revision=sales_revision,
