@@ -293,8 +293,14 @@ describe('HistoryDetailCharts V4 ChartFrame consumers', () => {
     const tooltipProps = rechartsCalls.tooltip.mock.calls[0]?.[0] as {
       formatter: (value: unknown, name: unknown) => unknown;
     };
-    expect(tooltipProps.formatter(100, 'Vanzari')).toBe(formatAmount(100));
-    expect(tooltipProps.formatter(3, 'Cantitate')).toBe(formatInt(3));
+    const fractionalTooltipValue = 100.25;
+    expect(formatAmount(fractionalTooltipValue)).not.toBe(formatInt(fractionalTooltipValue));
+    expect(tooltipProps.formatter(fractionalTooltipValue, 'Vanzari')).toBe(
+      formatAmount(fractionalTooltipValue),
+    );
+    expect(tooltipProps.formatter(fractionalTooltipValue, 'Cantitate')).toBe(
+      formatInt(fractionalTooltipValue),
+    );
 
     const barProps = rechartsCalls.bar.mock.calls[0]?.[0] as Record<string, unknown>;
     expect(barProps).toMatchObject({
