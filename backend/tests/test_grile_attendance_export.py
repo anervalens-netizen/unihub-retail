@@ -36,8 +36,9 @@ async def test_zip_reconciles_actual_store_minutes_and_reference_layout():
             assert manifest['projection_revision'] == data.projection_revision
             files = [name for name in archive.namelist() if name.endswith('.xlsx')]
             assert len(files) == 2
-            books = [load_workbook(BytesIO(archive.read(name)), data_only=True) for name in files]
-            a, b = [book['Pontaj'] for book in books]
+            first = load_workbook(BytesIO(archive.read(files[0])), data_only=True)
+            second = load_workbook(BytesIO(archive.read(files[1])), data_only=True)
+            a, b = first['Pontaj'], second['Pontaj']
             assert (a['C8'].value, a['C9'].value, a['C10'].value) == (11, '10:00–22:00', 1)
             assert (b['D8'].value, b['D9'].value, b['D10'].value) == (12, '09:00–22:00', 1)
             assert a['D8'].value is None  # no duplicate at home
@@ -48,8 +49,8 @@ async def test_zip_reconciles_actual_store_minutes_and_reference_layout():
             assert a['AG8'].fill.fgColor.rgb.endswith('E5E7EB')  # day 31 absent
             assert a['B31'].value == 'Pauza'
             assert a.freeze_panes == 'C8'
-            for book in books:
-                book.close()
+            first.close()
+            second.close()
     finally:
         artifact.close()
 
