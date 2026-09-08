@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { dayChanges, monthDays } from './calendarModel';
 import type { CalendarData } from '../../api/grileCalendar';
 
-const data: CalendarData = { month: '2026-09', roster: [], attendance: [], days: [
+const data: CalendarData = { attendance_by_store: {}, attendance_days: [], store_hours: [], projection_revision: '', month: '2026-09', roster: [], attendance: [], days: [
   { agent_code: 'A', work_date: '2026-09-01', site_code: 'S1', status: 'work', supplemental: false, revision: 3 },
   { agent_code: 'B', work_date: '2026-09-01', site_code: 'S1', status: 'cancelled', supplemental: false, revision: 7 },
 ] };

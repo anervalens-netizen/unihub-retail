@@ -2,14 +2,16 @@
 from __future__ import annotations
 
 from datetime import date, timedelta
+from hashlib import sha256
 
 from fastapi import HTTPException
 
 from business_clock import business_today
 from grile.calendar_models import (
-    AgentCandidate, CalendarAttendance, CalendarChanges, CalendarDay,
-    CalendarMonth, RosterEntry, RosterInput,
+    AgentCandidate, CalendarChanges, CalendarDay,
+    CalendarMonth, RosterEntry, RosterInput, StoreHours, StoreHoursInput,
 )
+from grile.calendar_projection import attendance_by_agent_and_store, attendance_days
 from repositories.grile_calendar import CalendarConflict, GrileCalendarRepository
 
 
@@ -44,17 +46,13 @@ class GrileCalendarService:
         data = await self.repository.read(month)
         roster = [RosterEntry.model_validate(row) for row in data["roster"]]
         days = [CalendarDay.model_validate(row) for row in data["days"]]
-        attendance = {row.agent_code: CalendarAttendance(agent_code=row.agent_code) for row in roster}
-        for day in days:
-            entry = attendance[day.agent_code]
-            if day.status == "work":
-                entry.work_days += 1
-                entry.work_days_by_site[day.site_code] = entry.work_days_by_site.get(day.site_code, 0) + 1
-            elif day.status == "leave":
-                entry.leave_days += 1
-            elif day.status == "off":
-                entry.off_days += 1
-        return CalendarMonth(month=month, roster=roster, days=days, attendance=list(attendance.values()))
+        hours = [StoreHours.model_validate(row) for row in data.get("store_hours", [])]
+        attendance, stores = attendance_by_agent_and_store(roster, days, hours)
+        result = CalendarMonth(month=month, roster=roster, days=days, attendance=attendance,
+                               store_hours=hours, attendance_by_store=stores,
+                               attendance_days=attendance_days(days, hours))
+        result.projection_revision = sha256(result.model_dump_json().encode()).hexdigest()
+        return result
 
     async def save_roster(self, month: str, agent_code: str, payload: RosterInput, actor: str) -> RosterEntry:
         if payload.expected_revision == 0:
@@ -77,3 +75,18 @@ class GrileCalendarService:
         except CalendarConflict as exc:
             raise HTTPException(409, str(exc)) from exc
         return [CalendarDay.model_validate(row) for row in rows]
+
+    async def save_hours(self, month: str, site_code: str, payload: StoreHoursInput, actor: str) -> StoreHours:
+        try:
+            row = await self.repository.save_hours(month, site_code, payload, actor)
+        except CalendarConflict as exc:
+            raise HTTPException(409, str(exc)) from exc
+        return StoreHours.model_validate(row)
+
+    async def export_attendance(self, month: str, expected_revision: str):
+        from starlette.concurrency import run_in_threadpool
+        from services.grile_attendance_export import build_attendance_zip
+        data = await self.read(month)
+        if data.projection_revision != expected_revision:
+            raise HTTPException(409, "Calendar changed; reload before exporting")
+        return await run_in_threadpool(build_attendance_zip, data)

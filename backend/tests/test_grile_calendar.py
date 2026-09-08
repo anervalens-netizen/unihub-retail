@@ -132,6 +132,7 @@ def test_agents_leaders_and_hr_cannot_write_calendar(api, role):
     assert client.put("/api/grile/calendar/2026-09/roster/AG1", json={"home_site_code": "A", "expected_revision": 0}).status_code == 403
     assert client.patch("/api/grile/calendar/2026-09/days", json={"days": [change().model_dump(mode="json")]}).status_code == 403
     service.save_days.assert_not_awaited()
+    assert client.put("/api/grile/calendar/2026-09/store-hours/A", json={"expected_revision": 0}).status_code == 403
 
 
 def test_manager_routes_preserve_actor_and_typed_contract(api):
@@ -149,6 +150,9 @@ def test_manager_routes_preserve_actor_and_typed_contract(api):
     assert client.patch("/api/grile/calendar/2026-09/days", json={"days": [change().model_dump(mode="json")]}).status_code == 200
     assert service.save_days.await_args.args[-1] == "manager-sub"
     assert client.get("/api/grile/calendar/0000-01").status_code == 422
+    service.save_hours.return_value = {"site_code": "A", "revision": 1}
+    assert client.put("/api/grile/calendar/2026-09/store-hours/A", json={"expected_revision": 0}).status_code == 200
+    assert service.save_hours.await_args.args[-1] == "manager-sub"
 
 
 @pytest.mark.parametrize("role", ["unihub-agent", "unihub-team-leader"])
@@ -156,6 +160,7 @@ def test_calendar_reads_are_management_only(api, role):
     app, _ = api
     set_role(app, role)
     assert TestClient(app).get("/api/grile/calendar/2026-09").status_code == 403
+    assert TestClient(app).get("/api/grile/calendar/2026-09/attendance.zip", params={"expected_revision": "a" * 64}).status_code == 403
 
 
 @pytest.mark.asyncio
@@ -164,3 +169,9 @@ async def test_calendar_composition_uses_existing_pool(monkeypatch):
     monkeypatch.setattr("composition.get_pool", AsyncMock(return_value=pool))
     service = await build_grile_calendar_service()
     assert service.repository.pool is pool
+
+
+def test_attendance_openapi_declares_binary_zip(api):
+    app, _service = api
+    response = app.openapi()['paths']['/api/grile/calendar/{month}/attendance.zip']['get']['responses']['200']
+    assert response['content'] == {'application/zip': {'schema': {'type': 'string', 'format': 'binary'}}}

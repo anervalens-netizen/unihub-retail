@@ -5,7 +5,7 @@ from typing import Any
 
 import asyncpg
 
-from grile.calendar_models import CalendarDayInput
+from grile.calendar_models import CalendarDayInput, StoreHoursInput
 from retail_filters import distribution_location_clause
 
 
@@ -42,7 +42,11 @@ class GrileCalendarRepository:
                 days = await conn.fetch(
                     "SELECT * FROM grile_calendar_days WHERE month=$1 ORDER BY work_date, agent_code", month,
                 )
-        return {"roster": [dict(row) for row in roster], "days": [dict(row) for row in days]}
+                hours = await conn.fetch(
+                    "SELECT * FROM grile_calendar_store_hours WHERE month=$1 ORDER BY site_code", month,
+                )
+        return {"roster": [dict(row) for row in roster], "days": [dict(row) for row in days],
+                "store_hours": [dict(row) for row in hours]}
 
     @staticmethod
     async def _store(conn: asyncpg.Connection, site_code: str) -> asyncpg.Record:
@@ -159,3 +163,29 @@ class GrileCalendarRepository:
                     return result
         except asyncpg.UniqueViolationError as exc:
             raise CalendarConflict("A store already has an assigned agent on that day") from exc
+
+    async def save_hours(self, month: str, site_code: str, payload: StoreHoursInput, actor: str) -> dict[str, Any]:
+        async with self.pool.acquire() as conn:
+            async with conn.transaction():
+                await self._store(conn, site_code)
+                old = await conn.fetchval(
+                    "SELECT revision FROM grile_calendar_store_hours WHERE month=$1 AND site_code=$2 FOR UPDATE",
+                    month, site_code,
+                )
+                if (old or 0) != payload.expected_revision:
+                    raise CalendarConflict("Store hours changed; reload the calendar")
+                row = await conn.fetchrow(
+                    """INSERT INTO grile_calendar_store_hours
+                       (month,site_code,opens,closes,break_minutes,revision,updated_by_sub)
+                       VALUES ($1,$2,$3,$4,$5,1,$6)
+                       ON CONFLICT (month,site_code) DO UPDATE SET
+                         opens=EXCLUDED.opens, closes=EXCLUDED.closes, break_minutes=EXCLUDED.break_minutes,
+                         revision=grile_calendar_store_hours.revision+1,
+                         updated_by_sub=EXCLUDED.updated_by_sub, updated_at=now()
+                       WHERE grile_calendar_store_hours.revision=$7 RETURNING *""",
+                    month, site_code, payload.opens, payload.closes, payload.break_minutes,
+                    actor, payload.expected_revision,
+                )
+                if row is None:
+                    raise CalendarConflict("Store hours changed; reload the calendar")
+                return dict(row)

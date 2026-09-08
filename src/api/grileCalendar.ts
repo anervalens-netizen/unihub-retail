@@ -13,3 +13,13 @@ export async function confirmCalendarAgent(month: string, code: string, body: Re
 }
 export type CalendarData = Awaited<ReturnType<typeof readCalendar>>;
 export type CalendarStore = Awaited<ReturnType<typeof calendarStores>>[number] & { cleanupOnly?: boolean };
+
+export async function saveStoreHours(month: string, site: string, body: import('./generated/contracts').RetailStoreHoursInput) {
+  const response = await client.put(`/api/grile/calendar/${encodeURIComponent(month)}/store-hours/${encodeURIComponent(site)}`, body);
+  return decodeRetail('save_store_hours_api_grile_calendar__month__store_hours__site_code__put', response.data);
+}
+export async function downloadAttendance(month: string, revision: string) {
+  const { downloadBlob } = await import('../lib/download');
+  const response = await client.get<Blob>(`/api/grile/calendar/${encodeURIComponent(month)}/attendance.zip`, { params: { expected_revision: revision }, responseType: 'blob', timeoutMs: 120_000 });
+  downloadBlob(response.data, `Pontaje-provizorii-${month}.zip`);
+}
