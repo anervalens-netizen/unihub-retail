@@ -114,7 +114,10 @@ describe('DataGrid', () => {
       'descending',
     );
 
-    const status = screen.getByRole('status');
+    const status = screen.getByText(
+      'Sortare activă: 1. Vânzări, descrescător.',
+      { selector: 'p[role="status"]' },
+    );
     expect(status).toHaveTextContent('Sortare activă: 1. Vânzări, descrescător.');
     expect(screen.getByRole('button', { name: 'Sortează după Nume' })).toHaveAttribute(
       'aria-describedby',
