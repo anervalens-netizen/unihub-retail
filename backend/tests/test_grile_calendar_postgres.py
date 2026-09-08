@@ -1,0 +1,225 @@
+"""Real database proof of calendar replacement, absence and identity fencing."""
+from __future__ import annotations
+
+import asyncio
+import os
+from datetime import date
+
+import asyncpg
+import pytest
+import pytest_asyncio
+
+from db.connection import validate_test_database_url
+from grile.calendar_models import CalendarChanges, CalendarDayInput, RosterInput
+from repositories.grile_calendar import CalendarConflict, GrileCalendarRepository
+from services.grile_calendar import GrileCalendarService
+
+pytestmark = [pytest.mark.asyncio, pytest.mark.skipif(
+    os.getenv("UNIHUB_TEST_DATABASE") != "1", reason="requires isolated PostgreSQL",
+)]
+MONTH = "2196-09"
+A, B, C, CLOSED = ("CAL-R1-" + value for value in ("A", "B", "C", "CLOSED"))
+AG1, AG2 = "CAL-R1-AG1", "CAL-R1-AG2"
+
+
+@pytest_asyncio.fixture
+async def repo():
+    url = os.environ["DATABASE_URL"]
+    validate_test_database_url(url)
+    pool = await asyncpg.create_pool(url, min_size=1, max_size=4, server_settings={
+        "statement_timeout": "5000", "lock_timeout": "2000", "idle_in_transaction_session_timeout": "10000",
+    })
+    async with pool.acquire() as conn:
+        for site, region in [(A, "R1"), (B, "R1"), (C, "R2"), (CLOSED, "R1")]:
+            await conn.execute(
+                """INSERT INTO stores(site_code,locatie,firma,regional,asm,first_seen_month,last_seen_month,is_active)
+                   VALUES($1,$1,'SYNTHETIC',$2,'TL',$3,$3,$4)""", site, region, MONTH, site != CLOSED,
+            )
+    repository = GrileCalendarRepository(pool)
+    try:
+        yield repository
+    finally:
+        async with pool.acquire() as conn:
+            await conn.execute("DELETE FROM grile_calendar_days WHERE agent_code LIKE 'CAL-R1-%'")
+            await conn.execute("DELETE FROM grile_calendar_roster WHERE agent_code LIKE 'CAL-R1-%'")
+            await conn.execute("DELETE FROM reporting_agent_month WHERE site_code LIKE 'CAL-R1-%'")
+            await conn.execute("DELETE FROM stores WHERE site_code LIKE 'CAL-R1-%'")
+        await pool.close()
+
+
+def day(agent=AG1, site=A, status="work", revision=0, number=1, supplemental=False):
+    return CalendarDayInput(work_date=date(2196, 9, number), agent_code=agent, site_code=site,
+                            status=status, expected_revision=revision, supplemental=supplemental)
+
+
+async def confirm(repo, code=AG1, home=A):
+    return await repo.save_roster(MONTH, code, home, True, 0, "synthetic-manager")
+
+
+async def test_atomic_replacement_leave_and_reassignment_keep_revisions(repo):
+    await confirm(repo)
+    await confirm(repo, AG2)
+    service = GrileCalendarService(repo)
+    first = await service.save_days(MONTH, CalendarChanges(days=[day()]), "manager")
+    assert first[0].revision == 1
+    # Person 1 takes leave; person 2 covers that exact store/day atomically.
+    replaced = await service.save_days(MONTH, CalendarChanges(days=[
+        day(status="leave", revision=1), day(agent=AG2, supplemental=True),
+    ]), "manager")
+    assert {row.agent_code: row.status for row in replaced} == {AG1: "leave", AG2: "work"}
+    report = await service.read(MONTH)
+    counts = {row.agent_code: row for row in report.attendance}
+    assert counts[AG1].work_days == 0 and counts[AG1].leave_days == 1
+    assert counts[AG2].work_days_by_site == {A: 1}
+    await repo.save_days([day(status="cancelled", revision=2)], "manager")
+    with pytest.raises(CalendarConflict, match="revision"):
+        await repo.save_days([day(site=B, supplemental=True)], "stale-client")
+    updated = await repo.save_days([day(site=B, supplemental=True, revision=3)], "manager")
+    assert updated[0]["revision"] == 4
+    counts = {row.agent_code: row for row in (await service.read(MONTH)).attendance}
+    assert counts[AG1].work_days_by_site == {B: 1}
+    assert counts[AG1].leave_days == 0
+
+
+async def test_conflicting_batch_rolls_back_original_schedule(repo):
+    await confirm(repo)
+    await confirm(repo, AG2)
+    await repo.save_days([day()], "manager")
+    with pytest.raises(CalendarConflict, match="already has"):
+        await repo.save_days([day(revision=1), day(agent=AG2)], "manager")
+    rows = (await repo.read(MONTH))["days"]
+    assert len(rows) == 1 and rows[0]["revision"] == 1 and rows[0]["status"] == "work"
+    with pytest.raises(CalendarConflict, match="revision"):
+        await repo.save_days([day(status="leave", revision=1), day(agent=AG2, revision=4)], "manager")
+    assert (await repo.read(MONTH))["days"][0]["status"] == "work"
+
+
+async def test_two_simultaneous_agents_cannot_occupy_one_store_day(repo):
+    await confirm(repo)
+    await confirm(repo, AG2)
+    outcomes = await asyncio.gather(
+        repo.save_days([day()], "manager1"),
+        repo.save_days([day(agent=AG2)], "manager2"), return_exceptions=True,
+    )
+    assert sum(isinstance(item, CalendarConflict) for item in outcomes) == 1
+    assert len((await repo.read(MONTH))["days"]) == 1
+
+
+async def test_two_managers_creating_same_agent_day_cannot_overwrite_winner(repo):
+    await confirm(repo)
+    outcomes = await asyncio.gather(
+        repo.save_days([day()], "manager1"),
+        repo.save_days([day(site=B, supplemental=True)], "manager2"),
+        return_exceptions=True,
+    )
+    conflicts = [item for item in outcomes if isinstance(item, CalendarConflict)]
+    assert len(conflicts) == 1 and "revision" in str(conflicts[0])
+    winner = next(item for item in outcomes if isinstance(item, list))[0]
+    saved = (await repo.read(MONTH))["days"]
+    assert len(saved) == 1
+    assert saved[0]["revision"] == winner["revision"] == 1
+    assert saved[0]["site_code"] == winner["site_code"]
+    assert saved[0]["updated_by_sub"] == winner["updated_by_sub"]
+
+
+async def test_roster_creation_and_update_are_fenced(repo):
+    outcomes = await asyncio.gather(confirm(repo), confirm(repo), return_exceptions=True)
+    assert sum(isinstance(item, CalendarConflict) for item in outcomes) == 1
+    row = await repo.save_roster(MONTH, AG1, A, False, 1, "manager")
+    assert not row["active"] and row["revision"] == 2
+    with pytest.raises(CalendarConflict, match="confirmed active"):
+        await repo.save_days([day()], "manager")
+    with pytest.raises(CalendarConflict, match="revision"):
+        await repo.save_roster(MONTH, AG1, A, True, 1, "manager")
+    await repo.save_roster(MONTH, AG1, A, True, 2, "manager")
+    await repo.save_days([day()], "manager")
+    for home, active in [(A, False), (B, True)]:
+        with pytest.raises(CalendarConflict, match="Cancel scheduled"):
+            await repo.save_roster(MONTH, AG1, home, active, 3, "manager")
+    await repo.save_days([day(status="cancelled", revision=1)], "manager")
+    moved = await repo.save_roster(MONTH, AG1, B, True, 3, "manager")
+    assert moved["home_site_code"] == B
+
+
+async def test_missing_identity_store_scope_and_leave_conflicts(repo):
+    with pytest.raises(CalendarConflict, match="roster first"):
+        await repo.save_days([day()], "manager")
+    with pytest.raises(CalendarConflict, match="not active"):
+        await confirm(repo, home=CLOSED)
+    with pytest.raises(CalendarConflict, match="revision"):
+        await repo.save_roster(MONTH, AG1, A, True, 5, "manager")
+    await confirm(repo)
+    with pytest.raises(CalendarConflict, match="unassigned"):
+        await repo.save_days([day(status="cancelled")], "manager")
+    for change, error in [
+        (day(site=CLOSED, supplemental=True), "not active"),
+        (day(site=B), "explicitly supplemental"),
+        (day(site=B, status="leave"), "explicitly supplemental"),
+        (day(site=C, supplemental=True), "home region"),
+    ]:
+        with pytest.raises(CalendarConflict, match=error):
+            await repo.save_days([change], "manager")
+    await repo.save_days([day(status="leave")], "manager")
+    with pytest.raises(CalendarConflict, match="retain"):
+        await repo.save_days([day(status="cancelled", site=B, revision=1)], "manager")
+    with pytest.raises(CalendarConflict, match="revision"):
+        await repo.save_days([day(site=B, supplemental=True)], "manager")
+
+
+async def test_database_constraints_and_minimal_authority(repo):
+    await confirm(repo)
+    await repo.save_days([day()], "manager")
+    async with repo.pool.acquire() as conn:
+        assert await conn.fetchval("SELECT has_table_privilege('unihub_business_write','grile_calendar_days','UPDATE')")
+        assert not await conn.fetchval("SELECT has_table_privilege('unihub_web_read','grile_calendar_days','INSERT')")
+        assert not await conn.fetchval("SELECT has_table_privilege('unihub_business_write','grile_calendar_days','DELETE')")
+        for sql in [
+            "UPDATE grile_calendar_days SET month='2196-10' WHERE agent_code=$1",
+            "UPDATE grile_calendar_days SET status='leave', supplemental=TRUE WHERE agent_code=$1",
+        ]:
+            with pytest.raises(asyncpg.IntegrityConstraintViolationError):
+                await conn.execute(sql, AG1)
+
+
+async def test_real_candidates_allow_explicit_confirmation_without_current_sales(repo, monkeypatch):
+    monkeypatch.setattr("services.grile_calendar.business_today", lambda: date(2196, 9, 20))
+    async with repo.pool.acquire() as conn:
+        for code, month, site in [(AG1, MONTH, A), (AG1, "2196-08", B), (AG2, "2196-08", A)]:
+            await conn.execute(
+                """INSERT INTO reporting_agent_month(import_month,site_code,locatie,firma,regional,asm,agent)
+                   VALUES($1,$2,$2,'SYNTHETIC','R1','TL',$3)""", month, site, code,
+            )
+    service = GrileCalendarService(repo)
+    candidates = {row.agent_code: row for row in await service.candidates(MONTH)}
+    assert candidates[AG1].site_codes == [A]
+    assert candidates[AG2].needs_active_confirmation
+    assert (await repo.read(MONTH))["roster"] == []
+    row = await service.save_roster(MONTH, AG2, RosterInput(home_site_code=A, expected_revision=0), "manager")
+    assert row.active and row.agent_code == AG2
+    changed = await service.save_roster(MONTH, AG2, RosterInput(home_site_code=A, expected_revision=1, active=False), "manager")
+    assert not changed.active
+
+
+async def test_distribution_locations_and_nonretail_codes_cannot_enter_calendar(repo, monkeypatch):
+    monkeypatch.setattr("services.grile_calendar.business_today", lambda: date(2196, 9, 20))
+    async with repo.pool.acquire() as conn:
+        # Opaque site code: eligibility must use the canonical location field.
+        await conn.execute("UPDATE stores SET locatie='tr Distribution', regional='R1' WHERE site_code=$1", C)
+        for code, site in [(AG1, A), (AG2, C), ('-', A), (' - ', A), (' tr123 ', A)]:
+            await conn.execute(
+                """INSERT INTO reporting_agent_month(import_month,site_code,locatie,firma,regional,asm,agent)
+                   VALUES($1,$2,$2,'SYNTHETIC','R1','TL',$3)""", MONTH, site, code,
+            )
+    service = GrileCalendarService(repo)
+    assert [row.agent_code for row in await service.candidates(MONTH)] == [AG1]
+    from fastapi import HTTPException
+    for code in ['-', 'tr123', AG2]:
+        with pytest.raises(HTTPException) as error:
+            await service.save_roster(MONTH, code, RosterInput(home_site_code=A, expected_revision=0), 'manager')
+        assert error.value.status_code == 422
+    with pytest.raises(CalendarConflict, match='not active'):
+        await confirm(repo, home=C)
+    await confirm(repo)
+    with pytest.raises(CalendarConflict, match='not active'):
+        await repo.save_days([day(site=C, supplemental=True)], 'manager')
+    assert (await repo.read(MONTH))['days'] == []

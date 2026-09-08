@@ -1,6 +1,42 @@
 {
   "components": {
     "schemas": {
+      "AgentCandidate": {
+        "properties": {
+          "agent_code": {
+            "title": "Agent Code",
+            "type": "string"
+          },
+          "needs_active_confirmation": {
+            "title": "Needs Active Confirmation",
+            "type": "boolean"
+          },
+          "needs_home_confirmation": {
+            "title": "Needs Home Confirmation",
+            "type": "boolean"
+          },
+          "site_codes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Site Codes",
+            "type": "array"
+          },
+          "source_month": {
+            "title": "Source Month",
+            "type": "string"
+          }
+        },
+        "required": [
+          "agent_code",
+          "source_month",
+          "site_codes",
+          "needs_active_confirmation",
+          "needs_home_confirmation"
+        ],
+        "title": "AgentCandidate",
+        "type": "object"
+      },
       "AgentEvaluationOption": {
         "additionalProperties": false,
         "properties": {
@@ -2409,6 +2445,193 @@
           "share_pct"
         ],
         "title": "BrandMixItem",
+        "type": "object"
+      },
+      "CalendarAttendance": {
+        "properties": {
+          "agent_code": {
+            "title": "Agent Code",
+            "type": "string"
+          },
+          "leave_days": {
+            "default": 0,
+            "title": "Leave Days",
+            "type": "integer"
+          },
+          "off_days": {
+            "default": 0,
+            "title": "Off Days",
+            "type": "integer"
+          },
+          "work_days": {
+            "default": 0,
+            "title": "Work Days",
+            "type": "integer"
+          },
+          "work_days_by_site": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Work Days By Site",
+            "type": "object"
+          }
+        },
+        "required": [
+          "agent_code"
+        ],
+        "title": "CalendarAttendance",
+        "type": "object"
+      },
+      "CalendarChanges": {
+        "additionalProperties": false,
+        "properties": {
+          "days": {
+            "items": {
+              "$ref": "#/components/schemas/CalendarDayInput"
+            },
+            "maxItems": 93,
+            "minItems": 1,
+            "title": "Days",
+            "type": "array"
+          }
+        },
+        "required": [
+          "days"
+        ],
+        "title": "CalendarChanges",
+        "type": "object"
+      },
+      "CalendarDay": {
+        "properties": {
+          "agent_code": {
+            "title": "Agent Code",
+            "type": "string"
+          },
+          "revision": {
+            "title": "Revision",
+            "type": "integer"
+          },
+          "site_code": {
+            "title": "Site Code",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "work",
+              "leave",
+              "off",
+              "cancelled"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "supplemental": {
+            "title": "Supplemental",
+            "type": "boolean"
+          },
+          "work_date": {
+            "format": "date",
+            "title": "Work Date",
+            "type": "string"
+          }
+        },
+        "required": [
+          "work_date",
+          "agent_code",
+          "site_code",
+          "status",
+          "supplemental",
+          "revision"
+        ],
+        "title": "CalendarDay",
+        "type": "object"
+      },
+      "CalendarDayInput": {
+        "additionalProperties": false,
+        "properties": {
+          "agent_code": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Agent Code",
+            "type": "string"
+          },
+          "expected_revision": {
+            "minimum": 0.0,
+            "title": "Expected Revision",
+            "type": "integer"
+          },
+          "site_code": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Site Code",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "work",
+              "leave",
+              "off",
+              "cancelled"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "supplemental": {
+            "default": false,
+            "title": "Supplemental",
+            "type": "boolean"
+          },
+          "work_date": {
+            "format": "date",
+            "title": "Work Date",
+            "type": "string"
+          }
+        },
+        "required": [
+          "work_date",
+          "agent_code",
+          "site_code",
+          "status",
+          "expected_revision"
+        ],
+        "title": "CalendarDayInput",
+        "type": "object"
+      },
+      "CalendarMonth": {
+        "properties": {
+          "attendance": {
+            "items": {
+              "$ref": "#/components/schemas/CalendarAttendance"
+            },
+            "title": "Attendance",
+            "type": "array"
+          },
+          "days": {
+            "items": {
+              "$ref": "#/components/schemas/CalendarDay"
+            },
+            "title": "Days",
+            "type": "array"
+          },
+          "month": {
+            "title": "Month",
+            "type": "string"
+          },
+          "roster": {
+            "items": {
+              "$ref": "#/components/schemas/RosterEntry"
+            },
+            "title": "Roster",
+            "type": "array"
+          }
+        },
+        "required": [
+          "month",
+          "roster",
+          "days",
+          "attendance"
+        ],
+        "title": "CalendarMonth",
         "type": "object"
       },
       "CampaignOverview": {
@@ -10304,6 +10527,66 @@
           "prc_focus_acc_qty"
         ],
         "title": "RegionalStats",
+        "type": "object"
+      },
+      "RosterEntry": {
+        "properties": {
+          "active": {
+            "title": "Active",
+            "type": "boolean"
+          },
+          "agent_code": {
+            "title": "Agent Code",
+            "type": "string"
+          },
+          "home_site_code": {
+            "title": "Home Site Code",
+            "type": "string"
+          },
+          "month": {
+            "title": "Month",
+            "type": "string"
+          },
+          "revision": {
+            "title": "Revision",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "month",
+          "agent_code",
+          "home_site_code",
+          "active",
+          "revision"
+        ],
+        "title": "RosterEntry",
+        "type": "object"
+      },
+      "RosterInput": {
+        "additionalProperties": false,
+        "properties": {
+          "active": {
+            "default": true,
+            "title": "Active",
+            "type": "boolean"
+          },
+          "expected_revision": {
+            "minimum": 0.0,
+            "title": "Expected Revision",
+            "type": "integer"
+          },
+          "home_site_code": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Home Site Code",
+            "type": "string"
+          }
+        },
+        "required": [
+          "home_site_code",
+          "expected_revision"
+        ],
+        "title": "RosterInput",
         "type": "object"
       },
       "SalaryAgentSummaryPublic": {
@@ -19636,6 +19919,237 @@
         "summary": "Grile Agent Targets Sync",
         "tags": [
           "grile"
+        ]
+      }
+    },
+    "/api/grile/calendar/{month}": {
+      "get": {
+        "operationId": "read_calendar_api_grile_calendar__month__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "month",
+            "required": true,
+            "schema": {
+              "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
+              "title": "Month",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CalendarMonth"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Read Calendar",
+        "tags": [
+          "grile-calendar"
+        ]
+      }
+    },
+    "/api/grile/calendar/{month}/candidates": {
+      "get": {
+        "operationId": "candidates_api_grile_calendar__month__candidates_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "month",
+            "required": true,
+            "schema": {
+              "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
+              "title": "Month",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/AgentCandidate"
+                  },
+                  "title": "Response Candidates Api Grile Calendar  Month  Candidates Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Candidates",
+        "tags": [
+          "grile-calendar"
+        ]
+      }
+    },
+    "/api/grile/calendar/{month}/days": {
+      "patch": {
+        "operationId": "save_days_api_grile_calendar__month__days_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "month",
+            "required": true,
+            "schema": {
+              "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
+              "title": "Month",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CalendarChanges"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/CalendarDay"
+                  },
+                  "title": "Response Save Days Api Grile Calendar  Month  Days Patch",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Save Days",
+        "tags": [
+          "grile-calendar"
+        ]
+      }
+    },
+    "/api/grile/calendar/{month}/roster/{agent_code}": {
+      "put": {
+        "operationId": "save_roster_api_grile_calendar__month__roster__agent_code__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "month",
+            "required": true,
+            "schema": {
+              "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
+              "title": "Month",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "agent_code",
+            "required": true,
+            "schema": {
+              "maxLength": 80,
+              "minLength": 1,
+              "title": "Agent Code",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RosterInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RosterEntry"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Save Roster",
+        "tags": [
+          "grile-calendar"
         ]
       }
     },
