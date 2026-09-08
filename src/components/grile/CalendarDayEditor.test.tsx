@@ -38,3 +38,10 @@ it('does not allow read-only users to save', () => {
   render(<CalendarDayEditor {...props} writable={false} onSave={vi.fn()} />);
   expect(screen.getByRole('button', { name: 'Salvează ziua' })).toBeDisabled();
 });
+it('cancels supplemental work at the assigned store while preserving its revision', async () => {
+  const onSave = vi.fn();
+  render(<CalendarDayEditor {...props} data={{ ...data, days: [{ ...data.days[0]!, agent_code: 'B', supplemental: true }] }} onSave={onSave} />);
+  await userEvent.selectOptions(screen.getByLabelText('Tip zi'), 'cancelled');
+  await userEvent.click(screen.getByRole('button', { name: 'Salvează ziua' }));
+  expect(onSave).toHaveBeenCalledWith([{ agent_code: 'B', work_date: '2026-09-01', site_code: 'S1', status: 'cancelled', supplemental: false, expected_revision: 3 }]);
+});

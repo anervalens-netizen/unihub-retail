@@ -78,3 +78,28 @@ it('does not turn a failed month load into an empty editable schedule', async ()
   expect(await screen.findByRole('alert')).toHaveTextContent('nu poate fi încărcat');
   expect(screen.queryByRole('button', { name: /Magazin Alpha/ })).not.toBeInTheDocument();
 });
+it('corrects an existing home store using the selected roster revision', async () => {
+  api.readCalendar.mockResolvedValue({ month: '2026-09', roster: [{ ...roster[0], home_site_code: 'S2', revision: 4 }], days: [], attendance: [] });
+  mount(); await openStore();
+  await userEvent.click(screen.getByText('Confirmă agenții și magazinul de bază'));
+  await userEvent.selectOptions(screen.getByLabelText('Cod agent pentru confirmare'), 'AG1');
+  api.confirmCalendarAgent.mockResolvedValue({});
+  await userEvent.click(screen.getByRole('button', { name: 'Confirmă în Magazin Alpha' }));
+  await waitFor(() => expect(api.confirmCalendarAgent).toHaveBeenCalledWith('2026-09', 'AG1', { home_site_code: 'S1', active: true, expected_revision: 4 }));
+});
+it('deactivates and reactivates confirmed agents through revision-fenced updates', async () => {
+  api.readCalendar.mockResolvedValue({ month: '2026-09', roster, days: [], attendance: [] });
+  mount(); await openStore();
+  await userEvent.click(screen.getByText('Confirmă agenții și magazinul de bază'));
+  await userEvent.selectOptions(screen.getByLabelText('Cod agent pentru confirmare'), 'AG1');
+  await userEvent.click(screen.getByLabelText('Activ în această lună'));
+  api.confirmCalendarAgent.mockResolvedValue({});
+  api.readCalendar.mockResolvedValue({ month: '2026-09', roster: [{ ...roster[0], active: false, revision: 2 }], days: [], attendance: [] });
+  await userEvent.click(screen.getByRole('button', { name: 'Confirmă în Magazin Alpha' }));
+  await waitFor(() => expect(api.confirmCalendarAgent).toHaveBeenCalledWith('2026-09', 'AG1', { home_site_code: 'S1', active: false, expected_revision: 1 }));
+  await waitFor(() => expect(screen.getByLabelText('Cod agent pentru confirmare')).toHaveValue(''));
+  await userEvent.selectOptions(screen.getByLabelText('Cod agent pentru confirmare'), 'AG1');
+  await userEvent.click(screen.getByLabelText('Activ în această lună'));
+  await userEvent.click(screen.getByRole('button', { name: 'Confirmă în Magazin Alpha' }));
+  await waitFor(() => expect(api.confirmCalendarAgent).toHaveBeenLastCalledWith('2026-09', 'AG1', { home_site_code: 'S1', active: true, expected_revision: 2 }));
+});
