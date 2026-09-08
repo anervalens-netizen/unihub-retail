@@ -52,3 +52,14 @@ it('reports unassigned store sales and agents from another home stay outside thi
   expect(await screen.findByRole('alert')).toHaveTextContent('fără persoană alocată');
   expect(screen.queryByText('222 lei')).not.toBeInTheDocument();
 });
+it('shows confirmed names alongside stable codes and explains identity conflicts', async () => {
+  const data = response();
+  api.readEarnings.mockResolvedValue({ ...data, agents: [
+    { ...data.agents[0], display_name: 'Synthetic Name', identity_status: 'confirmed' },
+    { ...data.agents[0], agent_code: 'AG2', identity_status: 'conflicting' },
+  ] });
+  mount();
+  expect(await screen.findByRole('heading', { name: 'Synthetic Name · AG1' })).toBeInTheDocument();
+  expect(screen.getByRole('heading', { name: 'AG2' })).toBeInTheDocument();
+  expect(screen.getByText(/identități salariale contradictorii/)).toBeInTheDocument();
+});

@@ -62,6 +62,7 @@ def _agent_earnings(entry: RosterEntry, days: list[EarningsDay], target_basis: t
     known = None if commission is None or away is None or supplemental is None else commission + away + supplemental
     return AgentEarnings(
         agent_code=entry.agent_code, home_site_code=entry.home_site_code,
+        display_name=entry.display_name, identity_status=entry.identity_status,
         home_work_days=sum(not day.away for day in days), home_target=target,
         home_sales=sales if has_source else None, home_commission=commission if has_source else None,
         away_commission=away if has_source else None,

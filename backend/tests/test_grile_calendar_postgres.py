@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+from hashlib import sha256
 import os
 from datetime import date
 
@@ -46,6 +47,7 @@ async def repo():
             await conn.execute("DELETE FROM store_targets WHERE site_code LIKE 'CAL-R1-%'")
             await conn.execute("DELETE FROM reporting_agent_month WHERE site_code LIKE 'CAL-R1-%'")
             await conn.execute("DELETE FROM stores WHERE site_code LIKE 'CAL-R1-%'")
+            await conn.execute("DELETE FROM salary_private.people WHERE normalized_name='CAL-R4-SYNTHETIC-IDENTITY'")
         await pool.close()
 
 
@@ -333,3 +335,50 @@ async def web_repo(repo):
         await pool.close()
         async with repo.pool.acquire() as conn:
             await conn.execute(f"DROP ROLE {principal}")
+
+
+@pytest.mark.parametrize('start,person,name,other_person,expected', [
+    ('2196-09', 'synthetic-1', 'Synthetic Name', None, 'confirmed'),
+    ('2196-10', 'synthetic-1', 'Synthetic Name', None, 'unavailable'),
+    (None, 'synthetic-1', 'Synthetic Name', None, 'unavailable'),
+    ('2196-08', None, None, None, 'unavailable'),
+    ('2196-08', 'synthetic-1', '   ', None, 'unavailable'),
+    ('2196-08', 'synthetic-1', 'Synthetic Name', 'synthetic-2', 'conflicting'),
+    ('2196-08', 'synthetic-1', 'Synthetic Name', 'synthetic-1', 'confirmed'),
+])
+async def test_calendar_identity_is_effective_scoped_and_web_readable(repo, web_repo, start, person, name, other_person, expected):
+    await confirm(repo)
+    person = 'sp1_' + sha256(person.encode()).hexdigest() if person else None
+    other_person = 'sp1_' + sha256(other_person.encode()).hexdigest() if other_person else None
+    async with repo.pool.acquire() as conn:
+        for identity in {person, other_person} - {None}:
+            await conn.execute(
+                """INSERT INTO salary_private.people(person_id,normalized_name,identity_source)
+                   VALUES($1,'CAL-R4-SYNTHETIC-IDENTITY','name')""", identity,
+            )
+        await conn.execute(
+            """INSERT INTO agent_salary_links(agent_code,site_code,salary_full_name,person_id,effective_from_month,match_status)
+               VALUES($1,$2,$3,$4,$5,$6)""", AG1, A, name, person, start, "confirmed" if person else "unknown",
+        )
+        if other_person:
+            await conn.execute(
+                """INSERT INTO agent_salary_links(agent_code,site_code,salary_full_name,person_id,effective_from_month)
+                   VALUES($1,$2,'Other store name',$3,'2196-08')""", AG1, B, other_person,
+            )
+    service = GrileCalendarService(web_repo)
+    first = await service.read(MONTH)
+    assert first.roster[0].identity_status == expected
+    assert first.roster[0].display_name == ('Synthetic Name' if expected == 'confirmed' else None)
+    assert 'person_id' not in first.model_dump_json()
+    if expected == 'confirmed':
+        async with repo.pool.acquire() as conn:
+            await conn.execute("UPDATE agent_salary_links SET salary_full_name='Corrected name' WHERE agent_code=$1 AND site_code=$2", AG1, A)
+        changed = await service.read(MONTH)
+        assert changed.projection_revision != first.projection_revision
+        assert changed.roster[0].display_name == 'Corrected name'
+    earnings = await service.earnings(MONTH)
+    assert earnings.agents[0].display_name == (await service.read(MONTH)).roster[0].display_name
+    if other_person == person and expected == 'confirmed':
+        async with repo.pool.acquire() as conn:
+            await conn.execute("DELETE FROM agent_salary_links WHERE agent_code=$1 AND site_code=$2", AG1, A)
+        assert (await service.read(MONTH)).roster[0].display_name is None

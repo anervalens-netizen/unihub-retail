@@ -57,6 +57,8 @@ class CalendarChanges(BaseModel):
 
 
 class RosterEntry(BaseModel):
+    display_name: str | None = None
+    identity_status: Literal["confirmed", "unavailable", "conflicting"] = "unavailable"
     month: str
     agent_code: str
     home_site_code: str
