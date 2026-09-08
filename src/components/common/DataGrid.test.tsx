@@ -104,6 +104,19 @@ function renderedNames(): string[] {
 }
 
 describe('DataGrid', () => {
+  it('preserves heading semantics and labels the card and table from one title', () => {
+    renderGrid();
+
+    const heading = screen.getByRole('heading', { name: 'Regional', level: 3 });
+    const table = screen.getByRole('table', { name: 'Regional' });
+    const section = heading.closest('section');
+
+    expect(heading.id).not.toBe('');
+    expect(section).toHaveAttribute('aria-labelledby', heading.id);
+    expect(table).toHaveAttribute('aria-labelledby', heading.id);
+    expect(table.closest('section')).toBe(section);
+  });
+
   it('keeps stable sorting, reports complete sort state and persists changes', () => {
     const onSortChange = vi.fn<(sorts: readonly Sort[]) => void>();
     renderGrid(rows, onSortChange);
