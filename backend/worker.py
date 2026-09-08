@@ -276,6 +276,9 @@ async def promote_sales_background(
             if row is None:
                 raise RuntimeError("Promoted sales generation cannot be read back")
             import_month = str(row["import_month"])
+        # V1 verification is independent of campaign publication and the retired V2 pilot.
+        from services.imports import trigger_grile_check_after_import
+        await trigger_grile_check_after_import(import_month, snapshot_id)
         from routers.filters import clear_filter_options_cache
         from services.retail_metrics import update_business_metrics
         clear_filter_options_cache()

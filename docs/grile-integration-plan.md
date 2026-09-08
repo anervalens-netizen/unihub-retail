@@ -44,6 +44,10 @@ salariilor V2. Refolosim infrastructura Retail și regulile verificate, nu copie
 aplicația standalone ca dependență runtime.
 
 `POST /api/grile/run` rezervă și pune în coadă exclusiv o verificare read-only.
+După promovarea reușită a unui import de vânzări, import workerul declanșează
+aceeași verificare V1 cu `source=auto` și ID-ul snapshotului, best-effort prin
+`trigger_grile_check_after_import`. Aceasta este independentă de publicarea
+campaniilor prin outbox și de pilotul V2 retras. Uploadul doar validat nu o pornește.
 Jobul citește valorile și metadatele Google necesare, compară cu starea Retail și
 persistă rezultatul verificării; nu modifică `agent_targets` și nu scrie în
 Google Sheets.
