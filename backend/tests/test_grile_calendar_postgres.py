@@ -105,6 +105,23 @@ async def test_two_simultaneous_agents_cannot_occupy_one_store_day(repo):
     assert len((await repo.read(MONTH))["days"]) == 1
 
 
+async def test_two_managers_creating_same_agent_day_cannot_overwrite_winner(repo):
+    await confirm(repo)
+    outcomes = await asyncio.gather(
+        repo.save_days([day()], "manager1"),
+        repo.save_days([day(site=B, supplemental=True)], "manager2"),
+        return_exceptions=True,
+    )
+    conflicts = [item for item in outcomes if isinstance(item, CalendarConflict)]
+    assert len(conflicts) == 1 and "revision" in str(conflicts[0])
+    winner = next(item for item in outcomes if isinstance(item, list))[0]
+    saved = (await repo.read(MONTH))["days"]
+    assert len(saved) == 1
+    assert saved[0]["revision"] == winner["revision"] == 1
+    assert saved[0]["site_code"] == winner["site_code"]
+    assert saved[0]["updated_by_sub"] == winner["updated_by_sub"]
+
+
 async def test_roster_creation_and_update_are_fenced(repo):
     outcomes = await asyncio.gather(confirm(repo), confirm(repo), return_exceptions=True)
     assert sum(isinstance(item, CalendarConflict) for item in outcomes) == 1
