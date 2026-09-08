@@ -90,7 +90,6 @@ def project_earnings(calendar: CalendarMonth, sources: dict[str, Any]) -> Earnin
     unassigned = [row for row in sources["sales"] if (row["site_code"], row["sale_date"]) not in assigned]
     result = EarningsMonth(
         month=calendar.month, projection_revision="", calendar_revision=calendar.projection_revision,
-        source_snapshot_id=source.get("snapshot_id"), source_revision=source.get("revision"),
         cutoff=cutoff, selling_days=selling_days, agents=agents, unassigned_sales=unassigned,
     )
     result.projection_revision = sha256((result.model_dump_json() + json.dumps(sources["targets"], default=str, sort_keys=True)).encode()).hexdigest()

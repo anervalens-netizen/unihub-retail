@@ -247,7 +247,7 @@ async def test_store_hours_cas_and_month_isolation(repo):
             await conn.execute('DELETE FROM grile_calendar_store_hours WHERE site_code=$1', A)
 
 
-async def test_earnings_db_credits_tl_sales_to_calendar_person(repo):
+async def test_earnings_db_credits_tl_sales_to_calendar_person(repo, web_repo):
     from decimal import Decimal
     await confirm(repo)
     await confirm(repo, AG2, B)
@@ -261,11 +261,11 @@ async def test_earnings_db_credits_tl_sales_to_calendar_person(repo):
                    VALUES($1,$2,$3,$3,'SYNTHETIC','R1','TL','LEADER-POS',$4)""",
                 MONTH, date(2196, 9, number), site, amount,
             )
-        snapshot = await publish_earnings_fixture(conn)
+        await publish_earnings_fixture(conn)
 
     try:
-        result = await GrileCalendarService(repo).earnings(MONTH)
-        assert result.source_snapshot_id == snapshot
+        result = await GrileCalendarService(web_repo).earnings(MONTH)
+        assert result.cutoff == date(2196, 9, 2)
         assert [agent.agent_code for agent in result.agents] == [AG1, AG2]
         agent = result.agents[0]
         assert (agent.home_commission, agent.away_commission, agent.supplemental_pay) == (48, 24, 150)
@@ -304,3 +304,28 @@ async def publish_earnings_fixture(conn):
     )
     await conn.execute("INSERT INTO sales_generation_heads(import_month,snapshot_id,revision) VALUES($1,$2,1)", MONTH, snapshot)
     return snapshot
+
+
+@pytest_asyncio.fixture
+async def web_repo(repo):
+    """Authenticate as a non-superuser with the same memberships as web runtime."""
+    from secrets import token_hex
+    principal = "r4_web_" + token_hex(6)
+    password = token_hex(24)
+    async with repo.pool.acquire() as conn:
+        await conn.execute(f"CREATE ROLE {principal} LOGIN PASSWORD '{password}'")
+        await conn.execute(f"GRANT unihub_web_read, unihub_business_write TO {principal}")
+    pool = await asyncpg.create_pool(os.environ["DATABASE_URL"], user=principal, password=password,
+                                    min_size=1, max_size=2, server_settings={
+        "statement_timeout": "5000", "lock_timeout": "2000", "idle_in_transaction_session_timeout": "10000",
+    })
+    try:
+        async with pool.acquire() as conn:
+            assert await conn.fetchval("SELECT current_user") == principal
+            with pytest.raises(asyncpg.InsufficientPrivilegeError):
+                await conn.fetch("SELECT * FROM sales_generation_heads")
+        yield GrileCalendarRepository(pool)
+    finally:
+        await pool.close()
+        async with repo.pool.acquire() as conn:
+            await conn.execute(f"DROP ROLE {principal}")

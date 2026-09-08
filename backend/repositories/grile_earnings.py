@@ -12,10 +12,8 @@ async def read_earnings_sources(pool: asyncpg.Pool, month: str) -> dict[str, Any
         async with conn.transaction(isolation="repeatable_read", readonly=True):
             calendar = await GrileCalendarRepository.read_on_connection(conn, month)
             source = await conn.fetchrow(
-                """SELECT h.snapshot_id, h.revision, i.cutoff_date
-                   FROM sales_generation_heads h
-                   JOIN import_snapshots i ON i.id=h.snapshot_id AND i.import_month=h.import_month
-                   WHERE h.import_month=$1 AND i.status='completed'""", month,
+                """SELECT cutoff_date FROM reporting_sales_cutoff_v1
+                   WHERE import_month=$1""", month,
             )
             sales = await conn.fetch(
                 f"""SELECT r.site_code, r.sale_date, SUM(r.total_sales) AS sales

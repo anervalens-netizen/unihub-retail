@@ -1,5 +1,5 @@
 /* GENERATED FILE. Run npm run contracts:generate; do not edit manually. */
-export const RETAIL_OPENAPI_SHA256 = '7d1f6134ed031ee48463a61c572b16222fad57cc72143d657fdc718021c59acb' as const; // pragma: allowlist secret
+export const RETAIL_OPENAPI_SHA256 = '9c8ca255c289ebbbb73a32468b2ef3c2e60be3522f3a713a804b1e42ec409dd9' as const; // pragma: allowlist secret
 
 export type RetailDecimal = string & { readonly __retailDecimal: unique symbol };
 
@@ -750,8 +750,6 @@ export interface RetailEarningsMonth {
   "month": string;
   "projection_revision": string;
   "selling_days": Record<string, number>;
-  "source_revision": number | null;
-  "source_snapshot_id": number | null;
   "status"?: string;
   "unassigned_sales"?: Array<RetailUnassignedSales>;
   "unavailable_components"?: Array<string>;

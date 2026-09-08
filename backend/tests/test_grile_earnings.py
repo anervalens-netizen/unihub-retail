@@ -21,7 +21,7 @@ def sources():
              for _, site, number, value in schedule]
     return dict(calendar=dict(roster=roster, days=days, store_hours=[]), sales=sales,
                 targets=[dict(site_code=site, target_value=D(3000)) for site in ["A", "B"]],
-                source=dict(snapshot_id=1, revision=1, cutoff_date=date(2026, 9, 3)))
+                source=dict(cutoff_date=date(2026, 9, 3)))
 
 
 def project(data):

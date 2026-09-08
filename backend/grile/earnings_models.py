@@ -44,8 +44,6 @@ class EarningsMonth(BaseModel):
     status: Literal["provisional"] = "provisional"
     projection_revision: str
     calendar_revision: str
-    source_snapshot_id: int | None
-    source_revision: int | None
     cutoff: date | None
     selling_days: dict[str, int]
     agents: list[AgentEarnings]

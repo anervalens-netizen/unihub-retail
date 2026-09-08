@@ -4573,28 +4573,6 @@ export const RETAIL_COMPONENT_SCHEMAS = {
         "title": "Selling Days",
         "type": "object"
       },
-      "source_revision": {
-        "anyOf": [
-          {
-            "type": "integer"
-          },
-          {
-            "type": "null"
-          }
-        ],
-        "title": "Source Revision"
-      },
-      "source_snapshot_id": {
-        "anyOf": [
-          {
-            "type": "integer"
-          },
-          {
-            "type": "null"
-          }
-        ],
-        "title": "Source Snapshot Id"
-      },
       "status": {
         "const": "provisional",
         "default": "provisional",
@@ -4620,8 +4598,6 @@ export const RETAIL_COMPONENT_SCHEMAS = {
       "month",
       "projection_revision",
       "calendar_revision",
-      "source_snapshot_id",
-      "source_revision",
       "cutoff",
       "selling_days",
       "agents"
