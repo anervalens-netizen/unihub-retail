@@ -50,6 +50,13 @@ function trendProps(overrides: Record<string, unknown> = {}) {
         progress: 111.11,
         isAggregate: false,
       },
+      {
+        label: 'Feb',
+        sales: 120,
+        target: 110,
+        progress: 109.09,
+        isAggregate: false,
+      },
     ],
     kpiMetric: 'proc_bon2acc',
     onKpiMetricChange: vi.fn(),
@@ -82,7 +89,7 @@ describe('HistoryDashboardTrend ChartFrame pilot', () => {
       />,
     );
     expect(screen.getByText('Toate lunile disponibile — 2025')).toBeInTheDocument();
-    expect(screen.getByTestId('composed-chart')).toHaveAttribute('data-points', '1');
+    expect(screen.getByTestId('composed-chart')).toHaveAttribute('data-points', '2');
 
     rerender(
       <HistoryMonthlyTrend
