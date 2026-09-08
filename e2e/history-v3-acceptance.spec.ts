@@ -100,6 +100,32 @@ const HISTORY_DETAILS = {
   ],
 };
 
+const PERFORMANCE_DETAIL = {
+  context_summary: null,
+  daily: [],
+  history: [],
+  key: 'S-NORD',
+  level: 'store',
+  month: '2026-05',
+  note: 'Date demonstrative pentru acceptanta V3.',
+  peer_rows: [],
+  risks: [],
+  score: 78,
+  score_breakdown: {
+    bon2acc_points: 25,
+    focus_points: 20,
+    target_points: 33,
+  },
+  score_label: 'Bun',
+  strengths: ['Target stabil'],
+  subtitle: 'Mobiup · Nord',
+  summary: {
+    ...HISTORY_DETAILS.summary,
+    month: '2026-05',
+  },
+  title: 'Promenada',
+};
+
 async function installHistoryMocks(context: BrowserContext) {
   await setupBaseMocks(context);
 
@@ -135,7 +161,7 @@ async function installHistoryMocks(context: BrowserContext) {
       body: JSON.stringify(retailWireForRequest(
         'GET',
         route.request().url(),
-        { level: 'store', key: 'S-NORD', selected: null, peers: [] },
+        PERFORMANCE_DETAIL,
       )),
     });
   });
@@ -235,6 +261,7 @@ test.describe('V3 Hub history acceptance', () => {
     expect(detailParams.get('month')).toBe('2026-05');
     const drawer = page.getByRole('dialog');
     await expect(drawer).toBeVisible();
+    await expect(drawer).toContainText('Promenada');
     await drawer.getByRole('button', { name: 'Inchide', exact: true }).click();
     await expect(drawer).toHaveCount(0);
   });
