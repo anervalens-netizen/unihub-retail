@@ -1,12 +1,13 @@
-import { lazy, Suspense } from 'react';
+import { lazy, Suspense, useState } from 'react';
 
 import { PageHeader } from '../../components/common/DesktopLayout';
 import { SegmentedTabs, type SegmentedTabOption } from '../../components/common/SegmentedTabs';
 import { ErrorCard, LoadingCard } from '../../components/common/DataDisplay';
+import type { DataGridSort } from '../../lib/dataGrid';
 import { CurrentDashboard } from './CurrentDashboard';
 import { HistoryDashboard } from './HistoryDashboard';
 import { PerformanceDetailDrawer } from './PerformanceDetailDrawer';
-import type { DashboardSection, DashboardViewProps } from './dashboardTypes';
+import type { DashboardSection, DashboardViewProps, RegionalSortKey } from './dashboardTypes';
 
 const SECTIONS: SegmentedTabOption<DashboardSection>[] = [
   { value: 'current', label: 'Luna în curs' }, { value: 'history', label: 'Istoric' },
@@ -35,7 +36,15 @@ function CurrentSection({ model }: { model: DashboardViewProps }) {
   />;
 }
 
-function HistorySection({ model }: { model: DashboardViewProps }) {
+function HistorySection({
+  model,
+  regionalGridSorts,
+  onRegionalGridSortsChange,
+}: {
+  model: DashboardViewProps;
+  regionalGridSorts: readonly DataGridSort<RegionalSortKey>[];
+  onRegionalGridSortsChange: (sorts: readonly DataGridSort<RegionalSortKey>[]) => void;
+}) {
   if (!model.summary) return null;
   return <HistoryDashboard
     loading={model.historyLoading} error={model.historyError} onRetry={model.onRetryHistory}
@@ -60,7 +69,10 @@ function HistorySection({ model }: { model: DashboardViewProps }) {
     historyBrandMixChartData={model.historyBrandMixChartData} selectionSlug={model.historySelectionSlug}
     regionals={model.historyRegionals} sortedRegionals={model.sortedHistoryRegionals}
     regionalColumns={model.historyRegionalColumns} regionalSort={model.historyRegionalSort}
-    onSortRegionals={model.handleSortHistoryRegionals} stores={model.historyStores}
+    onSortRegionals={model.handleSortHistoryRegionals}
+    regionalGridSorts={regionalGridSorts}
+    onRegionalGridSortsChange={onRegionalGridSortsChange}
+    stores={model.historyStores}
     sortedStores={model.sortedHistoryStores} storeColumns={model.historyStoreColumns}
     storeSort={model.historyStoreSort} onSortStores={model.handleSortHistoryStores}
     agents={model.historyAgents} sortedAgents={model.sortedHistoryAgents}
@@ -70,10 +82,20 @@ function HistorySection({ model }: { model: DashboardViewProps }) {
 }
 
 function DashboardContent({ model }: { model: DashboardViewProps }) {
+  const [historyRegionalGridSorts, setHistoryRegionalGridSorts] = useState<
+    DataGridSort<RegionalSortKey>[]
+  >(() => [{ ...model.historyRegionalSort }]);
+
   if (model.activeSection === 'visits') return <Suspense fallback={<LoadingCard label="Se incarca modulul Vizite..." />}><VisiteSubtab currentMonth={model.currentMonth} months={model.months} /></Suspense>;
   if (model.loading) return <LoadingCard label="Se incarca luna in curs..." />;
   if (model.error || !model.summary) return <ErrorCard message={model.error ?? 'Datele pentru luna in curs nu au putut fi incarcate.'} onRetry={model.onRetryCurrent} />;
-  return model.activeSection === 'current' ? <CurrentSection model={model} /> : <HistorySection model={model} />;
+  return model.activeSection === 'current'
+    ? <CurrentSection model={model} />
+    : <HistorySection
+        model={model}
+        regionalGridSorts={historyRegionalGridSorts}
+        onRegionalGridSortsChange={(sorts) => setHistoryRegionalGridSorts([...sorts])}
+      />;
 }
 
 export function DashboardSurface(model: DashboardViewProps) {
