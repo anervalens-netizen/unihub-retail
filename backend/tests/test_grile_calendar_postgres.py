@@ -223,3 +223,23 @@ async def test_distribution_locations_and_nonretail_codes_cannot_enter_calendar(
     with pytest.raises(CalendarConflict, match='not active'):
         await repo.save_days([day(site=C, supplemental=True)], 'manager')
     assert (await repo.read(MONTH))['days'] == []
+
+
+async def test_store_hours_cas_and_month_isolation(repo):
+    from grile.calendar_models import StoreHoursInput
+    await confirm(repo)
+    await repo.save_days([day()], 'manager')
+    try:
+        created = await repo.save_hours(MONTH, A, StoreHoursInput(opens='09:00', expected_revision=0), 'manager')
+        assert created['revision'] == 1
+        with pytest.raises(CalendarConflict, match='hours changed'):
+            await repo.save_hours(MONTH, A, StoreHoursInput(expected_revision=0), 'stale')
+        report = await GrileCalendarService(repo).read(MONTH)
+        assert report.attendance[0].worked_minutes == 720
+        assert (await repo.read('2196-10'))['store_hours'] == []
+        updated = await repo.save_hours(MONTH, A, StoreHoursInput(expected_revision=1), 'manager')
+        assert updated['revision'] == 2
+        assert (await GrileCalendarService(repo).read(MONTH)).attendance[0].worked_minutes == 660
+    finally:
+        async with repo.pool.acquire() as conn:
+            await conn.execute('DELETE FROM grile_calendar_store_hours WHERE site_code=$1', A)

@@ -1,14 +1,17 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
+
+from starlette.background import BackgroundTask
+from starlette.responses import StreamingResponse
 
 from auth import AuthClaims
 from composition import build_grile_calendar_service
 from grile.calendar_models import (
-    AgentCandidate, CalendarChanges, CalendarDay, CalendarMonth, CalendarMonthKey, Code, RosterEntry, RosterInput,
+    AgentCandidate, CalendarChanges, CalendarDay, CalendarMonth, CalendarMonthKey, Code, RosterEntry, RosterInput, StoreHours, StoreHoursInput,
 )
 from permissions import require_business_write_access, require_management_access
-from rate_limits import BUSINESS_WRITE_LIMIT, rate_limit
+from rate_limits import BUSINESS_WRITE_LIMIT, REPORT_EXPORT_LIMIT, rate_limit
 from services.grile_calendar import GrileCalendarService
 
 router = APIRouter(prefix="/api/grile/calendar", tags=["grile-calendar"])
@@ -50,3 +53,27 @@ async def save_days(
     svc: GrileCalendarService = Depends(build_grile_calendar_service),
 ) -> list[CalendarDay]:
     return await svc.save_days(month, payload, claims.sub)
+
+
+@router.put("/{month}/store-hours/{site_code}", response_model=StoreHours)
+async def save_store_hours(
+    month: CalendarMonthKey, site_code: Code, payload: StoreHoursInput,
+    claims: AuthClaims = Depends(require_business_write_access),
+    _limit: None = Depends(rate_limit(BUSINESS_WRITE_LIMIT)),
+    svc: GrileCalendarService = Depends(build_grile_calendar_service),
+) -> StoreHours:
+    return await svc.save_hours(month, site_code, payload, claims.sub)
+
+
+@router.get("/{month}/attendance.zip", response_class=StreamingResponse)
+async def export_attendance(
+    month: CalendarMonthKey,
+    expected_revision: str = Query(pattern="^[a-f0-9]{64}$"),
+    _claims: AuthClaims = Depends(require_management_access),
+    _limit: None = Depends(rate_limit(REPORT_EXPORT_LIMIT)),
+    svc: GrileCalendarService = Depends(build_grile_calendar_service),
+):
+    artifact = await svc.export_attendance(month, expected_revision)
+    return StreamingResponse(artifact.iter_chunks(), media_type="application/zip",
+                             headers={"Content-Disposition": f'attachment; filename="{artifact.filename}"'},
+                             background=BackgroundTask(artifact.close))

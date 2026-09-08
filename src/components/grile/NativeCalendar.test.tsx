@@ -4,7 +4,7 @@ import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { ApiError } from '../../api/client';
-const api = vi.hoisted(() => ({ readCalendar: vi.fn(), calendarStores: vi.fn(), calendarCandidates: vi.fn(), confirmCalendarAgent: vi.fn(), saveCalendarDays: vi.fn() }));
+const api = vi.hoisted(() => ({ saveStoreHours: vi.fn(), downloadAttendance: vi.fn(), readCalendar: vi.fn(), calendarStores: vi.fn(), calendarCandidates: vi.fn(), confirmCalendarAgent: vi.fn(), saveCalendarDays: vi.fn() }));
 const auth = vi.hoisted(() => ({ profile: { groups: ['unihub-manager'] } }));
 vi.mock('../../api/grileCalendar', () => api);
 vi.mock('../../auth/AuthContext', () => ({ useAuth: () => ({ user: auth }) }));
@@ -167,4 +167,24 @@ it('blocks day opening and saving until roster confirmation settles', async () =
   finish({});
   await waitFor(() => expect(screen.getByRole('button', { name: 'Editează 2026-09-02' })).not.toBeDisabled());
   expect(screen.queryByLabelText('Agent pentru zi')).not.toBeInTheDocument();
+});
+it('saves monthly store hours with revision and reloads attendance', async () => {
+  mount(); await openStore();
+  await userEvent.click(screen.getByText(/Program magazin ·/));
+  const { fireEvent } = await import('@testing-library/react');
+  fireEvent.change(screen.getByLabelText('Deschidere'), { target: { value: '09:00' } });
+  api.saveStoreHours.mockResolvedValue({ site_code: 'S1', opens: '09:00', closes: '22:00', break_minutes: 60, revision: 1 });
+  api.readCalendar.mockResolvedValue({ month: '2026-09', roster, days: [day], attendance: [], store_hours: [{ site_code: 'S1', opens: '09:00', closes: '22:00', break_minutes: 60, revision: 1 }], attendance_days: [{ ...day, worked_minutes: 720, opens: '09:00', closes: '22:00', break_minutes: 60 }], attendance_by_store: { S1: [{ agent_code: 'AG1', worked_minutes: 720 }] } });
+  await userEvent.click(screen.getByRole('button', { name: 'Salvează programul magazinului' }));
+  await waitFor(() => expect(api.saveStoreHours).toHaveBeenCalledWith('2026-09', 'S1', { opens: '09:00', closes: '22:00', break_minutes: 60, expected_revision: 0 }));
+  expect(await screen.findByText(/Program magazin · 09:00/)).toBeInTheDocument();
+  await userEvent.click(screen.getByRole('button', { name: 'Pontaj' }));
+  expect(screen.getByRole('table')).toHaveTextContent('09:00–22:00');
+  expect(screen.getByRole('table')).toHaveTextContent('12');
+});
+it('downloads the displayed projection revision', async () => {
+  api.readCalendar.mockResolvedValue({ month: '2026-09', roster, days: [day], attendance: [], projection_revision: 'abc' });
+  mount();
+  await userEvent.click(await screen.findByRole('button', { name: 'Descarcă pontajele ZIP (provizoriu)' }));
+  expect(api.downloadAttendance).toHaveBeenCalledWith('2026-09', 'abc');
 });

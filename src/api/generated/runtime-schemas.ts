@@ -2346,6 +2346,72 @@ export const RETAIL_COMPONENT_SCHEMAS = {
     "title": "AsmStats",
     "type": "object"
   },
+  "AttendanceDay": {
+    "properties": {
+      "agent_code": {
+        "title": "Agent Code",
+        "type": "string"
+      },
+      "break_minutes": {
+        "default": 0,
+        "title": "Break Minutes",
+        "type": "integer"
+      },
+      "closes": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Closes"
+      },
+      "opens": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Opens"
+      },
+      "site_code": {
+        "title": "Site Code",
+        "type": "string"
+      },
+      "status": {
+        "enum": [
+          "work",
+          "leave",
+          "off"
+        ],
+        "title": "Status",
+        "type": "string"
+      },
+      "work_date": {
+        "format": "date",
+        "title": "Work Date",
+        "type": "string"
+      },
+      "worked_minutes": {
+        "title": "Worked Minutes",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "work_date",
+      "agent_code",
+      "site_code",
+      "status",
+      "worked_minutes"
+    ],
+    "title": "AttendanceDay",
+    "type": "object"
+  },
   "Body_reconcile_erp_report_file_api_import_erp_reconciliation_post": {
     "properties": {
       "file": {
@@ -2475,6 +2541,11 @@ export const RETAIL_COMPONENT_SCHEMAS = {
         },
         "title": "Work Days By Site",
         "type": "object"
+      },
+      "worked_minutes": {
+        "default": 0,
+        "title": "Worked Minutes",
+        "type": "integer"
       }
     },
     "required": [
@@ -2607,6 +2678,23 @@ export const RETAIL_COMPONENT_SCHEMAS = {
         "title": "Attendance",
         "type": "array"
       },
+      "attendance_by_store": {
+        "additionalProperties": {
+          "items": {
+            "$ref": "#/components/schemas/CalendarAttendance"
+          },
+          "type": "array"
+        },
+        "title": "Attendance By Store",
+        "type": "object"
+      },
+      "attendance_days": {
+        "items": {
+          "$ref": "#/components/schemas/AttendanceDay"
+        },
+        "title": "Attendance Days",
+        "type": "array"
+      },
       "days": {
         "items": {
           "$ref": "#/components/schemas/CalendarDay"
@@ -2618,11 +2706,23 @@ export const RETAIL_COMPONENT_SCHEMAS = {
         "title": "Month",
         "type": "string"
       },
+      "projection_revision": {
+        "default": "",
+        "title": "Projection Revision",
+        "type": "string"
+      },
       "roster": {
         "items": {
           "$ref": "#/components/schemas/RosterEntry"
         },
         "title": "Roster",
+        "type": "array"
+      },
+      "store_hours": {
+        "items": {
+          "$ref": "#/components/schemas/StoreHours"
+        },
+        "title": "Store Hours",
         "type": "array"
       }
     },
@@ -12053,6 +12153,73 @@ export const RETAIL_COMPONENT_SCHEMAS = {
     "title": "StoreCoverageResponse",
     "type": "object"
   },
+  "StoreHours": {
+    "properties": {
+      "break_minutes": {
+        "default": 60,
+        "title": "Break Minutes",
+        "type": "integer"
+      },
+      "closes": {
+        "default": "22:00",
+        "title": "Closes",
+        "type": "string"
+      },
+      "opens": {
+        "default": "10:00",
+        "title": "Opens",
+        "type": "string"
+      },
+      "revision": {
+        "default": 0,
+        "title": "Revision",
+        "type": "integer"
+      },
+      "site_code": {
+        "title": "Site Code",
+        "type": "string"
+      }
+    },
+    "required": [
+      "site_code"
+    ],
+    "title": "StoreHours",
+    "type": "object"
+  },
+  "StoreHoursInput": {
+    "additionalProperties": false,
+    "properties": {
+      "break_minutes": {
+        "default": 60,
+        "maximum": 720.0,
+        "minimum": 0.0,
+        "title": "Break Minutes",
+        "type": "integer"
+      },
+      "closes": {
+        "default": "22:00",
+        "pattern": "^(?:[01][0-9]|2[0-3]):[0-5][0-9]$",
+        "title": "Closes",
+        "type": "string"
+      },
+      "expected_revision": {
+        "minimum": 0.0,
+        "title": "Expected Revision",
+        "type": "integer"
+      },
+      "opens": {
+        "default": "10:00",
+        "pattern": "^(?:[01][0-9]|2[0-3]):[0-5][0-9]$",
+        "title": "Opens",
+        "type": "string"
+      }
+    },
+    "required": [
+      "expected_revision"
+    ],
+    "title": "StoreHoursInput",
+    "type": "object"
+  },
   "StoreOption": {
     "additionalProperties": false,
     "properties": {
@@ -15934,6 +16101,7 @@ export const RETAIL_RESPONSE_SCHEMAS = {
   },
   "download_export_api_exports_download_post": {},
   "download_export_operation_api_exports_operations__operation_id__download_get": {},
+  "export_attendance_api_grile_calendar__month__attendance_zip_get": null,
   "export_scenario_api_target_calculator_scenarios__scenario_id__export_get": {},
   "finalize_scenario_api_target_calculator_scenarios__scenario_id__finalize_post": {
     "$ref": "#/components/schemas/TargetScenarioResponse"
@@ -16277,6 +16445,9 @@ export const RETAIL_RESPONSE_SCHEMAS = {
   },
   "save_roster_api_grile_calendar__month__roster__agent_code__put": {
     "$ref": "#/components/schemas/RosterEntry"
+  },
+  "save_store_hours_api_grile_calendar__month__store_hours__site_code__put": {
+    "$ref": "#/components/schemas/StoreHours"
   },
   "save_targets_api_stores_targets_post": {
     "$ref": "#/components/schemas/StoreTargetsSaveResponse"
