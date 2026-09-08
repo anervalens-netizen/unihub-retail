@@ -1,0 +1,207 @@
+{
+  "schema": "unihub-v3-frontend-performance-baseline-v1",
+  "captured_at": "2026-09-08",
+  "status": "complete",
+  "product_target": "UniHub Retail V3.0",
+  "scope": "exact accumulated V3 frontend union on current production contracts",
+  "identity": {
+    "v3_integration_head": "26757666f5085d294a2d8968e1fd9c961bb7966f",
+    "v3_integration_tree": "4a7a48706a016484991e8cd2ddb95c41314da229",
+    "certification_pr": 295,
+    "certification_base_main": "685a839812dc2be53244728d711f9e129b2d5a61",
+    "certification_head": "b988b32d7bb34874a3f1dc809087268964c52261",
+    "certification_tree": "897423995f1004048c1d4c7bc891fe76068bf71d",
+    "workflow_run_id": 34242398155,
+    "workflow_run_number": 1164,
+    "workflow_job_id": 102118687317,
+    "workflow_job_name": "pr-fast",
+    "workflow_result": "success",
+    "main_after_measurement": "77a902c112aecddb0fe161e05f9fdad4e16642b3",
+    "main_after_measurement_change": "AGENTS.md only; no measured frontend runtime overlap"
+  },
+  "bundle_budget": {
+    "source": "scripts/check_bundle_budget.mjs",
+    "baseline_source": "scripts/bundle-budget-baseline.json",
+    "tolerance_bytes": 4096,
+    "metrics": {
+      "entry_js": {
+        "raw": {
+          "current_bytes": 40867,
+          "baseline_bytes": 40783,
+          "delta_bytes": 84,
+          "delta_percent": 0.206,
+          "within_tolerance": true
+        },
+        "gzip": {
+          "current_bytes": 13035,
+          "baseline_bytes": 13026,
+          "delta_bytes": 9,
+          "delta_percent": 0.0691,
+          "within_tolerance": true
+        }
+      },
+      "initial_css": {
+        "raw": {
+          "current_bytes": 125496,
+          "baseline_bytes": 124995,
+          "delta_bytes": 501,
+          "delta_percent": 0.4008,
+          "within_tolerance": true
+        },
+        "gzip": {
+          "current_bytes": 18506,
+          "baseline_bytes": 18334,
+          "delta_bytes": 172,
+          "delta_percent": 0.9381,
+          "within_tolerance": true
+        }
+      },
+      "vendor": {
+        "raw": {
+          "current_bytes": 396220,
+          "baseline_bytes": 396230,
+          "delta_bytes": -10,
+          "delta_percent": -0.0025,
+          "within_tolerance": true
+        },
+        "gzip": {
+          "current_bytes": 125253,
+          "baseline_bytes": 125260,
+          "delta_bytes": -7,
+          "delta_percent": -0.0056,
+          "within_tolerance": true
+        }
+      },
+      "ui": {
+        "raw": {
+          "current_bytes": 143760,
+          "baseline_bytes": 143957,
+          "delta_bytes": -197,
+          "delta_percent": -0.1368,
+          "within_tolerance": true
+        },
+        "gzip": {
+          "current_bytes": 46782,
+          "baseline_bytes": 46840,
+          "delta_bytes": -58,
+          "delta_percent": -0.1238,
+          "within_tolerance": true
+        }
+      },
+      "charts": {
+        "raw": {
+          "current_bytes": 428661,
+          "baseline_bytes": 428671,
+          "delta_bytes": -10,
+          "delta_percent": -0.0023,
+          "within_tolerance": true
+        },
+        "gzip": {
+          "current_bytes": 118595,
+          "baseline_bytes": 118602,
+          "delta_bytes": -7,
+          "delta_percent": -0.0059,
+          "within_tolerance": true
+        }
+      },
+      "precache_total": {
+        "raw": {
+          "current_bytes": 1498040,
+          "baseline_bytes": 1497673,
+          "delta_bytes": 367,
+          "delta_percent": 0.0245,
+          "within_tolerance": true
+        },
+        "gzip": {
+          "current_bytes": 994439,
+          "baseline_bytes": 994332,
+          "delta_bytes": 107,
+          "delta_percent": 0.0108,
+          "within_tolerance": true
+        }
+      }
+    }
+  },
+  "vite_build": {
+    "modules_transformed": 3337,
+    "duration_seconds": 2.02,
+    "reported_chunks_kb": {
+      "initial_css": {
+        "raw": 125.49,
+        "gzip": 19.02
+      },
+      "entry_js": {
+        "raw": 40.86,
+        "gzip": 13.1
+      },
+      "DashboardPage": {
+        "raw": 163.45,
+        "gzip": 33.11
+      },
+      "Management": {
+        "raw": 155.37,
+        "gzip": 35.4
+      },
+      "client": {
+        "raw": 287.44,
+        "gzip": 37.94
+      },
+      "vendor": {
+        "raw": 396.22,
+        "gzip": 126.74
+      },
+      "charts": {
+        "raw": 428.66,
+        "gzip": 119.95
+      }
+    },
+    "pwa_precache": {
+      "entries": 14,
+      "reported_kib": 1085.13
+    },
+    "notes": [
+      "Vite's human-readable gzip figures are rounded and may differ from the deterministic bundle-budget script's byte values.",
+      "The charts chunk remains separate and is excluded from module preload and shell precache by vite.config.ts."
+    ]
+  },
+  "test_evidence": {
+    "affected_test_files_passed": 12,
+    "affected_tests_passed": 41,
+    "duration_seconds": 15.64,
+    "coverage_percent": {
+      "statements": 88.71,
+      "branches": 85.66,
+      "functions": 84.86,
+      "lines": 95.8
+    },
+    "changed_line_coverage": {
+      "covered": 232,
+      "total": 241,
+      "percent": 96.27
+    }
+  },
+  "decisions": {
+    "bundle_optimization": "not_justified",
+    "baseline_or_tolerance_change": "not_justified",
+    "reason": "Every tracked raw/gzip delta is below 1% and well inside the existing 4096-byte tolerance; vendor, UI and charts are flat or smaller.",
+    "next_measurements": [
+      "LCP and INP on an exact runnable V3 candidate",
+      "cold and warm Hub/Istoric navigation timing",
+      "request count, duplicate requests and transferred bytes per navigation",
+      "DataGrid first-row and local filter/sort latency on representative row counts",
+      "Dashboard API p50/p95/p99 and component timings",
+      "read-only pg_stat_statements and EXPLAIN/BUFFERS for dominant queries",
+      "import/export peak memory where the affected path is changed"
+    ]
+  },
+  "not_measured_or_not_claimed": [
+    "CLS, LCP or INP on the V3 branch",
+    "browser navigation timing",
+    "exact-candidate Playwright PASS",
+    "request count or duplicate-request count",
+    "DataGrid interaction latency",
+    "API p50/p95/p99",
+    "database query plans or rows scanned",
+    "production runtime memory"
+  ]
+}
