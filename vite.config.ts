@@ -66,6 +66,7 @@ export default defineConfig(({ mode }) => {
             '**/*.{html,ico,png,svg,woff2}',
             'assets/index-*.{js,css}',
             'assets/vendor-*.js',
+            'assets/rolldown-runtime-*.js',
             'assets/ui-*.js',
           ],
           // Server-owned navigations must reach FastAPI. Falling back to the
@@ -109,7 +110,14 @@ export default defineConfig(({ mode }) => {
       },
       rollupOptions: {
         output: {
-          manualChunks,
+          codeSplitting: {
+            groups: [
+              // Isolate API code without capturing Sentry/React dependencies;
+              // this keeps shared runtime helpers outside the API entry.
+              { name: 'api', test: /\/src\/api\//, priority: 100, includeDependenciesRecursively: false },
+              { name: manualChunks },
+            ],
+          },
         },
       },
     },
