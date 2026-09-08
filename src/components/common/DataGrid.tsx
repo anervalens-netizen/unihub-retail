@@ -77,8 +77,12 @@ function useDataGridState<Row, Key extends string>({
   const [filters, setFilters] = useState<DataGridFilters<Key>>({});
   const [order, setOrder] = useState<Key[]>(() => [...allKeys]);
   const [hidden, setHidden] = useState<Key[]>([]);
+
   const normalizedOrder = normalizeColumnOrder(allKeys, order);
-  const visibleKeys = visibleColumnKeys(allKeys, { order: normalizedOrder, hidden });
+  const visibleKeys = visibleColumnKeys(allKeys, {
+    order: normalizedOrder,
+    hidden,
+  });
   const visibleColumns = visibleKeys
     .map((key) => columnMap.get(key))
     .filter((column): column is DataGridColumn<Row, Key> => column !== undefined);
@@ -103,6 +107,7 @@ function useDataGridState<Row, Key extends string>({
     })),
     [visibleColumns],
   );
+
   return {
     activeFilterCount,
     allKeys,
@@ -120,6 +125,18 @@ function useDataGridState<Row, Key extends string>({
     viewRows,
     visibleColumns,
   };
+}
+
+function buildSortStatus<Row, Key extends string>(
+  sorts: readonly DataGridSort<Key>[],
+  columns: ReadonlyMap<Key, DataGridColumn<Row, Key>,
+): string {
+  if (sorts.length === 0) return 'Nicio sortare activă.';
+  return `Sortare activă: ${sorts.map((sort, index) => {
+    const label = columns.get(sort.key)?.label ?? sort.key;
+    const direction = sort.direction === 'asc' ? 'crescător' : 'descrescător';
+    return `${index + 1}. ${label}, ${direction}`;
+  }).join('; ')}.`;
 }
 
 function DataGridHead<Row, Key extends string>({
@@ -164,12 +181,22 @@ function DataGridHead<Row, Key extends string>({
                 title="Click pentru sortare; Shift+click pentru sortare multiplă"
                 className="flex w-full min-w-0 items-center justify-between gap-1 rounded text-left hover:text-indigo-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:hover:text-indigo-300"
               >
-                <span className="min-w-0 whitespace-normal break-words">{column.label}</span>
-                <span className="inline-flex shrink-0 items-center gap-0.5" aria-hidden="true">
+                <span className="min-w-0 whitespace-normal break-words">
+                  {column.label}
+                </span>
+                <span
+                  className="inline-flex shrink-0 items-center gap-0.5"
+                  aria-hidden="true"
+                >
                   {sort ? (
-                    sort.direction === 'asc' ? <ChevronUp size={11} /> : <ChevronDown size={11} />
+                    sort.direction === 'asc'
+                      ? <ChevronUp size={11} />
+                      : <ChevronDown size={11} />
                   ) : (
-                    <ArrowUpDown size={10} className="text-slate-300 dark:text-slate-600" />
+                    <ArrowUpDown
+                      size={10}
+                      className="text-slate-300 dark:text-slate-600"
+                    />
                   )}
                   {sortIndex >= 0 && sorts.length > 1 && (
                     <span
@@ -188,13 +215,17 @@ function DataGridHead<Row, Key extends string>({
       {hasFilters && (
         <tr className="border-t border-slate-200/80 dark:border-slate-700">
           {columns.map((column) => (
-            <th key={column.key} scope="col" className="px-1 py-1 align-top font-normal">
+            <td
+              key={column.key}
+              className="px-1 py-1 align-top"
+              data-testid={`data-grid-filter-cell-${column.key}`}
+            >
               <DataGridFilterControl
                 column={column}
                 filter={filters[column.key]}
                 onChange={(filter) => onFilter(column.key, filter)}
               />
-            </th>
+            </td>
           ))}
         </tr>
       )}
@@ -217,13 +248,17 @@ function DataGridBody<Row, Key extends string>({
     return (
       <tbody>
         <tr>
-          <td colSpan={columns.length} className="px-4 py-8 text-center text-sm font-semibold text-slate-500 dark:text-slate-400">
+          <td
+            colSpan={columns.length}
+            className="px-4 py-8 text-center text-sm font-semibold text-slate-500 dark:text-slate-400"
+          >
             {emptyLabel}
           </td>
         </tr>
       </tbody>
     );
   }
+
   return (
     <tbody data-testid="data-grid-body">
       {rows.map((row, index) => (
@@ -233,7 +268,10 @@ function DataGridBody<Row, Key extends string>({
           className="border-t border-slate-100 odd:bg-slate-50/35 hover:bg-indigo-50/50 dark:border-slate-800 dark:odd:bg-slate-900/20 dark:hover:bg-indigo-950/20"
         >
           {columns.map((column) => (
-            <td key={column.key} className={column.cellClassName ?? 'px-1.5 py-1 whitespace-nowrap align-middle leading-tight'}>
+            <td
+              key={column.key}
+              className={column.cellClassName ?? 'px-1.5 py-1 whitespace-nowrap align-middle leading-tight'}
+            >
               {column.render(row)}
             </td>
           ))}
@@ -246,14 +284,12 @@ function DataGridBody<Row, Key extends string>({
 export function DataGrid<Row, Key extends string>(props: DataGridProps<Row, Key>) {
   const state = useDataGridState(props);
   const sortStatusId = useId();
-  const sortStatus = state.sorts.length === 0
-    ? 'Nicio sortare activă.'
-    : `Sortare activă: ${state.sorts.map((sort, index) => {
-      const label = state.columnMap.get(sort.key)?.label ?? sort.key;
-      const direction = sort.direction === 'asc' ? 'crescător' : 'descrescător';
-      return `${index + 1}. ${label}, ${direction}`;
-    }).join('; ')}.`;
-  const setFilter = (key: Key, filter: DataGridFilterValue | undefined) => {
+  const sortStatus = buildSortStatus(state.sorts, state.columnMap);
+
+  const setFilter = (
+    key: Key,
+    filter: DataGridFilterValue | undefined,
+  ) => {
     state.setFilters((current) => {
       const next = { ...current };
       if (isDataGridFilterActive(filter)) next[key] = filter;
@@ -261,6 +297,7 @@ export function DataGrid<Row, Key extends string>(props: DataGridProps<Row, Key>
       return next;
     });
   };
+
   const updateSort = (key: Key, append: boolean) => {
     const next = nextDataGridSorts(state.sorts, key, {
       append,
@@ -269,11 +306,13 @@ export function DataGrid<Row, Key extends string>(props: DataGridProps<Row, Key>
     state.setSorts(next);
     props.onSortChange?.(next);
   };
+
   const resultLabel = state.viewRows.length === props.rows.length
     ? `${props.rows.length} înregistrări`
     : `${state.viewRows.length} din ${props.rows.length} înregistrări`;
+
   return (
-    <section className="rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900/70">
+    <section className="rounded-2xl horder border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900/70">
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-3 py-2 dark:border-slate-800">
         <div className="min-w-0">
           <div className="flex items-center gap-2 font-bold text-slate-800 dark:text-slate-100">
@@ -317,6 +356,7 @@ export function DataGrid<Row, Key extends string>(props: DataGridProps<Row, Key>
           />
         </div>
       </div>
+
       <p
         id={sortStatusId}
         role="status"
@@ -326,8 +366,12 @@ export function DataGrid<Row, Key extends string>(props: DataGridProps<Row, Key>
       >
         {sortStatus}
       </p>
+
       <div className="max-h-[360px] overflow-auto rounded-b-2xl">
-        <table className="w-full min-w-max table-auto text-xs" aria-label={props.title}>
+        <table
+          className="w-full min-w-max table-auto text-xs"
+          aria-label={props.title}
+        >
           <DataGridHead
             columns={state.visibleColumns}
             sorts={state.sorts}

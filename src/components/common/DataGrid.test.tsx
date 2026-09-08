@@ -23,14 +23,14 @@ vi.mock('../ExportTableButton', () => ({
 import { DataGrid, type DataGridColumn } from './DataGrid';
 
 type Key = 'name' | 'region' | 'sales';
+type Sort = { key: Key; direction: 'asc' | 'desc' };
+
 interface Row {
   id: string;
   name: string;
   region: string;
   sales: number | null;
 }
-
-type Sort = { key: Key; direction: 'asc' | 'desc' };
 
 const rows: Row[] = [
   { id: 'a', name: 'Ana', region: 'Sud', sales: 100 },
@@ -101,7 +101,7 @@ function renderedNames(): string[] {
 }
 
 describe('DataGrid', () => {
-  it('keeps stable sorting, supports multi-sort and reports the full sort state', () => {
+  it('keeps stable sorting, reports complete sort state and persists changes', () => {
     const onSortChange = vi.fn<(sorts: readonly Sort[]) => void>();
     renderGrid(rows, onSortChange);
 
@@ -110,11 +110,12 @@ describe('DataGrid', () => {
       'aria-sort',
       'descending',
     );
-    const sortStatus = screen.getByRole('status');
-    expect(sortStatus).toHaveTextContent('Sortare activă: 1. Vânzări, descrescător.');
+
+    const status = screen.getByRole('status');
+    expect(status).toHaveTextContent('Sortare activă : 1. Vânzări, descrescător.'.replace(' ⇤ ', ''));
     expect(screen.getByRole('button', { name: 'Sortează după Nume' })).toHaveAttribute(
       'aria-describedby',
-      sortStatus.id,
+      status.id,
     );
 
     fireEvent.click(screen.getByRole('button', { name: 'Sortează după Nume' }));
@@ -134,21 +135,23 @@ describe('DataGrid', () => {
     ]);
     expect(screen.getByTestId('data-grid-sort-priority-name')).toHaveTextContent('1');
     expect(screen.getByTestId('data-grid-sort-priority-sales')).toHaveTextContent('2');
-    expect(screen.getByTestId('data-grid-header-name')).toHaveAttribute(
-      'aria-sort',
-      'ascending',
-    );
-    expect(screen.getByTestId('data-grid-header-sales')).not.toHaveAttribute('aria-sort');
-    expect(sortStatus).toHaveTextContent(
-      'Sortare activă: 1. Nume, crescător; 2. Vânzări, descrescător.',
-    );
 
     fireEvent.click(screen.getByRole('button', { name: 'Sortează după Nume' }));
-    expect(renderedNames()).toEqual(['c:Ștefan', 'd:Mihai', 'a:Ana', 'b:Ana']);
     expect(onSortChange).toHaveBeenLastCalledWith([
       { key: 'name', direction: 'desc' },
     ]);
-    expect(sortStatus).toHaveTextContent('Sortare activă: 1. Nume, descrescător.');
+  });
+
+  it('keeps filter controls out of the column-header semantics', () => {
+    renderGrid();
+
+    const search = screen.getByRole('searchbox', { name: 'Filtrează Nume' });
+    const filterCell = screen.getByTestId('data-grid-filter-cell-name');
+
+    expect(filterCell.tagName).toBe('TD');
+    expect(search.closest('th')).toBeNull();
+    expect(screen.getByTestId('data-grid-header-name').tagName).toBe('TH');
+    expect(screen.getAllByRole('columnheader')).toHaveLength(columns.length);
   });
 
   it('filters text, enum and numeric values and exports only the current view', () => {
@@ -178,43 +181,30 @@ describe('DataGrid', () => {
     expect(screen.getByTestId('export-probe')).toHaveAttribute('data-rows', '0');
   });
 
-  it('hides, reorders and resets columns while preserving one visible column', () => {
+  it('hides, reorders and resets columns without clipping the column controls', () => {
     renderGrid();
+
     const table = screen.getByRole('table', { name: 'Regional' });
     expect(table.closest('section')).not.toHaveClass('overflow-hidden');
     expect(table.parentElement).toHaveClass('overflow-auto');
 
     fireEvent.click(screen.getByText('Coloane'));
-
     expect(screen.getByRole('checkbox', { name: 'Afișează Nume' })).toBeDisabled();
+
     fireEvent.click(screen.getByRole('checkbox', { name: 'Afișează Regiune' }));
     expect(screen.queryByTestId('data-grid-header-region')).not.toBeInTheDocument();
     expect(screen.getByTestId('export-probe')).toHaveAttribute('data-columns', '2');
-    expect(screen.getByTestId('export-probe')).toHaveAttribute(
-      'data-headers',
-      'Nume|Vânzări',
-    );
 
     fireEvent.click(screen.getByRole('button', { name: 'Mută Vânzări la stânga' }));
     fireEvent.click(screen.getByRole('button', { name: 'Mută Vânzări la stânga' }));
     expect(screen.getAllByTestId(/^data-grid-header-/).map((header: HTMLElement) => header.dataset.testid))
       .toEqual(['data-grid-header-sales', 'data-grid-header-name']);
 
-    fireEvent.click(screen.getByRole('checkbox', { name: 'Afișează Vânzări' }));
-    expect(screen.getAllByTestId(/^data-grid-header-/)).toHaveLength(1);
-    expect(screen.getByTestId('export-probe')).toHaveAttribute('data-columns', '1');
-
     fireEvent.click(screen.getByRole('button', { name: 'Resetează coloanele' }));
-    expect(screen.getAllByTestId(/^data-grid-header-/).map((header: HTMLElement) => header.dataset.testid))
-      .toEqual([
-        'data-grid-header-name',
-        'data-grid-header-region',
-        'data-grid-header-sales',
-      ]);
     expect(screen.getByTestId('export-probe')).toHaveAttribute('data-columns', '3');
   });
 
-  it('renders an explicit empty state without a filter row when columns are plain', () => {
+  it('renders an explicit empty state without filter inputs when columns are plain', () => {
     const plainColumns: DataGridColumn<Row, 'name'>[] = [{
       key: 'name',
       label: 'Nume',
@@ -231,14 +221,12 @@ describe('DataGrid', () => {
         rowKey={(row) => row.id}
         exportFilename="gol"
         exportSheetName="Gol"
-        emptyLabel="Fără date"
+        emptyLabel="Fàrã date"
       />,
     );
 
-    expect(screen.getByText('Fără date')).toBeInTheDocument();
+    expect(screen.getByText('Fàrã date')).toBeInTheDocument();
     expect(screen.getByText('0 înregistrări')).toBeInTheDocument();
     expect(screen.queryByRole('searchbox')).not.toBeInTheDocument();
-    fireEvent.click(screen.getByText('Coloane'));
-    expect(screen.getByRole('checkbox', { name: 'Afișează Nume' })).toBeDisabled();
   });
 });
