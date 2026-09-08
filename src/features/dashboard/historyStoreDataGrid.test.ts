@@ -80,6 +80,18 @@ describe('historyStoreDataGridColumns', () => {
     expect(columns[2]?.value(row)).toBe(900);
   });
 
+  it('projects the exact displayed Store text without changing raw values', () => {
+    const columns = historyStoreDataGridColumns(sourceColumns);
+
+    expect(columns[0]?.searchValue?.(row)).toBe('Mobiup Promenada');
+    expect(columns[1]?.searchValue?.(row)).toBe('1.000');
+    expect(columns[2]?.searchValue?.(row)).toBe('900');
+    expect(columns[3]?.searchValue?.(row)).toBe('90.00%');
+    expect(columns[4]?.searchValue?.(row)).toBe('12');
+    expect(columns[1]?.value(row)).toBe(1000);
+    expect(columns[3]?.value(row)).toBe(90);
+  });
+
   it('reproduces the exact legacy Store export projection', () => {
     const exportColumns = historyStoreLegacyExportColumns();
 
