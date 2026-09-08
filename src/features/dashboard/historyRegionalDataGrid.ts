@@ -1,5 +1,6 @@
 import type { RegionalStat } from '../../api/generated/runtime-types';
 import type { DataGridColumn } from '../../components/common/DataGrid';
+import { formatAmount, formatInt, formatPercent } from '../../lib/formatters';
 import type { ExportColumn } from '../../lib/tableExport';
 import type { BreakdownColumn } from './BreakdownTable';
 
@@ -26,6 +27,20 @@ const EXPORT_HEADERS: Record<string, string> = {
   prc_focus_acc_qty: 'Focus%',
 };
 
+function regionalValue(row: RegionalStat, key: string): unknown {
+  return row[key as keyof RegionalStat];
+}
+
+function regionalSearchValue(row: RegionalStat, key: string): unknown {
+  const value = regionalValue(row, key);
+  if (key === 'regional') return value;
+  if (CURRENCY_KEYS.has(key)) return formatAmount(Number(value ?? 0));
+  if (PERCENT_KEYS.has(key)) {
+    return formatPercent(typeof value === 'number' ? value : null);
+  }
+  return formatInt(Number(value ?? 0));
+}
+
 function exportFormat(key: string): ExportColumn<RegionalStat>['format'] {
   if (CURRENCY_KEYS.has(key)) return 'currency';
   if (PERCENT_KEYS.has(key)) return 'percentPoints';
@@ -40,7 +55,8 @@ export function historyRegionalDataGridColumns<Key extends string>(
     cellClassName: typeof column.cellClassName === 'string'
       ? column.cellClassName
       : undefined,
-    value: (row) => row[column.key as keyof RegionalStat],
+    value: (row) => regionalValue(row, column.key),
+    searchValue: (row) => regionalSearchValue(row, column.key),
     filter: column.key === 'regional'
       ? { kind: 'text' as const, placeholder: 'Regional' }
       : { kind: 'number' as const },
@@ -48,7 +64,7 @@ export function historyRegionalDataGridColumns<Key extends string>(
     hideable: column.key !== 'regional',
     exportHeader: EXPORT_HEADERS[column.key] ?? column.label,
     exportValue: (row) => {
-      const value = row[column.key as keyof RegionalStat];
+      const value = regionalValue(row, column.key);
       return typeof value === 'string' || typeof value === 'number' || value == null
         ? value
         : String(value);
