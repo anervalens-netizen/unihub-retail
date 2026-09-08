@@ -135,3 +135,20 @@ it('keeps unavailable scheduled stores accessible only for cancellation', async 
   await userEvent.click(screen.getByRole('button', { name: 'Salvează ziua' }));
   await waitFor(() => expect(api.saveCalendarDays).toHaveBeenCalledWith('2026-09', [{ agent_code: 'AG1', work_date: '2026-09-01', site_code: 'S1', status: 'cancelled', supplemental: false, expected_revision: 1 }]));
 });
+it('keeps date switching locked until a slow day save completes', async () => {
+  let finish!: (value: unknown[]) => void;
+  api.saveCalendarDays.mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+  mount(); await openStore();
+  await userEvent.click(screen.getByRole('button', { name: 'Editează 2026-09-01' }));
+  await userEvent.click(screen.getByRole('button', { name: 'Salvează ziua' }));
+  const otherDate = screen.getByRole('button', { name: 'Editează 2026-09-02' });
+  expect(otherDate).toBeDisabled();
+  await userEvent.click(otherDate);
+  expect(screen.getByText('Program pentru 2026-09-01')).toBeInTheDocument();
+  expect(api.saveCalendarDays).toHaveBeenCalledTimes(1);
+  expect(screen.queryByText('Confirmă agenții și magazinul de bază')).not.toBeInTheDocument();
+  finish([]);
+  await waitFor(() => expect(otherDate).not.toBeDisabled());
+  await userEvent.click(otherDate);
+  expect(screen.getByText('Program pentru 2026-09-02')).toBeInTheDocument();
+});
