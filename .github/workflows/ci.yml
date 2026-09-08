@@ -36,7 +36,6 @@ env:
 jobs:
   classify-changes:
     name: Classify PR changes
-    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 3
     outputs:
@@ -50,6 +49,10 @@ jobs:
           EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
         run: |
           set -euo pipefail
+          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
+            echo "docs_only=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER" > /tmp/pr-metadata.json
           gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/files?per_page=100" > /tmp/pr-files.json
           python3 - <<'PYCLASSIFY'
