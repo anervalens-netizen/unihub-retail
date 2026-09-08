@@ -74,7 +74,8 @@
     "066_salary_export_authority.sql": "transactional",
     "067_grile_v2_operations_read_authority.sql": "transactional",
     "068_grile_v2_forecast_digest_authority.sql": "transactional",
-    "069_ai_cohort_and_transactional_outbox.sql": "transactional"
+    "069_ai_cohort_and_transactional_outbox.sql": "transactional",
+    "070_grile_native_calendar.sql": "transactional"
   },
   "migrations": {
     "001_add_cartela_composite_index.sql": "7f502462f585088286f9ae60d5c4ded69fccf745342ae6ddfc34c48241514b46",
@@ -145,6 +146,7 @@
     "066_salary_export_authority.sql": "ab13ccc87b3da126f9935f1bb4ee66773afcc01417e08e3193242ddc2ed88fa5",
     "067_grile_v2_operations_read_authority.sql": "06b3c857983669677a741d6f743b47de370ce5195df33ba69d7c1f5c6b13057a",
     "068_grile_v2_forecast_digest_authority.sql": "766e550ddf03474979c2bf8c26067d5dc3a79a1e501a705a6988ae9fc47afa79",
-    "069_ai_cohort_and_transactional_outbox.sql": "e2f3f1ff09c14cbba577ac40ba476250a7b746ebbe0bdf373c6ebf4e552fc8a0"
+    "069_ai_cohort_and_transactional_outbox.sql": "e2f3f1ff09c14cbba577ac40ba476250a7b746ebbe0bdf373c6ebf4e552fc8a0",
+    "070_grile_native_calendar.sql": "5eeeb63af9d38ff6ee5c66503612267c74e3fafff3eae14891e9f23d2c144773"
   }
 }

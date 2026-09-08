@@ -37,6 +37,8 @@ from services.export_operations import ExportOperationsService
 from services.exports import ExportsService
 from services.filter_options import FilterOptionsService
 from services.grile_queries import GrileQueryService
+from repositories.grile_calendar import GrileCalendarRepository
+from services.grile_calendar import GrileCalendarService
 from services.hr import HrService
 from services.imports import ImportsService
 from services.salarii import SalariiService
@@ -50,6 +52,10 @@ from services.visits_report import VisitsReportService
 async def build_agents_service() -> AgentsService:
     pool = await get_pool()
     return AgentsService(AgentsRepository(pool))
+
+
+async def build_grile_calendar_service() -> GrileCalendarService:
+    return GrileCalendarService(GrileCalendarRepository(await get_pool()))
 
 
 async def build_ai_forecast_service() -> AiForecastService:

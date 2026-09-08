@@ -1045,6 +1045,21 @@ apartin exclusiv locatiei lucrate, iar ecranul, Google, Excel si centralizatorul
 folosesc aceleasi date. Codul si bazele standalone sunt arhivate separat si nu
 sunt dependinte runtime ale Retail.
 
+Fundatia calendarului nativ este separata de verificarea V1:
+`routers/grile_calendar.py` -> `services/grile_calendar.py` ->
+`repositories/grile_calendar.py`. Rutele `/api/grile/calendar/{month}` ofera
+candidati, confirmarea catalogului lunar, citirea calendarului/pontajului in zile
+si modificari atomice de zile. Citirile cer rol de management; scrierile cer
+rolul business-write existent si sunt rate-limited. Migrarea 070 pastreaza
+catalogul lunar pe cod stabil si o singura inregistrare persoana/zi. Indexul
+partial permite cel mult un agent care lucreaza per magazin/zi; concediile nu
+ocupa postul magazinului. Reviziile sunt pastrate inclusiv dupa anulare.
+Codul Team Leaderului din POS nu atribuie automat ziua unui agent. R1 nu scrie
+in Sheets si nu calculeaza salarii, ore sau valoarea targetului; furnizeaza
+zilele confirmate pentru etapele urmatoare. Magazinul de baza este lunar;
+modificarea lui necesita anularea programului existent, fara transfer automat
+al zilelor istorice.
+
 Migrarea 035 separa observatia imuabila de proiectia curenta. Fiecare full run
 sau refresh per magazin rezerva si claim-uieste prin CAS generatia
 `(luna, magazin)` inainte de orice I/O Google. Workerul ruleaza o singura
