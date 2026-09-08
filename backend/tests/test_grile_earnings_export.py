@@ -164,3 +164,27 @@ def test_leap_month_keeps_unallocated_days_and_inactive_roster_out_of_cohort():
             book.close()
     finally:
         artifact.close()
+
+
+def test_calendar_keeps_cancelled_only_location_without_adding_paid_hours():
+    from datetime import date
+    data = sources()
+    data['calendar']['days'].append(dict(
+        agent_code='AG1', site_code='CANCELLED_ONLY', work_date=date(2026, 9, 6),
+        status='cancelled', supplemental=False, revision=1,
+    ))
+    calendar = GrileCalendarService.project_calendar('2026-09', data['calendar'])
+    artifact = build_earnings_zip(calendar, project_earnings(calendar, data))
+    try:
+        with ZipFile(artifact.stream) as archive:
+            book = load_workbook(BytesIO(archive.read('Castiguri-provizorii-2026-09.xlsx')))
+            rows = [row for row in book['Calendar'].iter_rows(min_row=5, values_only=True)
+                    if row[0] == 'CANCELLED_ONLY']
+            assert len(rows) == 31  # 30 unallocated days plus the cancellation
+            cancelled = next(row for row in rows if row[4] == 'Anulat')
+            assert cancelled[1:3] == ('2026-09-06', 'AG1')
+            assert cancelled[10] == 0
+            assert book['Castiguri provizorii']['K5'].value == 222
+            book.close()
+    finally:
+        artifact.close()
