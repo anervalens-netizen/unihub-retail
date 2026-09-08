@@ -82,7 +82,7 @@ describe('dataGrid model', () => {
 
   it('applies filters before sorting without mutating source rows', () => {
     const source = [...rows];
-    const result = applyDataGridModel(
+    const result = applyDataGridModel<Row, Key>(
       source,
       { region: { kind: 'enum', value: 'Nord' } },
       [{ key: 'name', direction: 'desc' }],
