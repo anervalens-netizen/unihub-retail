@@ -28,8 +28,8 @@ the same proof.
 |---|---|
 | docs / Markdown / tracker metadata | cheap docs/native checks only; no code CI, PR-DEEP or FULL |
 | small UI/config/test/refactor with bounded impact | focused local check(s) + repository-native PR fast lane |
-| ordinary application/runtime code | focused local checks + `pr-fast`; let native policy decide whether escalation is required |
-| auth/authz, financial/private data, migrations, destructive operations | relevant focused tests + high-risk governance; PR-DEEP only when native policy requires it or a concrete unresolved risk justifies it |
+| ordinary application/runtime code | focused local checks + `pr-fast`; no automatic DEEP escalation |
+| auth/authz, financial/private data, migrations, destructive operations | relevant focused tests + high-risk governance; PR-DEEP only for an explicitly chosen check of a concrete unresolved risk |
 | CI/release/control-plane authority | high-risk governance and the exact authority checks activated by the change; avoid unrelated suites |
 | formal production release/deploy | exact-main `FULL` release run because it creates/verifies the deployable artifact, manifests and provenance |
 
@@ -39,9 +39,16 @@ native gates remain authoritative for the exact PR they guard.
 ## PR-DEEP
 
 `PR-DEEP` is an **escalation lane**, not a standard second phase of every PR.
-The trusted selector/policy may require it for unsafe or broad backend changes
-(for example control-plane/dependency/wiring trust surfaces, deletions, changed
-dynamic-import surfaces, or affected-test fan-out above the fast-lane budget).
+By explicit owner decision on 2026-09-08, automatic DEEP policy and the
+aggregate merge-gate workflow are disabled. Required native checks are
+`Validate release authority and docs`, `Classify PR changes`, `pr-fast`, and
+`Validate high-risk PR governance`. PRs and resolved review threads remain
+required. DEEP remains available as a deliberate manual escalation.
+
+CI classifies the complete PR file list before allocating the self-hosted runner.
+Docs-only changes skip heavy jobs while classification and governance report
+results. Classification failure blocks merge; renamed files include both paths.
+Production release authority is unchanged.
 
 Do not manually dispatch PR-DEEP for docs, snapshots, normal UI work, small
 refactors, or ordinary changes merely because a previous audit once used it.

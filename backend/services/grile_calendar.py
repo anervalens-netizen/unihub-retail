@@ -102,3 +102,13 @@ class GrileCalendarService:
         sources = await read_earnings_sources(self.repository.pool, month)
         calendar = self.project_calendar(month, sources["calendar"])
         return project_earnings(calendar, sources)
+
+    async def export_earnings(self, month: str, expected_revision: str):
+        from starlette.concurrency import run_in_threadpool
+        from services.grile_earnings_export import build_earnings_zip
+        sources = await read_earnings_sources(self.repository.pool, month)
+        calendar = self.project_calendar(month, sources['calendar'])
+        earnings = project_earnings(calendar, sources)
+        if earnings.projection_revision != expected_revision:
+            raise HTTPException(409, 'Earnings changed; reload before exporting')
+        return await run_in_threadpool(build_earnings_zip, calendar, earnings)

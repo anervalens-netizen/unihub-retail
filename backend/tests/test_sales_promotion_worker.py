@@ -8,6 +8,7 @@ import pytest
 
 import routers.filters
 import services.retail_metrics
+import services.imports
 import services.sales_generation_flow
 import worker
 from services.sales_generation import SalesGenerationConflictError
@@ -62,6 +63,8 @@ async def test_promotion_worker_claims_with_import_authority(
     monkeypatch.setattr(services.sales_generation_flow, "restore_sales_generation_claim", restore)
     clear_filters = MagicMock()
     update_metrics = AsyncMock()
+    grile_check = AsyncMock()
+    monkeypatch.setattr(services.imports, "trigger_grile_check_after_import", grile_check)
     monkeypatch.setattr(routers.filters, "clear_filter_options_cache", clear_filters)
     monkeypatch.setattr(services.retail_metrics, "update_business_metrics", update_metrics)
 
@@ -94,9 +97,10 @@ async def test_promotion_worker_claims_with_import_authority(
     assert result["generation_state"] == "promoted"
     assert result["snapshot_id"] == 214
     update_metrics.assert_awaited_once_with(pool)
+    grile_check.assert_awaited_once_with("2026-08", 214)
 
 
-def test_promotion_worker_has_only_transactional_outbox_post_commit_chain() -> None:
+def test_promotion_worker_keeps_campaigns_in_outbox_and_triggers_v1_check() -> None:
     source = (ROOT / "backend/worker.py").read_text(encoding="utf-8")
     tree = ast.parse(source)
     promote_worker = next(
@@ -111,7 +115,7 @@ def test_promotion_worker_has_only_transactional_outbox_post_commit_chain() -> N
         if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
     }
 
-    assert "trigger_grile_check_after_import" not in names
+    assert "trigger_grile_check_after_import" in names
     assert "trigger_campaign_reporting_publication" not in names
     assert "trigger_grile_pilot_v2_sync" not in names
 

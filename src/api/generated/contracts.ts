@@ -1,5 +1,5 @@
 /* GENERATED FILE. Run npm run contracts:generate; do not edit manually. */
-export const RETAIL_OPENAPI_SHA256 = 'd4a4943e33c0f9763d8e0503b59251dcbc719a5e3680442a56f8e7c75728f477' as const; // pragma: allowlist secret
+export const RETAIL_OPENAPI_SHA256 = '77c9eeb3e4698578e707c945f5529450525d153377bf754a69759a376fe6e6d7' as const; // pragma: allowlist secret
 
 export type RetailDecimal = string & { readonly __retailDecimal: unique symbol };
 
@@ -2644,6 +2644,7 @@ export type RetailOperationId =
   'candidates_api_grile_calendar__month__candidates_get' |
   'save_days_api_grile_calendar__month__days_patch' |
   'read_earnings_api_grile_calendar__month__earnings_get' |
+  'export_earnings_api_grile_calendar__month__earnings_zip_get' |
   'save_roster_api_grile_calendar__month__roster__agent_code__put' |
   'save_store_hours_api_grile_calendar__month__store_hours__site_code__put' |
   'grile_monthly_download_api_grile_monthly_download__kind___month__get' |
@@ -2946,6 +2947,11 @@ export interface RetailOperationResponses {
 
   'read_earnings_api_grile_calendar__month__earnings_get': {
     '200': RetailEarningsMonth;
+    '422': RetailHTTPValidationError;
+  }
+
+  'export_earnings_api_grile_calendar__month__earnings_zip_get': {
+    '200': Blob;
     '422': RetailHTTPValidationError;
   }
 
@@ -3339,6 +3345,7 @@ export interface RetailOperationSuccesses {
   'candidates_api_grile_calendar__month__candidates_get': Array<RetailAgentCandidate>;
   'save_days_api_grile_calendar__month__days_patch': Array<RetailCalendarDay>;
   'read_earnings_api_grile_calendar__month__earnings_get': RetailEarningsMonth;
+  'export_earnings_api_grile_calendar__month__earnings_zip_get': Blob;
   'save_roster_api_grile_calendar__month__roster__agent_code__put': RetailRosterEntry;
   'save_store_hours_api_grile_calendar__month__store_hours__site_code__put': RetailStoreHours;
   'grile_monthly_download_api_grile_monthly_download__kind___month__get': unknown;
@@ -3455,6 +3462,7 @@ export interface RetailOperationErrors {
   'candidates_api_grile_calendar__month__candidates_get': { '422': RetailHTTPValidationError };
   'save_days_api_grile_calendar__month__days_patch': { '422': RetailHTTPValidationError };
   'read_earnings_api_grile_calendar__month__earnings_get': { '422': RetailHTTPValidationError };
+  'export_earnings_api_grile_calendar__month__earnings_zip_get': { '422': RetailHTTPValidationError };
   'save_roster_api_grile_calendar__month__roster__agent_code__put': { '422': RetailHTTPValidationError };
   'save_store_hours_api_grile_calendar__month__store_hours__site_code__put': { '422': RetailHTTPValidationError };
   'grile_monthly_download_api_grile_monthly_download__kind___month__get': { '422': RetailHTTPValidationError };
@@ -3667,6 +3675,9 @@ export const RETAIL_OPERATION_ERROR_STATUSES: { readonly [Id in RetailOperationI
     '422',
   ]),
   'read_earnings_api_grile_calendar__month__earnings_get': new Set<string>([
+    '422',
+  ]),
+  'export_earnings_api_grile_calendar__month__earnings_zip_get': new Set<string>([
     '422',
   ]),
   'save_roster_api_grile_calendar__month__roster__agent_code__put': new Set<string>([
@@ -3926,6 +3937,7 @@ export interface RetailOperationQueries {
   'candidates_api_grile_calendar__month__candidates_get': Record<never, never>;
   'save_days_api_grile_calendar__month__days_patch': Record<never, never>;
   'read_earnings_api_grile_calendar__month__earnings_get': Record<never, never>;
+  'export_earnings_api_grile_calendar__month__earnings_zip_get': { "expected_revision": string };
   'save_roster_api_grile_calendar__month__roster__agent_code__put': Record<never, never>;
   'save_store_hours_api_grile_calendar__month__store_hours__site_code__put': Record<never, never>;
   'grile_monthly_download_api_grile_monthly_download__kind___month__get': Record<never, never>;
@@ -4042,6 +4054,7 @@ export interface RetailOperationPaths {
   'candidates_api_grile_calendar__month__candidates_get': { "month": string };
   'save_days_api_grile_calendar__month__days_patch': { "month": string };
   'read_earnings_api_grile_calendar__month__earnings_get': { "month": string };
+  'export_earnings_api_grile_calendar__month__earnings_zip_get': { "month": string };
   'save_roster_api_grile_calendar__month__roster__agent_code__put': { "month": string; "agent_code": string };
   'save_store_hours_api_grile_calendar__month__store_hours__site_code__put': { "month": string; "site_code": string };
   'grile_monthly_download_api_grile_monthly_download__kind___month__get': { "kind": "final" | "archive"; "month": string };
@@ -4158,6 +4171,7 @@ export interface RetailOperationBodies {
   'candidates_api_grile_calendar__month__candidates_get': undefined;
   'save_days_api_grile_calendar__month__days_patch': RetailCalendarChanges;
   'read_earnings_api_grile_calendar__month__earnings_get': undefined;
+  'export_earnings_api_grile_calendar__month__earnings_zip_get': undefined;
   'save_roster_api_grile_calendar__month__roster__agent_code__put': RetailRosterInput;
   'save_store_hours_api_grile_calendar__month__store_hours__site_code__put': RetailStoreHoursInput;
   'grile_monthly_download_api_grile_monthly_download__kind___month__get': undefined;
@@ -4274,6 +4288,7 @@ export interface RetailOperationMeta {
   'candidates_api_grile_calendar__month__candidates_get': { method: 'get'; path: '/api/grile/calendar/{month}/candidates'; responseType: 'json' };
   'save_days_api_grile_calendar__month__days_patch': { method: 'patch'; path: '/api/grile/calendar/{month}/days'; responseType: 'json' };
   'read_earnings_api_grile_calendar__month__earnings_get': { method: 'get'; path: '/api/grile/calendar/{month}/earnings'; responseType: 'json' };
+  'export_earnings_api_grile_calendar__month__earnings_zip_get': { method: 'get'; path: '/api/grile/calendar/{month}/earnings.zip'; responseType: 'blob' };
   'save_roster_api_grile_calendar__month__roster__agent_code__put': { method: 'put'; path: '/api/grile/calendar/{month}/roster/{agent_code}'; responseType: 'json' };
   'save_store_hours_api_grile_calendar__month__store_hours__site_code__put': { method: 'put'; path: '/api/grile/calendar/{month}/store-hours/{site_code}'; responseType: 'json' };
   'grile_monthly_download_api_grile_monthly_download__kind___month__get': { method: 'get'; path: '/api/grile/monthly/download/{kind}/{month}'; responseType: 'json' };
@@ -4906,6 +4921,8 @@ export const RETAIL_DECIMAL_PATHS: { readonly [Id in RetailOperationId]: Readonl
     'agents/*/known_earnings',
     'agents/*/supplemental_pay',
     'unassigned_sales/*/sales',
+  ]),
+  'export_earnings_api_grile_calendar__month__earnings_zip_get': new Set<string>([
   ]),
   'save_roster_api_grile_calendar__month__roster__agent_code__put': new Set<string>([
   ]),
@@ -5761,6 +5778,8 @@ export const RETAIL_DATE_PATHS: { readonly [Id in RetailOperationId]: ReadonlySe
     'cutoff',
     'unassigned_sales/*/sale_date',
   ]),
+  'export_earnings_api_grile_calendar__month__earnings_zip_get': new Set<string>([
+  ]),
   'save_roster_api_grile_calendar__month__roster__agent_code__put': new Set<string>([
   ]),
   'save_store_hours_api_grile_calendar__month__store_hours__site_code__put': new Set<string>([
@@ -6050,6 +6069,8 @@ export const RETAIL_DATETIME_PATHS: { readonly [Id in RetailOperationId]: Readon
   ]),
   'read_earnings_api_grile_calendar__month__earnings_get': new Set<string>([
   ]),
+  'export_earnings_api_grile_calendar__month__earnings_zip_get': new Set<string>([
+  ]),
   'save_roster_api_grile_calendar__month__roster__agent_code__put': new Set<string>([
   ]),
   'save_store_hours_api_grile_calendar__month__store_hours__site_code__put': new Set<string>([
@@ -6268,6 +6289,7 @@ export const RETAIL_OPERATION_ROUTES = {
   'candidates_api_grile_calendar__month__candidates_get': { method: 'get', path: '/api/grile/calendar/{month}/candidates', responseType: 'json' },
   'save_days_api_grile_calendar__month__days_patch': { method: 'patch', path: '/api/grile/calendar/{month}/days', responseType: 'json' },
   'read_earnings_api_grile_calendar__month__earnings_get': { method: 'get', path: '/api/grile/calendar/{month}/earnings', responseType: 'json' },
+  'export_earnings_api_grile_calendar__month__earnings_zip_get': { method: 'get', path: '/api/grile/calendar/{month}/earnings.zip', responseType: 'blob' },
   'save_roster_api_grile_calendar__month__roster__agent_code__put': { method: 'put', path: '/api/grile/calendar/{month}/roster/{agent_code}', responseType: 'json' },
   'save_store_hours_api_grile_calendar__month__store_hours__site_code__put': { method: 'put', path: '/api/grile/calendar/{month}/store-hours/{site_code}', responseType: 'json' },
   'grile_monthly_download_api_grile_monthly_download__kind___month__get': { method: 'get', path: '/api/grile/monthly/download/{kind}/{month}', responseType: 'json' },

@@ -1,5 +1,5 @@
-import { useQuery } from '@tanstack/react-query';
-import { readEarnings } from '../../api/grileCalendar';
+import { useMutation, useQuery } from '@tanstack/react-query';
+import { downloadEarnings, readEarnings } from '../../api/grileCalendar';
 import { agentLabel } from './calendarModel';
 
 const money = (value: string | number | null) => value === null ? 'Indisponibil' : `${Number(value).toLocaleString('ro-RO', { maximumFractionDigits: 2 })} lei`;
@@ -11,6 +11,7 @@ const issues: Record<string, string> = {
 
 export function Earnings({ month, site, calendarRevision }: { month: string; site: string; calendarRevision: string }) {
   const query = useQuery({ queryKey: ['native-earnings', month, calendarRevision], queryFn: ({ signal }) => readEarnings(month, signal) });
+  const download = useMutation({ mutationFn: () => downloadEarnings(month, query.data?.projection_revision ?? '') });
   if (query.isError) return <p role="alert">Câștigurile nu pot fi încărcate. <button onClick={() => void query.refetch()}>Reîncarcă</button></p>;
   if (!query.data || query.isFetching) return <p role="status">Se calculează câștigurile…</p>;
   const data = query.data;
@@ -18,6 +19,9 @@ export function Earnings({ month, site, calendarRevision }: { month: string; sit
   const agents = data.agents.filter(agent => agent.home_site_code === site);
   return <section className="space-y-4">
     <h3 className="font-semibold">Câștiguri provizorii</h3>
+    <button disabled={download.isPending} onClick={() => download.mutate()} className="rounded border px-3 py-2">Descarcă câștiguri și pontaje ZIP</button>
+    <p className="text-sm text-slate-500">Exportă toate persoanele și magazinele din programul lunii, din aceeași revizie. Centralizatorul este provizoriu.</p>
+    {download.isError && <p role="alert">Exportul nu a reușit sau datele s-au schimbat. <button onClick={() => { download.reset(); void query.refetch(); }}>Reîncarcă câștigurile</button></p>}
     <p>Vânzări până la {data.cutoff ?? 'dată indisponibilă'}. Targetul folosește {data.selling_days[site] ?? 0} zile de funcționare programate în această lună. Completează calendarul întregii luni pentru o estimare corectă.</p>
     <p className="text-sm text-slate-500">Comision lunar: prag 80%, bonus la 100% / 120%. Alte locații: prag zilnic 79% inclusiv. Suplimentare: 150 lei/zi până la data limită a vânzărilor.</p>
     {!data.cutoff && <p role="alert">Lipsește importul publicat cu dată limită.</p>}

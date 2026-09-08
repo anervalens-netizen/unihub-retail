@@ -7,17 +7,13 @@ on:
   pull_request:
     branches:
       - main
-    # Markdown/docs-only PRs are non-runtime under the current no-native-
-    # required-checks model; do not launch the heavy CI workflow for them.
-    paths-ignore:
-      - "**/*.md"
-      - "docs/**"
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 permissions:
+  pull-requests: read
   contents: read
 
 env:
@@ -38,13 +34,55 @@ env:
   GLOBIGNORE: ""
 
 jobs:
+  classify-changes:
+    name: Classify PR changes
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    outputs:
+      docs_only: ${{ steps.paths.outputs.docs_only }}
+    steps:
+      - name: Classify complete PR file list
+        id: paths
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER" > /tmp/pr-metadata.json
+          gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/files?per_page=100" > /tmp/pr-files.json
+          python3 - <<'PYCLASSIFY'
+          import json
+          import os
+          from pathlib import Path
+          metadata = json.loads(Path('/tmp/pr-metadata.json').read_text())
+          pages = json.loads(Path('/tmp/pr-files.json').read_text())
+          rows = [row for page in pages for row in page]
+          assert metadata['head']['sha'] == os.environ['EXPECTED_HEAD'], 'PR head changed'
+          assert 0 < len(rows) < 3000 and len(rows) == metadata['changed_files'], 'Incomplete PR file list'
+          paths = []
+          for row in rows:
+              paths.append(row['filename'])
+              if row['status'] == 'renamed':
+                  paths.append(row['previous_filename'])
+          assert all(isinstance(path, str) and path for path in paths), 'Invalid PR path'
+          docs_only = all(path.startswith('docs/') or path.endswith('.md') for path in paths)
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write(f'docs_only={str(docs_only).lower()}\n')
+          PYCLASSIFY
+
   runner-isolation:
     name: runner-isolation
+    needs: classify-changes
     if: >-
+      always() && (
       (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
       ||
       (github.event_name == 'pull_request'
-       && github.event.pull_request.head.repo.full_name == github.repository)
+       && github.event.pull_request.head.repo.full_name == github.repository
+       && needs.classify-changes.result == 'success'
+       && needs.classify-changes.outputs.docs_only == 'false'))
     runs-on: [self-hosted, Linux, X64, dell-compute, unihub-build, unihub-retail-build]
     timeout-minutes: 5
     steps:
@@ -253,6 +291,7 @@ jobs:
 
       - name: Python typecheck
         run: |
+          set +e
           venv/bin/python -I -m mypy . --ignore-missing-imports --explicit-package-bases \
             > mypy-report.txt 2>&1
           status=$?

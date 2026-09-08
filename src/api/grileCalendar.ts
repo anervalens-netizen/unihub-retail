@@ -25,3 +25,9 @@ export async function downloadAttendance(month: string, revision: string) {
 }
 
 export const readEarnings = (month: string, signal?: AbortSignal) => generatedGet('read_earnings_api_grile_calendar__month__earnings_get', { pathParams: { month }, signal });
+
+export async function downloadEarnings(month: string, revision: string) {
+  const { downloadBlob } = await import('../lib/download');
+  const response = await client.get<Blob>(`/api/grile/calendar/${encodeURIComponent(month)}/earnings.zip`, { params: { expected_revision: revision }, responseType: 'blob', timeoutMs: 120_000 });
+  downloadBlob(response.data, `Grile-pontaje-provizorii-${month}.zip`);
+}
