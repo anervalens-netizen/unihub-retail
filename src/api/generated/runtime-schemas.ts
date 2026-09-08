@@ -63,6 +63,17 @@ export const RETAIL_COMPONENT_SCHEMAS = {
         "title": "Days",
         "type": "array"
       },
+      "display_name": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Display Name"
+      },
       "home_commission": {
         "anyOf": [
           {
@@ -106,6 +117,16 @@ export const RETAIL_COMPONENT_SCHEMAS = {
       "home_work_days": {
         "title": "Home Work Days",
         "type": "integer"
+      },
+      "identity_status": {
+        "default": "unavailable",
+        "enum": [
+          "confirmed",
+          "unavailable",
+          "conflicting"
+        ],
+        "title": "Identity Status",
+        "type": "string"
       },
       "issues": {
         "items": {
@@ -10924,8 +10945,29 @@ export const RETAIL_COMPONENT_SCHEMAS = {
         "title": "Agent Code",
         "type": "string"
       },
+      "display_name": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Display Name"
+      },
       "home_site_code": {
         "title": "Home Site Code",
+        "type": "string"
+      },
+      "identity_status": {
+        "default": "unavailable",
+        "enum": [
+          "confirmed",
+          "unavailable",
+          "conflicting"
+        ],
+        "title": "Identity Status",
         "type": "string"
       },
       "month": {

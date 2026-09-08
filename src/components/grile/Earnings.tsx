@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { readEarnings } from '../../api/grileCalendar';
+import { agentLabel } from './calendarModel';
 
 const money = (value: string | number | null) => value === null ? 'Indisponibil' : `${Number(value).toLocaleString('ro-RO', { maximumFractionDigits: 2 })} lei`;
 const issues: Record<string, string> = {
@@ -22,7 +23,8 @@ export function Earnings({ month, site, calendarRevision }: { month: string; sit
     {!data.cutoff && <p role="alert">Lipsește importul publicat cu dată limită.</p>}
     {!agents.length && <p>Nu există agenți de bază confirmați pentru acest magazin.</p>}
     {agents.map(agent => <article key={agent.agent_code} className="space-y-3 rounded-xl border p-4">
-      <h4 className="font-semibold">{agent.agent_code}</h4>
+      <h4 className="font-semibold">{agentLabel(agent)}</h4>
+      {agent.identity_status !== 'confirmed' && <p className="text-sm text-amber-700">{agent.identity_status === 'conflicting' ? 'Codul are identități salariale contradictorii. Este necesară reconcilierea.' : 'Identitatea salarială nu este confirmată pentru magazinul de bază și luna selectată.'}</p>}
       {agent.issues.map(issue => <p role="alert" key={issue}>{issues[issue] ?? issue}</p>)}
       <dl className="grid grid-cols-2 gap-2 sm:grid-cols-3">
         <div><dt>Target personal · {agent.home_work_days} zile</dt><dd>{money(agent.home_target)}</dd></div>

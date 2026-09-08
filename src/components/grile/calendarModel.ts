@@ -21,3 +21,7 @@ export function dayChanges(data: CalendarData, input: Omit<RetailCalendarDayInpu
   // Response-only revision must never leak into extra=forbid request bodies.
   return changes.map(({ work_date, agent_code, site_code, status, supplemental, expected_revision }) => ({ work_date, agent_code, site_code, status, supplemental, expected_revision }));
 }
+
+export function agentLabel(agent: { agent_code: string; display_name?: string | null }) {
+  return agent.display_name ? `${agent.display_name} · ${agent.agent_code}` : agent.agent_code;
+}

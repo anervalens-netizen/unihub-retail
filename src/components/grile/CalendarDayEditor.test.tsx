@@ -8,8 +8,8 @@ afterEach(cleanup);
 const store = { site_code: 'S1', locatie: 'Store 1', firma: 'Firm', regional: 'R', asm: '' };
 const other = { ...store, site_code: 'S2' };
 const data: CalendarData = { attendance_by_store: {}, attendance_days: [], store_hours: [], projection_revision: '', month: '2026-09', attendance: [], roster: [
-  { month: '2026-09', agent_code: 'A', home_site_code: 'S1', active: true, revision: 1 },
-  { month: '2026-09', agent_code: 'B', home_site_code: 'S2', active: true, revision: 1 },
+  { display_name: null, identity_status: 'unavailable', month: '2026-09', agent_code: 'A', home_site_code: 'S1', active: true, revision: 1 },
+  { display_name: null, identity_status: 'unavailable', month: '2026-09', agent_code: 'B', home_site_code: 'S2', active: true, revision: 1 },
 ], days: [{ agent_code: 'A', work_date: '2026-09-01', site_code: 'S1', status: 'work', supplemental: false, revision: 3 }] };
 const props = { data, store, stores: [store, other], date: '2026-09-01', busy: false, writable: true };
 it('uses the original edit revision even if a background read changes', async () => {

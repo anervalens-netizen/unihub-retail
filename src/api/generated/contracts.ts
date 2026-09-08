@@ -1,5 +1,5 @@
 /* GENERATED FILE. Run npm run contracts:generate; do not edit manually. */
-export const RETAIL_OPENAPI_SHA256 = '9c8ca255c289ebbbb73a32468b2ef3c2e60be3522f3a713a804b1e42ec409dd9' as const; // pragma: allowlist secret
+export const RETAIL_OPENAPI_SHA256 = 'd4a4943e33c0f9763d8e0503b59251dcbc719a5e3680442a56f8e7c75728f477' as const; // pragma: allowlist secret
 
 export type RetailDecimal = string & { readonly __retailDecimal: unique symbol };
 
@@ -15,11 +15,13 @@ export interface RetailAgentEarnings {
   "agent_code": string;
   "away_commission": RetailDecimal | null;
   "days": Array<RetailEarningsDay>;
+  "display_name"?: string | null;
   "home_commission": RetailDecimal | null;
   "home_sales": RetailDecimal | null;
   "home_site_code": string;
   "home_target": RetailDecimal | null;
   "home_work_days": number;
+  "identity_status"?: "confirmed" | "unavailable" | "conflicting";
   "issues"?: Array<string>;
   "known_earnings": RetailDecimal | null;
   "supplemental_pay": RetailDecimal | null;
@@ -1781,7 +1783,9 @@ export interface RetailRegionalStats {
 export interface RetailRosterEntry {
   "active": boolean;
   "agent_code": string;
+  "display_name"?: string | null;
   "home_site_code": string;
+  "identity_status"?: "confirmed" | "unavailable" | "conflicting";
   "month": string;
   "revision": number;
 }

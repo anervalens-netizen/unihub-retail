@@ -94,3 +94,28 @@ async def test_inactive_roster_does_not_add_export_participants_or_stores():
             assert json.loads(archive.read('manifest.json'))['stores'] == ['A', 'B']
     finally:
         artifact.close()
+
+
+@pytest.mark.asyncio
+async def test_confirmed_name_is_literal_in_both_stores_and_fences_stale_export():
+    repo = repository()
+    entry = repo.read.return_value['roster'][0]
+    entry.update(display_name='=Synthetic Name', identity_status='confirmed')
+    service = GrileCalendarService(repo)
+    data = await service.read('2026-09')
+    artifact = await service.export_attendance('2026-09', data.projection_revision)
+    try:
+        with ZipFile(artifact.stream) as archive:
+            for name in archive.namelist():
+                if name.endswith('.xlsx'):
+                    workbook = load_workbook(BytesIO(archive.read(name)), data_only=False)
+                    cell = workbook['Pontaj']['B8']
+                    assert cell.value == '=Synthetic Name · AG1'
+                    assert cell.data_type == 's'
+                    workbook.close()
+    finally:
+        artifact.close()
+    entry['display_name'] = 'Corrected name'
+    with pytest.raises(HTTPException) as error:
+        await service.export_attendance('2026-09', data.projection_revision)
+    assert error.value.status_code == 409

@@ -41,7 +41,24 @@ class GrileCalendarRepository:
     @staticmethod
     async def read_on_connection(conn: asyncpg.Connection, month: str) -> dict[str, Any]:
         roster = await conn.fetch(
-            "SELECT * FROM grile_calendar_roster WHERE month=$1 ORDER BY agent_code", month,
+            """WITH eligible AS (
+                   SELECT agent_code, site_code, person_id, NULLIF(btrim(salary_full_name), '') AS name
+                   FROM agent_salary_links
+                   WHERE match_status='confirmed' AND effective_from_month <= $1
+                     AND NULLIF(btrim(person_id), '') IS NOT NULL
+               ), conflicts AS (
+                   SELECT agent_code FROM eligible GROUP BY agent_code
+                   HAVING COUNT(DISTINCT person_id) > 1
+               )
+               SELECT r.*,
+                      CASE WHEN c.agent_code IS NULL THEN l.name END AS display_name,
+                      CASE WHEN c.agent_code IS NOT NULL THEN 'conflicting'
+                           WHEN l.name IS NOT NULL THEN 'confirmed'
+                           ELSE 'unavailable' END AS identity_status
+               FROM grile_calendar_roster r
+               LEFT JOIN eligible l ON l.agent_code=r.agent_code AND l.site_code=r.home_site_code
+               LEFT JOIN conflicts c ON c.agent_code=r.agent_code
+               WHERE r.month=$1 ORDER BY r.agent_code""", month,
         )
         days = await conn.fetch(
             "SELECT * FROM grile_calendar_days WHERE month=$1 ORDER BY work_date, agent_code", month,

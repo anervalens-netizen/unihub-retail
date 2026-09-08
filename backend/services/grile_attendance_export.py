@@ -29,10 +29,11 @@ def _workbook(data: CalendarMonth, site: str, codes: list[str]) -> Workbook:
     sheet['A4'], sheet['B4'] = "Orar", f"{hours.opens}–{hours.closes}"
     sheet['B5'] = data.month
     workbook.properties.identifier = data.projection_revision
-    for column, value in enumerate(["NrCrt", "Cod agent", *range(1, 32), "Total ore lucrate"], 1):
+    for column, value in enumerate(["NrCrt", "Nume / Cod agent", *range(1, 32), "Total ore lucrate"], 1):
         sheet.cell(7, column, value)
     days = {(row.agent_code, row.work_date.day): row for row in data.attendance_days if row.site_code == site}
     totals = {row.agent_code: row.worked_minutes for row in data.attendance_by_store.get(site, [])}
+    names = {r.agent_code: r.display_name for r in data.roster}
     for index in range(max(8, len(codes))):
         row = 8 + index * 3
         sheet.cell(row, 1, index + 1)
@@ -41,7 +42,7 @@ def _workbook(data: CalendarMonth, site: str, codes: list[str]) -> Workbook:
         if index >= len(codes):
             continue
         code = codes[index]
-        sheet.cell(row, 2, code).data_type = 's'
+        sheet.cell(row, 2, f'{names[code]} · {code}' if names.get(code) else code).data_type = 's'
         sheet.cell(row, 34, totals.get(code, 0) / 60)
         for number in range(1, 32):
             day = days.get((code, number))

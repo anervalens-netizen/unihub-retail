@@ -20,6 +20,8 @@ class EarningsDay(BaseModel):
 
 
 class AgentEarnings(BaseModel):
+    display_name: str | None = None
+    identity_status: Literal["confirmed", "unavailable", "conflicting"] = "unavailable"
     agent_code: str
     home_site_code: str
     home_work_days: int
