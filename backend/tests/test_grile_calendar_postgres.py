@@ -296,7 +296,11 @@ async def publish_earnings_fixture(conn):
     await conn.execute(
         """WITH payload AS (
                SELECT jsonb_build_object('generation_state','promoted',
-                      'stage_rows_sha256',sales_stage_rows_sha256($1)) AS manifest)
+                      'stage_rows_sha256',sales_stage_rows_sha256($1),
+                      'rows_imported',COUNT(*), 'store_count',COUNT(DISTINCT site_code),
+                      'total_quantity',SUM(quantity), 'total_value',SUM(total_value),
+                      'max_sale_date',MAX(sale_date)::text) AS manifest
+               FROM sales_import_stage_rows WHERE snapshot_id=$1)
            UPDATE import_snapshots SET manifest=payload.manifest,
                   manifest_sha256=encode(sha256(convert_to(payload.manifest::text,'UTF8')),'hex'),
                   status='completed'
