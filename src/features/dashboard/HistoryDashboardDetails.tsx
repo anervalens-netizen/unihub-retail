@@ -1,10 +1,12 @@
 import { Building2, CalendarRange, MapPin, PieChart as PieChartIcon } from 'lucide-react';
 import { Bar, CartesianGrid, ComposedChart, Legend, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 
+import { DataGrid } from '../../components/common/DataGrid';
 import { formatAmount, formatInt } from '../../lib/formatters';
 import { BreakdownTable } from './BreakdownTable';
 import { CompactPieSection, formatCompactAxisValue, formatCompactDonutValue, sumChartValues } from './DashboardWidgets';
 import type { HistoryDashboardProps } from './HistoryDashboard';
+import { historyRegionalDataGridColumns } from './historyRegionalDataGrid';
 
 type DetailProps = Pick<HistoryDashboardProps<string, string, string>,
   'selectionLabel' | 'historyDailyChartData' | 'historyCategoryMixChartData' | 'historyBrandMixChartData'>;
@@ -37,10 +39,9 @@ export function HistoryDetailCharts({ props, visible }: { props: DetailProps; vi
 export function HistoryBreakdowns<RegionalKey extends string, StoreKey extends string, AgentKey extends string>({
   props, visible,
 }: { props: HistoryDashboardProps<RegionalKey, StoreKey, AgentKey>; visible: boolean }) {
+  const regionalGridColumns = historyRegionalDataGridColumns(props.regionalColumns);
   return <div className={!visible ? 'hidden lg:contents' : 'contents'}><div className="space-y-3">
-    <div className="min-w-0"><BreakdownTable title="RM" icon={<MapPin size={16} className="text-indigo-500" />} subtitle={`Sortare: ${props.regionalColumns.find((column) => column.key === props.regionalSort.key)?.label} (${props.regionalSort.direction}) · ${props.regionals.length} regionali`} rows={props.sortedRegionals} columns={props.regionalColumns} sortKey={props.regionalSort.key} sortDirection={props.regionalSort.direction} onSort={props.onSortRegionals} rowKey={(row) => row.regional} exportFilename={`hub_${props.selectionSlug}_istoric_rm`} exportSheetName="RM istoric" exportColumns={[
-      { header: 'Regional', value: (row) => row.regional }, { header: 'Target', value: (row) => row.target, format: 'currency' }, { header: 'Vanzari', value: (row) => row.total_vanzari, format: 'currency' }, { header: 'Procent', value: (row) => row.proc_realizare_target, format: 'percentPoints' }, { header: 'Cantitate', value: (row) => row.qty_total, format: 'integer' }, { header: 'Nr bonuri', value: (row) => row.nr_bonuri, format: 'integer' }, { header: 'ProcBon2Acc', value: (row) => row.proc_bon2acc, format: 'percentPoints' }, { header: 'Focus%', value: (row) => row.prc_focus_acc_qty, format: 'percentPoints' },
-    ]} /></div>
+    <div className="min-w-0"><DataGrid title="RM" icon={<MapPin size={16} className="text-indigo-500" />} subtitle="Filtre pe coloane · Shift+click pentru sortare multiplă" rows={props.regionals} columns={regionalGridColumns} initialSort={props.regionalGridSorts} onSortChange={props.onRegionalGridSortsChange} rowKey={(row) => row.regional} exportFilename={`hub_${props.selectionSlug}_istoric_rm`} exportSheetName="RM istoric" emptyLabel="Nu există regionali pentru filtrele selectate." /></div>
     <div className="min-w-0"><BreakdownTable title="Magazine" icon={<Building2 size={16} className="text-indigo-500" />} subtitle={`Sortare: ${props.storeColumns.find((column) => column.key === props.storeSort.key)?.label} (${props.storeSort.direction}) · ${props.stores.length} magazine`} rows={props.sortedStores} columns={props.storeColumns} sortKey={props.storeSort.key} sortDirection={props.storeSort.direction} onSort={props.onSortStores} rowKey={(row) => row.site_code} exportFilename={`hub_${props.selectionSlug}_istoric_magazine`} exportSheetName="Magazine istoric" exportColumns={[
       { header: 'Firma', value: (row) => row.firma }, { header: 'Magazin', value: (row) => row.locatie }, { header: 'Target', value: (row) => row.target, format: 'currency' }, { header: 'Vanzari', value: (row) => row.total_vanzari, format: 'currency' }, { header: 'Procent', value: (row) => row.proc_realizare_target, format: 'percentPoints' }, { header: 'Cantitate', value: (row) => row.qty_total, format: 'integer' }, { header: 'Nr bonuri', value: (row) => row.nr_bonuri, format: 'integer' }, { header: 'Retururi', value: (row) => row.return_receipt_count, format: 'integer' }, { header: 'Agenti', value: (row) => row.nr_agenti, format: 'integer' }, { header: 'Zile active', value: (row) => row.zile_active, format: 'integer' },
     ]} /></div>

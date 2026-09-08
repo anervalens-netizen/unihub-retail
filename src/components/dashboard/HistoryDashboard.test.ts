@@ -85,6 +85,8 @@ function historyProps(loading = false) {
     regionalColumns: [],
     regionalSort: { key: 'regional', direction: 'asc' as const },
     onSortRegionals: vi.fn(),
+    regionalGridSorts: [{ key: 'regional', direction: 'asc' as const }],
+    onRegionalGridSortsChange: vi.fn(),
     stores: [],
     sortedStores: [],
     storeColumns: [],
