@@ -97,16 +97,57 @@ def _workflow_on(workflow_path):
     return data.get(True) or data.get("on") or {}
 
 
-def test_pr_verification_workflows_skip_markdown_and_docs_only_changes():
-    """Docs-only PRs must not launch redundant heavy PR verification."""
+def test_docs_prs_report_required_checks_without_heavy_jobs():
     for workflow_path, trigger_name in (
         (CI_YML, "pull_request"),
         (HIGH_RISK_YML, "pull_request_target"),
-        (PR_DEEP_POLICY_YML, "pull_request_target"),
     ):
-        trigger = _workflow_on(workflow_path)[trigger_name]
-        ignored = set(trigger.get("paths-ignore", []))
-        assert {"**/*.md", "docs/**"} <= ignored, workflow_path
+        assert "paths-ignore" not in _workflow_on(workflow_path)[trigger_name]
+    jobs = _yaml().safe_load(CI_YML.read_text())["jobs"]
+    assert jobs["runner-isolation"]["needs"] == "classify-changes"
+    condition = jobs["runner-isolation"]["if"]
+    assert "needs.classify-changes.result == 'success'" in condition
+    assert "needs.classify-changes.outputs.docs_only == 'false'" in condition
+    assert "github.event_name == 'workflow_dispatch'" in condition
+    assert "github.ref == 'refs/heads/main'" in condition
+
+
+@pytest.mark.parametrize("rows,count,head,expected", [
+    ([{"filename": "docs/guide.md", "status": "modified"}], 1, "head", "true"),
+    ([{"filename": "README.md", "status": "modified"}], 1, "head", "true"),
+    ([{"filename": "backend/app.py", "status": "modified"}], 1, "head", "false"),
+    ([{"filename": "docs/new.md", "status": "renamed",
+       "previous_filename": "backend/app.py"}], 1, "head", "false"),
+    ([{"filename": "docs/new.md", "status": "renamed"}], 1, "head", None),
+    ([{"filename": "docs/guide.md", "status": "modified"}], 2, "head", None),
+    ([{"filename": "docs/guide.md", "status": "modified"}], 1, "stale", None),
+    ([], 0, "head", None),
+    ([{"filename": "docs/guide.md", "status": "modified"},
+      {"filename": "backend/app.py", "status": "modified"}], 2, "head", "false"),
+])
+def test_pr_file_classifier_executes_fail_closed(tmp_path, rows, count, head, expected):
+    import os
+    import sys
+
+    jobs = _yaml().safe_load(CI_YML.read_text())["jobs"]
+    run = jobs["classify-changes"]["steps"][0]["run"]
+    code = run.split("python3 - <<'PYCLASSIFY'\n", 1)[1].rsplit("PYCLASSIFY", 1)[0]
+    metadata = tmp_path / "metadata.json"
+    files = tmp_path / "files.json"
+    output = tmp_path / "output"
+    metadata.write_text(json.dumps({"head": {"sha": head}, "changed_files": count}))
+    files.write_text(json.dumps([[row] for row in rows]))
+    code = code.replace("/tmp/pr-metadata.json", str(metadata)).replace("/tmp/pr-files.json", str(files))
+    result = subprocess.run(
+        [sys.executable, "-I", "-c", code], capture_output=True, text=True,
+        env={**os.environ, "EXPECTED_HEAD": "head", "GITHUB_OUTPUT": str(output)},
+    )
+    if expected is None:
+        assert result.returncode != 0
+        assert not output.exists()
+    else:
+        assert result.returncode == 0, result.stderr
+        assert output.read_text() == f"docs_only={expected}\n"
 
 
 # ---------------------------------------------------------------------------

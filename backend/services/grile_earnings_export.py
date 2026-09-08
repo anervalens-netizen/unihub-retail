@@ -111,7 +111,7 @@ def _workbook(data: EarningsMonth, calendar: CalendarMonth) -> Workbook:
         ['Cod agent', 'Data', 'Magazin lucrat', 'Altă locație', 'Suplimentare', 'Vânzări',
          'Target zilnic', 'Comision alte locații', 'Plata suplimentării', 'Problemă'],
         *[[a.agent_code, d.work_date.isoformat(), d.site_code, d.away, d.supplemental,
-           d.sales, d.daily_target, d.commission, d.supplemental_pay, _LABELS.get(d.issue, d.issue)]
+           d.sales, d.daily_target, d.commission, d.supplemental_pay, _LABELS.get(d.issue or '', d.issue or '')]
           for a in data.agents for d in a.days],
     ])
     unassigned = workbook.create_sheet('Vanzari nealocate')
