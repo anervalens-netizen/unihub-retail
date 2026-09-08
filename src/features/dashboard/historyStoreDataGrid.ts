@@ -1,5 +1,6 @@
 import type { StoreStat } from '../../api/generated/runtime-types';
 import type { DataGridColumn } from '../../components/common/DataGrid';
+import { formatAmount, formatInt, formatPercent } from '../../lib/formatters';
 import type { ExportColumn } from '../../lib/tableExport';
 import type { BreakdownColumn } from './BreakdownTable';
 
@@ -24,6 +25,18 @@ function storeValue(row: StoreStat, key: string): unknown {
   return row[key as keyof StoreStat];
 }
 
+function storeSearchValue(row: StoreStat, key: string): unknown {
+  const value = storeValue(row, key);
+  if (key === 'locatie') return `${row.firma} ${row.locatie}`;
+  if (key === 'site_code') return row.firma;
+  if (typeof value === 'string') return value;
+  if (CURRENCY_KEYS.has(key)) return formatAmount(Number(value ?? 0));
+  if (PERCENT_KEYS.has(key)) {
+    return formatPercent(typeof value === 'number' ? value : null);
+  }
+  return formatInt(Number(value ?? 0));
+}
+
 function exportFormat(key: string): ExportColumn<StoreStat>['format'] {
   if (CURRENCY_KEYS.has(key)) return 'currency';
   if (PERCENT_KEYS.has(key)) return 'percentPoints';
@@ -39,6 +52,7 @@ export function historyStoreDataGridColumns<Key extends string>(
       ? column.cellClassName
       : undefined,
     value: (row) => storeValue(row, column.key),
+    searchValue: (row) => storeSearchValue(row, column.key),
     filter: ASC_KEYS.has(column.key)
       ? { kind: 'text' as const, placeholder: column.label }
       : { kind: 'number' as const },
