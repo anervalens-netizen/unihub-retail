@@ -45,7 +45,7 @@ interface DataGridProps<Row, Key extends string> {
   rowKey: (row: Row, index: number) => string;
   exportFilename: string;
   exportSheetName: string;
-  exportColumns?: readonly ExportColumn<Row>[];
+  exportColumns?: ExportColumn<Row>[];
   emptyLabel?: string;
 }
 
