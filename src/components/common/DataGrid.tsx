@@ -59,6 +59,16 @@ function exportCellValue(value: unknown): string | number | null | undefined {
     : String(value);
 }
 
+function dataGridColumnSearchValue<Row, Key extends string>(
+  column: DataGridColumn<Row, Key>,
+  row: Row,
+): unknown {
+  const raw = column.value(row);
+  const displayed = column.searchValue?.(row);
+  if (displayed === undefined || displayed === null) return raw;
+  return `${String(raw ?? '')} ${String(displayed)}`;
+}
+
 function useDataGridState<Row, Key extends string>({
   rows,
   columns,
@@ -102,11 +112,15 @@ function useDataGridState<Row, Key extends string>({
   );
   const viewRows = useMemo(() => {
     const getValue = (row: Row, key: Key) => columnMap.get(key)?.value(row);
+    const getSearchValue = (row: Row, key: Key) => {
+      const column = columnMap.get(key);
+      return column ? dataGridColumnSearchValue(column, row) : undefined;
+    };
     const searchedRows = searchDataGridRows(
       rows,
       globalSearch,
       visibleKeys,
-      getValue,
+      getSearchValue,
     );
     return applyDataGridModel(
       searchedRows,
