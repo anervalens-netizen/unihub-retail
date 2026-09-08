@@ -42,6 +42,8 @@ async def repo():
         async with pool.acquire() as conn:
             await conn.execute("DELETE FROM grile_calendar_days WHERE agent_code LIKE 'CAL-R1-%'")
             await conn.execute("DELETE FROM grile_calendar_roster WHERE agent_code LIKE 'CAL-R1-%'")
+            await conn.execute("DELETE FROM reporting_agent_day WHERE site_code LIKE 'CAL-R1-%'")
+            await conn.execute("DELETE FROM store_targets WHERE site_code LIKE 'CAL-R1-%'")
             await conn.execute("DELETE FROM reporting_agent_month WHERE site_code LIKE 'CAL-R1-%'")
             await conn.execute("DELETE FROM stores WHERE site_code LIKE 'CAL-R1-%'")
         await pool.close()
@@ -243,3 +245,91 @@ async def test_store_hours_cas_and_month_isolation(repo):
     finally:
         async with repo.pool.acquire() as conn:
             await conn.execute('DELETE FROM grile_calendar_store_hours WHERE site_code=$1', A)
+
+
+async def test_earnings_db_credits_tl_sales_to_calendar_person(repo, web_repo):
+    from decimal import Decimal
+    await confirm(repo)
+    await confirm(repo, AG2, B)
+    await repo.save_days([day(), day(site=B, number=2, supplemental=True), day(agent=AG2, site=B)], "manager")
+    async with repo.pool.acquire() as conn:
+        for site in (A, B):
+            await conn.execute("INSERT INTO store_targets(import_month,site_code,target_value) VALUES($1,$2,2000)", MONTH, site)
+        for site, number, amount in [(A, 1, 1600), (B, 1, 1000), (B, 2, 790)]:
+            await conn.execute(
+                """INSERT INTO reporting_agent_day(import_month,sale_date,site_code,locatie,firma,regional,asm,agent,total_sales)
+                   VALUES($1,$2,$3,$3,'SYNTHETIC','R1','TL','LEADER-POS',$4)""",
+                MONTH, date(2196, 9, number), site, amount,
+            )
+        await publish_earnings_fixture(conn)
+
+    try:
+        result = await GrileCalendarService(web_repo).earnings(MONTH)
+        assert result.cutoff == date(2196, 9, 2)
+        assert [agent.agent_code for agent in result.agents] == [AG1, AG2]
+        agent = result.agents[0]
+        assert (agent.home_commission, agent.away_commission, agent.supplemental_pay) == (48, 24, 150)
+        assert agent.known_earnings == Decimal(222)
+        assert sum(day.sales for agent in result.agents for day in agent.days) == Decimal(3390)
+        assert result.unassigned_sales == []
+    finally:
+        async with repo.pool.acquire() as conn:
+            await conn.execute("DELETE FROM sales_generation_heads WHERE import_month=$1", MONTH)
+            # Published staging is append-only; the isolated runner drops this DB.
+            # Keep its synthetic audit rows instead of disabling retention guards.
+
+
+async def publish_earnings_fixture(conn):
+    snapshot = await conn.fetchval(
+        """INSERT INTO import_snapshots(import_month,filename,status,cutoff_date)
+           VALUES($1,'synthetic-r4','processing',$2) RETURNING id""", MONTH, date(2196, 9, 2),
+    )
+    await conn.execute(
+        """INSERT INTO sales_import_stage_rows
+           (snapshot_id,row_number,import_month,sale_date,site_code,locatie,firma,regional,asm,
+            bon_nr,item_code,item_name,quantity,unit_price,total_value,agent,is_cartela,is_return)
+           SELECT $1, row_number() OVER (ORDER BY site_code,sale_date),import_month,sale_date,
+                  site_code,locatie,firma,regional,asm,'synthetic','ACC','Accessory',1,
+                  total_sales,total_sales,agent,FALSE,FALSE
+           FROM reporting_agent_day WHERE import_month=$2""", snapshot, MONTH,
+    )
+    await conn.execute(
+        """WITH payload AS (
+               SELECT jsonb_build_object('generation_state','promoted',
+                      'stage_rows_sha256',sales_stage_rows_sha256($1),
+                      'rows_imported',COUNT(*), 'store_count',COUNT(DISTINCT site_code),
+                      'total_quantity',SUM(quantity), 'total_value',SUM(total_value),
+                      'max_sale_date',MAX(sale_date)::text) AS manifest
+               FROM sales_import_stage_rows WHERE snapshot_id=$1)
+           UPDATE import_snapshots SET manifest=payload.manifest,
+                  manifest_sha256=encode(sha256(convert_to(payload.manifest::text,'UTF8')),'hex'),
+                  status='completed'
+           FROM payload WHERE id=$1""", snapshot,
+    )
+    await conn.execute("INSERT INTO sales_generation_heads(import_month,snapshot_id,revision) VALUES($1,$2,1)", MONTH, snapshot)
+    return snapshot
+
+
+@pytest_asyncio.fixture
+async def web_repo(repo):
+    """Authenticate as a non-superuser with the same memberships as web runtime."""
+    from secrets import token_hex
+    principal = "r4_web_" + token_hex(6)
+    password = token_hex(24)
+    async with repo.pool.acquire() as conn:
+        await conn.execute(f"CREATE ROLE {principal} LOGIN PASSWORD '{password}'")
+        await conn.execute(f"GRANT unihub_web_read, unihub_business_write TO {principal}")
+    pool = await asyncpg.create_pool(os.environ["DATABASE_URL"], user=principal, password=password,
+                                    min_size=1, max_size=2, server_settings={
+        "statement_timeout": "5000", "lock_timeout": "2000", "idle_in_transaction_session_timeout": "10000",
+    })
+    try:
+        async with pool.acquire() as conn:
+            assert await conn.fetchval("SELECT current_user") == principal
+            with pytest.raises(asyncpg.InsufficientPrivilegeError):
+                await conn.fetch("SELECT * FROM sales_generation_heads")
+        yield GrileCalendarRepository(pool)
+    finally:
+        await pool.close()
+        async with repo.pool.acquire() as conn:
+            await conn.execute(f"DROP ROLE {principal}")

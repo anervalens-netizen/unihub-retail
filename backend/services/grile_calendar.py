@@ -11,6 +11,9 @@ from grile.calendar_models import (
     AgentCandidate, CalendarChanges, CalendarDay,
     CalendarMonth, RosterEntry, RosterInput, StoreHours, StoreHoursInput,
 )
+from grile.earnings_models import EarningsMonth
+from grile.earnings_projection import project_earnings
+from repositories.grile_earnings import read_earnings_sources
 from grile.calendar_projection import attendance_by_agent_and_store, attendance_days
 from repositories.grile_calendar import CalendarConflict, GrileCalendarRepository
 
@@ -44,6 +47,10 @@ class GrileCalendarService:
 
     async def read(self, month: str) -> CalendarMonth:
         data = await self.repository.read(month)
+        return self.project_calendar(month, data)
+
+    @staticmethod
+    def project_calendar(month: str, data: dict) -> CalendarMonth:
         roster = [RosterEntry.model_validate(row) for row in data["roster"]]
         days = [CalendarDay.model_validate(row) for row in data["days"]]
         hours = [StoreHours.model_validate(row) for row in data.get("store_hours", [])]
@@ -90,3 +97,8 @@ class GrileCalendarService:
         if data.projection_revision != expected_revision:
             raise HTTPException(409, "Calendar changed; reload before exporting")
         return await run_in_threadpool(build_attendance_zip, data)
+
+    async def earnings(self, month: str) -> EarningsMonth:
+        sources = await read_earnings_sources(self.repository.pool, month)
+        calendar = self.project_calendar(month, sources["calendar"])
+        return project_earnings(calendar, sources)

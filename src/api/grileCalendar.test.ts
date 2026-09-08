@@ -33,3 +33,12 @@ it('saves store hours through the API and downloads the chosen revision', async 
     expect(timeout).toHaveBeenLastCalledWith(120_000);
   } finally { click.mockRestore(); timeout.mockRestore(); }
 });
+
+it('reads provisional earnings through the generated decimal contract', async () => {
+  const { readEarnings } = await import('./grileCalendar');
+  const data = { month: '2026-09', status: 'provisional', projection_revision: 'r', calendar_revision: 'c', cutoff: null, selling_days: {}, agents: [], unassigned_sales: [], unavailable_components: ['salary_base'] };
+  const fetch = vi.fn().mockResolvedValueOnce(new Response(JSON.stringify(data)));
+  vi.stubGlobal('fetch', fetch);
+  expect(await readEarnings('2026-09')).toEqual(data);
+  expect(fetch.mock.calls[0]?.[0]).toBe('/api/grile/calendar/2026-09/earnings');
+});

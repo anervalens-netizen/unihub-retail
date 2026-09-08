@@ -23,3 +23,5 @@ export async function downloadAttendance(month: string, revision: string) {
   const response = await client.get<Blob>(`/api/grile/calendar/${encodeURIComponent(month)}/attendance.zip`, { params: { expected_revision: revision }, responseType: 'blob', timeoutMs: 120_000 });
   downloadBlob(response.data, `Pontaje-provizorii-${month}.zip`);
 }
+
+export const readEarnings = (month: string, signal?: AbortSignal) => generatedGet('read_earnings_api_grile_calendar__month__earnings_get', { pathParams: { month }, signal });
