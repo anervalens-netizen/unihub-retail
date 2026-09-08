@@ -129,7 +129,7 @@ function useDataGridState<Row, Key extends string>({
 
 function buildSortStatus<Row, Key extends string>(
   sorts: readonly DataGridSort<Key>[],
-  columns: ReadonlyMap<Key, DataGridColumn<Row, Key>,
+  columns: ReadonlyMap<Key, DataGridColumn<Row, Key>>,
 ): string {
   if (sorts.length === 0) return 'Nicio sortare activă.';
   return `Sortare activă: ${sorts.map((sort, index) => {
@@ -312,7 +312,7 @@ export function DataGrid<Row, Key extends string>(props: DataGridProps<Row, Key>
     : `${state.viewRows.length} din ${props.rows.length} înregistrări`;
 
   return (
-    <section className="rounded-2xl horder border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900/70">
+    <section className="rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900/70">
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-3 py-2 dark:border-slate-800">
         <div className="min-w-0">
           <div className="flex items-center gap-2 font-bold text-slate-800 dark:text-slate-100">
