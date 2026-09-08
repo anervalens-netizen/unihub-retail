@@ -1,6 +1,8 @@
+import { useState } from 'react';
+
 import { TrendingUp } from 'lucide-react';
 import {
-  Area, AreaChart, Bar, CartesianGrid, Cell, ComposedChart, Legend, Line,
+  Area, AreaChart, Bar, CartesianGrid, Cell, ComposedChart, Legend, Line, LineChart,
   ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from 'recharts';
 
@@ -12,6 +14,8 @@ type TrendProps = Pick<HistoryDashboardProps<string, string, string>,
   'currentSummary' | 'yearFilter' | 'onYearFilterChange' | 'availableYears'
   | 'currentHistoryLoading' | 'yearHistoryLoading' | 'currentHistoryChartData'
   | 'yearHistoryChartData' | 'kpiMetric' | 'onKpiMetricChange' | 'kpiChartData'>;
+
+type KpiChartView = 'area' | 'line';
 
 export function HistoryMonthlyTrend({ props, visible }: { props: TrendProps; visible: boolean }) {
   const loading = props.yearFilter === null ? props.currentHistoryLoading : props.yearHistoryLoading;
@@ -91,38 +95,69 @@ function YearHistoryChart({ props }: { props: TrendProps }) {
 }
 
 export function HistoryKpiTrend({ props, visible }: { props: TrendProps; visible: boolean }) {
+  const [chartView, setChartView] = useState<KpiChartView>('area');
+  const seriesName = props.kpiMetric === 'proc_bon2acc'
+    ? 'ProcBon2Acc'
+    : props.kpiMetric === 'prc_focus_acc_qty'
+      ? 'PrcFocus/AccQtty'
+      : 'Total bonuri';
+  const formatKpiValue = (value: unknown) => props.kpiMetric === 'total_receipts'
+    ? formatInt(Number(value))
+    : `${Number(value).toFixed(1)}%`;
+
   return (
     <ChartFrame
       title="Trend KPI"
       icon={<TrendingUp size={16} className="text-indigo-500" />}
       controls={(
-        <div className="flex gap-1">{([
-          { key: 'proc_bon2acc', label: 'Bon2Acc' },
-          { key: 'prc_focus_acc_qty', label: 'Focus' },
-          { key: 'total_receipts', label: 'Bonuri' },
-        ] as const).map(({ key, label }) => (
-          <button
-            key={key}
-            onClick={() => props.onKpiMetricChange(key)}
-            className={`rounded-full px-2.5 py-1 text-[10px] font-bold transition-colors ${props.kpiMetric === key ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-400'}`}
+        <div className="flex flex-wrap items-center justify-end gap-1">
+          {([
+            { key: 'proc_bon2acc', label: 'Bon2Acc' },
+            { key: 'prc_focus_acc_qty', label: 'Focus' },
+            { key: 'total_receipts', label: 'Bonuri' },
+          ] as const).map(({ key, label }) => (
+            <button
+              key={key}
+              onClick={() => props.onKpiMetricChange(key)}
+              className={`rounded-full px-2.5 py-1 text-[10px] font-bold transition-colors ${props.kpiMetric === key ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-400'}`}
+            >
+              {label}
+            </button>
+          ))}
+          <select
+            aria-label="Tip grafic KPI"
+            value={chartView}
+            onChange={(event) => setChartView(event.target.value as KpiChartView)}
+            className="shrink-0 rounded-full border border-slate-200 bg-white px-2 py-1 text-[10px] font-bold text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
           >
-            {label}
-          </button>
-        ))}</div>
+            <option value="area">Arie</option>
+            <option value="line">Linie</option>
+          </select>
+        </div>
       )}
       loading={props.currentHistoryLoading}
       contentClassName="h-48"
       className={!visible ? 'hidden lg:block' : ''}
     >
       <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}>
-        <AreaChart data={props.kpiChartData}>
-          <defs><linearGradient id="kpiTrendArea" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#4f46e5" stopOpacity={0.35} /><stop offset="95%" stopColor="#4f46e5" stopOpacity={0.03} /></linearGradient></defs>
-          <CartesianGrid strokeDasharray="3 3" vertical={false} opacity={0.15} />
-          <XAxis dataKey="month" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
-          <YAxis tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
-          <Tooltip formatter={(value: unknown) => props.kpiMetric === 'total_receipts' ? formatInt(Number(value)) : `${Number(value).toFixed(1)}%`} />
-          <Area type="monotone" dataKey="value" name={props.kpiMetric === 'proc_bon2acc' ? 'ProcBon2Acc' : props.kpiMetric === 'prc_focus_acc_qty' ? 'PrcFocus/AccQtty' : 'Total bonuri'} stroke="#4f46e5" fill="url(#kpiTrendArea)" strokeWidth={2} />
-        </AreaChart>
+        {chartView === 'area' ? (
+          <AreaChart data={props.kpiChartData}>
+            <defs><linearGradient id="kpiTrendArea" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#4f46e5" stopOpacity={0.35} /><stop offset="95%" stopColor="#4f46e5" stopOpacity={0.03} /></linearGradient></defs>
+            <CartesianGrid strokeDasharray="3 3" vertical={false} opacity={0.15} />
+            <XAxis dataKey="month" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
+            <YAxis tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
+            <Tooltip formatter={formatKpiValue} />
+            <Area type="monotone" dataKey="value" name={seriesName} stroke="#4f46e5" fill="url(#kpiTrendArea)" strokeWidth={2} />
+          </AreaChart>
+        ) : (
+          <LineChart data={props.kpiChartData}>
+            <CartesianGrid strokeDasharray="3 3" vertical={false} opacity={0.15} />
+            <XAxis dataKey="month" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
+            <YAxis tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
+            <Tooltip formatter={formatKpiValue} />
+            <Line type="monotone" dataKey="value" name={seriesName} stroke="#4f46e5" strokeWidth={2} dot={false} />
+          </LineChart>
+        )}
       </ResponsiveContainer>
     </ChartFrame>
   );
