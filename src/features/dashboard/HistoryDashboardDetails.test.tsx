@@ -1,15 +1,18 @@
 // @vitest-environment jsdom
 
 import { fireEvent, render, screen } from '@testing-library/react';
+import type { ReactNode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('recharts', () => ({
   Bar: () => null,
   CartesianGrid: () => null,
-  ComposedChart: ({ children }: { children?: unknown }) => children,
+  ComposedChart: ({ children, data }: { children?: ReactNode; data?: unknown[] }) => (
+    <div data-testid="daily-composed-chart" data-points={data?.length ?? 0}>{children}</div>
+  ),
   Legend: () => null,
   Line: () => null,
-  ResponsiveContainer: ({ children }: { children?: unknown }) => children,
+  ResponsiveContainer: ({ children }: { children?: ReactNode }) => <>{children}</>,
   Tooltip: () => null,
   XAxis: () => null,
   YAxis: () => null,
@@ -65,13 +68,15 @@ vi.mock('./BreakdownTable', () => ({
 }));
 
 vi.mock('./DashboardWidgets', () => ({
-  CompactPieSection: () => null,
+  CompactPieSection: ({ title, pieData }: { title: string; pieData: unknown[] }) => (
+    <div data-testid={`pie-${title}`} data-points={pieData.length}>{title}</div>
+  ),
   formatCompactAxisValue: String,
   formatCompactDonutValue: String,
   sumChartValues: () => 0,
 }));
 
-import { HistoryBreakdowns } from './HistoryDashboardDetails';
+import { HistoryBreakdowns, HistoryDetailCharts } from './HistoryDashboardDetails';
 
 const onRegionalGridSortsChange = vi.fn();
 const onStoreGridSortsChange = vi.fn();
@@ -115,6 +120,52 @@ const props = {
   agentSort: { key: 'agent', direction: 'asc' },
   onSortAgents: vi.fn(),
 };
+
+const detailProps = {
+  selectionLabel: '2026-08',
+  historyDailyChartData: [
+    { day: '01', sales: 100, qty: 2, receipts: 1 },
+    { day: '02', sales: 200, qty: 3, receipts: 2 },
+  ],
+  historyCategoryMixChartData: [
+    { category: 'Huse', sales_total: 100, quantity_total: 2, share_pct: 100 },
+  ],
+  historyBrandMixChartData: [
+    { brand: 'Apple', sales_total: 60, share_pct: 60 },
+    { brand: 'Samsung', sales_total: 40, share_pct: 40 },
+  ],
+};
+
+describe('HistoryDetailCharts V4 ChartFrame consumers', () => {
+  it('preserves daily chart and pie content inside the compact mobile ChartFrame shell', () => {
+    render(<HistoryDetailCharts props={detailProps as never} visible={false} />);
+
+    const dailyHeading = screen.getByRole('heading', {
+      name: 'Evolutie zilnica pentru 2026-08',
+    });
+    const dailyFrame = dailyHeading.closest('.glass');
+    expect(dailyFrame).toHaveClass('p-3', 'sm:p-4', 'flex', 'min-w-0', 'flex-col');
+    expect(dailyFrame?.parentElement).toHaveClass('grid', 'hidden', 'lg:grid');
+
+    const dailyChart = screen.getByTestId('daily-composed-chart');
+    expect(dailyChart).toHaveAttribute('data-points', '2');
+    expect(dailyChart.parentElement).toHaveClass(
+      '-mx-2',
+      'aspect-[16/6]',
+      'min-[1500px]:flex-1',
+    );
+
+    const pieHeading = screen.getByRole('heading', { name: 'Top categorii si branduri' });
+    expect(pieHeading.closest('.glass')).toHaveClass('p-3', 'sm:p-4', 'flex', 'flex-col');
+    expect(screen.getByTestId('pie-Top categorii')).toHaveAttribute('data-points', '1');
+    expect(screen.getByTestId('pie-Branduri compatibile')).toHaveAttribute('data-points', '2');
+    expect(screen.getByTestId('pie-Top categorii').parentElement).toHaveClass(
+      'grid',
+      'flex-1',
+      'min-[1500px]:grid-rows-2',
+    );
+  });
+});
 
 describe('HistoryBreakdowns V3 DataGrid consumers', () => {
   it('uses raw RM and Store rows, persists both sort chains and leaves Agenti legacy', () => {
