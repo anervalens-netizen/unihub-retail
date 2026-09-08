@@ -4,6 +4,7 @@ from __future__ import annotations
 import calendar
 import json
 import re
+from shutil import copyfileobj
 from tempfile import SpooledTemporaryFile
 from zipfile import ZIP_DEFLATED, ZipFile
 
@@ -107,8 +108,7 @@ def build_attendance_zip(data: CalendarMonth) -> XlsxArtifact:
                         file.seek(0)
                         name = re.sub(r'[^\w.-]', '_', site)[:80]
                         with archive.open(f'{index:03d}_{name}_{data.month}.xlsx', 'w') as member:
-                            while chunk := file.read(256 * 1024):
-                                member.write(chunk)
+                            copyfileobj(file, member, length=256 * 1024)
                 finally:
                     workbook.close()
             archive.writestr('manifest.json', json.dumps({
