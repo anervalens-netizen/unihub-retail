@@ -42,7 +42,7 @@ async def repo():
         async with pool.acquire() as conn:
             await conn.execute("DELETE FROM grile_calendar_days WHERE agent_code LIKE 'CAL-R1-%'")
             await conn.execute("DELETE FROM grile_calendar_roster WHERE agent_code LIKE 'CAL-R1-%'")
-            await conn.execute("DELETE FROM reporting_agent_month WHERE agent LIKE 'CAL-R1-%'")
+            await conn.execute("DELETE FROM reporting_agent_month WHERE site_code LIKE 'CAL-R1-%'")
             await conn.execute("DELETE FROM stores WHERE site_code LIKE 'CAL-R1-%'")
         await pool.close()
 
@@ -181,3 +181,28 @@ async def test_real_candidates_allow_explicit_confirmation_without_current_sales
     assert row.active and row.agent_code == AG2
     changed = await service.save_roster(MONTH, AG2, RosterInput(home_site_code=A, expected_revision=1, active=False), "manager")
     assert not changed.active
+
+
+async def test_distribution_locations_and_nonretail_codes_cannot_enter_calendar(repo, monkeypatch):
+    monkeypatch.setattr("services.grile_calendar.business_today", lambda: date(2196, 9, 20))
+    async with repo.pool.acquire() as conn:
+        # Opaque site code: eligibility must use the canonical location field.
+        await conn.execute("UPDATE stores SET locatie='tr Distribution', regional='R1' WHERE site_code=$1", C)
+        for code, site in [(AG1, A), (AG2, C), ('-', A), (' - ', A), (' tr123 ', A)]:
+            await conn.execute(
+                """INSERT INTO reporting_agent_month(import_month,site_code,locatie,firma,regional,asm,agent)
+                   VALUES($1,$2,$2,'SYNTHETIC','R1','TL',$3)""", MONTH, site, code,
+            )
+    service = GrileCalendarService(repo)
+    assert [row.agent_code for row in await service.candidates(MONTH)] == [AG1]
+    from fastapi import HTTPException
+    for code in ['-', 'tr123', AG2]:
+        with pytest.raises(HTTPException) as error:
+            await service.save_roster(MONTH, code, RosterInput(home_site_code=A, expected_revision=0), 'manager')
+        assert error.value.status_code == 422
+    with pytest.raises(CalendarConflict, match='not active'):
+        await confirm(repo, home=C)
+    await confirm(repo)
+    with pytest.raises(CalendarConflict, match='not active'):
+        await repo.save_days([day(site=C, supplemental=True)], 'manager')
+    assert (await repo.read(MONTH))['days'] == []

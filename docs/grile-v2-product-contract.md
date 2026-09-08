@@ -71,5 +71,8 @@ Nu însumăm salarii complete repetate în proiecțiile mai multor magazine.
 Schimbul obișnuit de program și suplimentarea plătită trebuie diferențiate
 explicit de manager. Nu inferăm suplimentarea din simpla modificare a zilei și
 nu transformăm activitatea observată de vânzări în pontaj confirmat automat.
+Codurile `TR...` reprezintă reprezentanți comerciali, nu Team Leaderi. Acestea,
+codurile goale/`-` și locațiile de distribuție `TR ...` sunt excluse din catalogul
+Retail; nu deducem codul Team Leaderului din prefixul `TR`.
 Acestea sunt reguli de contract pentru fazele R1/R2 și următoarele; documentul
 nu afirmă că implementarea este finalizată.

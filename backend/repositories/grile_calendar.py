@@ -6,6 +6,7 @@ from typing import Any
 import asyncpg
 
 from grile.calendar_models import CalendarDayInput
+from retail_filters import distribution_location_clause
 
 
 class CalendarConflict(Exception):
@@ -19,11 +20,13 @@ class GrileCalendarRepository:
     async def candidates(self, source_month: str, previous_month: str) -> list[dict[str, Any]]:
         async with self.pool.acquire() as conn:
             rows = await conn.fetch(
-                """SELECT DISTINCT r.import_month, btrim(r.agent) AS agent_code,
+                f"""SELECT DISTINCT r.import_month, btrim(r.agent) AS agent_code,
                           r.site_code, s.regional, s.firma
                    FROM reporting_agent_month r JOIN stores s USING (site_code)
                    WHERE r.import_month = ANY($1::text[]) AND s.is_active
-                     AND btrim(r.agent) <> '' AND s.site_code NOT LIKE 'TR %'
+                     AND btrim(r.agent) NOT IN ('', '-')
+                     AND btrim(r.agent) NOT ILIKE 'TR%'
+                     AND {distribution_location_clause("s")}
                      AND s.site_code <> 'Cartele'
                    ORDER BY agent_code, r.import_month DESC, r.site_code""",
                 [source_month, previous_month],
@@ -44,8 +47,8 @@ class GrileCalendarRepository:
     @staticmethod
     async def _store(conn: asyncpg.Connection, site_code: str) -> asyncpg.Record:
         row = await conn.fetchrow(
-            """SELECT site_code, regional FROM stores WHERE site_code=$1 AND is_active
-               AND site_code NOT LIKE 'TR %' AND site_code <> 'Cartele' FOR SHARE""", site_code,
+            f"""SELECT site_code, regional FROM stores WHERE site_code=$1 AND is_active
+               AND {distribution_location_clause()} AND site_code <> 'Cartele' FOR SHARE""", site_code,
         )
         if row is None:
             raise CalendarConflict("Store is not active")
