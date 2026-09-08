@@ -22,7 +22,11 @@ function CalendarMonth({ month, writable }: { month: string; writable: boolean }
   const calendar = useQuery({ queryKey: ['native-calendar', month], queryFn: ({ signal }) => readCalendar(month, signal) });
   if (stores.isError || calendar.isError) return <div role="alert">Calendarul nu poate fi încărcat. <button onClick={() => { void stores.refetch(); void calendar.refetch(); }}>Reîncarcă</button></div>;
   if (!stores.data || !calendar.data) return <p role="status">Se încarcă programul…</p>;
-  const eligible = stores.data.filter(s => !/^TR /i.test(s.locatie) && s.site_code !== 'Cartele');
+  const eligible: CalendarStore[] = stores.data.filter(s => !/^TR /i.test(s.locatie) && s.site_code !== 'Cartele');
+  const referenced = new Set([...calendar.data.days.map(d => d.site_code), ...calendar.data.roster.map(r => r.home_site_code)]);
+  for (const site_code of referenced) {
+    if (!eligible.some(s => s.site_code === site_code)) eligible.push({ site_code, locatie: `${site_code} · doar corectări`, firma: '', regional: 'Magazine indisponibile — corectări', asm: '', cleanupOnly: true });
+  }
   const managers = [...new Set(eligible.map(s => s.regional))].sort();
   return <div className="space-y-4">
     <p className="text-sm text-slate-500">Program confirmat de manager · un agent pe magazin și zi. V1 rămâne grila oficială.</p>
@@ -46,7 +50,7 @@ function StoreCalendar({ month, store, stores, data, refreshing, writable, onClo
     <nav aria-label="Secțiuni magazin" className="mb-4 flex gap-2">{['Grile', 'Calendar', 'Pontaj'].map(label => <button key={label} aria-pressed={tab === label} onClick={() => setTab(label)} className={`rounded-lg px-4 py-2 ${tab === label ? 'bg-indigo-600 text-white' : 'border'}`}>{label}</button>)}</nav>
     {tab === 'Grile' && <div><h3 className="font-semibold">Agenții magazinului</h3>{data.roster.filter(r => r.active && r.home_site_code === store.site_code).map(r => <p key={r.agent_code}>{r.agent_code}</p>)}<p className="mt-3">Calculul sumelor V2 este în pregătire. Consultă grilele oficiale în secțiunea V1.</p></div>}
     {tab === 'Pontaj' && <Attendance data={data} store={store} />}
-    {tab === 'Calendar' && <div className="space-y-4"><Roster month={month} store={store} data={data} writable={writable} onChanged={() => { setDate(''); save.reset(); }} /><MonthGrid month={month} store={store} data={data} disabled={refreshing} onSelect={d => { setDate(d); save.reset(); }} />{save.isError && <div role="alert">{save.error instanceof ApiError && save.error.status === 409 ? 'Programul s-a schimbat sau există un conflict. Reîncarcă înainte de o nouă editare.' : getApiErrorMessage(save.error, 'Salvarea a eșuat.')} <button onClick={() => void refresh()}>Reîncarcă programul</button></div>}{date && <CalendarDayEditor key={`${date}-${editVersion}-${data.roster.map(r => `${r.agent_code}:${r.revision}`).join('|')}`} date={date} store={store} stores={stores} data={data} writable={writable && !refreshing && !save.isError && !save.isSuccess} busy={save.isPending} onSave={days => save.mutate(days)} />}</div>}
+    {tab === 'Calendar' && <div className="space-y-4">{store.cleanupOnly ? <p>Magazin indisponibil pentru programări noi. Poți consulta și anula zilele existente.</p> : <Roster month={month} store={store} data={data} writable={writable} onChanged={() => { setDate(''); save.reset(); }} />}<MonthGrid month={month} store={store} data={data} disabled={refreshing} onSelect={d => { setDate(d); save.reset(); }} />{save.isError && <div role="alert">{save.error instanceof ApiError && save.error.status === 409 ? 'Programul s-a schimbat sau există un conflict. Reîncarcă înainte de o nouă editare.' : getApiErrorMessage(save.error, 'Salvarea a eșuat.')} <button onClick={() => void refresh()}>Reîncarcă programul</button></div>}{date && <CalendarDayEditor key={`${date}-${editVersion}-${data.roster.map(r => `${r.agent_code}:${r.revision}`).join('|')}`} date={date} store={store} stores={stores} data={data} writable={writable && !refreshing && !save.isError && !save.isSuccess} busy={save.isPending} onSave={days => save.mutate(days)} />}</div>}
   </dialog>;
 }
 
@@ -55,7 +59,7 @@ function MonthGrid({ month, store, data, disabled, onSelect }: { month: string; 
   return <div className="overflow-x-auto"><div className="grid min-w-[580px] grid-cols-7 gap-2">{['Lun', 'Mar', 'Mie', 'Joi', 'Vin', 'Sâm', 'Dum'].map(d => <div key={d} className="p-2 text-center text-sm text-slate-500">{d}</div>)}{Array.from({ length: offset }, (_, i) => <div key={`empty-${i}`} />)}{dates.map(date => {
     const entries = data.days.filter(d => d.work_date === date && d.site_code === store.site_code && d.status !== 'cancelled');
     const worker = entries.find(d => d.status === 'work');
-    return <button key={date} aria-label={`Editează ${date}`} disabled={disabled} onClick={() => onSelect(date)} className={`min-h-24 rounded-xl border p-2 text-left hover:border-indigo-500 ${worker ? 'bg-indigo-50 dark:bg-indigo-950' : ''}`}><span className="block font-bold">{Number(date.slice(-2))}</span>{!worker && <span className="block text-xs text-slate-500">Nealocat</span>}{entries.map(d => <span key={d.agent_code} className="block text-xs">{d.agent_code} · {dayLabels[d.status]}{d.supplemental ? ' (supl.)' : ''}</span>)}</button>;
+    return <button key={date} aria-label={`Editează ${date}`} disabled={disabled || (store.cleanupOnly && entries.length === 0)} onClick={() => onSelect(date)} className={`min-h-24 rounded-xl border p-2 text-left hover:border-indigo-500 ${worker ? 'bg-indigo-50 dark:bg-indigo-950' : ''}`}><span className="block font-bold">{Number(date.slice(-2))}</span>{!worker && <span className="block text-xs text-slate-500">Nealocat</span>}{entries.map(d => <span key={d.agent_code} className="block text-xs">{d.agent_code} · {dayLabels[d.status]}{d.supplemental ? ' (supl.)' : ''}</span>)}</button>;
   })}</div></div>;
 }
 

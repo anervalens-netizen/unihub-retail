@@ -1069,7 +1069,9 @@ Editorul pastreaza reviziile citite la deschidere si cere reincarcare explicita
 la conflict. Inlocuirea trimite anularea ocupantului si noua alocare in acelasi
 batch. O zi deja alocata in alta locatie se corecteaza intai acolo. Codul stabil
 este afisat fara a deduce numele din surse salariale. Nici acest ecran nu scrie
-in Google, nu calculeaza bani/ore si nu inchide luna salariala.
+in Google, nu calculeaza bani/ore si nu inchide luna salariala. Magazinele
+referite de calendar/catalog care lipsesc din lista activa raman accesibile
+prin cod, doar pentru consultare si anularea zilelor existente.
 
 Migrarea 035 separa observatia imuabila de proiectia curenta. Fiecare full run
 sau refresh per magazin rezerva si claim-uieste prin CAS generatia

@@ -45,3 +45,9 @@ it('cancels supplemental work at the assigned store while preserving its revisio
   await userEvent.click(screen.getByRole('button', { name: 'Salvează ziua' }));
   expect(onSave).toHaveBeenCalledWith([{ agent_code: 'B', work_date: '2026-09-01', site_code: 'S1', status: 'cancelled', supplemental: false, expected_revision: 3 }]);
 });
+it('allows cleanup of an unavailable-store supplement even when the home is absent', async () => {
+  const onSave = vi.fn();
+  render(<CalendarDayEditor {...props} store={{ ...store, regional: '', cleanupOnly: true }} stores={[]} data={{ ...data, days: [{ ...data.days[0]!, agent_code: 'B', supplemental: true }] }} onSave={onSave} />);
+  await userEvent.click(screen.getByRole('button', { name: 'Salvează ziua' }));
+  expect(onSave).toHaveBeenCalledWith([expect.objectContaining({ agent_code: 'B', site_code: 'S1', status: 'cancelled', expected_revision: 3 })]);
+});

@@ -121,3 +121,17 @@ it('closes the old day snapshot after a home-store correction', async () => {
   await userEvent.selectOptions(screen.getByLabelText('Agent pentru zi'), 'AG1');
   expect(screen.getByLabelText('Suplimentar')).not.toBeChecked();
 });
+it('keeps unavailable scheduled stores accessible only for cancellation', async () => {
+  api.calendarStores.mockResolvedValue([]);
+  mount();
+  await userEvent.click(await screen.findByRole('button', { name: /S1 · doar corectări/ }));
+  expect(screen.getByText(/Magazin indisponibil pentru programări noi/)).toBeInTheDocument();
+  expect(screen.queryByText('Confirmă agenții și magazinul de bază')).not.toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Editează 2026-09-02' })).toBeDisabled();
+  await userEvent.click(screen.getByRole('button', { name: 'Editează 2026-09-01' }));
+  expect(screen.getByLabelText('Tip zi')).toHaveValue('cancelled');
+  expect(screen.queryByRole('option', { name: 'Lucrează' })).not.toBeInTheDocument();
+  api.saveCalendarDays.mockResolvedValue([]);
+  await userEvent.click(screen.getByRole('button', { name: 'Salvează ziua' }));
+  await waitFor(() => expect(api.saveCalendarDays).toHaveBeenCalledWith('2026-09', [{ agent_code: 'AG1', work_date: '2026-09-01', site_code: 'S1', status: 'cancelled', supplemental: false, expected_revision: 1 }]));
+});
