@@ -13,7 +13,7 @@ export function ExportTableButton<T>({
   filename: string;
   sheetName: string;
   columns: ExportColumn<T>[];
-  rows: T[];
+  rows: readonly T[];
   label?: string;
   beforeExport?: () => Promise<void> | void;
 }) {
@@ -23,7 +23,7 @@ export function ExportTableButton<T>({
     setBusy(true);
     try {
       await beforeExport?.();
-      downloadExcelTable({ filename, sheetName, columns, rows });
+      downloadExcelTable({ filename, sheetName, columns, rows: [...rows] });
     } finally {
       setBusy(false);
     }
