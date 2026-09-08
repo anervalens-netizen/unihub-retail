@@ -27,7 +27,9 @@ function storeValue(row: StoreStat, key: string): unknown {
 
 function storeSearchValue(row: StoreStat, key: string): unknown {
   const value = storeValue(row, key);
-  if (key === 'locatie') return `${row.firma} ${row.locatie}`;
+  if (key === 'locatie') {
+    return `${row.firma} ${row.locatie} M${row.locatie}`;
+  }
   if (key === 'site_code') return row.firma;
   if (typeof value === 'string') return value;
   if (CURRENCY_KEYS.has(key)) return formatAmount(Number(value ?? 0));
