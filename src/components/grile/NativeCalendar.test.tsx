@@ -103,3 +103,21 @@ it('deactivates and reactivates confirmed agents through revision-fenced updates
   await userEvent.click(screen.getByRole('button', { name: 'Confirmă în Magazin Alpha' }));
   await waitFor(() => expect(api.confirmCalendarAgent).toHaveBeenLastCalledWith('2026-09', 'AG1', { home_site_code: 'S1', active: true, expected_revision: 2 }));
 });
+it('closes the old day snapshot after a home-store correction', async () => {
+  api.calendarStores.mockResolvedValue([store, { ...store, site_code: 'S2', locatie: 'Magazin Beta' }]);
+  api.readCalendar.mockResolvedValue({ month: '2026-09', roster: [{ ...roster[0], home_site_code: 'S2' }], days: [], attendance: [] });
+  mount(); await openStore();
+  await userEvent.click(screen.getByRole('button', { name: 'Editează 2026-09-01' }));
+  await userEvent.selectOptions(screen.getByLabelText('Agent pentru zi'), 'AG1');
+  expect(screen.getByLabelText('Suplimentar')).toBeChecked();
+  await userEvent.click(screen.getByText('Confirmă agenții și magazinul de bază'));
+  await userEvent.selectOptions(screen.getByLabelText('Cod agent pentru confirmare'), 'AG1');
+  api.readCalendar.mockResolvedValue({ month: '2026-09', roster: [{ ...roster[0], revision: 2 }], days: [], attendance: [] });
+  api.confirmCalendarAgent.mockResolvedValue({});
+  await userEvent.click(screen.getByRole('button', { name: 'Confirmă în Magazin Alpha' }));
+  await waitFor(() => expect(screen.queryByLabelText('Agent pentru zi')).not.toBeInTheDocument());
+  await waitFor(() => expect(screen.getByLabelText('Cod agent pentru confirmare')).toHaveValue(''));
+  await userEvent.click(screen.getByRole('button', { name: 'Editează 2026-09-01' }));
+  await userEvent.selectOptions(screen.getByLabelText('Agent pentru zi'), 'AG1');
+  expect(screen.getByLabelText('Suplimentar')).not.toBeChecked();
+});
