@@ -206,6 +206,11 @@ async function assertNoPageOverflow(page: Page) {
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
 }
 
+function historyDataGridCard(page: Page, title: 'RM' | 'Magazine') {
+  return page.getByRole('heading', { name: title, exact: true })
+    .locator('xpath=ancestor::section[1]');
+}
+
 async function assertResponsiveHubLayout(page: Page, viewportWidth: number) {
   const summary = page.getByTestId('hub-summary-panel');
   const donutCards = page.getByTestId('hub-donut-grid').locator(':scope > div');
@@ -322,10 +327,8 @@ for (const viewport of VIEWPORTS) {
       await expect(page.getByRole('tab', { name: 'Istoric', exact: true })).toHaveAttribute('aria-selected', 'true');
       await assertNoPageOverflow(page);
       if (viewport.width >= 1024) {
-        const historyRm = page.getByRole('heading', { name: 'RM', exact: true })
-          .locator('xpath=ancestor::div[contains(@class, "glass")][1]');
-        const historyStores = page.getByRole('heading', { name: 'Magazine', exact: true })
-          .locator('xpath=ancestor::div[contains(@class, "glass")][1]');
+        const historyRm = historyDataGridCard(page, 'RM');
+        const historyStores = historyDataGridCard(page, 'Magazine');
         const historyAgents = page.getByRole('heading', { name: 'Agenti', exact: true })
           .locator('xpath=ancestor::div[contains(@class, "glass")][1]');
         const [historyRmBox, historyStoresBox, historyAgentsBox] = await Promise.all([
@@ -333,6 +336,9 @@ for (const viewport of VIEWPORTS) {
           historyStores.boundingBox(),
           historyAgents.boundingBox(),
         ]);
+        expect(historyRmBox).not.toBeNull();
+        expect(historyStoresBox).not.toBeNull();
+        expect(historyAgentsBox).not.toBeNull();
         expect((historyStoresBox?.y ?? 0)).toBeGreaterThan(historyRmBox?.y ?? 0);
         expect((historyAgentsBox?.y ?? 0)).toBeGreaterThan(historyStoresBox?.y ?? 0);
       }
