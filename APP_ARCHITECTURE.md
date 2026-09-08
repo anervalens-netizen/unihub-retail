@@ -1060,6 +1060,17 @@ zilele confirmate pentru etapele urmatoare. Magazinul de baza este lunar;
 modificarea lui necesita anularea programului existent, fara transfer automat
 al zilelor istorice.
 
+Interfata `Program V2` este incarcata separat din `GrileSubtab`, pastrand V1
+implicit. `NativeCalendar` foloseste catalogul activ Retail si backendul R1;
+fereastra nativa dialog ofera Calendar/Pontaj in zile si o sectiune Grile care
+explica explicit ca sumele V2 nu sunt inca disponibile. Confirmarea catalogului
+si modificarile de zi cer business-write; HR consulta, agentii nu acceseaza.
+Editorul pastreaza reviziile citite la deschidere si cere reincarcare explicita
+la conflict. Inlocuirea trimite anularea ocupantului si noua alocare in acelasi
+batch. O zi deja alocata in alta locatie se corecteaza intai acolo. Codul stabil
+este afisat fara a deduce numele din surse salariale. Nici acest ecran nu scrie
+in Google, nu calculeaza bani/ore si nu inchide luna salariala.
+
 Migrarea 035 separa observatia imuabila de proiectia curenta. Fiecare full run
 sau refresh per magazin rezerva si claim-uieste prin CAS generatia
 `(luna, magazin)` inainte de orice I/O Google. Workerul ruleaza o singura
