@@ -65,7 +65,10 @@ async def save_store_hours(
     return await svc.save_hours(month, site_code, payload, claims.sub)
 
 
-@router.get("/{month}/attendance.zip", response_class=StreamingResponse)
+@router.get(
+    "/{month}/attendance.zip", response_class=StreamingResponse,
+    responses={200: {"content": {"application/zip": {"schema": {"type": "string", "format": "binary"}}}}},
+)
 async def export_attendance(
     month: CalendarMonthKey,
     expected_revision: str = Query(pattern="^[a-f0-9]{64}$"),

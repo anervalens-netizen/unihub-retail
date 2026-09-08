@@ -84,17 +84,19 @@ def _format(sheet, month: str, count: int) -> None:
 
 
 def build_attendance_zip(data: CalendarMonth) -> XlsxArtifact:
-    sites = sorted({r.home_site_code for r in data.roster} | set(data.attendance_by_store) |
+    active = [r for r in data.roster if r.active]
+    participants = {r.agent_code for r in active} | {r.agent_code for r in data.attendance_days}
+    sites = sorted({r.home_site_code for r in active} | set(data.attendance_by_store) |
                    {r.site_code for r in data.store_hours})
     if not sites:
         raise HTTPException(409, "Confirm the monthly roster before exporting attendance")
-    if len(sites) > 200 or len(data.roster) > 2000:
+    if len(sites) > 200 or len(participants) > 2000:
         raise HTTPException(422, "Attendance export exceeds the supported monthly cohort")
     stream = SpooledTemporaryFile(max_size=4 * 1024 * 1024, mode='w+b')
     try:
         with ZipFile(stream, 'w', compression=ZIP_DEFLATED) as archive:
             for index, site in enumerate(sites, 1):
-                codes = sorted({r.agent_code for r in data.roster if r.home_site_code == site} |
+                codes = sorted({r.agent_code for r in active if r.home_site_code == site} |
                                {r.agent_code for r in data.attendance_by_store.get(site, [])})
                 if len(codes) > 100:
                     raise HTTPException(422, "Attendance export exceeds 100 participants per store")

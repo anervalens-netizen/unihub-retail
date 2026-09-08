@@ -1,5 +1,5 @@
 /* GENERATED FILE. Run npm run contracts:generate; do not edit manually. */
-export const RETAIL_OPENAPI_SHA256 = '4321bcd6fc72ca0bd605f3ce5f1d22972921bc220d530da08c3c21773d17ebdf' as const; // pragma: allowlist secret
+export const RETAIL_OPENAPI_SHA256 = 'e80cac603fbbcd0e0314a0ecbf1eeee9b1d1fbf42372e50db8f7cea91331787a' as const; // pragma: allowlist secret
 
 export type RetailDecimal = string & { readonly __retailDecimal: unique symbol };
 
@@ -2880,7 +2880,7 @@ export interface RetailOperationResponses {
   }
 
   'export_attendance_api_grile_calendar__month__attendance_zip_get': {
-    '200': void;
+    '200': Blob;
     '422': RetailHTTPValidationError;
   }
 
@@ -3280,7 +3280,7 @@ export interface RetailOperationSuccesses {
   'grile_agent_targets_operation_api_grile_agent_targets_operations__operation_id__get': RetailGrileAgentTargetOperationEnvelope;
   'grile_agent_targets_sync_api_grile_agent_targets_sync_post': RetailGrileAgentTargetEnqueueResponse;
   'read_calendar_api_grile_calendar__month__get': RetailCalendarMonth;
-  'export_attendance_api_grile_calendar__month__attendance_zip_get': void;
+  'export_attendance_api_grile_calendar__month__attendance_zip_get': Blob;
   'candidates_api_grile_calendar__month__candidates_get': Array<RetailAgentCandidate>;
   'save_days_api_grile_calendar__month__days_patch': Array<RetailCalendarDay>;
   'save_roster_api_grile_calendar__month__roster__agent_code__put': RetailRosterEntry;
@@ -4207,7 +4207,7 @@ export interface RetailOperationMeta {
   'grile_agent_targets_operation_api_grile_agent_targets_operations__operation_id__get': { method: 'get'; path: '/api/grile/agent-targets/operations/{operation_id}'; responseType: 'json' };
   'grile_agent_targets_sync_api_grile_agent_targets_sync_post': { method: 'post'; path: '/api/grile/agent-targets/sync'; responseType: 'json' };
   'read_calendar_api_grile_calendar__month__get': { method: 'get'; path: '/api/grile/calendar/{month}'; responseType: 'json' };
-  'export_attendance_api_grile_calendar__month__attendance_zip_get': { method: 'get'; path: '/api/grile/calendar/{month}/attendance.zip'; responseType: 'json' };
+  'export_attendance_api_grile_calendar__month__attendance_zip_get': { method: 'get'; path: '/api/grile/calendar/{month}/attendance.zip'; responseType: 'blob' };
   'candidates_api_grile_calendar__month__candidates_get': { method: 'get'; path: '/api/grile/calendar/{month}/candidates'; responseType: 'json' };
   'save_days_api_grile_calendar__month__days_patch': { method: 'patch'; path: '/api/grile/calendar/{month}/days'; responseType: 'json' };
   'save_roster_api_grile_calendar__month__roster__agent_code__put': { method: 'put'; path: '/api/grile/calendar/{month}/roster/{agent_code}'; responseType: 'json' };
@@ -6180,7 +6180,7 @@ export const RETAIL_OPERATION_ROUTES = {
   'grile_agent_targets_operation_api_grile_agent_targets_operations__operation_id__get': { method: 'get', path: '/api/grile/agent-targets/operations/{operation_id}', responseType: 'json' },
   'grile_agent_targets_sync_api_grile_agent_targets_sync_post': { method: 'post', path: '/api/grile/agent-targets/sync', responseType: 'json' },
   'read_calendar_api_grile_calendar__month__get': { method: 'get', path: '/api/grile/calendar/{month}', responseType: 'json' },
-  'export_attendance_api_grile_calendar__month__attendance_zip_get': { method: 'get', path: '/api/grile/calendar/{month}/attendance.zip', responseType: 'json' },
+  'export_attendance_api_grile_calendar__month__attendance_zip_get': { method: 'get', path: '/api/grile/calendar/{month}/attendance.zip', responseType: 'blob' },
   'candidates_api_grile_calendar__month__candidates_get': { method: 'get', path: '/api/grile/calendar/{month}/candidates', responseType: 'json' },
   'save_days_api_grile_calendar__month__days_patch': { method: 'patch', path: '/api/grile/calendar/{month}/days', responseType: 'json' },
   'save_roster_api_grile_calendar__month__roster__agent_code__put': { method: 'put', path: '/api/grile/calendar/{month}/roster/{agent_code}', responseType: 'json' },

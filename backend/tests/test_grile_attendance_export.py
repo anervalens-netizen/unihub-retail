@@ -71,3 +71,26 @@ async def test_changed_hours_invalidate_export_revision():
 def test_invalid_store_intervals_rejected(values):
     with pytest.raises(ValidationError):
         StoreHoursInput(expected_revision=0, **values)
+
+
+@pytest.mark.asyncio
+async def test_inactive_roster_does_not_add_export_participants_or_stores():
+    repo = repository()
+    repo.read.return_value['roster'].append(dict(month='2026-09', agent_code='LEFT', home_site_code='OLD', active=False, revision=2))
+    service = GrileCalendarService(repo)
+    data = await service.read('2026-09')
+    artifact = await service.export_attendance('2026-09', data.projection_revision)
+    try:
+        with ZipFile(artifact.stream) as archive:
+            assert json.loads(archive.read('manifest.json'))['stores'] == ['A', 'B']
+    finally:
+        artifact.close()
+    # Historical attendance remains authoritative even if an inactive roster is supplied.
+    repo.read.return_value['roster'][0]['active'] = False
+    data = await service.read('2026-09')
+    artifact = await service.export_attendance('2026-09', data.projection_revision)
+    try:
+        with ZipFile(artifact.stream) as archive:
+            assert json.loads(archive.read('manifest.json'))['stores'] == ['A', 'B']
+    finally:
+        artifact.close()

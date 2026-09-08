@@ -169,3 +169,9 @@ async def test_calendar_composition_uses_existing_pool(monkeypatch):
     monkeypatch.setattr("composition.get_pool", AsyncMock(return_value=pool))
     service = await build_grile_calendar_service()
     assert service.repository.pool is pool
+
+
+def test_attendance_openapi_declares_binary_zip(api):
+    app, _service = api
+    response = app.openapi()['paths']['/api/grile/calendar/{month}/attendance.zip']['get']['responses']['200']
+    assert response['content'] == {'application/zip': {'schema': {'type': 'string', 'format': 'binary'}}}

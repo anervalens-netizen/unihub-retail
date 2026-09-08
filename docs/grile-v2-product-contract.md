@@ -109,9 +109,11 @@ excepțiile în luna următoare. O revizie veche este respinsă cu 409.
 Proiecția citește catalogul confirmat, zilele și orarele în aceeași tranzacție
 repeatable-read. Orele sunt păstrate ca minute întregi, apoi afișate în ore.
 Exportul cere revizia proiecției afișate; o schimbare între citire și export
-cere reîncărcare. ZIP-ul include toate magazinele referite de catalogul lunar,
+cere reîncărcare. ZIP-ul include toate magazinele referite de agenții activi din catalogul lunar,
 pontaj sau orarele configurate, inclusiv locațiile suplimentărilor. Nu include
-magazine încă neconfigurate și fără agenți/program în luna aleasă.
+magazine încă neconfigurate și fără agenți/program în luna aleasă. Agenții
+dezactivați fără pontaj nu creează participanți sau magazine goale; prezența
+efectivă din proiecție rămâne inclusă indiferent de starea catalogului.
 
 Excel-ul păstrează structura V1, cu codul agentului până la confirmarea numelor.
 Totalurile sunt valori ale proiecției comune, fără recalculare salarială în
