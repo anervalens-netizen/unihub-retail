@@ -207,6 +207,7 @@ test.describe('V3 Hub history acceptance', () => {
     await expect(rmCard.getByTestId('data-grid-header-target')).toHaveCount(0);
     await rmCard.getByRole('button', { name: 'Resetează coloanele' }).click();
     await expect(rmCard.getByTestId('data-grid-header-target')).toBeVisible();
+    await rmCard.getByText('Coloane', { exact: true }).click();
 
     await regionalFilter.fill('nord');
     const [download] = await Promise.all([
@@ -215,6 +216,12 @@ test.describe('V3 Hub history acceptance', () => {
     ]);
     expect(download.suggestedFilename()).toBe('hub_2026-04_istoric_rm.xlsx');
     await rmCard.getByRole('button', { name: 'Șterge filtrele (1)' }).click();
+
+    const chartType = page.getByRole('combobox', { name: 'Tip grafic KPI' });
+    await expect(chartType).toHaveValue('area');
+    await chartType.selectOption('line');
+    await expect(chartType).toHaveValue('line');
+    await expectNoPageOverflow(page);
 
     await expect(storeCard.getByTitle('Mobiup')).toBeVisible();
     const detailRequestPromise = page.waitForRequest((request) =>
@@ -226,12 +233,10 @@ test.describe('V3 Hub history acceptance', () => {
     expect(detailParams.get('level')).toBe('store');
     expect(detailParams.get('key')).toBe('S-NORD');
     expect(detailParams.get('month')).toBe('2026-05');
-
-    const chartType = page.getByRole('combobox', { name: 'Tip grafic KPI' });
-    await expect(chartType).toHaveValue('area');
-    await chartType.selectOption('line');
-    await expect(chartType).toHaveValue('line');
-    await expectNoPageOverflow(page);
+    const drawer = page.getByRole('dialog');
+    await expect(drawer).toBeVisible();
+    await drawer.getByRole('button', { name: 'Inchide', exact: true }).click();
+    await expect(drawer).toHaveCount(0);
   });
 
   test('keeps the local KPI chart choice while moving between mobile history sections', async ({ page }) => {
