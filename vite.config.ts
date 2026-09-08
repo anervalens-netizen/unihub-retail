@@ -12,6 +12,9 @@ export default defineConfig(({ mode }) => {
   const backendTarget = process.env.VITE_PROXY_TARGET ?? 'http://localhost:8000';
   const frontendErrorDsn = env.VITE_FRONTEND_GLITCHTIP_DSN || '';
   const manualChunks = (id: string) => {
+    // Keep API modules out of the automatic shared-runtime chunk. Otherwise
+    // Sentry creates runtime -> vendor -> charts -> runtime initialization cycles.
+    if (id.includes('/src/api/')) return 'api';
     if (!id.includes('node_modules')) {
       return undefined;
     }
@@ -66,6 +69,7 @@ export default defineConfig(({ mode }) => {
             '**/*.{html,ico,png,svg,woff2}',
             'assets/index-*.{js,css}',
             'assets/vendor-*.js',
+            'assets/rolldown-runtime-*.js',
             'assets/ui-*.js',
           ],
           // Server-owned navigations must reach FastAPI. Falling back to the
@@ -109,7 +113,10 @@ export default defineConfig(({ mode }) => {
       },
       rollupOptions: {
         output: {
-          manualChunks,
+          codeSplitting: {
+            includeDependenciesRecursively: false,
+            groups: [{ name: manualChunks }],
+          },
         },
       },
     },
