@@ -12,6 +12,7 @@ interface ChartFrameProps {
   contentClassName: string;
   className?: string;
   headerAlign?: 'start' | 'center';
+  compactMobile?: boolean;
   children: ReactNode;
 }
 
@@ -27,15 +28,18 @@ export function ChartFrame({
   contentClassName,
   className = '',
   headerAlign = 'center',
+  compactMobile = false,
   children,
 }: ChartFrameProps) {
   const showingState = loading || empty;
   const content = loading ? loadingLabel : empty ? emptyLabel : children;
+  const rootSpacing = compactMobile ? 'p-3 sm:p-4' : 'p-4';
+  const headerSpacing = compactMobile ? 'mb-2 sm:mb-3' : 'mb-3';
 
   return (
-    <div className={`glass rounded-3xl p-4 ${className}`.trim()}>
+    <div className={`glass rounded-3xl ${rootSpacing} ${className}`.trim()}>
       <div
-        className={`mb-3 flex justify-between gap-2 ${
+        className={`${headerSpacing} flex justify-between gap-2 ${
           headerAlign === 'start' ? 'items-start' : 'items-center'
         }`}
       >

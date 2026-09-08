@@ -1,6 +1,7 @@
 import { Building2, CalendarRange, MapPin, PieChart as PieChartIcon } from 'lucide-react';
 import { Bar, CartesianGrid, ComposedChart, Legend, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 
+import { ChartFrame } from '../../components/common/ChartFrame';
 import { DataGrid } from '../../components/common/DataGrid';
 import { formatAmount, formatInt } from '../../lib/formatters';
 import { BreakdownTable } from './BreakdownTable';
@@ -17,26 +18,32 @@ type DetailProps = Pick<HistoryDashboardProps<string, string, string>,
 
 export function HistoryDetailCharts({ props, visible }: { props: DetailProps; visible: boolean }) {
   return <div className={`grid min-w-0 items-stretch gap-3 min-[1500px]:grid-cols-[minmax(0,2fr)_minmax(320px,1fr)] ${!visible ? 'hidden lg:grid' : ''}`}>
-    <div className="glass flex min-w-0 flex-col rounded-3xl p-3 sm:p-4">
-      <div className="mb-2 flex items-center gap-2 sm:mb-3"><CalendarRange size={16} className="text-indigo-500" /><h3 className="text-sm font-bold">Evolutie zilnica pentru {props.selectionLabel}</h3></div>
-      <div className="-mx-2 aspect-[16/6] min-h-56 max-h-72 w-auto rounded-xl bg-slate-50/80 p-0.5 sm:mx-0 sm:w-full sm:rounded-2xl sm:p-2 dark:bg-slate-800/40 min-[1500px]:aspect-auto min-[1500px]:min-h-[24rem] min-[1500px]:max-h-none min-[1500px]:flex-1">
-        <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}><ComposedChart data={props.historyDailyChartData} margin={{ top: 4, right: 0, bottom: 0, left: 0 }}>
-          <CartesianGrid strokeDasharray="3 3" vertical={false} opacity={0.15} />
-          <XAxis dataKey="day" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
-          <YAxis yAxisId="sales" width={38} tick={{ fontSize: 10 }} tickFormatter={formatCompactAxisValue} axisLine={false} tickLine={false} />
-          <YAxis yAxisId="qty" width={30} orientation="right" tick={{ fontSize: 10 }} tickFormatter={formatCompactAxisValue} axisLine={false} tickLine={false} />
-          <Tooltip formatter={(value: unknown, name: unknown) => String(name) === 'Vanzari' ? formatAmount(Number(value)) : formatInt(Number(value))} />
-          <Legend /><Bar yAxisId="sales" dataKey="sales" name="Vanzari" fill="#4f46e5" radius={[8, 8, 0, 0]} /><Line yAxisId="qty" type="monotone" dataKey="qty" name="Cantitate" stroke="#f59e0b" strokeWidth={2} dot={false} />
-        </ComposedChart></ResponsiveContainer>
-      </div>
-    </div>
-    <div className="glass flex min-w-0 flex-col rounded-3xl p-3 sm:p-4">
-      <div className="mb-2 flex items-center gap-2 sm:mb-3"><PieChartIcon size={16} className="text-indigo-500" /><h3 className="text-sm font-bold">Top categorii si branduri</h3></div>
-      <div className="grid min-w-0 flex-1 gap-2 min-[1500px]:grid-rows-2">
-        <CompactPieSection title="Top categorii" emptyLabel="Nu exista categorii disponibile pentru filtrarea curenta." pieData={props.historyCategoryMixChartData} dataKey="sales_total" nameKey="category" valueFormatter={formatAmount} centerValue={formatCompactDonutValue(sumChartValues(props.historyCategoryMixChartData, 'sales_total'))} compact />
-        <CompactPieSection title="Branduri compatibile" emptyLabel="Nu exista date pentru brandurile urmarite." pieData={props.historyBrandMixChartData} dataKey="sales_total" nameKey="brand" valueFormatter={formatAmount} centerValue={formatCompactDonutValue(sumChartValues(props.historyBrandMixChartData, 'sales_total'))} compact />
-      </div>
-    </div>
+    <ChartFrame
+      title={<>Evolutie zilnica pentru {props.selectionLabel}</>}
+      icon={<CalendarRange size={16} className="text-indigo-500" />}
+      contentClassName="-mx-2 aspect-[16/6] min-h-56 max-h-72 w-auto rounded-xl bg-slate-50/80 p-0.5 sm:mx-0 sm:w-full sm:rounded-2xl sm:p-2 dark:bg-slate-800/40 min-[1500px]:aspect-auto min-[1500px]:min-h-[24rem] min-[1500px]:max-h-none min-[1500px]:flex-1"
+      className="flex min-w-0 flex-col"
+      compactMobile
+    >
+      <ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}><ComposedChart data={props.historyDailyChartData} margin={{ top: 4, right: 0, bottom: 0, left: 0 }}>
+        <CartesianGrid strokeDasharray="3 3" vertical={false} opacity={0.15} />
+        <XAxis dataKey="day" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
+        <YAxis yAxisId="sales" width={38} tick={{ fontSize: 10 }} tickFormatter={formatCompactAxisValue} axisLine={false} tickLine={false} />
+        <YAxis yAxisId="qty" width={30} orientation="right" tick={{ fontSize: 10 }} tickFormatter={formatCompactAxisValue} axisLine={false} tickLine={false} />
+        <Tooltip formatter={(value: unknown, name: unknown) => String(name) === 'Vanzari' ? formatAmount(Number(value)) : formatInt(Number(value))} />
+        <Legend /><Bar yAxisId="sales" dataKey="sales" name="Vanzari" fill="#4f46e5" radius={[8, 8, 0, 0]} /><Line yAxisId="qty" type="monotone" dataKey="qty" name="Cantitate" stroke="#f59e0b" strokeWidth={2} dot={false} />
+      </ComposedChart></ResponsiveContainer>
+    </ChartFrame>
+    <ChartFrame
+      title="Top categorii si branduri"
+      icon={<PieChartIcon size={16} className="text-indigo-500" />}
+      contentClassName="grid min-w-0 flex-1 gap-2 min-[1500px]:grid-rows-2"
+      className="flex min-w-0 flex-col"
+      compactMobile
+    >
+      <CompactPieSection title="Top categorii" emptyLabel="Nu exista categorii disponibile pentru filtrarea curenta." pieData={props.historyCategoryMixChartData} dataKey="sales_total" nameKey="category" valueFormatter={formatAmount} centerValue={formatCompactDonutValue(sumChartValues(props.historyCategoryMixChartData, 'sales_total'))} compact />
+      <CompactPieSection title="Branduri compatibile" emptyLabel="Nu exista date pentru brandurile urmarite." pieData={props.historyBrandMixChartData} dataKey="sales_total" nameKey="brand" valueFormatter={formatAmount} centerValue={formatCompactDonutValue(sumChartValues(props.historyBrandMixChartData, 'sales_total'))} compact />
+    </ChartFrame>
   </div>;
 }
 
