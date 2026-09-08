@@ -21,7 +21,8 @@ it('saves store hours through the API and downloads the chosen revision', async 
     .mockResolvedValueOnce(new Response('zip', { headers: { 'Content-Type': 'application/zip' } }));
   vi.stubGlobal('fetch', fetch);
   const create = vi.fn().mockReturnValue('blob:synthetic');
-  vi.stubGlobal('URL', class extends URL { static createObjectURL = create; static revokeObjectURL = vi.fn(); });
+  vi.stubGlobal('URL', class extends URL { static override createObjectURL = create; static override revokeObjectURL = vi.fn(); });
+  const timeout = vi.spyOn(AbortSignal, 'timeout');
   const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
   try {
     expect(await saveStoreHours('2026-09', 'S1', { opens: '09:00', closes: '22:00', break_minutes: 60, expected_revision: 1 })).toEqual(hours);
@@ -29,5 +30,6 @@ it('saves store hours through the API and downloads the chosen revision', async 
     expect(fetch.mock.calls[0]?.[0]).toBe('/api/grile/calendar/2026-09/store-hours/S1');
     expect(fetch.mock.calls[1]?.[0]).toContain('attendance.zip?expected_revision=' + 'a'.repeat(64));
     expect(create).toHaveBeenCalledOnce();
-  } finally { click.mockRestore(); }
+    expect(timeout).toHaveBeenLastCalledWith(120_000);
+  } finally { click.mockRestore(); timeout.mockRestore(); }
 });

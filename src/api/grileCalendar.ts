@@ -20,6 +20,6 @@ export async function saveStoreHours(month: string, site: string, body: import('
 }
 export async function downloadAttendance(month: string, revision: string) {
   const { downloadBlob } = await import('../lib/download');
-  const response = await client.get(`/api/grile/calendar/${encodeURIComponent(month)}/attendance.zip`, { params: { expected_revision: revision }, responseType: 'blob' });
+  const response = await client.get<Blob>(`/api/grile/calendar/${encodeURIComponent(month)}/attendance.zip`, { params: { expected_revision: revision }, responseType: 'blob', timeoutMs: 120_000 });
   downloadBlob(response.data, `Pontaje-provizorii-${month}.zip`);
 }
