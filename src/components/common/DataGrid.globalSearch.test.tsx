@@ -4,7 +4,7 @@ import { fireEvent, render, screen, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('../ExportTableButton', () => ({
-  ExportTableButton: ({ rows }: { rows: unknown[] }) => (
+  ExportTableButton: ({ rows }: { rows: readonly unknown[] }) => (
     <output data-testid="global-search-export" data-rows={rows.length} />
   ),
 }));
@@ -26,6 +26,10 @@ const rows: Row[] = [
   { id: 'c', name: 'Ștefan', region: 'Sud', sales: 150 },
   { id: 'd', name: 'Mihai', region: 'Nord', sales: null },
 ];
+
+function displayedSales(row: Row): string {
+  return row.sales === null ? '—' : `${row.sales.toFixed(2)} lei`;
+}
 
 const columns: DataGridColumn<Row, Key>[] = [
   {
@@ -55,7 +59,8 @@ const columns: DataGridColumn<Row, Key>[] = [
     key: 'sales',
     label: 'Vânzări',
     value: (row) => row.sales,
-    render: (row) => row.sales ?? '—',
+    searchValue: displayedSales,
+    render: displayedSales,
     filter: { kind: 'number', step: 1 },
   },
 ];
@@ -115,5 +120,28 @@ describe('DataGrid global search', () => {
     expect(screen.getByRole('spinbutton', { name: 'Minim Vânzări' })).toHaveValue(null);
     expect(renderedNames()).toEqual(['b:Ana', 'c:Ștefan', 'a:Ana', 'd:Mihai']);
     expect(screen.getByTestId('global-search-export')).toHaveAttribute('data-rows', '4');
+  });
+
+  it('matches both canonical raw values and explicit displayed projections', () => {
+    render(
+      <DataGrid
+        title="Regional"
+        rows={rows}
+        columns={columns}
+        rowKey={(row) => row.id}
+        exportFilename="regional"
+        exportSheetName="Regional"
+      />,
+    );
+
+    const search = screen.getByRole('searchbox', {
+      name: 'Caută în coloanele afișate din Regional',
+    });
+
+    fireEvent.change(search, { target: { value: '200.00 lei' } });
+    expect(renderedNames()).toEqual(['b:Ana']);
+
+    fireEvent.change(search, { target: { value: '200' } });
+    expect(renderedNames()).toEqual(['b:Ana']);
   });
 });
