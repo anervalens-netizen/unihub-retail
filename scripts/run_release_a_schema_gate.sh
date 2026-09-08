@@ -411,7 +411,10 @@ async def database_evidence(database_url: str) -> dict[str, object]:
         "restored_marker_count": int(marker),
         "migration_count": len(applied),
         "last_migration": str(applied[-1]["filename"]),
-        "migration_069_checksum": str(applied[-1]["checksum"]),
+        "migration_069_checksum": next(
+            str(row["checksum"]) for row in applied
+            if row["filename"] == "069_ai_cohort_and_transactional_outbox.sql"
+        ),
         "ledger_sha256": hashlib.sha256(ledger_serialized).hexdigest(),
         "outbox_event_count": int(outbox_count),
         "schema_catalog_sha256": hashlib.sha256(serialized).hexdigest(),
@@ -429,6 +432,24 @@ restored_database = asyncio.run(database_evidence(os.environ["RESTORED_DATABASE_
 expected_069 = hashlib.sha256(
     (Path(os.environ["ROOT_DIR"]) / "backend/db/migrations/069_ai_cohort_and_transactional_outbox.sql").read_bytes()
 ).hexdigest()
+manifest_path = Path(os.environ["ROOT_DIR"]) / "backend/db/migrations/manifest.json"
+manifest = json.loads(manifest_path.read_text())
+expected_ledger = [
+    {"filename": filename, "checksum": checksum}
+    for filename, checksum in sorted(manifest["migrations"].items())
+]
+expected_ledger_sha256 = hashlib.sha256(
+    json.dumps(expected_ledger, sort_keys=True, separators=(",", ":")).encode()
+).hexdigest()
+
+def verify_final_ledger(state: dict[str, object]) -> None:
+    if (
+        state["migration_count"] != len(expected_ledger)
+        or state["last_migration"] != expected_ledger[-1]["filename"]
+        or state["ledger_sha256"] != expected_ledger_sha256
+    ):
+        raise SystemExit("Release-A final database ledger differs from candidate manifest")
+
 database_names = {
     baseline_068["database_name"],
     empty_initial["database_name"],
@@ -456,15 +477,13 @@ if restored_pre_upgrade != {
 }:
     raise SystemExit("Release-A restored fixture does not equal the dumped 068 ledger")
 for state in (empty_final_state, restored_final_state):
-    if state["migration_count"] != 69 or state["last_migration"] != "069_ai_cohort_and_transactional_outbox.sql":
-        raise SystemExit("Release-A final database ledger did not reach 069")
+    verify_final_ledger(state)
 if empty_final_state["ledger_sha256"] != restored_final_state["ledger_sha256"]:
     raise SystemExit("Release-A empty and restored final ledgers differ")
 for database, marker_count in ((empty_database, 0), (restored_database, 1)):
     if database["restored_marker_count"] != marker_count:
         raise SystemExit("Release-A database restore marker mismatch")
-    if database["migration_count"] != 69 or database["last_migration"] != "069_ai_cohort_and_transactional_outbox.sql":
-        raise SystemExit("Release-A database evidence did not reach 069")
+    verify_final_ledger(database)
     if database["migration_069_checksum"] != expected_069 or database["outbox_event_count"] != 0:
         raise SystemExit("Release-A database migration hash or outbox inertness failed")
 if empty_database["ledger_sha256"] != empty_final_state["ledger_sha256"]:
@@ -524,6 +543,7 @@ evidence = {
         "restored_database_pre_upgrade_through_068": True,
         "restored_database_upgrade_068_to_069": True,
         "final_schema_ledgers_equal": True,
+        "final_schema_ledgers_match_candidate_manifest": True,
         "final_schema_catalogs_equal": True,
         "release_a_runtime_ready_on_empty": True,
         "release_a_runtime_ready_on_restored": True,
