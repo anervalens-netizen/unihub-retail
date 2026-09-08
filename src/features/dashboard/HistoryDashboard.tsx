@@ -133,6 +133,8 @@ export interface HistoryDashboardProps<RegionalKey extends string, StoreKey exte
   storeColumns: BreakdownColumn<StoreStat, StoreKey>[];
   storeSort: SortState<StoreKey>;
   onSortStores: (key: StoreKey) => void;
+  storeGridSorts: readonly DataGridSort<StoreKey>[];
+  onStoreGridSortsChange: (sorts: readonly DataGridSort<StoreKey>[]) => void;
   agents: AgentStat[];
   sortedAgents: AgentStat[];
   agentColumns: BreakdownColumn<AgentStat, AgentKey>[];
