@@ -4,12 +4,12 @@ import { cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 
-const api = vi.hoisted(() => ({ readEarnings: vi.fn() }));
+const api = vi.hoisted(() => ({ readEarnings: vi.fn(), downloadEarnings: vi.fn() }));
 vi.mock('../../api/grileCalendar', () => api);
 import { Earnings } from './Earnings';
 
 function response() {
-  return { calendar_revision: 'revision-1', cutoff: '2026-09-03', selling_days: { A: 3 }, unassigned_sales: [], agents: [{
+  return { projection_revision: 'earnings-revision', calendar_revision: 'revision-1', cutoff: '2026-09-03', selling_days: { A: 3 }, unassigned_sales: [], agents: [{
     agent_code: 'AG1', home_site_code: 'A', home_work_days: 2, home_target: '2000', home_sales: '1600', home_commission: '48', away_commission: '24', supplemental_pay: '150', known_earnings: '222', issues: [], days: [{ work_date: '2026-09-03', site_code: 'B', sales: '790', daily_target: '1000', commission: '24', supplemental: true, supplemental_pay: '150', away: true, issue: null }],
   }] };
 }
@@ -62,4 +62,13 @@ it('shows confirmed names alongside stable codes and explains identity conflicts
   expect(await screen.findByRole('heading', { name: 'Synthetic Name · AG1' })).toBeInTheDocument();
   expect(screen.getByRole('heading', { name: 'AG2' })).toBeInTheDocument();
   expect(screen.getByText(/identități salariale contradictorii/)).toBeInTheDocument();
+});
+
+it('downloads the earnings revision and offers reload on a stale export', async () => {
+  api.downloadEarnings.mockRejectedValueOnce(new Error('conflict'));
+  mount();
+  await userEvent.click(await screen.findByRole('button', { name: 'Descarcă câștiguri și pontaje ZIP' }));
+  expect(api.downloadEarnings).toHaveBeenCalledWith('2026-09', 'earnings-revision');
+  await userEvent.click(await screen.findByRole('button', { name: 'Reîncarcă câștigurile' }));
+  expect(api.readEarnings).toHaveBeenCalledTimes(2);
 });

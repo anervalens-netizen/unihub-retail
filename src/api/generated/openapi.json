@@ -20709,6 +20709,65 @@
         ]
       }
     },
+    "/api/grile/calendar/{month}/earnings.zip": {
+      "get": {
+        "operationId": "export_earnings_api_grile_calendar__month__earnings_zip_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "month",
+            "required": true,
+            "schema": {
+              "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
+              "title": "Month",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "expected_revision",
+            "required": true,
+            "schema": {
+              "pattern": "^[a-f0-9]{64}$",
+              "title": "Expected Revision",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/zip": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Export Earnings",
+        "tags": [
+          "grile-calendar"
+        ]
+      }
+    },
     "/api/grile/calendar/{month}/roster/{agent_code}": {
       "put": {
         "operationId": "save_roster_api_grile_calendar__month__roster__agent_code__put",

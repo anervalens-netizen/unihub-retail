@@ -162,6 +162,7 @@ def test_calendar_reads_are_management_only(api, role):
     assert TestClient(app).get("/api/grile/calendar/2026-09").status_code == 403
     assert TestClient(app).get("/api/grile/calendar/2026-09/earnings").status_code == 403
     assert TestClient(app).get("/api/grile/calendar/2026-09/attendance.zip", params={"expected_revision": "a" * 64}).status_code == 403
+    assert TestClient(app).get("/api/grile/calendar/2026-09/earnings.zip", params={"expected_revision": "a" * 64}).status_code == 403
 
 
 @pytest.mark.asyncio
@@ -194,3 +195,20 @@ def test_earnings_requires_authentication(api):
     app, service = api
     assert TestClient(app).get("/api/grile/calendar/2026-09/earnings").status_code == 401
     service.earnings.assert_not_awaited()
+
+
+@pytest.mark.parametrize('role', ['unihub-manager', 'unihub-hr', 'unihub-admin'])
+def test_earnings_zip_streams_revision_and_closes_artifact(api, role):
+    from io import BytesIO
+    from services.exports.artifact import XlsxArtifact
+    app, service = api
+    set_role(app, role)
+    artifact = XlsxArtifact(BytesIO(b'synthetic-zip'), 'synthetic.zip', 13)
+    service.export_earnings.return_value = artifact
+    response = TestClient(app).get('/api/grile/calendar/2026-09/earnings.zip', params={'expected_revision': 'b' * 64})
+    assert response.status_code == 200 and response.content == b'synthetic-zip'
+    assert response.headers['content-type'] == 'application/zip'
+    assert artifact.stream.closed
+    service.export_earnings.assert_awaited_once_with('2026-09', 'b' * 64)
+    schema = app.openapi()['paths']['/api/grile/calendar/{month}/earnings.zip']['get']['responses']['200']
+    assert schema['content'] == {'application/zip': {'schema': {'type': 'string', 'format': 'binary'}}}

@@ -16453,6 +16453,7 @@ export const RETAIL_RESPONSE_SCHEMAS = {
   "download_export_api_exports_download_post": {},
   "download_export_operation_api_exports_operations__operation_id__download_get": {},
   "export_attendance_api_grile_calendar__month__attendance_zip_get": null,
+  "export_earnings_api_grile_calendar__month__earnings_zip_get": null,
   "export_scenario_api_target_calculator_scenarios__scenario_id__export_get": {},
   "finalize_scenario_api_target_calculator_scenarios__scenario_id__finalize_post": {
     "$ref": "#/components/schemas/TargetScenarioResponse"

@@ -443,8 +443,8 @@ def test_zero_drift_across_all_production_functions(l1):
         )
 
 
-def test_total_production_function_count_is_3001(l1):
-    """Production tree must contain exactly 3001 measured functions.
+def test_total_production_function_count_is_3006(l1):
+    """Production tree must contain exactly 3006 measured functions.
 
     The C6 Target Calculator repository decomposition intentionally
     adds 8 focused helper functions (+2 in target_calculator_sources.py,
@@ -466,13 +466,14 @@ def test_total_production_function_count_is_3001(l1):
     R3 adds 14 functions for monthly store hours, attendance projection and ZIP
     export; the measured inventory moves from 2975 to 2989.
     R4 adds 12 functions for read-only earnings and shared calendar projection;
-    the measured inventory moves from 2989 to 3001.
+    the measured inventory moves from 2989 to 3001. The provisional combined
+    earnings/attendance export adds 5 functions, moving the inventory to 3006.
     The exact snapshot
     rejects unrelated production-function drift.
     """
     metrics = l1.collect_metrics(PR_B1_WORKTREE)
-    assert len(metrics) == 3001, (
-        f"production count drift: expected 3001, got {len(metrics)}"
+    assert len(metrics) == 3006, (
+        f"production count drift: expected 3006, got {len(metrics)}"
     )
 
 

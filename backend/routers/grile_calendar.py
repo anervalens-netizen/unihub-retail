@@ -90,3 +90,20 @@ async def read_earnings(
     svc: GrileCalendarService = Depends(build_grile_calendar_service),
 ) -> EarningsMonth:
     return await svc.earnings(month)
+
+
+@router.get(
+    "/{month}/earnings.zip", response_class=StreamingResponse,
+    responses={200: {"content": {"application/zip": {"schema": {"type": "string", "format": "binary"}}}}},
+)
+async def export_earnings(
+    month: CalendarMonthKey,
+    expected_revision: str = Query(pattern="^[a-f0-9]{64}$"),
+    _claims: AuthClaims = Depends(require_management_access),
+    _limit: None = Depends(rate_limit(REPORT_EXPORT_LIMIT)),
+    svc: GrileCalendarService = Depends(build_grile_calendar_service),
+):
+    artifact = await svc.export_earnings(month, expected_revision)
+    return StreamingResponse(artifact.iter_chunks(), media_type="application/zip",
+                             headers={"Content-Disposition": f'attachment; filename="{artifact.filename}"'},
+                             background=BackgroundTask(artifact.close))

@@ -15,10 +15,11 @@ it('uses the existing transport, encoded identity and decoded responses', async 
   expect(fetch.mock.calls[4]?.[1]).toMatchObject({ method: 'PUT' });
 });
 it('saves store hours through the API and downloads the chosen revision', async () => {
-  const { saveStoreHours, downloadAttendance } = await import('./grileCalendar');
+  const { saveStoreHours, downloadAttendance, downloadEarnings } = await import('./grileCalendar');
   const hours = { site_code: 'S1', opens: '09:00', closes: '22:00', break_minutes: 60, revision: 2 };
   const fetch = vi.fn().mockResolvedValueOnce(new Response(JSON.stringify(hours)))
-    .mockResolvedValueOnce(new Response('zip', { headers: { 'Content-Type': 'application/zip' } }));
+    .mockResolvedValueOnce(new Response('zip', { headers: { 'Content-Type': 'application/zip' } }))
+    .mockResolvedValueOnce(new Response('earnings-zip', { headers: { 'Content-Type': 'application/zip' } }));
   vi.stubGlobal('fetch', fetch);
   const create = vi.fn().mockReturnValue('blob:synthetic');
   vi.stubGlobal('URL', class extends URL { static override createObjectURL = create; static override revokeObjectURL = vi.fn(); });
@@ -29,7 +30,9 @@ it('saves store hours through the API and downloads the chosen revision', async 
     await downloadAttendance('2026-09', 'a'.repeat(64));
     expect(fetch.mock.calls[0]?.[0]).toBe('/api/grile/calendar/2026-09/store-hours/S1');
     expect(fetch.mock.calls[1]?.[0]).toContain('attendance.zip?expected_revision=' + 'a'.repeat(64));
-    expect(create).toHaveBeenCalledOnce();
+    await downloadEarnings('2026-09', 'b'.repeat(64));
+    expect(fetch.mock.calls[2]?.[0]).toContain('earnings.zip?expected_revision=' + 'b'.repeat(64));
+    expect(create).toHaveBeenCalledTimes(2);
     expect(timeout).toHaveBeenLastCalledWith(120_000);
   } finally { click.mockRestore(); timeout.mockRestore(); }
 });
