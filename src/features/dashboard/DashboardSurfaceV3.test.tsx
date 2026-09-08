@@ -47,8 +47,9 @@ vi.mock('./PerformanceDetailDrawer', () => ({
 }));
 
 import { DashboardSurface } from './DashboardSurface';
+import type { DashboardViewProps } from './dashboardTypes';
 
-function model(activeSection: 'current' | 'history') {
+function model(activeSection: 'current' | 'history'): DashboardViewProps {
   return {
     activeSection,
     summary: {},
@@ -57,12 +58,12 @@ function model(activeSection: 'current' | 'history') {
     historyRegionalSort: { key: 'total_vanzari', direction: 'desc' },
     performanceSelection: null,
     onClosePerformance: vi.fn(),
-  };
+  } as unknown as DashboardViewProps;
 }
 
 describe('DashboardSurface V3 state', () => {
   it('keeps the full RM DataGrid sort chain when History unmounts and remounts', () => {
-    const { rerender } = render(<DashboardSurface {...model('history') as never} />);
+    const { rerender } = render(<DashboardSurface {...model('history')} />);
 
     expect(screen.getByTestId('history-grid-sort')).toHaveTextContent(
       'total_vanzari:desc',
@@ -73,10 +74,10 @@ describe('DashboardSurface V3 state', () => {
       'regional:asc|target:desc',
     );
 
-    rerender(<DashboardSurface {...model('current') as never} />);
+    rerender(<DashboardSurface {...model('current')} />);
     expect(screen.getByTestId('current-dashboard')).toBeInTheDocument();
 
-    rerender(<DashboardSurface {...model('history') as never} />);
+    rerender(<DashboardSurface {...model('history')} />);
     expect(screen.getByTestId('history-grid-sort')).toHaveTextContent(
       'regional:asc|target:desc',
     );
