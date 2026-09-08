@@ -107,7 +107,7 @@ describe('historyStoreDataGridColumns', () => {
       'integer',
       'integer',
     ]);
-    expect(exportColumns.map((column) => column.value(row))).toEqual([
+    expect(exportColumns.map((column) => column.value(row, 0))).toEqual([
       'Mobiup',
       'Promenada',
       1000,
