@@ -1,68 +1,10 @@
 # UniHub Retail
 
-## Operating rule — smallest safe action
+Work autonomously with proportional validation. Read only the relevant business/runbook sections; no routine audits or new trackers.
 
-Default behavior is **product delivery with proportional verification**, not
-ceremonial certification.
+`main` requires PRs, resolved review threads and native checks. Use `pr-fast` normally; escalate to PR-DEEP only for required policy or a concrete unresolved risk. FULL is for a requested release/checkpoint, never an automatic post-merge ritual. Docs-only changes need no heavy code CI. See `docs/engineering/verification-efficiency-policy.md` when deciding an expensive check.
 
-Canonical verification/cost policy:
-`docs/engineering/verification-efficiency-policy.md`.
-
-Before starting any expensive check (`PR-DEEP`, `FULL`, large-suite replay,
-extra independent review), answer:
-
-1. What concrete risk does it verify?
-2. What materially new evidence will it add?
-
-If there is no meaningful new evidence, do not run it. Owner waiting time,
-self-hosted runner time and AI/model usage are engineering costs.
-
-For bounded UI fixes, local corrections, config/docs and small changes, prefer
-completion in minutes without sacrificing correctness. Do not create a new
-framework, tracker, plan, temporary environment or audit unless the task truly
-requires one.
-
-## GitHub / verification routing
-
-- `main` is server-side protected. Current ruleset requires PRs, merge commits,
-  review-thread resolution and required status checks; there are no bypass
-  actors.
-- `pr-fast` is the normal code/runtime PR lane; target **under 10 minutes** and
-  15 minutes remains a guardrail, not a target.
-- Docs/Markdown-only work must not launch heavy code CI under the current
-  paths-ignore model.
-- `PR-DEEP` is an escalation lane. Run it only when the trusted native policy
-  requires it for exact current HEAD/base or a concrete unresolved risk makes
-  it necessary. Do not dispatch it merely because a change is runtime code.
-- `FULL` is not a per-PR/per-merge ritual. Run it for formal release/deploy
-  artifact creation, a deliberate checkpoint, a demonstrated unresolved
-  cross-lane/control-plane question, or explicit owner request.
-- Never default to `PR-DEEP -> merge -> FULL`. If PR-DEEP certified the relevant
-  candidate and merge introduced the identical certified tree, no extra FULL is
-  needed unless a release/checkpoint has a distinct purpose.
-- Server status authority may be SHA-bound; technical test evidence is
-  content/scope-bound. A new SHA alone does not invalidate every test result.
-- Do not blindly rerun failures/timeouts. Diagnose job -> step -> log/artifact ->
-  root cause first.
-- Never lower thresholds, broaden snapshots or weaken gates only to make CI
-  green.
-- Do not repeat lint/typecheck/build/tests on unchanged relevant content merely
-  for ceremony.
-- GitHub-hosted execution follows the global USD 1 per-task ceiling.
-
-Retail is the source of truth for retail sales, targets, campaigns, salaries,
-visits reporting and the active Grile UI.
-
-Read `APP_ARCHITECTURE.md` for module boundaries and `README.md` for setup. For
-promo/incentive/contest work read
-`docs/RUNBOOK-campanii-promo-incentive-concursuri.md`; for salary-grid work read
-the focused salary docs. For monthly HR salary import follow
-`docs/RUNBOOK-import-salarii-HR.md`; always dry-run both companies, validate the
-manifest and reconcile HR before apply.
-
-Historical audit trackers #159 and #226 (K1-K10 #227-#236) are completed
-evidence. Do not resume them or invent a next audit item unless the owner
-explicitly asks to revisit that history.
+Retail owns retail sales, targets, salaries and active Grile UI. Consult `APP_ARCHITECTURE.md` for affected module boundaries and focused salary/runbook docs for financial changes. Historical audit trackers are completed, not a work queue.
 
 ## Runtime
 
@@ -241,9 +183,3 @@ certified main -> exact-main FULL release run -> immutable artifact/provenance
   deployment.
 - Verify health/metrics and the changed user path after an actual deployment.
 - See `docs/adr/006-verified-runtime-delivery.md` and `ops/README.md`.
-
-## Planning
-
-Use `.agent/PLANS.md`. Ordinary bounded work does not need an execution plan.
-Substantial multi-session/high-risk/coordination-heavy work may use exactly one
-living plan. Completed audit trackers are never default active plans.
