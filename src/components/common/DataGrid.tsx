@@ -305,6 +305,115 @@ function DataGridBody<Row, Key extends string>({
   );
 }
 
+function DataGridGlobalSearch({
+  title,
+  tableId,
+  value,
+  onChange,
+}: {
+  title: string;
+  tableId: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <div className="relative min-w-52 flex-1 sm:max-w-64 sm:flex-none">
+      <Search
+        size={12}
+        aria-hidden="true"
+        className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-slate-400"
+      />
+      <input
+        type="search"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        aria-label={`Caută în coloanele afișate din ${title}`}
+        aria-controls={tableId}
+        placeholder="Caută în coloanele afișate"
+        className="w-full rounded-lg border border-slate-200 bg-white py-1 pl-7 pr-2 text-[11px] font-semibold text-slate-700 outline-none placeholder:font-medium placeholder:text-slate-400 focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+      />
+    </div>
+  );
+}
+
+function DataGridToolbar<Row, Key extends string>({
+  title,
+  rowsLength,
+  tableId,
+  search,
+  activeFilterCount,
+  onSearchChange,
+  onClearFilters,
+  columns,
+  allKeys,
+  order,
+  hidden,
+  onMove,
+  onToggle,
+  onResetColumns,
+  exportFilename,
+  exportSheetName,
+  exportColumns,
+  exportRows,
+}: {
+  title: string;
+  rowsLength: number;
+  tableId: string;
+  search: string;
+  activeFilterCount: number;
+  onSearchChange: (value: string) => void;
+  onClearFilters: () => void;
+  columns: ReadonlyMap<Key, DataGridColumn<Row, Key>>;
+  allKeys: readonly Key[];
+  order: readonly Key[];
+  hidden: readonly Key[];
+  onMove: (key: Key, offset: -1 | 1) => void;
+  onToggle: (key: Key) => void;
+  onResetColumns: () => void;
+  exportFilename: string;
+  exportSheetName: string;
+  exportColumns: ExportColumn<Row>[];
+  exportRows: readonly Row[];
+}) {
+  return (
+    <div className="flex min-w-0 flex-1 flex-wrap items-center justify-end gap-1.5">
+      {rowsLength > 0 && (
+        <DataGridGlobalSearch
+          title={title}
+          tableId={tableId}
+          value={search}
+          onChange={onSearchChange}
+        />
+      )}
+      {activeFilterCount > 0 && (
+        <button
+          type="button"
+          onClick={onClearFilters}
+          className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1 text-[11px] font-bold text-slate-600 hover:border-indigo-200 hover:text-indigo-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+        >
+          <RotateCcw size={12} />
+          Șterge filtrele ({activeFilterCount})
+        </button>
+      )}
+      <DataGridColumnMenu
+        columns={columns}
+        allKeys={allKeys}
+        order={order}
+        hidden={hidden}
+        onMove={onMove}
+        onToggle={onToggle}
+        onReset={onResetColumns}
+      />
+      <ExportTableButton
+        filename={exportFilename}
+        sheetName={exportSheetName}
+        columns={exportColumns}
+        rows={exportRows}
+      />
+    </div>
+  );
+}
+
 export function DataGrid<Row, Key extends string>(props: DataGridProps<Row, Key>) {
   const state = useDataGridState(props);
   const titleId = useId();
@@ -357,56 +466,31 @@ export function DataGrid<Row, Key extends string>(props: DataGridProps<Row, Key>
             {props.subtitle}{props.subtitle ? ' · ' : ''}{resultLabel}
           </div>
         </div>
-        <div className="flex min-w-0 flex-1 flex-wrap items-center justify-end gap-1.5">
-          {props.rows.length > 0 && (
-            <div className="relative min-w-52 flex-1 sm:max-w-64 sm:flex-none">
-              <Search
-                size={12}
-                aria-hidden="true"
-                className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-slate-400"
-              />
-              <input
-                type="search"
-                value={state.globalSearch}
-                onChange={(event) => state.setGlobalSearch(event.target.value)}
-                aria-label={`Caută în coloanele afișate din ${props.title}`}
-                aria-controls={tableId}
-                placeholder="Caută în coloanele afișate"
-                className="w-full rounded-lg border border-slate-200 bg-white py-1 pl-7 pr-2 text-[11px] font-semibold text-slate-700 outline-none placeholder:font-medium placeholder:text-slate-400 focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-              />
-            </div>
-          )}
-          {state.activeFilterCount > 0 && (
-            <button
-              type="button"
-              onClick={clearFilters}
-              className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1 text-[11px] font-bold text-slate-600 hover:border-indigo-200 hover:text-indigo-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
-            >
-              <RotateCcw size={12} />
-              Șterge filtrele ({state.activeFilterCount})
-            </button>
-          )}
-          <DataGridColumnMenu
-            columns={state.columnMap}
-            allKeys={state.allKeys}
-            order={state.normalizedOrder}
-            hidden={state.hidden}
-            onMove={(key, offset) => state.setOrder((current) =>
-              moveColumnKey(state.allKeys, current, key, offset))}
-            onToggle={(key) => state.setHidden((current) =>
-              toggleColumnVisibility(state.allKeys, current, key))}
-            onReset={() => {
-              state.setOrder([...state.allKeys]);
-              state.setHidden([]);
-            }}
-          />
-          <ExportTableButton
-            filename={props.exportFilename}
-            sheetName={props.exportSheetName}
-            columns={props.exportColumns ?? state.exportColumns}
-            rows={state.viewRows}
-          />
-        </div>
+        <DataGridToolbar
+          title={props.title}
+          rowsLength={props.rows.length}
+          tableId={tableId}
+          search={state.globalSearch}
+          activeFilterCount={state.activeFilterCount}
+          onSearchChange={state.setGlobalSearch}
+          onClearFilters={clearFilters}
+          columns={state.columnMap}
+          allKeys={state.allKeys}
+          order={state.normalizedOrder}
+          hidden={state.hidden}
+          onMove={(key, offset) => state.setOrder((current) =>
+            moveColumnKey(state.allKeys, current, key, offset))}
+          onToggle={(key) => state.setHidden((current) =>
+            toggleColumnVisibility(state.allKeys, current, key))}
+          onResetColumns={() => {
+            state.setOrder([...state.allKeys]);
+            state.setHidden([]);
+          }}
+          exportFilename={props.exportFilename}
+          exportSheetName={props.exportSheetName}
+          exportColumns={props.exportColumns ?? state.exportColumns}
+          exportRows={state.viewRows}
+        />
       </div>
 
       <p
