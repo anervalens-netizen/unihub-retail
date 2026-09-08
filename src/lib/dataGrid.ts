@@ -34,12 +34,38 @@ function normalizeFilterText(value: unknown): string {
     .trim();
 }
 
+function dataGridSearchTokens(query: string): string[] {
+  const normalized = normalizeFilterText(query);
+  return normalized === '' ? [] : normalized.split(/\s+/);
+}
+
 function numericFilterValue(value: unknown): number | null {
   if (value === null || value === undefined) return null;
   const normalized = normalizeSortableValue(value);
   return typeof normalized === 'number' && Number.isFinite(normalized)
     ? normalized
     : null;
+}
+
+export function isDataGridSearchActive(query: string): boolean {
+  return dataGridSearchTokens(query).length > 0;
+}
+
+export function searchDataGridRows<Row, Key extends string>(
+  rows: readonly Row[],
+  query: string,
+  keys: readonly Key[],
+  getValue: ValueGetter<Row, Key>,
+): Row[] {
+  const tokens = dataGridSearchTokens(query);
+  if (tokens.length === 0) return [...rows];
+  if (keys.length === 0) return [];
+  return rows.filter((row) => {
+    const searchableText = keys
+      .map((key) => normalizeFilterText(getValue(row, key)))
+      .join(' ');
+    return tokens.every((token) => searchableText.includes(token));
+  });
 }
 
 export function isDataGridFilterActive(filter: DataGridFilterValue | undefined): boolean {
