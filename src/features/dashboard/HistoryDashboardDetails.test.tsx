@@ -17,26 +17,42 @@ vi.mock('recharts', () => ({
 
 vi.mock('../../components/common/DataGrid', () => ({
   DataGrid: ({
+    title,
     rows,
     columns,
     initialSort,
     onSortChange,
+    exportColumns,
   }: {
+    title: string;
     rows: unknown[];
     columns: Array<{ filter?: { kind: string } }>;
     initialSort: Array<{ key: string }>;
     onSortChange?: (sorts: Array<{ key: string; direction: 'asc' | 'desc' }>) => void;
+    exportColumns?: Array<{ header: string }>;
   }) => (
-    <div data-testid="regional-grid">
-      {rows.length}|{columns[0]?.filter?.kind}|{initialSort.map((sort) => sort.key).join(',')}
+    <div data-testid={`grid-${title}`}>
+      <span data-testid={`grid-${title}-state`}>
+        {rows.length}|{columns[0]?.filter?.kind}|{initialSort.map((sort) => sort.key).join(',')}
+      </span>
+      <span data-testid={`grid-${title}-export`}>
+        {exportColumns?.map((column) => column.header).join('|') ?? 'derived'}
+      </span>
       <button
         type="button"
-        onClick={() => onSortChange?.([
-          { key: 'regional', direction: 'asc' },
-          { key: 'target', direction: 'desc' },
-        ])}
+        onClick={() => onSortChange?.(
+          title === 'RM'
+            ? [
+                { key: 'regional', direction: 'asc' },
+                { key: 'target', direction: 'desc' },
+              ]
+            : [
+                { key: 'locatie', direction: 'asc' },
+                { key: 'target', direction: 'desc' },
+              ],
+        )}
       >
-        persist-sort
+        persist-{title}-sort
       </button>
     </div>
   ),
@@ -58,6 +74,7 @@ vi.mock('./DashboardWidgets', () => ({
 import { HistoryBreakdowns } from './HistoryDashboardDetails';
 
 const onRegionalGridSortsChange = vi.fn();
+const onStoreGridSortsChange = vi.fn();
 
 const props = {
   selectionSlug: '2026-08',
@@ -77,11 +94,21 @@ const props = {
     { key: 'regional', direction: 'asc' },
   ],
   onRegionalGridSortsChange,
-  stores: [{ site_code: 'S1' }],
-  sortedStores: [{ site_code: 'S1' }],
-  storeColumns: [{ key: 'locatie', label: 'Magazin', render: () => 'Magazin' }],
-  storeSort: { key: 'locatie', direction: 'asc' },
+  stores: [
+    { site_code: 'S1', firma: 'Mobiup', locatie: 'Promenada', target: 100 },
+    { site_code: 'S2', firma: 'Arsis', locatie: 'Baneasa', target: 200 },
+  ],
+  sortedStores: [{ site_code: 'S2', firma: 'Arsis', locatie: 'Baneasa', target: 200 }],
+  storeColumns: [
+    { key: 'locatie', label: 'Magazin', render: (row: { locatie: string }) => row.locatie },
+    { key: 'target', label: 'Target', render: (row: { target: number }) => row.target },
+  ],
+  storeSort: { key: 'total_vanzari', direction: 'desc' },
   onSortStores: vi.fn(),
+  storeGridSorts: [
+    { key: 'total_vanzari', direction: 'desc' },
+  ],
+  onStoreGridSortsChange,
   agents: [{ agent: 'Ana', site_code: 'S1' }],
   sortedAgents: [{ agent: 'Ana', site_code: 'S1' }],
   agentColumns: [{ key: 'agent', label: 'Agent', render: () => 'Ana' }],
@@ -89,18 +116,32 @@ const props = {
   onSortAgents: vi.fn(),
 };
 
-describe('HistoryBreakdowns V3 pilot', () => {
-  it('uses raw regional rows, preserves grid sort state and leaves other breakdowns unchanged', () => {
+describe('HistoryBreakdowns V3 DataGrid consumers', () => {
+  it('uses raw RM and Store rows, persists both sort chains and leaves Agenti legacy', () => {
     onRegionalGridSortsChange.mockClear();
+    onStoreGridSortsChange.mockClear();
     render(<HistoryBreakdowns props={props as never} visible />);
 
-    expect(screen.getByTestId('regional-grid')).toHaveTextContent('2|text|target,regional');
-    expect(screen.getByTestId('legacy-Magazine')).toHaveTextContent('1');
+    expect(screen.getByTestId('grid-RM-state')).toHaveTextContent('2|text|target,regional');
+    expect(screen.getByTestId('grid-Magazine-state')).toHaveTextContent(
+      '2|text|total_vanzari',
+    );
+    expect(screen.getByTestId('grid-RM-export')).toHaveTextContent('derived');
+    expect(screen.getByTestId('grid-Magazine-export')).toHaveTextContent(
+      'Firma|Magazin|Target|Vanzari|Procent|Cantitate|Nr bonuri|Retururi|Agenti|Zile active',
+    );
     expect(screen.getByTestId('legacy-Agenti')).toHaveTextContent('1');
+    expect(screen.queryByTestId('legacy-Magazine')).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: 'persist-sort' }));
+    fireEvent.click(screen.getByRole('button', { name: 'persist-RM-sort' }));
     expect(onRegionalGridSortsChange).toHaveBeenCalledWith([
       { key: 'regional', direction: 'asc' },
+      { key: 'target', direction: 'desc' },
+    ]);
+
+    fireEvent.click(screen.getByRole('button', { name: 'persist-Magazine-sort' }));
+    expect(onStoreGridSortsChange).toHaveBeenCalledWith([
+      { key: 'locatie', direction: 'asc' },
       { key: 'target', direction: 'desc' },
     ]);
   });
