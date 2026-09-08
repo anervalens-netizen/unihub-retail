@@ -3983,3 +3983,19 @@ def test_caddy_validation_trusted_prefix_rejects_ordering_mutations(parsed_workf
         "W", _caddy_normalize_prefix(_job_steps(cwf, "pr-fast")[:2]) != canonical_prefix["pr-fast"],
         "moving Caddy off index 1 was not caught",
     )
+
+
+def test_release_classifier_succeeds_without_skipped_dependency_or_github_api(tmp_path):
+    import os
+    jobs = _yaml().safe_load(CI_YML.read_text())["jobs"]
+    classifier = jobs["classify-changes"]
+    assert "if" not in classifier  # A skipped ancestor skips downstream FULL jobs.
+    output = tmp_path / "output"
+    result = subprocess.run(
+        ["bash", "-e", "-c", classifier["steps"][0]["run"]],
+        capture_output=True, text=True,
+        env={**os.environ, "GITHUB_EVENT_NAME": "workflow_dispatch",
+             "GITHUB_OUTPUT": str(output), "GITHUB_REPOSITORY": "", "PR_NUMBER": ""},
+    )
+    assert result.returncode == 0, result.stderr
+    assert output.read_text() == "docs_only=false\n"
