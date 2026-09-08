@@ -6,6 +6,7 @@ import { ApiError, getApiErrorMessage } from '../../api/client';
 import { downloadAttendance, calendarCandidates, calendarStores, confirmCalendarAgent, readCalendar, saveCalendarDays, type CalendarData, type CalendarStore } from '../../api/grileCalendar';
 import type { RetailCalendarDayInput } from '../../api/generated/contracts';
 import { getCurrentYearMonth } from '../../lib/dates';
+import { Earnings } from './Earnings';
 import { Attendance } from './Attendance';
 import { StoreHoursEditor } from './StoreHoursEditor';
 import { CalendarDayEditor } from './CalendarDayEditor';
@@ -57,7 +58,7 @@ function StoreCalendar({ month, store, stores, data, refreshing, writable, onClo
     <header className="mb-4 flex items-center justify-between gap-4"><div><h2 id="calendar-store-title" className="text-xl font-bold">{store.locatie}</h2><p>{month} · {store.site_code}</p></div><button aria-label="Închide magazinul" onClick={onClose} className="rounded border px-3 py-2">Închide</button></header>
     <StoreHoursEditor key={`${store.site_code}-${data.store_hours?.find(h => h.site_code === store.site_code)?.revision ?? 0}`} month={month} site={store.site_code} data={data} disabled={refreshing || save.isPending || rosterPending || hoursPending} writable={writable && !store.cleanupOnly} onPendingChange={setHoursPending} />
     <nav aria-label="Secțiuni magazin" className="mb-4 flex gap-2">{['Grile', 'Calendar', 'Pontaj'].map(label => <button key={label} aria-pressed={tab === label} onClick={() => setTab(label)} className={`rounded-lg px-4 py-2 ${tab === label ? 'bg-indigo-600 text-white' : 'border'}`}>{label}</button>)}</nav>
-    {tab === 'Grile' && <div><h3 className="font-semibold">Agenții magazinului</h3>{data.roster.filter(r => r.active && r.home_site_code === store.site_code).map(r => <p key={r.agent_code}>{r.agent_code}</p>)}<p className="mt-3">Calculul sumelor V2 este în pregătire. Consultă grilele oficiale în secțiunea V1.</p></div>}
+    {tab === 'Grile' && <Earnings month={month} site={store.site_code} calendarRevision={data.projection_revision} />}
     {tab === 'Pontaj' && <Attendance data={data} store={store} />}
     {tab === 'Calendar' && <div className="space-y-4">{store.cleanupOnly ? <p>Magazin indisponibil pentru programări noi. Poți consulta și anula zilele existente.</p> : <Roster month={month} store={store} data={data} writable={writable && !save.isPending && !hoursPending} onPendingChange={setRosterPending} onChanged={() => { setDate(''); }} />}<MonthGrid month={month} store={store} data={data} disabled={refreshing || save.isPending || rosterPending || hoursPending} onSelect={d => { setDate(d); save.reset(); }} />{save.isError && <div role="alert">{save.error instanceof ApiError && save.error.status === 409 ? 'Programul s-a schimbat sau există un conflict. Reîncarcă înainte de o nouă editare.' : getApiErrorMessage(save.error, 'Salvarea a eșuat.')} <button onClick={() => void refresh()}>Reîncarcă programul</button></div>}{date && <CalendarDayEditor key={`${date}-${editVersion}-${data.roster.map(r => `${r.agent_code}:${r.revision}`).join('|')}`} date={date} store={store} stores={stores} data={data} writable={writable && !hoursPending && !refreshing && !rosterPending && !save.isError && !save.isSuccess} busy={save.isPending} onSave={days => save.mutate(days)} />}</div>}
   </dialog>;

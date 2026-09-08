@@ -38,6 +38,122 @@ export const RETAIL_COMPONENT_SCHEMAS = {
     "title": "AgentCandidate",
     "type": "object"
   },
+  "AgentEarnings": {
+    "properties": {
+      "agent_code": {
+        "title": "Agent Code",
+        "type": "string"
+      },
+      "away_commission": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Away Commission"
+      },
+      "days": {
+        "items": {
+          "$ref": "#/components/schemas/EarningsDay"
+        },
+        "title": "Days",
+        "type": "array"
+      },
+      "home_commission": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Home Commission"
+      },
+      "home_sales": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Home Sales"
+      },
+      "home_site_code": {
+        "title": "Home Site Code",
+        "type": "string"
+      },
+      "home_target": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Home Target"
+      },
+      "home_work_days": {
+        "title": "Home Work Days",
+        "type": "integer"
+      },
+      "issues": {
+        "items": {
+          "type": "string"
+        },
+        "title": "Issues",
+        "type": "array"
+      },
+      "known_earnings": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Known Earnings"
+      },
+      "supplemental_pay": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Supplemental Pay"
+      }
+    },
+    "required": [
+      "agent_code",
+      "home_site_code",
+      "home_work_days",
+      "home_target",
+      "home_sales",
+      "home_commission",
+      "away_commission",
+      "supplemental_pay",
+      "known_earnings",
+      "days"
+    ],
+    "title": "AgentEarnings",
+    "type": "object"
+  },
   "AgentEvaluationOption": {
     "additionalProperties": false,
     "properties": {
@@ -4319,6 +4435,198 @@ export const RETAIL_COMPONENT_SCHEMAS = {
       "daily_average"
     ],
     "title": "DashboardSummary",
+    "type": "object"
+  },
+  "EarningsDay": {
+    "properties": {
+      "agent_code": {
+        "title": "Agent Code",
+        "type": "string"
+      },
+      "away": {
+        "title": "Away",
+        "type": "boolean"
+      },
+      "commission": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Commission"
+      },
+      "daily_target": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Daily Target"
+      },
+      "issue": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Issue"
+      },
+      "sales": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Sales"
+      },
+      "site_code": {
+        "title": "Site Code",
+        "type": "string"
+      },
+      "supplemental": {
+        "title": "Supplemental",
+        "type": "boolean"
+      },
+      "supplemental_pay": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": "0",
+        "title": "Supplemental Pay"
+      },
+      "work_date": {
+        "format": "date",
+        "title": "Work Date",
+        "type": "string"
+      }
+    },
+    "required": [
+      "work_date",
+      "site_code",
+      "agent_code",
+      "supplemental",
+      "away",
+      "sales",
+      "daily_target"
+    ],
+    "title": "EarningsDay",
+    "type": "object"
+  },
+  "EarningsMonth": {
+    "properties": {
+      "agents": {
+        "items": {
+          "$ref": "#/components/schemas/AgentEarnings"
+        },
+        "title": "Agents",
+        "type": "array"
+      },
+      "calendar_revision": {
+        "title": "Calendar Revision",
+        "type": "string"
+      },
+      "cutoff": {
+        "anyOf": [
+          {
+            "format": "date",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Cutoff"
+      },
+      "month": {
+        "title": "Month",
+        "type": "string"
+      },
+      "projection_revision": {
+        "title": "Projection Revision",
+        "type": "string"
+      },
+      "selling_days": {
+        "additionalProperties": {
+          "type": "integer"
+        },
+        "title": "Selling Days",
+        "type": "object"
+      },
+      "source_revision": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Source Revision"
+      },
+      "source_snapshot_id": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Source Snapshot Id"
+      },
+      "status": {
+        "const": "provisional",
+        "default": "provisional",
+        "title": "Status",
+        "type": "string"
+      },
+      "unassigned_sales": {
+        "items": {
+          "$ref": "#/components/schemas/UnassignedSales"
+        },
+        "title": "Unassigned Sales",
+        "type": "array"
+      },
+      "unavailable_components": {
+        "items": {
+          "type": "string"
+        },
+        "title": "Unavailable Components",
+        "type": "array"
+      }
+    },
+    "required": [
+      "month",
+      "projection_revision",
+      "calendar_revision",
+      "source_snapshot_id",
+      "source_revision",
+      "cutoff",
+      "selling_days",
+      "agents"
+    ],
+    "title": "EarningsMonth",
     "type": "object"
   },
   "ErpReconciliationAppMetric": {
@@ -15270,6 +15578,31 @@ export const RETAIL_COMPONENT_SCHEMAS = {
     "title": "TeamLeaderGroup",
     "type": "object"
   },
+  "UnassignedSales": {
+    "properties": {
+      "sale_date": {
+        "format": "date",
+        "title": "Sale Date",
+        "type": "string"
+      },
+      "sales": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Sales",
+        "type": "string"
+      },
+      "site_code": {
+        "title": "Site Code",
+        "type": "string"
+      }
+    },
+    "required": [
+      "site_code",
+      "sale_date",
+      "sales"
+    ],
+    "title": "UnassignedSales",
+    "type": "object"
+  },
   "ValidationError": {
     "properties": {
       "ctx": {
@@ -16396,6 +16729,9 @@ export const RETAIL_RESPONSE_SCHEMAS = {
   },
   "read_calendar_api_grile_calendar__month__get": {
     "$ref": "#/components/schemas/CalendarMonth"
+  },
+  "read_earnings_api_grile_calendar__month__earnings_get": {
+    "$ref": "#/components/schemas/EarningsMonth"
   },
   "recalculate_scores_api_crm_scores_recalculate_post": {
     "$ref": "#/components/schemas/CrmRecalculateResponse"

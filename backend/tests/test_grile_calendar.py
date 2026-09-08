@@ -160,6 +160,7 @@ def test_calendar_reads_are_management_only(api, role):
     app, _ = api
     set_role(app, role)
     assert TestClient(app).get("/api/grile/calendar/2026-09").status_code == 403
+    assert TestClient(app).get("/api/grile/calendar/2026-09/earnings").status_code == 403
     assert TestClient(app).get("/api/grile/calendar/2026-09/attendance.zip", params={"expected_revision": "a" * 64}).status_code == 403
 
 
@@ -175,3 +176,21 @@ def test_attendance_openapi_declares_binary_zip(api):
     app, _service = api
     response = app.openapi()['paths']['/api/grile/calendar/{month}/attendance.zip']['get']['responses']['200']
     assert response['content'] == {'application/zip': {'schema': {'type': 'string', 'format': 'binary'}}}
+
+
+@pytest.mark.parametrize("role", ["unihub-manager", "unihub-hr", "unihub-admin"])
+def test_earnings_route_uses_management_auth_and_typed_response(api, role):
+    from test_grile_earnings import project, sources
+    app, service = api
+    set_role(app, role)
+    service.earnings.return_value = project(sources())
+    response = TestClient(app).get("/api/grile/calendar/2026-09/earnings")
+    assert response.status_code == 200
+    assert response.json()["agents"][0]["known_earnings"] == "222"
+    service.earnings.assert_awaited_once_with("2026-09")
+
+
+def test_earnings_requires_authentication(api):
+    app, service = api
+    assert TestClient(app).get("/api/grile/calendar/2026-09/earnings").status_code == 401
+    service.earnings.assert_not_awaited()

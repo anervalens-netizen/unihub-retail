@@ -10,6 +10,7 @@ from composition import build_grile_calendar_service
 from grile.calendar_models import (
     AgentCandidate, CalendarChanges, CalendarDay, CalendarMonth, CalendarMonthKey, Code, RosterEntry, RosterInput, StoreHours, StoreHoursInput,
 )
+from grile.earnings_models import EarningsMonth
 from permissions import require_business_write_access, require_management_access
 from rate_limits import BUSINESS_WRITE_LIMIT, REPORT_EXPORT_LIMIT, rate_limit
 from services.grile_calendar import GrileCalendarService
@@ -80,3 +81,12 @@ async def export_attendance(
     return StreamingResponse(artifact.iter_chunks(), media_type="application/zip",
                              headers={"Content-Disposition": f'attachment; filename="{artifact.filename}"'},
                              background=BackgroundTask(artifact.close))
+
+
+@router.get("/{month}/earnings", response_model=EarningsMonth)
+async def read_earnings(
+    month: CalendarMonthKey,
+    _claims: AuthClaims = Depends(require_management_access),
+    svc: GrileCalendarService = Depends(build_grile_calendar_service),
+) -> EarningsMonth:
+    return await svc.earnings(month)

@@ -36,15 +36,19 @@ class GrileCalendarRepository:
     async def read(self, month: str) -> dict[str, Any]:
         async with self.pool.acquire() as conn:
             async with conn.transaction(isolation="repeatable_read", readonly=True):
-                roster = await conn.fetch(
-                    "SELECT * FROM grile_calendar_roster WHERE month=$1 ORDER BY agent_code", month,
-                )
-                days = await conn.fetch(
-                    "SELECT * FROM grile_calendar_days WHERE month=$1 ORDER BY work_date, agent_code", month,
-                )
-                hours = await conn.fetch(
-                    "SELECT * FROM grile_calendar_store_hours WHERE month=$1 ORDER BY site_code", month,
-                )
+                return await self.read_on_connection(conn, month)
+
+    @staticmethod
+    async def read_on_connection(conn: asyncpg.Connection, month: str) -> dict[str, Any]:
+        roster = await conn.fetch(
+            "SELECT * FROM grile_calendar_roster WHERE month=$1 ORDER BY agent_code", month,
+        )
+        days = await conn.fetch(
+            "SELECT * FROM grile_calendar_days WHERE month=$1 ORDER BY work_date, agent_code", month,
+        )
+        hours = await conn.fetch(
+            "SELECT * FROM grile_calendar_store_hours WHERE month=$1 ORDER BY site_code", month,
+        )
         return {"roster": [dict(row) for row in roster], "days": [dict(row) for row in days],
                 "store_hours": [dict(row) for row in hours]}
 
