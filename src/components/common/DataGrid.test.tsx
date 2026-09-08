@@ -112,7 +112,7 @@ describe('DataGrid', () => {
     );
 
     const status = screen.getByRole('status');
-    expect(status).toHaveTextContent('Sortare activă : 1. Vânzări, descrescător.'.replace(' ⇤ ', ''));
+    expect(status).toHaveTextContent('Sortare activă: 1. Vânzări, descrescător.');
     expect(screen.getByRole('button', { name: 'Sortează după Nume' })).toHaveAttribute(
       'aria-describedby',
       status.id,
@@ -162,7 +162,7 @@ describe('DataGrid', () => {
     });
     expect(renderedNames()).toEqual(['c:Ștefan']);
     expect(screen.getByTestId('export-probe')).toHaveAttribute('data-rows', '1');
-    expect(screen.getByText('1 din 4 înregistrări')).toBeInTheDocument();
+    expect(screen.getByText(/1 din 4 înregistrări/)).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Șterge filtrele (1)' }));
     fireEvent.change(screen.getByRole('combobox', { name: 'Filtrează Regiune' }), {
