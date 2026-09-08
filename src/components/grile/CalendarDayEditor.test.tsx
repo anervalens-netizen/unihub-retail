@@ -51,3 +51,13 @@ it('allows cleanup of an unavailable-store supplement even when the home is abse
   await userEvent.click(screen.getByRole('button', { name: 'Salvează ziua' }));
   expect(onSave).toHaveBeenCalledWith([expect.objectContaining({ agent_code: 'B', site_code: 'S1', status: 'cancelled', expected_revision: 3 })]);
 });
+it('does not inherit another occupants supplemental classification', async () => {
+  const onSave = vi.fn();
+  const homeData = { ...data, roster: data.roster.map(r => ({ ...r, home_site_code: 'S1' })), days: [{ ...data.days[0]!, supplemental: true }] };
+  render(<CalendarDayEditor {...props} data={homeData} onSave={onSave} />);
+  expect(screen.getByRole('checkbox')).toBeChecked();
+  await userEvent.selectOptions(screen.getByLabelText('Agent pentru zi'), 'B');
+  expect(screen.getByRole('checkbox')).not.toBeChecked();
+  await userEvent.click(screen.getByRole('button', { name: 'Salvează ziua' }));
+  expect(onSave.mock.calls[0]![0][1]).toMatchObject({ agent_code: 'B', supplemental: false });
+});

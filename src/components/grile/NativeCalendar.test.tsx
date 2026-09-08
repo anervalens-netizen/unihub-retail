@@ -152,3 +152,19 @@ it('keeps date switching locked until a slow day save completes', async () => {
   await userEvent.click(otherDate);
   expect(screen.getByText('Program pentru 2026-09-02')).toBeInTheDocument();
 });
+it('blocks day opening and saving until roster confirmation settles', async () => {
+  let finish!: (value: object) => void;
+  api.confirmCalendarAgent.mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+  mount(); await openStore();
+  await userEvent.click(screen.getByRole('button', { name: 'Editează 2026-09-01' }));
+  await userEvent.click(screen.getByText('Confirmă agenții și magazinul de bază'));
+  await userEvent.selectOptions(screen.getByLabelText('Cod agent pentru confirmare'), 'AG1');
+  await userEvent.click(screen.getByRole('button', { name: 'Confirmă în Magazin Alpha' }));
+  expect(screen.getByRole('button', { name: 'Editează 2026-09-02' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Salvează ziua' })).toBeDisabled();
+  await userEvent.click(screen.getByRole('button', { name: 'Salvează ziua' }));
+  expect(api.saveCalendarDays).not.toHaveBeenCalled();
+  finish({});
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Editează 2026-09-02' })).not.toBeDisabled());
+  expect(screen.queryByLabelText('Agent pentru zi')).not.toBeInTheDocument();
+});
