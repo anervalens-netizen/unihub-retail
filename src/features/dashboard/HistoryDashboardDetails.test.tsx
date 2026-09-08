@@ -251,6 +251,7 @@ describe('HistoryDetailCharts V4 ChartFrame consumers', () => {
       vertical: false,
       opacity: 0.15,
     }));
+    expect(rechartsCalls.legend).toHaveBeenCalledTimes(1);
 
     const xAxisProps = rechartsCalls.xAxis.mock.calls[0]?.[0] as Record<string, unknown>;
     expect(xAxisProps).toMatchObject({
