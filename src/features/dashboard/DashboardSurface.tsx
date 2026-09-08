@@ -7,7 +7,12 @@ import type { DataGridSort } from '../../lib/dataGrid';
 import { CurrentDashboard } from './CurrentDashboard';
 import { HistoryDashboard } from './HistoryDashboard';
 import { PerformanceDetailDrawer } from './PerformanceDetailDrawer';
-import type { DashboardSection, DashboardViewProps, RegionalSortKey } from './dashboardTypes';
+import type {
+  DashboardSection,
+  DashboardViewProps,
+  RegionalSortKey,
+  StoreSortKey,
+} from './dashboardTypes';
 
 const SECTIONS: SegmentedTabOption<DashboardSection>[] = [
   { value: 'current', label: 'Luna în curs' }, { value: 'history', label: 'Istoric' },
@@ -40,10 +45,14 @@ function HistorySection({
   model,
   regionalGridSorts,
   onRegionalGridSortsChange,
+  storeGridSorts,
+  onStoreGridSortsChange,
 }: {
   model: DashboardViewProps;
   regionalGridSorts: readonly DataGridSort<RegionalSortKey>[];
   onRegionalGridSortsChange: (sorts: readonly DataGridSort<RegionalSortKey>[]) => void;
+  storeGridSorts: readonly DataGridSort<StoreSortKey>[];
+  onStoreGridSortsChange: (sorts: readonly DataGridSort<StoreSortKey>[]) => void;
 }) {
   if (!model.summary) return null;
   return <HistoryDashboard
@@ -75,6 +84,8 @@ function HistorySection({
     stores={model.historyStores}
     sortedStores={model.sortedHistoryStores} storeColumns={model.historyStoreColumns}
     storeSort={model.historyStoreSort} onSortStores={model.handleSortHistoryStores}
+    storeGridSorts={storeGridSorts}
+    onStoreGridSortsChange={onStoreGridSortsChange}
     agents={model.historyAgents} sortedAgents={model.sortedHistoryAgents}
     agentColumns={model.historyAgentColumns} agentSort={model.historyAgentSort}
     onSortAgents={model.handleSortHistoryAgents}
@@ -85,6 +96,9 @@ function DashboardContent({ model }: { model: DashboardViewProps }) {
   const [historyRegionalGridSorts, setHistoryRegionalGridSorts] = useState<
     DataGridSort<RegionalSortKey>[]
   >(() => [{ ...model.historyRegionalSort }]);
+  const [historyStoreGridSorts, setHistoryStoreGridSorts] = useState<
+    DataGridSort<StoreSortKey>[]
+  >(() => [{ ...model.historyStoreSort }]);
 
   if (model.activeSection === 'visits') return <Suspense fallback={<LoadingCard label="Se incarca modulul Vizite..." />}><VisiteSubtab currentMonth={model.currentMonth} months={model.months} /></Suspense>;
   if (model.loading) return <LoadingCard label="Se incarca luna in curs..." />;
@@ -95,6 +109,8 @@ function DashboardContent({ model }: { model: DashboardViewProps }) {
         model={model}
         regionalGridSorts={historyRegionalGridSorts}
         onRegionalGridSortsChange={(sorts) => setHistoryRegionalGridSorts([...sorts])}
+        storeGridSorts={historyStoreGridSorts}
+        onStoreGridSortsChange={(sorts) => setHistoryStoreGridSorts([...sorts])}
       />;
 }
 
