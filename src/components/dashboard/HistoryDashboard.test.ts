@@ -92,6 +92,8 @@ function historyProps(loading = false) {
     storeColumns: [],
     storeSort: { key: 'locatie', direction: 'asc' as const },
     onSortStores: vi.fn(),
+    storeGridSorts: [{ key: 'locatie', direction: 'asc' as const }],
+    onStoreGridSortsChange: vi.fn(),
     agents: [],
     sortedAgents: [],
     agentColumns: [],

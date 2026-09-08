@@ -45,6 +45,7 @@ interface DataGridProps<Row, Key extends string> {
   rowKey: (row: Row, index: number) => string;
   exportFilename: string;
   exportSheetName: string;
+  exportColumns?: ExportColumn<Row>[];
   emptyLabel?: string;
 }
 
@@ -351,7 +352,7 @@ export function DataGrid<Row, Key extends string>(props: DataGridProps<Row, Key>
           <ExportTableButton
             filename={props.exportFilename}
             sheetName={props.exportSheetName}
-            columns={state.exportColumns}
+            columns={props.exportColumns ?? state.exportColumns}
             rows={state.viewRows}
           />
         </div>

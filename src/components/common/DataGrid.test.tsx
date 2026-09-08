@@ -9,13 +9,16 @@ vi.mock('../ExportTableButton', () => ({
     columns,
   }: {
     rows: unknown[];
-    columns: Array<{ header: string }>;
+    columns: Array<{ header: string; value: (row: unknown) => unknown }>;
   }) => (
     <output
       data-testid="export-probe"
       data-rows={rows.length}
       data-columns={columns.length}
       data-headers={columns.map((column) => column.header).join('|')}
+      data-values={rows
+        .map((row) => columns.map((column) => String(column.value(row))).join(':'))
+        .join('|')}
     />
   ),
 }));
@@ -182,6 +185,42 @@ describe('DataGrid', () => {
     });
     expect(screen.getByText('Nu există rezultate pentru filtrele selectate.')).toBeInTheDocument();
     expect(screen.getByTestId('export-probe')).toHaveAttribute('data-rows', '0');
+  });
+
+  it('supports a narrow legacy export projection without changing filtered/sorted rows', () => {
+    render(
+      <DataGrid
+        title="Magazine"
+        rows={rows}
+        columns={columns}
+        initialSort={[{ key: 'sales', direction: 'desc' }]}
+        rowKey={(row) => row.id}
+        exportFilename="magazine"
+        exportSheetName="Magazine"
+        exportColumns={[
+          { header: 'Firma', value: (row) => row.region },
+          { header: 'Magazin', value: (row) => row.name },
+        ]}
+      />,
+    );
+
+    const exportProbe = screen.getByTestId('export-probe');
+    expect(exportProbe).toHaveAttribute('data-headers', 'Firma|Magazin');
+    expect(exportProbe).toHaveAttribute(
+      'data-values',
+      'Nord:Ana|Sud:Ștefan|Sud:Ana|Nord:Mihai',
+    );
+
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Filtrează Nume' }), {
+      target: { value: 'ana' },
+    });
+    expect(exportProbe).toHaveAttribute('data-rows', '2');
+    expect(exportProbe).toHaveAttribute('data-values', 'Nord:Ana|Sud:Ana');
+
+    fireEvent.click(screen.getByText('Coloane'));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Afișează Regiune' }));
+    expect(exportProbe).toHaveAttribute('data-headers', 'Firma|Magazin');
+    expect(exportProbe).toHaveAttribute('data-columns', '2');
   });
 
   it('hides, reorders and resets columns without clipping the column controls', () => {
