@@ -272,6 +272,9 @@ describe('HistoryDetailCharts V4 ChartFrame consumers', () => {
         tickLine: boolean;
       },
     );
+    if (!salesAxisProps || !qtyAxisProps) {
+      throw new Error('Expected both daily Y-axis calls');
+    }
     expect(salesAxisProps).toMatchObject({
       yAxisId: 'sales',
       width: 38,
