@@ -3,6 +3,7 @@ import { useState, type RefObject } from 'react';
 import type { AgentStat, DashboardSummary, RegionalStat, StoreStat } from '../../api/generated/runtime-types';
 import { ErrorCard, LoadingCard } from '../../components/common/DataDisplay';
 import { SegmentedTabs } from '../../components/common/SegmentedTabs';
+import type { DataGridSort } from '../../lib/dataGrid';
 import type { BreakdownColumn } from './BreakdownTable';
 import { HistoryDetailCharts, HistoryBreakdowns } from './HistoryDashboardDetails';
 import { HistorySelection, HistorySummary } from './HistoryDashboardSummary';
@@ -125,6 +126,8 @@ export interface HistoryDashboardProps<RegionalKey extends string, StoreKey exte
   regionalColumns: BreakdownColumn<RegionalStat, RegionalKey>[];
   regionalSort: SortState<RegionalKey>;
   onSortRegionals: (key: RegionalKey) => void;
+  regionalGridSorts: readonly DataGridSort<RegionalKey>[];
+  onRegionalGridSortsChange: (sorts: readonly DataGridSort<RegionalKey>[]) => void;
   stores: StoreStat[];
   sortedStores: StoreStat[];
   storeColumns: BreakdownColumn<StoreStat, StoreKey>[];

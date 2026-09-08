@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('recharts', () => ({
@@ -20,13 +20,24 @@ vi.mock('../../components/common/DataGrid', () => ({
     rows,
     columns,
     initialSort,
+    onSortChange,
   }: {
     rows: unknown[];
     columns: Array<{ filter?: { kind: string } }>;
     initialSort: Array<{ key: string }>;
+    onSortChange?: (sorts: Array<{ key: string; direction: 'asc' | 'desc' }>) => void;
   }) => (
     <div data-testid="regional-grid">
-      {rows.length}|{columns[0]?.filter?.kind}|{initialSort[0]?.key}
+      {rows.length}|{columns[0]?.filter?.kind}|{initialSort.map((sort) => sort.key).join(',')}
+      <button
+        type="button"
+        onClick={() => onSortChange?.([
+          { key: 'regional', direction: 'asc' },
+          { key: 'target', direction: 'desc' },
+        ])}
+      >
+        persist-sort
+      </button>
     </div>
   ),
 }));
@@ -46,6 +57,8 @@ vi.mock('./DashboardWidgets', () => ({
 
 import { HistoryBreakdowns } from './HistoryDashboardDetails';
 
+const onRegionalGridSortsChange = vi.fn();
+
 const props = {
   selectionSlug: '2026-08',
   regionals: [
@@ -59,6 +72,11 @@ const props = {
   ],
   regionalSort: { key: 'target', direction: 'desc' },
   onSortRegionals: vi.fn(),
+  regionalGridSorts: [
+    { key: 'target', direction: 'desc' },
+    { key: 'regional', direction: 'asc' },
+  ],
+  onRegionalGridSortsChange,
   stores: [{ site_code: 'S1' }],
   sortedStores: [{ site_code: 'S1' }],
   storeColumns: [{ key: 'locatie', label: 'Magazin', render: () => 'Magazin' }],
@@ -72,11 +90,18 @@ const props = {
 };
 
 describe('HistoryBreakdowns V3 pilot', () => {
-  it('uses raw regional rows in DataGrid and leaves other breakdowns unchanged', () => {
+  it('uses raw regional rows, preserves grid sort state and leaves other breakdowns unchanged', () => {
+    onRegionalGridSortsChange.mockClear();
     render(<HistoryBreakdowns props={props as never} visible />);
 
-    expect(screen.getByTestId('regional-grid')).toHaveTextContent('2|text|target');
+    expect(screen.getByTestId('regional-grid')).toHaveTextContent('2|text|target,regional');
     expect(screen.getByTestId('legacy-Magazine')).toHaveTextContent('1');
     expect(screen.getByTestId('legacy-Agenti')).toHaveTextContent('1');
+
+    fireEvent.click(screen.getByRole('button', { name: 'persist-sort' }));
+    expect(onRegionalGridSortsChange).toHaveBeenCalledWith([
+      { key: 'regional', direction: 'asc' },
+      { key: 'target', direction: 'desc' },
+    ]);
   });
 });

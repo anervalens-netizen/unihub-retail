@@ -30,6 +30,8 @@ interface Row {
   sales: number | null;
 }
 
+type Sort = { key: Key; direction: 'asc' | 'desc' };
+
 const rows: Row[] = [
   { id: 'a', name: 'Ana', region: 'Sud', sales: 100 },
   { id: 'b', name: 'Ana', region: 'Nord', sales: 200 },
@@ -73,7 +75,10 @@ const columns: DataGridColumn<Row, Key>[] = [
   },
 ];
 
-function renderGrid(data: Row[] = rows) {
+function renderGrid(
+  data: Row[] = rows,
+  onSortChange?: (sorts: readonly Sort[]) => void,
+) {
   return render(
     <DataGrid
       title="Regional"
@@ -81,6 +86,7 @@ function renderGrid(data: Row[] = rows) {
       rows={data}
       columns={columns}
       initialSort={[{ key: 'sales', direction: 'desc' }]}
+      onSortChange={onSortChange}
       rowKey={(row) => row.id}
       exportFilename="regional"
       exportSheetName="Regional"
@@ -95,8 +101,9 @@ function renderedNames(): string[] {
 }
 
 describe('DataGrid', () => {
-  it('keeps stable sorting and supports Shift+click multi-sort', () => {
-    renderGrid();
+  it('keeps stable sorting, supports multi-sort and reports the full sort state', () => {
+    const onSortChange = vi.fn<(sorts: readonly Sort[]) => void>();
+    renderGrid(rows, onSortChange);
 
     expect(renderedNames()).toEqual(['b:Ana', 'c:Ștefan', 'a:Ana', 'd:Mihai']);
     expect(screen.getByTestId('data-grid-header-sales')).toHaveAttribute(
@@ -112,12 +119,19 @@ describe('DataGrid', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Sortează după Nume' }));
     expect(renderedNames()).toEqual(['a:Ana', 'b:Ana', 'd:Mihai', 'c:Ștefan']);
+    expect(onSortChange).toHaveBeenLastCalledWith([
+      { key: 'name', direction: 'asc' },
+    ]);
 
     fireEvent.click(
       screen.getByRole('button', { name: 'Sortează după Vânzări' }),
       { shiftKey: true },
     );
     expect(renderedNames()).toEqual(['b:Ana', 'a:Ana', 'd:Mihai', 'c:Ștefan']);
+    expect(onSortChange).toHaveBeenLastCalledWith([
+      { key: 'name', direction: 'asc' },
+      { key: 'sales', direction: 'desc' },
+    ]);
     expect(screen.getByTestId('data-grid-sort-priority-name')).toHaveTextContent('1');
     expect(screen.getByTestId('data-grid-sort-priority-sales')).toHaveTextContent('2');
     expect(screen.getByTestId('data-grid-header-name')).toHaveAttribute(
@@ -131,6 +145,9 @@ describe('DataGrid', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Sortează după Nume' }));
     expect(renderedNames()).toEqual(['c:Ștefan', 'd:Mihai', 'a:Ana', 'b:Ana']);
+    expect(onSortChange).toHaveBeenLastCalledWith([
+      { key: 'name', direction: 'desc' },
+    ]);
     expect(sortStatus).toHaveTextContent('Sortare activă: 1. Nume, descrescător.');
   });
 
@@ -163,6 +180,10 @@ describe('DataGrid', () => {
 
   it('hides, reorders and resets columns while preserving one visible column', () => {
     renderGrid();
+    const table = screen.getByRole('table', { name: 'Regional' });
+    expect(table.closest('section')).not.toHaveClass('overflow-hidden');
+    expect(table.parentElement).toHaveClass('overflow-auto');
+
     fireEvent.click(screen.getByText('Coloane'));
 
     expect(screen.getByRole('checkbox', { name: 'Afișează Nume' })).toBeDisabled();

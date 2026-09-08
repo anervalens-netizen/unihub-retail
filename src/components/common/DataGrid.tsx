@@ -41,6 +41,7 @@ interface DataGridProps<Row, Key extends string> {
   rows: readonly Row[];
   columns: readonly DataGridColumn<Row, Key>[];
   initialSort?: readonly DataGridSort<Key>[];
+  onSortChange?: (sorts: readonly DataGridSort<Key>[]) => void;
   rowKey: (row: Row, index: number) => string;
   exportFilename: string;
   exportSheetName: string;
@@ -260,11 +261,19 @@ export function DataGrid<Row, Key extends string>(props: DataGridProps<Row, Key>
       return next;
     });
   };
+  const updateSort = (key: Key, append: boolean) => {
+    const next = nextDataGridSorts(state.sorts, key, {
+      append,
+      defaultAscKeys: state.defaultAscKeys,
+    });
+    state.setSorts(next);
+    props.onSortChange?.(next);
+  };
   const resultLabel = state.viewRows.length === props.rows.length
     ? `${props.rows.length} înregistrări`
     : `${state.viewRows.length} din ${props.rows.length} înregistrări`;
   return (
-    <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900/70">
+    <section className="rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900/70">
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-3 py-2 dark:border-slate-800">
         <div className="min-w-0">
           <div className="flex items-center gap-2 font-bold text-slate-800 dark:text-slate-100">
@@ -317,17 +326,13 @@ export function DataGrid<Row, Key extends string>(props: DataGridProps<Row, Key>
       >
         {sortStatus}
       </p>
-      <div className="max-h-[360px] overflow-auto">
+      <div className="max-h-[360px] overflow-auto rounded-b-2xl">
         <table className="w-full min-w-max table-auto text-xs" aria-label={props.title}>
           <DataGridHead
             columns={state.visibleColumns}
             sorts={state.sorts}
             filters={state.filters}
-            onSort={(key, append) => state.setSorts((current) =>
-              nextDataGridSorts(current, key, {
-                append,
-                defaultAscKeys: state.defaultAscKeys,
-              }))}
+            onSort={updateSort}
             onFilter={setFilter}
             sortStatusId={sortStatusId}
           />
