@@ -31,13 +31,13 @@ const rows: Row[] = [
 
 const getValue = (row: Row, key: Key) => row[key];
 const ids = (items: Row[]) => items.map((row) => row.id);
+const filterRows = (filters: DataGridFilters<Key>) =>
+  filterDataGridRows<Row, Key>(rows, filters, getValue);
 
 describe('dataGrid model', () => {
   it('matches text without case or Romanian diacritics', () => {
-    expect(ids(filterDataGridRows(
-      rows,
+    expect(ids(filterRows(
       { name: { kind: 'text', value: 'stef' } },
-      getValue,
     ))).toEqual(['1']);
   });
 
@@ -47,25 +47,19 @@ describe('dataGrid model', () => {
       sales: { kind: 'number', min: 150, max: 200 },
     };
 
-    expect(ids(filterDataGridRows(rows, filters, getValue))).toEqual(['2', '3']);
-    expect(ids(filterDataGridRows(
-      rows,
+    expect(ids(filterRows(filters))).toEqual(['2', '3']);
+    expect(ids(filterRows(
       { sales: { kind: 'number', min: null, max: 100 } },
-      getValue,
     ))).toEqual(['1']);
   });
 
   it('accepts localized numeric strings and ignores empty or invalid ranges', () => {
-    expect(ids(filterDataGridRows(
-      rows,
+    expect(ids(filterRows(
       { score: { kind: 'number', min: 10, max: 11 } },
-      getValue,
     ))).toEqual(['1', '3']);
     expect(isDataGridFilterActive({ kind: 'number', min: Number.NaN, max: null })).toBe(false);
-    expect(ids(filterDataGridRows(
-      rows,
+    expect(ids(filterRows(
       { sales: { kind: 'number', min: Number.NaN, max: null } },
-      getValue,
     ))).toEqual(['1', '2', '3', '4']);
   });
 
