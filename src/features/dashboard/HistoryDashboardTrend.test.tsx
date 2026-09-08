@@ -77,12 +77,20 @@ describe('HistoryDashboardTrend ChartFrame pilot', () => {
 
     rerender(
       <HistoryMonthlyTrend
+        props={trendProps({ yearFilter: 2025 }) as never}
+        visible
+      />,
+    );
+    expect(screen.getByText('Toate lunile disponibile — 2025')).toBeInTheDocument();
+    expect(screen.getByTestId('composed-chart')).toHaveAttribute('data-points', '1');
+
+    rerender(
+      <HistoryMonthlyTrend
         props={trendProps({ yearFilter: 2025, yearHistoryChartData: [] }) as never}
         visible
       />,
     );
 
-    expect(screen.getByText('Toate lunile disponibile — 2025')).toBeInTheDocument();
     expect(screen.getByText(
       'Nu exista date pentru 2025 cu filtrele curente.',
     )).toBeInTheDocument();
