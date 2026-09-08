@@ -4,18 +4,55 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 
+const rechartsCalls = vi.hoisted(() => ({
+  bar: vi.fn(),
+  grid: vi.fn(),
+  composed: vi.fn(),
+  legend: vi.fn(),
+  line: vi.fn(),
+  responsive: vi.fn(),
+  tooltip: vi.fn(),
+  xAxis: vi.fn(),
+  yAxis: vi.fn(),
+}));
+
 vi.mock('recharts', () => ({
-  Bar: () => null,
-  CartesianGrid: () => null,
-  ComposedChart: ({ children, data }: { children?: ReactNode; data?: unknown[] }) => (
-    <div data-testid="daily-composed-chart" data-points={data?.length ?? 0}>{children}</div>
-  ),
-  Legend: () => null,
-  Line: () => null,
-  ResponsiveContainer: ({ children }: { children?: ReactNode }) => <>{children}</>,
-  Tooltip: () => null,
-  XAxis: () => null,
-  YAxis: () => null,
+  Bar: (chartProps: Record<string, unknown>) => {
+    rechartsCalls.bar(chartProps);
+    return null;
+  },
+  CartesianGrid: (chartProps: Record<string, unknown>) => {
+    rechartsCalls.grid(chartProps);
+    return null;
+  },
+  ComposedChart: ({ children, ...chartProps }: { children?: ReactNode } & Record<string, unknown>) => {
+    rechartsCalls.composed(chartProps);
+    return <>{children}</>;
+  },
+  Legend: (chartProps: Record<string, unknown>) => {
+    rechartsCalls.legend(chartProps);
+    return null;
+  },
+  Line: (chartProps: Record<string, unknown>) => {
+    rechartsCalls.line(chartProps);
+    return null;
+  },
+  ResponsiveContainer: ({ children, ...chartProps }: { children?: ReactNode } & Record<string, unknown>) => {
+    rechartsCalls.responsive(chartProps);
+    return <>{children}</>;
+  },
+  Tooltip: (chartProps: Record<string, unknown>) => {
+    rechartsCalls.tooltip(chartProps);
+    return null;
+  },
+  XAxis: (chartProps: Record<string, unknown>) => {
+    rechartsCalls.xAxis(chartProps);
+    return null;
+  },
+  YAxis: (chartProps: Record<string, unknown>) => {
+    rechartsCalls.yAxis(chartProps);
+    return null;
+  },
 }));
 
 vi.mock('../../components/common/DataGrid', () => ({
@@ -71,11 +108,12 @@ vi.mock('./DashboardWidgets', () => ({
   CompactPieSection: ({ title, pieData }: { title: string; pieData: unknown[] }) => (
     <div data-testid={`pie-${title}`} data-points={pieData.length}>{title}</div>
   ),
-  formatCompactAxisValue: String,
+  formatCompactAxisValue: (value: unknown) => `axis:${String(value)}`,
   formatCompactDonutValue: String,
   sumChartValues: () => 0,
 }));
 
+import { formatAmount, formatInt } from '../../lib/formatters';
 import { HistoryBreakdowns, HistoryDetailCharts } from './HistoryDashboardDetails';
 
 const onRegionalGridSortsChange = vi.fn();
@@ -137,31 +175,173 @@ const detailProps = {
 };
 
 describe('HistoryDetailCharts V4 ChartFrame consumers', () => {
-  it('preserves daily chart and pie content inside the compact mobile ChartFrame shell', () => {
+  it('preserves the complete responsive shell and daily Recharts contract', () => {
+    for (const mock of Object.values(rechartsCalls)) mock.mockClear();
     render(<HistoryDetailCharts props={detailProps as never} visible={false} />);
 
     const dailyHeading = screen.getByRole('heading', {
       name: 'Evolutie zilnica pentru 2026-08',
     });
     const dailyFrame = dailyHeading.closest('.glass');
-    expect(dailyFrame).toHaveClass('p-3', 'sm:p-4', 'flex', 'min-w-0', 'flex-col');
-    expect(dailyFrame?.parentElement).toHaveClass('grid', 'hidden', 'lg:grid');
+    expect(dailyFrame).toHaveClass(
+      'glass',
+      'rounded-3xl',
+      'p-3',
+      'sm:p-4',
+      'flex',
+      'min-w-0',
+      'flex-col',
+    );
+    expect(dailyHeading.closest('.mb-2')).toHaveClass(
+      'mb-2',
+      'sm:mb-3',
+      'flex',
+      'justify-between',
+      'gap-2',
+      'items-center',
+    );
 
-    const dailyChart = screen.getByTestId('daily-composed-chart');
-    expect(dailyChart).toHaveAttribute('data-points', '2');
-    expect(dailyChart.parentElement).toHaveClass(
+    const outerGrid = dailyFrame?.parentElement;
+    expect(outerGrid).toHaveClass(
+      'grid',
+      'min-w-0',
+      'items-stretch',
+      'gap-3',
+      'min-[1500px]:grid-cols-[minmax(0,2fr)_minmax(320px,1fr)]',
+      'hidden',
+      'lg:grid',
+    );
+
+    const dailyContent = dailyFrame?.querySelector('.aspect-\\[16\\/6\\]');
+    expect(dailyContent).toHaveClass(
       '-mx-2',
       'aspect-[16/6]',
+      'min-h-56',
+      'max-h-72',
+      'w-auto',
+      'rounded-xl',
+      'bg-slate-50/80',
+      'p-0.5',
+      'sm:mx-0',
+      'sm:w-full',
+      'sm:rounded-2xl',
+      'sm:p-2',
+      'dark:bg-slate-800/40',
+      'min-[1500px]:aspect-auto',
+      'min-[1500px]:min-h-[24rem]',
+      'min-[1500px]:max-h-none',
       'min-[1500px]:flex-1',
     );
 
+    const composedProps = rechartsCalls.composed.mock.calls[0]?.[0] as {
+      data: unknown;
+      margin: Record<string, number>;
+    };
+    expect(composedProps.data).toBe(detailProps.historyDailyChartData);
+    expect(composedProps.margin).toEqual({ top: 4, right: 0, bottom: 0, left: 0 });
+
+    expect(rechartsCalls.responsive).toHaveBeenCalledWith(expect.objectContaining({
+      width: '100%',
+      height: '100%',
+      minWidth: 1,
+      minHeight: 1,
+    }));
+    expect(rechartsCalls.grid).toHaveBeenCalledWith(expect.objectContaining({
+      strokeDasharray: '3 3',
+      vertical: false,
+      opacity: 0.15,
+    }));
+
+    const xAxisProps = rechartsCalls.xAxis.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(xAxisProps).toMatchObject({
+      dataKey: 'day',
+      tick: { fontSize: 10 },
+      axisLine: false,
+      tickLine: false,
+    });
+
+    const [salesAxisProps, qtyAxisProps] = rechartsCalls.yAxis.mock.calls.map(
+      ([callProps]) => callProps as {
+        yAxisId: string;
+        width: number;
+        orientation?: string;
+        tick: { fontSize: number };
+        tickFormatter: (value: unknown) => unknown;
+        axisLine: boolean;
+        tickLine: boolean;
+      },
+    );
+    expect(salesAxisProps).toMatchObject({
+      yAxisId: 'sales',
+      width: 38,
+      tick: { fontSize: 10 },
+      axisLine: false,
+      tickLine: false,
+    });
+    expect(salesAxisProps.orientation).toBeUndefined();
+    expect(salesAxisProps.tickFormatter(1234)).toBe('axis:1234');
+    expect(qtyAxisProps).toMatchObject({
+      yAxisId: 'qty',
+      width: 30,
+      orientation: 'right',
+      tick: { fontSize: 10 },
+      axisLine: false,
+      tickLine: false,
+    });
+    expect(qtyAxisProps.tickFormatter(1234)).toBe('axis:1234');
+
+    const tooltipProps = rechartsCalls.tooltip.mock.calls[0]?.[0] as {
+      formatter: (value: unknown, name: unknown) => unknown;
+    };
+    expect(tooltipProps.formatter(100, 'Vanzari')).toBe(formatAmount(100));
+    expect(tooltipProps.formatter(3, 'Cantitate')).toBe(formatInt(3));
+
+    const barProps = rechartsCalls.bar.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(barProps).toMatchObject({
+      yAxisId: 'sales',
+      dataKey: 'sales',
+      name: 'Vanzari',
+      fill: '#4f46e5',
+      radius: [8, 8, 0, 0],
+    });
+
+    const lineProps = rechartsCalls.line.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(lineProps).toMatchObject({
+      yAxisId: 'qty',
+      type: 'monotone',
+      dataKey: 'qty',
+      name: 'Cantitate',
+      stroke: '#f59e0b',
+      strokeWidth: 2,
+      dot: false,
+    });
+
     const pieHeading = screen.getByRole('heading', { name: 'Top categorii si branduri' });
-    expect(pieHeading.closest('.glass')).toHaveClass('p-3', 'sm:p-4', 'flex', 'flex-col');
+    const pieFrame = pieHeading.closest('.glass');
+    expect(pieFrame).toHaveClass(
+      'glass',
+      'rounded-3xl',
+      'p-3',
+      'sm:p-4',
+      'flex',
+      'min-w-0',
+      'flex-col',
+    );
+    expect(pieHeading.closest('.mb-2')).toHaveClass(
+      'mb-2',
+      'sm:mb-3',
+      'flex',
+      'justify-between',
+      'gap-2',
+      'items-center',
+    );
     expect(screen.getByTestId('pie-Top categorii')).toHaveAttribute('data-points', '1');
     expect(screen.getByTestId('pie-Branduri compatibile')).toHaveAttribute('data-points', '2');
     expect(screen.getByTestId('pie-Top categorii').parentElement).toHaveClass(
       'grid',
+      'min-w-0',
       'flex-1',
+      'gap-2',
       'min-[1500px]:grid-rows-2',
     );
   });
