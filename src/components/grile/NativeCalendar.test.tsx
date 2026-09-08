@@ -188,3 +188,11 @@ it('downloads the displayed projection revision', async () => {
   await userEvent.click(await screen.findByRole('button', { name: 'Descarcă pontajele ZIP (provizoriu)' }));
   expect(api.downloadAttendance).toHaveBeenCalledWith('2026-09', 'abc');
 });
+it('keeps confirmed names and stable codes visible in the calendar and roster', async () => {
+  api.readCalendar.mockResolvedValue({ month: '2026-09', roster: [{ ...roster[0], display_name: 'Nume Confirmat', identity_status: 'confirmed' }], days: [day], attendance: [] });
+  mount();
+  await userEvent.click(await screen.findByRole('button', { name: /Magazin Alpha/ }));
+  expect(screen.getByRole('button', { name: 'Editează 2026-09-01' })).toHaveTextContent('Nume Confirmat · AG1');
+  await userEvent.click(screen.getByText('Confirmă agenții și magazinul de bază'));
+  expect(screen.getByRole('option', { name: /Nume Confirmat · AG1/ })).toHaveValue('AG1');
+});

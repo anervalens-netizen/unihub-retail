@@ -81,7 +81,7 @@ async def test_export_missing_money_stays_blank_and_reads_once(monkeypatch):
         with ZipFile(artifact.stream) as archive:
             book = load_workbook(BytesIO(archive.read('Castiguri-provizorii-2026-09.xlsx')), data_only=True)
             assert book['Castiguri provizorii']['K5'].value is None
-            assert 'Bază salarială' in book['Castiguri provizorii']['B3'].value
+            assert 'Bază salarială' in book['Castiguri provizorii']['A3'].value
             book.close()
     finally:
         artifact.close()
@@ -107,9 +107,60 @@ def test_partial_build_failure_closes_artifact(monkeypatch):
     earnings = project_earnings(calendar, data)
     artifact = module.build_attendance_zip(calendar)
     monkeypatch.setattr(module, 'build_attendance_zip', lambda _: artifact)
-    def fail(_):
+    def fail(*_):
         raise OSError('synthetic disk failure')
     monkeypatch.setattr(module, '_workbook', fail)
     with pytest.raises(OSError):
         module.build_earnings_zip(calendar, earnings)
     assert artifact.stream.closed
+
+
+def test_full_calendar_distinguishes_unallocated_leave_off_cancelled_and_future_work():
+    from datetime import date
+    data = sources()
+    for number, status in [(4, 'leave'), (5, 'off'), (6, 'cancelled')]:
+        data['calendar']['days'].append(dict(agent_code='AG1', site_code='A', work_date=date(2026, 9, number),
+                                            status=status, supplemental=False, revision=1))
+    data['calendar']['days'].append(dict(agent_code='SUP', site_code='B', work_date=date(2026, 9, 8),
+                                        status='work', supplemental=False, revision=1))
+    calendar = GrileCalendarService.project_calendar('2026-09', data['calendar'])
+    earnings = project_earnings(calendar, data)
+    artifact = build_earnings_zip(calendar, earnings)
+    try:
+        with ZipFile(artifact.stream) as archive:
+            book = load_workbook(BytesIO(archive.read('Castiguri-provizorii-2026-09.xlsx')), data_only=True)
+            summary = book['Castiguri provizorii']
+            assert summary['M5'].value == 33 and summary['N5'].value == 1
+            rows = list(book['Calendar'].iter_rows(min_row=5, values_only=True))
+            assert len(rows) == 63
+            assert sum(row[4] == 'Nealocat' for row in rows) == 53
+            actual = {row[1]: row for row in rows if row[2] == 'AG1' and row[0] == 'A'}
+            assert [actual[f'2026-09-0{n}'][4] for n in (4, 5, 6)] == ['Concediu', 'Liber', 'Anulat']
+            assert (actual['2026-09-04'][10], actual['2026-09-05'][10], actual['2026-09-06'][10]) == (0, 0, 0)
+            assert sum(row[10] or 0 for row in rows) == 77  # seven programmed days at 11 hours
+            future = next(row for row in book['Detalii zile'].iter_rows(min_row=5, values_only=True) if row[1] == '2026-09-08')
+            assert future[5] is None and future[9] == 'Planificat după data limită'
+            book.close()
+    finally:
+        artifact.close()
+
+
+def test_leap_month_keeps_unallocated_days_and_inactive_roster_out_of_cohort():
+    data = sources()
+    data['calendar']['days'] = []
+    for entry in data['calendar']['roster']:
+        entry['month'] = '2028-02'
+    data['calendar']['roster'][2].update(active=False, home_site_code='INACTIVE')
+    calendar = GrileCalendarService.project_calendar('2028-02', data['calendar'])
+    data.update(sales=[], targets=[], source=None)
+    earnings = project_earnings(calendar, data)
+    artifact = build_earnings_zip(calendar, earnings)
+    try:
+        with ZipFile(artifact.stream) as archive:
+            book = load_workbook(BytesIO(archive.read('Castiguri-provizorii-2028-02.xlsx')), data_only=True)
+            rows = list(book['Calendar'].iter_rows(min_row=5, values_only=True))
+            assert len(rows) == 29 and rows[-1][1] == '2028-02-29'
+            assert all(row[0] == 'A' and row[4] == 'Nealocat' for row in rows)
+            book.close()
+    finally:
+        artifact.close()

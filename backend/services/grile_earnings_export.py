@@ -2,6 +2,10 @@
 from __future__ import annotations
 
 import json
+from calendar import monthrange
+from collections import defaultdict
+from datetime import date
+from decimal import Decimal
 from shutil import copyfileobj
 from tempfile import SpooledTemporaryFile
 from zipfile import ZipFile
@@ -9,8 +13,9 @@ from zipfile import ZipFile
 from fastapi import HTTPException
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font
+from openpyxl.utils import get_column_letter
 
-from grile.calendar_models import CalendarMonth
+from grile.calendar_models import CalendarAttendance, CalendarMonth
 from grile.earnings_models import EarningsMonth
 from services.grile_attendance_export import build_attendance_zip
 
@@ -29,17 +34,63 @@ def _rows(sheet, rows) -> None:
         for column, value in enumerate(row, 1):
             if isinstance(value, str):
                 sheet.cell(number, column).data_type = 's'
+            if isinstance(value, Decimal):
+                sheet.cell(number, column).number_format = '#,##0.00'
     sheet.freeze_panes = 'C5'
     sheet.auto_filter.ref = f'A4:{sheet.cell(sheet.max_row, sheet.max_column).coordinate}'
     for cell in sheet[4]:
         cell.font = Font(bold=True)
         cell.alignment = Alignment(wrap_text=True)
     sheet.row_dimensions[4].height = 36
-    for cells in sheet.columns:
-        sheet.column_dimensions[cells[0].column_letter].width = 24
+    width = sheet.max_column
+    for number in range(1, 4):
+        text = ' · '.join(str(cell.value) for cell in sheet[number] if cell.value is not None)
+        sheet.merge_cells(start_row=number, start_column=1, end_row=number, end_column=width)
+        sheet.cell(number, 1, text).data_type = 's'
+        sheet.cell(number, 1).alignment = Alignment(wrap_text=True)
+        sheet.row_dimensions[number].height = 30
+    for column in range(1, width + 1):
+        sheet.column_dimensions[get_column_letter(column)].width = 24
+    sheet.print_title_rows = '1:4'
+    sheet.sheet_view.showGridLines = False
 
 
-def _workbook(data: EarningsMonth) -> Workbook:
+def _summary_rows(data: EarningsMonth, calendar: CalendarMonth):
+    attendance = {a.agent_code: a for a in calendar.attendance}
+    for agent in data.agents:
+        totals = attendance.get(agent.agent_code, CalendarAttendance(agent_code=agent.agent_code))
+        yield [agent.agent_code, agent.display_name, agent.home_site_code, _LABELS[agent.identity_status],
+               agent.home_work_days, agent.home_target, agent.home_sales, agent.home_commission,
+               agent.away_commission, agent.supplemental_pay, agent.known_earnings,
+               ', '.join(_LABELS.get(value, value) for value in agent.issues),
+               totals.worked_minutes / 60, totals.leave_days]
+
+
+def _calendar_rows(calendar: CalendarMonth):
+    grouped = defaultdict(list)
+    for day in calendar.days:
+        grouped[(day.site_code, day.work_date)].append(day)
+    roster = {r.agent_code: r for r in calendar.roster}
+    attendance = {(d.agent_code, d.work_date): d for d in calendar.attendance_days}
+    sites = {r.home_site_code for r in calendar.roster if r.active} | set(calendar.attendance_by_store) | {h.site_code for h in calendar.store_hours}
+    year, month = map(int, calendar.month.split('-'))
+    labels = {'work': 'Lucrează', 'leave': 'Concediu', 'off': 'Liber', 'cancelled': 'Anulat'}
+    for site in sorted(sites):
+        for number in range(1, monthrange(year, month)[1] + 1):
+            current = date(year, month, number)
+            entries = grouped[(site, current)]
+            for day in sorted(entries, key=lambda row: row.agent_code):
+                person = roster[day.agent_code]
+                hours = attendance.get((day.agent_code, current))
+                yield [site, current.isoformat(), day.agent_code, person.display_name,
+                       labels[day.status], day.supplemental, person.home_site_code,
+                       hours.opens if hours else None, hours.closes if hours else None,
+                       hours.break_minutes if hours else 0, hours.worked_minutes / 60 if hours else 0]
+            if not any(day.status == 'work' for day in entries):
+                yield [site, current.isoformat(), None, None, 'Nealocat']
+
+
+def _workbook(data: EarningsMonth, calendar: CalendarMonth) -> Workbook:
     workbook = Workbook()
     workbook.remove(workbook.active)
     workbook.properties.identifier = data.projection_revision
@@ -49,10 +100,8 @@ def _workbook(data: EarningsMonth) -> Workbook:
         ['Vânzări până la', str(data.cutoff or 'Indisponibil')],
         ['Componente neincluse', ', '.join(_LABELS.get(value, value) for value in data.unavailable_components)],
         ['Cod agent', 'Nume confirmat', 'Magazin de bază', 'Identitate', 'Zile bază', 'Target personal (lei)',
-         'Vânzări bază (lei)', 'Comision lunar (lei)', 'Comision alte locații (lei)', 'Plata suplimentărilor (lei)', 'Total calculat (lei)', 'Probleme'],
-        *[[a.agent_code, a.display_name, a.home_site_code, _LABELS[a.identity_status], a.home_work_days,
-           a.home_target, a.home_sales, a.home_commission, a.away_commission, a.supplemental_pay,
-           a.known_earnings, ', '.join(_LABELS.get(value, value) for value in a.issues)] for a in data.agents],
+         'Vânzări bază (lei)', 'Comision lunar (lei)', 'Comision alte locații (lei)', 'Plata suplimentărilor (lei)', 'Total calculat (lei)', 'Probleme', 'Ore programate în toate magazinele', 'Zile CO programate'],
+        *_summary_rows(data, calendar),
     ])
     detail = workbook.create_sheet('Detalii zile')
     _rows(detail, [
@@ -73,17 +122,26 @@ def _workbook(data: EarningsMonth) -> Workbook:
         ['Magazin', 'Data', 'Vânzări'],
         *[[r.site_code, r.sale_date.isoformat(), r.sales] for r in data.unassigned_sales],
     ])
+    schedule = workbook.create_sheet('Calendar')
+    _rows(schedule, [
+        ['PROVIZORIU — program confirmat, fără atribuiri din vânzări', calendar.month],
+        ['Nealocat = niciun lucrător confirmat în magazin în acea zi'],
+        ['Orele și concediile includ programul întregii luni, inclusiv zilele viitoare'],
+        ['Magazin lucrat', 'Data', 'Cod agent', 'Nume confirmat', 'Tip zi', 'Suplimentare',
+         'Magazin de bază', 'Deschidere', 'Închidere', 'Pauză (minute)', 'Ore programate'],
+        *_calendar_rows(calendar),
+    ])
     return workbook
 
 
 def build_earnings_zip(calendar: CalendarMonth, earnings: EarningsMonth):
     if earnings.calendar_revision != calendar.projection_revision or earnings.month != calendar.month:
         raise HTTPException(409, 'Earnings and attendance must share one calendar revision')
-    if len(earnings.agents) > 2000 or sum(len(a.days) for a in earnings.agents) > 62000 or len(earnings.unassigned_sales) > 62000:
+    if len(calendar.days) > 62000 or len(earnings.agents) > 2000 or sum(len(a.days) for a in earnings.agents) > 62000 or len(earnings.unassigned_sales) > 62000:
         raise HTTPException(422, 'Earnings export exceeds the supported monthly cohort')
     artifact = build_attendance_zip(calendar)
     try:
-        workbook = _workbook(earnings)
+        workbook = _workbook(earnings, calendar)
         try:
             with SpooledTemporaryFile(max_size=1024 * 1024, mode='w+b') as file:
                 workbook.save(file)
