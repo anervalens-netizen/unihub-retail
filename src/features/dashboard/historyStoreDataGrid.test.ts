@@ -80,10 +80,12 @@ describe('historyStoreDataGridColumns', () => {
     expect(columns[2]?.value(row)).toBe(900);
   });
 
-  it('projects the exact displayed Store text without changing raw values', () => {
+  it('projects exact displayed and copied Store text without changing raw values', () => {
     const columns = historyStoreDataGridColumns(sourceColumns);
 
-    expect(columns[0]?.searchValue?.(row)).toBe('Mobiup Promenada');
+    expect(columns[0]?.searchValue?.(row)).toBe(
+      'Mobiup Promenada MPromenada',
+    );
     expect(columns[1]?.searchValue?.(row)).toBe('1.000');
     expect(columns[2]?.searchValue?.(row)).toBe('900');
     expect(columns[3]?.searchValue?.(row)).toBe('90.00%');
