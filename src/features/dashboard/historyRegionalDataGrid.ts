@@ -37,6 +37,9 @@ export function historyRegionalDataGridColumns<Key extends string>(
 ): DataGridColumn<RegionalStat, Key>[] {
   return columns.map((column) => ({
     ...column,
+    cellClassName: typeof column.cellClassName === 'string'
+      ? column.cellClassName
+      : undefined,
     value: (row) => row[column.key as keyof RegionalStat],
     filter: column.key === 'regional'
       ? { kind: 'text' as const, placeholder: 'Regional' }
