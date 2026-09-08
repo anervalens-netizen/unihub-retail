@@ -15,6 +15,7 @@ export interface DataGridColumn<Row, Key extends string> {
   key: Key;
   label: string;
   value: (row: Row) => unknown;
+  searchValue?: (row: Row) => unknown;
   render: (row: Row) => ReactNode;
   filter?: DataGridFilterConfig;
   defaultDirection?: 'asc' | 'desc';
