@@ -32,6 +32,7 @@ import type { ExportColumn } from '../../lib/tableExport';
 import {
   DataGridColumnMenu,
   DataGridFilterControl,
+  DataGridHiddenFilters,
 } from './DataGridControls';
 import type { DataGridColumn } from './dataGridTypes';
 
@@ -506,6 +507,14 @@ export function DataGrid<Row, Key extends string>(props: DataGridProps<Row, Key>
           exportRows={state.viewRows}
         />
       </div>
+
+      <DataGridHiddenFilters
+        columns={props.columns}
+        hidden={state.hidden}
+        filters={state.filters}
+        tableId={tableId}
+        onClear={(key) => setFilter(key, undefined)}
+      />
 
       <p
         id={sortStatusId}

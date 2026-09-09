@@ -330,5 +330,37 @@ test.describe('V3 Hub history acceptance', () => {
       await expect(kpiCard.getByRole('table')).toHaveCount(0);
       await expect(kpiCard.locator('.recharts-wrapper')).toBeVisible();
     });
+
+    test(`clears a hidden-column filter without losing global search at ${width}px`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await openHistory(page);
+      if (width < 1024) {
+        await page.getByRole('tablist', { name: 'Conținut istoric mobil' })
+          .getByRole('tab', { name: 'Detalii', exact: true }).click();
+      }
+      const card = dataGridCard(page, 'RM');
+      await expect(card.getByTestId('data-grid-row')).toHaveCount(2);
+      const search = card.getByRole('searchbox', { name: 'Caută în coloanele afișate din RM' });
+      await search.fill('sud');
+      await card.getByRole('spinbutton', { name: 'Minim Target' }).fill('2500');
+      await expect(card.getByTestId('data-grid-row')).toHaveCount(0);
+      await card.getByText('Coloane', { exact: true }).click();
+      await card.getByRole('checkbox', { name: 'Afișează Target' }).uncheck();
+      await card.getByText('Coloane', { exact: true }).click();
+      const group = card.getByRole('group', { name: 'Filtre pe coloane ascunse' });
+      const clear = group.getByRole('button', { name: 'Șterge filtrul Target: ≥ 2500' });
+      await expect(clear).toBeVisible();
+      await expectNoPageOverflow(page);
+      await clear.focus();
+      await clear.press('Enter');
+      await expect(group).toHaveCount(0);
+      await expect(search).toHaveValue('sud');
+      await expect(card.getByTestId('data-grid-row')).toHaveCount(1);
+      await expect(card.getByTestId('data-grid-row')).toContainText('Sud');
+      await expect(card.getByTestId('data-grid-header-target')).toHaveCount(0);
+      await card.getByRole('button', { name: 'Șterge filtrele (1)' }).click();
+      await expect(card.getByTestId('data-grid-row')).toHaveCount(2);
+      await expectNoPageOverflow(page);
+    });
   }
 });

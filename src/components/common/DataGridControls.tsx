@@ -6,7 +6,11 @@ import {
 } from 'lucide-react';
 import type { ChangeEvent } from 'react';
 
-import type { DataGridFilterValue } from '../../lib/dataGrid';
+import {
+  isDataGridFilterActive,
+  type DataGridFilters,
+  type DataGridFilterValue,
+} from '../../lib/dataGrid';
 import type { DataGridColumn } from './dataGridTypes';
 
 function parseNumericInput(value: string): number | null {
@@ -172,5 +176,66 @@ export function DataGridColumnMenu<Row, Key extends string>({
         )}
       </div>
     </details>
+  );
+}
+
+function hiddenFilterDescription<Row, Key extends string>(
+  column: DataGridColumn<Row, Key>,
+  filter: DataGridFilterValue,
+): string {
+  if (filter.kind === 'number') {
+    const min = filter.min !== null && Number.isFinite(filter.min) ? filter.min : null;
+    const max = filter.max !== null && Number.isFinite(filter.max) ? filter.max : null;
+    if (min !== null && max !== null) return `${min} – ${max}`;
+    return min !== null ? `≥ ${min}` : `≤ ${max}`;
+  }
+  if (filter.kind === 'enum' && column.filter?.kind === 'enum') {
+    return column.filter.options.find((option) => option.value === filter.value)?.label
+      ?? filter.value;
+  }
+  return filter.value;
+}
+
+export function DataGridHiddenFilters<Row, Key extends string>({
+  columns,
+  hidden,
+  filters,
+  tableId,
+  onClear,
+}: {
+  columns: readonly DataGridColumn<Row, Key>[];
+  hidden: readonly Key[];
+  filters: DataGridFilters<Key>;
+  tableId: string;
+  onClear: (key: Key) => void;
+}) {
+  const active = columns.flatMap((column) => {
+    const filter = filters[column.key];
+    if (!hidden.includes(column.key) || !filter || !isDataGridFilterActive(filter)) return [];
+    return [{ key: column.key, label: `${column.label}: ${hiddenFilterDescription(column, filter)}` }];
+  });
+  if (active.length === 0) return null;
+
+  return (
+    <div
+      role="group"
+      aria-label="Filtre pe coloane ascunse"
+      className="flex min-w-0 flex-wrap items-center gap-1.5 border-b border-slate-100 px-3 py-2 text-[11px] text-slate-600 dark:border-slate-800 dark:text-slate-300"
+    >
+      <span>Filtre pe coloane ascunse:</span>
+      {active.map(({ key, label }) => (
+        <button
+          key={key}
+          type="button"
+          aria-label={`Șterge filtrul ${label}`}
+          aria-controls={tableId}
+          onClick={() => onClear(key)}
+          className="inline-flex min-w-0 max-w-full items-center gap-1 rounded-lg border border-slate-200 px-2 py-1 text-left font-semibold hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:border-slate-700 dark:hover:bg-slate-800"
+        >
+          <span className="min-w-0 break-all">{label}</span>
+          <RotateCcw size={12} aria-hidden="true" className="shrink-0" />
+        </button>
+      ))}
+    </div>
   );
 }
