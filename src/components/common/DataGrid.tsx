@@ -8,9 +8,11 @@ import {
 import {
   useId,
   useMemo,
+  useRef,
   useState,
   type MouseEvent,
   type ReactNode,
+  type RefObject,
 } from 'react';
 
 import { ExportTableButton } from '../ExportTableButton';
@@ -32,6 +34,7 @@ import type { ExportColumn } from '../../lib/tableExport';
 import {
   DataGridColumnMenu,
   DataGridFilterControl,
+  DataGridHiddenFilters,
 } from './DataGridControls';
 import type { DataGridColumn } from './dataGridTypes';
 
@@ -144,6 +147,18 @@ function useDataGridState<Row, Key extends string>({
     [visibleColumns],
   );
 
+  const setFilter = (
+    key: Key,
+    filter: DataGridFilterValue | undefined,
+  ) => {
+    setFilters((current) => {
+      const next = { ...current };
+      if (isDataGridFilterActive(filter)) next[key] = filter;
+      else delete next[key];
+      return next;
+    });
+  };
+
   return {
     activeFilterCount,
     allKeys,
@@ -154,6 +169,7 @@ function useDataGridState<Row, Key extends string>({
     globalSearch,
     hidden,
     normalizedOrder,
+    setFilter,
     setFilters,
     setGlobalSearch,
     setHidden,
@@ -324,11 +340,13 @@ function DataGridGlobalSearch({
   tableId,
   value,
   onChange,
+  inputRef,
 }: {
   title: string;
   tableId: string;
   value: string;
   onChange: (value: string) => void;
+  inputRef?: RefObject<HTMLInputElement | null>;
 }) {
   return (
     <div className="relative min-w-52 flex-1 sm:max-w-64 sm:flex-none">
@@ -338,6 +356,7 @@ function DataGridGlobalSearch({
         className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-slate-400"
       />
       <input
+        ref={inputRef ?? undefined}
         type="search"
         value={value}
         onChange={(event) => onChange(event.target.value)}
@@ -369,6 +388,8 @@ function DataGridToolbar<Row, Key extends string>({
   exportSheetName,
   exportColumns,
   exportRows,
+  searchInputRef,
+  clearAllRef,
 }: {
   title: string;
   rowsLength: number;
@@ -388,6 +409,8 @@ function DataGridToolbar<Row, Key extends string>({
   exportSheetName: string;
   exportColumns: ExportColumn<Row>[];
   exportRows: readonly Row[];
+  searchInputRef?: RefObject<HTMLInputElement | null>;
+  clearAllRef?: RefObject<HTMLButtonElement | null>;
 }) {
   return (
     <div className="flex min-w-0 flex-1 flex-wrap items-center justify-end gap-1.5">
@@ -397,10 +420,12 @@ function DataGridToolbar<Row, Key extends string>({
           tableId={tableId}
           value={search}
           onChange={onSearchChange}
+          inputRef={searchInputRef}
         />
       )}
       {activeFilterCount > 0 && (
         <button
+          ref={clearAllRef ?? undefined}
           type="button"
           onClick={onClearFilters}
           className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1 text-[11px] font-bold text-slate-600 hover:border-indigo-200 hover:text-indigo-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
@@ -433,19 +458,9 @@ export function DataGrid<Row, Key extends string>(props: DataGridProps<Row, Key>
   const titleId = useId();
   const tableId = useId();
   const sortStatusId = useId();
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const clearAllRef = useRef<HTMLButtonElement>(null);
   const sortStatus = buildSortStatus(state.sorts, state.columnMap);
-
-  const setFilter = (
-    key: Key,
-    filter: DataGridFilterValue | undefined,
-  ) => {
-    state.setFilters((current) => {
-      const next = { ...current };
-      if (isDataGridFilterActive(filter)) next[key] = filter;
-      else delete next[key];
-      return next;
-    });
-  };
 
   const updateSort = (key: Key, append: boolean) => {
     const next = nextDataGridSorts(state.sorts, key, {
@@ -504,8 +519,20 @@ export function DataGrid<Row, Key extends string>(props: DataGridProps<Row, Key>
           exportSheetName={props.exportSheetName}
           exportColumns={props.exportColumns ?? state.exportColumns}
           exportRows={state.viewRows}
+          searchInputRef={searchInputRef}
+          clearAllRef={clearAllRef}
         />
       </div>
+
+      <DataGridHiddenFilters
+        columns={props.columns}
+        hidden={state.hidden}
+        filters={state.filters}
+        tableId={tableId}
+        searchInputRef={searchInputRef}
+        clearAllRef={clearAllRef}
+        onClear={(key) => state.setFilter(key, undefined)}
+      />
 
       <p
         id={sortStatusId}
@@ -528,7 +555,7 @@ export function DataGrid<Row, Key extends string>(props: DataGridProps<Row, Key>
             sorts={state.sorts}
             filters={state.filters}
             onSort={updateSort}
-            onFilter={setFilter}
+            onFilter={state.setFilter}
             sortStatusId={sortStatusId}
           />
           <DataGridBody
