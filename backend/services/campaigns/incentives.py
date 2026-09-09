@@ -281,10 +281,16 @@ def _incentive_top_stores(
     promotion: PromotionProjection,
     accumulator: _IncentiveAccumulator,
 ) -> list[PromoTopStore]:
+    regionals = {
+        str(row["site_code"]): str(row.get("regional") or "")
+        for row in snapshot.incentive_store_rows
+    }
     if not promotion.has_active:
         return [
             PromoTopStore(
                 store_name=f"{site_code} - {data[0]}",
+                site_code=site_code,
+                regional=regionals.get(site_code, ""),
                 qty=int(data[3]),
                 total_qty=0,
                 category_qty=0,
@@ -306,6 +312,8 @@ def _incentive_top_stores(
         rows.append(
             PromoTopStore(
                 store_name=store.store_name,
+                site_code=site_code,
+                regional=regionals.get(site_code, store.regional),
                 qty=int(data[3]),
                 total_qty=store.total_qty,
                 category_qty=store.category_qty,

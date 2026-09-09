@@ -390,12 +390,14 @@ class CampaignsRepository:
         )
         location_expr = "s.locatie" if current_scope else "agg.locatie"
         company_expr = "s.firma" if current_scope else "agg.firma"
+        regional_expr = "s.regional" if current_scope else "agg.regional"
         return await conn.fetch(
             f"""
             SELECT
                 agg.site_code,
                 MAX({location_expr}) AS locatie,
                 MAX({company_expr}) AS firma,
+                MAX({regional_expr}) AS regional,
                 COALESCE(SUM(agg.positive_quantity), 0)::INT AS qty,
                 COALESCE(SUM(agg.net_quantity), 0)::INT AS total_qty
             FROM reporting_item_day agg
@@ -434,6 +436,7 @@ class CampaignsRepository:
         )
         location_expr = "s.locatie" if current_scope else "agg.locatie"
         company_expr = "s.firma" if current_scope else "agg.firma"
+        regional_expr = "s.regional" if current_scope else "agg.regional"
         return await conn.fetch(
             f"""
             WITH item_categories AS (
@@ -446,6 +449,7 @@ class CampaignsRepository:
             )
             SELECT agg.site_code, MAX({location_expr}) AS locatie,
                    MAX({company_expr}) AS firma,
+                   MAX({regional_expr}) AS regional,
                    agg.item_code,
                    ip.valid_from,
                    ip.valid_to,
@@ -494,6 +498,7 @@ class CampaignsRepository:
         )
         location_expr = "s.locatie" if current_scope else "agg.locatie"
         company_expr = "s.firma" if current_scope else "agg.firma"
+        regional_expr = "s.regional" if current_scope else "agg.regional"
         return await conn.fetch(
             f"""
             WITH item_categories AS (
@@ -507,6 +512,7 @@ class CampaignsRepository:
             SELECT agg.agent, agg.site_code,
                    MAX({location_expr}) AS locatie,
                    MAX({company_expr}) AS firma,
+                   MAX({regional_expr}) AS regional,
                    agg.item_code,
                    ip.valid_from,
                    ip.valid_to,
