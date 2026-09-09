@@ -6,9 +6,15 @@ on:
       - "v3/main"
     paths:
       - "src/**"
+      - "e2e/**"
+      - "playwright.config.ts"
       - "vendor/npm/**"
       - "package.json"
       - "package-lock.json"
+      - "backend/requirements.txt"
+      - "backend/requirements.lock"
+      - "backend/requirements-dev.txt"
+      - "backend/requirements-dev.lock"
       - "eslint.config.js"
       - "tsconfig*.json"
       - "vite.config.ts"
@@ -30,14 +36,16 @@ permissions:
 jobs:
   frontend:
     name: v3-frontend
-    if: github.event.pull_request.head.repo.full_name == github.repository
+    if: github.event.pull_request.head.repo.full_name == github.repository && startsWith(github.head_ref, 'v3/')
     runs-on: [self-hosted, Linux, X64, dell-compute, unihub-build, unihub-retail-build]
     timeout-minutes: 25
     env:
+      CI: "true"
       RETAIL_NODE: /opt/codex-desktop/resources/node-runtime/bin/node
       RETAIL_NPM_CLI: /opt/codex-desktop/resources/node-runtime/lib/node_modules/npm/bin/npm-cli.js
       PATH: /opt/codex-desktop/resources/node-runtime/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
       PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
       VITE_FRONTEND_GLITCHTIP_DSN: ""
     steps:
       - name: Prove isolated build runner
@@ -61,6 +69,18 @@ jobs:
           fetch-tags: true
           persist-credentials: false
 
+      - name: Verify exact source and select focused browser coverage
+        id: scope
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$PR_HEAD_SHA"
+          test -z "$(git status --short)"
+          git diff --check "$PR_BASE_SHA"...HEAD
+          changed="$(git diff --name-only "$PR_BASE_SHA"...HEAD)"
+          if grep -Eq '^(src/|e2e/|vendor/npm/|package(-lock)?\.json$|playwright\.config\.ts$|vite\.config\.ts$|\.github/workflows/v3-frontend-ci\.yml$)' <<< "$changed"; then
+            echo "history_browser=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Verify pinned Node.js and npm
         run: |
           set -euo pipefail
@@ -69,16 +89,27 @@ jobs:
           test "$("$RETAIL_NODE" --version)" = v22.22.2
           test "$("$RETAIL_NODE" "$RETAIL_NPM_CLI" --version)" = 10.9.7
 
-      - name: Verify vendored packages and dependency policy
+      - name: Verify vendored packages and frontend dependency policy
         run: |
+          set -euo pipefail
+          # This lane must not certify Python dependency changes without a Python environment.
+          if ! git diff --quiet "$PR_BASE_SHA"...HEAD -- \
+            backend/requirements.txt backend/requirements.lock \
+            backend/requirements-dev.txt backend/requirements-dev.lock; then
+            echo "::error::Python dependency changes require the backend verification lane."
+            exit 1
+          fi
           "$RETAIL_NODE" scripts/verify_vendored_npm_packages.mjs
-          "$RETAIL_NODE" scripts/check_dependency_policy.mjs
+          "$RETAIL_NODE" scripts/check_dependency_policy.mjs --pr-diff-only
 
       - name: Install frontend dependencies
-        run: "$RETAIL_NODE" "$RETAIL_NPM_CLI" ci --include=dev
+        run: |
+          set -euo pipefail
+          "$RETAIL_NODE" "$RETAIL_NPM_CLI" ci --include=dev
 
       - name: Typecheck, complexity and lint
         run: |
+          set -euo pipefail
           "$RETAIL_NODE" "$RETAIL_NPM_CLI" run typecheck
           "$RETAIL_NODE" scripts/check_ts_function_complexity.cjs
           "$RETAIL_NODE" "$RETAIL_NPM_CLI" run lint
@@ -87,20 +118,35 @@ jobs:
         run: |
           set -euo pipefail
           MERGE_BASE="$(git merge-base "$PR_BASE_SHA" HEAD)"
+          if git diff --quiet "$MERGE_BASE" HEAD -- src; then
+            # Exercise the lane itself instead of reporting a zero-test workflow/config check.
+            "$RETAIL_NODE" "$RETAIL_NPM_CLI" run test -- \
+              src/lib/dataGrid.test.ts \
+              src/components/common/DataGrid.globalSearch.test.tsx \
+              src/features/dashboard/HistoryDashboardTrend.test.tsx \
+              src/features/dashboard/HistoryPerformanceSelection.test.tsx \
+              src/features/dashboard/BreakdownTable.test.tsx
+          fi
+          # Keep affected-source coverage separate from the workflow-only smoke suite.
           "$RETAIL_NODE" "$RETAIL_NPM_CLI" run test:coverage -- \
-            --changed="$MERGE_BASE" \
-            --passWithNoTests
+            --changed="$MERGE_BASE" --passWithNoTests
           LCOV_PATH=coverage/frontend/lcov.info
           if [[ ! -s "$LCOV_PATH" ]]; then
             LCOV_PATH="$(mktemp -t retail-v3-empty-lcov-XXXXXX.info)"
             : > "$LCOV_PATH"
           fi
           /usr/bin/python3.12 -I -S scripts/check_changed_line_coverage.py \
-            --base "$MERGE_BASE" \
-            --frontend-lcov "$LCOV_PATH" \
-            --minimum 80
+            --base "$MERGE_BASE" --frontend-lcov "$LCOV_PATH" --minimum 80
 
       - name: Production build and bundle budget
         run: |
+          set -euo pipefail
           "$RETAIL_NODE" "$RETAIL_NPM_CLI" run build
           "$RETAIL_NODE" scripts/check_bundle_budget.mjs
+
+      - name: Focused History browser acceptance
+        if: steps.scope.outputs.history_browser == 'true'
+        run: |
+          set -euo pipefail
+          "$RETAIL_NODE" node_modules/@playwright/test/cli.js install chromium
+          "$RETAIL_NODE" "$RETAIL_NPM_CLI" run test:e2e -- e2e/history-v3-acceptance.spec.ts
