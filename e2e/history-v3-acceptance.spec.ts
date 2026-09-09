@@ -290,4 +290,45 @@ test.describe('V3 Hub history acceptance', () => {
     await expect(page.getByRole('combobox', { name: 'Tip grafic KPI' })).toHaveValue('line');
     await expectNoPageOverflow(page);
   });
+
+  for (const width of [1280, 390]) {
+    test(`reads KPI table values and retains the selected view at ${width}px`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await openHistory(page);
+      const sections = page.getByRole('tablist', { name: 'Conținut istoric mobil' });
+      if (width < 1024) await sections.getByRole('tab', { name: 'Trend', exact: true }).click();
+
+      const kpiCard = page.getByRole('heading', { name: 'Trend KPI', exact: true })
+        .locator('xpath=ancestor::div[contains(@class, "glass")][1]');
+      const view = kpiCard.getByRole('combobox', { name: 'Tip grafic KPI' });
+      await expect(view).toHaveValue('area');
+      await view.selectOption('table');
+      const table = kpiCard.getByRole('table', { name: 'Trend KPI — ProcBon2Acc' });
+      await expect(table).toBeVisible();
+      await expect(table.getByRole('columnheader', { name: 'Luna' })).toBeVisible();
+      await expect(table.getByRole('cell').first()).toBeVisible();
+      await expect(kpiCard.locator('.recharts-wrapper')).toHaveCount(0);
+      const region = kpiCard.getByRole('region', { name: 'Date Trend KPI' });
+      await region.focus();
+      await expect(region).toBeFocused();
+
+      await kpiCard.getByRole('button', { name: 'Focus', exact: true }).click();
+      await expect(kpiCard.getByRole('button', { name: 'Focus', exact: true }))
+        .toHaveAttribute('aria-pressed', 'true');
+      await expect(kpiCard.getByRole('table', { name: 'Trend KPI — PrcFocus/AccQtty' })).toBeVisible();
+      await kpiCard.getByRole('button', { name: 'Bonuri', exact: true }).click();
+      await expect(kpiCard.getByRole('table', { name: 'Trend KPI — Total bonuri' })).toBeVisible();
+      await expectNoPageOverflow(page);
+
+      if (width < 1024) {
+        await sections.getByRole('tab', { name: 'Detalii', exact: true }).click();
+        await sections.getByRole('tab', { name: 'Trend', exact: true }).click();
+        await expect(view).toHaveValue('table');
+        await expect(kpiCard.getByRole('table', { name: 'Trend KPI — Total bonuri' })).toBeVisible();
+      }
+      await view.selectOption('line');
+      await expect(kpiCard.getByRole('table')).toHaveCount(0);
+      await expect(kpiCard.locator('.recharts-wrapper')).toBeVisible();
+    });
+  }
 });
