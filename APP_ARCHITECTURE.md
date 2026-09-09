@@ -469,9 +469,12 @@ cardurile speciale folosesc acelasi `current_scope`/`include_closed_stores`;
 taskul comun este asteptat numai dupa eliberarea conexiunii folosite pentru
 randurile si multiplicatorii cardului. Aceeasi regula se pastreaza la
 recalcularea excluderilor pentru campaniile incentive cu mai multe perioade.
-Frontendul reda aceleasi coloane curente si istorice RM/Magazine/Agenti prin
-componenta tipizata `dashboard/BreakdownTable.tsx`, care centralizeaza tabelul
-sortabil si exportul Excel fara a schimba payload-urile API.
+Frontendul reda tabelele curente RM/Magazine/Agenti prin componenta tipizata
+`dashboard/BreakdownTable.tsx`. In `Hub -> Istoric`, breakdown-urile
+RM/Magazine/Agenti folosesc shared V3 `common/DataGrid.tsx` prin adaptoarele
+dedicate `historyRegionalDataGrid.ts`, `historyStoreDataGrid.ts` si
+`historyAgentDataGrid.ts`, pastrand payload-urile API si proiectiile legacy de
+export acolo unde acestea difera de coloanele vizibile.
 `Dashboard.tsx` orchestreaza query-urile, agregarea multi-luna, filtrele si
 state-ul comun; `dashboard/CurrentDashboard.tsx` si
 `dashboard/HistoryDashboard.tsx` sunt view-uri tipizate fara data fetching

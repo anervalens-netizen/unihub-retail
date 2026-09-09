@@ -140,6 +140,8 @@ export interface HistoryDashboardProps<RegionalKey extends string, StoreKey exte
   agentColumns: BreakdownColumn<AgentStat, AgentKey>[];
   agentSort: SortState<AgentKey>;
   onSortAgents: (key: AgentKey) => void;
+  agentGridSorts: readonly DataGridSort<AgentKey>[];
+  onAgentGridSortsChange: (sorts: readonly DataGridSort<AgentKey>[]) => void;
 }
 
 export function HistoryDashboard<RegionalKey extends string, StoreKey extends string, AgentKey extends string>(

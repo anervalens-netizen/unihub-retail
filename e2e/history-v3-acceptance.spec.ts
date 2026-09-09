@@ -177,7 +177,7 @@ async function openHistory(page: Page) {
     .toHaveAttribute('aria-selected', 'true');
 }
 
-function dataGridCard(page: Page, title: 'RM' | 'Magazine') {
+function dataGridCard(page: Page, title: 'RM' | 'Magazine' | 'Agenti') {
   return page.getByRole('heading', { name: title, exact: true, level: 3 })
     .locator('xpath=ancestor::section[1]');
 }
@@ -193,23 +193,24 @@ test.describe('V3 Hub history acceptance', () => {
     await installHistoryMocks(context);
   });
 
-  test('proves DataGrid filters, multi-sort, columns, export, drill-down and legacy Agents on desktop', async ({ page }) => {
+  test('proves all three History DataGrids, export and Store drill-down on desktop', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 900 });
     await openHistory(page);
 
     const rmCard = dataGridCard(page, 'RM');
     const storeCard = dataGridCard(page, 'Magazine');
+    const agentsCard = dataGridCard(page, 'Agenti');
     const rmTable = rmCard.getByRole('table', { name: 'RM' });
     const storeTable = storeCard.getByRole('table', { name: 'Magazine' });
-    const agentsHeading = page.getByRole('heading', { name: 'Agenti', exact: true });
-    const agentsCard = agentsHeading.locator('xpath=ancestor::div[contains(@class, "glass")][1]');
+    const agentsTable = agentsCard.getByRole('table', { name: 'Agenti' });
 
     await expect(rmTable).toBeVisible();
     await expect(storeTable).toBeVisible();
-    await expect(agentsCard.getByRole('table', { name: 'Agenti' })).toBeVisible();
+    await expect(agentsTable).toBeVisible();
     await expect(rmCard.getByTestId('data-grid-row')).toHaveCount(2);
     await expect(storeCard.getByTestId('data-grid-row')).toHaveCount(2);
-    await expect(agentsCard).toContainText('Ana Popescu');
+    await expect(agentsCard.getByTestId('data-grid-row')).toHaveCount(1);
+    await expect(agentsCard.getByTestId('data-grid-row')).toContainText('Ana Popescu');
 
     const regionalFilter = rmCard.getByRole('searchbox', { name: 'Filtrează Regional' });
     await regionalFilter.fill('nord');
@@ -236,12 +237,35 @@ test.describe('V3 Hub history acceptance', () => {
     await rmCard.getByText('Coloane', { exact: true }).click();
 
     await regionalFilter.fill('nord');
-    const [download] = await Promise.all([
+    const [rmDownload] = await Promise.all([
       page.waitForEvent('download'),
       rmCard.getByRole('button', { name: 'Excel', exact: true }).click(),
     ]);
-    expect(download.suggestedFilename()).toBe('hub_2026-04_istoric_rm.xlsx');
+    expect(rmDownload.suggestedFilename()).toBe('hub_2026-04_istoric_rm.xlsx');
     await rmCard.getByRole('button', { name: 'Șterge filtrele (1)' }).click();
+
+    const agentSearch = agentsCard.getByRole('searchbox', {
+      name: 'Caută în coloanele afișate din Agenti',
+    });
+    await agentSearch.fill('ana');
+    await agentsCard.getByRole('searchbox', { name: 'Filtrează Agent' }).fill('ana');
+    await expect(agentsCard.getByTestId('data-grid-row')).toHaveCount(1);
+    await agentsCard.getByText('Coloane', { exact: true }).click();
+    await expect(agentsCard.getByRole('checkbox', { name: 'Afișează Agent' })).toBeDisabled();
+    await agentsCard.getByText('Coloane', { exact: true }).click();
+    const agentResize = agentsCard.getByRole('separator', { name: 'Redimensionează Target' });
+    await agentResize.focus();
+    await agentResize.press('ArrowRight');
+    await expect(agentResize).toHaveAttribute('aria-valuetext', /pixeli$/);
+    await agentsCard.getByText('Coloane', { exact: true }).click();
+    await agentsCard.getByRole('button', { name: 'Resetează lățimile' }).click();
+    const [agentDownload] = await Promise.all([
+      page.waitForEvent('download'),
+      agentsCard.getByRole('button', { name: 'Excel', exact: true }).click(),
+    ]);
+    expect(agentDownload.suggestedFilename()).toBe('hub_2026-04_istoric_agenti.xlsx');
+    await agentsCard.getByRole('button', { name: 'Șterge filtrele (2)' }).click();
+    await expect(agentSearch).toHaveValue('');
 
     const chartType = page.getByRole('combobox', { name: 'Tip grafic KPI' });
     await expect(chartType).toHaveValue('area');
@@ -283,7 +307,7 @@ test.describe('V3 Hub history acceptance', () => {
     await mobileSections.getByRole('tab', { name: 'Detalii', exact: true }).click();
     await expect(dataGridCard(page, 'RM')).toBeVisible();
     await expect(dataGridCard(page, 'Magazine')).toBeVisible();
-    await expect(page.getByRole('heading', { name: 'Agenti', exact: true })).toBeVisible();
+    await expect(dataGridCard(page, 'Agenti')).toBeVisible();
     await expect(page.locator('select[aria-label="Tip grafic KPI"]')).toHaveValue('line');
 
     await mobileSections.getByRole('tab', { name: 'Trend', exact: true }).click();
@@ -358,8 +382,6 @@ test.describe('V3 Hub history acceptance', () => {
       await expect(card.getByTestId('data-grid-row')).toHaveCount(1);
       await expect(card.getByTestId('data-grid-row')).toContainText('Sud');
       await expect(card.getByTestId('data-grid-header-target')).toHaveCount(0);
-      // Keyboard focus must land on the stable clear-all toolbar button
-      // because global search still holds a value (count = 1).
       await expect(
         card.getByRole('button', { name: 'Șterge filtrele (1)' }),
       ).toBeFocused();
@@ -383,7 +405,7 @@ test.describe('V3 Hub history acceptance', () => {
       await handle.focus();
       await handle.press('ArrowRight');
       const resizedWidth = Number(await handle.getAttribute('aria-valuenow'));
-      expect(resizedWidth).toBeGreaterThan(72);
+      expect(resizedWidth).toBeGreaterThanOrEqual(112);
       await expect(header).toHaveCSS('width', `${resizedWidth}px`);
       await expectNoPageOverflow(page);
 

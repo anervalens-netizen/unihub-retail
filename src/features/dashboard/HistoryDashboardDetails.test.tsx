@@ -86,10 +86,15 @@ vi.mock('../../components/common/DataGrid', () => ({
                 { key: 'regional', direction: 'asc' },
                 { key: 'target', direction: 'desc' },
               ]
-            : [
-                { key: 'locatie', direction: 'asc' },
-                { key: 'target', direction: 'desc' },
-              ],
+            : title === 'Agenti'
+              ? [
+                  { key: 'agent', direction: 'asc' },
+                  { key: 'target', direction: 'desc' },
+                ]
+              : [
+                  { key: 'locatie', direction: 'asc' },
+                  { key: 'target', direction: 'desc' },
+                ],
         )}
       >
         persist-{title}-sort
@@ -118,6 +123,7 @@ import { HistoryBreakdowns, HistoryDetailCharts } from './HistoryDashboardDetail
 
 const onRegionalGridSortsChange = vi.fn();
 const onStoreGridSortsChange = vi.fn();
+const onAgentGridSortsChange = vi.fn();
 
 const props = {
   selectionSlug: '2026-08',
@@ -157,6 +163,10 @@ const props = {
   agentColumns: [{ key: 'agent', label: 'Agent', render: () => 'Ana' }],
   agentSort: { key: 'agent', direction: 'asc' },
   onSortAgents: vi.fn(),
+  agentGridSorts: [
+    { key: 'agent', direction: 'asc' },
+  ],
+  onAgentGridSortsChange,
 };
 
 const detailProps = {
@@ -358,20 +368,25 @@ describe('HistoryDetailCharts V4 ChartFrame consumers', () => {
 });
 
 describe('HistoryBreakdowns V3 DataGrid consumers', () => {
-  it('uses raw RM and Store rows, persists both sort chains and leaves Agenti legacy', () => {
+  it('uses raw rows and persists all History DataGrid sort chains', () => {
     onRegionalGridSortsChange.mockClear();
     onStoreGridSortsChange.mockClear();
+    onAgentGridSortsChange.mockClear();
     render(<HistoryBreakdowns props={props as never} visible />);
 
     expect(screen.getByTestId('grid-RM-state')).toHaveTextContent('2|text|target,regional');
     expect(screen.getByTestId('grid-Magazine-state')).toHaveTextContent(
       '2|text|total_vanzari',
     );
+    expect(screen.getByTestId('grid-Agenti-state')).toHaveTextContent('1|text|agent');
     expect(screen.getByTestId('grid-RM-export')).toHaveTextContent('derived');
     expect(screen.getByTestId('grid-Magazine-export')).toHaveTextContent(
       'Firma|Magazin|Target|Vanzari|Procent|Cantitate|Nr bonuri|Retururi|Agenti|Zile active',
     );
-    expect(screen.getByTestId('legacy-Agenti')).toHaveTextContent('1');
+    expect(screen.getByTestId('grid-Agenti-export')).toHaveTextContent(
+      'Agent|Firma|Magazin|Target|Vanzari|Procent|Cantitate|Nr bonuri|Retururi|Zile lucrate|Medie zilnica|ProcBon2Acc|Focus%',
+    );
+    expect(screen.queryByTestId('legacy-Agenti')).not.toBeInTheDocument();
     expect(screen.queryByTestId('legacy-Magazine')).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'persist-RM-sort' }));
@@ -383,6 +398,12 @@ describe('HistoryBreakdowns V3 DataGrid consumers', () => {
     fireEvent.click(screen.getByRole('button', { name: 'persist-Magazine-sort' }));
     expect(onStoreGridSortsChange).toHaveBeenCalledWith([
       { key: 'locatie', direction: 'asc' },
+      { key: 'target', direction: 'desc' },
+    ]);
+
+    fireEvent.click(screen.getByRole('button', { name: 'persist-Agenti-sort' }));
+    expect(onAgentGridSortsChange).toHaveBeenCalledWith([
+      { key: 'agent', direction: 'asc' },
       { key: 'target', direction: 'desc' },
     ]);
   });
