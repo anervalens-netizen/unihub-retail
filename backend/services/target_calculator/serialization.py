@@ -82,97 +82,139 @@ def strip_legacy_rule_fields(
     return True
 
 
-def regional_summary(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    summary: dict[str, dict[str, Any]] = defaultdict(
-        lambda: {
-            "store_count": 0,
-            "floor_total": Decimal("0"),
-            "proposed_total": Decimal("0"),
-            "final_total": Decimal("0"),
-            "current_month": None,
-            "current_forecast_total": Decimal("0"),
-            "last_year_base_month": None,
-            "last_year_target_month": None,
-            "last_year_base_total": Decimal("0"),
-            "last_year_target_total": Decimal("0"),
-        }
-    )
-    for row in rows:
-        data = summary[row["regional"]]
-        data["store_count"] += 1
-        data["floor_total"] += _money(row["floor_target"])
-        data["proposed_total"] += _money(row["proposed_target"])
-        data["final_total"] += _money(row["final_target"])
-        details = row.get("calculation_details") or {}
-        if isinstance(details, str):
-            details = json.loads(details)
-        history = row.get("history") or []
-        if isinstance(history, str):
-            history = json.loads(history)
+def _empty_regional_summary() -> dict[str, Any]:
+    return {
+        "store_count": 0,
+        "floor_total": Decimal("0"),
+        "proposed_total": Decimal("0"),
+        "final_total": Decimal("0"),
+        "current_month": None,
+        "current_forecast_total": Decimal("0"),
+        "last_year_base_month": None,
+        "last_year_target_month": None,
+        "last_year_base_total": Decimal("0"),
+        "last_year_target_total": Decimal("0"),
+    }
 
-        current_month = details.get("current_month")
-        current_forecast = details.get("current_forecast")
-        if current_forecast is None:
-            current_period = next(
-                (item for item in history if item.get("role") == "floor_reference"),
-                None,
-            )
-            current_month = current_month or (current_period or {}).get("month")
-            current_forecast = (current_period or {}).get("realized")
-        if current_month:
-            data["current_month"] = current_month
-        data["current_forecast_total"] += _money(current_forecast)
 
-        seasonality = details.get("seasonality") or {}
-        last_year = next(
-            (
-                item
-                for item in seasonality.get("store_years") or []
-                if item.get("year_offset") == 1
-            ),
+def _regional_row_projection(row: dict[str, Any]) -> dict[str, Any]:
+    details = row.get("calculation_details") or {}
+    if isinstance(details, str):
+        details = json.loads(details)
+    history = row.get("history") or []
+    if isinstance(history, str):
+        history = json.loads(history)
+
+    current_month = details.get("current_month")
+    current_forecast = details.get("current_forecast")
+    if current_forecast is None:
+        current_period = next(
+            (item for item in history if item.get("role") == "floor_reference"),
             None,
         )
-        if last_year is None:
-            base_period = next(
-                (item for item in history if item.get("role") == "seasonality_base_y1"),
-                None,
-            )
-            target_period = next(
-                (item for item in history if item.get("role") == "seasonality_target_y1"),
-                None,
-            )
-            last_year = {
-                "base_month": (base_period or {}).get("month"),
-                "target_month": (target_period or {}).get("month"),
-                "base_value": (base_period or {}).get("realized"),
-                "target_value": (target_period or {}).get("realized"),
-            }
-        if last_year.get("base_month"):
-            data["last_year_base_month"] = last_year["base_month"]
-        if last_year.get("target_month"):
-            data["last_year_target_month"] = last_year["target_month"]
-        data["last_year_base_total"] += _money(last_year.get("base_value"))
-        data["last_year_target_total"] += _money(last_year.get("target_value"))
-    return [
-        {
-            "regional": regional,
-            **values,
-            "floor_total": float(values["floor_total"]),
-            "proposed_total": float(values["proposed_total"]),
-            "final_total": float(values["final_total"]),
-            "current_forecast_total": float(values["current_forecast_total"]),
-            "last_year_base_total": float(values["last_year_base_total"]),
-            "last_year_target_total": float(values["last_year_target_total"]),
-            "proposed_growth_vs_current_pct": _percent_change_float(
-                values["proposed_total"], values["current_forecast_total"]
-            ) if values["current_forecast_total"] > 0 else None,
-            "final_growth_vs_current_pct": _percent_change_float(
-                values["final_total"], values["current_forecast_total"]
-            ) if values["current_forecast_total"] > 0 else None,
-            "last_year_growth_pct": _percent_change_float(
-                values["last_year_target_total"], values["last_year_base_total"]
-            ) if values["last_year_base_total"] > 0 else None,
+        current_month = current_month or (current_period or {}).get("month")
+        current_forecast = (current_period or {}).get("realized")
+
+    seasonality = details.get("seasonality") or {}
+    last_year = next(
+        (
+            item
+            for item in seasonality.get("store_years") or []
+            if item.get("year_offset") == 1
+        ),
+        None,
+    )
+    if last_year is None:
+        base_period = next(
+            (item for item in history if item.get("role") == "seasonality_base_y1"),
+            None,
+        )
+        target_period = next(
+            (item for item in history if item.get("role") == "seasonality_target_y1"),
+            None,
+        )
+        last_year = {
+            "base_month": (base_period or {}).get("month"),
+            "target_month": (target_period or {}).get("month"),
+            "base_value": (base_period or {}).get("realized"),
+            "target_value": (target_period or {}).get("realized"),
         }
+
+    return {
+        "current_month": current_month,
+        "current_forecast": current_forecast,
+        "last_year_base_month": last_year.get("base_month"),
+        "last_year_target_month": last_year.get("target_month"),
+        "last_year_base_value": last_year.get("base_value"),
+        "last_year_target_value": last_year.get("target_value"),
+    }
+
+
+def _accumulate_regional_summary(
+    values: dict[str, Any],
+    row: dict[str, Any],
+    projection: dict[str, Any],
+) -> None:
+    values["store_count"] += 1
+    values["floor_total"] += _money(row["floor_target"])
+    values["proposed_total"] += _money(row["proposed_target"])
+    values["final_total"] += _money(row["final_target"])
+
+    if projection["current_month"]:
+        values["current_month"] = projection["current_month"]
+    values["current_forecast_total"] += _money(projection["current_forecast"])
+
+    if projection["last_year_base_month"]:
+        values["last_year_base_month"] = projection["last_year_base_month"]
+    if projection["last_year_target_month"]:
+        values["last_year_target_month"] = projection["last_year_target_month"]
+    values["last_year_base_total"] += _money(projection["last_year_base_value"])
+    values["last_year_target_total"] += _money(projection["last_year_target_value"])
+
+
+def _finalize_regional_summary(
+    regional: str, values: dict[str, Any]
+) -> dict[str, Any]:
+    current_forecast_total = values["current_forecast_total"]
+    last_year_base_total = values["last_year_base_total"]
+    return {
+        "regional": regional,
+        "store_count": values["store_count"],
+        "floor_total": float(values["floor_total"]),
+        "proposed_total": float(values["proposed_total"]),
+        "final_total": float(values["final_total"]),
+        "current_month": values["current_month"],
+        "current_forecast_total": float(current_forecast_total),
+        "last_year_base_month": values["last_year_base_month"],
+        "last_year_target_month": values["last_year_target_month"],
+        "last_year_base_total": float(last_year_base_total),
+        "last_year_target_total": float(values["last_year_target_total"]),
+        "proposed_growth_vs_current_pct": (
+            _percent_change_float(values["proposed_total"], current_forecast_total)
+            if current_forecast_total > 0
+            else None
+        ),
+        "final_growth_vs_current_pct": (
+            _percent_change_float(values["final_total"], current_forecast_total)
+            if current_forecast_total > 0
+            else None
+        ),
+        "last_year_growth_pct": (
+            _percent_change_float(values["last_year_target_total"], last_year_base_total)
+            if last_year_base_total > 0
+            else None
+        ),
+    }
+
+
+def regional_summary(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    summary: dict[str, dict[str, Any]] = defaultdict(_empty_regional_summary)
+    for row in rows:
+        values = summary[row["regional"]]
+        projection = _regional_row_projection(row)
+        _accumulate_regional_summary(values, row, projection)
+    return [
+        _finalize_regional_summary(regional, values)
         for regional, values in sorted(summary.items())
     ]
 
