@@ -168,13 +168,13 @@ class GrileCalendarRepository:
             return
         worked = await self._store(conn, day.site_code)
         if roster["home_site_code"] is None:
-            if day.status != "work" or not day.supplemental or worked["regional"] != roster["regional"]:
-                raise CalendarConflict("Team Leader work must be supplemental in the confirmed region")
+            if day.status != "work" or worked["regional"] != roster["regional"]:
+                raise CalendarConflict("Team Leader work must stay in the confirmed region")
             return
         home = await self._store(conn, roster["home_site_code"])
         if day.site_code != home["site_code"]:
-            if day.status != "work" or not day.supplemental:
-                raise CalendarConflict("Work at another store must be explicitly supplemental")
+            if day.status != "work":
+                raise CalendarConflict("Only work can be assigned at another store")
             if not home["regional"] or home["regional"] != worked["regional"]:
                 raise CalendarConflict("Supplemental store must be in the agent's home region")
 

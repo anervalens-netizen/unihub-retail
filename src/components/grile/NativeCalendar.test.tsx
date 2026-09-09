@@ -113,7 +113,8 @@ it('closes the old day snapshot after a home-store correction', async () => {
   mount(); await openStore();
   await userEvent.click(screen.getByRole('button', { name: 'Editează 2026-09-01' }));
   await userEvent.selectOptions(screen.getByLabelText('Agent pentru zi'), 'AG1');
-  expect(screen.getByLabelText('Suplimentar')).toBeChecked();
+  await userEvent.click(screen.getByLabelText('Zi suplimentară plătită'));
+  expect(screen.getByLabelText('Zi suplimentară plătită')).toBeChecked();
   await userEvent.click(screen.getByText('Confirmă agenții și magazinul de bază'));
   await userEvent.selectOptions(screen.getByLabelText('Cod agent pentru confirmare'), 'AG1');
   api.readCalendar.mockResolvedValue({ month: '2026-09', roster: [{ ...roster[0], revision: 2 }], days: [], attendance: [] });
@@ -123,7 +124,7 @@ it('closes the old day snapshot after a home-store correction', async () => {
   await waitFor(() => expect(screen.getByLabelText('Cod agent pentru confirmare')).toHaveValue(''));
   await userEvent.click(screen.getByRole('button', { name: 'Editează 2026-09-01' }));
   await userEvent.selectOptions(screen.getByLabelText('Agent pentru zi'), 'AG1');
-  expect(screen.getByLabelText('Suplimentar')).not.toBeChecked();
+  expect(screen.getByLabelText('Zi suplimentară plătită')).not.toBeChecked();
 });
 it('keeps unavailable scheduled stores accessible only for cancellation', async () => {
   api.calendarStores.mockResolvedValue([]);

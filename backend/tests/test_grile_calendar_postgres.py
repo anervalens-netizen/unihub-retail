@@ -101,11 +101,9 @@ async def test_conflicting_batch_rolls_back_original_schedule(repo):
 async def test_virtual_leader_preserves_store_scope_and_revision_fencing(repo):
     await repo.save_roster(MONTH, AG1, "TL", True, 0, "manager", regional="R1")
     assert (await repo.read(MONTH))["roster"][0]["home_site_code"] == "TL"
-    with pytest.raises(CalendarConflict, match="supplemental"):
-        await repo.save_days([day()], "manager")
     with pytest.raises(CalendarConflict, match="confirmed region"):
         await repo.save_days([day(site=C, supplemental=True)], "manager")
-    await repo.save_days([day(supplemental=True)], "manager")
+    await repo.save_days([day()], "manager")
     with pytest.raises(CalendarConflict, match="Cancel scheduled"):
         await repo.save_roster(MONTH, AG1, "TL", True, 1, "manager", regional="R2")
     calendar = await GrileCalendarService(repo).read(MONTH)
@@ -224,8 +222,7 @@ async def test_missing_identity_store_scope_and_leave_conflicts(repo):
         await repo.save_days([day(status="cancelled")], "manager")
     for change, error in [
         (day(site=CLOSED, supplemental=True), "not active"),
-        (day(site=B), "explicitly supplemental"),
-        (day(site=B, status="leave"), "explicitly supplemental"),
+        (day(site=B, status="leave"), "Only work"),
         (day(site=C, supplemental=True), "home region"),
     ]:
         with pytest.raises(CalendarConflict, match=error):
@@ -449,3 +446,12 @@ async def test_calendar_identity_is_effective_scoped_and_web_readable(repo, web_
         async with repo.pool.acquire() as conn:
             await conn.execute("DELETE FROM agent_salary_links WHERE agent_code=$1 AND site_code=$2", AG1, A)
         assert (await service.read(MONTH)).roster[0].display_name is None
+
+
+async def test_normal_shift_swap_preserves_store_hours_without_supplement(repo):
+    await confirm(repo)
+    await repo.save_days([day(site=B)], "manager")
+    calendar = await GrileCalendarService(repo).read(MONTH)
+    assert calendar.days[0].site_code == B and not calendar.days[0].supplemental
+    assert calendar.attendance[0].work_days_by_site == {B: 1}
+    assert calendar.attendance[0].worked_minutes == 660

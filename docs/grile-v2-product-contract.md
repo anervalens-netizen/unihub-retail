@@ -61,8 +61,9 @@ salariale rămân în reconcilierea D-03, distincte de cele 11/12 ore ale unei z
 
 Team Leader-ul fără magazin de bază este confirmat explicit prin cod și manager
 regional, în baza virtuală `TL` disponibilă numai în Grile. Aceasta nu creează un
-magazin în catalogul comercial. Zilele sale sunt suplimentări la magazinele
-lucrate, în regiunea confirmată; vânzările și orele rămân integral acolo.
+magazin în catalogul comercial. Zilele sale sunt alocate magazinelor
+lucrate, în regiunea confirmată; schimburile de tură sunt plătite normal,
+iar sporul de suplimentar se acordă numai zilelor marcate explicit. vânzările și orele rămân integral acolo.
 Grila personală TL centralizează câștigurile fără a dubla totalurile magazinelor.
 Concediul și zilele libere TL se editează în calendarul bazei virtuale, fără
 magazin fizic, ore lucrate sau vânzări. Baza virtuală nu acceptă zile lucrate.
