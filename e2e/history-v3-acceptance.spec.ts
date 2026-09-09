@@ -367,5 +367,39 @@ test.describe('V3 Hub history acceptance', () => {
       await expect(card.getByTestId('data-grid-row')).toHaveCount(2);
       await expectNoPageOverflow(page);
     });
+
+    test(`resizes a History DataGrid column without page overflow at ${width}px`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 });
+      await openHistory(page);
+      if (width < 1024) {
+        await page.getByRole('tablist', { name: 'Conținut istoric mobil' })
+          .getByRole('tab', { name: 'Detalii', exact: true }).click();
+      }
+
+      const card = dataGridCard(page, 'RM');
+      const header = card.getByTestId('data-grid-header-target');
+      const handle = card.getByRole('separator', { name: 'Redimensionează Target' });
+      await expect(handle).toHaveAttribute('aria-valuetext', 'Lățime automată');
+      await handle.focus();
+      await handle.press('ArrowRight');
+      const resizedWidth = Number(await handle.getAttribute('aria-valuenow'));
+      expect(resizedWidth).toBeGreaterThan(72);
+      await expect(header).toHaveCSS('width', `${resizedWidth}px`);
+      await expectNoPageOverflow(page);
+
+      await card.getByText('Coloane', { exact: true }).click();
+      await card.getByRole('checkbox', { name: 'Afișează Target' }).uncheck();
+      await expect(card.getByTestId('data-grid-header-target')).toHaveCount(0);
+      await card.getByRole('checkbox', { name: 'Afișează Target' }).check();
+      await expect(
+        card.getByRole('separator', { name: 'Redimensionează Target' }),
+      ).toHaveAttribute('aria-valuenow', String(resizedWidth));
+
+      await card.getByRole('button', { name: 'Resetează lățimile' }).click();
+      await expect(
+        card.getByRole('separator', { name: 'Redimensionează Target' }),
+      ).toHaveAttribute('aria-valuetext', 'Lățime automată');
+      await expectNoPageOverflow(page);
+    });
   }
 });
