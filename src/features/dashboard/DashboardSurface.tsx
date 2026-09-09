@@ -8,6 +8,7 @@ import { CurrentDashboard } from './CurrentDashboard';
 import { HistoryDashboard } from './HistoryDashboard';
 import { PerformanceDetailDrawer } from './PerformanceDetailDrawer';
 import type {
+  AgentSortKey,
   DashboardSection,
   DashboardViewProps,
   RegionalSortKey,
@@ -47,12 +48,16 @@ function HistorySection({
   onRegionalGridSortsChange,
   storeGridSorts,
   onStoreGridSortsChange,
+  agentGridSorts,
+  onAgentGridSortsChange,
 }: {
   model: DashboardViewProps;
   regionalGridSorts: readonly DataGridSort<RegionalSortKey>[];
   onRegionalGridSortsChange: (sorts: readonly DataGridSort<RegionalSortKey>[]) => void;
   storeGridSorts: readonly DataGridSort<StoreSortKey>[];
   onStoreGridSortsChange: (sorts: readonly DataGridSort<StoreSortKey>[]) => void;
+  agentGridSorts: readonly DataGridSort<AgentSortKey>[];
+  onAgentGridSortsChange: (sorts: readonly DataGridSort<AgentSortKey>[]) => void;
 }) {
   if (!model.summary) return null;
   return <HistoryDashboard
@@ -89,6 +94,8 @@ function HistorySection({
     agents={model.historyAgents} sortedAgents={model.sortedHistoryAgents}
     agentColumns={model.historyAgentColumns} agentSort={model.historyAgentSort}
     onSortAgents={model.handleSortHistoryAgents}
+    agentGridSorts={agentGridSorts}
+    onAgentGridSortsChange={onAgentGridSortsChange}
   />;
 }
 
@@ -99,6 +106,9 @@ function DashboardContent({ model }: { model: DashboardViewProps }) {
   const [historyStoreGridSorts, setHistoryStoreGridSorts] = useState<
     DataGridSort<StoreSortKey>[]
   >(() => [{ ...model.historyStoreSort }]);
+  const [historyAgentGridSorts, setHistoryAgentGridSorts] = useState<
+    DataGridSort<AgentSortKey>[]
+  >(() => [{ ...model.historyAgentSort }]);
 
   if (model.activeSection === 'visits') return <Suspense fallback={<LoadingCard label="Se incarca modulul Vizite..." />}><VisiteSubtab currentMonth={model.currentMonth} months={model.months} /></Suspense>;
   if (model.loading) return <LoadingCard label="Se incarca luna in curs..." />;
@@ -111,6 +121,8 @@ function DashboardContent({ model }: { model: DashboardViewProps }) {
         onRegionalGridSortsChange={(sorts) => setHistoryRegionalGridSorts([...sorts])}
         storeGridSorts={historyStoreGridSorts}
         onStoreGridSortsChange={(sorts) => setHistoryStoreGridSorts([...sorts])}
+        agentGridSorts={historyAgentGridSorts}
+        onAgentGridSortsChange={(sorts) => setHistoryAgentGridSorts([...sorts])}
       />;
 }
 
