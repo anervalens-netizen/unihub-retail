@@ -115,7 +115,6 @@ describe('DataGrid hidden-column filters', () => {
 
   it('moves keyboard focus to the next remaining hidden chip when a middle chip is removed', () => {
     renderGrid();
-    // Set up three hidden filters (city, region, sales) by hiding those columns.
     fireEvent.change(screen.getByRole('searchbox', { name: 'Filtrează Magazin' }), { target: { value: 'Mall' } });
     fireEvent.change(screen.getByRole('combobox', { name: 'Filtrează Regiune' }), { target: { value: 'N' } });
     fireEvent.change(screen.getByRole('spinbutton', { name: 'Minim Vânzări' }), { target: { value: '150' } });
@@ -156,8 +155,6 @@ describe('DataGrid hidden-column filters', () => {
 
   it('moves focus to the clear-all button when the last hidden chip is removed and other filters remain', () => {
     renderGrid();
-    // Keep the global search active so the clear-all button stays visible
-    // after the hidden chip is the last column filter to be removed.
     fireEvent.change(screen.getByRole('searchbox', { name: 'Caută în coloanele afișate din Regional' }), { target: { value: 'ana' } });
     fireEvent.change(screen.getByRole('combobox', { name: 'Filtrează Regiune' }), { target: { value: 'N' } });
     fireEvent.click(screen.getByText('Coloane', { exact: true }));
@@ -188,6 +185,35 @@ describe('DataGrid hidden-column filters', () => {
     expect(search).toHaveFocus();
   });
 
+  it('falls back to the stable Columns control when the grid has no rows', () => {
+    const view = render(
+      <DataGrid title="Regional" rows={rows} columns={columns}
+        initialSort={[{ key: 'sales', direction: 'desc' }]} rowKey={(row) => row.id}
+        exportFilename="regional" exportSheetName="Regional" />,
+    );
+    fireEvent.change(screen.getByRole('combobox', { name: 'Filtrează Regiune' }), { target: { value: 'N' } });
+    fireEvent.click(screen.getByText('Coloane', { exact: true }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Afișează Regiune' }));
+    fireEvent.click(screen.getByText('Coloane', { exact: true }));
+
+    view.rerender(
+      <DataGrid title="Regional" rows={[]} columns={columns}
+        initialSort={[{ key: 'sales', direction: 'desc' }]} rowKey={(row) => row.id}
+        exportFilename="regional" exportSheetName="Regional" />,
+    );
+    expect(screen.queryByRole('searchbox', { name: 'Caută în coloanele afișate din Regional' }))
+      .not.toBeInTheDocument();
+    const chip = screen.getByRole('button', { name: 'Șterge filtrul Regiune: Nord' });
+    chip.focus();
+    fireEvent.click(chip);
+
+    expect(screen.queryByRole('group', { name: groupName })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Șterge filtrele (1)' })).not.toBeInTheDocument();
+    const columnsTrigger = document.querySelector<HTMLElement>('[data-grid-column-menu-trigger]');
+    expect(columnsTrigger).not.toBeNull();
+    expect(columnsTrigger).toHaveFocus();
+  });
+
   it('does not steal focus when an unrelated control clears a filter', () => {
     renderGrid();
     fireEvent.change(screen.getByRole('searchbox', { name: 'Filtrează Magazin' }), { target: { value: 'Mall' } });
@@ -195,8 +221,6 @@ describe('DataGrid hidden-column filters', () => {
     fireEvent.click(screen.getByRole('checkbox', { name: 'Afișează Magazin' }));
     fireEvent.click(screen.getByText('Coloane', { exact: true }));
 
-    // Focus a stable visible control (the global search input) so we can
-    // verify that clearing the filter via the toolbar does not steal it.
     const other = screen.getByRole('searchbox', { name: 'Caută în coloanele afișate din Regional' });
     other.focus();
     expect(other).toHaveFocus();
