@@ -1,7 +1,16 @@
 // @vitest-environment jsdom
 
-import { act, renderHook, waitFor } from '@testing-library/react';
+import {
+  act,
+  fireEvent,
+  render,
+  renderHook,
+  screen,
+  waitFor,
+} from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+import type { StoreStat } from '../../api/generated/runtime-types';
 
 const api = vi.hoisted(() => ({
   performance: vi.fn(),
@@ -12,6 +21,10 @@ vi.mock('../../api/dashboard', async (importOriginal) => ({
   getPerformanceDetail: api.performance,
 }));
 
+import {
+  HIST_STORE_COLUMNS,
+  storeBreakdownColumns,
+} from './dashboardColumns';
 import type { PerformanceSelection } from './PerformanceDetailDrawer';
 import {
   buildHistoryPerformanceOpen,
@@ -19,6 +32,12 @@ import {
 import {
   useDashboardPerformanceDetail,
 } from './useDashboardPerformanceDetail';
+
+const historyStore = {
+  site_code: 'S-NORD',
+  firma: 'Mobiup',
+  locatie: 'Promenada',
+} as StoreStat;
 
 describe('History performance selection', () => {
   beforeEach(() => {
@@ -50,12 +69,42 @@ describe('History performance selection', () => {
     });
   });
 
-  it('does not invent one detail period for an aggregated multi-month history view', () => {
-    expect(buildHistoryPerformanceOpen(
-      ['2026-03', '2026-04'],
+  it('renders a Store detail button for one month and plain text for an aggregate', () => {
+    const openPerformance = vi.fn();
+    const singleMonthOpen = buildHistoryPerformanceOpen(
+      ['2026-04'],
       false,
-      vi.fn(),
-    )).toBeUndefined();
+      openPerformance,
+    );
+    const singleMonthLocation = storeBreakdownColumns(
+      HIST_STORE_COLUMNS,
+      singleMonthOpen,
+    ).find((column) => column.key === 'locatie');
+    const view = render(<>{singleMonthLocation?.render(historyStore)}</>);
+
+    fireEvent.click(screen.getByRole('button', { name: /Promenada/ }));
+    expect(openPerformance).toHaveBeenCalledWith({
+      level: 'store',
+      key: 'S-NORD',
+      month: '2026-04',
+      includeClosedStores: false,
+    });
+
+    const aggregateLocation = storeBreakdownColumns(
+      HIST_STORE_COLUMNS,
+      buildHistoryPerformanceOpen(
+        ['2026-03', '2026-04'],
+        false,
+        openPerformance,
+      ),
+    ).find((column) => column.key === 'locatie');
+    view.rerender(<>{aggregateLocation?.render(historyStore)}</>);
+
+    expect(screen.queryByRole('button', { name: /Promenada/ })).not.toBeInTheDocument();
+    expect(screen.getByText('Promenada')).toBeInTheDocument();
+  });
+
+  it('does not invent one detail period for an empty history view', () => {
     expect(buildHistoryPerformanceOpen([], false, vi.fn())).toBeUndefined();
   });
 
