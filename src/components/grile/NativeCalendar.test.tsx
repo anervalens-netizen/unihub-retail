@@ -199,7 +199,7 @@ it('keeps confirmed names and stable codes visible in the calendar and roster', 
   await userEvent.click(await screen.findByRole('button', { name: /Magazin Alpha/ }));
   expect(screen.getByRole('button', { name: 'Editează 2026-09-01' })).toHaveTextContent('Nume Confirmat · AG1');
   await userEvent.click(screen.getByText('Confirmă agenții și magazinul de bază'));
-  expect(screen.getByRole('option', { name: /Nume Confirmat · AG1/ })).toHaveValue('AG1');
+  expect(screen.getAllByRole('option', { name: /Nume Confirmat · AG1/ }).every(option => (option as HTMLOptionElement).value === 'AG1')).toBe(true);
 });
 it('filters managers, companies and stores without changing the monthly export scope', async () => {
   api.calendarStores.mockResolvedValue([store, { ...store, site_code: 'S2', locatie: 'Magazin Beta', firma: 'Other' }, { ...store, site_code: 'S3', locatie: 'Magazin Gamma', regional: 'Manager G' }, { ...store, site_code: 'S4', locatie: 'Magazin Delta', regional: '' }]);

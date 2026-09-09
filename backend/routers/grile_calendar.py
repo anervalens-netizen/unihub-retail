@@ -11,6 +11,7 @@ from grile.calendar_models import (
     AgentCandidate, CalendarChanges, CalendarDay, CalendarMonth, CalendarMonthKey, Code, RosterEntry, RosterInput, StoreHours, StoreHoursInput,
 )
 from grile.earnings_models import EarningsMonth
+from grile.compensation_models import CompensationEntry, CompensationInput
 from permissions import require_business_write_access, require_management_access
 from rate_limits import BUSINESS_WRITE_LIMIT, REPORT_EXPORT_LIMIT, rate_limit
 from services.grile_calendar import GrileCalendarService
@@ -107,3 +108,13 @@ async def export_earnings(
     return StreamingResponse(artifact.iter_chunks(), media_type="application/zip",
                              headers={"Content-Disposition": f'attachment; filename="{artifact.filename}"'},
                              background=BackgroundTask(artifact.close))
+
+
+@router.put('/{month}/compensation/{agent_code}', response_model=CompensationEntry)
+async def save_compensation(
+    month: CalendarMonthKey, agent_code: Code, payload: CompensationInput,
+    claims: AuthClaims = Depends(require_business_write_access),
+    _limit: None = Depends(rate_limit(BUSINESS_WRITE_LIMIT)),
+    svc: GrileCalendarService = Depends(build_grile_calendar_service),
+) -> CompensationEntry:
+    return await svc.save_compensation(month, agent_code, payload, claims.sub)

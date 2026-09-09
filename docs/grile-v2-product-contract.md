@@ -137,3 +137,17 @@ Acest lot produce **pontaje provizorii**, nu închide luna. Arhiva oficială cu
 Grile/Calendar/Pontaj, Google și centralizatorul salarial rămân în etapele
 următoare. Nicio migrație, publicare Sheets sau promovare în producție nu este
 implicită în implementarea R3.
+
+### Salariu de bază — regulă explicită a proprietarului (9 septembrie 2026)
+
+- **București, Constanța și Cluj: 2.600 lei.**
+- **Toate celelalte orașe: 2.400 lei.**
+- Se folosește orașul magazinului de bază al agentului. O zi lucrată în alt
+  magazin, normală sau suplimentară, nu schimbă salariul de bază și nu îl dublează.
+- Ziua suplimentară plătită se marchează explicit de manager; schimbul de tură
+  ori schimbarea magazinului nu activează automat sporul.
+- Componente V1: SIM 3 lei/bucată, E-pay sub 50 lei 5 lei/bucată,
+  E-pay de la 50 lei inclusiv 12 lei/bucată. Cantitățile și corecțiile sunt
+  confirmate de manager, iar un câmp necompletat nu înseamnă zero confirmat.
+
+- **Carrefour Bălotești (MCRFBAL) este inclus explicit la București: 2.600 lei**, confirmat de proprietar.

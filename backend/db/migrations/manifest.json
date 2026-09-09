@@ -77,7 +77,8 @@
     "069_ai_cohort_and_transactional_outbox.sql": "transactional",
     "070_grile_native_calendar.sql": "transactional",
     "071_grile_store_hours.sql": "transactional",
-    "072_grile_team_leader_base.sql": "transactional"
+    "072_grile_team_leader_base.sql": "transactional",
+    "073_grile_compensation_inputs.sql": "transactional"
   },
   "migrations": {
     "001_add_cartela_composite_index.sql": "7f502462f585088286f9ae60d5c4ded69fccf745342ae6ddfc34c48241514b46",
@@ -151,6 +152,7 @@
     "069_ai_cohort_and_transactional_outbox.sql": "e2f3f1ff09c14cbba577ac40ba476250a7b746ebbe0bdf373c6ebf4e552fc8a0",
     "070_grile_native_calendar.sql": "5eeeb63af9d38ff6ee5c66503612267c74e3fafff3eae14891e9f23d2c144773",
     "071_grile_store_hours.sql": "051002f000d766e708956835e7c4a5c23a381527c8c74b19323b3e4420a91f23",
-    "072_grile_team_leader_base.sql": "c8bc6c01ab513a19bac74f391309cc2c6e6ef299470755de24cd98929964fcd1"
+    "072_grile_team_leader_base.sql": "c8bc6c01ab513a19bac74f391309cc2c6e6ef299470755de24cd98929964fcd1",
+    "073_grile_compensation_inputs.sql": "482727c8f87944b1754c8d02d6db07126c36b8a90bef4ea5ee05d3ed023a4cf1"
   }
 }

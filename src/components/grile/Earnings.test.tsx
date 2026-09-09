@@ -20,10 +20,9 @@ function mount(revision = 'revision-1') {
 }
 it('shows home earnings including the other store and the provisional salary boundary', async () => {
   mount();
-  expect(await screen.findByText('222 lei')).toBeInTheDocument();
-  expect(screen.getByText(/3 zile de funcționare/)).toBeInTheDocument();
-  expect(screen.getByText(/nu reprezintă salariul oficial/)).toBeInTheDocument();
-  await userEvent.click(screen.getByText('Detalii pe zile și locații'));
+  expect(await screen.findByText('1.600 lei')).toBeInTheDocument();
+  expect(screen.getByText(/V1 rămâne oficial/)).toBeInTheDocument();
+  expect(screen.getByText('Zile suplimentare · agenții magazinului')).toBeInTheDocument();
   expect(screen.getByRole('table')).toHaveTextContent('B');
   expect(screen.getByRole('table')).toHaveTextContent('790 lei');
 });
@@ -46,13 +45,13 @@ it('shows missing input instead of zero earnings', async () => {
   api.readEarnings.mockResolvedValue({ ...data, agents: [{ ...data.agents[0], home_sales: null, home_commission: null, known_earnings: null, issues: ['missing_sales'] }] });
   mount();
   expect(await screen.findByRole('alert')).toHaveTextContent('nu sunt considerate zero');
-  expect(screen.getAllByText('Indisponibil')).toHaveLength(3);
+  expect(screen.getAllByText('De completat').length).toBeGreaterThan(3);
 });
 it('retries a failed read without writing business data', async () => {
   api.readEarnings.mockRejectedValueOnce(new Error('offline'));
   mount();
   await userEvent.click(await screen.findByRole('button', { name: 'Reîncarcă' }));
-  expect(await screen.findByText('222 lei')).toBeInTheDocument();
+  expect(await screen.findByText('1.600 lei')).toBeInTheDocument();
 });
 it('reports unassigned store sales and agents from another home stay outside this grid', async () => {
   const data = response();

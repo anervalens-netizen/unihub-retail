@@ -11,6 +11,7 @@ async def read_earnings_sources(pool: asyncpg.Pool, month: str) -> dict[str, Any
     async with pool.acquire() as conn:
         async with conn.transaction(isolation="repeatable_read", readonly=True):
             calendar = await GrileCalendarRepository.read_on_connection(conn, month)
+            compensation = await conn.fetch('SELECT month,agent_code,salary_base,vouchers,sim_quantity,epay_under_50,epay_over_50,incentive,adjustment,revision FROM grile_calendar_compensation WHERE month=$1 ORDER BY agent_code', month)
             source = await conn.fetchrow(
                 """SELECT cutoff_date FROM reporting_sales_cutoff_v1
                    WHERE import_month=$1""", month,
@@ -29,5 +30,5 @@ async def read_earnings_sources(pool: asyncpg.Pool, month: str) -> dict[str, Any
                       AND {distribution_location_clause('s')}
                     ORDER BY t.site_code""", month,
             )
-    return {"calendar": calendar, "source": dict(source) if source else None,
+    return {"compensation": [dict(row) for row in compensation], "calendar": calendar, "source": dict(source) if source else None,
             "sales": [dict(row) for row in sales], "targets": [dict(row) for row in targets]}

@@ -9,6 +9,7 @@ from typing import Any
 from grile.calendar_models import CalendarDay, CalendarMonth, RosterEntry
 from grile.earnings_models import AgentEarnings, EarningsDay, EarningsMonth
 from grile.earnings_rules import daily_commission, monthly_commission
+from grile.earnings_dashboard import enrich_dashboard
 
 
 def _day_earnings(
@@ -93,5 +94,6 @@ def project_earnings(calendar: CalendarMonth, sources: dict[str, Any]) -> Earnin
         month=calendar.month, projection_revision="", calendar_revision=calendar.projection_revision,
         cutoff=cutoff, selling_days=selling_days, agents=agents, unassigned_sales=unassigned,
     )
+    enrich_dashboard(result, calendar, sources)
     result.projection_revision = sha256((result.model_dump_json() + json.dumps(sources["targets"], default=str, sort_keys=True)).encode()).hexdigest()
     return result
