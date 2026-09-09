@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useId, type ReactNode } from 'react';
 
 import type { ExportColumn } from '../../lib/tableExport';
 import { ExportTableButton } from '../../components/ExportTableButton';
@@ -45,13 +45,15 @@ export function BreakdownTable<Row, SortKey extends string>({
   exportSheetName,
   exportColumns,
 }: BreakdownTableProps<Row, SortKey>) {
+  const titleId = useId();
+
   return (
     <div className="glass rounded-3xl p-3">
       <div className="mb-2 flex min-h-10 items-center justify-between gap-3">
         <div>
           <div className="flex items-center gap-2">
             {icon}
-            <h3 className="text-sm font-bold">{title}</h3>
+            <h3 id={titleId} className="text-sm font-bold">{title}</h3>
           </div>
           <p className="text-[11px] text-slate-500">{subtitle}</p>
         </div>
@@ -63,7 +65,7 @@ export function BreakdownTable<Row, SortKey extends string>({
         />
       </div>
       <div className="compact-data-table max-h-[26rem] overflow-auto rounded-2xl border border-slate-200/70 dark:border-slate-700/70">
-        <table className={TABLE_CLASS}>
+        <table className={TABLE_CLASS} aria-labelledby={titleId}>
           <thead className="sticky top-0 z-10 bg-slate-50 dark:bg-slate-800/95">
             <tr className="h-12 text-left text-[11px] uppercase tracking-wide text-slate-500">
               {columns.map((column) => (
