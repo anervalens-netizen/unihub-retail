@@ -62,12 +62,17 @@ function stubHeaderWidth(handle: HTMLElement, width: number) {
 describe('DataGrid column resizing', () => {
   it('resizes from the measured width with keyboard steps without sorting', () => {
     const onSortChange = renderGrid();
+    const table = screen.getByRole('table', { name: 'Regional' });
     const handle = resizeHandle();
     stubHeaderWidth(handle, 120);
+    expect(table).toHaveClass('w-full');
+    expect(table).not.toHaveClass('w-max');
 
     fireEvent.keyDown(handle, { key: 'ArrowRight' });
     expect(handle).toHaveAttribute('aria-valuenow', '136');
     expect(screen.getByTestId('data-grid-header-region')).toHaveStyle({ width: '136px' });
+    expect(table).toHaveClass('w-max');
+    expect(table).not.toHaveClass('w-full');
     expect(onSortChange).not.toHaveBeenCalled();
 
     fireEvent.keyDown(handle, { key: 'ArrowRight', shiftKey: true });
@@ -96,18 +101,23 @@ describe('DataGrid column resizing', () => {
 
   it('retains an in-session width while a column is hidden and shown again', () => {
     renderGrid();
+    const table = screen.getByRole('table', { name: 'Regional' });
     const handle = resizeHandle();
     stubHeaderWidth(handle, 120);
     fireEvent.keyDown(handle, { key: 'ArrowRight' });
     expect(handle).toHaveAttribute('aria-valuenow', '136');
+    expect(table).toHaveClass('w-max');
 
     fireEvent.click(screen.getByText('Coloane', { exact: true }));
     fireEvent.click(screen.getByRole('checkbox', { name: 'Afișează Regiune' }));
     expect(screen.queryByRole('separator', { name: 'Redimensionează Regiune' })).not.toBeInTheDocument();
+    expect(table).toHaveClass('w-full');
+    expect(table).not.toHaveClass('w-max');
     fireEvent.click(screen.getByRole('checkbox', { name: 'Afișează Regiune' }));
 
     expect(resizeHandle()).toHaveAttribute('aria-valuenow', '136');
     expect(screen.getByTestId('data-grid-header-region')).toHaveStyle({ width: '136px' });
+    expect(table).toHaveClass('w-max');
   });
 
   it('resets one width on double click', () => {
@@ -120,6 +130,7 @@ describe('DataGrid column resizing', () => {
     fireEvent.doubleClick(handle);
     expect(handle).toHaveAttribute('aria-valuetext', 'Lățime automată');
     expect(screen.getByTestId('data-grid-header-region').style.width).toBe('');
+    expect(screen.getByRole('table', { name: 'Regional' })).toHaveClass('w-full');
   });
 
   it('resets all widths without resetting visibility or order', () => {
