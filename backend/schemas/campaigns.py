@@ -107,6 +107,8 @@ class FocusHistoryResponse(StrictApiModel):
 
 class PromoTopStore(StrictApiModel):
     store_name: str
+    site_code: str = ""
+    regional: str = ""
     qty: int
     total_qty: int
     category_qty: int
@@ -126,6 +128,8 @@ class PromoTopAgent(StrictApiModel):
 
 class IncentiveTopAgent(StrictApiModel):
     agent_name: str
+    site_code: str = ""
+    regional: str = ""
     store_name: str = ""
     firma: str = ""
     qty_sold: int

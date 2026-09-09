@@ -219,6 +219,10 @@ def build_incentive_agent_rows(
         {site_code: data[4] for site_code, data in store_incentives.items()},
     )
     rows: list[IncentiveTopAgent] = []
+    regionals = {
+        str(row["site_code"]): str(row.get("regional") or "")
+        for row in snapshot.incentive_store_rows
+    }
     for agent_key in agent_values:
         site_code, agent = agent_key
         location, company = agent_store_meta.get(
@@ -246,6 +250,8 @@ def build_incentive_agent_rows(
         rows.append(
             IncentiveTopAgent(
                 agent_name=agent,
+                site_code=site_code,
+                regional=regionals.get(site_code, ""),
                 store_name=store_name,
                 firma=company,
                 qty_sold=agent_quantities[agent_key],

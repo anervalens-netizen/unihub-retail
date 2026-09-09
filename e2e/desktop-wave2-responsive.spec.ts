@@ -55,9 +55,9 @@ const PROMO_RESPONSE: CampaignPromotionsWireResponse = {
   incentive_title: 'Incentive Mai 2026', incentive_description: 'Bonus pentru produsele eligibile.', incentive_qty: 20, incentive_sold_qty: 28, incentive_value: 100, incentive_potential: 120, incentive_qualified_qty: 20, incentive_qualified_stores: 1, incentive_qualified_stores_full: 1, incentive_qualified_stores_half: 0, incentive_qualified_agents: 1, incentive_qualified_agents_full: 1, incentive_qualified_agents_half: 0, incentive_product_count: 2,
   incentive_categories: [{ label: 'Accesorii', qty: 20, value: 100 }], incentive_periods: [{ label: 'Mai', start_date: '2026-05-01', end_date: '2026-05-31', product_count: 2, reward_values: [5], qty: 20, potential: 120, value: 100 }], incentive_category_breakdown: [{ label: 'Accesorii', qty: 20, qualified_qty: 16, potential: 120, value: 100 }],
   has_active_promotion: true, promo_calculation_status: 'partial', incentive_calculation_status: 'complete', calculation_warnings: ['Raportul promo este disponibil doar până la ziua 20.'],
-  top_stores: [{ store_name: 'Mobiup - Magazin Unirii', qty: 28, total_qty: 28, category_qty: 16, promo_bons: 12, incentive_value: 100, incentive_potential: 120, achievement: 1, firma: 'Mobiup' }],
+  top_stores: [{ site_code: "S1", regional: "RM 1", store_name: 'Mobiup - Magazin Unirii', qty: 28, total_qty: 28, category_qty: 16, promo_bons: 12, incentive_value: 100, incentive_potential: 120, achievement: 1, firma: 'Mobiup' }],
   promo_agents: [{ agent_name: 'Ana Popescu', store_name: 'Mobiup - Magazin Unirii', firma: 'Mobiup', promo_bons: 12 }],
-  top_agents: [{ agent_name: 'Ana Popescu', store_name: 'Mobiup - Magazin Unirii', firma: 'Mobiup', qty_sold: 28, val_incentive: 100, incentive_potential: 120, achievement: 1 }],
+  top_agents: [{ site_code: "S1", regional: "RM 1", agent_name: 'Ana Popescu', store_name: 'Mobiup - Magazin Unirii', firma: 'Mobiup', qty_sold: 28, val_incentive: 100, incentive_potential: 120, achievement: 1 }],
 };
 
 const VIEWPORTS = [

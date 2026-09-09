@@ -8634,6 +8634,16 @@ export const RETAIL_COMPONENT_SCHEMAS = {
         "title": "Qty Sold",
         "type": "integer"
       },
+      "regional": {
+        "default": "",
+        "title": "Regional",
+        "type": "string"
+      },
+      "site_code": {
+        "default": "",
+        "title": "Site Code",
+        "type": "string"
+      },
       "store_name": {
         "default": "",
         "title": "Store Name",
@@ -10741,6 +10751,16 @@ export const RETAIL_COMPONENT_SCHEMAS = {
       "qty": {
         "title": "Qty",
         "type": "integer"
+      },
+      "regional": {
+        "default": "",
+        "title": "Regional",
+        "type": "string"
+      },
+      "site_code": {
+        "default": "",
+        "title": "Site Code",
+        "type": "string"
       },
       "store_name": {
         "title": "Store Name",

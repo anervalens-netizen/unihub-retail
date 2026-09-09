@@ -75,6 +75,7 @@ function makePromoData(): CampaignsPromotionsResponse {
   calculation_warnings: [],
     top_stores: [
       {
+        site_code: "S1", regional: "RM 1",
         store_name: 'Mobiup - Store Test',
         qty: 8,
         total_qty: 20,
@@ -97,6 +98,7 @@ function makePromoData(): CampaignsPromotionsResponse {
     top_agents: [
       {
         agent_name: 'Ana Agent',
+        site_code: "S1", regional: "RM 1",
         store_name: 'Mobiup - Store Test',
         firma: 'Mobiup',
         qty_sold: 18,

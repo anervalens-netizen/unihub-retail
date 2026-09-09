@@ -478,7 +478,7 @@ class TestPromoIncentivesNoConfig:
         )
         mock_summary.return_value = PromoIncentiveSummary()
         mock_repo.fetch_incentive_store_rows.return_value = [
-            FakeRow(site_code="S1", locatie="Store 1", firma="F1", item_code="COD1", qty=2),
+            FakeRow(site_code="S1", locatie="Store 1", firma="F1", regional="RM istoric", item_code="COD1", qty=2),
             FakeRow(site_code="S2", locatie="Store 2", firma="F1", item_code="COD1", qty=3),
             FakeRow(site_code="S3", locatie="Store 3", firma="F1", item_code="COD1", qty=4),
         ]
@@ -494,6 +494,8 @@ class TestPromoIncentivesNoConfig:
 
         assert len(result["top_agents"]) == 3
         assert {row.store_name.split(" - ")[0] for row in result["top_agents"]} == {"S1", "S2", "S3"}
+        assert next(row for row in result["top_stores"] if row.site_code == "S1").regional == "RM istoric"
+        assert next(row for row in result["top_agents"] if row.site_code == "S1").regional == "RM istoric"
         for store in result["top_stores"]:
             site_code = store.store_name.split(" - ")[0]
             agents = [row for row in result["top_agents"] if row.store_name.startswith(f"{site_code} - ")]
@@ -523,7 +525,7 @@ class TestPromoIncentivesNoConfig:
         mock_mults.return_value = ({"S1": 1.0}, {"S1": 1.0})
         mock_summary.return_value = PromoIncentiveSummary()
         mock_repo.fetch_incentive_store_rows.return_value = [
-            FakeRow(site_code="S1", locatie="Store 1", firma="F1", item_code="COD1", qty=2),
+            FakeRow(site_code="S1", locatie="Store 1", firma="F1", regional="RM istoric", item_code="COD1", qty=2),
         ]
         mock_repo.fetch_incentive_agent_rows.return_value = [
             FakeRow(agent="Agent1", site_code="S1", locatie="Store 1", firma="F1", item_code="COD1", qty=3),

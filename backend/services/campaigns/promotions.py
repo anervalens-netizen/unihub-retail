@@ -178,6 +178,8 @@ def _promotion_top_stores(
     return [
         PromoTopStore(
             store_name=f"{row['site_code']} - {row['locatie']}",
+            site_code=str(row["site_code"]),
+            regional=str(row.get("regional") or ""),
             qty=0,
             total_qty=row["total_qty"],
             category_qty=0,

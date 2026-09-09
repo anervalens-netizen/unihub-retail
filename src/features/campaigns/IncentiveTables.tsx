@@ -15,6 +15,8 @@ const INCENTIVE_AGENT_EXPORT_COLUMNS: ExportColumn<IncentiveTopAgent>[] = [
   { header: "Agent", value: (row) => row.agent_name },
   { header: "Firma", value: (row) => row.firma },
   { header: "Magazin", value: (row) => displayStoreName(row.store_name) },
+  { header: "Cod locație", value: (row) => row.site_code },
+  { header: "Manager (RM)", value: (row) => row.regional || "Neatribuit" },
   { header: "%Prev.", value: (row) => row.achievement, format: "percent" },
   { header: "Cant.", value: (row) => row.qty_sold, format: "integer" },
   { header: "Val Inc.", value: (row) => row.val_incentive, format: "currency" },
@@ -152,6 +154,8 @@ export function IncentiveStoresTable({
             header: "Magazin",
             value: (row) => displayStoreName(row.store_name),
           },
+          { header: "Cod locație", value: (row) => row.site_code },
+          { header: "Manager (RM)", value: (row) => row.regional || "Neatribuit" },
           {
             header: "%Prev.",
             value: (row) => row.achievement,

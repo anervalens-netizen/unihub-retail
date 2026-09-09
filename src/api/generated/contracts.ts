@@ -1,5 +1,5 @@
 /* GENERATED FILE. Run npm run contracts:generate; do not edit manually. */
-export const RETAIL_OPENAPI_SHA256 = '77c9eeb3e4698578e707c945f5529450525d153377bf754a69759a376fe6e6d7' as const; // pragma: allowlist secret
+export const RETAIL_OPENAPI_SHA256 = '74f374a96e22299d7617c8717cd10bbcc4a6d5e4aaf9c7688dd92f86e658fabe' as const; // pragma: allowlist secret
 
 export type RetailDecimal = string & { readonly __retailDecimal: unique symbol };
 
@@ -1372,6 +1372,8 @@ export interface RetailIncentiveTopAgent {
   "firma"?: string;
   "incentive_potential"?: number;
   "qty_sold": number;
+  "regional"?: string;
+  "site_code"?: string;
   "store_name"?: string;
   "val_incentive": number;
 }
@@ -1750,6 +1752,8 @@ export interface RetailPromoTopStore {
   "incentive_value"?: number;
   "promo_bons"?: number;
   "qty": number;
+  "regional"?: string;
+  "site_code"?: string;
   "store_name": string;
   "total_qty": number;
 }
