@@ -116,16 +116,16 @@ jobs:
           MERGE_BASE="$(git merge-base "$PR_BASE_SHA" HEAD)"
           if git diff --quiet "$MERGE_BASE" HEAD -- src; then
             # Exercise the lane itself instead of reporting a zero-test workflow/config check.
-            "$RETAIL_NODE" "$RETAIL_NPM_CLI" run test:coverage -- \
+            "$RETAIL_NODE" "$RETAIL_NPM_CLI" run test -- \
               src/lib/dataGrid.test.ts \
               src/components/common/DataGrid.globalSearch.test.tsx \
               src/features/dashboard/HistoryDashboardTrend.test.tsx \
               src/features/dashboard/HistoryPerformanceSelection.test.tsx \
               src/features/dashboard/BreakdownTable.test.tsx
-          else
-            "$RETAIL_NODE" "$RETAIL_NPM_CLI" run test:coverage -- \
-              --changed="$MERGE_BASE" --passWithNoTests
           fi
+          # Keep affected-source coverage separate from the workflow-only smoke suite.
+          "$RETAIL_NODE" "$RETAIL_NPM_CLI" run test:coverage -- \
+            --changed="$MERGE_BASE" --passWithNoTests
           LCOV_PATH=coverage/frontend/lcov.info
           if [[ ! -s "$LCOV_PATH" ]]; then
             LCOV_PATH="$(mktemp -t retail-v3-empty-lcov-XXXXXX.info)"
