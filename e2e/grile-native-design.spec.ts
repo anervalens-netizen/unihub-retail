@@ -51,6 +51,10 @@ for (const viewport of [{ width: 360, height: 800 }, { width: 390, height: 844 }
       await page.getByRole('heading', { name: 'Programul echipei' }).scrollIntoViewIfNeeded();
       await page.screenshot({ path: testInfo.outputPath('dark.png'), fullPage: true });
       expect((await new AxeBuilder({ page }).include('.native-calendar').withTags(['wcag2a', 'wcag2aa']).analyze()).violations).toEqual([]);
+      await page.getByRole('button', { name: /BÂRLAD CARREFOUR/ }).click();
+      await page.getByRole('button', { name: 'Editează 2026-09-01' }).click();
+      await page.screenshot({ path: testInfo.outputPath('dark-calendar.png'), fullPage: true });
+      expect((await new AxeBuilder({ page }).include('dialog').withTags(['wcag2a', 'wcag2aa']).analyze()).violations).toEqual([]);
     }
   });
 }
