@@ -1,5 +1,5 @@
 /* GENERATED FILE. Run npm run contracts:generate; do not edit manually. */
-export const RETAIL_OPENAPI_SHA256 = '74f374a96e22299d7617c8717cd10bbcc4a6d5e4aaf9c7688dd92f86e658fabe' as const; // pragma: allowlist secret
+export const RETAIL_OPENAPI_SHA256 = 'e02a13050a1651af75f2853ecd8aac7ce46c9a8ac71f4f6e79e845991fc70d2e' as const; // pragma: allowlist secret
 
 export type RetailDecimal = string & { readonly __retailDecimal: unique symbol };
 
@@ -1791,6 +1791,7 @@ export interface RetailRosterEntry {
   "home_site_code": string;
   "identity_status"?: "confirmed" | "unavailable" | "conflicting";
   "month": string;
+  "regional"?: string | null;
   "revision": number;
 }
 
@@ -1798,6 +1799,7 @@ export interface RetailRosterInput {
   "active"?: boolean;
   "expected_revision": number;
   "home_site_code": string;
+  "regional"?: string | null;
 }
 
 export interface RetailSalaryAgentSummaryPublic {

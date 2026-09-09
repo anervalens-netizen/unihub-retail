@@ -8,10 +8,21 @@ afterEach(cleanup);
 const store = { site_code: 'S1', locatie: 'Store 1', firma: 'Firm', regional: 'R', asm: '' };
 const other = { ...store, site_code: 'S2' };
 const data: CalendarData = { attendance_by_store: {}, attendance_days: [], store_hours: [], projection_revision: '', month: '2026-09', attendance: [], roster: [
-  { display_name: null, identity_status: 'unavailable', month: '2026-09', agent_code: 'A', home_site_code: 'S1', active: true, revision: 1 },
-  { display_name: null, identity_status: 'unavailable', month: '2026-09', agent_code: 'B', home_site_code: 'S2', active: true, revision: 1 },
+  { regional: null, display_name: null, identity_status: 'unavailable', month: '2026-09', agent_code: 'A', home_site_code: 'S1', active: true, revision: 1 },
+  { regional: null, display_name: null, identity_status: 'unavailable', month: '2026-09', agent_code: 'B', home_site_code: 'S2', active: true, revision: 1 },
 ], days: [{ agent_code: 'A', work_date: '2026-09-01', site_code: 'S1', status: 'work', supplemental: false, revision: 3 }] };
 const props = { data, store, stores: [store, other], date: '2026-09-01', busy: false, writable: true };
+it('offers a virtual TL only within the confirmed region and forces supplemental work', async () => {
+  const onSave = vi.fn();
+  const leader = { ...data.roster[0]!, agent_code: 'LEADER', home_site_code: 'TL', regional: 'R' };
+  render(<CalendarDayEditor {...props} data={{ ...data, roster: [...data.roster, leader, { ...leader, agent_code: 'OTHER-TL', regional: 'OTHER' }] }} onSave={onSave} />);
+  expect(screen.queryByRole('option', { name: /OTHER-TL/ })).not.toBeInTheDocument();
+  await userEvent.selectOptions(screen.getByLabelText('Agent pentru zi'), 'LEADER');
+  expect(screen.getByRole('checkbox')).toBeChecked();
+  expect(screen.getByRole('checkbox')).toBeDisabled();
+  await userEvent.click(screen.getByRole('button', { name: 'Salvează ziua' }));
+  expect(onSave.mock.calls[0]![0][1]).toMatchObject({ agent_code: 'LEADER', site_code: 'S1', supplemental: true });
+});
 it('uses the original edit revision even if a background read changes', async () => {
   const onSave = vi.fn();
   const { rerender } = render(<CalendarDayEditor {...props} onSave={onSave} />);

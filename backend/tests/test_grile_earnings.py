@@ -64,6 +64,21 @@ def test_two_stores_supplemental_reconciles_person_and_physical_sales():
     assert "salary_base" in result.unavailable_components
 
 
+def test_virtual_leader_sales_stay_in_worked_store_and_pay_is_not_duplicated():
+    data = sources()
+    data["calendar"]["roster"][2].update(home_site_code="TL", regional="R1")
+    for day in data["calendar"]["days"]:
+        if day["agent_code"] == "SUP":
+            day["supplemental"] = True
+    result = project(data)
+    leader = next(a for a in result.agents if a.agent_code == "SUP")
+    assert leader.home_sales == 0 and leader.home_target == 0
+    assert leader.supplemental_pay == 300
+    assert sum(d.sales for a in result.agents for d in a.days if d.site_code == "B") == 2990
+    assert result.selling_days == {"A": 3, "B": 3}
+    assert result.unassigned_sales == []
+
+
 def test_missing_is_not_zero_and_absence_does_not_earn():
     data = sources()
     data["sales"][0]["sales"] = D(0)

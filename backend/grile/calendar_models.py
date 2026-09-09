@@ -24,8 +24,17 @@ CalendarMonthKey = Annotated[MonthStr, AfterValidator(_valid_month)]
 class RosterInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
     home_site_code: Code
+    regional: Code | None = None
     active: bool = True
     expected_revision: int = Field(ge=0)
+
+    @model_validator(mode="after")
+    def validate_virtual_base(self) -> RosterInput:
+        if self.home_site_code == "TL" and not self.regional:
+            raise ValueError("Team Leader base requires a regional manager")
+        if self.home_site_code != "TL" and self.regional is not None:
+            raise ValueError("Physical store region comes from the store catalog")
+        return self
 
 
 class CalendarDayInput(BaseModel):
@@ -62,6 +71,7 @@ class RosterEntry(BaseModel):
     month: str
     agent_code: str
     home_site_code: str
+    regional: str | None = None
     active: bool
     revision: int
 

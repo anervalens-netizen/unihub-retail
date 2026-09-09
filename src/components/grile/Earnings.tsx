@@ -1,6 +1,7 @@
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { downloadEarnings, readEarnings } from '../../api/grileCalendar';
 import { agentLabel } from './calendarModel';
+import { StoreSalesSummary } from './StoreSalesSummary';
 
 const money = (value: string | number | null) => value === null ? 'Indisponibil' : `${Number(value).toLocaleString('ro-RO', { maximumFractionDigits: 2 })} lei`;
 const issues: Record<string, string> = {
@@ -19,6 +20,7 @@ export function Earnings({ month, site, calendarRevision }: { month: string; sit
   const agents = data.agents.filter(agent => agent.home_site_code === site);
   return <section className="space-y-4">
     <h3 className="font-semibold">Câștiguri provizorii</h3>
+    {site !== 'TL' && <StoreSalesSummary data={data} site={site} />}
     <button disabled={download.isPending} onClick={() => download.mutate()} className="native-primary">Descarcă câștiguri și pontaje ZIP</button>
     <p className="text-sm text-slate-500">Exportă toate persoanele și magazinele din programul lunii, din aceeași revizie. Centralizatorul este provizoriu.</p>
     {download.isError && <p role="alert">Exportul nu a reușit sau datele s-au schimbat. <button onClick={() => { download.reset(); void query.refetch(); }}>Reîncarcă câștigurile</button></p>}

@@ -98,6 +98,23 @@ async def test_conflicting_batch_rolls_back_original_schedule(repo):
     assert (await repo.read(MONTH))["days"][0]["status"] == "work"
 
 
+async def test_virtual_leader_preserves_store_scope_and_revision_fencing(repo):
+    await repo.save_roster(MONTH, AG1, "TL", True, 0, "manager", regional="R1")
+    assert (await repo.read(MONTH))["roster"][0]["home_site_code"] == "TL"
+    with pytest.raises(CalendarConflict, match="supplemental"):
+        await repo.save_days([day()], "manager")
+    with pytest.raises(CalendarConflict, match="confirmed region"):
+        await repo.save_days([day(site=C, supplemental=True)], "manager")
+    await repo.save_days([day(supplemental=True)], "manager")
+    with pytest.raises(CalendarConflict, match="Cancel scheduled"):
+        await repo.save_roster(MONTH, AG1, "TL", True, 1, "manager", regional="R2")
+    calendar = await GrileCalendarService(repo).read(MONTH)
+    assert calendar.attendance[0].work_days_by_site == {A: 1}
+    assert "TL" not in calendar.attendance_by_store
+    await repo.save_days([day(status="cancelled", revision=1)], "manager")
+    assert (await repo.read(MONTH))["days"][0]["status"] == "cancelled"
+
+
 async def test_two_simultaneous_agents_cannot_occupy_one_store_day(repo):
     await confirm(repo)
     await confirm(repo, AG2)

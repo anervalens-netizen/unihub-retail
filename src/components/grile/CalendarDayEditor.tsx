@@ -14,7 +14,7 @@ export function CalendarDayEditor({ data, store, stores, date, busy, writable, o
   const [status, setStatus] = useState<RetailCalendarDayInput['status']>(store.cleanupOnly ? 'cancelled' : 'work');
   const [supplemental, setSupplemental] = useState(occupant?.supplemental ?? false);
   const assignedHere = (agent: string) => snapshot.days.some(d => d.agent_code === agent && d.work_date === date && d.site_code === store.site_code && d.status !== 'cancelled');
-  const roster = store.cleanupOnly ? snapshot.roster.filter(r => assignedHere(r.agent_code)) : snapshot.roster.filter(r => r.active && (r.home_site_code === store.site_code || stores.some(s => s.site_code === r.home_site_code && s.regional === store.regional && Boolean(s.regional))));
+  const roster = store.cleanupOnly ? snapshot.roster.filter(r => assignedHere(r.agent_code)) : snapshot.roster.filter(r => r.active && (r.home_site_code === store.site_code || (r.home_site_code === 'TL' && Boolean(r.regional) && r.regional === store.regional) || stores.some(s => s.site_code === r.home_site_code && s.regional === store.regional && Boolean(s.regional))));
   const selected = snapshot.roster.find(r => r.agent_code === code);
   const existing = snapshot.days.find(d => d.work_date === date && d.agent_code === code);
   const away = Boolean(selected && selected.home_site_code !== store.site_code);

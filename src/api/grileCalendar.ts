@@ -12,7 +12,7 @@ export async function confirmCalendarAgent(month: string, code: string, body: Re
   return decodeRetail('save_roster_api_grile_calendar__month__roster__agent_code__put', response.data);
 }
 export type CalendarData = Awaited<ReturnType<typeof readCalendar>>;
-export type CalendarStore = Awaited<ReturnType<typeof calendarStores>>[number] & { cleanupOnly?: boolean };
+export type CalendarStore = Awaited<ReturnType<typeof calendarStores>>[number] & { cleanupOnly?: boolean; virtualBase?: boolean };
 
 export async function saveStoreHours(month: string, site: string, body: import('./generated/contracts').RetailStoreHoursInput) {
   const response = await client.put(`/api/grile/calendar/${encodeURIComponent(month)}/store-hours/${encodeURIComponent(site)}`, body);

@@ -76,7 +76,8 @@
     "068_grile_v2_forecast_digest_authority.sql": "transactional",
     "069_ai_cohort_and_transactional_outbox.sql": "transactional",
     "070_grile_native_calendar.sql": "transactional",
-    "071_grile_store_hours.sql": "transactional"
+    "071_grile_store_hours.sql": "transactional",
+    "072_grile_team_leader_base.sql": "transactional"
   },
   "migrations": {
     "001_add_cartela_composite_index.sql": "7f502462f585088286f9ae60d5c4ded69fccf745342ae6ddfc34c48241514b46",
@@ -149,6 +150,7 @@
     "068_grile_v2_forecast_digest_authority.sql": "766e550ddf03474979c2bf8c26067d5dc3a79a1e501a705a6988ae9fc47afa79",
     "069_ai_cohort_and_transactional_outbox.sql": "e2f3f1ff09c14cbba577ac40ba476250a7b746ebbe0bdf373c6ebf4e552fc8a0",
     "070_grile_native_calendar.sql": "5eeeb63af9d38ff6ee5c66503612267c74e3fafff3eae14891e9f23d2c144773",
-    "071_grile_store_hours.sql": "051002f000d766e708956835e7c4a5c23a381527c8c74b19323b3e4420a91f23"
+    "071_grile_store_hours.sql": "051002f000d766e708956835e7c4a5c23a381527c8c74b19323b3e4420a91f23",
+    "072_grile_team_leader_base.sql": "bfa29b6c20816b4e2052f09adebc5b51a902af0a4c5091f919f756a3f5fb3846"
   }
 }

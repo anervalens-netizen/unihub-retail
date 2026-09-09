@@ -88,7 +88,7 @@ def _format(sheet, month: str, count: int) -> None:
 def build_attendance_zip(data: CalendarMonth) -> XlsxArtifact:
     active = [r for r in data.roster if r.active]
     participants = {r.agent_code for r in active} | {r.agent_code for r in data.attendance_days}
-    sites = sorted({r.home_site_code for r in active} | set(data.attendance_by_store) |
+    sites = sorted({r.home_site_code for r in active if r.home_site_code != "TL"} | set(data.attendance_by_store) |
                    {r.site_code for r in data.store_hours})
     if not sites:
         raise HTTPException(409, "Confirm the monthly roster before exporting attendance")

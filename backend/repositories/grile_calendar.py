@@ -66,7 +66,7 @@ class GrileCalendarRepository:
         hours = await conn.fetch(
             "SELECT * FROM grile_calendar_store_hours WHERE month=$1 ORDER BY site_code", month,
         )
-        return {"roster": [dict(row) for row in roster], "days": [dict(row) for row in days],
+        return {"roster": [dict(row, home_site_code=row["home_site_code"] or "TL") for row in roster], "days": [dict(row) for row in days],
                 "store_hours": [dict(row) for row in hours]}
 
     @staticmethod
@@ -82,18 +82,26 @@ class GrileCalendarRepository:
     async def save_roster(
         self, month: str, agent_code: str, home_site_code: str, active: bool,
         expected_revision: int, actor: str,
+        *, regional: str | None = None,
     ) -> dict[str, Any]:
         try:
             async with self.pool.acquire() as conn:
                 async with conn.transaction():
-                    await self._store(conn, home_site_code)
+                    if home_site_code == "TL":
+                        if not regional or not await conn.fetchval(
+                            "SELECT EXISTS(SELECT 1 FROM stores WHERE is_active AND regional=$1)", regional,
+                        ):
+                            raise CalendarConflict("Team Leader requires an active regional scope")
+                    else:
+                        await self._store(conn, home_site_code)
+                    stored_home = None if home_site_code == "TL" else home_site_code
                     old = await conn.fetchrow(
                         "SELECT * FROM grile_calendar_roster WHERE month=$1 AND agent_code=$2 FOR UPDATE",
                         month, agent_code,
                     )
                     if (old["revision"] if old else 0) != expected_revision:
                         raise CalendarConflict("Roster revision changed; reload the calendar")
-                    if old and (not active or old["home_site_code"] != home_site_code):
+                    if old and (not active or old["home_site_code"] != stored_home or old["regional"] != regional):
                         used = await conn.fetchval(
                             """SELECT EXISTS(SELECT 1 FROM grile_calendar_days
                                WHERE month=$1 AND agent_code=$2 AND status <> 'cancelled')""",
@@ -103,18 +111,18 @@ class GrileCalendarRepository:
                             raise CalendarConflict("Cancel scheduled days before changing roster membership")
                     row = await conn.fetchrow(
                         """INSERT INTO grile_calendar_roster
-                           (month, agent_code, home_site_code, active, revision, updated_by_sub)
-                           VALUES ($1,$2,$3,$4,1,$5)
+                           (month, agent_code, home_site_code, active, revision, updated_by_sub, regional)
+                           VALUES ($1,$2,$3,$4,1,$5,$7)
                            ON CONFLICT (month,agent_code) DO UPDATE SET
-                             home_site_code=EXCLUDED.home_site_code, active=EXCLUDED.active,
+                             home_site_code=EXCLUDED.home_site_code, active=EXCLUDED.active, regional=EXCLUDED.regional,
                              revision=grile_calendar_roster.revision+1,
                              updated_by_sub=EXCLUDED.updated_by_sub, updated_at=now()
                            WHERE grile_calendar_roster.revision=$6 RETURNING *""",
-                        month, agent_code, home_site_code, active, actor, expected_revision,
+                        month, agent_code, stored_home, active, actor, expected_revision, regional,
                     )
                     if row is None:
                         raise CalendarConflict("Roster revision changed; reload the calendar")
-                    return dict(row)
+                    return dict(row, home_site_code=row["home_site_code"] or "TL")
         except asyncpg.UniqueViolationError as exc:
             raise CalendarConflict("Roster revision changed; reload the calendar") from exc
 
@@ -135,8 +143,12 @@ class GrileCalendarRepository:
             return
         if not roster["active"]:
             raise CalendarConflict("Agent must be confirmed active for this month")
-        home = await self._store(conn, roster["home_site_code"])
         worked = await self._store(conn, day.site_code)
+        if roster["home_site_code"] is None:
+            if day.status != "work" or not day.supplemental or worked["regional"] != roster["regional"]:
+                raise CalendarConflict("Team Leader work must be supplemental in the confirmed region")
+            return
+        home = await self._store(conn, roster["home_site_code"])
         if day.site_code != home["site_code"]:
             if day.status != "work" or not day.supplemental:
                 raise CalendarConflict("Work at another store must be explicitly supplemental")
