@@ -203,6 +203,7 @@ function useDataGridState<Row, Key extends string>({
     sorts,
     viewRows,
     visibleColumns,
+    hasVisibleCustomWidths: visibleKeys.some((key) => widthState.columnWidths[key] !== undefined),
     ...widthState,
   };
 }
@@ -599,7 +600,7 @@ export function DataGrid<Row, Key extends string>(props: DataGridProps<Row, Key>
       <div className="max-h-[360px] overflow-auto rounded-b-2xl">
         <table
           id={tableId}
-          className="w-full min-w-max table-auto text-xs"
+          className={`${state.hasVisibleCustomWidths ? 'w-max' : 'w-full min-w-max'} table-auto text-xs`}
           aria-labelledby={titleId}
         >
           <DataGridHead
