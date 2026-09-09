@@ -113,3 +113,12 @@ class GrileCalendarService:
         if earnings.projection_revision != expected_revision:
             raise HTTPException(409, 'Earnings changed; reload before exporting')
         return await run_in_threadpool(build_earnings_zip, calendar, earnings)
+
+    async def save_compensation(self, month, agent, payload, actor):
+        from grile.compensation_models import CompensationEntry
+        from repositories.grile_compensation import save_compensation
+        try:
+            row = await save_compensation(self.repository.pool, month, agent, payload, actor)
+        except CalendarConflict as exc:
+            raise HTTPException(409, str(exc)) from exc
+        return CompensationEntry.model_validate(dict(row))

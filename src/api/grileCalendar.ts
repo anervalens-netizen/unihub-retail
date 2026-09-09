@@ -31,3 +31,8 @@ export async function downloadEarnings(month: string, revision: string) {
   const response = await client.get<Blob>(`/api/grile/calendar/${encodeURIComponent(month)}/earnings.zip`, { params: { expected_revision: revision }, responseType: 'blob', timeoutMs: 120_000 });
   downloadBlob(response.data, `Grile-pontaje-provizorii-${month}.zip`);
 }
+
+export async function saveCompensation(month: string, code: string, body: import('./generated/contracts').RetailCompensationInput) {
+  const response = await client.put(`/api/grile/calendar/${encodeURIComponent(month)}/compensation/${encodeURIComponent(code)}`, body);
+  return decodeRetail('save_compensation_api_grile_calendar__month__compensation__agent_code__put', response.data);
+}

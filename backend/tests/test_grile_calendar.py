@@ -152,6 +152,7 @@ def test_agents_leaders_and_hr_cannot_write_calendar(api, role):
     assert client.patch("/api/grile/calendar/2026-09/days", json={"days": [change().model_dump(mode="json")]}).status_code == 403
     service.save_days.assert_not_awaited()
     assert client.put("/api/grile/calendar/2026-09/store-hours/A", json={"expected_revision": 0}).status_code == 403
+    assert client.put("/api/grile/calendar/2026-09/compensation/AG1", json={"expected_revision": 0}).status_code == 403
 
 
 def test_manager_routes_preserve_actor_and_typed_contract(api):
@@ -180,6 +181,7 @@ def test_calendar_reads_are_management_only(api, role):
     set_role(app, role)
     assert TestClient(app).get("/api/grile/calendar/2026-09").status_code == 403
     assert TestClient(app).get("/api/grile/calendar/2026-09/earnings").status_code == 403
+    assert TestClient(app).put("/api/grile/calendar/2026-09/compensation/AG1", json={"expected_revision": 0}).status_code == 403
     assert TestClient(app).get("/api/grile/calendar/2026-09/attendance.zip", params={"expected_revision": "a" * 64}).status_code == 403
     assert TestClient(app).get("/api/grile/calendar/2026-09/earnings.zip", params={"expected_revision": "a" * 64}).status_code == 403
 

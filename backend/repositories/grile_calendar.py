@@ -51,7 +51,7 @@ class GrileCalendarRepository:
                    HAVING COUNT(DISTINCT person_id) > 1
                )
                SELECT r.*,
-                      CASE WHEN c.agent_code IS NULL THEN l.name END AS display_name,
+                      CASE WHEN c.agent_code IS NULL THEN COALESCE(l.name, catalog.name) END AS display_name,
                       CASE WHEN c.agent_code IS NOT NULL THEN 'conflicting'
                            WHEN l.name IS NOT NULL THEN 'confirmed'
                            ELSE 'unavailable' END AS identity_status
@@ -62,6 +62,10 @@ class GrileCalendarRepository:
                    WHERE agent_code=r.agent_code
                      AND (r.home_site_code IS NULL OR site_code=r.home_site_code)
                ) l ON TRUE
+               LEFT JOIN LATERAL (
+                   SELECT CASE WHEN COUNT(DISTINCT name)=1 THEN MIN(name) END AS name
+                   FROM eligible WHERE agent_code=r.agent_code
+               ) catalog ON TRUE
                LEFT JOIN conflicts c ON c.agent_code=r.agent_code
                WHERE r.month=$1 ORDER BY r.agent_code""", month,
         )
