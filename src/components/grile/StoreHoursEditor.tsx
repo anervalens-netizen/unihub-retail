@@ -17,13 +17,13 @@ export function StoreHoursEditor({ month, site, data, disabled, writable, onPend
     onSuccess: () => cache.invalidateQueries({ queryKey: ['native-calendar', month] }),
     onSettled: () => onPendingChange(false),
   });
-  return <details className="mb-4 rounded border p-3"><summary>Program magazin · {current?.opens ?? '10:00'}–{current?.closes ?? '22:00'} · pauză {current?.break_minutes ?? 60} min</summary>
+  return <details className="mb-4 rounded-2xl border border-slate-100 bg-slate-50/70 p-4 text-sm dark:border-slate-700 dark:bg-slate-800/50"><summary>Program magazin · {current?.opens ?? '10:00'}–{current?.closes ?? '22:00'} · pauză {current?.break_minutes ?? 60} min</summary>
     <p className="my-2 text-sm">Se aplică tuturor zilelor lucrate din {month}, inclusiv suplimentarilor. Celelalte luni nu se modifică.</p>
     {writable && <form onSubmit={e => { e.preventDefault(); save.mutate(); }} className="flex flex-wrap items-end gap-3">
-      <label>Deschidere <input aria-label="Deschidere" type="time" required value={opens} disabled={disabled || save.isPending || save.isError} onChange={e => setOpens(e.target.value)} /></label>
-      <label>Închidere <input aria-label="Închidere" type="time" required value={closes} disabled={disabled || save.isPending || save.isError} onChange={e => setCloses(e.target.value)} /></label>
-      <label>Pauză (minute) <input aria-label="Pauză (minute)" type="number" required min={0} max={720} value={pause} disabled={disabled || save.isPending || save.isError} onChange={e => setPause(Number(e.target.value))} className="w-20" /></label>
-      <button className="rounded border px-3 py-2" disabled={disabled || save.isPending || save.isError}>Salvează programul magazinului</button>
+      <label className="native-label">Deschidere <input aria-label="Deschidere" className="native-field" type="time" required value={opens} disabled={disabled || save.isPending || save.isError} onChange={e => setOpens(e.target.value)} /></label>
+      <label className="native-label">Închidere <input aria-label="Închidere" className="native-field" type="time" required value={closes} disabled={disabled || save.isPending || save.isError} onChange={e => setCloses(e.target.value)} /></label>
+      <label className="native-label">Pauză (minute) <input aria-label="Pauză (minute)" type="number" required min={0} max={720} value={pause} disabled={disabled || save.isPending || save.isError} onChange={e => setPause(Number(e.target.value))} className="native-field !w-24" /></label>
+      <button className="native-primary" disabled={disabled || save.isPending || save.isError}>Salvează programul magazinului</button>
     </form>}
     {save.isError && <p role="alert">{getApiErrorMessage(save.error, 'Programul nu a fost salvat.')} <button onClick={async () => { await cache.invalidateQueries({ queryKey: ['native-calendar', month] }); save.reset(); }}>Reîncarcă orarul</button></p>}
   </details>;
