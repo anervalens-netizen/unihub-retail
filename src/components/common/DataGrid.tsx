@@ -10,6 +10,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
   type MouseEvent,
   type ReactNode,
   type RefObject,
@@ -35,6 +36,7 @@ import {
   DataGridColumnMenu,
   DataGridFilterControl,
   DataGridHiddenFilters,
+  DataGridResizeHandle,
 } from './DataGridControls';
 import type { DataGridColumn } from './dataGridTypes';
 
@@ -53,6 +55,28 @@ interface DataGridProps<Row, Key extends string> {
   exportSheetName: string;
   exportColumns?: ExportColumn<Row>[];
   emptyLabel?: string;
+}
+
+type DataGridColumnWidths<Key extends string> = Partial<Record<Key, number>>;
+
+function useDataGridColumnWidths<Key extends string>() {
+  const [columnWidths, setColumnWidths] = useState<DataGridColumnWidths<Key>>({});
+  const setColumnWidth = (key: Key, width: number | undefined) => {
+    setColumnWidths((current) => {
+      if (width === undefined) {
+        const next = { ...current };
+        delete next[key];
+        return next;
+      }
+      return { ...current, [key]: width };
+    });
+  };
+  return {
+    columnWidths,
+    hasCustomWidths: Object.keys(columnWidths).length > 0,
+    resetColumnWidths: () => setColumnWidths({}),
+    setColumnWidth,
+  };
 }
 
 function exportCellValue(value: unknown): string | number | null | undefined {
@@ -95,6 +119,7 @@ function useDataGridState<Row, Key extends string>({
   const [globalSearch, setGlobalSearch] = useState('');
   const [order, setOrder] = useState<Key[]>(() => [...allKeys]);
   const [hidden, setHidden] = useState<Key[]>([]);
+  const widthState = useDataGridColumnWidths<Key>();
 
   const normalizedOrder = useMemo(
     () => normalizeColumnOrder(allKeys, order),
@@ -178,6 +203,8 @@ function useDataGridState<Row, Key extends string>({
     sorts,
     viewRows,
     visibleColumns,
+    hasVisibleCustomWidths: visibleKeys.some((key) => widthState.columnWidths[key] !== undefined),
+    ...widthState,
   };
 }
 
@@ -193,19 +220,29 @@ function buildSortStatus<Row, Key extends string>(
   }).join('; ')}.`;
 }
 
+function columnWidthStyle(width: number | undefined): CSSProperties | undefined {
+  return width === undefined
+    ? undefined
+    : { width, minWidth: width, maxWidth: width };
+}
+
 function DataGridHead<Row, Key extends string>({
   columns,
   sorts,
   filters,
+  columnWidths,
   onSort,
   onFilter,
+  onResizeColumn,
   sortStatusId,
 }: {
   columns: readonly DataGridColumn<Row, Key>[];
   sorts: readonly DataGridSort<Key>[];
   filters: DataGridFilters<Key>;
+  columnWidths: DataGridColumnWidths<Key>;
   onSort: (key: Key, append: boolean) => void;
   onFilter: (key: Key, filter: DataGridFilterValue | undefined) => void;
+  onResizeColumn: (key: Key, width: number | undefined) => void;
   sortStatusId: string;
 }) {
   const hasFilters = columns.some((column) => column.filter !== undefined);
@@ -218,13 +255,15 @@ function DataGridHead<Row, Key extends string>({
           const ariaSort: 'ascending' | 'descending' | undefined = sortIndex === 0
             ? sort?.direction === 'asc' ? 'ascending' : 'descending'
             : undefined;
+          const width = columnWidths[column.key];
           return (
             <th
               key={column.key}
               scope="col"
               aria-sort={ariaSort}
               data-testid={`data-grid-header-${column.key}`}
-              className={`px-1.5 py-1.5 align-bottom text-[11px] font-bold leading-tight ${column.headerClassName ?? ''}`}
+              style={columnWidthStyle(width)}
+              className={`relative px-1.5 py-1.5 align-bottom text-[11px] font-bold leading-tight ${column.headerClassName ?? ''}`}
             >
               <button
                 type="button"
@@ -233,7 +272,7 @@ function DataGridHead<Row, Key extends string>({
                 aria-label={`Sortează după ${column.label}`}
                 aria-describedby={sortStatusId}
                 title="Click pentru sortare; Shift+click pentru sortare multiplă"
-                className="flex w-full min-w-0 items-center justify-between gap-1 rounded text-left hover:text-indigo-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:hover:text-indigo-300"
+                className="flex w-full min-w-0 items-center justify-between gap-1 rounded pr-1 text-left hover:text-indigo-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:hover:text-indigo-300"
               >
                 <span className="min-w-0 whitespace-normal break-words">
                   {column.label}
@@ -262,6 +301,11 @@ function DataGridHead<Row, Key extends string>({
                   )}
                 </span>
               </button>
+              <DataGridResizeHandle
+                label={column.label}
+                width={width}
+                onResize={(nextWidth) => onResizeColumn(column.key, nextWidth)}
+              />
             </th>
           );
         })}
@@ -271,6 +315,7 @@ function DataGridHead<Row, Key extends string>({
           {columns.map((column) => (
             <td
               key={column.key}
+              style={columnWidthStyle(columnWidths[column.key])}
               className="px-1 py-1 align-top"
               data-testid={`data-grid-filter-cell-${column.key}`}
             >
@@ -384,6 +429,8 @@ function DataGridToolbar<Row, Key extends string>({
   onMove,
   onToggle,
   onResetColumns,
+  hasCustomWidths,
+  onResetWidths,
   exportFilename,
   exportSheetName,
   exportColumns,
@@ -405,6 +452,8 @@ function DataGridToolbar<Row, Key extends string>({
   onMove: (key: Key, offset: -1 | 1) => void;
   onToggle: (key: Key) => void;
   onResetColumns: () => void;
+  hasCustomWidths: boolean;
+  onResetWidths: () => void;
   exportFilename: string;
   exportSheetName: string;
   exportColumns: ExportColumn<Row>[];
@@ -442,6 +491,8 @@ function DataGridToolbar<Row, Key extends string>({
         onMove={onMove}
         onToggle={onToggle}
         onReset={onResetColumns}
+        hasCustomWidths={hasCustomWidths}
+        onResetWidths={onResetWidths}
       />
       <ExportTableButton
         filename={exportFilename}
@@ -515,6 +566,8 @@ export function DataGrid<Row, Key extends string>(props: DataGridProps<Row, Key>
             state.setOrder([...state.allKeys]);
             state.setHidden([]);
           }}
+          hasCustomWidths={state.hasCustomWidths}
+          onResetWidths={state.resetColumnWidths}
           exportFilename={props.exportFilename}
           exportSheetName={props.exportSheetName}
           exportColumns={props.exportColumns ?? state.exportColumns}
@@ -547,15 +600,17 @@ export function DataGrid<Row, Key extends string>(props: DataGridProps<Row, Key>
       <div className="max-h-[360px] overflow-auto rounded-b-2xl">
         <table
           id={tableId}
-          className="w-full min-w-max table-auto text-xs"
+          className={`${state.hasVisibleCustomWidths ? 'w-max' : 'w-full min-w-max'} table-auto text-xs`}
           aria-labelledby={titleId}
         >
           <DataGridHead
             columns={state.visibleColumns}
             sorts={state.sorts}
             filters={state.filters}
+            columnWidths={state.columnWidths}
             onSort={updateSort}
             onFilter={state.setFilter}
+            onResizeColumn={state.setColumnWidth}
             sortStatusId={sortStatusId}
           />
           <DataGridBody
