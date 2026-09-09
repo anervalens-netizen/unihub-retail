@@ -27,7 +27,7 @@ async function openStore() { await userEvent.click(await screen.findByRole('butt
 it('opens grouped store, shows attendance, and reopens calendar', async () => {
   mount(); await openStore();
   expect(screen.getByRole('dialog')).toHaveAccessibleName('Magazin Alpha');
-  await userEvent.click(screen.getByRole('button', { name: 'Pontaj' }));
+  await userEvent.click(screen.getByRole('tab', { name: 'Pontaj' }));
   expect(screen.getByRole('table')).toHaveTextContent('AG1');
   await userEvent.click(screen.getByLabelText('Închide magazinul'));
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
@@ -178,7 +178,7 @@ it('saves monthly store hours with revision and reloads attendance', async () =>
   await userEvent.click(screen.getByRole('button', { name: 'Salvează programul magazinului' }));
   await waitFor(() => expect(api.saveStoreHours).toHaveBeenCalledWith('2026-09', 'S1', { opens: '09:00', closes: '22:00', break_minutes: 60, expected_revision: 0 }));
   expect(await screen.findByText(/Program magazin · 09:00/)).toBeInTheDocument();
-  await userEvent.click(screen.getByRole('button', { name: 'Pontaj' }));
+  await userEvent.click(screen.getByRole('tab', { name: 'Pontaj' }));
   expect(screen.getByRole('table')).toHaveTextContent('09:00–22:00');
   expect(screen.getByRole('table')).toHaveTextContent('12');
 });
@@ -195,4 +195,23 @@ it('keeps confirmed names and stable codes visible in the calendar and roster', 
   expect(screen.getByRole('button', { name: 'Editează 2026-09-01' })).toHaveTextContent('Nume Confirmat · AG1');
   await userEvent.click(screen.getByText('Confirmă agenții și magazinul de bază'));
   expect(screen.getByRole('option', { name: /Nume Confirmat · AG1/ })).toHaveValue('AG1');
+});
+it('filters managers, companies and stores without changing the monthly export scope', async () => {
+  api.calendarStores.mockResolvedValue([store, { ...store, site_code: 'S2', locatie: 'Magazin Beta', firma: 'Other' }, { ...store, site_code: 'S3', locatie: 'Magazin Gamma', regional: 'Manager G' }, { ...store, site_code: 'S4', locatie: 'Magazin Delta', regional: '' }]);
+  api.readCalendar.mockResolvedValue({ month: '2026-09', roster, days: [day], attendance: [], projection_revision: 'whole-month' });
+  mount();
+  await userEvent.selectOptions(await screen.findByLabelText('Manager program'), 'Manager R');
+  expect(screen.getByRole('button', { name: /Magazin Alpha/ })).toBeVisible();
+  expect(screen.queryByRole('button', { name: /Magazin Gamma/ })).not.toBeInTheDocument();
+  await userEvent.selectOptions(screen.getByLabelText('Firmă program'), 'Other');
+  expect(screen.queryByRole('button', { name: /Magazin Alpha/ })).not.toBeInTheDocument();
+  expect(screen.getByRole('button', { name: /Magazin Beta/ })).toBeVisible();
+  await userEvent.click(screen.getByRole('button', { name: 'Descarcă pontajele ZIP (provizoriu)' }));
+  expect(api.downloadAttendance).toHaveBeenCalledWith('2026-09', 'whole-month');
+  await userEvent.type(screen.getByLabelText('Caută magazin'), 'missing');
+  expect(screen.getByText('Niciun magazin găsit')).toBeVisible();
+  await userEvent.click(screen.getByRole('button', { name: 'Resetează filtrele' }));
+  await userEvent.selectOptions(screen.getByLabelText('Manager program'), '__unassigned');
+  expect(screen.getByRole('button', { name: /Magazin Delta/ })).toBeVisible();
+  expect(api.saveCalendarDays).not.toHaveBeenCalled();
 });
