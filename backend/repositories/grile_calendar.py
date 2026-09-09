@@ -132,6 +132,13 @@ class GrileCalendarRepository:
         except asyncpg.UniqueViolationError as exc:
             raise CalendarConflict("Roster revision changed; reload the calendar") from exc
 
+    @staticmethod
+    def _validate_cancellation(day: CalendarDayInput, old: asyncpg.Record | None) -> None:
+        if old is None:
+            raise CalendarConflict("Cannot cancel an unassigned day")
+        if (old["site_code"] or "TL") != day.site_code:
+            raise CalendarConflict("Cancellation must retain the assigned store")
+
     async def _validate_day(
         self, conn: asyncpg.Connection, day: CalendarDayInput, roster: asyncpg.Record,
     ) -> None:
@@ -142,10 +149,7 @@ class GrileCalendarRepository:
         if (old["revision"] if old else 0) != day.expected_revision:
             raise CalendarConflict("Day revision changed; reload the calendar")
         if day.status == "cancelled":
-            if old is None:
-                raise CalendarConflict("Cannot cancel an unassigned day")
-            if (old["site_code"] or "TL") != day.site_code:
-                raise CalendarConflict("Cancellation must retain the assigned store")
+            self._validate_cancellation(day, old)
             return
         if not roster["active"]:
             raise CalendarConflict("Agent must be confirmed active for this month")
