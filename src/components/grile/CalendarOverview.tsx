@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { CalendarDays, ChevronDown, ChevronRight, Download, Search, Store, Users } from 'lucide-react';
 import type { CalendarData, CalendarStore } from '../../api/grileCalendar';
+import { calendarTeamGroups } from './calendarTeamLeaders';
 
 export function CalendarOverview({ stores, data, downloading, refreshing, onDownload, onSelect }: {
   stores: CalendarStore[]; data: CalendarData; downloading: boolean; refreshing: boolean;
@@ -35,9 +36,9 @@ export function CalendarOverview({ stores, data, downloading, refreshing, onDown
       </div>
     </div>
     <div className="flex items-center justify-between px-1"><h3 className="font-bold text-slate-800 dark:text-slate-100">Magazinele echipei</h3><span className="text-xs text-slate-500">{visible.length} din {stores.length} magazine</span></div>
-    <div className="space-y-3">{groups.map(name => <details key={`${name}-${manager}-${company}-${query}`} open={Boolean(manager || query) || groups.length === 1} className="group glass overflow-hidden rounded-2xl">
-      <summary className="flex min-h-16 cursor-pointer list-none items-center gap-3 px-4 py-4 marker:content-none sm:px-5 [&::-webkit-details-marker]:hidden"><span className="rounded-xl bg-indigo-50 p-2 text-indigo-600 dark:bg-indigo-950 dark:text-indigo-300"><Users size={18} /></span><span className="min-w-0 flex-1"><span className="block truncate text-sm font-bold text-slate-800 dark:text-slate-100">{name || 'Fără manager'}</span><span className="text-xs text-slate-500">{visible.filter(store => store.regional === name).length} magazine</span></span><ChevronDown size={18} className="text-slate-400 transition-transform group-open:rotate-180" /></summary>
-      <div className="grid gap-3 border-t border-slate-100 bg-slate-50/50 p-3 sm:grid-cols-2 sm:p-4 xl:grid-cols-3 dark:border-slate-800 dark:bg-slate-950/20">{visible.filter(store => store.regional === name).map(store => <CalendarStoreCard key={store.site_code} store={store} data={data} onSelect={onSelect} />)}</div>
+    <div className="space-y-3">{groups.map(name => <details key={`${name}-${manager}-${company}-${query}`} open={Boolean(manager || query) || groups.length === 1} className="group/manager glass overflow-hidden rounded-2xl">
+      <summary className="flex min-h-16 cursor-pointer list-none items-center gap-3 px-4 py-4 marker:content-none sm:px-5 [&::-webkit-details-marker]:hidden"><span className="rounded-xl bg-indigo-50 p-2 text-indigo-600 dark:bg-indigo-950 dark:text-indigo-300"><Users size={18} /></span><span className="min-w-0 flex-1"><span className="block truncate text-sm font-bold text-slate-800 dark:text-slate-100">{name || 'Fără manager'}</span><span className="text-xs text-slate-500">{visible.filter(store => store.regional === name).length} magazine</span></span><ChevronDown size={18} className="text-slate-400 transition-transform group-open/manager:rotate-180" /></summary>
+      {name === 'Andrei Stancu' ? <CalendarTeamGroups stores={visible.filter(store => store.regional === name)} data={data} onSelect={onSelect} expanded={Boolean(query)} /> : <div className="grid gap-3 border-t border-slate-100 p-3 sm:grid-cols-2 sm:p-4 xl:grid-cols-3 dark:border-slate-800">{visible.filter(store => store.regional === name).map(store => <CalendarStoreCard key={store.site_code} store={store} data={data} onSelect={onSelect} />)}</div>}
     </details>)}</div>
       <div className="glass mt-5 flex flex-col gap-3 rounded-2xl p-4 sm:flex-row sm:items-center sm:justify-between dark:border-slate-800">
         <p className="max-w-lg text-xs leading-relaxed text-slate-500">Pontajele sunt provizorii. ZIP-ul include toate magazinele din programul lunii, indiferent de filtre. V1 rămâne grila oficială.</p>
@@ -61,4 +62,11 @@ function CalendarStoreCard({ store, data, onSelect }: { store: CalendarStore; da
     <strong className="block break-words text-sm text-slate-900 dark:text-white">{store.locatie}</strong><span className="mt-1 block text-xs text-slate-400">{store.site_code}</span>
     <div className="mt-4 flex flex-wrap gap-2 text-xs"><span className={`rounded-lg px-2 py-1 ${days ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-200' : 'bg-amber-50 text-amber-800 dark:bg-amber-950 dark:text-amber-200'}`}>{days ? `${days} ${days === 1 ? 'zi programată' : 'zile programate'}` : 'De completat'}</span><span className="py-1 text-slate-500">{agents} {agents === 1 ? 'agent confirmat' : 'agenți confirmați'}</span></div>
   </button>;
+}
+
+function CalendarTeamGroups({ stores, data, onSelect, expanded }: { stores: CalendarStore[]; data: CalendarData; onSelect: (store: CalendarStore) => void; expanded: boolean }) {
+  return <div className="space-y-3 border-t border-slate-100 bg-slate-50/50 p-3 sm:p-4 dark:border-slate-800 dark:bg-slate-950/20">{calendarTeamGroups(stores).map(team => <details key={team.code} open={expanded} className="group/team overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900">
+    <summary className="flex min-h-14 cursor-pointer list-none items-center gap-3 p-4 marker:content-none [&::-webkit-details-marker]:hidden"><Users size={17} className="shrink-0 text-indigo-500" /><span className="min-w-0 flex-1"><span className="block text-sm font-semibold">{team.label}{team.code ? ` · ${team.code}` : ''}</span><span className="text-xs text-slate-500">{team.stores.length} {team.stores.length === 1 ? 'magazin' : 'magazine'}</span></span><ChevronDown size={17} className="shrink-0 text-slate-400 transition-transform group-open/team:rotate-180" /></summary>
+    <div className="grid gap-3 border-t border-slate-100 p-3 sm:grid-cols-2 xl:grid-cols-3 dark:border-slate-800">{team.stores.map(store => <CalendarStoreCard key={store.site_code} store={store} data={data} onSelect={onSelect} />)}</div>
+  </details>)}</div>;
 }
