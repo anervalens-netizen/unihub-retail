@@ -115,6 +115,20 @@ async def test_virtual_leader_preserves_store_scope_and_revision_fencing(repo):
     assert (await repo.read(MONTH))["days"][0]["status"] == "cancelled"
 
 
+async def test_virtual_leader_identity_uses_unique_confirmed_person_without_home_join(repo, web_repo):
+    await repo.save_roster(MONTH, AG1, "TL", True, 0, "manager", regional="R1")
+    person = 'sp1_' + sha256(b'synthetic-tl').hexdigest()
+    async with repo.pool.acquire() as conn:
+        await conn.execute("INSERT INTO salary_private.people(person_id,normalized_name,identity_source) VALUES($1,'CAL-R4-SYNTHETIC-IDENTITY','name')", person)
+        for site in (A, B):
+            await conn.execute("INSERT INTO agent_salary_links(agent_code,site_code,salary_full_name,person_id,effective_from_month,match_status) VALUES($1,$2,'Synthetic TL',$3,'2196-08','confirmed')", AG1, site, person)
+    calendar = await GrileCalendarService(web_repo).read(MONTH)
+    assert len(calendar.roster) == 1
+    assert calendar.roster[0].display_name == 'Synthetic TL'
+    assert calendar.roster[0].identity_status == 'confirmed'
+    assert 'person_id' not in calendar.model_dump_json()
+
+
 async def test_two_simultaneous_agents_cannot_occupy_one_store_day(repo):
     await confirm(repo)
     await confirm(repo, AG2)

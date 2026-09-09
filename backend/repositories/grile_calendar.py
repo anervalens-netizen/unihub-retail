@@ -56,7 +56,12 @@ class GrileCalendarRepository:
                            WHEN l.name IS NOT NULL THEN 'confirmed'
                            ELSE 'unavailable' END AS identity_status
                FROM grile_calendar_roster r
-               LEFT JOIN eligible l ON l.agent_code=r.agent_code AND l.site_code=r.home_site_code
+               LEFT JOIN LATERAL (
+                   SELECT CASE WHEN COUNT(DISTINCT name)=1 THEN MIN(name) END AS name
+                   FROM eligible
+                   WHERE agent_code=r.agent_code
+                     AND (r.home_site_code IS NULL OR site_code=r.home_site_code)
+               ) l ON TRUE
                LEFT JOIN conflicts c ON c.agent_code=r.agent_code
                WHERE r.month=$1 ORDER BY r.agent_code""", month,
         )
