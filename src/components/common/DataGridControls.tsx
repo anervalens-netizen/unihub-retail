@@ -116,7 +116,10 @@ export function DataGridColumnMenu<Row, Key extends string>({
     || order.some((key, index) => key !== allKeys[index]);
   return (
     <details className="relative">
-      <summary className="inline-flex cursor-pointer list-none items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1 text-[11px] font-bold text-slate-600 hover:border-indigo-200 hover:text-indigo-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 [&::-webkit-details-marker]:hidden">
+      <summary
+        data-grid-column-menu-trigger
+        className="inline-flex cursor-pointer list-none items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1 text-[11px] font-bold text-slate-600 hover:border-indigo-200 hover:text-indigo-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 [&::-webkit-details-marker]:hidden"
+      >
         <Columns3 size={12} />
         Coloane
       </summary>
@@ -220,12 +223,15 @@ export function DataGridHiddenFilters<Row, Key extends string>({
   });
   const containerRef = useRef<HTMLDivElement>(null);
   const pendingFocusKeyRef = useRef<Key | null>(null);
+  const stableFallbackRef = useRef<HTMLElement | null>(null);
   useEffect(() => {
     if (pendingFocusKeyRef.current === null) return;
     const removedKey = pendingFocusKeyRef.current;
     pendingFocusKeyRef.current = null;
     if (active.length === 0) {
-      const fallback = clearAllRef?.current ?? searchInputRef?.current ?? null;
+      const fallback = clearAllRef?.current
+        ?? searchInputRef?.current
+        ?? stableFallbackRef.current;
       fallback?.focus();
       return;
     }
@@ -243,6 +249,8 @@ export function DataGridHiddenFilters<Row, Key extends string>({
   if (active.length === 0) return null;
   const handleClear = (key: Key) => {
     pendingFocusKeyRef.current = key;
+    stableFallbackRef.current = containerRef.current?.parentElement
+      ?.querySelector<HTMLElement>('[data-grid-column-menu-trigger]') ?? null;
     onClear(key);
   };
 
