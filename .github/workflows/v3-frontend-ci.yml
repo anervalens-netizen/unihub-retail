@@ -11,6 +11,10 @@ on:
       - "vendor/npm/**"
       - "package.json"
       - "package-lock.json"
+      - "backend/requirements.txt"
+      - "backend/requirements.lock"
+      - "backend/requirements-dev.txt"
+      - "backend/requirements-dev.lock"
       - "eslint.config.js"
       - "tsconfig*.json"
       - "vite.config.ts"
@@ -73,7 +77,7 @@ jobs:
           test -z "$(git status --short)"
           git diff --check "$PR_BASE_SHA"...HEAD
           changed="$(git diff --name-only "$PR_BASE_SHA"...HEAD)"
-          if grep -Eq '^(src/|e2e/|vendor/npm/|package(-lock)?\.json$|playwright\.config\.ts$|\.github/workflows/v3-frontend-ci\.yml$)' <<< "$changed"; then
+          if grep -Eq '^(src/|e2e/|vendor/npm/|package(-lock)?\.json$|playwright\.config\.ts$|vite\.config\.ts$|\.github/workflows/v3-frontend-ci\.yml$)' <<< "$changed"; then
             echo "history_browser=true" >> "$GITHUB_OUTPUT"
           fi
 
