@@ -158,6 +158,13 @@ async def test_retired_tl_region_allows_deactivation_but_not_reactivation(repo):
         await repo.save_roster(MONTH, AG1, "TL", True, 2, "manager", regional="R1")
 
 
+async def test_distribution_only_region_cannot_create_team_leader(repo):
+    async with repo.pool.acquire() as conn:
+        await conn.execute("UPDATE stores SET locatie='TR Synthetic' WHERE site_code=$1", C)
+    with pytest.raises(CalendarConflict, match="active regional scope"):
+        await repo.save_roster(MONTH, AG1, "TL", True, 0, "manager", regional="R2")
+
+
 async def test_two_simultaneous_agents_cannot_occupy_one_store_day(repo):
     await confirm(repo)
     await confirm(repo, AG2)

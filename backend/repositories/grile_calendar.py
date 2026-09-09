@@ -95,7 +95,8 @@ class GrileCalendarRepository:
         if not active and old and old["home_site_code"] is None and old["regional"] == regional:
             return
         if not regional or not await conn.fetchval(
-            "SELECT EXISTS(SELECT 1 FROM stores WHERE is_active AND regional=$1)", regional,
+            f"""SELECT EXISTS(SELECT 1 FROM stores WHERE is_active AND regional=$1
+                AND {distribution_location_clause()} AND site_code <> 'Cartele')""", regional,
         ):
             raise CalendarConflict("Team Leader requires an active regional scope")
 
