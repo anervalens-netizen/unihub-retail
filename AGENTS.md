@@ -173,7 +173,6 @@ certified main -> exact-main FULL release run -> immutable artifact/provenance
 ```
 
 - Never push runtime code directly to `main`.
-- Never deploy a local checkout or rebuild release source on the server.
 - Do not start FULL merely because a merge occurred.
 - Do not deploy/tag/release/migrate/restart production without explicit scope/
   authorization for that operation.
