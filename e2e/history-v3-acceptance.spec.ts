@@ -106,7 +106,7 @@ const PERFORMANCE_DETAIL = {
   history: [],
   key: 'S-NORD',
   level: 'store',
-  month: '2026-05',
+  month: '2026-04',
   note: 'Date demonstrative pentru acceptanta V3.',
   peer_rows: [],
   risks: [],
@@ -121,7 +121,7 @@ const PERFORMANCE_DETAIL = {
   subtitle: 'Mobiup · Nord',
   summary: {
     ...HISTORY_DETAILS.summary,
-    month: '2026-05',
+    month: '2026-04',
   },
   title: 'Promenada',
 };
@@ -258,7 +258,9 @@ test.describe('V3 Hub history acceptance', () => {
     const detailParams = new URL(detailRequest.url()).searchParams;
     expect(detailParams.get('level')).toBe('store');
     expect(detailParams.get('key')).toBe('S-NORD');
-    expect(detailParams.get('month')).toBe('2026-05');
+    expect(detailParams.get('month')).toBe('2026-04');
+    expect(detailParams.get('current_scope')).toBe('true');
+    expect(detailParams.get('include_closed_stores')).toBe('false');
     const drawer = page.getByRole('dialog');
     await expect(drawer).toBeVisible();
     await expect(drawer).toContainText('Promenada');
