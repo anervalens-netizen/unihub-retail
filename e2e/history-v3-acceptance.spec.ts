@@ -358,6 +358,11 @@ test.describe('V3 Hub history acceptance', () => {
       await expect(card.getByTestId('data-grid-row')).toHaveCount(1);
       await expect(card.getByTestId('data-grid-row')).toContainText('Sud');
       await expect(card.getByTestId('data-grid-header-target')).toHaveCount(0);
+      // Keyboard focus must land on the stable clear-all toolbar button
+      // because global search still holds a value (count = 1).
+      await expect(
+        card.getByRole('button', { name: 'Șterge filtrele (1)' }),
+      ).toBeFocused();
       await card.getByRole('button', { name: 'Șterge filtrele (1)' }).click();
       await expect(card.getByTestId('data-grid-row')).toHaveCount(2);
       await expectNoPageOverflow(page);

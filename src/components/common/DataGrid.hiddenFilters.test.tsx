@@ -112,4 +112,98 @@ describe('DataGrid hidden-column filters', () => {
     expect(screen.getByTestId('export-rows')).toHaveTextContent(/^d,c,b,a$/);
     expect(screen.queryByTestId('data-grid-header-region')).not.toBeInTheDocument();
   });
+
+  it('moves keyboard focus to the next remaining hidden chip when a middle chip is removed', () => {
+    renderGrid();
+    // Set up three hidden filters (city, region, sales) by hiding those columns.
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Filtrează Magazin' }), { target: { value: 'Mall' } });
+    fireEvent.change(screen.getByRole('combobox', { name: 'Filtrează Regiune' }), { target: { value: 'N' } });
+    fireEvent.change(screen.getByRole('spinbutton', { name: 'Minim Vânzări' }), { target: { value: '150' } });
+    fireEvent.click(screen.getByText('Coloane', { exact: true }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Afișează Magazin' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Afișează Regiune' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Afișează Vânzări' }));
+    fireEvent.click(screen.getByText('Coloane', { exact: true }));
+
+    const group = screen.getByRole('group', { name: groupName });
+    expect(within(group).getAllByRole('button')).toHaveLength(3);
+
+    const regionChip = within(group).getByRole('button', { name: 'Șterge filtrul Regiune: Nord' });
+    regionChip.focus();
+    fireEvent.click(regionChip);
+
+    const salesChip = within(group).getByRole('button', { name: 'Șterge filtrul Vânzări: ≥ 150' });
+    expect(salesChip).toHaveFocus();
+  });
+
+  it('falls back to the previous chip when the removed chip is the last remaining one', () => {
+    renderGrid();
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Filtrează Magazin' }), { target: { value: 'Mall' } });
+    fireEvent.change(screen.getByRole('combobox', { name: 'Filtrează Regiune' }), { target: { value: 'N' } });
+    fireEvent.click(screen.getByText('Coloane', { exact: true }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Afișează Magazin' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Afișează Regiune' }));
+    fireEvent.click(screen.getByText('Coloane', { exact: true }));
+
+    const group = screen.getByRole('group', { name: groupName });
+    const regionChip = within(group).getByRole('button', { name: 'Șterge filtrul Regiune: Nord' });
+    regionChip.focus();
+    fireEvent.click(regionChip);
+
+    const cityChip = within(group).getByRole('button', { name: 'Șterge filtrul Magazin: Mall' });
+    expect(cityChip).toHaveFocus();
+  });
+
+  it('moves focus to the clear-all button when the last hidden chip is removed and other filters remain', () => {
+    renderGrid();
+    // Keep the global search active so the clear-all button stays visible
+    // after the hidden chip is the last column filter to be removed.
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Caută în coloanele afișate din Regional' }), { target: { value: 'ana' } });
+    fireEvent.change(screen.getByRole('combobox', { name: 'Filtrează Regiune' }), { target: { value: 'N' } });
+    fireEvent.click(screen.getByText('Coloane', { exact: true }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Afișează Regiune' }));
+    fireEvent.click(screen.getByText('Coloane', { exact: true }));
+
+    const chip = screen.getByRole('button', { name: 'Șterge filtrul Regiune: Nord' });
+    chip.focus();
+    fireEvent.click(chip);
+
+    expect(screen.queryByRole('group', { name: groupName })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Șterge filtrele (1)' })).toHaveFocus();
+  });
+
+  it('falls back to the global search input when no chips and no clear-all remain', () => {
+    renderGrid();
+    fireEvent.change(screen.getByRole('combobox', { name: 'Filtrează Regiune' }), { target: { value: 'N' } });
+    fireEvent.click(screen.getByText('Coloane', { exact: true }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Afișează Regiune' }));
+
+    const chip = screen.getByRole('button', { name: 'Șterge filtrul Regiune: Nord' });
+    chip.focus();
+    fireEvent.click(chip);
+
+    expect(screen.queryByRole('group', { name: groupName })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Șterge filtrele (1)' })).not.toBeInTheDocument();
+    const search = screen.getByRole('searchbox', { name: 'Caută în coloanele afișate din Regional' });
+    expect(search).toHaveFocus();
+  });
+
+  it('does not steal focus when an unrelated control clears a filter', () => {
+    renderGrid();
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Filtrează Magazin' }), { target: { value: 'Mall' } });
+    fireEvent.click(screen.getByText('Coloane', { exact: true }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Afișează Magazin' }));
+    fireEvent.click(screen.getByText('Coloane', { exact: true }));
+
+    // Focus a stable visible control (the global search input) so we can
+    // verify that clearing the filter via the toolbar does not steal it.
+    const other = screen.getByRole('searchbox', { name: 'Caută în coloanele afișate din Regional' });
+    other.focus();
+    expect(other).toHaveFocus();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Șterge filtrele (1)' }));
+
+    expect(screen.queryByRole('group', { name: groupName })).not.toBeInTheDocument();
+    expect(other).toHaveFocus();
+  });
 });

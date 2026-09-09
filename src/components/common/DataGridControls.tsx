@@ -4,7 +4,7 @@ import {
   Columns3,
   RotateCcw,
 } from 'lucide-react';
-import type { ChangeEvent } from 'react';
+import { useEffect, useRef, type ChangeEvent, type RefObject } from 'react';
 
 import {
   isDataGridFilterActive,
@@ -202,22 +202,53 @@ export function DataGridHiddenFilters<Row, Key extends string>({
   filters,
   tableId,
   onClear,
+  searchInputRef,
+  clearAllRef,
 }: {
   columns: readonly DataGridColumn<Row, Key>[];
   hidden: readonly Key[];
   filters: DataGridFilters<Key>;
   tableId: string;
   onClear: (key: Key) => void;
+  searchInputRef?: RefObject<HTMLInputElement | null>;
+  clearAllRef?: RefObject<HTMLButtonElement | null>;
 }) {
   const active = columns.flatMap((column) => {
     const filter = filters[column.key];
     if (!hidden.includes(column.key) || !filter || !isDataGridFilterActive(filter)) return [];
     return [{ key: column.key, label: `${column.label}: ${hiddenFilterDescription(column, filter)}` }];
   });
+  const containerRef = useRef<HTMLDivElement>(null);
+  const pendingFocusKeyRef = useRef<Key | null>(null);
+  useEffect(() => {
+    if (pendingFocusKeyRef.current === null) return;
+    const removedKey = pendingFocusKeyRef.current;
+    pendingFocusKeyRef.current = null;
+    if (active.length === 0) {
+      const fallback = clearAllRef?.current ?? searchInputRef?.current ?? null;
+      fallback?.focus();
+      return;
+    }
+    const removedIndex = columns.findIndex((column) => column.key === removedKey);
+    const afterRemoved = active.find(({ key }) =>
+      columns.findIndex((column) => column.key === key) > removedIndex,
+    );
+    const successor = afterRemoved ?? active[active.length - 1];
+    if (!successor) return;
+    const target = containerRef.current?.querySelector<HTMLButtonElement>(
+      `button[data-hidden-filter-key="${CSS.escape(successor.key)}"]`,
+    );
+    target?.focus();
+  }, [active, columns, clearAllRef, searchInputRef]);
   if (active.length === 0) return null;
+  const handleClear = (key: Key) => {
+    pendingFocusKeyRef.current = key;
+    onClear(key);
+  };
 
   return (
     <div
+      ref={containerRef}
       role="group"
       aria-label="Filtre pe coloane ascunse"
       className="flex min-w-0 flex-wrap items-center gap-1.5 border-b border-slate-100 px-3 py-2 text-[11px] text-slate-600 dark:border-slate-800 dark:text-slate-300"
@@ -227,9 +258,10 @@ export function DataGridHiddenFilters<Row, Key extends string>({
         <button
           key={key}
           type="button"
+          data-hidden-filter-key={key}
           aria-label={`Șterge filtrul ${label}`}
           aria-controls={tableId}
-          onClick={() => onClear(key)}
+          onClick={() => handleClear(key)}
           className="inline-flex min-w-0 max-w-full items-center gap-1 rounded-lg border border-slate-200 px-2 py-1 text-left font-semibold hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:border-slate-700 dark:hover:bg-slate-800"
         >
           <span className="min-w-0 break-all">{label}</span>
