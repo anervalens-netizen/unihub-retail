@@ -4,7 +4,14 @@ import {
   Columns3,
   RotateCcw,
 } from 'lucide-react';
-import { useEffect, useRef, type ChangeEvent, type RefObject } from 'react';
+import {
+  useEffect,
+  useRef,
+  type ChangeEvent,
+  type KeyboardEvent,
+  type PointerEvent,
+  type RefObject,
+} from 'react';
 
 import {
   isDataGridFilterActive,
@@ -12,6 +19,107 @@ import {
   type DataGridFilterValue,
 } from '../../lib/dataGrid';
 import type { DataGridColumn } from './dataGridTypes';
+
+export const DATA_GRID_COLUMN_MIN_WIDTH = 72;
+export const DATA_GRID_COLUMN_MAX_WIDTH = 640;
+const DATA_GRID_COLUMN_STEP = 16;
+const DATA_GRID_COLUMN_LARGE_STEP = 48;
+const DATA_GRID_COLUMN_FALLBACK_WIDTH = 160;
+
+function clampColumnWidth(width: number): number {
+  return Math.min(
+    DATA_GRID_COLUMN_MAX_WIDTH,
+    Math.max(DATA_GRID_COLUMN_MIN_WIDTH, Math.round(width)),
+  );
+}
+
+function measuredColumnWidth(
+  element: HTMLElement,
+  width: number | undefined,
+): number {
+  if (width !== undefined) return clampColumnWidth(width);
+  const measured = element.parentElement?.getBoundingClientRect().width ?? 0;
+  return clampColumnWidth(measured > 0 ? measured : DATA_GRID_COLUMN_FALLBACK_WIDTH);
+}
+
+export function DataGridResizeHandle({
+  label,
+  width,
+  onResize,
+}: {
+  label: string;
+  width: number | undefined;
+  onResize: (width: number | undefined) => void;
+}) {
+  const dragRef = useRef<{
+    pointerId: number;
+    startX: number;
+    startWidth: number;
+  } | null>(null);
+
+  const handlePointerDown = (event: PointerEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    dragRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startWidth: measuredColumnWidth(event.currentTarget, width),
+    };
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+  };
+  const handlePointerMove = (event: PointerEvent<HTMLDivElement>) => {
+    const drag = dragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    onResize(clampColumnWidth(drag.startWidth + event.clientX - drag.startX));
+  };
+  const finishPointerResize = (event: PointerEvent<HTMLDivElement>) => {
+    if (dragRef.current?.pointerId !== event.pointerId) return;
+    dragRef.current = null;
+    event.currentTarget.releasePointerCapture?.(event.pointerId);
+  };
+  const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+    event.preventDefault();
+    event.stopPropagation();
+    const step = event.shiftKey
+      ? DATA_GRID_COLUMN_LARGE_STEP
+      : DATA_GRID_COLUMN_STEP;
+    const direction = event.key === 'ArrowRight' ? 1 : -1;
+    const current = measuredColumnWidth(event.currentTarget, width);
+    onResize(clampColumnWidth(current + direction * step));
+  };
+
+  return (
+    <div
+      role="separator"
+      aria-orientation="vertical"
+      aria-label={`Redimensionează ${label}`}
+      aria-valuemin={DATA_GRID_COLUMN_MIN_WIDTH}
+      aria-valuemax={DATA_GRID_COLUMN_MAX_WIDTH}
+      aria-valuenow={width}
+      aria-valuetext={width === undefined ? 'Lățime automată' : `${width} pixeli`}
+      tabIndex={0}
+      title="Trage pentru redimensionare; săgeți pentru ajustare; dublu click pentru reset"
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={finishPointerResize}
+      onPointerCancel={finishPointerResize}
+      onKeyDown={handleKeyDown}
+      onDoubleClick={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        onResize(undefined);
+      }}
+      onClick={(event) => event.stopPropagation()}
+      className="group absolute right-0 top-0 z-20 flex h-full w-2 translate-x-1/2 cursor-col-resize touch-none select-none items-stretch justify-center focus-visible:outline-none"
+    >
+      <span
+        aria-hidden="true"
+        className="w-px bg-slate-300 opacity-0 transition-opacity group-hover:opacity-100 group-focus:opacity-100 dark:bg-slate-600"
+      />
+    </div>
+  );
+}
 
 function parseNumericInput(value: string): number | null {
   if (value.trim() === '') return null;
@@ -101,6 +209,8 @@ export function DataGridColumnMenu<Row, Key extends string>({
   onMove,
   onToggle,
   onReset,
+  hasCustomWidths = false,
+  onResetWidths,
 }: {
   columns: ReadonlyMap<Key, DataGridColumn<Row, Key>>;
   allKeys: readonly Key[];
@@ -109,6 +219,8 @@ export function DataGridColumnMenu<Row, Key extends string>({
   onMove: (key: Key, offset: -1 | 1) => void;
   onToggle: (key: Key) => void;
   onReset: () => void;
+  hasCustomWidths?: boolean;
+  onResetWidths?: () => void;
 }) {
   const hiddenSet = new Set(hidden);
   const visibleCount = allKeys.filter((key) => !hiddenSet.has(key)).length;
@@ -175,6 +287,16 @@ export function DataGridColumnMenu<Row, Key extends string>({
           >
             <RotateCcw size={12} />
             Resetează coloanele
+          </button>
+        )}
+        {hasCustomWidths && onResetWidths && (
+          <button
+            type="button"
+            onClick={onResetWidths}
+            className="mt-2 inline-flex w-full items-center justify-center gap-1 rounded-lg border border-slate-200 px-2 py-1.5 text-xs font-bold text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-900"
+          >
+            <RotateCcw size={12} />
+            Resetează lățimile
           </button>
         )}
       </div>
