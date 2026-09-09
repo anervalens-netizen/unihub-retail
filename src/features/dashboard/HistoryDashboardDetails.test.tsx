@@ -358,7 +358,7 @@ describe('HistoryDetailCharts V4 ChartFrame consumers', () => {
 });
 
 describe('HistoryBreakdowns V3 DataGrid consumers', () => {
-  it('uses raw RM and Store rows, persists both sort chains and leaves Agenti legacy', () => {
+  it('uses raw RM, Store and Agent rows and persists RM/Store sort chains', () => {
     onRegionalGridSortsChange.mockClear();
     onStoreGridSortsChange.mockClear();
     render(<HistoryBreakdowns props={props as never} visible />);
@@ -367,11 +367,15 @@ describe('HistoryBreakdowns V3 DataGrid consumers', () => {
     expect(screen.getByTestId('grid-Magazine-state')).toHaveTextContent(
       '2|text|total_vanzari',
     );
+    expect(screen.getByTestId('grid-Agenti-state')).toHaveTextContent('1|text|agent');
     expect(screen.getByTestId('grid-RM-export')).toHaveTextContent('derived');
     expect(screen.getByTestId('grid-Magazine-export')).toHaveTextContent(
       'Firma|Magazin|Target|Vanzari|Procent|Cantitate|Nr bonuri|Retururi|Agenti|Zile active',
     );
-    expect(screen.getByTestId('legacy-Agenti')).toHaveTextContent('1');
+    expect(screen.getByTestId('grid-Agenti-export')).toHaveTextContent(
+      'Agent|Firma|Magazin|Target|Vanzari|Procent|Cantitate|Nr bonuri|Retururi|Zile lucrate|Medie zilnica|ProcBon2Acc|Focus%',
+    );
+    expect(screen.queryByTestId('legacy-Agenti')).not.toBeInTheDocument();
     expect(screen.queryByTestId('legacy-Magazine')).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'persist-RM-sort' }));
