@@ -10994,6 +10994,17 @@ export const RETAIL_COMPONENT_SCHEMAS = {
         "title": "Month",
         "type": "string"
       },
+      "regional": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Regional"
+      },
       "revision": {
         "title": "Revision",
         "type": "integer"
@@ -11027,6 +11038,19 @@ export const RETAIL_COMPONENT_SCHEMAS = {
         "minLength": 1,
         "title": "Home Site Code",
         "type": "string"
+      },
+      "regional": {
+        "anyOf": [
+          {
+            "maxLength": 80,
+            "minLength": 1,
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Regional"
       }
     },
     "required": [

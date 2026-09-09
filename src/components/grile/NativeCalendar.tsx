@@ -7,6 +7,7 @@ import { downloadAttendance, calendarCandidates, calendarStores, confirmCalendar
 import type { RetailCalendarDayInput } from '../../api/generated/contracts';
 import { getCurrentYearMonth } from '../../lib/dates';
 import { Earnings } from './Earnings';
+import { TeamLeaderRoster } from './TeamLeaderRoster';
 import { Attendance } from './Attendance';
 import { StoreHoursEditor } from './StoreHoursEditor';
 import { CalendarDayEditor } from './CalendarDayEditor';
@@ -33,9 +34,11 @@ function CalendarMonth({ month, writable }: { month: string; writable: boolean }
   const eligible: CalendarStore[] = stores.data.filter(s => !/^TR /i.test(s.locatie) && s.site_code !== 'Cartele');
   const referenced = new Set([...calendar.data.days.map(d => d.site_code), ...calendar.data.roster.map(r => r.home_site_code)]);
   for (const site_code of referenced) {
+    if (site_code === 'TL') continue;
     if (!eligible.some(s => s.site_code === site_code)) eligible.push({ site_code, locatie: `${site_code} · doar corectări`, firma: '', regional: 'Magazine indisponibile — corectări', asm: '', cleanupOnly: true });
   }
   return <div className="space-y-4">
+    <button className="native-secondary" onClick={() => setSelected({ site_code: 'TL', locatie: 'TL · Team Leaders', firma: '', regional: '', asm: '', virtualBase: true })}>TL · Grile Team Leaders</button>
     <CalendarOverview stores={eligible} data={calendar.data} downloading={download.isPending} refreshing={calendar.isFetching} onDownload={() => download.mutate()} onSelect={setSelected} />
     {download.isError && <p role="alert" className="rounded-2xl bg-rose-50 p-4 text-sm text-rose-700">Exportul nu a reușit. Reîncarcă programul înainte de a încerca din nou. <button className="native-secondary" onClick={() => void calendar.refetch()}>Reîncarcă pontajele</button></p>}
     {selected && <StoreCalendar key={selected.site_code} month={month} store={selected} stores={eligible} data={calendar.data} refreshing={calendar.isFetching} writable={writable} onClose={() => setSelected(null)} />}
@@ -44,7 +47,7 @@ function CalendarMonth({ month, writable }: { month: string; writable: boolean }
 
 function StoreCalendar({ month, store, stores, data, refreshing, writable, onClose }: { month: string; store: CalendarStore; stores: CalendarStore[]; data: CalendarData; refreshing: boolean; writable: boolean; onClose: () => void }) {
   const dialog = useRef<HTMLDialogElement>(null);
-  const [tab, setTab] = useState('Calendar');
+  const [tab, setTab] = useState(store.virtualBase ? 'Grile' : 'Calendar');
   const [date, setDate] = useState('');
   const [editVersion, setEditVersion] = useState(0);
   const [rosterPending, setRosterPending] = useState(false);
@@ -55,11 +58,12 @@ function StoreCalendar({ month, store, stores, data, refreshing, writable, onClo
   const refresh = async () => { await cache.invalidateQueries({ queryKey: ['native-calendar', month] }); save.reset(); setEditVersion(v => v + 1); };
   return <dialog ref={dialog} aria-labelledby="calendar-store-title" onCancel={onClose} onClose={onClose} className="native-calendar m-auto max-h-[90dvh] w-[min(1100px,95vw)] overflow-auto rounded-3xl border-0 bg-white p-4 text-slate-900 shadow-2xl backdrop:bg-slate-950/50 sm:p-6 dark:bg-slate-900 dark:text-slate-100">
     <header className="mb-4 flex items-center justify-between gap-4"><div><h2 id="calendar-store-title" className="text-xl font-bold">{store.locatie}</h2><p className="mt-1 text-xs text-slate-500">{store.firma} · {month} · {store.site_code}</p></div><button aria-label="Închide magazinul" onClick={onClose} className="native-secondary shrink-0"><X size={18} aria-hidden="true" /><span className="sr-only sm:not-sr-only">Închide</span></button></header>
-    <StoreHoursEditor key={`${store.site_code}-${data.store_hours?.find(h => h.site_code === store.site_code)?.revision ?? 0}`} month={month} site={store.site_code} data={data} disabled={refreshing || save.isPending || rosterPending || hoursPending} writable={writable && !store.cleanupOnly} onPendingChange={setHoursPending} />
+    {store.virtualBase && <TeamLeaderRoster month={month} data={data} stores={stores} writable={writable && !refreshing} />}
+    {!store.virtualBase && <StoreHoursEditor key={`${store.site_code}-${data.store_hours?.find(h => h.site_code === store.site_code)?.revision ?? 0}`} month={month} site={store.site_code} data={data} disabled={refreshing || save.isPending || rosterPending || hoursPending} writable={writable && !store.cleanupOnly} onPendingChange={setHoursPending} />}
     <div className="mb-4"><SegmentedTabs ariaLabel="Secțiuni magazin" options={['Grile', 'Calendar', 'Pontaj'].map(label => ({ value: label, label }))} value={tab} onChange={setTab} /></div>
     {tab === 'Grile' && <Earnings month={month} site={store.site_code} calendarRevision={data.projection_revision} />}
     {tab === 'Pontaj' && <Attendance data={data} store={store} />}
-    {tab === 'Calendar' && <div className="space-y-4">{store.cleanupOnly ? <p>Magazin indisponibil pentru programări noi. Poți consulta și anula zilele existente.</p> : <Roster month={month} store={store} data={data} writable={writable && !save.isPending && !hoursPending} onPendingChange={setRosterPending} onChanged={() => { setDate(''); }} />}<MonthGrid month={month} store={store} data={data} disabled={refreshing || save.isPending || rosterPending || hoursPending} onSelect={d => { setDate(d); save.reset(); }} />{save.isError && <div role="alert">{save.error instanceof ApiError && save.error.status === 409 ? 'Programul s-a schimbat sau există un conflict. Reîncarcă înainte de o nouă editare.' : getApiErrorMessage(save.error, 'Salvarea a eșuat.')} <button onClick={() => void refresh()}>Reîncarcă programul</button></div>}{date && <CalendarDayEditor key={`${date}-${editVersion}-${data.roster.map(r => `${r.agent_code}:${r.revision}`).join('|')}`} date={date} store={store} stores={stores} data={data} writable={writable && !hoursPending && !refreshing && !rosterPending && !save.isError && !save.isSuccess} busy={save.isPending} onSave={days => save.mutate(days)} />}</div>}
+    {tab === 'Calendar' && <div className="space-y-4">{store.virtualBase ? <p>Concediile și zilele libere se înregistrează aici. Zilele lucrate se programează la magazinul efectiv.</p> : store.cleanupOnly ? <p>Magazin indisponibil pentru programări noi. Poți consulta și anula zilele existente.</p> : <Roster month={month} store={store} data={data} writable={writable && !save.isPending && !hoursPending} onPendingChange={setRosterPending} onChanged={() => { setDate(''); }} />}<MonthGrid month={month} store={store} data={data} disabled={refreshing || save.isPending || rosterPending || hoursPending} onSelect={d => { setDate(d); save.reset(); }} />{save.isError && <div role="alert">{save.error instanceof ApiError && save.error.status === 409 ? 'Programul s-a schimbat sau există un conflict. Reîncarcă înainte de o nouă editare.' : getApiErrorMessage(save.error, 'Salvarea a eșuat.')} <button onClick={() => void refresh()}>Reîncarcă programul</button></div>}{date && <CalendarDayEditor key={`${date}-${editVersion}-${data.roster.map(r => `${r.agent_code}:${r.revision}`).join('|')}`} date={date} store={store} stores={stores} data={data} writable={writable && !hoursPending && !refreshing && !rosterPending && !save.isError && !save.isSuccess} busy={save.isPending} onSave={days => save.mutate(days)} />}</div>}
   </dialog>;
 }
 
@@ -68,7 +72,7 @@ function MonthGrid({ month, store, data, disabled, onSelect }: { month: string; 
   return <div className="overflow-x-auto"><div className="grid grid-cols-7 gap-1 sm:gap-2">{['Lun', 'Mar', 'Mie', 'Joi', 'Vin', 'Sâm', 'Dum'].map(d => <div key={d} className="p-2 text-center text-sm text-slate-500">{d}</div>)}{Array.from({ length: offset }, (_, i) => <div key={`empty-${i}`} />)}{dates.map(date => {
     const entries = data.days.filter(d => d.work_date === date && d.site_code === store.site_code && d.status !== 'cancelled');
     const worker = entries.find(d => d.status === 'work');
-    return <button key={date} aria-label={`Editează ${date}`} disabled={disabled || (store.cleanupOnly && entries.length === 0)} onClick={() => onSelect(date)} className={`min-h-20 min-w-0 overflow-hidden rounded-xl border border-slate-100 p-1 text-left transition hover:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-500 sm:min-h-24 sm:p-2 dark:border-slate-700 ${worker ? 'bg-indigo-50 dark:bg-indigo-950' : ''}`}><span className="block font-bold">{Number(date.slice(-2))}</span>{!worker && <span className="block text-[9px] text-slate-500 sm:text-xs">Nealocat</span>}{entries.map(d => <span key={d.agent_code} className="block truncate text-[10px] sm:text-xs">{agentLabel(data.roster.find(r => r.agent_code === d.agent_code) ?? d)} · {dayLabels[d.status]}{d.supplemental ? ' (supl.)' : ''}</span>)}</button>;
+    return <button key={date} aria-label={`Editează ${date}`} disabled={disabled || (store.cleanupOnly && entries.length === 0)} onClick={() => onSelect(date)} className={`min-h-20 min-w-0 overflow-hidden rounded-xl border border-slate-100 p-1 text-left transition hover:border-indigo-300 focus-visible:ring-2 focus-visible:ring-indigo-500 sm:min-h-24 sm:p-2 dark:border-slate-700 ${worker ? 'bg-indigo-50 dark:bg-indigo-950' : ''}`}><span className="block font-bold">{Number(date.slice(-2))}</span>{!worker && <span className="block text-[9px] text-slate-500 sm:text-xs">{store.virtualBase ? 'Fără zi lucrată' : 'Nealocat'}</span>}{entries.map(d => <span key={d.agent_code} className="block truncate text-[10px] sm:text-xs">{agentLabel(data.roster.find(r => r.agent_code === d.agent_code) ?? d)} · {dayLabels[d.status]}{d.supplemental ? ' (supl.)' : ''}</span>)}</button>;
   })}</div></div>;
 }
 

@@ -98,6 +98,73 @@ async def test_conflicting_batch_rolls_back_original_schedule(repo):
     assert (await repo.read(MONTH))["days"][0]["status"] == "work"
 
 
+async def test_virtual_leader_preserves_store_scope_and_revision_fencing(repo):
+    await repo.save_roster(MONTH, AG1, "TL", True, 0, "manager", regional="R1")
+    assert (await repo.read(MONTH))["roster"][0]["home_site_code"] == "TL"
+    with pytest.raises(CalendarConflict, match="supplemental"):
+        await repo.save_days([day()], "manager")
+    with pytest.raises(CalendarConflict, match="confirmed region"):
+        await repo.save_days([day(site=C, supplemental=True)], "manager")
+    await repo.save_days([day(supplemental=True)], "manager")
+    with pytest.raises(CalendarConflict, match="Cancel scheduled"):
+        await repo.save_roster(MONTH, AG1, "TL", True, 1, "manager", regional="R2")
+    calendar = await GrileCalendarService(repo).read(MONTH)
+    assert calendar.attendance[0].work_days_by_site == {A: 1}
+    assert "TL" not in calendar.attendance_by_store
+    await repo.save_days([day(status="cancelled", revision=1)], "manager")
+    assert (await repo.read(MONTH))["days"][0]["status"] == "cancelled"
+
+
+async def test_virtual_leader_identity_uses_unique_confirmed_person_without_home_join(repo, web_repo):
+    await repo.save_roster(MONTH, AG1, "TL", True, 0, "manager", regional="R1")
+    person = 'sp1_' + sha256(b'synthetic-tl').hexdigest()
+    async with repo.pool.acquire() as conn:
+        await conn.execute("INSERT INTO salary_private.people(person_id,normalized_name,identity_source) VALUES($1,'CAL-R4-SYNTHETIC-IDENTITY','name')", person)
+        for site in (A, B):
+            await conn.execute("INSERT INTO agent_salary_links(agent_code,site_code,salary_full_name,person_id,effective_from_month,match_status) VALUES($1,$2,'Synthetic TL',$3,'2196-08','confirmed')", AG1, site, person)
+    calendar = await GrileCalendarService(web_repo).read(MONTH)
+    assert len(calendar.roster) == 1
+    assert calendar.roster[0].display_name == 'Synthetic TL'
+    assert calendar.roster[0].identity_status == 'confirmed'
+    assert 'person_id' not in calendar.model_dump_json()
+
+
+async def test_virtual_leader_absence_has_no_physical_store_hours_or_sales(repo):
+    await repo.save_roster(MONTH, AG1, "TL", True, 0, "manager", regional="R1")
+    with pytest.raises(CalendarConflict, match="only Team Leader absences"):
+        await repo.save_days([day(site="TL", supplemental=True)], "manager")
+    created = await repo.save_days([day(site="TL", status="leave")], "manager")
+    assert created[0]['site_code'] == 'TL'
+    calendar = await GrileCalendarService(repo).read(MONTH)
+    assert calendar.attendance[0].worked_minutes == 0
+    assert calendar.attendance[0].leave_days == 1
+    assert A not in calendar.attendance_by_store
+    async with repo.pool.acquire() as conn:
+        assert await conn.fetchval('SELECT site_code IS NULL FROM grile_calendar_days WHERE agent_code=$1', AG1)
+    await repo.save_days([day(site="TL", status="off", revision=1)], "manager")
+    await repo.save_days([day(site="TL", status="cancelled", revision=2)], "manager")
+    await confirm(repo, AG2)
+    with pytest.raises(CalendarConflict, match="only Team Leader absences"):
+        await repo.save_days([day(agent=AG2, site="TL", status="leave")], "manager")
+
+
+async def test_retired_tl_region_allows_deactivation_but_not_reactivation(repo):
+    await repo.save_roster(MONTH, AG1, "TL", True, 0, "manager", regional="R1")
+    async with repo.pool.acquire() as conn:
+        await conn.execute("UPDATE stores SET is_active=FALSE WHERE site_code=ANY($1::text[])", [A, B, CLOSED])
+    result = await repo.save_roster(MONTH, AG1, "TL", False, 1, "manager", regional="R1")
+    assert not result['active'] and result['regional'] == 'R1'
+    with pytest.raises(CalendarConflict, match="active regional scope"):
+        await repo.save_roster(MONTH, AG1, "TL", True, 2, "manager", regional="R1")
+
+
+async def test_distribution_only_region_cannot_create_team_leader(repo):
+    async with repo.pool.acquire() as conn:
+        await conn.execute("UPDATE stores SET locatie='TR Synthetic' WHERE site_code=$1", C)
+    with pytest.raises(CalendarConflict, match="active regional scope"):
+        await repo.save_roster(MONTH, AG1, "TL", True, 0, "manager", regional="R2")
+
+
 async def test_two_simultaneous_agents_cannot_occupy_one_store_day(repo):
     await confirm(repo)
     await confirm(repo, AG2)

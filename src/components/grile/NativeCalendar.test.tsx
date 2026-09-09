@@ -24,6 +24,10 @@ beforeEach(() => {
 afterEach(cleanup);
 function mount() { return render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })}><NativeCalendar initialMonth="2026-09" /></QueryClientProvider>); }
 async function openStore() { await userEvent.click(await screen.findByRole('button', { name: /Magazin Alpha/ })); }
+it('exposes TL management in a month with no confirmed Team Leaders', async () => {
+  mount();
+  expect(await screen.findByRole('button', { name: 'TL · Grile Team Leaders' })).toBeInTheDocument();
+});
 it('opens grouped store, shows attendance, and reopens calendar', async () => {
   mount(); await openStore();
   expect(screen.getByRole('dialog')).toHaveAccessibleName('Magazin Alpha');

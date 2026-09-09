@@ -56,7 +56,12 @@ class GrileCalendarRepository:
                            WHEN l.name IS NOT NULL THEN 'confirmed'
                            ELSE 'unavailable' END AS identity_status
                FROM grile_calendar_roster r
-               LEFT JOIN eligible l ON l.agent_code=r.agent_code AND l.site_code=r.home_site_code
+               LEFT JOIN LATERAL (
+                   SELECT CASE WHEN COUNT(DISTINCT name)=1 THEN MIN(name) END AS name
+                   FROM eligible
+                   WHERE agent_code=r.agent_code
+                     AND (r.home_site_code IS NULL OR site_code=r.home_site_code)
+               ) l ON TRUE
                LEFT JOIN conflicts c ON c.agent_code=r.agent_code
                WHERE r.month=$1 ORDER BY r.agent_code""", month,
         )
@@ -66,7 +71,8 @@ class GrileCalendarRepository:
         hours = await conn.fetch(
             "SELECT * FROM grile_calendar_store_hours WHERE month=$1 ORDER BY site_code", month,
         )
-        return {"roster": [dict(row) for row in roster], "days": [dict(row) for row in days],
+        return {"roster": [dict(row, home_site_code=row["home_site_code"] or "TL") for row in roster],
+                "days": [dict(row, site_code=row["site_code"] or "TL") for row in days],
                 "store_hours": [dict(row) for row in hours]}
 
     @staticmethod
@@ -79,21 +85,38 @@ class GrileCalendarRepository:
             raise CalendarConflict("Store is not active")
         return row
 
+    async def _validate_roster_base(
+        self, conn: asyncpg.Connection, home: str, regional: str | None,
+        active: bool, old: asyncpg.Record | None,
+    ) -> None:
+        if home != "TL":
+            await self._store(conn, home)
+            return
+        if not active and old and old["home_site_code"] is None and old["regional"] == regional:
+            return
+        if not regional or not await conn.fetchval(
+            f"""SELECT EXISTS(SELECT 1 FROM stores WHERE is_active AND regional=$1
+                AND {distribution_location_clause()} AND site_code <> 'Cartele')""", regional,
+        ):
+            raise CalendarConflict("Team Leader requires an active regional scope")
+
     async def save_roster(
         self, month: str, agent_code: str, home_site_code: str, active: bool,
         expected_revision: int, actor: str,
+        *, regional: str | None = None,
     ) -> dict[str, Any]:
         try:
             async with self.pool.acquire() as conn:
                 async with conn.transaction():
-                    await self._store(conn, home_site_code)
+                    stored_home = None if home_site_code == "TL" else home_site_code
                     old = await conn.fetchrow(
                         "SELECT * FROM grile_calendar_roster WHERE month=$1 AND agent_code=$2 FOR UPDATE",
                         month, agent_code,
                     )
                     if (old["revision"] if old else 0) != expected_revision:
                         raise CalendarConflict("Roster revision changed; reload the calendar")
-                    if old and (not active or old["home_site_code"] != home_site_code):
+                    await self._validate_roster_base(conn, home_site_code, regional, active, old)
+                    if old and (not active or old["home_site_code"] != stored_home or old["regional"] != regional):
                         used = await conn.fetchval(
                             """SELECT EXISTS(SELECT 1 FROM grile_calendar_days
                                WHERE month=$1 AND agent_code=$2 AND status <> 'cancelled')""",
@@ -103,20 +126,27 @@ class GrileCalendarRepository:
                             raise CalendarConflict("Cancel scheduled days before changing roster membership")
                     row = await conn.fetchrow(
                         """INSERT INTO grile_calendar_roster
-                           (month, agent_code, home_site_code, active, revision, updated_by_sub)
-                           VALUES ($1,$2,$3,$4,1,$5)
+                           (month, agent_code, home_site_code, active, revision, updated_by_sub, regional)
+                           VALUES ($1,$2,$3,$4,1,$5,$7)
                            ON CONFLICT (month,agent_code) DO UPDATE SET
-                             home_site_code=EXCLUDED.home_site_code, active=EXCLUDED.active,
+                             home_site_code=EXCLUDED.home_site_code, active=EXCLUDED.active, regional=EXCLUDED.regional,
                              revision=grile_calendar_roster.revision+1,
                              updated_by_sub=EXCLUDED.updated_by_sub, updated_at=now()
                            WHERE grile_calendar_roster.revision=$6 RETURNING *""",
-                        month, agent_code, home_site_code, active, actor, expected_revision,
+                        month, agent_code, stored_home, active, actor, expected_revision, regional,
                     )
                     if row is None:
                         raise CalendarConflict("Roster revision changed; reload the calendar")
-                    return dict(row)
+                    return dict(row, home_site_code=row["home_site_code"] or "TL")
         except asyncpg.UniqueViolationError as exc:
             raise CalendarConflict("Roster revision changed; reload the calendar") from exc
+
+    @staticmethod
+    def _validate_cancellation(day: CalendarDayInput, old: asyncpg.Record | None) -> None:
+        if old is None:
+            raise CalendarConflict("Cannot cancel an unassigned day")
+        if (old["site_code"] or "TL") != day.site_code:
+            raise CalendarConflict("Cancellation must retain the assigned store")
 
     async def _validate_day(
         self, conn: asyncpg.Connection, day: CalendarDayInput, roster: asyncpg.Record,
@@ -128,15 +158,20 @@ class GrileCalendarRepository:
         if (old["revision"] if old else 0) != day.expected_revision:
             raise CalendarConflict("Day revision changed; reload the calendar")
         if day.status == "cancelled":
-            if old is None:
-                raise CalendarConflict("Cannot cancel an unassigned day")
-            if old["site_code"] != day.site_code:
-                raise CalendarConflict("Cancellation must retain the assigned store")
+            self._validate_cancellation(day, old)
             return
         if not roster["active"]:
             raise CalendarConflict("Agent must be confirmed active for this month")
-        home = await self._store(conn, roster["home_site_code"])
+        if day.site_code == "TL":
+            if roster["home_site_code"] is not None or day.status not in {"leave", "off"}:
+                raise CalendarConflict("Virtual TL base accepts only Team Leader absences")
+            return
         worked = await self._store(conn, day.site_code)
+        if roster["home_site_code"] is None:
+            if day.status != "work" or not day.supplemental or worked["regional"] != roster["regional"]:
+                raise CalendarConflict("Team Leader work must be supplemental in the confirmed region")
+            return
+        home = await self._store(conn, roster["home_site_code"])
         if day.site_code != home["site_code"]:
             if day.status != "work" or not day.supplemental:
                 raise CalendarConflict("Work at another store must be explicitly supplemental")
@@ -178,9 +213,9 @@ class GrileCalendarRepository:
                                  updated_by_sub=EXCLUDED.updated_by_sub,updated_at=now()
                                RETURNING *""",
                             day.work_date.strftime("%Y-%m"), day.work_date, day.agent_code,
-                            day.site_code, day.status, day.supplemental, actor,
+                            None if day.site_code == "TL" else day.site_code, day.status, day.supplemental, actor,
                         )
-                        result.append(dict(row))
+                        result.append(dict(row, site_code=row["site_code"] or "TL"))
                     return result
         except asyncpg.UniqueViolationError as exc:
             raise CalendarConflict("A store already has an assigned agent on that day") from exc

@@ -25,8 +25,8 @@ def _workbook(data: CalendarMonth, site: str, codes: list[str]) -> Workbook:
     hours = next((row for row in data.store_hours if row.site_code == site), StoreHours(site_code=site))
     sheet.merge_cells("A1:AH1")
     sheet['A1'] = "Foaie colectiva de prezenta — PROVIZORIU"
-    sheet['B3'] = f"Magazin: {site}"
-    sheet['A4'], sheet['B4'] = "Orar", f"{hours.opens}–{hours.closes}"
+    sheet['B3'] = "Bază virtuală: TL" if site == "TL" else f"Magazin: {site}"
+    sheet['A4'], sheet['B4'] = ("Tip", "Absențe · fără ore lucrate") if site == "TL" else ("Orar", f"{hours.opens}–{hours.closes}")
     sheet['B5'] = data.month
     workbook.properties.identifier = data.projection_revision
     for column, value in enumerate(["NrCrt", "Nume / Cod agent", *range(1, 32), "Total ore lucrate"], 1):
@@ -85,10 +85,18 @@ def _format(sheet, month: str, count: int) -> None:
     sheet['A1'].font = Font(name='Calibri', size=14, bold=True)
 
 
+def _attendance_manifest(data: CalendarMonth, sites: list[str]) -> str:
+    return json.dumps({
+        'month': data.month, 'projection_revision': data.projection_revision,
+        'status': 'provisional', 'stores': [site for site in sites if site != 'TL'],
+        'virtual_bases': ['TL'] if 'TL' in sites else [],
+    }, ensure_ascii=False)
+
+
 def build_attendance_zip(data: CalendarMonth) -> XlsxArtifact:
     active = [r for r in data.roster if r.active]
     participants = {r.agent_code for r in active} | {r.agent_code for r in data.attendance_days}
-    sites = sorted({r.home_site_code for r in active} | set(data.attendance_by_store) |
+    sites = sorted({r.home_site_code for r in active if r.home_site_code != "TL"} | set(data.attendance_by_store) |
                    {r.site_code for r in data.store_hours})
     if not sites:
         raise HTTPException(409, "Confirm the monthly roster before exporting attendance")
@@ -112,10 +120,7 @@ def build_attendance_zip(data: CalendarMonth) -> XlsxArtifact:
                             copyfileobj(file, member, length=256 * 1024)
                 finally:
                     workbook.close()
-            archive.writestr('manifest.json', json.dumps({
-                'month': data.month, 'projection_revision': data.projection_revision,
-                'status': 'provisional', 'stores': sites,
-            }, ensure_ascii=False))
+            archive.writestr('manifest.json', _attendance_manifest(data, sites))
         return XlsxArtifact(stream, f'Pontaje-provizorii-{data.month}.zip', stream.tell())
     except BaseException:
         stream.close()

@@ -72,7 +72,7 @@ def _calendar_rows(calendar: CalendarMonth):
         grouped[(day.site_code, day.work_date)].append(day)
     roster = {r.agent_code: r for r in calendar.roster}
     attendance = {(d.agent_code, d.work_date): d for d in calendar.attendance_days}
-    sites = {r.home_site_code for r in calendar.roster if r.active} | set(calendar.attendance_by_store) | {h.site_code for h in calendar.store_hours} | {d.site_code for d in calendar.days}
+    sites = {r.home_site_code for r in calendar.roster if r.active and r.home_site_code != "TL"} | set(calendar.attendance_by_store) | {h.site_code for h in calendar.store_hours} | {d.site_code for d in calendar.days}
     if len(sites) > 200:
         raise HTTPException(422, "Calendar export exceeds 200 stores")
     year, month = map(int, calendar.month.split('-'))

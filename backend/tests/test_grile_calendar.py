@@ -40,6 +40,25 @@ def test_inputs_reject_ambiguous_or_unbounded_changes():
         CalendarChanges(days=[])
 
 
+def test_virtual_team_leader_requires_explicit_scope():
+    with pytest.raises(ValidationError, match="regional manager"):
+        RosterInput(home_site_code="TL", expected_revision=0)
+    with pytest.raises(ValidationError, match="store catalog"):
+        RosterInput(home_site_code="A", regional="R1", expected_revision=0)
+
+
+@pytest.mark.asyncio
+async def test_manager_can_confirm_team_leader_without_pos_candidate():
+    repository = AsyncMock()
+    repository.save_roster.return_value = dict(month="2026-09", agent_code="LEADER", home_site_code="TL", regional="R1", active=True, revision=1)
+    result = await GrileCalendarService(repository).save_roster(
+        "2026-09", "LEADER", RosterInput(home_site_code="TL", regional="R1", expected_revision=0), "manager",
+    )
+    assert result.home_site_code == "TL"
+    repository.candidates.assert_not_awaited()
+    repository.save_roster.assert_awaited_once_with("2026-09", "LEADER", "TL", True, 0, "manager", regional="R1")
+
+
 @pytest.mark.asyncio
 async def test_future_roster_uses_current_month_and_marks_absent_previous(monkeypatch):
     monkeypatch.setattr("services.grile_calendar.business_today", lambda: date(2026, 9, 15))

@@ -25,6 +25,31 @@ def repository():
 
 
 @pytest.mark.asyncio
+async def test_virtual_absence_is_retained_without_duplicating_physical_work_hours():
+    repo = AsyncMock(read=AsyncMock(return_value={
+        'roster': [dict(month='2026-09', agent_code='LEADER', home_site_code='TL', regional='R1', active=True, revision=1)],
+        'days': [dict(work_date=date(2026, 9, n), agent_code='LEADER', site_code=site, status=status, supplemental=status == 'work', revision=1)
+                 for n, site, status in [(1, 'A', 'work'), (2, 'TL', 'leave')]],
+        'store_hours': [],
+    }))
+    service = GrileCalendarService(repo)
+    calendar = await service.read('2026-09')
+    artifact = await service.export_attendance('2026-09', calendar.projection_revision)
+    try:
+        with ZipFile(artifact.stream) as archive:
+            sheets = [load_workbook(BytesIO(archive.read(name)), data_only=True)['Pontaj'] for name in archive.namelist() if name.endswith('.xlsx')]
+            physical = next(s for s in sheets if s['B3'].value == 'Magazin: A')
+            virtual = next(s for s in sheets if s['B3'].value == 'Bază virtuală: TL')
+            manifest = json.loads(archive.read('manifest.json'))
+            assert manifest['stores'] == ['A'] and manifest['virtual_bases'] == ['TL']
+            assert physical['AH8'].value == 11
+            assert virtual['AH8'].value == 0 and virtual['D8'].value == 'CO'
+            assert sum(s['AH8'].value for s in sheets) == 11
+    finally:
+        artifact.close()
+
+
+@pytest.mark.asyncio
 async def test_zip_reconciles_actual_store_minutes_and_reference_layout():
     service = GrileCalendarService(repository())
     data = await service.read('2026-09')

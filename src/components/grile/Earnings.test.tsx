@@ -27,6 +27,15 @@ it('shows home earnings including the other store and the provisional salary bou
   expect(screen.getByRole('table')).toHaveTextContent('B');
   expect(screen.getByRole('table')).toHaveTextContent('790 lei');
 });
+it('includes the TL and unassigned sales in the physical store total', async () => {
+  const data = response();
+  const day = data.agents[0]!.days[0]!;
+  api.readEarnings.mockResolvedValue({ ...data, agents: [{ ...data.agents[0], agent_code: 'LEADER', home_site_code: 'TL', days: [{ ...day, site_code: 'A', sales: '790.25' }] }], unassigned_sales: [{ site_code: 'A', sale_date: '2026-09-02', sales: '10.75' }] });
+  mount();
+  expect(await screen.findByText('801 lei')).toBeInTheDocument();
+  expect(screen.getByText(/LEADER · 2026-09-03/)).toBeInTheDocument();
+  expect(screen.queryByText('222 lei')).not.toBeInTheDocument();
+});
 it('rejects a different calendar revision without showing stale money', async () => {
   mount('revision-2');
   expect(await screen.findByRole('alert')).toHaveTextContent('Calendarul s-a schimbat');

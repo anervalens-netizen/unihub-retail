@@ -62,13 +62,14 @@ class GrileCalendarService:
         return result
 
     async def save_roster(self, month: str, agent_code: str, payload: RosterInput, actor: str) -> RosterEntry:
-        if payload.expected_revision == 0:
+        if payload.expected_revision == 0 and payload.home_site_code != "TL":
             candidates = await self.candidates(month)
             if agent_code not in {item.agent_code for item in candidates}:
                 raise HTTPException(422, "Agent code is not a current/previous month candidate")
         try:
             result = await self.repository.save_roster(
                 month, agent_code, payload.home_site_code, payload.active, payload.expected_revision, actor,
+                regional=payload.regional,
             )
         except CalendarConflict as exc:
             raise HTTPException(409, str(exc)) from exc
