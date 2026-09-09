@@ -96,7 +96,7 @@ export function DataGridResizeHandle({
       aria-label={`Redimensionează ${label}`}
       aria-valuemin={DATA_GRID_COLUMN_MIN_WIDTH}
       aria-valuemax={DATA_GRID_COLUMN_MAX_WIDTH}
-      aria-valuenow={width}
+      aria-valuenow={width ?? DATA_GRID_COLUMN_FALLBACK_WIDTH}
       aria-valuetext={width === undefined ? 'Lățime automată' : `${width} pixeli`}
       tabIndex={0}
       title="Trage pentru redimensionare; săgeți pentru ajustare; dublu click pentru reset"
