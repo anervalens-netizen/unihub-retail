@@ -10,7 +10,7 @@ export function TeamLeaderRoster({ month, data, stores, writable }: { month: str
     await cache.invalidateQueries({ queryKey: ['native-calendar', month] });
     setEntry({ code: '', regional: '', revision: 0, active: true });
   } });
-  const managers = [...new Set(stores.filter(s => !s.cleanupOnly).map(s => s.regional).filter(Boolean))].sort();
+  const managers = [...new Set([...stores.filter(s => !s.cleanupOnly).map(s => s.regional), entry.regional].filter(Boolean))].sort();
   const leaders = data.roster.filter(r => r.home_site_code === 'TL');
   if (!writable) return <p>Team Leaders fără magazin de bază · mod consultare.</p>;
   return <form className="mb-4 space-y-3 rounded-2xl bg-slate-50 p-4 dark:bg-slate-800" onSubmit={e => { e.preventDefault(); if (entry.code.trim() && entry.regional && !save.isPending) save.mutate(); }}>

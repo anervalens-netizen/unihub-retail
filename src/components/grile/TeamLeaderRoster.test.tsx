@@ -30,3 +30,11 @@ it('keeps management read-only without business-write authority', () => {
   mount(data, false);
   expect(screen.queryByRole('button', { name: 'Salvează Team Leader' })).not.toBeInTheDocument();
 });
+it('retains a retired region while deactivating its existing leader', async () => {
+  mount({ ...data, roster: [{ month: '2026-09', agent_code: 'LEADER', display_name: null, identity_status: 'unavailable', home_site_code: 'TL', regional: 'RETIRED', active: true, revision: 3 }] });
+  await userEvent.selectOptions(screen.getByLabelText('Team Leader confirmat'), 'LEADER');
+  expect(screen.getByLabelText('Manager regional TL')).toHaveValue('RETIRED');
+  await userEvent.click(screen.getByRole('checkbox'));
+  await userEvent.click(screen.getByRole('button', { name: 'Salvează Team Leader' }));
+  await waitFor(() => expect(api.confirmCalendarAgent).toHaveBeenCalledWith('2026-09', 'LEADER', expect.objectContaining({ active: false, regional: 'RETIRED', expected_revision: 3 })));
+});

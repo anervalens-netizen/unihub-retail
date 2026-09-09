@@ -66,6 +66,9 @@ lucrate, în regiunea confirmată; vânzările și orele rămân integral acolo.
 Grila personală TL centralizează câștigurile fără a dubla totalurile magazinelor.
 Concediul și zilele libere TL se editează în calendarul bazei virtuale, fără
 magazin fizic, ore lucrate sau vânzări. Baza virtuală nu acceptă zile lucrate.
+Pentru a păstra aceste absențe și în export, ZIP-ul de pontaje include o foaie
+`TL` numai când există absențe TL. Aceasta are zero ore lucrate și nu reprezintă
+un magazin comercial; orele lucrate ale TL rămân în fișierele magazinelor reale.
 
 Un catalog central leagă codul de agent de persoană și de magazinul de bază.
 Codul sursei trebuie verificat pentru unicitate/stabilitate înainte de alegerea

@@ -148,6 +148,16 @@ async def test_virtual_leader_absence_has_no_physical_store_hours_or_sales(repo)
         await repo.save_days([day(agent=AG2, site="TL", status="leave")], "manager")
 
 
+async def test_retired_tl_region_allows_deactivation_but_not_reactivation(repo):
+    await repo.save_roster(MONTH, AG1, "TL", True, 0, "manager", regional="R1")
+    async with repo.pool.acquire() as conn:
+        await conn.execute("UPDATE stores SET is_active=FALSE WHERE site_code=ANY($1::text[])", [A, B, CLOSED])
+    result = await repo.save_roster(MONTH, AG1, "TL", False, 1, "manager", regional="R1")
+    assert not result['active'] and result['regional'] == 'R1'
+    with pytest.raises(CalendarConflict, match="active regional scope"):
+        await repo.save_roster(MONTH, AG1, "TL", True, 2, "manager", regional="R1")
+
+
 async def test_two_simultaneous_agents_cannot_occupy_one_store_day(repo):
     await confirm(repo)
     await confirm(repo, AG2)

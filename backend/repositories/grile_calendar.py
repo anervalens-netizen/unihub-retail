@@ -85,6 +85,20 @@ class GrileCalendarRepository:
             raise CalendarConflict("Store is not active")
         return row
 
+    async def _validate_roster_base(
+        self, conn: asyncpg.Connection, home: str, regional: str | None,
+        active: bool, old: asyncpg.Record | None,
+    ) -> None:
+        if home != "TL":
+            await self._store(conn, home)
+            return
+        if not active and old and old["home_site_code"] is None and old["regional"] == regional:
+            return
+        if not regional or not await conn.fetchval(
+            "SELECT EXISTS(SELECT 1 FROM stores WHERE is_active AND regional=$1)", regional,
+        ):
+            raise CalendarConflict("Team Leader requires an active regional scope")
+
     async def save_roster(
         self, month: str, agent_code: str, home_site_code: str, active: bool,
         expected_revision: int, actor: str,
@@ -93,13 +107,6 @@ class GrileCalendarRepository:
         try:
             async with self.pool.acquire() as conn:
                 async with conn.transaction():
-                    if home_site_code == "TL":
-                        if not regional or not await conn.fetchval(
-                            "SELECT EXISTS(SELECT 1 FROM stores WHERE is_active AND regional=$1)", regional,
-                        ):
-                            raise CalendarConflict("Team Leader requires an active regional scope")
-                    else:
-                        await self._store(conn, home_site_code)
                     stored_home = None if home_site_code == "TL" else home_site_code
                     old = await conn.fetchrow(
                         "SELECT * FROM grile_calendar_roster WHERE month=$1 AND agent_code=$2 FOR UPDATE",
@@ -107,6 +114,7 @@ class GrileCalendarRepository:
                     )
                     if (old["revision"] if old else 0) != expected_revision:
                         raise CalendarConflict("Roster revision changed; reload the calendar")
+                    await self._validate_roster_base(conn, home_site_code, regional, active, old)
                     if old and (not active or old["home_site_code"] != stored_home or old["regional"] != regional):
                         used = await conn.fetchval(
                             """SELECT EXISTS(SELECT 1 FROM grile_calendar_days
