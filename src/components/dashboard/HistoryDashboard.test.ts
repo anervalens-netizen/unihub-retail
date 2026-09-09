@@ -99,6 +99,8 @@ function historyProps(loading = false) {
     agentColumns: [],
     agentSort: { key: 'agent', direction: 'asc' as const },
     onSortAgents: vi.fn(),
+    agentGridSorts: [{ key: 'agent', direction: 'asc' as const }],
+    onAgentGridSortsChange: vi.fn(),
   };
 }
 
