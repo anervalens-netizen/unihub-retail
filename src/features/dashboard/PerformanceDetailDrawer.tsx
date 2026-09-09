@@ -8,6 +8,8 @@ export type PerformanceSelection = {
   level: PerformanceDetailLevel;
   key: string;
   site_code?: string;
+  month?: string;
+  includeClosedStores?: boolean;
 };
 
 interface PerformanceDetailDrawerProps {
