@@ -144,3 +144,16 @@ def test_cancelled_work_keeps_physical_sales_unassigned():
     result = project(data)
     assert result.agents[0].supplemental_pay == 0
     assert [row.model_dump() for row in result.unassigned_sales] == [data["sales"][-1]]
+
+
+@pytest.mark.parametrize("home", ["A", "TL"])
+def test_normal_away_shift_has_commission_without_supplemental_pay(home):
+    data = sources()
+    data['calendar']['roster'][0]['home_site_code'] = home
+    for day in data['calendar']['days']:
+        day['supplemental'] = False
+    result = project(data)
+    agent = result.agents[0]
+    assert agent.supplemental_pay == 0
+    assert agent.days[-1].commission == 24
+    assert sum(day.sales for row in result.agents for day in row.days) == 5790

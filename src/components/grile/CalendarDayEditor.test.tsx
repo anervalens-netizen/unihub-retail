@@ -21,16 +21,16 @@ it('records a TL absence at the virtual base without offering a work day', async
   await userEvent.click(screen.getByRole('button', { name: 'Salvează ziua' }));
   expect(onSave).toHaveBeenCalledWith([{ agent_code: 'LEADER', site_code: 'TL', work_date: '2026-09-01', status: 'leave', supplemental: false, expected_revision: 0 }]);
 });
-it('offers a virtual TL only within the confirmed region and forces supplemental work', async () => {
+it('offers a virtual TL only within the confirmed region and permits normally paid work', async () => {
   const onSave = vi.fn();
   const leader = { ...data.roster[0]!, agent_code: 'LEADER', home_site_code: 'TL', regional: 'R' };
   render(<CalendarDayEditor {...props} data={{ ...data, roster: [...data.roster, leader, { ...leader, agent_code: 'OTHER-TL', regional: 'OTHER' }] }} onSave={onSave} />);
   expect(screen.queryByRole('option', { name: /OTHER-TL/ })).not.toBeInTheDocument();
   await userEvent.selectOptions(screen.getByLabelText('Agent pentru zi'), 'LEADER');
-  expect(screen.getByRole('checkbox')).toBeChecked();
-  expect(screen.getByRole('checkbox')).toBeDisabled();
+  expect(screen.getByRole('checkbox')).not.toBeChecked();
+  expect(screen.getByRole('checkbox')).toBeEnabled();
   await userEvent.click(screen.getByRole('button', { name: 'Salvează ziua' }));
-  expect(onSave.mock.calls[0]![0][1]).toMatchObject({ agent_code: 'LEADER', site_code: 'S1', supplemental: true });
+  expect(onSave.mock.calls[0]![0][1]).toMatchObject({ agent_code: 'LEADER', site_code: 'S1', supplemental: false });
 });
 it('uses the original edit revision even if a background read changes', async () => {
   const onSave = vi.fn();
@@ -40,13 +40,13 @@ it('uses the original edit revision even if a background read changes', async ()
   await userEvent.click(screen.getByRole('button', { name: 'Salvează ziua' }));
   expect(onSave.mock.calls[0]![0][0]).toMatchObject({ status: 'leave', expected_revision: 3 });
 });
-it('requires supplemental coverage for another home store', async () => {
+it('allows a normal shift swap at another home store', async () => {
   const onSave = vi.fn();
   render(<CalendarDayEditor {...props} onSave={onSave} />);
   await userEvent.selectOptions(screen.getByLabelText('Agent pentru zi'), 'B');
-  expect(screen.getByRole('checkbox')).toBeChecked();
+  expect(screen.getByRole('checkbox')).not.toBeChecked();
   await userEvent.click(screen.getByRole('button', { name: 'Salvează ziua' }));
-  expect(onSave.mock.calls[0]![0][1]).toMatchObject({ agent_code: 'B', supplemental: true });
+  expect(onSave.mock.calls[0]![0][1]).toMatchObject({ agent_code: 'B', supplemental: false });
 });
 it('does not move a day already assigned at another location', async () => {
   render(<CalendarDayEditor {...props} data={{ ...data, days: [...data.days, { ...data.days[0]!, agent_code: 'B', site_code: 'S2' }] }} onSave={vi.fn()} />);
@@ -80,4 +80,13 @@ it('does not inherit another occupants supplemental classification', async () =>
   expect(screen.getByRole('checkbox')).not.toBeChecked();
   await userEvent.click(screen.getByRole('button', { name: 'Salvează ziua' }));
   expect(onSave.mock.calls[0]![0][1]).toMatchObject({ agent_code: 'B', supplemental: false });
+});
+
+it('lets a manager explicitly mark away work as a paid supplement', async () => {
+  const onSave = vi.fn();
+  render(<CalendarDayEditor {...props} onSave={onSave} />);
+  await userEvent.selectOptions(screen.getByLabelText('Agent pentru zi'), 'B');
+  await userEvent.click(screen.getByRole('checkbox'));
+  await userEvent.click(screen.getByRole('button', { name: 'Salvează ziua' }));
+  expect(onSave.mock.calls[0]![0][1]).toMatchObject({ agent_code: 'B', supplemental: true });
 });
