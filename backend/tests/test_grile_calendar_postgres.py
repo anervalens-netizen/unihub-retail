@@ -446,8 +446,8 @@ async def test_calendar_identity_is_effective_scoped_and_web_readable(repo, web_
         async with repo.pool.acquire() as conn:
             await conn.execute("DELETE FROM agent_salary_links WHERE agent_code=$1 AND site_code=$2", AG1, A)
         known_person = (await service.read(MONTH)).roster[0]
-        assert known_person.display_name == 'Other store name'
-        assert known_person.identity_status == 'unavailable'  # name is known; home salary identity remains unconfirmed
+        # The name is known; home salary identity remains unconfirmed.
+        assert (known_person.display_name, known_person.identity_status) == ('Other store name', 'unavailable')
 
 
 async def test_normal_shift_swap_preserves_store_hours_without_supplement(repo):

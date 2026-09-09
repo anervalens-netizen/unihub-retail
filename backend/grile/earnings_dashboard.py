@@ -46,6 +46,9 @@ def enrich_dashboard(result, calendar, sources):
         if agent.compensation.vouchers is None:
             agent.compensation.vouchers = D(480)
         agent.salary = salary(agent, agent.compensation, metrics)
+    enrich_store_performance(result, calendar, sources)
+
+def enrich_store_performance(result, calendar, sources):
     targets = {row['site_code']: row['target_value'] for row in sources['targets']}
     for site in targets.keys() | result.selling_days.keys():
         work = [d for d in calendar.days if d.site_code == site and d.status == 'work']
