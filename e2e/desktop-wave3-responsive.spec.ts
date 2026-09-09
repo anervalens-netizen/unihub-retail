@@ -206,7 +206,7 @@ async function assertNoPageOverflow(page: Page) {
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
 }
 
-function historyDataGridCard(page: Page, title: 'RM' | 'Magazine') {
+function historyDataGridCard(page: Page, title: 'RM' | 'Magazine' | 'Agenti') {
   return page.getByRole('heading', { name: title, exact: true })
     .locator('xpath=ancestor::section[1]');
 }
@@ -329,8 +329,7 @@ for (const viewport of VIEWPORTS) {
       if (viewport.width >= 1024) {
         const historyRm = historyDataGridCard(page, 'RM');
         const historyStores = historyDataGridCard(page, 'Magazine');
-        const historyAgents = page.getByRole('heading', { name: 'Agenti', exact: true })
-          .locator('xpath=ancestor::div[contains(@class, "glass")][1]');
+        const historyAgents = historyDataGridCard(page, 'Agenti');
         const [historyRmBox, historyStoresBox, historyAgentsBox] = await Promise.all([
           historyRm.boundingBox(),
           historyStores.boundingBox(),
