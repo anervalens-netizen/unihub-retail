@@ -20,7 +20,7 @@ import {
 } from '../../lib/dataGrid';
 import type { DataGridColumn } from './dataGridTypes';
 
-export const DATA_GRID_COLUMN_MIN_WIDTH = 72;
+export const DATA_GRID_COLUMN_MIN_WIDTH = 112;
 export const DATA_GRID_COLUMN_MAX_WIDTH = 640;
 const DATA_GRID_COLUMN_STEP = 16;
 const DATA_GRID_COLUMN_LARGE_STEP = 48;
