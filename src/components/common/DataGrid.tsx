@@ -3,6 +3,7 @@ import {
   ChevronDown,
   ChevronUp,
   RotateCcw,
+  Search,
 } from 'lucide-react';
 import {
   useId,
@@ -16,9 +17,11 @@ import { ExportTableButton } from '../ExportTableButton';
 import {
   applyDataGridModel,
   isDataGridFilterActive,
+  isDataGridSearchActive,
   moveColumnKey,
   nextDataGridSorts,
   normalizeColumnOrder,
+  searchDataGridRows,
   toggleColumnVisibility,
   visibleColumnKeys,
   type DataGridFilterValue,
@@ -56,6 +59,16 @@ function exportCellValue(value: unknown): string | number | null | undefined {
     : String(value);
 }
 
+function dataGridColumnSearchValue<Row, Key extends string>(
+  column: DataGridColumn<Row, Key>,
+  row: Row,
+): unknown {
+  const raw = column.value(row);
+  const displayed = column.searchValue?.(row);
+  if (displayed === undefined || displayed === null) return raw;
+  return `${String(raw ?? '')} ${String(displayed)}`;
+}
+
 function useDataGridState<Row, Key extends string>({
   rows,
   columns,
@@ -76,29 +89,51 @@ function useDataGridState<Row, Key extends string>({
     () => initialSort.map((sort) => ({ ...sort })),
   );
   const [filters, setFilters] = useState<DataGridFilters<Key>>({});
+  const [globalSearch, setGlobalSearch] = useState('');
   const [order, setOrder] = useState<Key[]>(() => [...allKeys]);
   const [hidden, setHidden] = useState<Key[]>([]);
 
-  const normalizedOrder = normalizeColumnOrder(allKeys, order);
-  const visibleKeys = visibleColumnKeys(allKeys, {
-    order: normalizedOrder,
-    hidden,
-  });
-  const visibleColumns = visibleKeys
-    .map((key) => columnMap.get(key))
-    .filter((column): column is DataGridColumn<Row, Key> => column !== undefined);
-  const viewRows = useMemo(
-    () => applyDataGridModel(
+  const normalizedOrder = useMemo(
+    () => normalizeColumnOrder(allKeys, order),
+    [allKeys, order],
+  );
+  const visibleKeys = useMemo(
+    () => visibleColumnKeys(allKeys, {
+      order: normalizedOrder,
+      hidden,
+    }),
+    [allKeys, hidden, normalizedOrder],
+  );
+  const visibleColumns = useMemo(
+    () => visibleKeys
+      .map((key) => columnMap.get(key))
+      .filter((column): column is DataGridColumn<Row, Key> => column !== undefined),
+    [columnMap, visibleKeys],
+  );
+  const viewRows = useMemo(() => {
+    const getValue = (row: Row, key: Key) => columnMap.get(key)?.value(row);
+    const getSearchValue = (row: Row, key: Key) => {
+      const column = columnMap.get(key);
+      return column ? dataGridColumnSearchValue(column, row) : undefined;
+    };
+    const searchedRows = searchDataGridRows(
       rows,
+      globalSearch,
+      visibleKeys,
+      getSearchValue,
+    );
+    return applyDataGridModel(
+      searchedRows,
       filters,
       sorts,
-      (row, key) => columnMap.get(key)?.value(row),
-    ),
-    [columnMap, filters, rows, sorts],
-  );
-  const activeFilterCount = (Object.values(filters) as Array<
+      getValue,
+    );
+  }, [columnMap, filters, globalSearch, rows, sorts, visibleKeys]);
+  const activeColumnFilterCount = (Object.values(filters) as Array<
     DataGridFilterValue | undefined
   >).filter(isDataGridFilterActive).length;
+  const activeFilterCount = activeColumnFilterCount
+    + (isDataGridSearchActive(globalSearch) ? 1 : 0);
   const exportColumns = useMemo<ExportColumn<Row>[]>(
     () => visibleColumns.map((column) => ({
       header: column.exportHeader ?? column.label,
@@ -116,9 +151,11 @@ function useDataGridState<Row, Key extends string>({
     defaultAscKeys,
     exportColumns,
     filters,
+    globalSearch,
     hidden,
     normalizedOrder,
     setFilters,
+    setGlobalSearch,
     setHidden,
     setOrder,
     setSorts,
@@ -282,9 +319,119 @@ function DataGridBody<Row, Key extends string>({
   );
 }
 
+function DataGridGlobalSearch({
+  title,
+  tableId,
+  value,
+  onChange,
+}: {
+  title: string;
+  tableId: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <div className="relative min-w-52 flex-1 sm:max-w-64 sm:flex-none">
+      <Search
+        size={12}
+        aria-hidden="true"
+        className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-slate-400"
+      />
+      <input
+        type="search"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        aria-label={`Caută în coloanele afișate din ${title}`}
+        aria-controls={tableId}
+        placeholder="Caută în coloanele afișate"
+        className="w-full rounded-lg border border-slate-200 bg-white py-1 pl-7 pr-2 text-[11px] font-semibold text-slate-700 outline-none placeholder:font-medium placeholder:text-slate-400 focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+      />
+    </div>
+  );
+}
+
+function DataGridToolbar<Row, Key extends string>({
+  title,
+  rowsLength,
+  tableId,
+  search,
+  activeFilterCount,
+  onSearchChange,
+  onClearFilters,
+  columns,
+  allKeys,
+  order,
+  hidden,
+  onMove,
+  onToggle,
+  onResetColumns,
+  exportFilename,
+  exportSheetName,
+  exportColumns,
+  exportRows,
+}: {
+  title: string;
+  rowsLength: number;
+  tableId: string;
+  search: string;
+  activeFilterCount: number;
+  onSearchChange: (value: string) => void;
+  onClearFilters: () => void;
+  columns: ReadonlyMap<Key, DataGridColumn<Row, Key>>;
+  allKeys: readonly Key[];
+  order: readonly Key[];
+  hidden: readonly Key[];
+  onMove: (key: Key, offset: -1 | 1) => void;
+  onToggle: (key: Key) => void;
+  onResetColumns: () => void;
+  exportFilename: string;
+  exportSheetName: string;
+  exportColumns: ExportColumn<Row>[];
+  exportRows: readonly Row[];
+}) {
+  return (
+    <div className="flex min-w-0 flex-1 flex-wrap items-center justify-end gap-1.5">
+      {rowsLength > 0 && (
+        <DataGridGlobalSearch
+          title={title}
+          tableId={tableId}
+          value={search}
+          onChange={onSearchChange}
+        />
+      )}
+      {activeFilterCount > 0 && (
+        <button
+          type="button"
+          onClick={onClearFilters}
+          className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1 text-[11px] font-bold text-slate-600 hover:border-indigo-200 hover:text-indigo-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+        >
+          <RotateCcw size={12} />
+          Șterge filtrele ({activeFilterCount})
+        </button>
+      )}
+      <DataGridColumnMenu
+        columns={columns}
+        allKeys={allKeys}
+        order={order}
+        hidden={hidden}
+        onMove={onMove}
+        onToggle={onToggle}
+        onReset={onResetColumns}
+      />
+      <ExportTableButton
+        filename={exportFilename}
+        sheetName={exportSheetName}
+        columns={exportColumns}
+        rows={exportRows}
+      />
+    </div>
+  );
+}
+
 export function DataGrid<Row, Key extends string>(props: DataGridProps<Row, Key>) {
   const state = useDataGridState(props);
   const titleId = useId();
+  const tableId = useId();
   const sortStatusId = useId();
   const sortStatus = buildSortStatus(state.sorts, state.columnMap);
 
@@ -309,6 +456,11 @@ export function DataGrid<Row, Key extends string>(props: DataGridProps<Row, Key>
     props.onSortChange?.(next);
   };
 
+  const clearFilters = () => {
+    state.setFilters({});
+    state.setGlobalSearch('');
+  };
+
   const resultLabel = state.viewRows.length === props.rows.length
     ? `${props.rows.length} înregistrări`
     : `${state.viewRows.length} din ${props.rows.length} înregistrări`;
@@ -328,38 +480,31 @@ export function DataGrid<Row, Key extends string>(props: DataGridProps<Row, Key>
             {props.subtitle}{props.subtitle ? ' · ' : ''}{resultLabel}
           </div>
         </div>
-        <div className="flex flex-wrap items-center justify-end gap-1.5">
-          {state.activeFilterCount > 0 && (
-            <button
-              type="button"
-              onClick={() => state.setFilters({})}
-              className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1 text-[11px] font-bold text-slate-600 hover:border-indigo-200 hover:text-indigo-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
-            >
-              <RotateCcw size={12} />
-              Șterge filtrele ({state.activeFilterCount})
-            </button>
-          )}
-          <DataGridColumnMenu
-            columns={state.columnMap}
-            allKeys={state.allKeys}
-            order={state.normalizedOrder}
-            hidden={state.hidden}
-            onMove={(key, offset) => state.setOrder((current) =>
-              moveColumnKey(state.allKeys, current, key, offset))}
-            onToggle={(key) => state.setHidden((current) =>
-              toggleColumnVisibility(state.allKeys, current, key))}
-            onReset={() => {
-              state.setOrder([...state.allKeys]);
-              state.setHidden([]);
-            }}
-          />
-          <ExportTableButton
-            filename={props.exportFilename}
-            sheetName={props.exportSheetName}
-            columns={props.exportColumns ?? state.exportColumns}
-            rows={state.viewRows}
-          />
-        </div>
+        <DataGridToolbar
+          title={props.title}
+          rowsLength={props.rows.length}
+          tableId={tableId}
+          search={state.globalSearch}
+          activeFilterCount={state.activeFilterCount}
+          onSearchChange={state.setGlobalSearch}
+          onClearFilters={clearFilters}
+          columns={state.columnMap}
+          allKeys={state.allKeys}
+          order={state.normalizedOrder}
+          hidden={state.hidden}
+          onMove={(key, offset) => state.setOrder((current) =>
+            moveColumnKey(state.allKeys, current, key, offset))}
+          onToggle={(key) => state.setHidden((current) =>
+            toggleColumnVisibility(state.allKeys, current, key))}
+          onResetColumns={() => {
+            state.setOrder([...state.allKeys]);
+            state.setHidden([]);
+          }}
+          exportFilename={props.exportFilename}
+          exportSheetName={props.exportSheetName}
+          exportColumns={props.exportColumns ?? state.exportColumns}
+          exportRows={state.viewRows}
+        />
       </div>
 
       <p
@@ -374,6 +519,7 @@ export function DataGrid<Row, Key extends string>(props: DataGridProps<Row, Key>
 
       <div className="max-h-[360px] overflow-auto rounded-b-2xl">
         <table
+          id={tableId}
           className="w-full min-w-max table-auto text-xs"
           aria-labelledby={titleId}
         >

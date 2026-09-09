@@ -4,9 +4,11 @@ import {
   applyDataGridModel,
   filterDataGridRows,
   isDataGridFilterActive,
+  isDataGridSearchActive,
   moveColumnKey,
   nextDataGridSorts,
   normalizeColumnOrder,
+  searchDataGridRows,
   sortDataGridRows,
   toggleColumnVisibility,
   visibleColumnKeys,
@@ -39,6 +41,50 @@ describe('dataGrid model', () => {
     expect(ids(filterRows(
       { name: { kind: 'text', value: 'stef' } },
     ))).toEqual(['1']);
+  });
+
+  it('searches displayed values with accent-insensitive AND tokens', () => {
+    const source = [...rows];
+
+    expect(isDataGridSearchActive('   ')).toBe(false);
+    expect(isDataGridSearchActive(' nord ')).toBe(true);
+    expect(ids(searchDataGridRows(
+      source,
+      'stef sud',
+      ['name', 'region'],
+      getValue,
+    ))).toEqual(['1']);
+    expect(ids(searchDataGridRows(
+      source,
+      'nord 200',
+      ['region', 'sales'],
+      getValue,
+    ))).toEqual(['2', '3']);
+    expect(ids(searchDataGridRows(
+      source,
+      'ana 200',
+      ['name', 'sales'],
+      getValue,
+    ))).toEqual(['2']);
+    expect(searchDataGridRows(source, 'nord', [], getValue)).toEqual([]);
+    expect(source).toEqual(rows);
+  });
+
+  it('composes global search, column filters and stable sorting', () => {
+    const searched = searchDataGridRows(
+      rows,
+      'nord 200',
+      ['region', 'sales'],
+      getValue,
+    );
+    const result = applyDataGridModel<Row, Key>(
+      searched,
+      { name: { kind: 'text', value: 'and' } },
+      [{ key: 'name', direction: 'desc' }],
+      getValue,
+    );
+
+    expect(ids(result)).toEqual(['3']);
   });
 
   it('composes enum and numeric range filters and excludes missing numbers', () => {

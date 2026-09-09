@@ -57,4 +57,15 @@ describe('historyRegionalDataGridColumns', () => {
     expect(columns[3]?.exportFormat).toBe('integer');
     expect(columns[3]?.render(row)).toBe(12);
   });
+
+  it('projects the exact displayed Regional text without changing raw values', () => {
+    const columns = historyRegionalDataGridColumns(sourceColumns);
+
+    expect(columns[0]?.searchValue?.(row)).toBe('București');
+    expect(columns[1]?.searchValue?.(row)).toBe('1.000');
+    expect(columns[2]?.searchValue?.(row)).toBe('95.50%');
+    expect(columns[3]?.searchValue?.(row)).toBe('12');
+    expect(columns[1]?.value(row)).toBe(1000);
+    expect(columns[2]?.value(row)).toBe(95.5);
+  });
 });
