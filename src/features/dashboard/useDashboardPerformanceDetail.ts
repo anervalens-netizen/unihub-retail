@@ -29,13 +29,13 @@ export function useDashboardPerformanceDetail({
     setLoading(true);
     setError("");
     getPerformanceDetail({
-      month: currentMonth,
+      month: selection.month ?? currentMonth,
       level: selection.level,
       key: selection.key,
       firma,
       site_code: selection.site_code ? [selection.site_code] : undefined,
       current_scope: true,
-      include_closed_stores: false,
+      include_closed_stores: selection.includeClosedStores ?? false,
     })
       .then((data) => {
         if (!cancelled) setDetail(data);

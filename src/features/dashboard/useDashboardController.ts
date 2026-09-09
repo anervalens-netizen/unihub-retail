@@ -9,6 +9,7 @@ import {
   storeBreakdownColumns,
 } from './dashboardColumns';
 import type { DashboardProps, DashboardViewProps } from './dashboardTypes';
+import type { PerformanceSelection } from './PerformanceDetailDrawer';
 import { useDashboardCurrentCharts } from './useDashboardCurrentCharts';
 import { useDashboardData } from './useDashboardData';
 import { useDashboardHistorySelection } from './useDashboardHistorySelection';
@@ -18,6 +19,23 @@ import { useDashboardSorts } from './useDashboardSorts';
 import * as dashboardPresenters from './presenters';
 
 const HISTORY_START_YEAR = 2018;
+
+type OpenPerformance = (selection: PerformanceSelection) => void;
+
+export function buildHistoryPerformanceOpen(
+  selectedHistoryMonths: readonly string[],
+  includeClosedStores: boolean,
+  openPerformance: OpenPerformance,
+): OpenPerformance | undefined {
+  if (selectedHistoryMonths.length !== 1) return undefined;
+  const month = selectedHistoryMonths[0];
+  if (!month) return undefined;
+  return (selection) => openPerformance({
+    ...selection,
+    month,
+    includeClosedStores,
+  });
+}
 
 function useDashboardState(props: DashboardProps) {
   const { currentMonth, filters, initialSection, months, onSectionChange } = props;
@@ -83,6 +101,11 @@ export function useDashboardController(props: DashboardProps): DashboardViewProp
     historyAgents: data.historyAgents, historyStores: data.historyStores, historyRegionals: data.historyRegionals,
   });
   const openPerformance = performance.setPerformanceSelection;
+  const historyOpenPerformance = buildHistoryPerformanceOpen(
+    history.selectedHistoryMonths,
+    state.includeClosedStores,
+    openPerformance,
+  );
   return {
     activeSection: history.activeSection, agents: data.agents, agentSort: sorts.agentSort,
     availableYears: state.availableYears, brandMixChartData: mix.brandMixChartData,
@@ -121,7 +144,7 @@ export function useDashboardController(props: DashboardProps): DashboardViewProp
     historySelectionLabel: history.historySelectionLabel,
     historySelectionSlug: history.historySelectionSlug,
     historyStoreSort: sorts.historyStoreSort,
-    historyStoreColumns: storeBreakdownColumns(HIST_STORE_COLUMNS),
+    historyStoreColumns: storeBreakdownColumns(HIST_STORE_COLUMNS, historyOpenPerformance),
     historyStores: data.historyStores, historyStatusLabel: mix.historyStatusLabel,
     historyAgentColumns: agentBreakdownColumns(HIST_AGENT_COLUMNS),
     historySummary: data.historySummary, historyYearFilter: state.historyYearFilter,
