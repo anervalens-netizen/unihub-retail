@@ -64,6 +64,8 @@ regional, în baza virtuală `TL` disponibilă numai în Grile. Aceasta nu creea
 magazin în catalogul comercial. Zilele sale sunt suplimentări la magazinele
 lucrate, în regiunea confirmată; vânzările și orele rămân integral acolo.
 Grila personală TL centralizează câștigurile fără a dubla totalurile magazinelor.
+Concediul și zilele libere TL se editează în calendarul bazei virtuale, fără
+magazin fizic, ore lucrate sau vânzări. Baza virtuală nu acceptă zile lucrate.
 
 Un catalog central leagă codul de agent de persoană și de magazinul de bază.
 Codul sursei trebuie verificat pentru unicitate/stabilitate înainte de alegerea

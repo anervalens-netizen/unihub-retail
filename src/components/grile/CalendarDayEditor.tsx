@@ -11,7 +11,7 @@ export function CalendarDayEditor({ data, store, stores, date, busy, writable, o
   const [snapshot] = useState(data);
   const occupant = snapshot.days.find(d => d.work_date === date && d.site_code === store.site_code && d.status === 'work');
   const [code, setCode] = useState(occupant?.agent_code ?? '');
-  const [status, setStatus] = useState<RetailCalendarDayInput['status']>(store.cleanupOnly ? 'cancelled' : 'work');
+  const [status, setStatus] = useState<RetailCalendarDayInput['status']>(store.cleanupOnly ? 'cancelled' : store.virtualBase ? 'leave' : 'work');
   const [supplemental, setSupplemental] = useState(occupant?.supplemental ?? false);
   const assignedHere = (agent: string) => snapshot.days.some(d => d.agent_code === agent && d.work_date === date && d.site_code === store.site_code && d.status !== 'cancelled');
   const roster = store.cleanupOnly ? snapshot.roster.filter(r => assignedHere(r.agent_code)) : snapshot.roster.filter(r => r.active && (r.home_site_code === store.site_code || (r.home_site_code === 'TL' && Boolean(r.regional) && r.regional === store.regional) || stores.some(s => s.site_code === r.home_site_code && s.regional === store.regional && Boolean(s.regional))));
@@ -24,7 +24,7 @@ export function CalendarDayEditor({ data, store, stores, date, busy, writable, o
     <h4 className="font-semibold">Program pentru {date}</h4>
     <label className="native-label">Agent<select aria-label="Agent pentru zi" className="native-field" value={code} onChange={e => { setCode(e.target.value); setSupplemental(snapshot.days.find(d => d.agent_code === e.target.value && d.work_date === date && d.site_code === store.site_code)?.supplemental ?? false); }}><option value="">Alege agentul</option>{roster.map(r => <option key={r.agent_code} value={r.agent_code}>{agentLabel(r)}{r.home_site_code === store.site_code ? '' : ` · suplimentar din ${r.home_site_code}`}</option>)}</select></label>
     {existing && <p>Înregistrare actuală: {dayLabels[existing.status]} · {existing.site_code}</p>}
-    <label className="native-label">Tip zi<select aria-label="Tip zi" className="native-field" value={status} onChange={e => setStatus(e.target.value as typeof status)}>{Object.entries(dayLabels).filter(([value]) => !store.cleanupOnly || value === 'cancelled').map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+    <label className="native-label">Tip zi<select aria-label="Tip zi" className="native-field" value={status} onChange={e => setStatus(e.target.value as typeof status)}>{Object.entries(dayLabels).filter(([value]) => (!store.cleanupOnly || value === 'cancelled') && (!store.virtualBase || value !== 'work')).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
     {status === 'work' && <label className="block"><input type="checkbox" checked={away || supplemental} disabled={away} onChange={e => setSupplemental(e.target.checked)} /> Suplimentar</label>}
     {elsewhere && <p role="alert">Agentul are deja o zi în {existing.site_code}. Corectează întâi programul de acolo.</p>}
     {occupant && occupant.agent_code !== code && status === 'work' && <p>Salvarea înlocuiește alocarea lui {occupant.agent_code} pentru această zi.</p>}

@@ -12,6 +12,15 @@ const data: CalendarData = { attendance_by_store: {}, attendance_days: [], store
   { regional: null, display_name: null, identity_status: 'unavailable', month: '2026-09', agent_code: 'B', home_site_code: 'S2', active: true, revision: 1 },
 ], days: [{ agent_code: 'A', work_date: '2026-09-01', site_code: 'S1', status: 'work', supplemental: false, revision: 3 }] };
 const props = { data, store, stores: [store, other], date: '2026-09-01', busy: false, writable: true };
+it('records a TL absence at the virtual base without offering a work day', async () => {
+  const onSave = vi.fn();
+  const leader = { ...data.roster[0]!, agent_code: 'LEADER', home_site_code: 'TL', regional: 'R' };
+  render(<CalendarDayEditor {...props} store={{ ...store, site_code: 'TL', regional: '', virtualBase: true }} data={{ ...data, roster: [leader], days: [] }} onSave={onSave} />);
+  await userEvent.selectOptions(screen.getByLabelText('Agent pentru zi'), 'LEADER');
+  expect(screen.queryByRole('option', { name: 'Lucrează' })).not.toBeInTheDocument();
+  await userEvent.click(screen.getByRole('button', { name: 'Salvează ziua' }));
+  expect(onSave).toHaveBeenCalledWith([{ agent_code: 'LEADER', site_code: 'TL', work_date: '2026-09-01', status: 'leave', supplemental: false, expected_revision: 0 }]);
+});
 it('offers a virtual TL only within the confirmed region and forces supplemental work', async () => {
   const onSave = vi.fn();
   const leader = { ...data.roster[0]!, agent_code: 'LEADER', home_site_code: 'TL', regional: 'R' };

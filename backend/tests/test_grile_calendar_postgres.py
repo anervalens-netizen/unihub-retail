@@ -129,6 +129,25 @@ async def test_virtual_leader_identity_uses_unique_confirmed_person_without_home
     assert 'person_id' not in calendar.model_dump_json()
 
 
+async def test_virtual_leader_absence_has_no_physical_store_hours_or_sales(repo):
+    await repo.save_roster(MONTH, AG1, "TL", True, 0, "manager", regional="R1")
+    with pytest.raises(CalendarConflict, match="only Team Leader absences"):
+        await repo.save_days([day(site="TL", supplemental=True)], "manager")
+    created = await repo.save_days([day(site="TL", status="leave")], "manager")
+    assert created[0]['site_code'] == 'TL'
+    calendar = await GrileCalendarService(repo).read(MONTH)
+    assert calendar.attendance[0].worked_minutes == 0
+    assert calendar.attendance[0].leave_days == 1
+    assert A not in calendar.attendance_by_store
+    async with repo.pool.acquire() as conn:
+        assert await conn.fetchval('SELECT site_code IS NULL FROM grile_calendar_days WHERE agent_code=$1', AG1)
+    await repo.save_days([day(site="TL", status="off", revision=1)], "manager")
+    await repo.save_days([day(site="TL", status="cancelled", revision=2)], "manager")
+    await confirm(repo, AG2)
+    with pytest.raises(CalendarConflict, match="only Team Leader absences"):
+        await repo.save_days([day(agent=AG2, site="TL", status="leave")], "manager")
+
+
 async def test_two_simultaneous_agents_cannot_occupy_one_store_day(repo):
     await confirm(repo)
     await confirm(repo, AG2)

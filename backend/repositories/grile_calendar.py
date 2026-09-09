@@ -71,7 +71,8 @@ class GrileCalendarRepository:
         hours = await conn.fetch(
             "SELECT * FROM grile_calendar_store_hours WHERE month=$1 ORDER BY site_code", month,
         )
-        return {"roster": [dict(row, home_site_code=row["home_site_code"] or "TL") for row in roster], "days": [dict(row) for row in days],
+        return {"roster": [dict(row, home_site_code=row["home_site_code"] or "TL") for row in roster],
+                "days": [dict(row, site_code=row["site_code"] or "TL") for row in days],
                 "store_hours": [dict(row) for row in hours]}
 
     @staticmethod
@@ -143,11 +144,15 @@ class GrileCalendarRepository:
         if day.status == "cancelled":
             if old is None:
                 raise CalendarConflict("Cannot cancel an unassigned day")
-            if old["site_code"] != day.site_code:
+            if (old["site_code"] or "TL") != day.site_code:
                 raise CalendarConflict("Cancellation must retain the assigned store")
             return
         if not roster["active"]:
             raise CalendarConflict("Agent must be confirmed active for this month")
+        if day.site_code == "TL":
+            if roster["home_site_code"] is not None or day.status not in {"leave", "off"}:
+                raise CalendarConflict("Virtual TL base accepts only Team Leader absences")
+            return
         worked = await self._store(conn, day.site_code)
         if roster["home_site_code"] is None:
             if day.status != "work" or not day.supplemental or worked["regional"] != roster["regional"]:
@@ -195,9 +200,9 @@ class GrileCalendarRepository:
                                  updated_by_sub=EXCLUDED.updated_by_sub,updated_at=now()
                                RETURNING *""",
                             day.work_date.strftime("%Y-%m"), day.work_date, day.agent_code,
-                            day.site_code, day.status, day.supplemental, actor,
+                            None if day.site_code == "TL" else day.site_code, day.status, day.supplemental, actor,
                         )
-                        result.append(dict(row))
+                        result.append(dict(row, site_code=row["site_code"] or "TL"))
                     return result
         except asyncpg.UniqueViolationError as exc:
             raise CalendarConflict("A store already has an assigned agent on that day") from exc
