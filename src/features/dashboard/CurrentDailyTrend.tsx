@@ -137,6 +137,7 @@ export function CurrentDailyTrend({ currentMonth, data }: {
         </select>
       )}
       contentClassName={contentClassName}
+      className="flex min-w-0 flex-col"
       compactMobile
       headerAlign="start"
     >
