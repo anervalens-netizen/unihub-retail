@@ -16,8 +16,8 @@ function ArchiveRow({ item }: { item: SalaryArchiveItem }) {
     <td className="p-3 whitespace-nowrap">{item.period?.slice(0, 7) ?? 'Lună neclarificată'}</td>
     <td className="p-3"><span className="font-semibold">{item.full_name}</span><p className="mt-1 text-xs text-slate-500">{item.company_name ?? 'Firmă neclarificată'} · {item.location ?? item.site_code ?? 'Magazin neclarificat'}</p></td>
     <td className="p-3 text-right whitespace-nowrap tabular-nums">{amount !== null && Number.isFinite(amount) ? currency.format(amount) : 'Sumă neclarificată'}</td>
-    <td className="p-3"><span className={verified ? 'text-emerald-700 dark:text-emerald-300' : 'text-amber-700 dark:text-amber-300'}>{verified ? 'Identitate verificată' : 'Identitate nereconciliată'}</span>
-      <p className="mt-1 text-xs text-slate-500">{item.already_recorded ? 'Deja în salariile oficiale — nu se adună din nou' : item.pnl_eligible ? 'Eligibil pentru estimări; nu reprezintă un cost salarial complet' : 'Exclus din estimări până la clarificare'}</p>
+    <td className="p-3"><span className={verified ? 'text-emerald-700 dark:text-emerald-300' : 'text-amber-700 dark:text-amber-300'}>{verified ? 'Asociere cu persoana din aplicație verificată' : 'Fără asociere confirmată în aplicație'}</span>
+      <p className="mt-1 text-xs text-slate-500">{item.already_recorded ? 'Lună inclusă în sinteza existentă — nu se adună din nou' : item.pnl_eligible ? 'Eligibil pentru estimări; nu reprezintă un cost salarial complet' : 'Exclus din estimări până la clarificare'}</p>
       {!item.selected && <p className="mt-1 text-xs text-slate-500">Versiune arhivată, neutilizată</p>}
       {item.review_reasons.length > 0 && <p className="mt-1 text-xs text-amber-700 dark:text-amber-300">Necesită verificarea sursei ({item.review_reasons.length} {item.review_reasons.length === 1 ? 'observație' : 'observații'}).</p>}
     </td>
@@ -62,11 +62,11 @@ export function SalaryArchivePanel({ globalFilters }: { globalFilters?: AppFilte
   }, [search, year, month, siteKey, company, regional, activePage, attempt]);
   const goToPage = (next: number) => { setPageScope(scopeKey); setPage(next); };
   const total = result?.total_rows ?? 0;
-  return <section aria-label="Istoric HR arhivat" className="mx-4 space-y-4 pb-4">
+  return <section aria-label="Istoric state oficiale HR" className="mx-4 space-y-4 pb-4">
     <div className="rounded-2xl border border-indigo-100 bg-indigo-50 p-3 text-sm text-indigo-900 dark:border-indigo-900 dark:bg-indigo-950/30 dark:text-indigo-200">
-      <h3 className="font-bold">Istoric HR arhivat</h3>
-      <p className="mt-1">Documentele istorice sunt păstrate separat de salariile oficiale. Sumele reprezintă netul și bonurile, nu costul salarial complet al firmei. Rândurile deja înregistrate nu se adună din nou.</p>
-      <p className="mt-1">Identitățile nereconciliate rămân fără atribuire unei persoane. Lunile fără documente rămân lipsă.</p>
+      <h3 className="font-bold">Istoric state oficiale HR</h3>
+      <p className="mt-1">Statele provin din fișierele oficiale trimise de HR. Sunt afișate inclusiv salariile foștilor angajați, după numele din document, fără să fie necesar un cod ERP. Sumele reprezintă netul și bonurile.</p>
+      <p className="mt-1">Legătura cu persoana din aplicație este verificată separat de proveniența oficială a statului. Versiunile și sumele neclare sunt marcate; lunile fără documente rămân lipsă.</p>
     </div>
     <div className="flex flex-wrap items-end gap-3">
       <label className="grid gap-1 text-xs">Nume agent<input aria-label="Caută nume în istoricul HR" type="search" maxLength={120} value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Caută după nume..." className={controlClass} /></label>

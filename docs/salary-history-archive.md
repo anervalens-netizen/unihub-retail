@@ -37,3 +37,13 @@ private in `/opt/Mobiup/docs/comisioane/outlook-cristina-20260910/`.
 Acest lot pregateste intrari pentru estimari; nu recalculeaza si nu promoveaza
 automat P&L. Estimarile viitoare trebuie sa declare acoperirea si conversia de la
 net+bonuri la cost complet; sumele istorice nu inlocuiesc contabilitatea.
+
+## Clarificare owner: provenienta HR si codul ERP
+
+Ownerul confirma ca fisierele din mail sunt sursele oficiale HR folosite pentru
+tabul salarial existent. Istoricul se afiseaza implicit in Salarii oficiale >
+Istoric state HR, inclusiv pentru fosti angajati fara cod ERP. Absenta codului
+ERP nu invalideaza statul. Legatura cu persoana din aplicatie ramane distincta
+de provenienta oficiala a documentului. Sinteza existenta pastreaza separat
+perioadele deja calculate; aceasta schimbare de prezentare nu promoveaza
+randuri in salary_records si nu modifica verificarea semnata a importului.

@@ -16,10 +16,10 @@ describe('SalaryArchivePanel', () => {
   it('keeps unresolved identity separate even when a candidate exists and flags existing official rows', async () => {
     render(<SalaryArchivePanel />);
     await screen.findByText('Agent test');
-    expect(screen.getByText('Identitate nereconciliată')).toBeTruthy();
-    expect(screen.getByText('Deja în salariile oficiale — nu se adună din nou')).toBeTruthy();
+    expect(screen.getByText('Fără asociere confirmată în aplicație')).toBeTruthy();
+    expect(screen.getByText('Lună inclusă în sinteza existentă — nu se adună din nou')).toBeTruthy();
     expect(screen.queryByText('private-person-id')).toBeNull();
-    expect(screen.queryByText('Identitate verificată')).toBeNull();
+    expect(screen.queryByText('Asociere cu persoana din aplicație verificată')).toBeNull();
   });
   it('uses store scope over current company and resets pagination when searching', async () => {
     api.fetch.mockResolvedValue({ ...result, total_rows: 101 });
