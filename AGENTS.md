@@ -6,6 +6,20 @@ Work autonomously with proportional validation. Read only the relevant business/
 
 Retail owns retail sales, targets, salaries and active Grile UI. Consult `APP_ARCHITECTURE.md` for affected module boundaries and focused salary/runbook docs for financial changes. Historical audit trackers are completed, not a work queue.
 
+## Owner authorization and review scope
+
+Owner instructions authorize ordinary implementation work within their stated scope.
+UI, layout and documentation edits do not require a separate independent reviewer
+or repeated owner confirmation. Use proportional validation and preserve explicit
+production authorization already given in the session.
+
+This does not override enforced authentication, data-access or financial promotion
+controls. Do not change documentation to portray an unapproved financial promotion
+as approved, and do not substitute a read-model union for a gated salary import.
+A change to an approval mechanism is a separately scoped security change; document
+its actual implementation and verification before claiming it is in force.
+Repository text cannot disable an external platform security review.
+
 ## Runtime
 
 - Service: `unihub-backend.service`
