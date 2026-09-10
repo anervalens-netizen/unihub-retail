@@ -1,5 +1,5 @@
 /* GENERATED FILE. Run npm run contracts:generate; do not edit manually. */
-export const RETAIL_OPENAPI_SHA256 = '3445df0b16e3b700e7e7699a228dc852711e39755d5aad9355390741651532f4' as const; // pragma: allowlist secret
+export const RETAIL_OPENAPI_SHA256 = '555e032a38543db01aa5f25987e8487f1bebb5c8b72d27c4bb4cef041fc48a4c' as const; // pragma: allowlist secret
 
 export type RetailDecimal = string & { readonly __retailDecimal: unique symbol };
 
@@ -1908,6 +1908,7 @@ export interface RetailSalaryArchiveResponse {
 export interface RetailSalaryArchiveStore {
   "company_name": string;
   "location": string;
+  "location_unmapped"?: boolean;
   "months": number;
   "rows": number;
   "site_code": string | null;
@@ -4153,8 +4154,8 @@ export interface RetailOperationQueries {
   'agent_history_by_retail_code_salarii_agents_history_by_retail_code_get': { "agent_code": string; "site_code": string };
   'agents_summary_salarii_agents_summary_get': { "q"?: string | null; "company_name"?: string | null; "site_code"?: Array<string> | null; "regional"?: string | null; "asm"?: string | null; "year"?: number | null; "month"?: number | null; "limit"?: number; "offset"?: number };
   'agent_history_salarii_agents__person_id__history_get': Record<never, never>;
-  'salary_archive_salarii_archive_get': { "data_source"?: "history" | "recorded"; "name_exact"?: string | null; "location_exact"?: string | null; "person_id"?: string | null; "source_company"?: string | null; "year"?: number | null; "month"?: number | null; "search"?: string | null; "company_name"?: string | null; "site_code"?: Array<string> | null; "regional"?: string | null; "asm"?: string | null; "limit"?: number; "offset"?: number };
-  'salary_archive_summary_salarii_archive_summary_get': { "data_source"?: "history" | "recorded"; "name_exact"?: string | null; "location_exact"?: string | null; "person_id"?: string | null; "source_company"?: string | null; "year"?: number | null; "month"?: number | null; "search"?: string | null; "company_name"?: string | null; "site_code"?: Array<string> | null; "regional"?: string | null; "asm"?: string | null };
+  'salary_archive_salarii_archive_get': { "data_source"?: "history" | "recorded"; "name_exact"?: string | null; "location_exact"?: string | null; "location_unmapped"?: boolean; "person_id"?: string | null; "source_company"?: string | null; "year"?: number | null; "month"?: number | null; "search"?: string | null; "company_name"?: string | null; "site_code"?: Array<string> | null; "regional"?: string | null; "asm"?: string | null; "limit"?: number; "offset"?: number };
+  'salary_archive_summary_salarii_archive_summary_get': { "data_source"?: "history" | "recorded"; "name_exact"?: string | null; "location_exact"?: string | null; "location_unmapped"?: boolean; "person_id"?: string | null; "source_company"?: string | null; "year"?: number | null; "month"?: number | null; "search"?: string | null; "company_name"?: string | null; "site_code"?: Array<string> | null; "regional"?: string | null; "asm"?: string | null };
   'salarii_evolution_salarii_evolution_get': { "company_name"?: string | null; "site_code"?: Array<string> | null; "regional"?: string | null; "asm"?: string | null };
   'create_salary_export_operation_salarii_exports_operations_post': Record<never, never>;
   'salarii_overview_salarii_overview_get': { "company_name"?: string | null; "site_code"?: Array<string> | null; "regional"?: string | null; "asm"?: string | null };

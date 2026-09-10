@@ -11823,6 +11823,11 @@ export const RETAIL_COMPONENT_SCHEMAS = {
         "title": "Location",
         "type": "string"
       },
+      "location_unmapped": {
+        "default": false,
+        "title": "Location Unmapped",
+        "type": "boolean"
+      },
       "months": {
         "title": "Months",
         "type": "integer"

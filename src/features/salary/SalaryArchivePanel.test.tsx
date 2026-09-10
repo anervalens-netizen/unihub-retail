@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { SalaryArchivePanel } from './SalaryArchivePanel';
 const api=vi.hoisted(()=>({summary:vi.fn(),rows:vi.fn()}));
 vi.mock('../../api/salaryArchive',()=>({fetchSalaryArchiveSummary:api.summary,fetchSalaryArchive:api.rows}));
-const data={total:6000,rows:2,months:2,excluded_rows:0,monthly:[{period:'2026-06',company_name:'Mobiup',total:3000,rows:1},{period:'2026-07',company_name:'Mobiup',total:3000,rows:1}],stores:[{site_code:'TEST',location:'Magazin test',company_name:'Mobiup',total:6000,months:2,rows:2}],agents:[{full_name:'Agent test',company_name:'Mobiup',total:6000,months:2,rows:2,avg_salary:3000}]};
+const data={total:6000,rows:2,months:2,excluded_rows:0,monthly:[{period:'2026-06',company_name:'Mobiup',total:3000,rows:1},{period:'2026-07',company_name:'Mobiup',total:3000,rows:1}],stores:[{location_unmapped:false,site_code:'TEST',location:'Magazin test',company_name:'Mobiup',total:6000,months:2,rows:2}],agents:[{full_name:'Agent test',company_name:'Mobiup',total:6000,months:2,rows:2,avg_salary:3000}]};
 beforeEach(()=>{
  vi.clearAllMocks();api.summary.mockResolvedValue(data);api.rows.mockResolvedValue({total_rows:1,items:[{period:'2026-07',company_name:'Mobiup',full_name:'Agent test',site_code:'TEST',location:'Magazin test',total_amount:3000,identity_status:'missing_identifier',review_reasons:[],candidate_person_id:null,source_file:'sursa.xls',source_sheet:'Iulie',source_row:2,selected:true,pnl_eligible:true,already_recorded:false}]});
  HTMLDialogElement.prototype.showModal=function(){this.setAttribute('open','');};

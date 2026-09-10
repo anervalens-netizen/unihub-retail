@@ -32,6 +32,7 @@ class SalaryArchiveMonth(StrictApiModel):
     total: Decimal
 
 class SalaryArchiveStore(StrictApiModel):
+    location_unmapped: bool = False
     site_code: str | None
     location: str
     company_name: str

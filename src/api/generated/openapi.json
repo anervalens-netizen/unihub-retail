@@ -11822,6 +11822,11 @@
             "title": "Location",
             "type": "string"
           },
+          "location_unmapped": {
+            "default": false,
+            "title": "Location Unmapped",
+            "type": "boolean"
+          },
           "months": {
             "title": "Months",
             "type": "integer"
@@ -25355,6 +25360,16 @@
           },
           {
             "in": "query",
+            "name": "location_unmapped",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Location Unmapped",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
             "name": "person_id",
             "required": false,
             "schema": {
@@ -25628,6 +25643,16 @@
                 }
               ],
               "title": "Location Exact"
+            }
+          },
+          {
+            "in": "query",
+            "name": "location_unmapped",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Location Unmapped",
+              "type": "boolean"
             }
           },
           {
