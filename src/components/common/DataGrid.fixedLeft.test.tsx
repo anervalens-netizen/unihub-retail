@@ -76,8 +76,8 @@ describe('DataGrid fixed-left identity column', () => {
 
     const identityHeader = screen.getByTestId('data-grid-header-name');
     const identityFilter = screen.getByTestId('data-grid-filter-cell-name');
-    const firstRow = screen.getAllByTestId('data-grid-row')[0];
-    const identityCell = within(firstRow).getAllByRole('cell')[0];
+    const firstRow = screen.getAllByTestId('data-grid-row')[0]!;
+    const identityCell = within(firstRow).getAllByRole('cell')[0]!;
 
     expect(identityHeader).toHaveClass('sticky', 'left-0');
     expect(identityFilter).toHaveClass('sticky', 'left-0');
@@ -101,9 +101,8 @@ describe('DataGrid fixed-left identity column', () => {
     renderGrid(false);
 
     fireEvent.click(screen.getByText('Coloane', { exact: true }));
-    const moveSalesLeft = screen.getByRole('button', { name: 'Mută Vânzări la stânga' });
-    fireEvent.click(moveSalesLeft);
-    fireEvent.click(moveSalesLeft);
+    fireEvent.click(screen.getByRole('button', { name: 'Mută Vânzări la stânga' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Mută Vânzări la stânga' }));
 
     expect(headerOrder()).toEqual([
       'data-grid-header-sales',
