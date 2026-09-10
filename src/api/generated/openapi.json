@@ -11589,6 +11589,157 @@
         "title": "SalaryAgentsSummaryResponse",
         "type": "object"
       },
+      "SalaryArchiveItem": {
+        "additionalProperties": false,
+        "properties": {
+          "already_recorded": {
+            "title": "Already Recorded",
+            "type": "boolean"
+          },
+          "candidate_person_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Candidate Person Id"
+          },
+          "company_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Company Name"
+          },
+          "full_name": {
+            "title": "Full Name",
+            "type": "string"
+          },
+          "identity_status": {
+            "title": "Identity Status",
+            "type": "string"
+          },
+          "location": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Location"
+          },
+          "period": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Period"
+          },
+          "pnl_eligible": {
+            "title": "Pnl Eligible",
+            "type": "boolean"
+          },
+          "review_reasons": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Review Reasons",
+            "type": "array"
+          },
+          "selected": {
+            "title": "Selected",
+            "type": "boolean"
+          },
+          "site_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Site Code"
+          },
+          "source_file": {
+            "title": "Source File",
+            "type": "string"
+          },
+          "source_row": {
+            "title": "Source Row",
+            "type": "integer"
+          },
+          "source_sheet": {
+            "title": "Source Sheet",
+            "type": "string"
+          },
+          "total_amount": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Amount"
+          }
+        },
+        "required": [
+          "period",
+          "company_name",
+          "full_name",
+          "site_code",
+          "location",
+          "total_amount",
+          "identity_status",
+          "candidate_person_id",
+          "source_file",
+          "source_sheet",
+          "source_row",
+          "selected",
+          "pnl_eligible",
+          "already_recorded"
+        ],
+        "title": "SalaryArchiveItem",
+        "type": "object"
+      },
+      "SalaryArchiveResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SalaryArchiveItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "total_rows": {
+            "title": "Total Rows",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total_rows"
+        ],
+        "title": "SalaryArchiveResponse",
+        "type": "object"
+      },
       "SalaryCompanyTotal": {
         "additionalProperties": false,
         "properties": {
@@ -24971,6 +25122,198 @@
           }
         ],
         "summary": "Agent History",
+        "tags": [
+          "salarii"
+        ]
+      }
+    },
+    "/salarii/archive": {
+      "get": {
+        "operationId": "salary_archive_salarii_archive_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "year",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 2100,
+                  "minimum": 2015,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Year"
+            }
+          },
+          {
+            "in": "query",
+            "name": "month",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 12,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Month"
+            }
+          },
+          {
+            "in": "query",
+            "name": "search",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 120,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Search"
+            }
+          },
+          {
+            "in": "query",
+            "name": "company_name",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 120,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Company Name"
+            }
+          },
+          {
+            "in": "query",
+            "name": "site_code",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "maxLength": 100,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "maxItems": 100,
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Site Code"
+            }
+          },
+          {
+            "in": "query",
+            "name": "regional",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 120,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Regional"
+            }
+          },
+          {
+            "in": "query",
+            "name": "asm",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 120,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Asm"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "maximum": 100000,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SalaryArchiveResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Salary Archive",
         "tags": [
           "salarii"
         ]

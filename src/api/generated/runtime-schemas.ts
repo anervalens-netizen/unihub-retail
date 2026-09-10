@@ -11590,6 +11590,157 @@ export const RETAIL_COMPONENT_SCHEMAS = {
     "title": "SalaryAgentsSummaryResponse",
     "type": "object"
   },
+  "SalaryArchiveItem": {
+    "additionalProperties": false,
+    "properties": {
+      "already_recorded": {
+        "title": "Already Recorded",
+        "type": "boolean"
+      },
+      "candidate_person_id": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Candidate Person Id"
+      },
+      "company_name": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Company Name"
+      },
+      "full_name": {
+        "title": "Full Name",
+        "type": "string"
+      },
+      "identity_status": {
+        "title": "Identity Status",
+        "type": "string"
+      },
+      "location": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Location"
+      },
+      "period": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Period"
+      },
+      "pnl_eligible": {
+        "title": "Pnl Eligible",
+        "type": "boolean"
+      },
+      "review_reasons": {
+        "items": {
+          "type": "string"
+        },
+        "title": "Review Reasons",
+        "type": "array"
+      },
+      "selected": {
+        "title": "Selected",
+        "type": "boolean"
+      },
+      "site_code": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Site Code"
+      },
+      "source_file": {
+        "title": "Source File",
+        "type": "string"
+      },
+      "source_row": {
+        "title": "Source Row",
+        "type": "integer"
+      },
+      "source_sheet": {
+        "title": "Source Sheet",
+        "type": "string"
+      },
+      "total_amount": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Total Amount"
+      }
+    },
+    "required": [
+      "period",
+      "company_name",
+      "full_name",
+      "site_code",
+      "location",
+      "total_amount",
+      "identity_status",
+      "candidate_person_id",
+      "source_file",
+      "source_sheet",
+      "source_row",
+      "selected",
+      "pnl_eligible",
+      "already_recorded"
+    ],
+    "title": "SalaryArchiveItem",
+    "type": "object"
+  },
+  "SalaryArchiveResponse": {
+    "additionalProperties": false,
+    "properties": {
+      "items": {
+        "items": {
+          "$ref": "#/components/schemas/SalaryArchiveItem"
+        },
+        "title": "Items",
+        "type": "array"
+      },
+      "total_rows": {
+        "title": "Total Rows",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "items",
+      "total_rows"
+    ],
+    "title": "SalaryArchiveResponse",
+    "type": "object"
+  },
   "SalaryCompanyTotal": {
     "additionalProperties": false,
     "properties": {
@@ -17362,6 +17513,9 @@ export const RETAIL_RESPONSE_SCHEMAS = {
     "title": "Response Salarii Trend Salarii Trend Get",
     "type": "array"
   },
+  "salary_archive_salarii_archive_get": {
+    "$ref": "#/components/schemas/SalaryArchiveResponse"
+  },
   "save_compensation_api_grile_calendar__month__compensation__agent_code__put": {
     "$ref": "#/components/schemas/CompensationEntry"
   },
@@ -17432,6 +17586,7 @@ export const RETAIL_RUNTIME_VALIDATED_OPERATIONS = new Set([
   'agent_history_by_retail_code_salarii_agents_history_by_retail_code_get',
   'agents_summary_salarii_agents_summary_get',
   'agent_history_salarii_agents__person_id__history_get',
+  'salary_archive_salarii_archive_get',
   'salarii_evolution_salarii_evolution_get',
   'create_salary_export_operation_salarii_exports_operations_post',
   'salarii_overview_salarii_overview_get',

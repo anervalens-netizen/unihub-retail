@@ -969,6 +969,11 @@ modifica randurile din `salary_records`.
 
 P0 salary boundary: parserul HR poate valida și construi manifestul, dar importul live este NO-GO până la reconcilierea HR. CNP rămâne privat, nu intră în API/log/manifest, iar conflictul de identitate sau provenance incomplet oprește batchul înainte de orice write.
 
+Istoricul HR nereconciliat este separat in `salary_history_rows`; API-ul
+`/salarii/archive` pastreaza accesul salarial existent. Vezi
+[contractul arhivei](docs/salary-history-archive.md) pentru identitate, versiuni
+si excluderea suprapunerilor cu salariile oficiale din estimari.
+
 ### Grila de salarizare ASM (Management -> Manageri)
 
 Pentru ASM-ii activati (momentan `Mihai Condorateanu`), subsectiunea
