@@ -1,13 +1,13 @@
 import { Building2, CalendarRange, PieChart as PieChartIcon, Users } from 'lucide-react';
-import { Bar, CartesianGrid, ComposedChart, Legend, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 
 import { Metric } from '../../components/common/DataDisplay';
 import { formatAmount, formatInt, formatPercent } from '../../lib/formatters';
 import { BreakdownTable } from './BreakdownTable';
 import type { CurrentDashboardProps } from './CurrentDashboard';
+import { CurrentDailyTrend } from './CurrentDailyTrend';
 import {
   CompactCurrency, CompactPieSection, DeltaCard, KpiPerformanceCard, PeriodTable,
-  formatCompactDonutValue, formatCompactAxisValue, getBon2AccTone, getFocusTone, sumChartValues,
+  formatCompactDonutValue, getBon2AccTone, getFocusTone, sumChartValues,
 } from './DashboardWidgets';
 
 function CurrentSummary<R extends string, S extends string, A extends string>({ model }: { model: CurrentDashboardProps<R, S, A> }) {
@@ -38,7 +38,7 @@ function CurrentComparison<R extends string, S extends string, A extends string>
 
 function CurrentCharts<R extends string, S extends string, A extends string>({ model }: { model: CurrentDashboardProps<R, S, A> }) {
   return <div data-testid="hub-chart-layout" className="grid min-w-0 items-stretch gap-3 min-[1500px]:grid-cols-[minmax(0,2fr)_minmax(320px,1fr)]">
-    <div className="glass flex min-w-0 flex-col rounded-3xl p-3 sm:p-4"><div className="mb-2 flex items-center gap-2 sm:mb-3"><CalendarRange size={16} className="text-indigo-500" /><h3 className="text-sm font-bold">Evolutie zilnica pentru {model.currentMonth}</h3></div><div className="-mx-2 aspect-[16/6] min-h-56 max-h-72 w-auto rounded-xl bg-slate-50/80 p-0.5 sm:mx-0 sm:w-full sm:rounded-2xl sm:p-2 dark:bg-slate-800/40 min-[1500px]:aspect-auto min-[1500px]:min-h-[24rem] min-[1500px]:max-h-none min-[1500px]:flex-1"><ResponsiveContainer width="100%" height="100%" minWidth={1} minHeight={1}><ComposedChart data={model.dailyChartData} margin={{ top: 4, right: 0, bottom: 0, left: 0 }}><CartesianGrid strokeDasharray="3 3" vertical={false} opacity={0.15} /><XAxis dataKey="day" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} /><YAxis yAxisId="sales" width={38} tick={{ fontSize: 10 }} tickFormatter={formatCompactAxisValue} axisLine={false} tickLine={false} /><Tooltip formatter={(value: unknown) => formatAmount(Number(value))} /><Legend /><Bar yAxisId="sales" dataKey="sales" name="Vanzari" fill="#4f46e5" radius={[8, 8, 0, 0]} /><Line yAxisId="sales" type="monotone" dataKey="sales_last_year" name="Anul trecut" stroke="#10b981" strokeWidth={2} strokeDasharray="5 3" dot={false} connectNulls /><Line yAxisId="sales" type="monotone" dataKey="sales_forecast" name="Prognoza" stroke="#f59e0b" strokeWidth={2} strokeDasharray="3 3" dot={false} connectNulls /></ComposedChart></ResponsiveContainer></div></div>
+    <CurrentDailyTrend currentMonth={model.currentMonth} data={model.dailyChartData} />
     <div className="glass flex min-w-0 flex-col rounded-3xl p-3 sm:p-4"><div className="mb-2 flex items-center gap-2 sm:mb-3"><PieChartIcon size={16} className="text-indigo-500" /><h3 className="text-sm font-bold">Top categorii si branduri</h3></div><div className="grid min-w-0 flex-1 gap-2 min-[1500px]:grid-rows-2"><CompactPieSection title="Top categorii" emptyLabel="Nu exista categorii disponibile pentru filtrarea curenta." pieData={model.categoryMixChartData} dataKey="sales_total" nameKey="category" valueFormatter={formatAmount} centerValue={formatCompactDonutValue(sumChartValues(model.categoryMixChartData, 'sales_total'))} compact /><CompactPieSection title="Branduri compatibile" emptyLabel="Nu exista date pentru brandurile urmarite." pieData={model.brandMixChartData} dataKey="sales_total" nameKey="brand" valueFormatter={formatAmount} centerValue={formatCompactDonutValue(sumChartValues(model.brandMixChartData, 'sales_total'))} compact /></div></div>
   </div>;
 }
