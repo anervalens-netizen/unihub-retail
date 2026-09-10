@@ -102,7 +102,7 @@ describe('agents critical views', () => {
     fireEvent.click(screen.getByRole('tab', { name: 'Acoperire magazine' }));
     fireEvent.click(screen.getByRole('button', { name: /Cu Modificări/ }));
     fireEvent.click(screen.getByRole('button', { name: 'Miscari' }));
-    fireEvent.change(screen.getByPlaceholderText('Cauta dupa nume agent...'), { target: { value: 'bog' } });
+    fireEvent.change(screen.getByPlaceholderText('Caută după nume sau cod agent...'), { target: { value: 'bog' } });
     const selects = screen.getAllByRole('combobox');
     fireEvent.change(selects[0]!, { target: { value: 'Mobicell' } });
     fireEvent.change(selects[1]!, { target: { value: 'Beta' } });

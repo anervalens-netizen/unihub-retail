@@ -1057,6 +1057,17 @@ export const RETAIL_COMPONENT_SCHEMAS = {
         "title": "Current Status",
         "type": "string"
       },
+      "display_name": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Display Name"
+      },
       "firma": {
         "anyOf": [
           {
@@ -1067,6 +1078,28 @@ export const RETAIL_COMPONENT_SCHEMAS = {
           }
         ],
         "title": "Firma"
+      },
+      "home_site_code": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Home Site Code"
+      },
+      "home_store_name": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Home Store Name"
       },
       "is_new": {
         "title": "Is New",

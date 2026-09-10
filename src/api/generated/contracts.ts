@@ -1,5 +1,5 @@
 /* GENERATED FILE. Run npm run contracts:generate; do not edit manually. */
-export const RETAIL_OPENAPI_SHA256 = '323a2a753d12300e21b6e5ff93d0556faffa5d1d4b9990d27861e3b7e1f29b16' as const; // pragma: allowlist secret
+export const RETAIL_OPENAPI_SHA256 = '3006b175702c51e6dd4685958e167768966f386945f5f72a607b3e780cc17ba5' as const; // pragma: allowlist secret
 
 export type RetailDecimal = string & { readonly __retailDecimal: unique symbol };
 
@@ -154,7 +154,10 @@ export interface RetailAgentListItem {
   "active_in_month": boolean;
   "agent": string;
   "current_status": "active" | "inactive_recent" | "churned";
+  "display_name"?: string | null;
   "firma"?: string | null;
+  "home_site_code"?: string | null;
+  "home_store_name"?: string | null;
   "is_new": boolean;
   "is_reactivated": boolean;
   "store_name"?: string | null;

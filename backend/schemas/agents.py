@@ -82,6 +82,9 @@ class AgentMovementResponse(StrictApiModel):
 
 class AgentListItem(StrictApiModel):
     agent: str
+    display_name: str | None = None
+    home_site_code: str | None = None
+    home_store_name: str | None = None
     store_name: str | None = None
     firma: str | None = None
     active_in_month: bool
