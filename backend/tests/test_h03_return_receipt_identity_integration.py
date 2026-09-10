@@ -70,16 +70,22 @@ async def _seed_dashboard_rows(conn: asyncpg.Connection) -> int:
     )
     assert snapshot is not None
 
+    # Lot 23: the reporting read model materializes the canonical return count,
+    # so the fixture must carry the day-grain value the refresh would produce and
+    # its day-model sum on the month row.
     await conn.execute(
         """
         INSERT INTO reporting_agent_day
             (import_month, sale_date, site_code, locatie, firma, regional, asm, agent,
              total_sales, total_quantity, focus_quantity, receipt_count, receipt_2plus_count,
-             receipt_1_count, receipt_2_count, receipt_3_count, receipt_4plus_count)
+             receipt_1_count, receipt_2_count, receipt_3_count, receipt_4plus_count,
+             return_receipt_count)
         VALUES
-            ($1, DATE '2099-11-01', $2, 'H03 Store A', 'Mobiup', $4, $4, $5, 100, 1, 0, 1, 0, 1, 0, 0, 0),
-            ($1, DATE '2099-11-01', $2, 'H03 Store A', 'Mobiup', $4, $4, $6, 100, 1, 0, 1, 0, 1, 0, 0, 0),
-            ($1, DATE '2099-11-01', $3, 'H03 Store B', 'Mobiup', $4, $4, $5, 100, 1, 0, 1, 0, 1, 0, 0, 0)
+            ($1, DATE '2099-11-01', $2, 'H03 Store A', 'Mobiup', $4, $4, $5, 100, 1, 0, 1, 0, 1, 0, 0, 0, 1),
+            ($1, DATE '2099-11-02', $2, 'H03 Store A', 'Mobiup', $4, $4, $5, 100, 1, 0, 1, 0, 1, 0, 0, 0, 1),
+            ($1, DATE '2099-11-03', $2, 'H03 Store A', 'Mobiup', $4, $4, $5, 100, 1, 0, 1, 0, 1, 0, 0, 0, 1),
+            ($1, DATE '2099-11-01', $2, 'H03 Store A', 'Mobiup', $4, $4, $6, 100, 1, 0, 1, 0, 1, 0, 0, 0, 1),
+            ($1, DATE '2099-11-01', $3, 'H03 Store B', 'Mobiup', $4, $4, $5, 100, 1, 0, 1, 0, 1, 0, 0, 0, 1)
         """,
         _MONTH,
         _SITE_A,
@@ -93,11 +99,12 @@ async def _seed_dashboard_rows(conn: asyncpg.Connection) -> int:
         INSERT INTO reporting_agent_month
             (import_month, site_code, locatie, firma, regional, asm, agent,
              total_sales, total_quantity, focus_quantity, receipt_count, receipt_2plus_count,
-             receipt_1_count, receipt_2_count, receipt_3_count, receipt_4plus_count, working_days)
+             receipt_1_count, receipt_2_count, receipt_3_count, receipt_4plus_count,
+             return_receipt_count, working_days)
         VALUES
-            ($1, $2, 'H03 Store A', 'Mobiup', $4, $4, $5, 100, 1, 0, 1, 0, 1, 0, 0, 0, 1),
-            ($1, $2, 'H03 Store A', 'Mobiup', $4, $4, $6, 100, 1, 0, 1, 0, 1, 0, 0, 0, 1),
-            ($1, $3, 'H03 Store B', 'Mobiup', $4, $4, $5, 100, 1, 0, 1, 0, 1, 0, 0, 0, 1)
+            ($1, $2, 'H03 Store A', 'Mobiup', $4, $4, $5, 300, 3, 0, 3, 0, 3, 0, 0, 0, 3, 3),
+            ($1, $2, 'H03 Store A', 'Mobiup', $4, $4, $6, 100, 1, 0, 1, 0, 1, 0, 0, 0, 1, 1),
+            ($1, $3, 'H03 Store B', 'Mobiup', $4, $4, $5, 100, 1, 0, 1, 0, 1, 0, 0, 0, 1, 1)
         """,
         _MONTH,
         _SITE_A,

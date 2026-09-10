@@ -89,6 +89,26 @@ async def test_rebuild_reporting_month_applies_destructive_steps_and_scope_guard
     assert "CASE WHEN fp.item_code IS NOT NULL THEN st.quantity ELSE 0 END" in agent_day_insert
     assert "FILTER (WHERE tr.net_quantity > 0)::INT AS receipt_count" in agent_day_insert
     assert "NOT st.is_return" not in agent_day_insert
+    # Lot 23: the day model materializes the canonical return-receipt count from
+    # raw rows; a return is decided by negative rows, never by the receipt
+    # net-quantity bucket.
+    return_receipt_expression = agent_day_insert.split(
+        ")::INT AS return_receipt_count", 1
+    )[0].rsplit(",", 1)[1]
+    assert "COUNT(DISTINCT st.bon_nr)" in return_receipt_expression
+    assert "st.quantity < 0" in return_receipt_expression
+    assert "st.bon_nr IS NOT NULL" in return_receipt_expression
+    assert "tr." not in return_receipt_expression
+
+    agent_month_insert = next(
+        statement
+        for statement in sql
+        if "INSERT INTO reporting_agent_month" in statement
+    )
+    assert (
+        "COALESCE(SUM(return_receipt_count), 0)::INT AS return_receipt_count"
+        in agent_month_insert
+    )
 
     focus_insert = next(
         statement

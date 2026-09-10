@@ -84,6 +84,7 @@ def test_load_sales_dataframe_normalizes_and_flags_rows() -> None:
     assert detect_month(frame) == "2099-07"
     assert list(frame["SiteCode"]) == ["SITE01", "SITE02"]
     assert list(frame["Firma"]) == ["Mobiup", "MobiCell"]
+    assert list(frame["Agent"]) == ["Agent", "Agent"]
     assert list(frame["Nr"]) == ["BON-A1", "BON2"]
     assert list(frame["Pret"]) == [10.125, 0.0]
     assert list(frame["Valoare"]) == [20.255, 0.0]
