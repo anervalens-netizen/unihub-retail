@@ -60,6 +60,7 @@ export function historyStoreDataGridColumns<Key extends string>(
       : { kind: 'number' as const },
     defaultDirection: ASC_KEYS.has(column.key) ? 'asc' as const : 'desc' as const,
     hideable: column.key !== 'locatie',
+    fixedLeft: column.key === 'locatie',
     exportHeader: column.label,
     exportValue: (row) => {
       const value = storeValue(row, column.key);

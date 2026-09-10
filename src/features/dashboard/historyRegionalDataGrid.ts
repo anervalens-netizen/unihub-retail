@@ -62,6 +62,7 @@ export function historyRegionalDataGridColumns<Key extends string>(
       : { kind: 'number' as const },
     defaultDirection: column.key === 'regional' ? 'asc' as const : 'desc' as const,
     hideable: column.key !== 'regional',
+    fixedLeft: column.key === 'regional',
     exportHeader: EXPORT_HEADERS[column.key] ?? column.label,
     exportValue: (row) => {
       const value = regionalValue(row, column.key);

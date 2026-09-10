@@ -55,6 +55,7 @@ export function historyAgentDataGridColumns<Key extends string>(
       : { kind: 'number' as const },
     defaultDirection: ASC_KEYS.has(column.key) ? 'asc' as const : 'desc' as const,
     hideable: column.key !== 'agent',
+    fixedLeft: column.key === 'agent',
     exportHeader: column.label,
     exportValue: (row) => {
       const value = agentValue(row, column.key);

@@ -112,6 +112,10 @@ function useDataGridState<Row, Key extends string>({
       .map((column) => column.key),
     [columns],
   );
+  const fixedLeftKey = useMemo(
+    () => columns.find((column) => column.fixedLeft)?.key,
+    [columns],
+  );
   const [sorts, setSorts] = useState<DataGridSort<Key>[]>(
     () => initialSort.map((sort) => ({ ...sort })),
   );
@@ -121,10 +125,11 @@ function useDataGridState<Row, Key extends string>({
   const [hidden, setHidden] = useState<Key[]>([]);
   const widthState = useDataGridColumnWidths<Key>();
 
-  const normalizedOrder = useMemo(
-    () => normalizeColumnOrder(allKeys, order),
-    [allKeys, order],
-  );
+  const normalizedOrder = useMemo(() => {
+    const normalized = normalizeColumnOrder(allKeys, order);
+    if (!fixedLeftKey || !normalized.includes(fixedLeftKey)) return normalized;
+    return [fixedLeftKey, ...normalized.filter((key) => key !== fixedLeftKey)];
+  }, [allKeys, fixedLeftKey, order]);
   const visibleKeys = useMemo(
     () => visibleColumnKeys(allKeys, {
       order: normalizedOrder,
@@ -191,6 +196,7 @@ function useDataGridState<Row, Key extends string>({
     defaultAscKeys,
     exportColumns,
     filters,
+    fixedLeftKey,
     globalSearch,
     hidden,
     normalizedOrder,
@@ -231,6 +237,7 @@ function DataGridHead<Row, Key extends string>({
   sorts,
   filters,
   columnWidths,
+  fixedLeftKey,
   onSort,
   onFilter,
   onResizeColumn,
@@ -240,6 +247,7 @@ function DataGridHead<Row, Key extends string>({
   sorts: readonly DataGridSort<Key>[];
   filters: DataGridFilters<Key>;
   columnWidths: DataGridColumnWidths<Key>;
+  fixedLeftKey?: Key;
   onSort: (key: Key, append: boolean) => void;
   onFilter: (key: Key, filter: DataGridFilterValue | undefined) => void;
   onResizeColumn: (key: Key, width: number | undefined) => void;
@@ -256,6 +264,7 @@ function DataGridHead<Row, Key extends string>({
             ? sort?.direction === 'asc' ? 'ascending' : 'descending'
             : undefined;
           const width = columnWidths[column.key];
+          const fixedLeft = column.key === fixedLeftKey;
           return (
             <th
               key={column.key}
@@ -263,7 +272,7 @@ function DataGridHead<Row, Key extends string>({
               aria-sort={ariaSort}
               data-testid={`data-grid-header-${column.key}`}
               style={columnWidthStyle(width)}
-              className={`relative px-1.5 py-1.5 align-bottom text-[11px] font-bold leading-tight ${column.headerClassName ?? ''}`}
+              className={`${fixedLeft ? 'sticky left-0 z-20 border-r border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800' : 'relative'} px-1.5 py-1.5 align-bottom text-[11px] font-bold leading-tight ${column.headerClassName ?? ''}`}
             >
               <button
                 type="button"
@@ -312,20 +321,23 @@ function DataGridHead<Row, Key extends string>({
       </tr>
       {hasFilters && (
         <tr className="border-t border-slate-200/80 dark:border-slate-700">
-          {columns.map((column) => (
-            <td
-              key={column.key}
-              style={columnWidthStyle(columnWidths[column.key])}
-              className="px-1 py-1 align-top"
-              data-testid={`data-grid-filter-cell-${column.key}`}
-            >
-              <DataGridFilterControl
-                column={column}
-                filter={filters[column.key]}
-                onChange={(filter) => onFilter(column.key, filter)}
-              />
-            </td>
-          ))}
+          {columns.map((column) => {
+            const fixedLeft = column.key === fixedLeftKey;
+            return (
+              <td
+                key={column.key}
+                style={columnWidthStyle(columnWidths[column.key])}
+                className={`${fixedLeft ? 'sticky left-0 z-20 border-r border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800' : ''} px-1 py-1 align-top`}
+                data-testid={`data-grid-filter-cell-${column.key}`}
+              >
+                <DataGridFilterControl
+                  column={column}
+                  filter={filters[column.key]}
+                  onChange={(filter) => onFilter(column.key, filter)}
+                />
+              </td>
+            );
+          })}
         </tr>
       )}
     </thead>
@@ -335,11 +347,13 @@ function DataGridHead<Row, Key extends string>({
 function DataGridBody<Row, Key extends string>({
   rows,
   columns,
+  fixedLeftKey,
   rowKey,
   emptyLabel,
 }: {
   rows: readonly Row[];
   columns: readonly DataGridColumn<Row, Key>[];
+  fixedLeftKey?: Key;
   rowKey: (row: Row, index: number) => string;
   emptyLabel: string;
 }) {
@@ -364,16 +378,21 @@ function DataGridBody<Row, Key extends string>({
         <tr
           key={rowKey(row, index)}
           data-testid="data-grid-row"
-          className="border-t border-slate-100 odd:bg-slate-50/35 hover:bg-indigo-50/50 dark:border-slate-800 dark:odd:bg-slate-900/20 dark:hover:bg-indigo-950/20"
+          className="group border-t border-slate-100 odd:bg-slate-50/35 hover:bg-indigo-50/50 dark:border-slate-800 dark:odd:bg-slate-900/20 dark:hover:bg-indigo-950/20"
         >
-          {columns.map((column) => (
-            <td
-              key={column.key}
-              className={column.cellClassName ?? 'px-1.5 py-1 whitespace-nowrap align-middle leading-tight'}
-            >
-              {column.render(row)}
-            </td>
-          ))}
+          {columns.map((column) => {
+            const fixedLeft = column.key === fixedLeftKey;
+            const cellClassName = column.cellClassName
+              ?? 'px-1.5 py-1 whitespace-nowrap align-middle leading-tight';
+            return (
+              <td
+                key={column.key}
+                className={`${cellClassName} ${fixedLeft ? 'sticky left-0 z-[5] border-r border-slate-200 bg-white group-hover:bg-indigo-50/50 dark:border-slate-700 dark:bg-slate-900 dark:group-hover:bg-indigo-950/20' : ''}`}
+              >
+                {column.render(row)}
+              </td>
+            );
+          })}
         </tr>
       ))}
     </tbody>
@@ -426,6 +445,7 @@ function DataGridToolbar<Row, Key extends string>({
   allKeys,
   order,
   hidden,
+  fixedLeftKey,
   onMove,
   onToggle,
   onResetColumns,
@@ -449,6 +469,7 @@ function DataGridToolbar<Row, Key extends string>({
   allKeys: readonly Key[];
   order: readonly Key[];
   hidden: readonly Key[];
+  fixedLeftKey?: Key;
   onMove: (key: Key, offset: -1 | 1) => void;
   onToggle: (key: Key) => void;
   onResetColumns: () => void;
@@ -488,6 +509,7 @@ function DataGridToolbar<Row, Key extends string>({
         allKeys={allKeys}
         order={order}
         hidden={hidden}
+        fixedLeftKey={fixedLeftKey}
         onMove={onMove}
         onToggle={onToggle}
         onReset={onResetColumns}
@@ -500,6 +522,88 @@ function DataGridToolbar<Row, Key extends string>({
         columns={exportColumns}
         rows={exportRows}
       />
+    </div>
+  );
+}
+
+function nextDataGridColumnOrder<Key extends string>(
+  allKeys: readonly Key[],
+  order: readonly Key[],
+  fixedLeftKey: Key | undefined,
+  key: Key,
+  offset: -1 | 1,
+): Key[] {
+  const index = order.indexOf(key);
+  const targetIndex = index + offset;
+  if (
+    index < 0
+    || targetIndex < 0
+    || targetIndex >= order.length
+    || key === fixedLeftKey
+    || order[targetIndex] === fixedLeftKey
+  ) return [...order];
+  return moveColumnKey(allKeys, order, key, offset);
+}
+
+function DataGridScrollTable<Row, Key extends string>({
+  tableId,
+  titleId,
+  sortStatusId,
+  columns,
+  rows,
+  sorts,
+  filters,
+  columnWidths,
+  fixedLeftKey,
+  hasVisibleCustomWidths,
+  onSort,
+  onFilter,
+  onResizeColumn,
+  rowKey,
+  emptyLabel,
+}: {
+  tableId: string;
+  titleId: string;
+  sortStatusId: string;
+  columns: readonly DataGridColumn<Row, Key>[];
+  rows: readonly Row[];
+  sorts: readonly DataGridSort<Key>[];
+  filters: DataGridFilters<Key>;
+  columnWidths: DataGridColumnWidths<Key>;
+  fixedLeftKey?: Key;
+  hasVisibleCustomWidths: boolean;
+  onSort: (key: Key, append: boolean) => void;
+  onFilter: (key: Key, filter: DataGridFilterValue | undefined) => void;
+  onResizeColumn: (key: Key, width: number | undefined) => void;
+  rowKey: (row: Row, index: number) => string;
+  emptyLabel: string;
+}) {
+  return (
+    <div className="max-h-[360px] overflow-auto rounded-b-2xl">
+      <table
+        id={tableId}
+        className={`${hasVisibleCustomWidths ? 'w-max' : 'w-full min-w-max'} table-auto text-xs`}
+        aria-labelledby={titleId}
+      >
+        <DataGridHead
+          columns={columns}
+          sorts={sorts}
+          filters={filters}
+          columnWidths={columnWidths}
+          fixedLeftKey={fixedLeftKey}
+          onSort={onSort}
+          onFilter={onFilter}
+          onResizeColumn={onResizeColumn}
+          sortStatusId={sortStatusId}
+        />
+        <DataGridBody
+          rows={rows}
+          columns={columns}
+          fixedLeftKey={fixedLeftKey}
+          rowKey={rowKey}
+          emptyLabel={emptyLabel}
+        />
+      </table>
     </div>
   );
 }
@@ -521,12 +625,10 @@ export function DataGrid<Row, Key extends string>(props: DataGridProps<Row, Key>
     state.setSorts(next);
     props.onSortChange?.(next);
   };
-
   const clearFilters = () => {
     state.setFilters({});
     state.setGlobalSearch('');
   };
-
   const resultLabel = state.viewRows.length === props.rows.length
     ? `${props.rows.length} înregistrări`
     : `${state.viewRows.length} din ${props.rows.length} înregistrări`;
@@ -558,10 +660,19 @@ export function DataGrid<Row, Key extends string>(props: DataGridProps<Row, Key>
           allKeys={state.allKeys}
           order={state.normalizedOrder}
           hidden={state.hidden}
-          onMove={(key, offset) => state.setOrder((current) =>
-            moveColumnKey(state.allKeys, current, key, offset))}
-          onToggle={(key) => state.setHidden((current) =>
-            toggleColumnVisibility(state.allKeys, current, key))}
+          fixedLeftKey={state.fixedLeftKey}
+          onMove={(key, offset) => state.setOrder(nextDataGridColumnOrder(
+            state.allKeys,
+            state.normalizedOrder,
+            state.fixedLeftKey,
+            key,
+            offset,
+          ))}
+          onToggle={(key) => {
+            if (key === state.fixedLeftKey) return;
+            state.setHidden((current) =>
+              toggleColumnVisibility(state.allKeys, current, key));
+          }}
           onResetColumns={() => {
             state.setOrder([...state.allKeys]);
             state.setHidden([]);
@@ -597,30 +708,23 @@ export function DataGrid<Row, Key extends string>(props: DataGridProps<Row, Key>
         {sortStatus}
       </p>
 
-      <div className="max-h-[360px] overflow-auto rounded-b-2xl">
-        <table
-          id={tableId}
-          className={`${state.hasVisibleCustomWidths ? 'w-max' : 'w-full min-w-max'} table-auto text-xs`}
-          aria-labelledby={titleId}
-        >
-          <DataGridHead
-            columns={state.visibleColumns}
-            sorts={state.sorts}
-            filters={state.filters}
-            columnWidths={state.columnWidths}
-            onSort={updateSort}
-            onFilter={state.setFilter}
-            onResizeColumn={state.setColumnWidth}
-            sortStatusId={sortStatusId}
-          />
-          <DataGridBody
-            rows={state.viewRows}
-            columns={state.visibleColumns}
-            rowKey={props.rowKey}
-            emptyLabel={props.emptyLabel ?? 'Nu există rezultate pentru filtrele selectate.'}
-          />
-        </table>
-      </div>
+      <DataGridScrollTable
+        tableId={tableId}
+        titleId={titleId}
+        sortStatusId={sortStatusId}
+        columns={state.visibleColumns}
+        rows={state.viewRows}
+        sorts={state.sorts}
+        filters={state.filters}
+        columnWidths={state.columnWidths}
+        fixedLeftKey={state.fixedLeftKey}
+        hasVisibleCustomWidths={state.hasVisibleCustomWidths}
+        onSort={updateSort}
+        onFilter={state.setFilter}
+        onResizeColumn={state.setColumnWidth}
+        rowKey={props.rowKey}
+        emptyLabel={props.emptyLabel ?? 'Nu există rezultate pentru filtrele selectate.'}
+      />
     </section>
   );
 }
