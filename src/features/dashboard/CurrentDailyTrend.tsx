@@ -85,7 +85,7 @@ function DailyTrendTable({ currentMonth, data }: {
       role="region"
       aria-label={`Date evolutie zilnica ${currentMonth}`}
       tabIndex={0}
-      className="h-full overflow-auto rounded-xl border border-slate-200 bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:border-slate-700 dark:bg-slate-900/60"
+      className="h-56 w-full min-w-0 overflow-auto rounded-xl border border-slate-200 bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 sm:h-72 dark:border-slate-700 dark:bg-slate-900/60 min-[1500px]:h-[24rem]"
     >
       <table className="w-full min-w-[520px] text-left text-xs">
         <caption className="sr-only">Evolutie zilnica pentru {currentMonth}</caption>
@@ -119,7 +119,7 @@ export function CurrentDailyTrend({ currentMonth, data }: {
   const [view, setView] = useState<DailyTrendView>('chart');
   const contentClassName = view === 'chart'
     ? '-mx-2 aspect-[16/6] min-h-56 max-h-72 w-auto rounded-xl bg-slate-50/80 p-0.5 sm:mx-0 sm:w-full sm:rounded-2xl sm:p-2 dark:bg-slate-800/40 min-[1500px]:aspect-auto min-[1500px]:min-h-[24rem] min-[1500px]:max-h-none min-[1500px]:flex-1'
-    : 'min-h-56 max-h-72 min-w-0 overflow-hidden min-[1500px]:min-h-[24rem] min-[1500px]:max-h-none min-[1500px]:flex-1';
+    : 'min-w-0';
 
   return (
     <ChartFrame
