@@ -14,6 +14,52 @@ persoană/zi/magazin. Ecranul, totalurile, Google și Excel folosesc această pr
 Google nu calculează o autoritate salarială separată. Nu se adaugă un serviciu,
 un sistem de autentificare sau o coadă nouă pentru acest modul.
 
+## Structura operațională confirmată — 10 septembrie 2026
+
+Sursa acestor reguli este confirmarea explicită a proprietarului în sesiunea
+Retail din 2026-09-10. Se aplică planificării din septembrie 2026 și continuării
+dezvoltării; istoricul nu se rescrie după structura curentă.
+
+- Rețeaua curentă: **70 magazine și 6 manageri regionali**.
+- Andrei Stancu are în subordine **3 Team Leaders**; celelalte regiuni nu
+  primesc artificial un nivel TL.
+- Fiecare magazin are **2 agenți de bază** în structura țintă curentă.
+  **Sun Plaza are 2 din septembrie 2026**, după 3 anterior.
+- Agenții lucrează alternativ, fiecare zi întreagă, conform programului
+  confirmat. Alternanța nu autorizează generarea automată a pontajului:
+  concediile, schimburile și suplimentările sunt excepții explicite.
+- Cei doi agenți de bază nu limitează la două persoane pontajul magazinului:
+  TL și suplimentarii pot participa în zilele lor efective.
+- `site_code` identifică magazinul; `agent_code` identifică codul de vânzare.
+  Persoana stabilă, codurile ei și alocarea lunară la magazin sunt noțiuni
+  separate. Numele complet provine din identitatea HR asociată, nu din
+  interpretarea codului, asemănarea numelor sau suma vânzărilor.
+- Lista agenților, catalogul Grile și alocarea pe magazine trebuie să consume
+  aceeași identitate confirmată. Legătura existentă este
+  `agent_salary_links.person_id -> salary_private.people.person_id`; sursa
+  numelui salarial este `salary_records`. Nu se publică CNP sau valori salariale
+  pentru a afișa numele în lista de personal.
+- Magazinul de bază confirmat se păstrează în `grile_calendar_roster` pentru
+  luna respectivă. Magazinul cu cele mai multe vânzări este doar o observație,
+  nu dovada apartenenței. Fără vânzări nu înseamnă automat agent plecat.
+- O asociere istorică `auto/medium` nu devine o confirmare nouă a proprietarului.
+  Identitățile lipsă/ambigue, aliasurile de cod și alocările neconfirmate trebuie
+  rezolvate explicit înainte de a declara catalogul exact.
+- Firmele Mobiup și MobiCell rămân distincte; unificarea persoanei nu contopește
+  salariile sau obligațiile celor două firme.
+
+Verificare read-only la 2026-09-10: catalogul comercial confirmă 70 magazine /
+6 manageri. Septembrie are 142 coduri cu vânzări (145 perechi cod/magazin),
+121 cu legătură salarială existentă, 21 fără; 6 dintre cele 121 folosesc cel
+puțin o asociere `auto/medium`. Ultimele salarii importate sunt iunie 2026.
+Grile are 42 agenți de bază în 21 magazine plus 3 TL confirmați pentru septembrie.
+Aceste cifre sunt un snapshot, nu valori de introdus în cod și nici dovada că
+restul magazinelor nu au personal. Restul de 49 magazine necesită reconcilierea
+catalogului lunar. `LAUR` în Grile față de `CLAURENTIU` în reporting este o
+posibilă identitate comună ce a fost trimisă proprietarului pentru confirmare;
+nu se reunește automat. `CHIRILAC` există în catalogul lunar fără vânzări în
+septembrie la data verificării și nu se elimină din acest motiv.
+
 ## Reguli de business confirmate
 
 | ID | Regulă confirmată |

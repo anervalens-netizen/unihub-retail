@@ -126,6 +126,10 @@ Never commit `.npmrc` or Verdaccio tokens; run
 
 ## Business invariants
 
+- For agent identity, home-store assignment and Grile planning, read the confirmed
+  operational structure in `docs/grile-v2-product-contract.md` (2026-09-10).
+  Sales activity is not confirmed staffing; preserve explicit identity and monthly roster evidence.
+
 - Sales rows have no stable source-line identity. Identical visible values may
   be separate units on the same receipt; imports preserve multiplicity. See
   `docs/adr/004-sales-row-multiplicity.md`.
