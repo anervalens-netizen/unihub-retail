@@ -26,7 +26,7 @@ function mount() { return render(<QueryClientProvider client={new QueryClient({ 
 async function openStore() { await userEvent.click(await screen.findByRole('button', { name: /Magazin Alpha/ })); }
 it('exposes TL management in a month with no confirmed Team Leaders', async () => {
   mount();
-  expect(await screen.findByRole('button', { name: 'TL · Grile Team Leaders' })).toBeInTheDocument();
+  expect(await screen.findByRole('button', { name: 'Grile TL' })).toBeInTheDocument();
 });
 it('opens grouped store, shows attendance, and reopens calendar', async () => {
   mount(); await openStore();

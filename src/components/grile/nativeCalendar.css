@@ -23,3 +23,13 @@
 .native-calendar .text-slate-400 { color: #64748b; }
 .dark .native-calendar .text-slate-500, .dark .native-calendar [role="tab"][aria-selected="false"] { color: #cbd5e1; }
 .dark .native-calendar .text-slate-400 { color: #94a3b8; }
+
+/* Compact overview controls; store editors retain their touch-friendly sizing. */
+.calendar-summary .native-field { min-height: 36px; margin-top: .25rem; padding: .375rem .625rem; border-radius: .5rem; }
+.calendar-summary .native-secondary { min-height: 36px; padding: .375rem .75rem; border-radius: .5rem; }
+.calendar-summary .calendar-month { display: flex; align-items: center; gap: .5rem; }
+.calendar-summary .calendar-month .native-field { width: auto; margin-top: 0; }
+@media (pointer: coarse) {
+  .calendar-summary .native-field, .calendar-summary .native-secondary { min-height: 44px; }
+  .calendar-groups summary { min-height: 44px; }
+}

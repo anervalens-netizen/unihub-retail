@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../../auth/AuthContext';
 import { canAccessManagement, canWriteBusinessData } from '../../auth/permissions';
@@ -12,7 +12,7 @@ import { Attendance } from './Attendance';
 import { StoreHoursEditor } from './StoreHoursEditor';
 import { CalendarDayEditor } from './CalendarDayEditor';
 import { CalendarExtras } from './CalendarExtras';
-import { CalendarDays, X } from 'lucide-react';
+import { X } from 'lucide-react';
 import { SegmentedTabs } from '../common/SegmentedTabs';
 import { CalendarOverview } from './CalendarOverview';
 import './nativeCalendar.css';
@@ -22,10 +22,11 @@ export function NativeCalendar({ initialMonth }: { initialMonth?: string }) {
   const { user } = useAuth();
   const [month, setMonth] = useState(initialMonth || getCurrentYearMonth());
   if (!canAccessManagement(user?.profile)) return <p>Calendarul este disponibil echipei de management.</p>;
-  return <section className="native-calendar space-y-4"><div className="flex flex-wrap items-center justify-between gap-3 px-1"><div className="flex items-center gap-2 text-slate-700 dark:text-slate-200"><CalendarDays size={20} className="text-indigo-500" /><h2 className="text-lg font-bold">Program V2</h2></div><label className="native-label">Luna programului<input aria-label="Luna programului" type="month" value={month} min="2000-01" max="2100-12" onChange={e => { if (/^(20\d{2}|2100)-(0[1-9]|1[0-2])$/.test(e.target.value)) setMonth(e.target.value); }} className="native-field" /></label></div><CalendarMonth key={month} month={month} writable={canWriteBusinessData(user?.profile)} /></section>;
+  const monthPicker = <label className="native-label calendar-month">Luna<input aria-label="Luna programului" type="month" value={month} min="2000-01" max="2100-12" onChange={e => { if (/^(20\d{2}|2100)-(0[1-9]|1[0-2])$/.test(e.target.value)) setMonth(e.target.value); }} className="native-field" /></label>;
+  return <section className="native-calendar"><CalendarMonth key={month} month={month} monthPicker={monthPicker} writable={canWriteBusinessData(user?.profile)} /></section>;
 }
 
-function CalendarMonth({ month, writable }: { month: string; writable: boolean }) {
+function CalendarMonth({ month, writable, monthPicker }: { month: string; writable: boolean; monthPicker: ReactNode }) {
   const [selected, setSelected] = useState<CalendarStore | null>(null);
   const stores = useQuery({ queryKey: ['calendar-stores'], queryFn: ({ signal }) => calendarStores(signal) });
   const calendar = useQuery({ queryKey: ['native-calendar', month], queryFn: ({ signal }) => readCalendar(month, signal) });
@@ -38,9 +39,8 @@ function CalendarMonth({ month, writable }: { month: string; writable: boolean }
     if (site_code === 'TL') continue;
     if (!eligible.some(s => s.site_code === site_code)) eligible.push({ site_code, locatie: `${site_code} · doar corectări`, firma: '', regional: 'Magazine indisponibile — corectări', asm: '', cleanupOnly: true });
   }
-  return <div className="space-y-4">
-    <button className="native-secondary" onClick={() => setSelected({ site_code: 'TL', locatie: 'TL · Team Leaders', firma: '', regional: '', asm: '', virtualBase: true })}>TL · Grile Team Leaders</button>
-    <CalendarOverview stores={eligible} data={calendar.data} downloading={download.isPending} refreshing={calendar.isFetching} onDownload={() => download.mutate()} onSelect={setSelected} />
+  return <div className="calendar-overview space-y-2">
+    <CalendarOverview headerActions={<>{monthPicker}<button className="native-secondary" onClick={() => setSelected({ site_code: 'TL', locatie: 'Team Leaders', firma: '', regional: '', asm: '', virtualBase: true })}>Grile TL</button></>} stores={eligible} data={calendar.data} downloading={download.isPending} refreshing={calendar.isFetching} onDownload={() => download.mutate()} onSelect={setSelected} />
     {download.isError && <p role="alert" className="rounded-2xl bg-rose-50 p-4 text-sm text-rose-700">Exportul nu a reușit. Reîncarcă programul înainte de a încerca din nou. <button className="native-secondary" onClick={() => void calendar.refetch()}>Reîncarcă pontajele</button></p>}
     {selected && <StoreCalendar key={selected.site_code} month={month} store={selected} stores={eligible} data={calendar.data} refreshing={calendar.isFetching} writable={writable} onClose={() => setSelected(null)} />}
   </div>;
