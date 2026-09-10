@@ -526,6 +526,88 @@ function DataGridToolbar<Row, Key extends string>({
   );
 }
 
+function nextDataGridColumnOrder<Key extends string>(
+  allKeys: readonly Key[],
+  order: readonly Key[],
+  fixedLeftKey: Key | undefined,
+  key: Key,
+  offset: -1 | 1,
+): Key[] {
+  const index = order.indexOf(key);
+  const targetIndex = index + offset;
+  if (
+    index < 0
+    || targetIndex < 0
+    || targetIndex >= order.length
+    || key === fixedLeftKey
+    || order[targetIndex] === fixedLeftKey
+  ) return [...order];
+  return moveColumnKey(allKeys, order, key, offset);
+}
+
+function DataGridScrollTable<Row, Key extends string>({
+  tableId,
+  titleId,
+  sortStatusId,
+  columns,
+  rows,
+  sorts,
+  filters,
+  columnWidths,
+  fixedLeftKey,
+  hasVisibleCustomWidths,
+  onSort,
+  onFilter,
+  onResizeColumn,
+  rowKey,
+  emptyLabel,
+}: {
+  tableId: string;
+  titleId: string;
+  sortStatusId: string;
+  columns: readonly DataGridColumn<Row, Key>[];
+  rows: readonly Row[];
+  sorts: readonly DataGridSort<Key>[];
+  filters: DataGridFilters<Key>;
+  columnWidths: DataGridColumnWidths<Key>;
+  fixedLeftKey?: Key;
+  hasVisibleCustomWidths: boolean;
+  onSort: (key: Key, append: boolean) => void;
+  onFilter: (key: Key, filter: DataGridFilterValue | undefined) => void;
+  onResizeColumn: (key: Key, width: number | undefined) => void;
+  rowKey: (row: Row, index: number) => string;
+  emptyLabel: string;
+}) {
+  return (
+    <div className="max-h-[360px] overflow-auto rounded-b-2xl">
+      <table
+        id={tableId}
+        className={`${hasVisibleCustomWidths ? 'w-max' : 'w-full min-w-max'} table-auto text-xs`}
+        aria-labelledby={titleId}
+      >
+        <DataGridHead
+          columns={columns}
+          sorts={sorts}
+          filters={filters}
+          columnWidths={columnWidths}
+          fixedLeftKey={fixedLeftKey}
+          onSort={onSort}
+          onFilter={onFilter}
+          onResizeColumn={onResizeColumn}
+          sortStatusId={sortStatusId}
+        />
+        <DataGridBody
+          rows={rows}
+          columns={columns}
+          fixedLeftKey={fixedLeftKey}
+          rowKey={rowKey}
+          emptyLabel={emptyLabel}
+        />
+      </table>
+    </div>
+  );
+}
+
 export function DataGrid<Row, Key extends string>(props: DataGridProps<Row, Key>) {
   const state = useDataGridState(props);
   const titleId = useId();
@@ -543,12 +625,10 @@ export function DataGrid<Row, Key extends string>(props: DataGridProps<Row, Key>
     state.setSorts(next);
     props.onSortChange?.(next);
   };
-
   const clearFilters = () => {
     state.setFilters({});
     state.setGlobalSearch('');
   };
-
   const resultLabel = state.viewRows.length === props.rows.length
     ? `${props.rows.length} înregistrări`
     : `${state.viewRows.length} din ${props.rows.length} înregistrări`;
@@ -581,20 +661,13 @@ export function DataGrid<Row, Key extends string>(props: DataGridProps<Row, Key>
           order={state.normalizedOrder}
           hidden={state.hidden}
           fixedLeftKey={state.fixedLeftKey}
-          onMove={(key, offset) => {
-            const index = state.normalizedOrder.indexOf(key);
-            const targetIndex = index + offset;
-            if (
-              index < 0
-              || targetIndex < 0
-              || targetIndex >= state.normalizedOrder.length
-              || key === state.fixedLeftKey
-              || state.normalizedOrder[targetIndex] === state.fixedLeftKey
-            ) return;
-            state.setOrder(
-              moveColumnKey(state.allKeys, state.normalizedOrder, key, offset),
-            );
-          }}
+          onMove={(key, offset) => state.setOrder(nextDataGridColumnOrder(
+            state.allKeys,
+            state.normalizedOrder,
+            state.fixedLeftKey,
+            key,
+            offset,
+          ))}
           onToggle={(key) => {
             if (key === state.fixedLeftKey) return;
             state.setHidden((current) =>
@@ -635,32 +708,23 @@ export function DataGrid<Row, Key extends string>(props: DataGridProps<Row, Key>
         {sortStatus}
       </p>
 
-      <div className="max-h-[360px] overflow-auto rounded-b-2xl">
-        <table
-          id={tableId}
-          className={`${state.hasVisibleCustomWidths ? 'w-max' : 'w-full min-w-max'} table-auto text-xs`}
-          aria-labelledby={titleId}
-        >
-          <DataGridHead
-            columns={state.visibleColumns}
-            sorts={state.sorts}
-            filters={state.filters}
-            columnWidths={state.columnWidths}
-            fixedLeftKey={state.fixedLeftKey}
-            onSort={updateSort}
-            onFilter={state.setFilter}
-            onResizeColumn={state.setColumnWidth}
-            sortStatusId={sortStatusId}
-          />
-          <DataGridBody
-            rows={state.viewRows}
-            columns={state.visibleColumns}
-            fixedLeftKey={state.fixedLeftKey}
-            rowKey={props.rowKey}
-            emptyLabel={props.emptyLabel ?? 'Nu există rezultate pentru filtrele selectate.'}
-          />
-        </table>
-      </div>
+      <DataGridScrollTable
+        tableId={tableId}
+        titleId={titleId}
+        sortStatusId={sortStatusId}
+        columns={state.visibleColumns}
+        rows={state.viewRows}
+        sorts={state.sorts}
+        filters={state.filters}
+        columnWidths={state.columnWidths}
+        fixedLeftKey={state.fixedLeftKey}
+        hasVisibleCustomWidths={state.hasVisibleCustomWidths}
+        onSort={updateSort}
+        onFilter={state.setFilter}
+        onResizeColumn={state.setColumnWidth}
+        rowKey={props.rowKey}
+        emptyLabel={props.emptyLabel ?? 'Nu există rezultate pentru filtrele selectate.'}
+      />
     </section>
   );
 }
