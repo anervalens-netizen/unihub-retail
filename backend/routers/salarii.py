@@ -256,6 +256,11 @@ async def create_salary_export_operation(
 
 @router.get("/archive", response_model=SalaryArchiveResponse)
 async def salary_archive(
+    data_source: Literal["history", "recorded"] = Query("history"),
+    name_exact: BoundedText120 | None = Query(None),
+    location_exact: BoundedText120 | None = Query(None),
+    person_id: str | None = Query(None, pattern=r"^sp1_[0-9a-f]{64}$"),
+    source_company: BoundedText120 | None = Query(None),
     year: int | None = Query(None, ge=2015, le=2100),
     month: MonthNumber | None = Query(None),
     search: BoundedText120 | None = Query(None),
@@ -267,13 +272,18 @@ async def salary_archive(
     offset: Offset100000 = Query(0, ge=0, le=100_000),
     svc: SalariiService = Depends(get_salarii_service),
 ):
-    return await svc.get_salary_archive(year=year, month=month, search=search,
+    return await svc.get_salary_archive(data_source=data_source,name_exact=name_exact,location_exact=location_exact,person_id=person_id,source_company=source_company,year=year, month=month, search=search,
         company_name=company_name, site_code=site_code, regional=regional,
         asm=asm, limit=limit, offset=offset)
 
 
 @router.get("/archive/summary", response_model=SalaryArchiveSummary)
 async def salary_archive_summary(
+    data_source: Literal["history", "recorded"] = Query("history"),
+    name_exact: BoundedText120 | None = Query(None),
+    location_exact: BoundedText120 | None = Query(None),
+    person_id: str | None = Query(None, pattern=r"^sp1_[0-9a-f]{64}$"),
+    source_company: BoundedText120 | None = Query(None),
     year: int | None = Query(None, ge=2015, le=2100),
     month: MonthNumber | None = Query(None),
     search: BoundedText120 | None = Query(None),
@@ -283,5 +293,5 @@ async def salary_archive_summary(
     asm: BoundedText120 | None = Query(None),
     svc: SalariiService = Depends(get_salarii_service),
 ):
-    return await svc.get_salary_archive(summary=True,year=year,month=month,search=search,
+    return await svc.get_salary_archive(data_source=data_source,name_exact=name_exact,location_exact=location_exact,person_id=person_id,source_company=source_company,summary=True,year=year,month=month,search=search,
         company_name=company_name,site_code=site_code,regional=regional,asm=asm)

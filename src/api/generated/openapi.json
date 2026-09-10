@@ -11589,6 +11589,47 @@
         "title": "SalaryAgentsSummaryResponse",
         "type": "object"
       },
+      "SalaryArchiveAgent": {
+        "additionalProperties": false,
+        "properties": {
+          "avg_salary": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Avg Salary",
+            "type": "string"
+          },
+          "company_name": {
+            "title": "Company Name",
+            "type": "string"
+          },
+          "full_name": {
+            "title": "Full Name",
+            "type": "string"
+          },
+          "months": {
+            "title": "Months",
+            "type": "integer"
+          },
+          "rows": {
+            "title": "Rows",
+            "type": "integer"
+          },
+          "total": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Total",
+            "type": "string"
+          }
+        },
+        "required": [
+          "full_name",
+          "company_name",
+          "total",
+          "months",
+          "rows",
+          "avg_salary"
+        ],
+        "title": "SalaryArchiveAgent",
+        "type": "object"
+      },
       "SalaryArchiveItem": {
         "additionalProperties": false,
         "properties": {
@@ -11820,6 +11861,13 @@
       "SalaryArchiveSummary": {
         "additionalProperties": false,
         "properties": {
+          "agents": {
+            "items": {
+              "$ref": "#/components/schemas/SalaryArchiveAgent"
+            },
+            "title": "Agents",
+            "type": "array"
+          },
           "excluded_rows": {
             "title": "Excluded Rows",
             "type": "integer"
@@ -11858,7 +11906,8 @@
           "months",
           "excluded_rows",
           "monthly",
-          "stores"
+          "stores",
+          "agents"
         ],
         "title": "SalaryArchiveSummary",
         "type": "object"
@@ -25256,6 +25305,91 @@
         "parameters": [
           {
             "in": "query",
+            "name": "data_source",
+            "required": false,
+            "schema": {
+              "default": "history",
+              "enum": [
+                "history",
+                "recorded"
+              ],
+              "title": "Data Source",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "name_exact",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 120,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Name Exact"
+            }
+          },
+          {
+            "in": "query",
+            "name": "location_exact",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 120,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Location Exact"
+            }
+          },
+          {
+            "in": "query",
+            "name": "person_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "pattern": "^sp1_[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Person Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "source_company",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 120,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Source Company"
+            }
+          },
+          {
+            "in": "query",
             "name": "year",
             "required": false,
             "schema": {
@@ -25446,6 +25580,91 @@
       "get": {
         "operationId": "salary_archive_summary_salarii_archive_summary_get",
         "parameters": [
+          {
+            "in": "query",
+            "name": "data_source",
+            "required": false,
+            "schema": {
+              "default": "history",
+              "enum": [
+                "history",
+                "recorded"
+              ],
+              "title": "Data Source",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "name_exact",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 120,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Name Exact"
+            }
+          },
+          {
+            "in": "query",
+            "name": "location_exact",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 120,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Location Exact"
+            }
+          },
+          {
+            "in": "query",
+            "name": "person_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "pattern": "^sp1_[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Person Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "source_company",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 120,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Source Company"
+            }
+          },
           {
             "in": "query",
             "name": "year",

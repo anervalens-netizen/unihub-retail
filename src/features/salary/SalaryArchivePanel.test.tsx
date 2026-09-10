@@ -1,36 +1,35 @@
 // @vitest-environment jsdom
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { SalaryArchiveResponse } from '../../api/salaryArchive';
 import { SalaryArchivePanel } from './SalaryArchivePanel';
-const api = vi.hoisted(() => ({ fetch: vi.fn() }));
-vi.mock('../../api/salaryArchive', () => ({ fetchSalaryArchive: api.fetch, fetchSalaryArchiveSummary: vi.fn().mockResolvedValue({total:3000,rows:1,months:1,excluded_rows:0,monthly:[],stores:[]}) }));
-const result: SalaryArchiveResponse = { total_rows: 1, items: [{
-  period: '2020-01-01', company_name: 'Mobiup', full_name: 'Agent test', site_code: 'TEST',
-  location: 'Magazin test', total_amount: 3000, identity_status: 'conflicting', review_reasons: ['conflict'],
-  candidate_person_id: 'private-person-id', source_file: 'sursa.xls', source_sheet: 'Foaie 1', source_row: 4,
-  selected: true, pnl_eligible: false, already_recorded: true,
-}] };
-beforeEach(() => { vi.clearAllMocks(); api.fetch.mockResolvedValue(result); });
-describe('SalaryArchivePanel', () => {
-  it('keeps unresolved identity separate even when a candidate exists and flags existing official rows', async () => {
-    render(<SalaryArchivePanel />);
-    fireEvent.click(screen.getByRole('tab', {name:'Agenți'}));
-    await screen.findByText('Agent test');
-    expect(screen.getByText('Fără asociere confirmată în aplicație')).toBeTruthy();
-    expect(screen.getByText('Lună inclusă în sinteza existentă — nu se adună din nou')).toBeTruthy();
-    expect(screen.queryByText('private-person-id')).toBeNull();
-    expect(screen.queryByText('Asociere cu persoana din aplicație verificată')).toBeNull();
-  });
-  it('uses store scope over current company and resets pagination when searching', async () => {
-    api.fetch.mockResolvedValue({ ...result, total_rows: 101 });
-    render(<SalaryArchivePanel globalFilters={{ firma: 'Mobicell', rm: 'Manager', magazin: ['TEST'], agent: [] }} />);
-    fireEvent.click(screen.getByRole('tab', {name:'Agenți'}));
-    await screen.findByText('Agent test');
-    expect(api.fetch.mock.calls[0]?.[0]).toMatchObject({ site_code: ['TEST'], company_name: undefined, regional: undefined, offset: 0 });
-    fireEvent.click(screen.getByText('Înainte'));
-    await waitFor(() => expect(api.fetch.mock.calls.at(-1)?.[0].offset).toBe(50));
-    fireEvent.change(screen.getByLabelText('Caută nume în istoricul HR'), { target: { value: 'Alt nume' } });
-    await waitFor(() => expect(api.fetch.mock.calls.at(-1)?.[0]).toMatchObject({ offset: 0, search: 'Alt nume' }));
-  });
+const api=vi.hoisted(()=>({summary:vi.fn(),rows:vi.fn()}));
+vi.mock('../../api/salaryArchive',()=>({fetchSalaryArchiveSummary:api.summary,fetchSalaryArchive:api.rows}));
+const data={total:6000,rows:2,months:2,excluded_rows:0,monthly:[{period:'2026-06',company_name:'Mobiup',total:3000,rows:1},{period:'2026-07',company_name:'Mobiup',total:3000,rows:1}],stores:[{site_code:'TEST',location:'Magazin test',company_name:'Mobiup',total:6000,months:2,rows:2}],agents:[{full_name:'Agent test',company_name:'Mobiup',total:6000,months:2,rows:2,avg_salary:3000}]};
+beforeEach(()=>{
+ vi.clearAllMocks();api.summary.mockResolvedValue(data);api.rows.mockResolvedValue({total_rows:1,items:[{period:'2026-07',company_name:'Mobiup',full_name:'Agent test',site_code:'TEST',location:'Magazin test',total_amount:3000,identity_status:'missing_identifier',review_reasons:[],candidate_person_id:null,source_file:'sursa.xls',source_sheet:'Iulie',source_row:2,selected:true,pnl_eligible:true,already_recorded:false}]});
+ HTMLDialogElement.prototype.showModal=function(){this.setAttribute('open','');};
+ HTMLDialogElement.prototype.close=function(){this.removeAttribute('open');};
+});
+describe('SalaryArchivePanel',()=>{
+ it('shows aggregated names first and source rows only after opening a detail dialog',async()=>{
+  render(<SalaryArchivePanel/>);
+  fireEvent.click(screen.getByRole('tab',{name:'Agenți'}));
+  const name=await screen.findByRole('button',{name:'Agent test'});
+  expect(api.rows).not.toHaveBeenCalled();
+  expect(screen.queryByText('sursa.xls')).toBeNull();
+  fireEvent.click(name);
+  await screen.findByText('sursa.xls');
+  expect(api.rows.mock.calls.at(-1)?.[0]).toMatchObject({name_exact:'Agent test',source_company:'Mobiup',offset:0});
+  fireEvent.click(screen.getByRole('button',{name:'Închide detaliile salariale'}));
+  await waitFor(()=>expect(screen.queryByRole('dialog')).toBeNull());
+ });
+ it('keeps store and company scopes exact in the detail query',async()=>{
+  render(<SalaryArchivePanel globalFilters={{firma:'Mobicell',rm:'Manager',magazin:['TEST'],agent:[]}}/>);
+  fireEvent.click(screen.getByRole('tab',{name:'Magazine'}));
+  fireEvent.click(await screen.findByRole('button',{name:'Magazin test'}));
+  await waitFor(()=>expect(api.rows).toHaveBeenCalled());
+  expect(api.rows.mock.calls.at(-1)?.[0]).toMatchObject({site_code:['TEST'],source_company:'Mobiup'});
+  expect(api.rows.mock.calls.at(-1)?.[0].regional).toBeUndefined();
+  expect(api.rows.mock.calls.at(-1)?.[0].company_name).toBeUndefined();
+ });
 });

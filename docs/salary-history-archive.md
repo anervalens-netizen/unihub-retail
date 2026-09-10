@@ -57,3 +57,14 @@ Cele 161 pozitii nominale HR sunt distincte; 157 ating pragul mediei. Pozitiile
 fara asociere au chei locale de grupare per rand, nu person_id persistat. Numarul
 global de persoane asociate exclude aceste chei; sumele le includ. Totalul
 Mobiup este recalculat inclusiv randul2, omis de formula T81 din original.
+
+## Navigare si detalii agregate
+
+Overview este prima vizualizare, Istoric a doua. In Istoric, magazinele sunt
+grupate pe cod locatie si firma, iar numele pe text normalizat si firma. Sunt
+grupari de consultare, nu uniri de identitate. Totalurile si mediile pornesc
+de la lunile selectate; detaliile arata separat si variantele nealese.
+Ferestrele Overview/Magazine citesc strict salary_records prin campurile deja
+permise rolului web. Ferestrele Istoric/Magazine si Istoric/Agenti citesc arhiva
+cu filtre exacte pentru magazin sau nume si firma. Ambele endpointuri folosesc
+acelasi require_salary_access; nu se extind granturile si nu se afiseaza CNP.

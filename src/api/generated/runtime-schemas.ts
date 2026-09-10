@@ -11590,6 +11590,47 @@ export const RETAIL_COMPONENT_SCHEMAS = {
     "title": "SalaryAgentsSummaryResponse",
     "type": "object"
   },
+  "SalaryArchiveAgent": {
+    "additionalProperties": false,
+    "properties": {
+      "avg_salary": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Avg Salary",
+        "type": "string"
+      },
+      "company_name": {
+        "title": "Company Name",
+        "type": "string"
+      },
+      "full_name": {
+        "title": "Full Name",
+        "type": "string"
+      },
+      "months": {
+        "title": "Months",
+        "type": "integer"
+      },
+      "rows": {
+        "title": "Rows",
+        "type": "integer"
+      },
+      "total": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Total",
+        "type": "string"
+      }
+    },
+    "required": [
+      "full_name",
+      "company_name",
+      "total",
+      "months",
+      "rows",
+      "avg_salary"
+    ],
+    "title": "SalaryArchiveAgent",
+    "type": "object"
+  },
   "SalaryArchiveItem": {
     "additionalProperties": false,
     "properties": {
@@ -11821,6 +11862,13 @@ export const RETAIL_COMPONENT_SCHEMAS = {
   "SalaryArchiveSummary": {
     "additionalProperties": false,
     "properties": {
+      "agents": {
+        "items": {
+          "$ref": "#/components/schemas/SalaryArchiveAgent"
+        },
+        "title": "Agents",
+        "type": "array"
+      },
       "excluded_rows": {
         "title": "Excluded Rows",
         "type": "integer"
@@ -11859,7 +11907,8 @@ export const RETAIL_COMPONENT_SCHEMAS = {
       "months",
       "excluded_rows",
       "monthly",
-      "stores"
+      "stores",
+      "agents"
     ],
     "title": "SalaryArchiveSummary",
     "type": "object"

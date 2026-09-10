@@ -3,7 +3,7 @@ from __future__ import annotations
 class SalaryArchiveQueries:
     async def fetch_salary_archive(self, *, year=None, month=None, search=None,
                                    company_name=None, site_code=None, regional=None,
-                                   asm=None, limit=100, offset=0, summary=False):
+                                   asm=None, limit=100, offset=0, summary=False, name_exact=None, location_exact=None, person_id=None, source_company=None, data_source="history"):
         clauses, args = [], []
         def add(sql, value):
             args.append(value)
@@ -12,6 +12,14 @@ class SalaryArchiveQueries:
             add('left(h.period,4)::integer = ?', year)
         if month is not None:
             add('right(h.period,2)::integer = ?', month)
+        if name_exact:
+            add("upper(regexp_replace(trim(h.full_name),'\\s+',' ','g')) = upper(regexp_replace(trim(?),'\\s+',' ','g'))", name_exact)
+        if location_exact:
+            add('h.location = ?', location_exact)
+        if person_id:
+            add('h.candidate_person_id = ?', person_id)
+        if source_company:
+            add('lower(h.company_name) = lower(?)', source_company)
         if search:
             add('h.full_name ILIKE ?', '%'+search+'%')
         if site_code:
@@ -24,7 +32,20 @@ class SalaryArchiveQueries:
             if asm:
                 add('s.asm = ?', asm)
         where = ' AND '.join(clauses) or 'TRUE'
-        base = ' FROM salary_history_rows h LEFT JOIN stores s ON s.site_code=h.site_code WHERE '+where
+        if data_source == 'recorded':
+            source = """(SELECT id::text AS source_row_key,
+                to_char(year,'FM0000') || '-' || to_char(month,'FM00') AS period,
+                company_name,full_name,site_code,locatie AS location,total_salary AS total_amount,
+                'recorded'::text AS identity_status,ARRAY[]::text[] AS review_reasons,
+                person_id AS candidate_person_id,'Salariu înregistrat'::text AS source_file,
+                ''::text AS source_sheet,id::integer AS source_row,
+                true AS selected,false AS pnl_eligible,true AS already_recorded
+                FROM salary_records)"""
+        elif data_source == 'history':
+            source = 'salary_history_rows'
+        else:
+            raise ValueError('Unknown salary detail source')
+        base = ' FROM '+source+' h LEFT JOIN stores s ON s.site_code=h.site_code WHERE '+where
         fields = '''h.period,h.company_name,h.full_name,h.site_code,h.location,
             h.total_amount,h.identity_status,h.review_reasons,h.candidate_person_id,
             h.source_file,h.source_sheet,h.source_row,h.selected,h.pnl_eligible,
@@ -39,7 +60,8 @@ class SalaryArchiveQueries:
                     excluded = await conn.fetchval('SELECT count(*)'+base+' AND NOT (h.selected AND h.total_amount IS NOT NULL AND h.period IS NOT NULL AND h.company_name IS NOT NULL)', *args)
                     monthly = await conn.fetch('SELECT h.period, h.company_name, count(*) AS rows, sum(h.total_amount) AS total'+eligible+' GROUP BY h.period,h.company_name ORDER BY h.period DESC,h.company_name', *args)
                     stores = await conn.fetch("SELECT h.site_code, min(COALESCE(h.location,h.site_code,'Magazin neclarificat')) AS location, h.company_name, count(*) AS rows, count(DISTINCT h.period) AS months, sum(h.total_amount) AS total"+eligible+" GROUP BY h.site_code,CASE WHEN h.site_code IS NULL THEN h.location END,h.company_name ORDER BY total DESC", *args)
-                    return {'total':overview['total'],'rows':overview['rows'],'months':overview['months'],'excluded_rows':excluded,'monthly':[dict(row) for row in monthly],'stores':[dict(row) for row in stores]}
+                    agents = await conn.fetch("SELECT min(full_name) AS full_name,company_name,sum(month_total) AS total,count(*) AS months,sum(rows)::integer AS rows,COALESCE(avg(month_total) FILTER(WHERE month_total>=2000),0) AS avg_salary FROM (SELECT min(h.full_name) AS full_name,upper(regexp_replace(trim(h.full_name),'\\s+',' ','g')) AS name_key,h.company_name,h.period,sum(h.total_amount) AS month_total,count(*) AS rows"+eligible+" GROUP BY upper(regexp_replace(trim(h.full_name),'\\s+',' ','g')),h.company_name,h.period) a GROUP BY name_key,company_name ORDER BY total DESC", *args)
+                    return {'agents':[dict(row) for row in agents],'total':overview['total'],'rows':overview['rows'],'months':overview['months'],'excluded_rows':excluded,'monthly':[dict(row) for row in monthly],'stores':[dict(row) for row in stores]}
                 total = await conn.fetchval('SELECT count(*)'+base, *args)
                 rows = await conn.fetch('SELECT '+fields+base+
                     ' ORDER BY h.period DESC NULLS LAST,h.company_name,h.full_name,h.source_row_key'

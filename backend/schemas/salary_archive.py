@@ -39,6 +39,14 @@ class SalaryArchiveStore(StrictApiModel):
     months: int
     total: Decimal
 
+class SalaryArchiveAgent(StrictApiModel):
+    full_name: str
+    company_name: str
+    total: Decimal
+    months: int
+    rows: int
+    avg_salary: Decimal
+
 class SalaryArchiveSummary(StrictApiModel):
     total: Decimal
     rows: int
@@ -46,3 +54,4 @@ class SalaryArchiveSummary(StrictApiModel):
     excluded_rows: int
     monthly: list[SalaryArchiveMonth]
     stores: list[SalaryArchiveStore]
+    agents: list[SalaryArchiveAgent]
