@@ -206,6 +206,8 @@ def _monthly_history_sql(
                     WHERE st.import_month >= TO_CHAR(($1 || '-01')::DATE - ($2 - 1) * INTERVAL '1 month', 'YYYY-MM')
                       AND st.import_month <= $1
                       AND NOT st.is_cartela
+                      AND st.quantity < 0
+                      AND st.bon_nr IS NOT NULL
                       {" AND " + " AND ".join(return_store_clauses) if return_store_clauses else ""}
                     GROUP BY st.import_month
                 )
