@@ -149,4 +149,6 @@ jobs:
         run: |
           set -euo pipefail
           "$RETAIL_NODE" node_modules/@playwright/test/cli.js install chromium
-          "$RETAIL_NODE" "$RETAIL_NPM_CLI" run test:e2e -- e2e/history-v3-acceptance.spec.ts
+          "$RETAIL_NODE" "$RETAIL_NPM_CLI" run test:e2e -- \
+            e2e/history-v3-acceptance.spec.ts \
+            e2e/history-v3-fixed-identity.spec.ts
