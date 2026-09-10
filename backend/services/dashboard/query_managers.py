@@ -87,6 +87,8 @@ def _regional_base_query(
             JOIN stores s ON s.site_code = st.site_code
             WHERE st.import_month = $1
               AND NOT st.is_cartela
+              AND st.quantity < 0
+              AND st.bon_nr IS NOT NULL
               AND {return_clauses_sql}
             GROUP BY s.regional
         )
