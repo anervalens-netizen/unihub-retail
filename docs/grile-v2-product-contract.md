@@ -55,9 +55,11 @@ puțin o asociere `auto/medium`. Ultimele salarii importate sunt iunie 2026.
 Grile are 42 agenți de bază în 21 magazine plus 3 TL confirmați pentru septembrie.
 Aceste cifre sunt un snapshot, nu valori de introdus în cod și nici dovada că
 restul magazinelor nu au personal. Restul de 49 magazine necesită reconcilierea
-catalogului lunar. `LAUR` în Grile față de `CLAURENTIU` în reporting este o
-posibilă identitate comună ce a fost trimisă proprietarului pentru confirmare;
-nu se reunește automat. `CHIRILAC` există în catalogul lunar fără vânzări în
+catalogului lunar. Proprietarul a confirmat ulterior în aceeași sesiune că `LAUR` și
+`CLAURENTIU` sunt Laurențiu Cernat, cu cod canonic `CLAURENTIU`. Corectarea
+tranzacțională a catalogului din septembrie a păstrat cele două zile existente
+și componentele salariale, cu pre-image privat. Asocierea salarială folosește
+identitatea existentă unică pentru CERNAT LAURENTIU. `CHIRILAC` există în catalogul lunar fără vânzări în
 septembrie la data verificării și nu se elimină din acest motiv.
 
 ## Reguli de business confirmate

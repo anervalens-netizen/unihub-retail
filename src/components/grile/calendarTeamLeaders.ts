@@ -3,7 +3,7 @@ import type { CalendarStore } from '../../api/grileCalendar';
 // Owner-confirmed store responsibility from the September 2026 schedules.
 // Visiting shifts do not change the Team Leader responsible for a store.
 const confirmedTeams = [
-  { code: 'LAUR', label: 'Laurențiu Cernat', sites: ['PRKLK', 'CRFFEER', 'MCRFBAL', 'MEGAMALL', 'PROM', 'MC-MEGAMALL', 'PROMEN'] },
+  { code: 'CLAURENTIU', label: 'Laurențiu Cernat', sites: ['PRKLK', 'CRFFEER', 'MCRFBAL', 'MEGAMALL', 'PROM', 'MC-MEGAMALL', 'PROMEN'] },
   { code: 'VDELIA', label: 'Delia Vacalie', sites: ['AUCHMIL2', 'SUNPLZ', 'UNIRII', 'COTROCENI', 'CORALEX', 'AUCHTRIC', 'AUCHMILI', 'AFICOTRO'] },
   { code: 'DAVIDDA', label: 'TL Constanța', sites: ['CCTCIT', 'CTCORA', 'CTVIVO', 'CTCRFTOM', 'CTCITYPRK', 'CTAUCH'] },
 ];
