@@ -151,4 +151,5 @@ jobs:
           "$RETAIL_NODE" node_modules/@playwright/test/cli.js install chromium
           "$RETAIL_NODE" "$RETAIL_NPM_CLI" run test:e2e -- \
             e2e/history-v3-acceptance.spec.ts \
-            e2e/history-v3-fixed-identity.spec.ts
+            e2e/history-v3-fixed-identity.spec.ts \
+            e2e/current-daily-trend.spec.ts
