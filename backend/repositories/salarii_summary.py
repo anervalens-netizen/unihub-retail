@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncpg
+from repositories.salary_report_source import SALARY_MONTHLY_REPORT_SOURCE
 
 from domain.filter_scope import FilterInput
 from repositories.salarii_scope import MIN_SALARY_FOR_AVERAGE, _salary_scope
@@ -111,7 +112,7 @@ class SalariiSummaryQueries:
                     sr.company_name,
                     sr.site_code,
                     sr.locatie
-                FROM salary_records sr
+                FROM {SALARY_MONTHLY_REPORT_SOURCE} sr
                 {join_block}
                 {where_block}
             ),
@@ -138,7 +139,7 @@ class SalariiSummaryQueries:
                 SELECT
                     COALESCE((SELECT SUM(total_salary) FROM salary_base), 0) AS total,
                     (SELECT COUNT(*) FROM salary_base) AS record_count,
-                    (SELECT COUNT(DISTINCT agent_key) FROM salary_identified) AS agent_count,
+                    (SELECT COUNT(DISTINCT agent_key) FILTER (WHERE agent_key NOT LIKE 'hr-position:%') FROM salary_identified) AS agent_count,
                     (SELECT COUNT(*) FROM agent_months) AS agent_month_count,
                     (
                         SELECT COUNT(*)
@@ -207,7 +208,7 @@ class SalariiSummaryQueries:
                         sr.company_name,
                         sr.site_code,
                         sr.locatie
-                    FROM salary_records sr
+                    FROM {SALARY_MONTHLY_REPORT_SOURCE} sr
                     {join_block}
                     {where_block}
                 )
@@ -253,7 +254,7 @@ class SalariiSummaryQueries:
                         sr.company_name,
                         sr.site_code,
                         sr.locatie
-                    FROM salary_records sr
+                    FROM {SALARY_MONTHLY_REPORT_SOURCE} sr
                     {join_block}
                     {where_block}
                 )

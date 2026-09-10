@@ -47,3 +47,13 @@ ERP nu invalideaza statul. Legatura cu persoana din aplicatie ramane distincta
 de provenienta oficiala a documentului. Sinteza existenta pastreaza separat
 perioadele deja calculate; aceasta schimbare de prezentare nu promoveaza
 randuri in salary_records si nu modifica verificarea semnata a importului.
+
+## Iulie in tabelul lunar
+
+Citirile overview/evolution/trend includ acum iulie2026 din randurile HR selectate,
+numai daca firma/luna lipseste in salary_records. Este compozitie read-only,
+nu promovare salariala; aprobarea semnata si identitatile private nu se modifica.
+Cele 161 pozitii nominale HR sunt distincte; 157 ating pragul mediei. Pozitiile
+fara asociere au chei locale de grupare per rand, nu person_id persistat. Numarul
+global de persoane asociate exclude aceste chei; sumele le includ. Totalul
+Mobiup este recalculat inclusiv randul2, omis de formula T81 din original.

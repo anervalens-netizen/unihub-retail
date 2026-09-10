@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncpg
+from repositories.salary_report_source import SALARY_MONTHLY_REPORT_SOURCE
 
 from domain.filter_scope import FilterInput
 from repositories.salarii_scope import MIN_SALARY_FOR_AVERAGE, _salary_scope
@@ -217,7 +218,7 @@ class SalariiDetailQueries:
                         sr.company_name,
                         sr.site_code,
                         sr.locatie
-                    FROM salary_records sr
+                    FROM {SALARY_MONTHLY_REPORT_SOURCE} sr
                     {join_block}
                     {where_block}
                 ),
