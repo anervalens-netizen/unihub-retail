@@ -75,7 +75,7 @@
     "067_grile_v2_operations_read_authority.sql": "transactional",
     "068_grile_v2_forecast_digest_authority.sql": "transactional",
     "069_ai_cohort_and_transactional_outbox.sql": "transactional",
-    "074_v3_reporting_return_receipt_count.sql": "transactional"
+    "074_v3_reporting_return_receipt_count.sql": "maintenance-window"
   },
   "migrations": {
     "001_add_cartela_composite_index.sql": "7f502462f585088286f9ae60d5c4ded69fccf745342ae6ddfc34c48241514b46",
