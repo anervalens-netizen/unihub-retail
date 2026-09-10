@@ -206,6 +206,7 @@ export function DataGridColumnMenu<Row, Key extends string>({
   allKeys,
   order,
   hidden,
+  fixedLeftKey,
   onMove,
   onToggle,
   onReset,
@@ -216,6 +217,7 @@ export function DataGridColumnMenu<Row, Key extends string>({
   allKeys: readonly Key[];
   order: readonly Key[];
   hidden: readonly Key[];
+  fixedLeftKey?: Key;
   onMove: (key: Key, offset: -1 | 1) => void;
   onToggle: (key: Key) => void;
   onReset: () => void;
@@ -244,7 +246,14 @@ export function DataGridColumnMenu<Row, Key extends string>({
             const column = columns.get(key);
             if (!column) return null;
             const visible = !hiddenSet.has(key);
-            const cannotHide = column.hideable === false || (visible && visibleCount <= 1);
+            const fixedLeft = key === fixedLeftKey;
+            const cannotHide = fixedLeft
+              || column.hideable === false
+              || (visible && visibleCount <= 1);
+            const cannotMoveLeft = index === 0
+              || fixedLeft
+              || order[index - 1] === fixedLeftKey;
+            const cannotMoveRight = index === order.length - 1 || fixedLeft;
             return (
               <div key={key} className="flex items-center gap-2 rounded-lg px-1.5 py-1 hover:bg-slate-50 dark:hover:bg-slate-900">
                 <label className="flex min-w-0 flex-1 items-center gap-2 text-xs font-semibold text-slate-700 dark:text-slate-200">
@@ -260,7 +269,7 @@ export function DataGridColumnMenu<Row, Key extends string>({
                 <button
                   type="button"
                   onClick={() => onMove(key, -1)}
-                  disabled={index === 0}
+                  disabled={cannotMoveLeft}
                   aria-label={`Mută ${column.label} la stânga`}
                   className="rounded p-1 text-slate-500 hover:bg-slate-100 disabled:opacity-30 dark:hover:bg-slate-800"
                 >
@@ -269,7 +278,7 @@ export function DataGridColumnMenu<Row, Key extends string>({
                 <button
                   type="button"
                   onClick={() => onMove(key, 1)}
-                  disabled={index === order.length - 1}
+                  disabled={cannotMoveRight}
                   aria-label={`Mută ${column.label} la dreapta`}
                   className="rounded p-1 text-slate-500 hover:bg-slate-100 disabled:opacity-30 dark:hover:bg-slate-800"
                 >
