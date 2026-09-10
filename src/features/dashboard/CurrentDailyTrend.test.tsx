@@ -41,7 +41,7 @@ const data = [
 ];
 
 describe('CurrentDailyTrend', () => {
-  it('defaults to the chart and exposes the same data as an accessible table without refetch', () => {
+  it('defaults to the chart and exposes the same data as a bounded accessible table without refetch', () => {
     render(<CurrentDailyTrend currentMonth="2026-09" data={data} />);
 
     expect(screen.getByRole('heading', { name: 'Evolutie zilnica pentru 2026-09' })).toBeInTheDocument();
@@ -51,7 +51,9 @@ describe('CurrentDailyTrend', () => {
     fireEvent.change(viewSelect, { target: { value: 'table' } });
 
     expect(screen.queryByTestId('current-daily-chart')).not.toBeInTheDocument();
-    expect(screen.getByRole('region', { name: 'Date evolutie zilnica 2026-09' })).toHaveAttribute('tabindex', '0');
+    const tableRegion = screen.getByRole('region', { name: 'Date evolutie zilnica 2026-09' });
+    expect(tableRegion).toHaveAttribute('tabindex', '0');
+    expect(tableRegion).toHaveClass('h-56', 'overflow-auto', 'sm:h-72', 'min-[1500px]:h-[24rem]');
 
     const table = screen.getByRole('table');
     expect(within(table).getByText('Evolutie zilnica pentru 2026-09')).toHaveClass('sr-only');
