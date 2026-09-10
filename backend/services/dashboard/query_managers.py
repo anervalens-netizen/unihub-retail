@@ -26,7 +26,6 @@ from services.dashboard_specials import load_special_cards_config, parse_promoti
 from services.filters import FilterInput, build_scoped_params, scoped_clauses
 from services.forecast import business_forecast_factor_ctes
 from services.incentive_db import get_incentive_campaign
-from services.receipt_identity import canonical_receipt_identity_sql
 
 
 from services.dashboard.query_common import (
@@ -36,7 +35,6 @@ from services.dashboard.query_common import (
 )
 
 def _regional_base_query(
-    return_receipt_identity: str,
     current_scope: bool,
     return_clauses_sql: str,
     clauses: list[str],
@@ -78,17 +76,10 @@ def _regional_base_query(
         return_summary AS (
             SELECT
                 s.regional,
-                COUNT(DISTINCT {return_receipt_identity})
-                    FILTER (
-                        WHERE st.quantity < 0
-                          AND st.bon_nr IS NOT NULL
-                    ) AS return_receipt_count
-            FROM sales_transactions st
+                COALESCE(SUM(st.return_receipt_count), 0)::INT AS return_receipt_count
+            FROM reporting_agent_month st
             JOIN stores s ON s.site_code = st.site_code
             WHERE st.import_month = $1
-              AND NOT st.is_cartela
-              AND st.quantity < 0
-              AND st.bon_nr IS NOT NULL
               AND {return_clauses_sql}
             GROUP BY s.regional
         )
@@ -151,7 +142,6 @@ async def _fetch_regional_base_rows(
     current_scope: bool = False,
     include_closed_stores: bool = False,
 ) -> list[dict[str, Any]]:
-    return_receipt_identity = canonical_receipt_identity_sql("st")
     params, positions = build_scoped_params(
         [month],
         firma=firma,
@@ -179,7 +169,7 @@ async def _fetch_regional_base_rows(
     return_clauses_sql = " AND ".join(return_clauses)
     rows = await conn.fetch(
         _regional_base_query(
-            return_receipt_identity, current_scope, return_clauses_sql, clauses
+            current_scope, return_clauses_sql, clauses
         ),
         *params,
     )
@@ -203,7 +193,6 @@ async def _enrich_regional_campaign(
     current_scope: bool = False,
     include_closed_stores: bool = False,
 ) -> list[dict[str, Any]]:
-    return_receipt_identity = canonical_receipt_identity_sql("st")
     config, _ = load_special_cards_config()
     promotion_definition, _ = parse_promotion_definition(config, month)
     incentive_campaign = await get_incentive_campaign(conn, month)
@@ -291,7 +280,6 @@ async def _fetch_regional_stats(
     current_scope: bool = False,
     include_closed_stores: bool = False,
 ) -> list[dict[str, Any]]:
-    return_receipt_identity = canonical_receipt_identity_sql("st")
     base_rows = await _fetch_regional_base_rows(
         conn, month, firma, regional, asm, site_code, agent,
         current_scope=current_scope,

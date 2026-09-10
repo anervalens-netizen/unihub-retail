@@ -76,35 +76,47 @@ async def _insert_reporting_row(
     site_code: str,
     locatie: str,
     agent: str,
+    return_days: dict[int, int],
 ) -> None:
-    await conn.execute(
-        """
-        INSERT INTO reporting_agent_day
-            (import_month, sale_date, site_code, locatie, firma, regional, asm,
-             agent, total_sales, total_quantity, focus_quantity, receipt_count,
-             receipt_2plus_count, receipt_1_count, receipt_2_count,
-             receipt_3_count, receipt_4plus_count)
-        VALUES
-            ($1, DATE '2099-12-01', $2, $3, 'Mobiup', $4, $5, $6,
-             100, 1, 0, 1, 0, 1, 0, 0, 0)
-        """,
-        _MONTH,
-        site_code,
-        locatie,
-        _REGIONAL,
-        _ASM,
-        agent,
-    )
+    """Mirror the reporting read model for one (site, agent) pair.
+
+    Lot 23 added ``return_receipt_count`` to both reporting tables, so the
+    fixture must carry the materialized value the refresh would produce: one
+    count per day row and the day-model sum on the month row.
+    """
+    for day, return_receipt_count in return_days.items():
+        await conn.execute(
+            """
+            INSERT INTO reporting_agent_day
+                (import_month, sale_date, site_code, locatie, firma, regional, asm,
+                 agent, total_sales, total_quantity, focus_quantity, receipt_count,
+                 receipt_2plus_count, receipt_1_count, receipt_2_count,
+                 receipt_3_count, receipt_4plus_count, return_receipt_count)
+            VALUES
+                ($1, $2, $3, $4, 'Mobiup', $5, $6, $7,
+                 100, 1, 0, 1, 0, 1, 0, 0, 0, $8)
+            """,
+            _MONTH,
+            date(2099, 12, day),
+            site_code,
+            locatie,
+            _REGIONAL,
+            _ASM,
+            agent,
+            return_receipt_count,
+        )
+    day_rows = len(return_days)
     await conn.execute(
         """
         INSERT INTO reporting_agent_month
             (import_month, site_code, locatie, firma, regional, asm, agent,
              total_sales, total_quantity, focus_quantity, receipt_count,
              receipt_2plus_count, receipt_1_count, receipt_2_count,
-             receipt_3_count, receipt_4plus_count, working_days)
+             receipt_3_count, receipt_4plus_count, return_receipt_count,
+             working_days)
         VALUES
             ($1, $2, $3, 'Mobiup', $4, $5, $6,
-             100, 1, 0, 1, 0, 1, 0, 0, 0, 1)
+             100 * $7, 1 * $7, 0, $7, 0, $7, 0, 0, 0, $8, $7)
         """,
         _MONTH,
         site_code,
@@ -112,6 +124,8 @@ async def _insert_reporting_row(
         _REGIONAL,
         _ASM,
         agent,
+        day_rows,
+        sum(return_days.values()),
     )
 
 
@@ -145,14 +159,27 @@ async def _seed(conn: asyncpg.Connection) -> int:
     assert snapshot is not None
 
     # Reporting refresh includes normal/inactive retail history but excludes TR.
+    # Materialized return counts follow the canonical (day, site, agent) grain.
     await _insert_reporting_row(
-        conn, site_code=_RETAIL, locatie="Lot22 Retail", agent=_AGENT_A
+        conn,
+        site_code=_RETAIL,
+        locatie="Lot22 Retail",
+        agent=_AGENT_A,
+        return_days={1: 1, 2: 1, 3: 1},
     )
     await _insert_reporting_row(
-        conn, site_code=_RETAIL, locatie="Lot22 Retail", agent=_AGENT_B
+        conn,
+        site_code=_RETAIL,
+        locatie="Lot22 Retail",
+        agent=_AGENT_B,
+        return_days={1: 1},
     )
     await _insert_reporting_row(
-        conn, site_code=_CLOSED, locatie="Lot22 Closed", agent=_AGENT_A
+        conn,
+        site_code=_CLOSED,
+        locatie="Lot22 Closed",
+        agent=_AGENT_A,
+        return_days={1: 1},
     )
     return int(snapshot["id"])
 

@@ -87,7 +87,8 @@ _REPORTING_MONTH_SQL_5 = f"""
             receipt_1_count,
             receipt_2_count,
             receipt_3_count,
-            receipt_4plus_count
+            receipt_4plus_count,
+            return_receipt_count
         )
         SELECT
             st.import_month,
@@ -109,7 +110,12 @@ _REPORTING_MONTH_SQL_5 = f"""
             COUNT(DISTINCT st.bon_nr) FILTER (WHERE tr.net_quantity = 1)::INT AS receipt_1_count,
             COUNT(DISTINCT st.bon_nr) FILTER (WHERE tr.net_quantity = 2)::INT AS receipt_2_count,
             COUNT(DISTINCT st.bon_nr) FILTER (WHERE tr.net_quantity = 3)::INT AS receipt_3_count,
-            COUNT(DISTINCT st.bon_nr) FILTER (WHERE tr.net_quantity >= 4)::INT AS receipt_4plus_count
+            COUNT(DISTINCT st.bon_nr) FILTER (WHERE tr.net_quantity >= 4)::INT AS receipt_4plus_count,
+            COUNT(DISTINCT st.bon_nr)
+                FILTER (
+                    WHERE st.quantity < 0
+                      AND st.bon_nr IS NOT NULL
+                )::INT AS return_receipt_count
         FROM sales_transactions st
         JOIN stores s ON s.site_code = st.site_code
         LEFT JOIN focus_products fp ON fp.item_code = st.item_code
@@ -150,6 +156,7 @@ _REPORTING_MONTH_SQL_6 = f"""
             receipt_2_count,
             receipt_3_count,
             receipt_4plus_count,
+            return_receipt_count,
             working_days
         )
         SELECT
@@ -169,6 +176,7 @@ _REPORTING_MONTH_SQL_6 = f"""
             COALESCE(SUM(receipt_2_count), 0)::INT AS receipt_2_count,
             COALESCE(SUM(receipt_3_count), 0)::INT AS receipt_3_count,
             COALESCE(SUM(receipt_4plus_count), 0)::INT AS receipt_4plus_count,
+            COALESCE(SUM(return_receipt_count), 0)::INT AS return_receipt_count,
             COUNT(*)::INT AS working_days
         FROM reporting_agent_day
         WHERE import_month = $1

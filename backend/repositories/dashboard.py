@@ -3,7 +3,6 @@ from __future__ import annotations
 from typing import Any
 import asyncpg
 
-from domain.reporting_sql import canonical_receipt_identity_sql
 from domain.reporting_sql import business_forecast_factor_ctes
 
 
@@ -131,7 +130,6 @@ def _monthly_history_sql(
     sales_clauses: list[str],
     target_store_clauses: list[str],
     return_store_clauses: list[str],
-    return_receipt_identity: str,
 ) -> str:
     return f"""
                 WITH recent_months AS (
@@ -196,18 +194,11 @@ def _monthly_history_sql(
                 return_summary AS (
                     SELECT
                         st.import_month AS month,
-                        COUNT(DISTINCT {return_receipt_identity})
-                            FILTER (
-                                WHERE st.quantity < 0
-                                  AND st.bon_nr IS NOT NULL
-                            ) AS return_receipt_count
-                    FROM sales_transactions st
+                        COALESCE(SUM(st.return_receipt_count), 0)::INT AS return_receipt_count
+                    FROM reporting_agent_month st
                     JOIN stores s ON s.site_code = st.site_code
                     WHERE st.import_month >= TO_CHAR(($1 || '-01')::DATE - ($2 - 1) * INTERVAL '1 month', 'YYYY-MM')
                       AND st.import_month <= $1
-                      AND NOT st.is_cartela
-                      AND st.quantity < 0
-                      AND st.bon_nr IS NOT NULL
                       {" AND " + " AND ".join(return_store_clauses) if return_store_clauses else ""}
                     GROUP BY st.import_month
                 )
@@ -297,7 +288,6 @@ class DashboardRepository:
     ) -> list[asyncpg.Record]:
         active_pool = pool or self.pool
         store_join = "JOIN stores s ON s.site_code = agg.site_code" if current_scope else ""
-        return_receipt_identity = canonical_receipt_identity_sql("st")
         target_store_clauses = [
             clause.replace("agg.", "s.").replace("s.agent", "agg.agent")
             for clause in sales_clauses
@@ -315,7 +305,6 @@ class DashboardRepository:
                     sales_clauses,
                     target_store_clauses,
                     return_store_clauses,
-                    return_receipt_identity,
                 ),
                 *params,
             )

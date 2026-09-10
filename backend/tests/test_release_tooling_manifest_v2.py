@@ -622,9 +622,12 @@ def _base_v1_manifest_bytes() -> bytes:
 
 def test_rollback_compat_real_base_v1_equals_real_current_v2(deploy_validator) -> None:
     """A. Real transition: the base v1 manifest (d3ee8a6) and the current
-    candidate v2 manifest MUST be rollback-compatible: their canonical
-    representations compare equal because they share baseline, migrations,
-    checksums, and per-migration execution classes."""
+    candidate v2 manifest MUST stay rollback-compatible over their shared
+    migration history. The base history is append-only — baseline, migration
+    files/checksums and inferred per-migration execution classes are preserved
+    verbatim — so the base canonical view still equals the current one projected
+    onto the base migration set. Migrations appended after the base rollout are
+    additive and MUST NOT rewrite base entries."""
     base_payload = json.loads(_base_v1_manifest_bytes())
     current_payload = json.loads(
         (REPO_ROOT / "backend/db/migrations/manifest.json").read_text(
@@ -638,10 +641,26 @@ def test_rollback_compat_real_base_v1_equals_real_current_v2(deploy_validator) -
         current_payload["migrations"]
     )
 
+    base_migrations = base_payload["migrations"]
+    current_migrations = current_payload["migrations"]
+    assert current_payload["baseline"] == base_payload["baseline"]
+    assert set(base_migrations) <= set(current_migrations)
+    assert {
+        name: current_migrations[name] for name in base_migrations
+    } == base_migrations
+
     base_canonical = deploy_validator["_canonical"](base_payload)
     current_canonical = deploy_validator["_canonical"](current_payload)
-    assert base_canonical == current_canonical, (
-        "base v1 and current v2 must canonicalize identically"
+    current_shared_history = dict(current_canonical)
+    current_shared_history["migrations"] = {
+        name: current_canonical["migrations"][name] for name in base_migrations
+    }
+    current_shared_history["execution_classes"] = {
+        name: current_canonical["execution_classes"][name]
+        for name in base_migrations
+    }
+    assert base_canonical == current_shared_history, (
+        "base v1 and current v2 must canonicalize identically over the base history"
     )
 
 
