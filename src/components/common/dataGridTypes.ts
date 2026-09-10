@@ -22,6 +22,7 @@ export interface DataGridColumn<Row, Key extends string> {
   headerClassName?: string;
   cellClassName?: string;
   hideable?: boolean;
+  fixedLeft?: boolean;
   exportHeader?: string;
   exportValue?: ExportColumn<Row>['value'];
   exportFormat?: ExportColumn<Row>['format'];
