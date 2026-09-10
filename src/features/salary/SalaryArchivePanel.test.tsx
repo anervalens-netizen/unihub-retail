@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SalaryArchiveResponse } from '../../api/salaryArchive';
 import { SalaryArchivePanel } from './SalaryArchivePanel';
 const api = vi.hoisted(() => ({ fetch: vi.fn() }));
-vi.mock('../../api/salaryArchive', () => ({ fetchSalaryArchive: api.fetch }));
+vi.mock('../../api/salaryArchive', () => ({ fetchSalaryArchive: api.fetch, fetchSalaryArchiveSummary: vi.fn().mockResolvedValue({total:3000,rows:1,months:1,excluded_rows:0,monthly:[],stores:[]}) }));
 const result: SalaryArchiveResponse = { total_rows: 1, items: [{
   period: '2020-01-01', company_name: 'Mobiup', full_name: 'Agent test', site_code: 'TEST',
   location: 'Magazin test', total_amount: 3000, identity_status: 'conflicting', review_reasons: ['conflict'],
@@ -15,6 +15,7 @@ beforeEach(() => { vi.clearAllMocks(); api.fetch.mockResolvedValue(result); });
 describe('SalaryArchivePanel', () => {
   it('keeps unresolved identity separate even when a candidate exists and flags existing official rows', async () => {
     render(<SalaryArchivePanel />);
+    fireEvent.click(screen.getByRole('tab', {name:'Agenți'}));
     await screen.findByText('Agent test');
     expect(screen.getByText('Fără asociere confirmată în aplicație')).toBeTruthy();
     expect(screen.getByText('Lună inclusă în sinteza existentă — nu se adună din nou')).toBeTruthy();
@@ -24,6 +25,7 @@ describe('SalaryArchivePanel', () => {
   it('uses store scope over current company and resets pagination when searching', async () => {
     api.fetch.mockResolvedValue({ ...result, total_rows: 101 });
     render(<SalaryArchivePanel globalFilters={{ firma: 'Mobicell', rm: 'Manager', magazin: ['TEST'], agent: [] }} />);
+    fireEvent.click(screen.getByRole('tab', {name:'Agenți'}));
     await screen.findByText('Agent test');
     expect(api.fetch.mock.calls[0]?.[0]).toMatchObject({ site_code: ['TEST'], company_name: undefined, regional: undefined, offset: 0 });
     fireEvent.click(screen.getByText('Înainte'));

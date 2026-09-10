@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react';
+import { SegmentedTabs } from '../../components/common/SegmentedTabs';
+import { SalaryHistorySummaryPanel } from './SalaryHistorySummaryPanel';
 import { getApiErrorMessage } from '../../api/client';
 import { fetchSalaryArchive, type SalaryArchiveItem, type SalaryArchiveResponse } from '../../api/salaryArchive';
 import type { AppFilters } from '../../lib/appFilters';
@@ -26,6 +28,7 @@ function ArchiveRow({ item }: { item: SalaryArchiveItem }) {
 }
 
 export function SalaryArchivePanel({ globalFilters }: { globalFilters?: AppFilters }) {
+  const [view, setView] = useState<'overview' | 'stores' | 'agents'>('overview');
   const currentYear = Number(getCurrentYearMonth().slice(0, 4));
   const [search, setSearch] = useState('');
   const [year, setYear] = useState('');
@@ -63,6 +66,7 @@ export function SalaryArchivePanel({ globalFilters }: { globalFilters?: AppFilte
   const goToPage = (next: number) => { setPageScope(scopeKey); setPage(next); };
   const total = result?.total_rows ?? 0;
   return <section aria-label="Istoric state oficiale HR" className="mx-4 space-y-4 pb-4">
+    <SegmentedTabs ariaLabel="Vizualizare istoric salarii" options={[{value:'overview',label:'Overview'},{value:'stores',label:'Magazine'},{value:'agents',label:'Agenți'}]} value={view} onChange={setView} />
     <div className="rounded-2xl border border-indigo-100 bg-indigo-50 p-3 text-sm text-indigo-900 dark:border-indigo-900 dark:bg-indigo-950/30 dark:text-indigo-200">
       <h3 className="font-bold">Istoric state oficiale HR</h3>
       <p className="mt-1">Statele provin din fișierele oficiale trimise de HR. Sunt afișate inclusiv salariile foștilor angajați, după numele din document, fără să fie necesar un cod ERP. Sumele reprezintă netul și bonurile.</p>
@@ -74,6 +78,8 @@ export function SalaryArchivePanel({ globalFilters }: { globalFilters?: AppFilte
       <label className="grid gap-1 text-xs">Lună<select aria-label="Lună istoric HR" value={month} onChange={(event) => setMonth(event.target.value)} className={controlClass}><option value="">Toate lunile</option>{Array.from({ length: 12 }, (_, index) => index + 1).map((value) => <option key={value} value={value}>{String(value).padStart(2, '0')}</option>)}</select></label>
     </div>
     {!!globalFilters?.agent.length && <p className="text-xs text-slate-500">Filtrul global de cod agent nu se aplică arhivei. Folosește căutarea după nume.</p>}
+    {view !== 'agents' && <SalaryHistorySummaryPanel view={view} filters={{search:search.trim() || undefined,year:year ? Number(year) : undefined,month:month ? Number(month) : undefined,site_code:JSON.parse(siteKey) as string[],company_name:company,regional}} />}
+    {view === 'agents' && <>
     {error && <div role="alert" className="rounded-xl bg-amber-50 p-3 text-sm text-amber-900">{error} <button type="button" onClick={() => setAttempt((value) => value + 1)} className="ml-2 underline">Reîncearcă</button></div>}
     <div className="glass overflow-x-auto rounded-2xl" aria-busy={loading}>
       <table className="w-full min-w-[920px] text-left text-sm"><thead className="bg-slate-50 text-xs text-slate-500 dark:bg-slate-800"><tr>{['Lună', 'Agent / firmă / magazin', 'Net + bonuri', 'Stare', 'Sursă'].map((title) => <th key={title} scope="col" className="p-3">{title}</th>)}</tr></thead>
@@ -86,5 +92,6 @@ export function SalaryArchivePanel({ globalFilters }: { globalFilters?: AppFilte
     <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-slate-500"><span aria-live="polite">{result ? `${total ? activePage * PAGE_SIZE + 1 : 0}–${Math.min((activePage + 1) * PAGE_SIZE, total)} din ${total} rânduri` : ''}</span>
       <div className="flex gap-2"><button type="button" className={`${controlClass} disabled:opacity-40`} disabled={loading || activePage === 0} onClick={() => goToPage(activePage - 1)}>Înapoi</button><button type="button" className={`${controlClass} disabled:opacity-40`} disabled={loading || !result || (activePage + 1) * PAGE_SIZE >= total} onClick={() => goToPage(activePage + 1)}>Înainte</button></div>
     </div>
+    </>}
   </section>;
 }

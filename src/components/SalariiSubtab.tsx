@@ -11,10 +11,10 @@ function OfficialSalaryPanel({ globalFilters }: { globalFilters?: AppFilters }) 
 }
 
 export function SalariiSubtab({ globalFilters }: { globalFilters?: AppFilters }) {
-  const [view, setView] = useState<'official' | 'archive'>('archive');
+  const [view, setView] = useState<'official' | 'archive'>('official');
   return <div className="space-y-4">
     <h2 className="px-4 text-lg font-semibold">Salarii oficiale</h2>
-    <SegmentedTabs ariaLabel="Vizualizare salarii oficiale" options={[{ value: 'archive', label: 'Istoric state HR' }, { value: 'official', label: 'Sinteză existentă' }]} value={view} onChange={setView} className="mx-auto max-w-lg" />
+    <SegmentedTabs ariaLabel="Vizualizare salarii oficiale" options={[{ value: 'official', label: 'Sinteză existentă' }, { value: 'archive', label: 'Istoric' }]} value={view} onChange={setView} className="mx-auto max-w-lg" />
     {view === 'archive' ? <SalaryArchivePanel globalFilters={globalFilters} /> : <OfficialSalaryPanel globalFilters={globalFilters} />}
   </div>;
 }

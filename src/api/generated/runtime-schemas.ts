@@ -11719,6 +11719,36 @@ export const RETAIL_COMPONENT_SCHEMAS = {
     "title": "SalaryArchiveItem",
     "type": "object"
   },
+  "SalaryArchiveMonth": {
+    "additionalProperties": false,
+    "properties": {
+      "company_name": {
+        "title": "Company Name",
+        "type": "string"
+      },
+      "period": {
+        "title": "Period",
+        "type": "string"
+      },
+      "rows": {
+        "title": "Rows",
+        "type": "integer"
+      },
+      "total": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Total",
+        "type": "string"
+      }
+    },
+    "required": [
+      "period",
+      "company_name",
+      "rows",
+      "total"
+    ],
+    "title": "SalaryArchiveMonth",
+    "type": "object"
+  },
   "SalaryArchiveResponse": {
     "additionalProperties": false,
     "properties": {
@@ -11739,6 +11769,99 @@ export const RETAIL_COMPONENT_SCHEMAS = {
       "total_rows"
     ],
     "title": "SalaryArchiveResponse",
+    "type": "object"
+  },
+  "SalaryArchiveStore": {
+    "additionalProperties": false,
+    "properties": {
+      "company_name": {
+        "title": "Company Name",
+        "type": "string"
+      },
+      "location": {
+        "title": "Location",
+        "type": "string"
+      },
+      "months": {
+        "title": "Months",
+        "type": "integer"
+      },
+      "rows": {
+        "title": "Rows",
+        "type": "integer"
+      },
+      "site_code": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Site Code"
+      },
+      "total": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Total",
+        "type": "string"
+      }
+    },
+    "required": [
+      "site_code",
+      "location",
+      "company_name",
+      "rows",
+      "months",
+      "total"
+    ],
+    "title": "SalaryArchiveStore",
+    "type": "object"
+  },
+  "SalaryArchiveSummary": {
+    "additionalProperties": false,
+    "properties": {
+      "excluded_rows": {
+        "title": "Excluded Rows",
+        "type": "integer"
+      },
+      "monthly": {
+        "items": {
+          "$ref": "#/components/schemas/SalaryArchiveMonth"
+        },
+        "title": "Monthly",
+        "type": "array"
+      },
+      "months": {
+        "title": "Months",
+        "type": "integer"
+      },
+      "rows": {
+        "title": "Rows",
+        "type": "integer"
+      },
+      "stores": {
+        "items": {
+          "$ref": "#/components/schemas/SalaryArchiveStore"
+        },
+        "title": "Stores",
+        "type": "array"
+      },
+      "total": {
+        "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+        "title": "Total",
+        "type": "string"
+      }
+    },
+    "required": [
+      "total",
+      "rows",
+      "months",
+      "excluded_rows",
+      "monthly",
+      "stores"
+    ],
+    "title": "SalaryArchiveSummary",
     "type": "object"
   },
   "SalaryCompanyTotal": {
@@ -17516,6 +17639,9 @@ export const RETAIL_RESPONSE_SCHEMAS = {
   "salary_archive_salarii_archive_get": {
     "$ref": "#/components/schemas/SalaryArchiveResponse"
   },
+  "salary_archive_summary_salarii_archive_summary_get": {
+    "$ref": "#/components/schemas/SalaryArchiveSummary"
+  },
   "save_compensation_api_grile_calendar__month__compensation__agent_code__put": {
     "$ref": "#/components/schemas/CompensationEntry"
   },
@@ -17587,6 +17713,7 @@ export const RETAIL_RUNTIME_VALIDATED_OPERATIONS = new Set([
   'agents_summary_salarii_agents_summary_get',
   'agent_history_salarii_agents__person_id__history_get',
   'salary_archive_salarii_archive_get',
+  'salary_archive_summary_salarii_archive_summary_get',
   'salarii_evolution_salarii_evolution_get',
   'create_salary_export_operation_salarii_exports_operations_post',
   'salarii_overview_salarii_overview_get',

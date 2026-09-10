@@ -23,3 +23,26 @@ class SalaryArchiveItem(StrictApiModel):
 class SalaryArchiveResponse(StrictApiModel):
     items: list[SalaryArchiveItem]
     total_rows: int
+
+
+class SalaryArchiveMonth(StrictApiModel):
+    period: str
+    company_name: str
+    rows: int
+    total: Decimal
+
+class SalaryArchiveStore(StrictApiModel):
+    site_code: str | None
+    location: str
+    company_name: str
+    rows: int
+    months: int
+    total: Decimal
+
+class SalaryArchiveSummary(StrictApiModel):
+    total: Decimal
+    rows: int
+    months: int
+    excluded_rows: int
+    monthly: list[SalaryArchiveMonth]
+    stores: list[SalaryArchiveStore]

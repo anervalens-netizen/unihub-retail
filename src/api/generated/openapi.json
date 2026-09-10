@@ -11718,6 +11718,36 @@
         "title": "SalaryArchiveItem",
         "type": "object"
       },
+      "SalaryArchiveMonth": {
+        "additionalProperties": false,
+        "properties": {
+          "company_name": {
+            "title": "Company Name",
+            "type": "string"
+          },
+          "period": {
+            "title": "Period",
+            "type": "string"
+          },
+          "rows": {
+            "title": "Rows",
+            "type": "integer"
+          },
+          "total": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Total",
+            "type": "string"
+          }
+        },
+        "required": [
+          "period",
+          "company_name",
+          "rows",
+          "total"
+        ],
+        "title": "SalaryArchiveMonth",
+        "type": "object"
+      },
       "SalaryArchiveResponse": {
         "additionalProperties": false,
         "properties": {
@@ -11738,6 +11768,99 @@
           "total_rows"
         ],
         "title": "SalaryArchiveResponse",
+        "type": "object"
+      },
+      "SalaryArchiveStore": {
+        "additionalProperties": false,
+        "properties": {
+          "company_name": {
+            "title": "Company Name",
+            "type": "string"
+          },
+          "location": {
+            "title": "Location",
+            "type": "string"
+          },
+          "months": {
+            "title": "Months",
+            "type": "integer"
+          },
+          "rows": {
+            "title": "Rows",
+            "type": "integer"
+          },
+          "site_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Site Code"
+          },
+          "total": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Total",
+            "type": "string"
+          }
+        },
+        "required": [
+          "site_code",
+          "location",
+          "company_name",
+          "rows",
+          "months",
+          "total"
+        ],
+        "title": "SalaryArchiveStore",
+        "type": "object"
+      },
+      "SalaryArchiveSummary": {
+        "additionalProperties": false,
+        "properties": {
+          "excluded_rows": {
+            "title": "Excluded Rows",
+            "type": "integer"
+          },
+          "monthly": {
+            "items": {
+              "$ref": "#/components/schemas/SalaryArchiveMonth"
+            },
+            "title": "Monthly",
+            "type": "array"
+          },
+          "months": {
+            "title": "Months",
+            "type": "integer"
+          },
+          "rows": {
+            "title": "Rows",
+            "type": "integer"
+          },
+          "stores": {
+            "items": {
+              "$ref": "#/components/schemas/SalaryArchiveStore"
+            },
+            "title": "Stores",
+            "type": "array"
+          },
+          "total": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Total",
+            "type": "string"
+          }
+        },
+        "required": [
+          "total",
+          "rows",
+          "months",
+          "excluded_rows",
+          "monthly",
+          "stores"
+        ],
+        "title": "SalaryArchiveSummary",
         "type": "object"
       },
       "SalaryCompanyTotal": {
@@ -25314,6 +25437,174 @@
           }
         ],
         "summary": "Salary Archive",
+        "tags": [
+          "salarii"
+        ]
+      }
+    },
+    "/salarii/archive/summary": {
+      "get": {
+        "operationId": "salary_archive_summary_salarii_archive_summary_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "year",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 2100,
+                  "minimum": 2015,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Year"
+            }
+          },
+          {
+            "in": "query",
+            "name": "month",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 12,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Month"
+            }
+          },
+          {
+            "in": "query",
+            "name": "search",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 120,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Search"
+            }
+          },
+          {
+            "in": "query",
+            "name": "company_name",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 120,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Company Name"
+            }
+          },
+          {
+            "in": "query",
+            "name": "site_code",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "maxLength": 100,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "maxItems": 100,
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Site Code"
+            }
+          },
+          {
+            "in": "query",
+            "name": "regional",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 120,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Regional"
+            }
+          },
+          {
+            "in": "query",
+            "name": "asm",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 120,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Asm"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SalaryArchiveSummary"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Salary Archive Summary",
         "tags": [
           "salarii"
         ]

@@ -1,5 +1,5 @@
 /* GENERATED FILE. Run npm run contracts:generate; do not edit manually. */
-export const RETAIL_OPENAPI_SHA256 = '73ddec35f9441eab4b7acb95587b0d22c20bcc4fdf6833d26713b03f424e44ea' as const; // pragma: allowlist secret
+export const RETAIL_OPENAPI_SHA256 = '6649382544eda51c68d65230cb4d20cf699062ea83cad93a08173d4e99ef91fc' as const; // pragma: allowlist secret
 
 export type RetailDecimal = string & { readonly __retailDecimal: unique symbol };
 
@@ -1884,9 +1884,34 @@ export interface RetailSalaryArchiveItem {
   "total_amount": RetailDecimal | null;
 }
 
+export interface RetailSalaryArchiveMonth {
+  "company_name": string;
+  "period": string;
+  "rows": number;
+  "total": RetailDecimal;
+}
+
 export interface RetailSalaryArchiveResponse {
   "items": Array<RetailSalaryArchiveItem>;
   "total_rows": number;
+}
+
+export interface RetailSalaryArchiveStore {
+  "company_name": string;
+  "location": string;
+  "months": number;
+  "rows": number;
+  "site_code": string | null;
+  "total": RetailDecimal;
+}
+
+export interface RetailSalaryArchiveSummary {
+  "excluded_rows": number;
+  "monthly": Array<RetailSalaryArchiveMonth>;
+  "months": number;
+  "rows": number;
+  "stores": Array<RetailSalaryArchiveStore>;
+  "total": RetailDecimal;
 }
 
 export interface RetailSalaryCompanyTotal {
@@ -2793,6 +2818,7 @@ export type RetailOperationId =
   'agents_summary_salarii_agents_summary_get' |
   'agent_history_salarii_agents__person_id__history_get' |
   'salary_archive_salarii_archive_get' |
+  'salary_archive_summary_salarii_archive_summary_get' |
   'salarii_evolution_salarii_evolution_get' |
   'create_salary_export_operation_salarii_exports_operations_post' |
   'salarii_overview_salarii_overview_get' |
@@ -3356,6 +3382,11 @@ export interface RetailOperationResponses {
     '422': RetailHTTPValidationError;
   }
 
+  'salary_archive_summary_salarii_archive_summary_get': {
+    '200': RetailSalaryArchiveSummary;
+    '422': RetailHTTPValidationError;
+  }
+
   'salarii_evolution_salarii_evolution_get': {
     '200': Array<RetailSalaryEvolutionPoint>;
     '422': RetailHTTPValidationError;
@@ -3506,6 +3537,7 @@ export interface RetailOperationSuccesses {
   'agents_summary_salarii_agents_summary_get': RetailSalaryAgentsSummaryResponse;
   'agent_history_salarii_agents__person_id__history_get': RetailSalaryHistoryResponse;
   'salary_archive_salarii_archive_get': RetailSalaryArchiveResponse;
+  'salary_archive_summary_salarii_archive_summary_get': RetailSalaryArchiveSummary;
   'salarii_evolution_salarii_evolution_get': Array<RetailSalaryEvolutionPoint>;
   'create_salary_export_operation_salarii_exports_operations_post': RetailExportOperationResponse;
   'salarii_overview_salarii_overview_get': RetailSalaryOverviewResponse;
@@ -3625,6 +3657,7 @@ export interface RetailOperationErrors {
   'agents_summary_salarii_agents_summary_get': { '422': RetailHTTPValidationError };
   'agent_history_salarii_agents__person_id__history_get': { '422': RetailHTTPValidationError };
   'salary_archive_salarii_archive_get': { '422': RetailHTTPValidationError };
+  'salary_archive_summary_salarii_archive_summary_get': { '422': RetailHTTPValidationError };
   'salarii_evolution_salarii_evolution_get': { '422': RetailHTTPValidationError };
   'create_salary_export_operation_salarii_exports_operations_post': { '400': void; '409': void; '422': RetailHTTPValidationError; '503': RetailExportOperationUnavailableResponse };
   'salarii_overview_salarii_overview_get': { '422': RetailHTTPValidationError };
@@ -3972,6 +4005,9 @@ export const RETAIL_OPERATION_ERROR_STATUSES: { readonly [Id in RetailOperationI
   'salary_archive_salarii_archive_get': new Set<string>([
     '422',
   ]),
+  'salary_archive_summary_salarii_archive_summary_get': new Set<string>([
+    '422',
+  ]),
   'salarii_evolution_salarii_evolution_get': new Set<string>([
     '422',
   ]),
@@ -4108,6 +4144,7 @@ export interface RetailOperationQueries {
   'agents_summary_salarii_agents_summary_get': { "q"?: string | null; "company_name"?: string | null; "site_code"?: Array<string> | null; "regional"?: string | null; "asm"?: string | null; "year"?: number | null; "month"?: number | null; "limit"?: number; "offset"?: number };
   'agent_history_salarii_agents__person_id__history_get': Record<never, never>;
   'salary_archive_salarii_archive_get': { "year"?: number | null; "month"?: number | null; "search"?: string | null; "company_name"?: string | null; "site_code"?: Array<string> | null; "regional"?: string | null; "asm"?: string | null; "limit"?: number; "offset"?: number };
+  'salary_archive_summary_salarii_archive_summary_get': { "year"?: number | null; "month"?: number | null; "search"?: string | null; "company_name"?: string | null; "site_code"?: Array<string> | null; "regional"?: string | null; "asm"?: string | null };
   'salarii_evolution_salarii_evolution_get': { "company_name"?: string | null; "site_code"?: Array<string> | null; "regional"?: string | null; "asm"?: string | null };
   'create_salary_export_operation_salarii_exports_operations_post': Record<never, never>;
   'salarii_overview_salarii_overview_get': { "company_name"?: string | null; "site_code"?: Array<string> | null; "regional"?: string | null; "asm"?: string | null };
@@ -4227,6 +4264,7 @@ export interface RetailOperationPaths {
   'agents_summary_salarii_agents_summary_get': Record<never, never>;
   'agent_history_salarii_agents__person_id__history_get': { "person_id": string };
   'salary_archive_salarii_archive_get': Record<never, never>;
+  'salary_archive_summary_salarii_archive_summary_get': Record<never, never>;
   'salarii_evolution_salarii_evolution_get': Record<never, never>;
   'create_salary_export_operation_salarii_exports_operations_post': Record<never, never>;
   'salarii_overview_salarii_overview_get': Record<never, never>;
@@ -4346,6 +4384,7 @@ export interface RetailOperationBodies {
   'agents_summary_salarii_agents_summary_get': undefined;
   'agent_history_salarii_agents__person_id__history_get': undefined;
   'salary_archive_salarii_archive_get': undefined;
+  'salary_archive_summary_salarii_archive_summary_get': undefined;
   'salarii_evolution_salarii_evolution_get': undefined;
   'create_salary_export_operation_salarii_exports_operations_post': RetailSalaryExportRequest;
   'salarii_overview_salarii_overview_get': undefined;
@@ -4465,6 +4504,7 @@ export interface RetailOperationMeta {
   'agents_summary_salarii_agents_summary_get': { method: 'get'; path: '/salarii/agents/summary'; responseType: 'json' };
   'agent_history_salarii_agents__person_id__history_get': { method: 'get'; path: '/salarii/agents/{person_id}/history'; responseType: 'json' };
   'salary_archive_salarii_archive_get': { method: 'get'; path: '/salarii/archive'; responseType: 'json' };
+  'salary_archive_summary_salarii_archive_summary_get': { method: 'get'; path: '/salarii/archive/summary'; responseType: 'json' };
   'salarii_evolution_salarii_evolution_get': { method: 'get'; path: '/salarii/evolution'; responseType: 'json' };
   'create_salary_export_operation_salarii_exports_operations_post': { method: 'post'; path: '/salarii/exports/operations'; responseType: 'json' };
   'salarii_overview_salarii_overview_get': { method: 'get'; path: '/salarii/overview'; responseType: 'json' };
@@ -5788,6 +5828,11 @@ export const RETAIL_DECIMAL_PATHS: { readonly [Id in RetailOperationId]: Readonl
   'salary_archive_salarii_archive_get': new Set<string>([
     'items/*/total_amount',
   ]),
+  'salary_archive_summary_salarii_archive_summary_get': new Set<string>([
+    'monthly/*/total',
+    'stores/*/total',
+    'total',
+  ]),
   'salarii_evolution_salarii_evolution_get': new Set<string>([
     '*/mobicell',
     '*/mobiup',
@@ -6092,6 +6137,8 @@ export const RETAIL_DATE_PATHS: { readonly [Id in RetailOperationId]: ReadonlySe
   ]),
   'salary_archive_salarii_archive_get': new Set<string>([
   ]),
+  'salary_archive_summary_salarii_archive_summary_get': new Set<string>([
+  ]),
   'salarii_evolution_salarii_evolution_get': new Set<string>([
   ]),
   'create_salary_export_operation_salarii_exports_operations_post': new Set<string>([
@@ -6385,6 +6432,8 @@ export const RETAIL_DATETIME_PATHS: { readonly [Id in RetailOperationId]: Readon
   ]),
   'salary_archive_salarii_archive_get': new Set<string>([
   ]),
+  'salary_archive_summary_salarii_archive_summary_get': new Set<string>([
+  ]),
   'salarii_evolution_salarii_evolution_get': new Set<string>([
   ]),
   'create_salary_export_operation_salarii_exports_operations_post': new Set<string>([
@@ -6515,6 +6564,7 @@ export const RETAIL_OPERATION_ROUTES = {
   'agents_summary_salarii_agents_summary_get': { method: 'get', path: '/salarii/agents/summary', responseType: 'json' },
   'agent_history_salarii_agents__person_id__history_get': { method: 'get', path: '/salarii/agents/{person_id}/history', responseType: 'json' },
   'salary_archive_salarii_archive_get': { method: 'get', path: '/salarii/archive', responseType: 'json' },
+  'salary_archive_summary_salarii_archive_summary_get': { method: 'get', path: '/salarii/archive/summary', responseType: 'json' },
   'salarii_evolution_salarii_evolution_get': { method: 'get', path: '/salarii/evolution', responseType: 'json' },
   'create_salary_export_operation_salarii_exports_operations_post': { method: 'post', path: '/salarii/exports/operations', responseType: 'json' },
   'salarii_overview_salarii_overview_get': { method: 'get', path: '/salarii/overview', responseType: 'json' },
