@@ -2,7 +2,8 @@ import { useMemo, useState } from 'react';
 import { ChevronDown, ChevronUp } from 'lucide-react';
 
 import type { AgentEvaluationV2Row } from '../../api/agents';
-import { AgentV2MobileCard, AgentV2Row, type V2SortKey, V2SortHeader } from './AgentEvaluationTables';
+import { AgentV2MobileCard } from './AgentEvaluationTables';
+import { AgentEvaluationV2Grid } from './AgentEvaluationV2Grid';
 
 function EvaluationMechanismDetails() {
   const cards = [
@@ -75,37 +76,18 @@ function EvaluationSummary({ rows }: { rows: AgentEvaluationV2Row[] }) {
   </div>)}</div></div>;
 }
 
-function EvaluationTable({ rows, sortKey, sortDirection, onSort }: {
-  rows: AgentEvaluationV2Row[]; sortKey: V2SortKey;
-  sortDirection: 'asc' | 'desc'; onSort: (key: V2SortKey) => void;
-}) {
-  const headers: Array<{ label: string; key: V2SortKey; align?: 'right' }> = [
-    { label: 'Agent', key: 'agent' }, { label: 'Vânzare', key: 'total_sales', align: 'right' },
-    { label: 'Scor', key: 'total_score', align: 'right' }, { label: 'Status', key: 'eligibility_status' },
-    { label: 'Target', key: 'target_pct', align: 'right' }, { label: 'Productivitate', key: 'daily_vs_reference_pct', align: 'right' },
-    { label: 'Bon2Acc', key: 'bonuri_pct', align: 'right' }, { label: 'Focus', key: 'focus_pct', align: 'right' },
-    { label: 'Folii Premium', key: 'premium_glass_pct', align: 'right' }, { label: 'Valoare reper', key: 'value_reper', align: 'right' },
-    { label: 'Trend', key: 'trend_daily_pct', align: 'right' },
-  ];
+function EvaluationTable({ rows }: { rows: AgentEvaluationV2Row[] }) {
   return <>
     <div className="space-y-2 lg:hidden">{rows.map((row) => <AgentV2MobileCard key={`${row.month}:${row.site_code}:${row.agent}:mobile`} row={row} />)}{rows.length === 0 && <p className="rounded-2xl border border-slate-200 p-6 text-center text-sm text-slate-400 dark:border-slate-700">Fără agenți pentru filtrele selectate.</p>}</div>
-    <div className="hidden rounded-2xl border border-slate-200 bg-white/70 dark:border-slate-700 dark:bg-slate-900/40 lg:block lg:overflow-hidden"><div className="max-h-[68vh] overflow-auto"><table className="min-w-[1320px] w-full text-left">
-      <thead className="sticky top-0 z-10 bg-slate-100 text-[10px] uppercase tracking-wider text-slate-500 dark:bg-slate-800"><tr><th className="px-3 py-2">Lună</th>{headers.map((header) => <V2SortHeader key={header.key} label={header.label} sortKey={header.key} align={header.align} currentKey={sortKey} direction={sortDirection} onSort={onSort} />)}</tr></thead>
-      <tbody>{rows.map((row) => <AgentV2Row key={`${row.month}:${row.site_code}:${row.agent}:v2`} row={row} />)}{rows.length === 0 && <tr><td colSpan={12} className="px-3 py-8 text-center text-sm text-slate-400">Fără agenți pentru filtrele selectate.</td></tr>}</tbody>
-    </table></div></div>
+    <div className="hidden lg:block"><AgentEvaluationV2Grid rows={rows} /></div>
   </>;
 }
 
-export function NewEvaluationSubsection({ rows, sortKey, sortDirection, onSort }: {
-  rows: AgentEvaluationV2Row[];
-  sortKey: V2SortKey;
-  sortDirection: 'asc' | 'desc';
-  onSort: (key: V2SortKey) => void;
-}) {
+export function NewEvaluationSubsection({ rows }: { rows: AgentEvaluationV2Row[] }) {
   const [showMechanism, setShowMechanism] = useState(false);
   return <div className="space-y-3">
     <EvaluationMechanism open={showMechanism} onToggle={() => setShowMechanism((value) => !value)} />
     <EvaluationSummary rows={rows} />
-    <EvaluationTable rows={rows} sortKey={sortKey} sortDirection={sortDirection} onSort={onSort} />
+    <EvaluationTable rows={rows} />
   </div>;
 }
