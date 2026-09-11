@@ -66,6 +66,15 @@ function canonicalSelection(values: Iterable<string>): string[] {
   return result;
 }
 
+export function canonicalizeRetailContextFilters(filters: AppFilters): AppFilters {
+  return {
+    firma: bounded(filters.firma, MAX_FILTER_VALUE_LENGTH) ?? ALL_FIRMS,
+    rm: bounded(filters.rm, MAX_FILTER_VALUE_LENGTH) ?? ALL_SCOPE,
+    magazin: canonicalSelection(filters.magazin),
+    agent: canonicalSelection(filters.agent),
+  };
+}
+
 function filterValue(params: URLSearchParams, key: string, alias?: string): string | undefined {
   return bounded(params.get(key) ?? (alias ? params.get(alias) : null), MAX_FILTER_VALUE_LENGTH);
 }
@@ -78,12 +87,11 @@ function repeatedValues(params: URLSearchParams, key: string, alias?: string): s
 }
 
 function appendFilters(params: URLSearchParams, filters: AppFilters) {
-  const firma = bounded(filters.firma, MAX_FILTER_VALUE_LENGTH);
-  const rm = bounded(filters.rm, MAX_FILTER_VALUE_LENGTH);
-  if (firma && firma !== ALL_FIRMS) params.set('firma', firma);
-  if (rm && rm !== ALL_SCOPE) params.set('rm', rm);
-  canonicalSelection(filters.magazin).forEach((value) => params.append('magazin', value));
-  canonicalSelection(filters.agent).forEach((value) => params.append('agent', value));
+  const canonical = canonicalizeRetailContextFilters(filters);
+  if (canonical.firma !== ALL_FIRMS) params.set('firma', canonical.firma);
+  if (canonical.rm !== ALL_SCOPE) params.set('rm', canonical.rm);
+  canonical.magazin.forEach((value) => params.append('magazin', value));
+  canonical.agent.forEach((value) => params.append('agent', value));
 }
 
 export function buildRetailContextUrl(state: RetailContextUrlState): string {
