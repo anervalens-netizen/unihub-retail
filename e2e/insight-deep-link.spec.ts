@@ -1,7 +1,8 @@
+import type { Page } from '@playwright/test';
 import { expect, test } from './fixtures';
 import { setupBaseMocks } from './helpers';
 
-async function currentUrlState(page: Parameters<typeof test>[0] extends never ? never : any) {
+async function currentUrlState(page: Page) {
   return page.evaluate(() => ({
     pathname: window.location.pathname,
     params: Object.fromEntries(new URLSearchParams(window.location.search)),
