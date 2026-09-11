@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { Filter, LogOut } from 'lucide-react';
 import type { AppFilters } from '../lib/appFilters';
 import { TAB_LABELS, MGMT_SUBTAB_LABELS, type ManagementTab, type TabId } from '../lib/tabs';
@@ -10,13 +11,14 @@ interface Props {
   showFilterButton: boolean;
   onOpenFilter: () => void;
   filters: AppFilters;
+  savedViews?: ReactNode;
   userEmail?: string;
   onLogout?: () => void;
 }
 
 const FILTER_TABS = new Set<TabId>(['hub', 'focus', 'agents']);
 
-export function DesktopTopBar({ activeTab, mgmtSubTab, showFilterButton, onOpenFilter, filters, userEmail, onLogout }: Props) {
+export function DesktopTopBar({ activeTab, mgmtSubTab, showFilterButton, onOpenFilter, filters, savedViews, userEmail, onLogout }: Props) {
   const breadcrumb =
     activeTab === 'management'
       ? `Management › ${MGMT_SUBTAB_LABELS[mgmtSubTab] ?? ''}`
@@ -44,6 +46,7 @@ export function DesktopTopBar({ activeTab, mgmtSubTab, showFilterButton, onOpenF
             {userEmail}
           </span>
         )}
+        {savedViews}
         {showFilter && (
           <button
             onClick={onOpenFilter}
