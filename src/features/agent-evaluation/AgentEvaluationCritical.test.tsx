@@ -15,6 +15,7 @@ import {
   AgentLegacyMobileCard, AgentRow, AgentV2MobileCard, componentWeights,
   flagLabel, getSortValue, referenceLabel, score100Color, SortHeader, targetSourceLabel,
 } from './AgentEvaluationTables';
+import { V2_EXPORT_COLUMNS } from './AgentEvaluationV2Grid';
 import { NewEvaluationSubsection } from './AgentEvaluationV2Table';
 
 const legacy = {
@@ -58,7 +59,7 @@ function model(overrides: Record<string, unknown> = {}) {
 describe('agent evaluation critical surfaces', () => {
   beforeEach(() => { vi.clearAllMocks(); controller.current = model(); });
 
-  it('covers formatting, colors, labels, weights and legacy sorting edges', () => {
+  it('covers formatting, colors, labels, weights, legacy sorting and V2 export projection', () => {
     expect(formatMoney(null)).toBe('-'); expect(formatMoney(10)).not.toBe('-');
     expect(formatPct(undefined)).toBe('-'); expect(formatPct(10)).toBe('10.0%');
     expect(formatNumber(null)).toBe('-'); expect(formatNumber(10.25, 1)).toBeTruthy();
@@ -70,6 +71,10 @@ describe('agent evaluation critical surfaces', () => {
     expect(referenceLabel('colegi')).toBe('colegi'); expect(referenceLabel('istoric_locatie')).toBe('locație'); expect(referenceLabel('media_manager')).toBe('manager'); expect(referenceLabel('none')).toBe('fără reper');
     expect(targetSourceLabel('agent_target')).toBe('target agent'); expect(targetSourceLabel('partial_agent_target')).toBe('target mixt'); expect(targetSourceLabel('other')).toBe('target pe zile');
     expect(getSortValue(legacy as never, 'agent')).toContain('ana'); expect(getSortValue({ ...legacy, target_pct: null } as never, 'target_pct')).toBe(Number.NEGATIVE_INFINITY); expect(getSortValue({ ...legacy, target_pct: 'bad' } as never, 'target_pct')).toBe(Number.NEGATIVE_INFINITY); expect(getSortValue(legacy as never, 'month')).toBe('2026-07');
+    expect(V2_EXPORT_COLUMNS.map((column) => column.value(v2Rows[0] as never, 0))).toEqual([
+      '2026-07', 'Mobiup', 'Ana', 'Alfa', 12000, 86, 'Excelent', 'eligibil',
+      'lună parțială, target parțial, reper locație, extra flag', 120, 116, 36, 10, 50, 101, 12,
+    ]);
   });
 
   it('renders controls and executes dropdown/toggle branches', () => {
@@ -96,12 +101,17 @@ describe('agent evaluation critical surfaces', () => {
     rerender(<AgentV2MobileCard row={{ ...v2Base, confidence_flags: [] } as never} />);
   });
 
-  it('renders V2 DataGrid with score-desc default, sorting and empty state', () => {
+  it('renders V2 DataGrid with score-desc default, search, sorting and empty state', () => {
     const { rerender } = render(<NewEvaluationSubsection rows={v2Rows as never[]} />);
     fireEvent.click(screen.getByRole('button', { name: /Cum se face evaluarea/ }));
     expect(screen.getByText('Regula generala')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Punctaj 0–100' })).toBeInTheDocument();
     expect(screen.getAllByTestId('data-grid-row')[0]).toHaveTextContent('Ana');
+    const searchInput = screen.getByRole('searchbox', { name: 'Caută în coloanele afișate din Punctaj 0–100' });
+    fireEvent.change(searchInput, { target: { value: 'Mobicell' } });
+    expect(screen.getAllByTestId('data-grid-row')).toHaveLength(1);
+    expect(screen.getAllByTestId('data-grid-row')[0]).toHaveTextContent('Bogdan');
+    fireEvent.change(searchInput, { target: { value: '' } });
     const agentSort = screen.getByRole('button', { name: 'Sortează după Agent' });
     fireEvent.click(agentSort);
     fireEvent.click(agentSort);
