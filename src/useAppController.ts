@@ -16,6 +16,7 @@ import {
   type InsightAgentsSection,
 } from './lib/insightDeepLink';
 import { sanitizeActiveTab } from './lib/navigationAccess';
+import { buildCurrentRetailContextState } from './lib/retailContextState';
 import { usePersistentState } from './lib/usePersistentState';
 import { MGMT_SUBTABS, type ManagementTab, type TabId } from './lib/tabs';
 
@@ -132,41 +133,42 @@ function useAppData(
 function useRetailUrlProjection(
   authenticated: boolean,
   authLoading: boolean,
-  hasManagementAccess: boolean,
-  navigation: ReturnType<typeof useAppNavigation>,
-  data: ReturnType<typeof useAppData>,
+  state: ReturnType<typeof buildCurrentRetailContextState>,
 ) {
   useEffect(() => {
-    if (!authenticated || authLoading || !data.currentMonth) return;
-    if (navigation.activeTab === 'management' && !hasManagementAccess) return;
-
-    const filters = navigation.activeTab === 'focus'
-      ? data.focusFilters
-      : navigation.activeTab === 'agents'
-        || (navigation.activeTab === 'management' && navigation.mgmtSubTab === 'salarii')
-        ? data.agentsFilters
-        : data.hubFilters;
-    const period = navigation.activeTab === 'focus'
-      ? data.focusFilterMonth || data.currentMonth
-      : data.currentMonth;
-    const nextUrl = buildRetailContextUrl({
-      tab: navigation.activeTab,
-      period,
-      filters,
-      hubSection: navigation.hubSection,
-      campaignSection: navigation.campaignsSection,
-      agentsSection: navigation.agentsSection,
-      managementSubtab: navigation.mgmtSubTab,
-    });
+    if (!authenticated || authLoading || !state) return;
+    const nextUrl = buildRetailContextUrl(state);
     if (`${window.location.pathname}${window.location.search}` === nextUrl) return;
     try {
       window.history.replaceState(window.history.state, '', nextUrl);
     } catch {
       return;
     }
-  }, [
-    authenticated,
-    authLoading,
+  }, [authenticated, authLoading, state]);
+}
+
+export function useAppController() {
+  const deepLink = useMemo(() => parseInsightDeepLink(window.location), []);
+  const auth = useAuth();
+  const hasManagementAccess = canAccessManagement(auth.user?.profile);
+  const subject = typeof auth.user?.profile.sub === 'string' ? auth.user.profile.sub : undefined;
+  const pnl = usePnlCapability(auth.isAuthenticated, subject, hasManagementAccess);
+  const pnlPending = pnlPermissionIsPending(auth.isLoading, pnl.permissionPending);
+  const navigation = useAppNavigation(deepLink, hasManagementAccess, pnlPending, pnl.hasPnlAccess);
+  const data = useAppData(deepLink, auth.isAuthenticated, auth.user?.profile.sub ?? 'anonymous');
+  const retailContextState = useMemo(() => buildCurrentRetailContextState({
+    activeTab: navigation.activeTab,
+    currentMonth: data.currentMonth,
+    focusFilterMonth: data.focusFilterMonth,
+    hubFilters: data.hubFilters,
+    focusFilters: data.focusFilters,
+    agentsFilters: data.agentsFilters,
+    hubSection: navigation.hubSection,
+    campaignSection: navigation.campaignsSection,
+    agentsSection: navigation.agentsSection,
+    managementSubtab: navigation.mgmtSubTab,
+    hasManagementAccess,
+  }), [
     data.agentsFilters,
     data.currentMonth,
     data.focusFilterMonth,
@@ -179,22 +181,21 @@ function useRetailUrlProjection(
     navigation.hubSection,
     navigation.mgmtSubTab,
   ]);
-}
-
-export function useAppController() {
-  const deepLink = useMemo(() => parseInsightDeepLink(window.location), []);
-  const auth = useAuth();
-  const hasManagementAccess = canAccessManagement(auth.user?.profile);
-  const subject = typeof auth.user?.profile.sub === 'string' ? auth.user.profile.sub : undefined;
-  const pnl = usePnlCapability(auth.isAuthenticated, subject, hasManagementAccess);
-  const pnlPending = pnlPermissionIsPending(auth.isLoading, pnl.permissionPending);
-  const navigation = useAppNavigation(deepLink, hasManagementAccess, pnlPending, pnl.hasPnlAccess);
-  const data = useAppData(deepLink, auth.isAuthenticated, auth.user?.profile.sub ?? 'anonymous');
-  useRetailUrlProjection(auth.isAuthenticated, auth.isLoading, hasManagementAccess, navigation, data);
+  useRetailUrlProjection(auth.isAuthenticated, auth.isLoading, retailContextState);
   const login = auth.login;
   useEffect(() => { setUnauthorizedHandler(() => { void login(); }); }, [login]);
   const [isFilterOpen, setIsFilterOpen] = useState(false);
-  return { deepLink, auth, hasManagementAccess, hasPnlAccess: pnl.hasPnlAccess, navigation, data, isFilterOpen, setIsFilterOpen };
+  return {
+    deepLink,
+    auth,
+    hasManagementAccess,
+    hasPnlAccess: pnl.hasPnlAccess,
+    navigation,
+    data,
+    retailContextState,
+    isFilterOpen,
+    setIsFilterOpen,
+  };
 }
 
 export type AppController = ReturnType<typeof useAppController>;
