@@ -107,6 +107,16 @@ describe('Metric Catalog v1', () => {
     expect(attainment?.limitations.join(' ')).toContain('retail.target.value');
   });
 
+  it('documents current-store ownership for historical targets and derived attainment', () => {
+    for (const id of ['retail.target.value', 'retail.target.attainment_pct']) {
+      const metric = getMetricDefinition(id);
+      expect(metric?.organizationSemantics.historical).toContain('stores curent');
+      expect(metric?.organizationSemantics.historical).toContain('vânzările rămân în ownership-ul istoric');
+      expect(metric?.limitations.join(' ')).toContain('History filtrat pe firmă/RM/ASM');
+      expect(metric?.limitations.join(' ')).toContain('ownership');
+    }
+  });
+
   it('documents signed-quantity guard differences instead of claiming one ratio rule', () => {
     const focus = getMetricDefinition('retail.focus.accessory_pct');
     const averageProduct = getMetricDefinition('retail.sales.avg_product_value');
