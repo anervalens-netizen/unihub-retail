@@ -1,5 +1,4 @@
 import type { AppFilters } from '../../lib/appFilters';
-import { ALL_FIRMS, ALL_SCOPE, ALL_STORES } from '../../lib/filterValues';
 import {
   getMetricDefinition,
   type MetricDefinition,
@@ -13,6 +12,34 @@ export interface MetricFormulaInspectorContext {
   lastSaleDate?: string | null;
   importedDayOfMonth?: number | null;
   daysInMonth?: number | null;
+}
+
+const FILTER_SENTINELS = new Set(
+  [
+    '',
+    'Toate',
+    'Toti',
+    'Toți',
+    'ToÈ›I',
+    'ToÃˆâ€ºI',
+  ].map((value) => value.toLocaleLowerCase('ro-RO')),
+);
+
+function normalizeFilterValue(value: string): string | null {
+  const cleaned = value.trim();
+  return FILTER_SENTINELS.has(cleaned.toLocaleLowerCase('ro-RO')) ? null : cleaned;
+}
+
+function normalizeFilterValues(values: readonly string[]): string[] {
+  const seen = new Set<string>();
+  const normalized: string[] = [];
+  for (const rawValue of values) {
+    const value = normalizeFilterValue(rawValue);
+    if (value === null || seen.has(value)) continue;
+    seen.add(value);
+    normalized.push(value);
+  }
+  return normalized;
 }
 
 function displayValue(metric: MetricDefinition, value: number | null): string {
@@ -32,14 +59,17 @@ function displayValue(metric: MetricDefinition, value: number | null): string {
 }
 
 function filterContext(filters: AppFilters) {
-  const storeScope = filters.magazin.filter((store) => store !== ALL_STORES);
+  const storeScope = normalizeFilterValues(filters.magazin);
+  const agentScope = normalizeFilterValues(filters.agent);
+  const firma = normalizeFilterValue(filters.firma);
+  const manager = normalizeFilterValue(filters.rm);
   const hasStoreScope = storeScope.length > 0;
   const overriddenByStore = 'Suprascris de Magazin';
   return [
-    ['Firma', hasStoreScope ? overriddenByStore : filters.firma === ALL_FIRMS ? 'Toate firmele' : filters.firma],
-    ['Manager', hasStoreScope ? overriddenByStore : filters.rm === ALL_SCOPE ? 'Toți managerii' : filters.rm],
+    ['Firma', hasStoreScope ? overriddenByStore : firma ?? 'Toate firmele'],
+    ['Manager', hasStoreScope ? overriddenByStore : manager ?? 'Toți managerii'],
     ['Magazin', hasStoreScope ? storeScope.join(', ') : 'Toate magazinele din scope'],
-    ['Agent', filters.agent.length > 0 ? filters.agent.join(', ') : 'Toți agenții din scope'],
+    ['Agent', agentScope.length > 0 ? agentScope.join(', ') : 'Toți agenții din scope'],
   ] as const;
 }
 
