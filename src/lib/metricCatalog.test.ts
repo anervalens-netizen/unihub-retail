@@ -117,6 +117,19 @@ describe('Metric Catalog v1', () => {
     }
   });
 
+  it('documents the broader historical target cohort instead of claiming current-summary parity', () => {
+    const target = getMetricDefinition('retail.target.value');
+    expect(target?.inclusions.join(' ')).toContain('Current Dashboard summary');
+    expect(target?.inclusions.join(' ')).toContain('History/Year History');
+    expect(target?.limitations.join(' ')).toContain('nu cer existența unui rând de vânzări Retail');
+    expect(target?.limitations.join(' ')).toContain('TR %');
+    expect(target?.exclusions).toEqual([]);
+
+    const attainment = getMetricDefinition('retail.target.attainment_pct');
+    expect(attainment?.limitations.join(' ')).toContain('scope-ul denominatorului');
+    expect(attainment?.limitations.join(' ')).toContain('locații TR %');
+  });
+
   it('documents legacy Year History sources, freshness and ownership for net sales', () => {
     const sales = getMetricDefinition('retail.sales.net_value');
     expect(sales?.sources).toContain('historical_monthly_sales.total_value');
@@ -127,6 +140,18 @@ describe('Metric Catalog v1', () => {
     expect(sales?.organizationSemantics.historical).toContain('stores curent');
     expect(sales?.limitations.join(' ')).toContain('anii <= 2023');
     expect(sales?.limitations.join(' ')).toContain('RM/ASM');
+  });
+
+  it('documents legacy Year History sources, freshness and ownership for net quantity', () => {
+    const quantity = getMetricDefinition('retail.accessories.net_quantity');
+    expect(quantity?.sources).toContain('historical_monthly_sales.total_qty');
+    expect(quantity?.sources).toContain('historical_annual_sales.total_qty');
+    expect(quantity?.freshness).toContain('surse legacy');
+    expect(quantity?.freshness).toContain('nu sunt reconstruite');
+    expect(quantity?.organizationSemantics.historical).toContain('historical_monthly_sales');
+    expect(quantity?.organizationSemantics.historical).toContain('stores curent');
+    expect(quantity?.limitations.join(' ')).toContain('anii <= 2023');
+    expect(quantity?.limitations.join(' ')).toContain('RM/ASM');
   });
 
   it('documents browser-side recomputation without overstating source freshness', () => {
