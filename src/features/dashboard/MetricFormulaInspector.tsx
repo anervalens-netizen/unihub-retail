@@ -155,7 +155,7 @@ export function MetricFormulaInspector({
           <div className="font-bold text-slate-500">Surse</div>
           <div className="mt-1 flex flex-wrap gap-1.5">
             {metric.sources.map((source) => (
-              <span key={source} className="rounded-lg bg-slate-100 px-2 py-1 font-mono text-[10px] text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+              <span key={source} className="break-all rounded-lg bg-slate-100 px-2 py-1 font-mono text-[10px] text-slate-600 dark:bg-slate-800 dark:text-slate-300">
                 {source}
               </span>
             ))}
