@@ -175,6 +175,7 @@ describe('Metric Catalog v1', () => {
       expect(text).toContain('fără filtru de agent');
       expect(text).toContain('total_sales > 0');
       expect(text).toContain('total_quantity > 0');
+      expect(text).toContain('is_partial_year = TRUE');
       expect(text).toContain('sales, target și quantity');
       expect(text).toContain('toate <= 0');
       expect(text).toContain('total_sales anual > 0');
