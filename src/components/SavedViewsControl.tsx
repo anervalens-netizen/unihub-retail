@@ -104,7 +104,12 @@ function SavedViewList({ model }: { model: SavedViewsModel }) {
     <ul className="max-h-64 space-y-1 overflow-y-auto" aria-label="Vederi salvate">
       {model.views.map((view) => (
         <li key={view.id} className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 p-2 dark:border-slate-700 dark:bg-slate-800/70">
-          <button type="button" onClick={() => model.apply(view)} className="min-w-0 flex-1 text-left">
+          <button
+            type="button"
+            onClick={() => model.apply(view)}
+            aria-label={`Aplică vederea ${view.name}`}
+            className="min-w-0 flex-1 text-left"
+          >
             <span className="block truncate text-xs font-bold text-slate-800 dark:text-slate-100">{view.name}</span>
             <span className="block truncate text-[10px] text-slate-500 dark:text-slate-400">
               {MODULE_LABELS[view.module_id]}{view.state.period ? ` · ${view.state.period}` : ''}
