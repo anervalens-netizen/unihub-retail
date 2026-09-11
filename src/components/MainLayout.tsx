@@ -35,19 +35,19 @@ interface MainLayoutProps {
 
 export function MainLayout({
   children, activeTab, setActiveTab, isFilterOpen, setIsFilterOpen, filters, setFilters,
-  filterMonth, theme, setTheme, showFilterButton = true, mgmtSubTab, savedViewState = null,
+  filterMonth, theme, setTheme, showFilterButton = true, mgmtSubTab, savedViewState,
   errorCount = 0, userEmail, onLogout, canAccessManagement = true,
 }: MainLayoutProps) {
   const filterModel = useMainLayoutFilters({
     filterMonth, filters, setFilters, activeTab, mgmtSubTab, showFilterButton,
   });
-  const hasSavedViews = savedViewState !== null;
-  const desktopSavedViews = hasSavedViews ? (
+  const hasSavedViewBrowser = savedViewState !== undefined;
+  const desktopSavedViews = hasSavedViewBrowser ? (
     <Suspense fallback={null}>
       <SavedViewsControl currentState={savedViewState} mode="desktop" />
     </Suspense>
   ) : undefined;
-  const mobileSavedViews = hasSavedViews ? (
+  const mobileSavedViews = hasSavedViewBrowser ? (
     <Suspense fallback={null}>
       <SavedViewsControl currentState={savedViewState} mode="mobile" />
     </Suspense>
@@ -78,12 +78,12 @@ export function MainLayout({
       savedViews={mobileSavedViews}
     />
     <MobileBottomNavigation activeTab={activeTab} setActiveTab={setActiveTab} errorCount={errorCount} canAccessManagement={canAccessManagement} />
-    {(filterModel.hasMobileFilters || hasSavedViews) && (
+    {(filterModel.hasMobileFilters || hasSavedViewBrowser) && (
       <MobileFloatingFilter
         count={filterModel.activeCount}
         onOpen={() => setIsFilterOpen(true)}
         showFilters={filterModel.hasMobileFilters}
-        hasSavedViews={hasSavedViews}
+        hasSavedViews={hasSavedViewBrowser}
       />
     )}
   </div>;
