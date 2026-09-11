@@ -10,13 +10,9 @@ import type { AppFilters } from './lib/appFilters';
 import { selectCurrentMonth } from './lib/currentMonth';
 import { defaultAppFilters, normalizeAppFilters } from './lib/filterValues';
 import { reportFrontendBootstrapFailure, type FrontendBootstrapFailureReason } from './lib/frontendMetrics';
-import {
-  buildRetailContextUrl,
-  parseInsightDeepLink,
-  type InsightAgentsSection,
-} from './lib/insightDeepLink';
+import { buildRetailContextUrl, parseInsightDeepLink, type InsightAgentsSection } from './lib/insightDeepLink';
 import { sanitizeActiveTab } from './lib/navigationAccess';
-import { buildCurrentRetailContextState } from './lib/retailContextState';
+import { buildCurrentRetailContextState, buildCurrentSavedViewState } from './lib/retailContextState';
 import { usePersistentState } from './lib/usePersistentState';
 import { MGMT_SUBTABS, type ManagementTab, type TabId } from './lib/tabs';
 
@@ -39,15 +35,8 @@ function loadSavedFilters(key: string, overrides: Partial<AppFilters> = {}) {
   catch { return { ...defaultAppFilters(), ...overrides }; }
 }
 
-function useAppNavigation(
-  deepLink: ReturnType<typeof parseInsightDeepLink>,
-  hasManagementAccess: boolean,
-  pnlPending: boolean,
-  hasPnlAccess: boolean,
-) {
-  const [activeTab, setActiveTab] = usePersistentState<TabId>('unihub_active_tab', deepLink?.tab ?? 'hub', {
-    deserialize: (raw) => sanitizeActiveTab(raw, hasManagementAccess),
-  });
+function useAppNavigation(deepLink: ReturnType<typeof parseInsightDeepLink>, hasManagementAccess: boolean, pnlPending: boolean, hasPnlAccess: boolean) {
+  const [activeTab, setActiveTab] = usePersistentState<TabId>('unihub_active_tab', deepLink?.tab ?? 'hub', { deserialize: (raw) => sanitizeActiveTab(raw, hasManagementAccess) });
   const [campaignsSection, setCampaignsSection] = usePersistentState<CampaignsSection>('unihub_campaigns_section', deepLink?.campaignSection ?? 'incentive', { deserialize: parseCampaignsSection });
   const [agentsSection, setAgentsSection] = useState<InsightAgentsSection | undefined>(deepLink?.agentsSection);
   const [theme, setTheme] = usePersistentState('unihub_theme', 'light');
@@ -63,39 +52,18 @@ function useAppNavigation(
     if (deepLink.agentsSection) setAgentsSection(deepLink.agentsSection);
     if (deepLink.managementSubtab) setMgmtSubTab(deepLink.managementSubtab);
   }, [deepLink, setActiveTab, setCampaignsSection, setHubSection, setMgmtSubTab]);
-  useEffect(() => {
-    if (!hasManagementAccess && activeTab === 'management') setActiveTab('hub');
-  }, [activeTab, hasManagementAccess, setActiveTab]);
-  useEffect(() => {
-    if (shouldResetPnlSubtab(pnlPending, hasPnlAccess, mgmtSubTab)) setMgmtSubTab('asm');
-  }, [hasPnlAccess, mgmtSubTab, pnlPending, setMgmtSubTab]);
+  useEffect(() => { if (!hasManagementAccess && activeTab === 'management') setActiveTab('hub'); }, [activeTab, hasManagementAccess, setActiveTab]);
+  useEffect(() => { if (shouldResetPnlSubtab(pnlPending, hasPnlAccess, mgmtSubTab)) setMgmtSubTab('asm'); }, [hasPnlAccess, mgmtSubTab, pnlPending, setMgmtSubTab]);
   useEffect(() => {
     document.documentElement.className = '';
     if (theme === 'dark') document.documentElement.classList.add('dark');
     else if (theme === 'light-mint') document.documentElement.classList.add('theme-mint');
     else if (theme === 'light-olive') document.documentElement.classList.add('theme-olive');
   }, [theme]);
-  return {
-    activeTab,
-    setActiveTab,
-    campaignsSection,
-    setCampaignsSection,
-    agentsSection,
-    setAgentsSection,
-    theme,
-    setTheme,
-    hubSection,
-    setHubSection,
-    mgmtSubTab,
-    setMgmtSubTab,
-  };
+  return { activeTab, setActiveTab, campaignsSection, setCampaignsSection, agentsSection, setAgentsSection, theme, setTheme, hubSection, setHubSection, mgmtSubTab, setMgmtSubTab };
 }
 
-function useAppData(
-  deepLink: ReturnType<typeof parseInsightDeepLink>,
-  authenticated: boolean,
-  subject: string,
-) {
+function useAppData(deepLink: ReturnType<typeof parseInsightDeepLink>, authenticated: boolean, subject: string) {
   const [hubFilters, setHubFilters] = useState<AppFilters>(() => loadSavedFilters(FILTER_KEYS.hub, deepLink?.filters));
   const [focusFilters, setFocusFilters] = useState<AppFilters>(() => loadSavedFilters(FILTER_KEYS.focus, deepLink?.filters));
   const [agentsFilters, setAgentsFilters] = useState<AppFilters>(() => loadSavedFilters(FILTER_KEYS.agents, deepLink?.filters));
@@ -105,17 +73,12 @@ function useAppData(
   const lastFailure = useRef<FrontendBootstrapFailureReason | null>(null);
   useEffect(() => {
     const status = availableMonths.status;
-    const reason: FrontendBootstrapFailureReason | null = status === 'unavailable' || status === 'session_expired'
-      ? status : status === 'stale' ? 'stale_cache' : null;
+    const reason: FrontendBootstrapFailureReason | null = status === 'unavailable' || status === 'session_expired' ? status : status === 'stale' ? 'stale_cache' : null;
     if (reason && lastFailure.current !== reason) reportFrontendBootstrapFailure(reason);
     lastFailure.current = reason;
   }, [availableMonths.status]);
-  useEffect(() => {
-    if (currentMonth) sessionStorage.setItem('unihub_current_month', currentMonth);
-  }, [currentMonth]);
-  useEffect(() => {
-    if (currentMonth) setFocusFilterMonth((previous) => previous && availableMonths.months.includes(previous) ? previous : currentMonth);
-  }, [availableMonths.months, currentMonth]);
+  useEffect(() => { if (currentMonth) sessionStorage.setItem('unihub_current_month', currentMonth); }, [currentMonth]);
+  useEffect(() => { if (currentMonth) setFocusFilterMonth((previous) => previous && availableMonths.months.includes(previous) ? previous : currentMonth); }, [availableMonths.months, currentMonth]);
   useEffect(() => { sessionStorage.setItem(FILTER_KEYS.hub, JSON.stringify(hubFilters)); }, [hubFilters]);
   useEffect(() => { sessionStorage.setItem(FILTER_KEYS.focus, JSON.stringify(focusFilters)); }, [focusFilters]);
   useEffect(() => { sessionStorage.setItem(FILTER_KEYS.agents, JSON.stringify(agentsFilters)); }, [agentsFilters]);
@@ -124,26 +87,15 @@ function useAppData(
     setCurrentMonth((previous) => deepLink?.period && availableMonths.months.includes(deepLink.period)
       ? deepLink.period : previous && availableMonths.months.includes(previous) ? previous : selectCurrentMonth(availableMonths.months));
   }, [authenticated, availableMonths.months, deepLink?.period]);
-  return {
-    hubFilters, setHubFilters, focusFilters, setFocusFilters, agentsFilters, setAgentsFilters,
-    currentMonth, setCurrentMonth, focusFilterMonth, setFocusFilterMonth, availableMonths,
-  };
+  return { hubFilters, setHubFilters, focusFilters, setFocusFilters, agentsFilters, setAgentsFilters, currentMonth, setCurrentMonth, focusFilterMonth, setFocusFilterMonth, availableMonths };
 }
 
-function useRetailUrlProjection(
-  authenticated: boolean,
-  authLoading: boolean,
-  state: ReturnType<typeof buildCurrentRetailContextState>,
-) {
+function useRetailUrlProjection(authenticated: boolean, authLoading: boolean, state: ReturnType<typeof buildCurrentRetailContextState>) {
   useEffect(() => {
     if (!authenticated || authLoading || !state) return;
     const nextUrl = buildRetailContextUrl(state);
     if (`${window.location.pathname}${window.location.search}` === nextUrl) return;
-    try {
-      window.history.replaceState(window.history.state, '', nextUrl);
-    } catch {
-      return;
-    }
+    try { window.history.replaceState(window.history.state, '', nextUrl); } catch { return; }
   }, [authenticated, authLoading, state]);
 }
 
@@ -156,45 +108,28 @@ export function useAppController() {
   const pnlPending = pnlPermissionIsPending(auth.isLoading, pnl.permissionPending);
   const navigation = useAppNavigation(deepLink, hasManagementAccess, pnlPending, pnl.hasPnlAccess);
   const data = useAppData(deepLink, auth.isAuthenticated, auth.user?.profile.sub ?? 'anonymous');
-  const retailContextState = useMemo(() => buildCurrentRetailContextState({
-    activeTab: navigation.activeTab,
-    currentMonth: data.currentMonth,
-    focusFilterMonth: data.focusFilterMonth,
-    hubFilters: data.hubFilters,
-    focusFilters: data.focusFilters,
-    agentsFilters: data.agentsFilters,
-    hubSection: navigation.hubSection,
-    campaignSection: navigation.campaignsSection,
-    agentsSection: navigation.agentsSection,
-    managementSubtab: navigation.mgmtSubTab,
+  const [hubHistoryMonths, setHubHistoryMonths] = useState<string[]>([]);
+  const contextInput = useMemo(() => ({
+    activeTab: navigation.activeTab, currentMonth: data.currentMonth,
+    focusFilterMonth: data.focusFilterMonth, hubHistoryMonths,
+    hubFilters: data.hubFilters, focusFilters: data.focusFilters, agentsFilters: data.agentsFilters,
+    hubSection: navigation.hubSection, campaignSection: navigation.campaignsSection,
+    agentsSection: navigation.agentsSection, managementSubtab: navigation.mgmtSubTab,
     hasManagementAccess,
   }), [
-    data.agentsFilters,
-    data.currentMonth,
-    data.focusFilterMonth,
-    data.focusFilters,
-    data.hubFilters,
-    hasManagementAccess,
-    navigation.activeTab,
-    navigation.agentsSection,
-    navigation.campaignsSection,
-    navigation.hubSection,
-    navigation.mgmtSubTab,
+    data.agentsFilters, data.currentMonth, data.focusFilterMonth, data.focusFilters, data.hubFilters,
+    hasManagementAccess, hubHistoryMonths, navigation.activeTab, navigation.agentsSection,
+    navigation.campaignsSection, navigation.hubSection, navigation.mgmtSubTab,
   ]);
+  const retailContextState = useMemo(() => buildCurrentRetailContextState(contextInput), [contextInput]);
+  const savedViewState = useMemo(() => buildCurrentSavedViewState(contextInput), [contextInput]);
   useRetailUrlProjection(auth.isAuthenticated, auth.isLoading, retailContextState);
   const login = auth.login;
   useEffect(() => { setUnauthorizedHandler(() => { void login(); }); }, [login]);
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   return {
-    deepLink,
-    auth,
-    hasManagementAccess,
-    hasPnlAccess: pnl.hasPnlAccess,
-    navigation,
-    data,
-    retailContextState,
-    isFilterOpen,
-    setIsFilterOpen,
+    deepLink, auth, hasManagementAccess, hasPnlAccess: pnl.hasPnlAccess, navigation, data,
+    retailContextState, savedViewState, setHubHistoryMonths, isFilterOpen, setIsFilterOpen,
   };
 }
 
