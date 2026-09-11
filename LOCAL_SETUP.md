@@ -77,6 +77,36 @@ supersetul folosit local și în CI. Regenerează-le cu Python 3.12 și
 `pip-compile --generate-hashes` numai după modificarea fișierelor sursă
 `requirements*.txt`.
 
+## Doctor setup read-only
+
+Dupa clonare sau cand un agent nou preia un device, ruleaza din radacina repo:
+
+```bash
+python3 scripts/retail_doctor.py
+```
+
+Pentru un rezultat usor de consumat de alt agent:
+
+```bash
+python3 scripts/retail_doctor.py --json
+```
+
+Doctorul nu conecteaza baza de date, nu ruleaza migrari, nu porneste servicii si
+nu afiseaza valorile din `.env`. El raporteaza identitatea Git/worktree,
+versiunile locale Python/Node/npm, disponibilitatea Docker, prezenta
+`backend/venv`, `node_modules` si `.env`, apoi reutilizeaza checkerul canonic
+`scripts/check_env_contract.py` si validatorii statici de manifest/migrari din
+`backend/db/migration_runner.py`. Un worktree dirty sau lipsa Docker sunt
+warning-uri; dependintele/configuratia necesare pentru setup sunt failures si
+produc exit code `1`.
+
+Daca dotenv-ul local are alta cale, doctorul poate verifica prezenta lui fara a-i
+citi sau afisa continutul:
+
+```bash
+python3 scripts/retail_doctor.py --env-file /cale/catre/.env
+```
+
 ## Pornire dezvoltare
 
 ```bash
