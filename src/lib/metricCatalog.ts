@@ -45,6 +45,9 @@ const REPORTING_FRESHNESS =
 const DERIVED_REPORTING_FRESHNESS =
   'Intrările se actualizează odată cu read-modelurile reporting după un import de vânzări finalizat. La selecții multi-lună, UI recalculează această metrică în browser din totalurile sau ponderile primite de la server; recomputarea din browser nu schimbă freshness-ul datelor sursă.';
 
+const LEGACY_YEAR_HISTORY_FRESHNESS =
+  'Sursele reporting se actualizează după importul normal de vânzări. Year History poate citi separat historical_monthly_sales sau historical_annual_sales; aceste surse legacy urmează propriile importuri istorice și nu sunt reconstruite de un import normal de vânzări.';
+
 const ORGANIZATION = {
   current:
     'În current_scope, firma/RM/ASM și statusul activ sunt rezolvate din stores; scope-ul managerului folosește ownership-ul organizațional curent.',
@@ -52,7 +55,7 @@ const ORGANIZATION = {
     'În istoric, dimensiunile organizaționale stocate în reporting_* la import rămân autoritative; comparațiile istorice de perioadă păstrează cohorta de magazine din selecția curentă.',
 } as const;
 
-const NET_SALES_ORGANIZATION = {
+const LEGACY_YEAR_HISTORY_ORGANIZATION = {
   current: ORGANIZATION.current,
   historical:
     'Istoricul modern din reporting_* păstrează dimensiunile organizaționale importate când current_scope este oprit. Year History poate combina însă surse legacy: historical_monthly_sales păstrează firma istorică, dar filtrează RM/ASM prin stores curent; fallback-ul historical_annual_sales păstrează firma istorică fără current_scope, dar folosește de asemenea stores curent pentru RM/ASM. Cu current_scope, ownership-ul curent din stores este folosit explicit.',
@@ -90,9 +93,8 @@ export const METRIC_CATALOG = [
     ],
     inclusions: [NET_RETURN_NOTE],
     exclusions: REPORTING_EXCLUSIONS,
-    organizationSemantics: NET_SALES_ORGANIZATION,
-    freshness:
-      'Sursele reporting se actualizează după importul normal de vânzări. Year History poate citi separat historical_monthly_sales sau historical_annual_sales; aceste surse legacy urmează propriile importuri istorice și nu sunt reconstruite de un import normal de vânzări.',
+    organizationSemantics: LEGACY_YEAR_HISTORY_ORGANIZATION,
+    freshness: LEGACY_YEAR_HISTORY_FRESHNESS,
     visualThresholds: null,
     implementationRefs: [
       'backend/repositories/dashboard.py::_summary_sql',
@@ -126,8 +128,11 @@ export const METRIC_CATALOG = [
     aggregation:
       'Aditivă la nivel de magazin/RM/ASM/dashboard. La agent se folosește effective_target, nu se derivează din procentul de realizare.',
     sources: ['store_targets.target_value', 'agent_targets.target_value', 'reporting_agent_month'],
-    inclusions: ['Sunt incluse numai magazinele prezente în scope-ul Retail al selecției.'],
-    exclusions: REPORTING_EXCLUSIONS,
+    inclusions: [
+      'Current Dashboard summary: store_targets contribuie numai pentru site_code-urile prezente în filtered_days pentru selecția Retail curentă.',
+      'History/Year History: targeturile sunt însumate direct din store_targets după filtrele disponibile pe stores; nu este necesar ca magazinul să aibă un rând Retail reporting în luna respectivă.',
+    ],
+    exclusions: [],
     organizationSemantics: TARGET_ORGANIZATION,
     freshness:
       'Țintele sunt citite la request din store_targets/agent_targets și se pot modifica independent de read-modelurile de vânzări.',
@@ -146,6 +151,8 @@ export const METRIC_CATALOG = [
       'Regula canonică Retail cere alocarea fallback a targetului agentului proporțional cu selling days; fallback-ul curent al Dashboard este încă egal pe active_agents și este o deviație de implementare, nu formula canonică.',
       'Targetul unui agent poate fi null dacă nu există nici target explicit, nici fallback distribuibil.',
       'În History filtrat pe firmă/RM/ASM, targetul folosește ownership-ul curent din stores, în timp ce vânzările folosesc ownership-ul istoric; pentru magazine mutate cele două scope-uri pot diverge.',
+      'În History/Year History, target_summary/month_targets citesc store_targets direct după filtrele de stores și nu cer existența unui rând de vânzări Retail; un target poate contribui chiar dacă magazinul nu are vânzări Retail în lună.',
+      'În History/Year History, excluderea de locație Retail pentru locatie LIKE "TR %" nu este reaplicată explicit asupra store_targets; targetul istoric nu trebuie tratat ca fiind limitat strict la cohorta Retail.',
     ],
     version: 1,
   },
@@ -180,6 +187,7 @@ export const METRIC_CATALOG = [
       'Nu există un prag vizual global oficial pentru această metrică în V3.',
       'La nivel agent, realizarea moștenește deviația fallback documentată la retail.target.value atunci când lipsește agent_targets.',
       'În History filtrat pe firmă/RM/ASM, numărătorul de vânzări poate folosi ownership istoric iar targetul ownership curent; procentul rezultat moștenește această asimetrie pentru magazine mutate.',
+      'În History/Year History, denominatorul de target poate include store_targets pentru magazine fără rând Retail reporting sau locații TR %, astfel încât scope-ul denominatorului poate diferi de scope-ul vânzărilor din numărător.',
     ],
     version: 1,
   },
@@ -192,21 +200,32 @@ export const METRIC_CATALOG = [
     formula: 'SUM(total_quantity)',
     granularities: ['dashboard', 'period-comparison', 'regional', 'asm', 'store', 'agent'],
     aggregation: 'Aditivă.',
-    sources: ['reporting_agent_day.total_quantity', 'reporting_agent_month.total_quantity'],
+    sources: [
+      'reporting_agent_day.total_quantity',
+      'reporting_agent_month.total_quantity',
+      'historical_monthly_sales.total_qty',
+      'historical_annual_sales.total_qty',
+    ],
     inclusions: [NET_RETURN_NOTE],
     exclusions: REPORTING_EXCLUSIONS,
-    organizationSemantics: ORGANIZATION,
-    freshness: REPORTING_FRESHNESS,
+    organizationSemantics: LEGACY_YEAR_HISTORY_ORGANIZATION,
+    freshness: LEGACY_YEAR_HISTORY_FRESHNESS,
     visualThresholds: null,
     implementationRefs: [
       'backend/services/reporting_refresh_month.py::_REPORTING_MONTH_SQL_5',
       'backend/repositories/dashboard.py::_summary_sql',
+      'backend/repositories/dashboard.py::DashboardRepository.fetch_year_history_monthly',
+      'backend/repositories/dashboard.py::DashboardRepository.fetch_year_history_agg',
+      'backend/services/dashboard/history.py::load_history_by_year',
       'backend/services/dashboard/query_agents.py::_agent_base_query',
     ],
     verificationRefs: [
       'backend/tests/test_dashboard_summary_integration.py::test_reporting_uses_net_quantity_for_kpis_and_keeps_returns_separate',
     ],
-    limitations: [],
+    limitations: [
+      'Year History poate combina reporting_agent_month.total_quantity cu historical_monthly_sales.total_qty; pentru anii <= 2023, dacă nu există date lunare, poate folosi historical_annual_sales.total_qty ca agregat legacy.',
+      'Pe sursele legacy de Year History, firma poate rămâne cea stocată istoric, dar filtrele RM/ASM sunt rezolvate prin stores curent; un magazin mutat poate apărea sub ownership-ul managerial curent.',
+    ],
     version: 1,
   },
   {
