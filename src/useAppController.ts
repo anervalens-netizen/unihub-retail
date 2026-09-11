@@ -10,7 +10,11 @@ import type { AppFilters } from './lib/appFilters';
 import { selectCurrentMonth } from './lib/currentMonth';
 import { defaultAppFilters, normalizeAppFilters } from './lib/filterValues';
 import { reportFrontendBootstrapFailure, type FrontendBootstrapFailureReason } from './lib/frontendMetrics';
-import { parseInsightDeepLink } from './lib/insightDeepLink';
+import {
+  buildRetailContextUrl,
+  parseInsightDeepLink,
+  type InsightAgentsSection,
+} from './lib/insightDeepLink';
 import { sanitizeActiveTab } from './lib/navigationAccess';
 import { usePersistentState } from './lib/usePersistentState';
 import { MGMT_SUBTABS, type ManagementTab, type TabId } from './lib/tabs';
@@ -44,6 +48,7 @@ function useAppNavigation(
     deserialize: (raw) => sanitizeActiveTab(raw, hasManagementAccess),
   });
   const [campaignsSection, setCampaignsSection] = usePersistentState<CampaignsSection>('unihub_campaigns_section', deepLink?.campaignSection ?? 'incentive', { deserialize: parseCampaignsSection });
+  const [agentsSection, setAgentsSection] = useState<InsightAgentsSection | undefined>(deepLink?.agentsSection);
   const [theme, setTheme] = usePersistentState('unihub_theme', 'light');
   const [hubSection, setHubSection] = usePersistentState<HubSection>('unihub_hub_section', deepLink?.hubSection ?? 'current', { deserialize: parseHubSection });
   const [mgmtSubTab, setMgmtSubTab] = usePersistentState<ManagementTab>('unihub_management_subtab', deepLink?.managementSubtab ?? 'asm', { deserialize: parseManagementSubTab });
@@ -54,6 +59,7 @@ function useAppNavigation(
     setActiveTab(deepLink.tab);
     if (deepLink.hubSection) setHubSection(deepLink.hubSection);
     if (deepLink.campaignSection) setCampaignsSection(deepLink.campaignSection);
+    if (deepLink.agentsSection) setAgentsSection(deepLink.agentsSection);
     if (deepLink.managementSubtab) setMgmtSubTab(deepLink.managementSubtab);
   }, [deepLink, setActiveTab, setCampaignsSection, setHubSection, setMgmtSubTab]);
   useEffect(() => {
@@ -68,7 +74,20 @@ function useAppNavigation(
     else if (theme === 'light-mint') document.documentElement.classList.add('theme-mint');
     else if (theme === 'light-olive') document.documentElement.classList.add('theme-olive');
   }, [theme]);
-  return { activeTab, setActiveTab, campaignsSection, setCampaignsSection, theme, setTheme, hubSection, setHubSection, mgmtSubTab, setMgmtSubTab };
+  return {
+    activeTab,
+    setActiveTab,
+    campaignsSection,
+    setCampaignsSection,
+    agentsSection,
+    setAgentsSection,
+    theme,
+    setTheme,
+    hubSection,
+    setHubSection,
+    mgmtSubTab,
+    setMgmtSubTab,
+  };
 }
 
 function useAppData(
@@ -110,6 +129,58 @@ function useAppData(
   };
 }
 
+function useRetailUrlProjection(
+  authenticated: boolean,
+  authLoading: boolean,
+  hasManagementAccess: boolean,
+  navigation: ReturnType<typeof useAppNavigation>,
+  data: ReturnType<typeof useAppData>,
+) {
+  useEffect(() => {
+    if (!authenticated || authLoading || !data.currentMonth) return;
+    if (navigation.activeTab === 'management' && !hasManagementAccess) return;
+
+    const filters = navigation.activeTab === 'focus'
+      ? data.focusFilters
+      : navigation.activeTab === 'agents'
+        || (navigation.activeTab === 'management' && navigation.mgmtSubTab === 'salarii')
+        ? data.agentsFilters
+        : data.hubFilters;
+    const period = navigation.activeTab === 'focus'
+      ? data.focusFilterMonth || data.currentMonth
+      : data.currentMonth;
+    const nextUrl = buildRetailContextUrl({
+      tab: navigation.activeTab,
+      period,
+      filters,
+      hubSection: navigation.hubSection,
+      campaignSection: navigation.campaignsSection,
+      agentsSection: navigation.agentsSection,
+      managementSubtab: navigation.mgmtSubTab,
+    });
+    if (`${window.location.pathname}${window.location.search}` === nextUrl) return;
+    try {
+      window.history.replaceState(window.history.state, '', nextUrl);
+    } catch {
+      return;
+    }
+  }, [
+    authenticated,
+    authLoading,
+    data.agentsFilters,
+    data.currentMonth,
+    data.focusFilterMonth,
+    data.focusFilters,
+    data.hubFilters,
+    hasManagementAccess,
+    navigation.activeTab,
+    navigation.agentsSection,
+    navigation.campaignsSection,
+    navigation.hubSection,
+    navigation.mgmtSubTab,
+  ]);
+}
+
 export function useAppController() {
   const deepLink = useMemo(() => parseInsightDeepLink(window.location), []);
   const auth = useAuth();
@@ -119,6 +190,7 @@ export function useAppController() {
   const pnlPending = pnlPermissionIsPending(auth.isLoading, pnl.permissionPending);
   const navigation = useAppNavigation(deepLink, hasManagementAccess, pnlPending, pnl.hasPnlAccess);
   const data = useAppData(deepLink, auth.isAuthenticated, auth.user?.profile.sub ?? 'anonymous');
+  useRetailUrlProjection(auth.isAuthenticated, auth.isLoading, hasManagementAccess, navigation, data);
   const login = auth.login;
   useEffect(() => { setUnauthorizedHandler(() => { void login(); }); }, [login]);
   const [isFilterOpen, setIsFilterOpen] = useState(false);
