@@ -19,8 +19,12 @@ import { useDashboardSorts } from './useDashboardSorts';
 import * as dashboardPresenters from './presenters';
 
 const HISTORY_START_YEAR = 2018;
-
 type OpenPerformance = (selection: PerformanceSelection) => void;
+export interface DashboardContextProps {
+  preferredHistoryMonth?: string;
+  onHistoryMonthsChange?: (months: string[]) => void;
+}
+type DashboardControllerProps = DashboardProps & DashboardContextProps;
 
 export function buildHistoryPerformanceOpen(
   selectedHistoryMonths: readonly string[],
@@ -30,14 +34,10 @@ export function buildHistoryPerformanceOpen(
   if (selectedHistoryMonths.length !== 1) return undefined;
   const month = selectedHistoryMonths[0];
   if (!month) return undefined;
-  return (selection) => openPerformance({
-    ...selection,
-    month,
-    includeClosedStores,
-  });
+  return (selection) => openPerformance({ ...selection, month, includeClosedStores });
 }
 
-function useDashboardState(props: DashboardProps) {
+function useDashboardState(props: DashboardControllerProps) {
   const { currentMonth, filters, initialSection, months, onSectionChange } = props;
   const { user } = useAuth();
   const [currentMode, setCurrentMode] = useState<'overview' | 'forecast'>('overview');
@@ -47,20 +47,19 @@ function useDashboardState(props: DashboardProps) {
   const performance = useDashboardPerformanceDetail({ currentMonth, firma: filters.firma });
   const historySelection = useDashboardHistorySelection({
     currentMonth, months, initialSection: initialSection ?? 'current',
+    preferredHistoryMonth: props.preferredHistoryMonth,
   });
   const data = useDashboardData({
-    currentMonth: props.currentMonth,
-    filters: props.filters,
+    currentMonth: props.currentMonth, filters: props.filters,
     historyMonth: historySelection.historyMonth,
     selectedHistoryMonths: historySelection.selectedHistoryMonths,
-    includeClosedStores,
-    activeSection: historySelection.activeSection,
-    historyYearFilter,
-    aggregateDetails: dashboardPresenters.aggregateDashboardDetails,
+    includeClosedStores, activeSection: historySelection.activeSection,
+    historyYearFilter, aggregateDetails: dashboardPresenters.aggregateDashboardDetails,
   });
+  useEffect(() => { onSectionChange?.(historySelection.activeSection); }, [historySelection.activeSection, onSectionChange]);
   useEffect(() => {
-    onSectionChange?.(historySelection.activeSection);
-  }, [historySelection.activeSection, onSectionChange]);
+    props.onHistoryMonthsChange?.(historySelection.selectedHistoryMonths);
+  }, [historySelection.selectedHistoryMonths, props.onHistoryMonthsChange]);
   const availableYears = useMemo(() => {
     const currentYear = parseInt(currentMonth.slice(0, 4));
     return Array.from({ length: currentYear - HISTORY_START_YEAR + 1 }, (_, index) => HISTORY_START_YEAR + index);
@@ -72,7 +71,7 @@ function useDashboardState(props: DashboardProps) {
   };
 }
 
-function useDashboardCharts(props: DashboardProps, state: ReturnType<typeof useDashboardState>) {
+function useDashboardCharts(props: DashboardControllerProps, state: ReturnType<typeof useDashboardState>) {
   const { data, historySelection: history } = state;
   const current = useDashboardCurrentCharts({
     currentMonth: props.currentMonth, summary: data.summary, dailySales: data.dailySales,
@@ -92,7 +91,7 @@ function useDashboardCharts(props: DashboardProps, state: ReturnType<typeof useD
   return { current, mix };
 }
 
-export function useDashboardController(props: DashboardProps): DashboardViewProps {
+export function useDashboardController(props: DashboardControllerProps): DashboardViewProps {
   const state = useDashboardState(props);
   const { data, historySelection: history, performance } = state;
   const { current, mix } = useDashboardCharts(props, state);
@@ -101,11 +100,7 @@ export function useDashboardController(props: DashboardProps): DashboardViewProp
     historyAgents: data.historyAgents, historyStores: data.historyStores, historyRegionals: data.historyRegionals,
   });
   const openPerformance = performance.setPerformanceSelection;
-  const historyOpenPerformance = buildHistoryPerformanceOpen(
-    history.selectedHistoryMonths,
-    state.includeClosedStores,
-    openPerformance,
-  );
+  const historyOpenPerformance = buildHistoryPerformanceOpen(history.selectedHistoryMonths, state.includeClosedStores, openPerformance);
   return {
     activeSection: history.activeSection, agents: data.agents, agentSort: sorts.agentSort,
     availableYears: state.availableYears, brandMixChartData: mix.brandMixChartData,
@@ -116,24 +111,17 @@ export function useDashboardController(props: DashboardProps): DashboardViewProp
     currentStoreColumns: storeBreakdownColumns(CURRENT_STORE_COLUMNS, openPerformance),
     currentAgentColumns: agentBreakdownColumns(CURRENT_AGENT_COLUMNS, openPerformance),
     currentStatusLabel: current.currentStatusLabel, categoryMixChartData: mix.categoryMixChartData,
-    dailyChartData: current.dailyChartData,
-    draftHistorySelectionLabel: history.draftHistorySelectionLabel,
-    draftSelectedHistoryMonths: history.draftSelectedHistoryMonths,
-    error: data.error, filters: props.filters, filterScopeLabel: describeFilterScope(props.filters),
+    dailyChartData: current.dailyChartData, draftHistorySelectionLabel: history.draftHistorySelectionLabel,
+    draftSelectedHistoryMonths: history.draftSelectedHistoryMonths, error: data.error,
+    filters: props.filters, filterScopeLabel: describeFilterScope(props.filters),
     focusSubcategoryChartData: mix.focusSubcategoryChartData,
-    handleApplyHistoryMonths: history.handleApplyHistoryMonths,
-    handleApplyHistoryPreset: history.handleApplyHistoryPreset,
-    handleHistoryDropdownToggle: history.handleHistoryDropdownToggle,
-    handleSortAgents: sorts.currentAgent.handleSort,
-    handleSortHistoryAgents: sorts.historyAgent.handleSort,
-    handleSortHistoryRegionals: sorts.historyRegional.handleSort,
-    handleSortHistoryStores: sorts.historyStore.handleSort,
-    handleSortRegionals: sorts.currentRegional.handleSort,
-    handleSortStores: sorts.currentStore.handleSort,
-    handleToggleHistoryMonth: history.handleToggleHistoryMonth,
+    handleApplyHistoryMonths: history.handleApplyHistoryMonths, handleApplyHistoryPreset: history.handleApplyHistoryPreset,
+    handleHistoryDropdownToggle: history.handleHistoryDropdownToggle, handleSortAgents: sorts.currentAgent.handleSort,
+    handleSortHistoryAgents: sorts.historyAgent.handleSort, handleSortHistoryRegionals: sorts.historyRegional.handleSort,
+    handleSortHistoryStores: sorts.historyStore.handleSort, handleSortRegionals: sorts.currentRegional.handleSort,
+    handleSortStores: sorts.currentStore.handleSort, handleToggleHistoryMonth: history.handleToggleHistoryMonth,
     historyAgentSort: sorts.historyAgentSort, historyAgents: data.historyAgents,
-    historyBrandMixChartData: mix.historyBrandMixChartData,
-    historyCategoryMixChartData: mix.historyCategoryMixChartData,
+    historyBrandMixChartData: mix.historyBrandMixChartData, historyCategoryMixChartData: mix.historyCategoryMixChartData,
     historyDailyChartData: mix.historyDailyChartData, historyError: data.historyError,
     historyFocusSubcategoryChartData: mix.historyFocusSubcategoryChartData,
     historyLoading: data.historyLoading, historyMonthDropdownOpen: history.historyMonthDropdownOpen,
@@ -141,29 +129,21 @@ export function useDashboardController(props: DashboardProps): DashboardViewProp
     historyRegionalColumns: regionalBreakdownColumns(HIST_REGIONAL_COLUMNS),
     historyReceiptBucketChartData: mix.historyReceiptBucketChartData,
     historyRegionalSort: sorts.historyRegionalSort, historyRegionals: data.historyRegionals,
-    historySelectionLabel: history.historySelectionLabel,
-    historySelectionSlug: history.historySelectionSlug,
+    historySelectionLabel: history.historySelectionLabel, historySelectionSlug: history.historySelectionSlug,
     historyStoreSort: sorts.historyStoreSort,
     historyStoreColumns: storeBreakdownColumns(HIST_STORE_COLUMNS, historyOpenPerformance),
     historyStores: data.historyStores, historyStatusLabel: mix.historyStatusLabel,
-    historyAgentColumns: agentBreakdownColumns(HIST_AGENT_COLUMNS),
-    historySummary: data.historySummary, historyYearFilter: state.historyYearFilter,
-    includeClosedStores: state.includeClosedStores, kpiChartData: current.kpiChartData,
-    kpiMetric: state.kpiMetric, loading: data.loading, months: props.months,
-    onClosePerformance: performance.setPerformanceSelection,
-    onCurrentModeChange: state.setCurrentMode,
-    onHistoryYearFilterChange: state.setHistoryYearFilter,
-    onIncludeClosedStoresChange: state.setIncludeClosedStores,
-    onKpiMetricChange: state.setKpiMetric,
-    onRetryCurrent: data.refetchCurrentData, onRetryHistory: data.refetchHistoryData,
-    onSectionChange: history.setActiveSection,
-    performanceDetail: performance.performanceDetail,
-    performanceError: performance.performanceError,
-    performanceLoading: performance.performanceLoading,
-    performanceSelection: performance.performanceSelection,
+    historyAgentColumns: agentBreakdownColumns(HIST_AGENT_COLUMNS), historySummary: data.historySummary,
+    historyYearFilter: state.historyYearFilter, includeClosedStores: state.includeClosedStores,
+    kpiChartData: current.kpiChartData, kpiMetric: state.kpiMetric, loading: data.loading, months: props.months,
+    onClosePerformance: performance.setPerformanceSelection, onCurrentModeChange: state.setCurrentMode,
+    onHistoryYearFilterChange: state.setHistoryYearFilter, onIncludeClosedStoresChange: state.setIncludeClosedStores,
+    onKpiMetricChange: state.setKpiMetric, onRetryCurrent: data.refetchCurrentData,
+    onRetryHistory: data.refetchHistoryData, onSectionChange: history.setActiveSection,
+    performanceDetail: performance.performanceDetail, performanceError: performance.performanceError,
+    performanceLoading: performance.performanceLoading, performanceSelection: performance.performanceSelection,
     periodComparison: data.periodComparison, receiptBucketChartData: mix.receiptBucketChartData,
-    regionals: data.regionals, regionalSort: sorts.regionalSort,
-    selectedHistoryPoint: current.selectedHistoryPoint,
+    regionals: data.regionals, regionalSort: sorts.regionalSort, selectedHistoryPoint: current.selectedHistoryPoint,
     sortedAgents: sorts.currentAgent.sorted, sortedHistoryAgents: sorts.historyAgent.sorted,
     sortedHistoryRegionals: sorts.historyRegional.sorted, sortedHistoryStores: sorts.historyStore.sorted,
     sortedRegionals: sorts.currentRegional.sorted, sortedStores: sorts.currentStore.sorted,
