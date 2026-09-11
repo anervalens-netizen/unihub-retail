@@ -13,7 +13,7 @@ import type {
 } from "../../api/generated/runtime-types";
 import type { ExportStep } from "./exports/controls";
 
-export type SettingsSection = "imports" | "exports" | "preferences";
+export type SettingsSection = "imports" | "exports" | "metrics" | "preferences";
 export type ExportMode = "table" | "daily_comparison";
 export type SetState<T> = Dispatch<SetStateAction<T>>;
 type SettingsCatalog = Awaited<
