@@ -1,6 +1,9 @@
 import { client } from './client';
 import type { AppFilters } from '../lib/appFilters';
-import type { RetailContextUrlState } from '../lib/insightDeepLink';
+import {
+  canonicalizeRetailContextFilters,
+  type RetailContextUrlState,
+} from '../lib/insightDeepLink';
 
 export type SavedViewModule = 'hub' | 'focus' | 'agents' | 'management';
 
@@ -30,11 +33,7 @@ export function toSavedViewApiState(state: RetailContextUrlState): SavedViewApiS
   const base = {
     tab: state.tab,
     period: state.period,
-    filters: {
-      ...state.filters,
-      magazin: [...state.filters.magazin],
-      agent: [...state.filters.agent],
-    },
+    filters: canonicalizeRetailContextFilters(state.filters),
   };
   if (state.tab === 'hub') return { ...base, section: state.hubSection ?? 'current' };
   if (state.tab === 'focus') return { ...base, section: state.campaignSection ?? 'incentive' };
@@ -46,11 +45,7 @@ export function toRetailContextUrlState(state: SavedViewApiState): RetailContext
   const base = {
     tab: state.tab,
     period: state.period ?? undefined,
-    filters: {
-      ...state.filters,
-      magazin: [...state.filters.magazin],
-      agent: [...state.filters.agent],
-    },
+    filters: canonicalizeRetailContextFilters(state.filters),
   };
   if (state.tab === 'hub') {
     return { ...base, hubSection: state.section as 'current' | 'history' | 'visits' };
