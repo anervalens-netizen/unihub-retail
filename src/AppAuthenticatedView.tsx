@@ -40,7 +40,10 @@ export function AppAuthenticatedView({ controller }: { controller: AppController
 
 function AppScreens({ controller }: { controller: AppController }) {
   const { data, navigation } = controller;
-  const hubDeepLinkMonth = controller.deepLink?.tab === 'hub' ? controller.deepLink.period : undefined;
+  const hubDeepLinkMonth = controller.deepLink?.tab === 'hub'
+    && controller.deepLink.hubSection === 'history'
+    ? controller.deepLink.period
+    : undefined;
   const focusDeepLinkMonth = controller.deepLink?.tab === 'focus' ? controller.deepLink.period : undefined;
   const agentsDeepLinkMonth = controller.deepLink?.tab === 'agents' ? controller.deepLink.period : undefined;
   return <Suspense fallback={<div className="flex h-full items-center justify-center text-sm font-semibold text-slate-500">Se incarca ecranul...</div>}>
