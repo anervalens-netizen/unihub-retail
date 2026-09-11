@@ -29,7 +29,8 @@ export function AppAuthenticatedView({ controller }: { controller: AppController
     filters={activeFilters} setFilters={setActiveFilters} filterMonth={activeFilterMonth}
     theme={navigation.theme} setTheme={navigation.setTheme}
     showFilterButton={!(navigation.activeTab === 'hub' && navigation.hubSection === 'visits')}
-    mgmtSubTab={navigation.mgmtSubTab} userEmail={auth.user?.profile.email ?? undefined}
+    mgmtSubTab={navigation.mgmtSubTab} savedViewState={controller.retailContextState}
+    userEmail={auth.user?.profile.email ?? undefined}
     onLogout={auth.logout} canAccessManagement={controller.hasManagementAccess}
   >
     {staleBanner}
