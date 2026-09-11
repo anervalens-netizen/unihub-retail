@@ -1,22 +1,29 @@
+import type { AiForecastResponse } from '../src/api/generated/runtime-types';
 import { expect, test } from './fixtures';
 import { retailWireForRequest, setupBaseMocks } from './helpers';
 
+let cumulativeForecast = 0;
+let cumulativeActual = 0;
 const daily = Array.from({ length: 31 }, (_, index) => {
   const day = String(index + 1).padStart(2, '0');
   const forecast = 1000 + index * 10;
   const hasActual = index < 10;
+  const actual = hasActual ? forecast - 50 : 0;
+  cumulativeForecast += forecast;
+  if (hasActual) cumulativeActual += actual;
   return {
     forecast_date: `2026-05-${day}`,
     forecast_sales: forecast,
-    actual_sales: hasActual ? forecast - 50 : 0,
+    actual_sales: actual,
     has_actual: hasActual,
-    cumulative_forecast: (index + 1) * forecast,
-    cumulative_actual: hasActual ? (index + 1) * (forecast - 50) : 9500,
+    cumulative_forecast: cumulativeForecast,
+    cumulative_actual: cumulativeActual,
   };
 });
 
 const forecastResponse = {
   run: {
+    id: 1,
     forecast_month: '2026-05',
     source_month: '2025-05',
     model_name: 'TimesFM 2.5',
@@ -40,7 +47,7 @@ const forecastResponse = {
   daily,
   managers: [],
   stores: [],
-};
+} satisfies AiForecastResponse;
 
 test('AI Forecast daily table is local, bounded and contained on mobile', async ({
   context,
