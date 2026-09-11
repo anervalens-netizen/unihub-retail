@@ -3,7 +3,8 @@ import { RefreshCw } from 'lucide-react';
 import type { AgentEvaluationRow, AgentEvaluationV2Row } from '../../api/agents';
 import { ExportTableButton } from '../../components/ExportTableButton';
 import { CompactSummary, FirmSelector, MechanismCard, MonthDropdown, StoreDropdown } from './AgentEvaluationControls';
-import { AgentLegacyMobileCard, AgentRow, flagLabel, SortHeader, type SortKey } from './AgentEvaluationTables';
+import { AgentLegacyMobileCard, AgentRow, SortHeader, type SortKey } from './AgentEvaluationTables';
+import { V2_EXPORT_COLUMNS } from './AgentEvaluationV2Grid';
 import { NewEvaluationSubsection } from './AgentEvaluationV2Table';
 import type { AgentEvaluationController } from './useAgentEvaluationController';
 
@@ -33,16 +34,7 @@ function LegacyEvaluationExport({ rows }: { rows: AgentEvaluationRow[] }) {
 }
 
 function NewEvaluationExport({ rows }: { rows: AgentEvaluationV2Row[] }) {
-  return <ExportTableButton filename="management_agenti_evaluare_noua" sheetName="Punctaj 0-100" rows={rows} columns={[
-    { header: 'Luna', value: (row) => row.month, format: 'month' }, { header: 'Firma', value: (row) => row.firma },
-    { header: 'Agent', value: (row) => row.agent }, { header: 'Magazin', value: (row) => row.locatie },
-    { header: 'Vanzare', value: (row) => row.total_sales, format: 'currency' }, { header: 'Scor', value: (row) => row.total_score, format: 'number' },
-    { header: 'Rating', value: (row) => row.rating }, { header: 'Status', value: (row) => row.eligibility_status },
-    { header: 'Flaguri', value: (row) => row.confidence_flags.map(flagLabel).join(', ') }, { header: '% Target', value: (row) => row.target_pct, format: 'percentPoints' },
-    { header: 'Productivitate vs reper', value: (row) => row.daily_vs_reference_pct, format: 'percentPoints' }, { header: 'Bon2Acc', value: (row) => row.bonuri_pct, format: 'percentPoints' },
-    { header: 'Focus', value: (row) => row.focus_pct, format: 'percentPoints' }, { header: 'Folii Premium', value: (row) => row.premium_glass_pct, format: 'percentPoints' },
-    { header: 'Valoare reper', value: (row) => row.value_reper, format: 'number' }, { header: 'Trend 3 luni', value: (row) => row.trend_daily_pct, format: 'percentPoints' },
-  ]} />;
+  return <ExportTableButton filename="management_agenti_evaluare_noua" sheetName="Punctaj 0-100" rows={rows} columns={V2_EXPORT_COLUMNS} />;
 }
 
 export function EvaluationHeader({ model }: { model: AgentEvaluationController }) {
