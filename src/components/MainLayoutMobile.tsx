@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import { Check, ChevronDown, Filter, Search, X } from 'lucide-react';
+import { Bookmark, Check, ChevronDown, Filter, Search, X } from 'lucide-react';
 
 import type { AppFilters } from '../lib/appFilters';
 import { ALL_FIRMS, ALL_SCOPE, ALL_STORES } from '../lib/filterValues';
@@ -11,25 +11,34 @@ import type { MainLayoutFilterModel } from './useMainLayoutFilters';
 interface FilterValueOption { label: string; value: string }
 
 export function MobileFilterSheet({
-  open, onOpenChange, filters, setFilters, model,
+  open, onOpenChange, filters, setFilters, model, showFilters, savedViews,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   filters: AppFilters;
   setFilters: (filters: AppFilters) => void;
   model: MainLayoutFilterModel;
+  showFilters: boolean;
+  savedViews?: ReactNode;
 }) {
   return <AnimatePresence>{open && <>
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => onOpenChange(false)} className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-sm" />
     <motion.div initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }} transition={{ type: 'spring', damping: 24, stiffness: 180 }} className="mobile-filter-sheet fixed inset-x-0 bottom-0 z-50 mx-auto max-h-[88dvh] max-w-lg overflow-y-auto rounded-t-4xl bg-white p-4 shadow-2xl dark:bg-slate-900">
-      <div className="mb-4 flex items-center justify-between"><h3 className="text-lg font-bold">Filtre active</h3><button onClick={() => onOpenChange(false)} aria-label="Inchide" className="flex h-11 w-11 items-center justify-center rounded-full bg-slate-100 dark:bg-slate-800"><X size={16} /></button></div>
-      <div className="space-y-3">
-        <FilterSelect label="Firma" value={filters.firma} values={[{ label: ALL_FIRMS, value: ALL_FIRMS }, ...model.options.firme.map((item) => ({ label: item, value: item }))]} onChange={(value) => setFilters({ ...filters, firma: value, rm: ALL_SCOPE, magazin: [], agent: [] })} />
-        <FilterSelect label="Manager" value={filters.rm} values={[{ label: ALL_SCOPE, value: ALL_SCOPE }, ...model.regionals.map((item) => ({ label: item, value: item }))]} onChange={(value) => setFilters({ ...filters, rm: value, magazin: [], agent: [] })} />
-        <FilterMultiSelect label="Magazin" selectedSummaryLabel="magazine selectate" value={filters.magazin} allLabel={ALL_STORES} values={model.stores.map((item) => ({ label: `${item.locatie} (${item.site_code})`, value: item.site_code }))} onChange={(value) => setFilters({ ...filters, magazin: value, agent: [] })} />
-        <FilterMultiSelect label="Agent" selectedSummaryLabel="agenti selectati" value={filters.agent} allLabel={ALL_SCOPE} values={model.agents.map((item) => ({ label: item, value: item }))} onChange={(value) => setFilters({ ...filters, agent: value })} />
-      </div>
-      <div className="mt-5 flex gap-2"><button onClick={model.reset} className="flex-1 rounded-2xl bg-slate-100 px-4 py-3 text-xs font-bold dark:bg-slate-800">Reseteaza</button><button onClick={() => onOpenChange(false)} className="flex-2 rounded-2xl bg-indigo-600 px-4 py-3 text-xs font-bold text-white shadow-lg shadow-indigo-500/30">Aplica</button></div>
+      <div className="mb-4 flex items-center justify-between"><h2 className="text-lg font-bold">Context</h2><button onClick={() => onOpenChange(false)} aria-label="Inchide" className="flex h-11 w-11 items-center justify-center rounded-full bg-slate-100 dark:bg-slate-800"><X size={16} /></button></div>
+      {savedViews}
+      {showFilters && <>
+        {savedViews && <div className="my-4 border-t border-slate-200 dark:border-slate-700" />}
+        <section aria-labelledby="mobile-filter-title">
+          <h3 id="mobile-filter-title" className="mb-3 text-sm font-bold">Filtre active</h3>
+          <div className="space-y-3">
+            <FilterSelect label="Firma" value={filters.firma} values={[{ label: ALL_FIRMS, value: ALL_FIRMS }, ...model.options.firme.map((item) => ({ label: item, value: item }))]} onChange={(value) => setFilters({ ...filters, firma: value, rm: ALL_SCOPE, magazin: [], agent: [] })} />
+            <FilterSelect label="Manager" value={filters.rm} values={[{ label: ALL_SCOPE, value: ALL_SCOPE }, ...model.regionals.map((item) => ({ label: item, value: item }))]} onChange={(value) => setFilters({ ...filters, rm: value, magazin: [], agent: [] })} />
+            <FilterMultiSelect label="Magazin" selectedSummaryLabel="magazine selectate" value={filters.magazin} allLabel={ALL_STORES} values={model.stores.map((item) => ({ label: `${item.locatie} (${item.site_code})`, value: item.site_code }))} onChange={(value) => setFilters({ ...filters, magazin: value, agent: [] })} />
+            <FilterMultiSelect label="Agent" selectedSummaryLabel="agenti selectati" value={filters.agent} allLabel={ALL_SCOPE} values={model.agents.map((item) => ({ label: item, value: item }))} onChange={(value) => setFilters({ ...filters, agent: value })} />
+          </div>
+          <div className="mt-5 flex gap-2"><button onClick={model.reset} className="flex-1 rounded-2xl bg-slate-100 px-4 py-3 text-xs font-bold dark:bg-slate-800">Reseteaza</button><button onClick={() => onOpenChange(false)} className="flex-2 rounded-2xl bg-indigo-600 px-4 py-3 text-xs font-bold text-white shadow-lg shadow-indigo-500/30">Aplica</button></div>
+        </section>
+      </>}
     </motion.div>
   </>}</AnimatePresence>;
 }
@@ -53,9 +62,19 @@ export function MobileBottomNavigation({ activeTab, setActiveTab, errorCount, ca
   </div></div>;
 }
 
-export function MobileFloatingFilter({ count, onOpen }: { count: number; onOpen: () => void }) {
-  return <button type="button" onClick={onOpen} aria-label={count > 0 ? `Filtre, ${count} active` : 'Filtre'} className="mobile-floating-filter lg:hidden fixed right-4 z-40 flex h-11 w-11 items-center justify-center rounded-full border-2 border-white/95 bg-indigo-600 text-white shadow-[0_8px_22px_rgba(49,46,129,0.38),0_2px_6px_rgba(15,23,42,0.28)] transition hover:bg-indigo-700 active:translate-y-px active:bg-indigo-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 focus-visible:ring-offset-2 dark:border-slate-950/80 dark:bg-indigo-500 dark:hover:bg-indigo-400 dark:active:bg-indigo-400 dark:focus-visible:ring-indigo-300 dark:focus-visible:ring-offset-slate-950">
-    <Filter size={17} />{count > 0 && <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-400 px-1 text-[9px] font-black text-slate-950 ring-2 ring-white dark:bg-amber-300 dark:ring-slate-950">{count > 9 ? '9+' : count}</span>}
+export function MobileFloatingFilter({ count, onOpen, showFilters, hasSavedViews }: {
+  count: number;
+  onOpen: () => void;
+  showFilters: boolean;
+  hasSavedViews: boolean;
+}) {
+  const label = showFilters
+    ? hasSavedViews
+      ? count > 0 ? `Context, ${count} filtre active și vederi salvate` : 'Context, filtre și vederi salvate'
+      : count > 0 ? `Filtre, ${count} active` : 'Filtre'
+    : 'Vederi salvate';
+  return <button type="button" onClick={onOpen} aria-label={label} className="mobile-floating-filter lg:hidden fixed right-4 z-40 flex h-11 w-11 items-center justify-center rounded-full border-2 border-white/95 bg-indigo-600 text-white shadow-[0_8px_22px_rgba(49,46,129,0.38),0_2px_6px_rgba(15,23,42,0.28)] transition hover:bg-indigo-700 active:translate-y-px active:bg-indigo-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 focus-visible:ring-offset-2 dark:border-slate-950/80 dark:bg-indigo-500 dark:hover:bg-indigo-400 dark:active:bg-indigo-400 dark:focus-visible:ring-indigo-300 dark:focus-visible:ring-offset-slate-950">
+    {showFilters ? <Filter size={17} /> : <Bookmark size={17} />}{showFilters && count > 0 && <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-400 px-1 text-[9px] font-black text-slate-950 ring-2 ring-white dark:bg-amber-300 dark:ring-slate-950">{count > 9 ? '9+' : count}</span>}
   </button>;
 }
 
