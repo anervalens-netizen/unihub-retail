@@ -7,12 +7,7 @@ import {
   type AgentEvaluationV2Response,
 } from '../../api/agents';
 import { shiftMonth } from '../../lib/dates';
-import {
-  getSortValue,
-  getV2SortValue,
-  type SortKey,
-  type V2SortKey,
-} from './AgentEvaluationTables';
+import { getSortValue, type SortKey } from './AgentEvaluationTables';
 
 const EMPTY_RESPONSE: AgentEvaluationResponse = { months: [], firmas: [], asms: [], stores: [], rows: [] };
 const EMPTY_V2_RESPONSE: AgentEvaluationV2Response = { months: [], firmas: [], asms: [], stores: [], rows: [] };
@@ -40,8 +35,6 @@ export function useAgentEvaluationController(currentMonth: string, months: strin
   const [selectedStores, setSelectedStores] = useState<string[]>([]);
   const [sortKey, setSortKey] = useState<SortKey>('total_points');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
-  const [v2SortKey, setV2SortKey] = useState<V2SortKey>('total_score');
-  const [v2SortDirection, setV2SortDirection] = useState<'asc' | 'desc'>('desc');
   const [loading, setLoading] = useState(false);
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
   const load = useCallback(async () => {
@@ -68,18 +61,14 @@ export function useAgentEvaluationController(currentMonth: string, months: strin
   }, [data.rows, firma, sortDirection, sortKey]);
   const v2Rows = useMemo(() => {
     const filtered = firma ? v2Data.rows.filter((row) => row.firma.toLowerCase() === firma.toLowerCase()) : v2Data.rows;
-    return [...filtered].sort((left, right) => {
-      const result = compareValues(getV2SortValue(left, v2SortKey), getV2SortValue(right, v2SortKey));
-      return v2SortDirection === 'asc' ? result : -result;
-    });
-  }, [firma, v2Data.rows, v2SortDirection, v2SortKey]);
+    return [...filtered].sort((left, right) => compareValues(
+      right.total_score ?? Number.NEGATIVE_INFINITY,
+      left.total_score ?? Number.NEGATIVE_INFINITY,
+    ));
+  }, [firma, v2Data.rows]);
   const handleSort = (key: SortKey) => {
     if (key === sortKey) { setSortDirection((value) => value === 'asc' ? 'desc' : 'asc'); return; }
     setSortKey(key); setSortDirection(key === 'agent' || key === 'month' ? 'asc' : 'desc');
-  };
-  const handleV2Sort = (key: V2SortKey) => {
-    if (key === v2SortKey) { setV2SortDirection((value) => value === 'asc' ? 'desc' : 'asc'); return; }
-    setV2SortKey(key); setV2SortDirection(key === 'agent' || key === 'eligibility_status' ? 'asc' : 'desc');
   };
   const summary = useMemo(() => ({
     agents: new Set(rows.map((row) => row.agent)).size,
@@ -92,11 +81,10 @@ export function useAgentEvaluationController(currentMonth: string, months: strin
   return {
     mode, setMode, selectedMonths, setSelectedMonths, firma, setFirma, asm,
     resetManager, selectedStores, setSelectedStores, sortKey, sortDirection,
-    v2SortKey, v2SortDirection, loading, mobileFiltersOpen, setMobileFiltersOpen,
-    load, toggleMonth, toggleStore, rows, v2Rows, handleSort, handleV2Sort,
+    loading, mobileFiltersOpen, setMobileFiltersOpen,
+    load, toggleMonth, toggleStore, rows, v2Rows, handleSort,
     summary, optionData,
   };
 }
 
 export type AgentEvaluationController = ReturnType<typeof useAgentEvaluationController>;
-
