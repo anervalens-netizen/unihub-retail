@@ -47,6 +47,24 @@ describe('saved views API client', () => {
     expect(toRetailContextUrlState(saved.state)).toEqual(state);
   });
 
+  it('uses the same bounded selection normalization as canonical Retail URLs', () => {
+    const manyStores = Array.from({ length: 60 }, (_, index) => `M${index}`);
+    const manyAgents = [...Array.from({ length: 55 }, (_, index) => `A${index}`), 'A0'];
+    const state = toSavedViewApiState({
+      tab: 'hub',
+      period: '2026-09',
+      filters: { firma: ' Arsis ', rm: ' RM Est ', magazin: manyStores, agent: manyAgents },
+      hubSection: 'current',
+    });
+    expect(state.filters.firma).toBe('Arsis');
+    expect(state.filters.rm).toBe('RM Est');
+    expect(state.filters.magazin).toHaveLength(50);
+    expect(state.filters.magazin[0]).toBe('M0');
+    expect(state.filters.magazin[49]).toBe('M49');
+    expect(state.filters.agent).toHaveLength(50);
+    expect(new Set(state.filters.agent).size).toBe(50);
+  });
+
   it('maps the remaining module-specific context fields', () => {
     expect(toSavedViewApiState({ tab: 'focus', period: '2026-09', filters, campaignSection: 'promo' }).section).toBe('promo');
     expect(toSavedViewApiState({ tab: 'agents', period: '2026-09', filters }).section).toBe('overview');
