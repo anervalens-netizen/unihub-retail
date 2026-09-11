@@ -32,11 +32,13 @@ function displayValue(metric: MetricDefinition, value: number | null): string {
 }
 
 function filterContext(filters: AppFilters) {
+  const hasStoreScope = filters.magazin.length > 0;
+  const overriddenByStore = 'Suprascris de Magazin';
   return [
-    ['Firma', filters.firma === ALL_FIRMS ? 'Toate firmele' : filters.firma],
-    ['RM', filters.rm === ALL_SCOPE ? 'Toți RM' : filters.rm],
-    ['Magazine', filters.magazin.length > 0 ? filters.magazin.join(', ') : 'Toate din scope'],
-    ['Agenți', filters.agent.length > 0 ? filters.agent.join(', ') : 'Toți din scope'],
+    ['Firma', hasStoreScope ? overriddenByStore : filters.firma === ALL_FIRMS ? 'Toate firmele' : filters.firma],
+    ['Manager', hasStoreScope ? overriddenByStore : filters.rm === ALL_SCOPE ? 'Toți managerii' : filters.rm],
+    ['Magazin', hasStoreScope ? filters.magazin.join(', ') : 'Toate magazinele din scope'],
+    ['Agent', filters.agent.length > 0 ? filters.agent.join(', ') : 'Toți agenții din scope'],
   ] as const;
 }
 
