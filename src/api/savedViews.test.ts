@@ -1,11 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const get = vi.fn();
-const post = vi.fn();
-const del = vi.fn();
+const clientMock = vi.hoisted(() => ({
+  get: vi.fn(),
+  post: vi.fn(),
+  del: vi.fn(),
+}));
 
 vi.mock('./client', () => ({
-  client: { get, post, delete: del },
+  client: { get: clientMock.get, post: clientMock.post, delete: clientMock.del },
 }));
 
 import {
@@ -29,9 +31,9 @@ const saved = {
 
 describe('saved views API client', () => {
   beforeEach(() => {
-    get.mockReset();
-    post.mockReset();
-    del.mockReset();
+    clientMock.get.mockReset();
+    clientMock.post.mockReset();
+    clientMock.del.mockReset();
   });
 
   it('maps canonical URL state to the backend contract and back', () => {
@@ -53,9 +55,9 @@ describe('saved views API client', () => {
   });
 
   it('lists, creates and deletes through the canonical API client', async () => {
-    get.mockResolvedValue({ data: { items: [saved] } });
-    post.mockResolvedValue({ data: saved });
-    del.mockResolvedValue({ data: { ok: true } });
+    clientMock.get.mockResolvedValue({ data: { items: [saved] } });
+    clientMock.post.mockResolvedValue({ data: saved });
+    clientMock.del.mockResolvedValue({ data: { ok: true } });
 
     await expect(listSavedViews()).resolves.toEqual([saved]);
     await expect(createSavedView('Istoric Est', {
@@ -63,16 +65,16 @@ describe('saved views API client', () => {
     })).resolves.toEqual(saved);
     await expect(deleteSavedView(7)).resolves.toBeUndefined();
 
-    expect(get).toHaveBeenCalledWith('/api/saved-views', { signal: undefined });
-    expect(post).toHaveBeenCalledWith('/api/saved-views', {
+    expect(clientMock.get).toHaveBeenCalledWith('/api/saved-views', { signal: undefined });
+    expect(clientMock.post).toHaveBeenCalledWith('/api/saved-views', {
       name: 'Istoric Est',
       state: saved.state,
     });
-    expect(del).toHaveBeenCalledWith('/api/saved-views/7');
+    expect(clientMock.del).toHaveBeenCalledWith('/api/saved-views/7');
   });
 
   it('fails closed when delete is not acknowledged', async () => {
-    del.mockResolvedValue({ data: { ok: false } });
+    clientMock.del.mockResolvedValue({ data: { ok: false } });
     await expect(deleteSavedView(7)).rejects.toThrow(/not acknowledged/);
   });
 });
