@@ -30,7 +30,7 @@ type V2ColumnKey =
   | 'value_reper'
   | 'trend_daily_pct';
 
-const V2_EXPORT_COLUMNS: ExportColumn<AgentEvaluationV2Row>[] = [
+export const V2_EXPORT_COLUMNS: ExportColumn<AgentEvaluationV2Row>[] = [
   { header: 'Luna', value: (row) => row.month, format: 'month' },
   { header: 'Firma', value: (row) => row.firma },
   { header: 'Agent', value: (row) => row.agent },
