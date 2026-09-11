@@ -34,7 +34,9 @@ describe('MetricFormulaInspector', () => {
     expect(within(inspector).getByText(`${value.toFixed(2)}%`)).toBeInTheDocument();
     expect(within(inspector).getByText('2026-09')).toBeInTheDocument();
     expect(within(inspector).getByText('2026-09-10')).toBeInTheDocument();
-    expect(within(inspector).getByText('Ziua 10 din 30')).toBeInTheDocument();
+    expect(within(inspector).getByText('Acoperire vânzări în scope')).toBeInTheDocument();
+    expect(within(inspector).getByText('Până la ziua 10 din 30')).toBeInTheDocument();
+    expect(within(inspector).queryByText('Import lunar')).not.toBeInTheDocument();
     expect(within(inspector).getByText('Firma')).toBeInTheDocument();
     expect(within(inspector).getByText('Manager')).toBeInTheDocument();
     expect(within(inspector).getByText('Magazin')).toBeInTheDocument();
@@ -116,7 +118,7 @@ describe('MetricFormulaInspector', () => {
     expect(within(inspector).getByText('Toți managerii')).toBeInTheDocument();
   });
 
-  it('states unavailable cutoff/import context instead of inventing data', () => {
+  it('states unavailable scoped coverage instead of inventing data', () => {
     render(
       <MetricFormulaInspector
         metricId="retail.receipts.bon2acc_pct"
