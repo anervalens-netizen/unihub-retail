@@ -36,7 +36,7 @@ describe('MetricCatalogView', () => {
     expect(screen.getByText('0 din 11 metrici')).toBeInTheDocument();
   });
 
-  it('keeps implementation details collapsed until explicitly requested', () => {
+  it('keeps technical implementation details collapsed by default', () => {
     render(<MetricCatalogView />);
     fireEvent.change(screen.getByRole('searchbox', { name: 'Caută în Catalog KPI' }), {
       target: { value: 'retail.sales.avg_receipt_value' },
@@ -45,8 +45,6 @@ describe('MetricCatalogView', () => {
     const details = screen.getByText('Detalii tehnice').closest('details');
     expect(details).not.toBeNull();
     expect(details).not.toHaveAttribute('open');
-    fireEvent.click(screen.getByText('Detalii tehnice'));
-    expect(details).toHaveAttribute('open');
     expect(screen.getByText('backend/services/dashboard/query_comparison.py::_fetch_comparison_point')).toBeInTheDocument();
   });
 });
