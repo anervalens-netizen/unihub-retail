@@ -75,7 +75,8 @@
     "067_grile_v2_operations_read_authority.sql": "transactional",
     "068_grile_v2_forecast_digest_authority.sql": "transactional",
     "069_ai_cohort_and_transactional_outbox.sql": "transactional",
-    "074_v3_reporting_return_receipt_count.sql": "maintenance-window"
+    "074_v3_reporting_return_receipt_count.sql": "maintenance-window",
+    "075_v3_saved_views.sql": "transactional"
   },
   "migrations": {
     "001_add_cartela_composite_index.sql": "7f502462f585088286f9ae60d5c4ded69fccf745342ae6ddfc34c48241514b46",
@@ -147,6 +148,7 @@
     "067_grile_v2_operations_read_authority.sql": "06b3c857983669677a741d6f743b47de370ce5195df33ba69d7c1f5c6b13057a",
     "068_grile_v2_forecast_digest_authority.sql": "766e550ddf03474979c2bf8c26067d5dc3a79a1e501a705a6988ae9fc47afa79",
     "069_ai_cohort_and_transactional_outbox.sql": "e2f3f1ff09c14cbba577ac40ba476250a7b746ebbe0bdf373c6ebf4e552fc8a0",
-    "074_v3_reporting_return_receipt_count.sql": "ee9d9f90fd3772d6634c9a5de7bffe58dd5c46491a393ec5f368a599aa13666e"
+    "074_v3_reporting_return_receipt_count.sql": "ee9d9f90fd3772d6634c9a5de7bffe58dd5c46491a393ec5f368a599aa13666e",
+    "075_v3_saved_views.sql": "6ffc7bf571001b993af3849bb2a8170af826dc4737bdd643cdb876ee87b8d856"
   }
 }

@@ -68,7 +68,18 @@ class FakeRepository:
         self.calls.append(("update", owner_subject, view_id, kwargs))
         if self.raise_conflict:
             raise SavedViewNameConflict
-        return self.update_result
+        if self.update_result is None:
+            return None
+        # The real repository returns the persisted row through
+        # UPDATE ... RETURNING, so a faithful fake reflects the requested
+        # mutation instead of replaying the pre-update row.
+        name = kwargs.get("name")
+        state = kwargs.get("state")
+        return _row(
+            view_id=view_id,
+            name=self.update_result["name"] if name is None else name,
+            state=_state() if state is None else state,
+        )
 
     async def delete_view(self, owner_subject: str, view_id: int):
         self.calls.append(("delete", owner_subject, view_id))
