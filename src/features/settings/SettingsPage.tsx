@@ -6,9 +6,10 @@ import { PageHeader } from "../../components/common/DesktopLayout";
 import { SegmentedTabs } from "../../components/common/SegmentedTabs";
 import { ExportsView } from "./ExportsView";
 import { ImportsView } from "./ImportsView";
-import { PreferencesView } from "./preferences/PreferencesView";
 import { useSettingsExports } from "./hooks/useSettingsExports";
 import { useSettingsImports } from "./hooks/useSettingsImports";
+import { MetricCatalogView } from "./metrics/MetricCatalogView";
+import { PreferencesView } from "./preferences/PreferencesView";
 import type { SettingsSection } from "./types";
 
 export interface SettingsPageProps {
@@ -65,6 +66,7 @@ export function SettingsPage({
           ...(canUseExports
             ? [{ value: "exports" as const, label: "Exporturi" }]
             : []),
+          { value: "metrics" as const, label: "Metrici" },
           { value: "preferences" as const, label: "Preferințe" },
         ]}
         value={section}
@@ -72,6 +74,7 @@ export function SettingsPage({
       />
       {section === "imports" && <ImportsView model={imports} />}
       {section === "exports" && <ExportsView model={exports} />}
+      {section === "metrics" && <MetricCatalogView />}
       {section === "preferences" && (
         <PreferencesView
           theme={theme}
