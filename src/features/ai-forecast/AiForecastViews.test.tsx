@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -148,6 +148,26 @@ describe('AI forecast critical surfaces', () => {
     render(<><ForecastDefinition term="WAPE" description="eroare" /><ForecastLine label="Model" value="TimesFM" valueClassName="ok" /><ForecastDailyCurveCard title="Curba" subtitle="Detaliu" data={curve} metric="sales_value" /><ForecastDailyCurveCard title="Zero" data={[]} metric="units" /><RollingMonthlyChartCard data={rolling.months as never[]} metric="units" /></>);
     expect(screen.getByText('WAPE:')).toBeInTheDocument();
     expect(screen.getByText('1 zile weekend')).toBeInTheDocument();
+    expect(screen.getAllByTestId('forecast-daily-curve-chart')).toHaveLength(2);
+
+    const viewSelect = screen.getByRole('combobox', { name: 'Vizualizare Curba' });
+    fireEvent.change(viewSelect, { target: { value: 'table' } });
+    const region = screen.getByRole('region', { name: 'Date Curba' });
+    expect(region).toHaveClass('h-72', 'overflow-auto');
+    const table = within(region).getByRole('table');
+    const firstRow = within(table).getByRole('rowheader', { name: '2026-08-01' }).closest('tr');
+    const secondRow = within(table).getByRole('rowheader', { name: '2026-08-03' }).closest('tr');
+    expect(firstRow).not.toBeNull();
+    expect(secondRow).not.toBeNull();
+    expect(within(firstRow!).getAllByRole('cell').map((cell) => cell.textContent)).toEqual([
+      '01', 'Weekend', '100', '90', '100', '90',
+    ]);
+    expect(within(secondRow!).getAllByRole('cell').map((cell) => cell.textContent)).toEqual([
+      '03', 'Lucratoare', '120', '-', '220', '-',
+    ]);
+    fireEvent.change(viewSelect, { target: { value: 'chart' } });
+    expect(screen.queryByRole('region', { name: 'Date Curba' })).not.toBeInTheDocument();
+    expect(screen.getAllByTestId('forecast-daily-curve-chart')).toHaveLength(2);
   });
 
   it('renders current data, filters, sorts and opens both detail paths', async () => {
