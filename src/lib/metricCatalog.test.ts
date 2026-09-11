@@ -168,6 +168,19 @@ describe('Metric Catalog v1', () => {
     expect(quantity?.limitations.join(' ')).toContain('RM/ASM');
   });
 
+  it('documents the exact annual-history fallback eligibility and positivity gates', () => {
+    for (const id of ['retail.sales.net_value', 'retail.accessories.net_quantity']) {
+      const text = getMetricDefinition(id)?.limitations.join(' ') ?? '';
+      expect(text).toContain('anii <= 2023');
+      expect(text).toContain('fără filtru de agent');
+      expect(text).toContain('total_sales > 0');
+      expect(text).toContain('total_quantity > 0');
+      expect(text).toContain('sales, target și quantity');
+      expect(text).toContain('toate <= 0');
+      expect(text).toContain('total_sales anual > 0');
+    }
+  });
+
   it('documents browser-side recomputation without overstating source freshness', () => {
     for (const id of [
       'retail.target.attainment_pct',
@@ -192,6 +205,25 @@ describe('Metric Catalog v1', () => {
     const focus = getMetricDefinition('retail.focus.accessory_pct');
     expect(focus?.sources).toContain('reporting_agent_month.focus_quantity');
     expect(focus?.sources).toContain('reporting_agent_month.total_quantity');
+  });
+
+  it('documents the Monthly History zero coercion for missing derived KPI values', () => {
+    const bon2 = getMetricDefinition('retail.receipts.bon2acc_pct');
+    expect(bon2?.formula).toContain('Monthly History');
+    expect(bon2?.formula).toContain('0%');
+    expect(bon2?.limitations.join(' ')).toContain('Critic');
+    expect(bon2?.limitations.join(' ')).toContain('current summary');
+
+    for (const id of [
+      'retail.focus.accessory_pct',
+      'retail.sales.avg_product_value',
+      'retail.sales.daily_average',
+    ]) {
+      const text = getMetricDefinition(id)?.limitations.join(' ') ?? '';
+      expect(text).toContain('Monthly History');
+      expect(text).toContain('0');
+      expect(text).toContain('null');
+    }
   });
 
   it('documents the rounded-ratio reconstruction used for multi-month Bon2Acc', () => {
