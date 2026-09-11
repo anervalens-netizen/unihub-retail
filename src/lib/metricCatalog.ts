@@ -49,6 +49,12 @@ const ORGANIZATION = {
     'În istoric, dimensiunile organizaționale stocate în reporting_* la import rămân autoritative; comparațiile istorice de perioadă păstrează cohorta de magazine din selecția curentă.',
 } as const;
 
+const TARGET_ORGANIZATION = {
+  current: ORGANIZATION.current,
+  historical:
+    'În History, vânzările păstrează dimensiunile organizaționale istorice din reporting_*, dar target_summary filtrează store_targets prin stores curent pentru firmă/RM/ASM. După mutarea unui magazin, targetul istoric poate urma ownership-ul curent chiar dacă vânzările rămân în ownership-ul istoric.',
+} as const;
+
 const REPORTING_EXCLUSIONS = [
   'Cartelele sunt excluse din KPI Retail și raportate separat.',
   'Locațiile de distribuție cu locatie LIKE "TR %" sunt excluse de read-modelul Retail.',
@@ -101,12 +107,14 @@ export const METRIC_CATALOG = [
     sources: ['store_targets.target_value', 'agent_targets.target_value', 'reporting_agent_month'],
     inclusions: ['Sunt incluse numai magazinele prezente în scope-ul Retail al selecției.'],
     exclusions: REPORTING_EXCLUSIONS,
-    organizationSemantics: ORGANIZATION,
+    organizationSemantics: TARGET_ORGANIZATION,
     freshness:
       'Țintele sunt citite la request din store_targets/agent_targets și se pot modifica independent de read-modelurile de vânzări.',
     visualThresholds: null,
     implementationRefs: [
       'backend/repositories/dashboard.py::_summary_sql',
+      'backend/repositories/dashboard.py::_monthly_history_sql',
+      'backend/repositories/dashboard.py::DashboardRepository.fetch_monthly_history',
       'backend/services/dashboard/query_agents.py::_agent_base_query',
       'backend/services/dashboard/query_stores.py::_store_stats_query',
       'backend/services/dashboard/query_managers.py::_regional_base_query',
@@ -116,6 +124,7 @@ export const METRIC_CATALOG = [
     limitations: [
       'Regula canonică Retail cere alocarea fallback a targetului agentului proporțional cu selling days; fallback-ul curent al Dashboard este încă egal pe active_agents și este o deviație de implementare, nu formula canonică.',
       'Targetul unui agent poate fi null dacă nu există nici target explicit, nici fallback distribuibil.',
+      'În History filtrat pe firmă/RM/ASM, targetul folosește ownership-ul curent din stores, în timp ce vânzările folosesc ownership-ul istoric; pentru magazine mutate cele două scope-uri pot diverge.',
     ],
     version: 1,
   },
@@ -131,12 +140,14 @@ export const METRIC_CATALOG = [
     sources: ['retail.sales.net_value', 'retail.target.value'],
     inclusions: ['Moștenește scope-ul și regulile celor două metrici sursă.'],
     exclusions: [],
-    organizationSemantics: ORGANIZATION,
+    organizationSemantics: TARGET_ORGANIZATION,
     freshness:
       'Combină două intrări cu freshness independent: vânzările se schimbă după rebuild-ul reporting, iar targeturile sunt citite la request din store_targets/agent_targets; procentul se poate modifica atunci când se schimbă oricare dintre ele.',
     visualThresholds: null,
     implementationRefs: [
       'backend/repositories/dashboard.py::_summary_sql',
+      'backend/repositories/dashboard.py::_monthly_history_sql',
+      'backend/repositories/dashboard.py::DashboardRepository.fetch_monthly_history',
       'backend/services/dashboard/query_agents.py::_agent_base_query',
       'backend/services/dashboard/query_stores.py::_store_stats_query',
       'backend/services/dashboard/query_managers.py::_regional_base_query',
@@ -147,6 +158,7 @@ export const METRIC_CATALOG = [
     limitations: [
       'Nu există un prag vizual global oficial pentru această metrică în V3.',
       'La nivel agent, realizarea moștenește deviația fallback documentată la retail.target.value atunci când lipsește agent_targets.',
+      'În History filtrat pe firmă/RM/ASM, numărătorul de vânzări poate folosi ownership istoric iar targetul ownership curent; procentul rezultat moștenește această asimetrie pentru magazine mutate.',
     ],
     version: 1,
   },
