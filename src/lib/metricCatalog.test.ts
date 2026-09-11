@@ -130,6 +130,20 @@ describe('Metric Catalog v1', () => {
     expect(attainment?.limitations.join(' ')).toContain('locații TR %');
   });
 
+  it('documents target daily provenance and the ignored history agent filter', () => {
+    const target = getMetricDefinition('retail.target.value');
+    expect(target?.sources).toContain('reporting_agent_day.site_code');
+    expect(target?.inclusions.join(' ')).toContain('reporting_agent_day');
+    expect(target?.limitations.join(' ')).toContain('filtrul de agent');
+    expect(target?.limitations.join(' ')).toContain('eliminate înainte de construirea query-ului de target');
+    expect(target?.limitations.join(' ')).toContain('global');
+
+    const attainment = getMetricDefinition('retail.target.attainment_pct');
+    expect(attainment?.limitations.join(' ')).toContain('filtrat pe agent');
+    expect(attainment?.limitations.join(' ')).toContain('denominatorul de target îl ignoră');
+    expect(attainment?.limitations.join(' ')).toContain('targetul global');
+  });
+
   it('documents legacy Year History sources, freshness and ownership for net sales', () => {
     const sales = getMetricDefinition('retail.sales.net_value');
     expect(sales?.sources).toContain('historical_monthly_sales.total_value');
