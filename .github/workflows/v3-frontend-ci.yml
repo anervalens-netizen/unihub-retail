@@ -153,4 +153,5 @@ jobs:
             e2e/history-v3-acceptance.spec.ts \
             e2e/history-v3-fixed-identity.spec.ts \
             e2e/current-daily-trend.spec.ts \
-            e2e/ai-forecast-daily-table.spec.ts
+            e2e/ai-forecast-daily-table.spec.ts \
+            e2e/insight-deep-link.spec.ts

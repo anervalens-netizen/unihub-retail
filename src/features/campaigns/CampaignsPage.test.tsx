@@ -125,4 +125,33 @@ describe("Campaigns request states", () => {
       expect.any(AbortSignal),
     );
   });
+
+  it("uses the shared URL month instead of silently jumping to the latest campaign month", async () => {
+    api.getPromotionsIncentives.mockResolvedValue({
+      promotions: [],
+      selected_promotion_key: "",
+    });
+    render(
+      wrapper(
+        <CampaignsPage
+          currentMonth="2026-05"
+          months={["2026-08", "2026-07", "2026-05"]}
+          filters={defaultAppFilters()}
+          preferredSection="promo"
+          preferredMonth="2026-05"
+          onSectionChange={vi.fn()}
+        />,
+      ),
+    );
+
+    expect(await screen.findByTestId("promo-section")).toBeInTheDocument();
+    expect(api.getPromotionsIncentives).toHaveBeenCalledWith(
+      expect.objectContaining({
+        start_date: "2026-05-01",
+        end_date: "2026-05-31",
+        view: "promo",
+      }),
+      expect.any(AbortSignal),
+    );
+  });
 });

@@ -26,6 +26,7 @@ export interface CampaignsProps {
   months: string[];
   filters: AppFilters;
   preferredSection: CampaignSection;
+  preferredMonth?: string;
   onSectionChange: (section: CampaignSection) => void;
   onFilterMonthChange?: (month: string) => void;
 }
@@ -84,6 +85,7 @@ export function CampaignsPage({
   months,
   filters,
   preferredSection,
+  preferredMonth,
   onSectionChange,
   onFilterMonthChange,
 }: CampaignsProps) {
@@ -94,6 +96,7 @@ export function CampaignsPage({
     months,
     filters,
     activeSection,
+    preferredMonth,
     onFilterMonthChange,
   });
   useEffect(() => {
