@@ -180,6 +180,25 @@ describe('Metric Catalog v1', () => {
     expect(focus?.sources).toContain('reporting_agent_month.total_quantity');
   });
 
+  it('documents the rounded-ratio reconstruction used for multi-month Bon2Acc', () => {
+    const bon2 = getMetricDefinition('retail.receipts.bon2acc_pct');
+    expect(bon2?.aggregation).toContain('proc_bon2acc rotunjit');
+    expect(bon2?.aggregation).toContain('numărător aproximativ');
+    expect(bon2?.limitations.join(' ')).toContain('receipt_2plus_count brut');
+    expect(bon2?.limitations.join(' ')).toContain('prag vizual');
+    expect(bon2?.limitations.join(' ')).toContain('0.01');
+  });
+
+  it('documents mixed-sign Focus aggregation instead of claiming raw numerator parity', () => {
+    const focus = getMetricDefinition('retail.focus.accessory_pct');
+    expect(focus?.formula).toContain('procent null este tratat ca zero');
+    expect(focus?.aggregation).toContain('cantitatea semnată');
+    expect(focus?.aggregation).toContain('null');
+    expect(focus?.limitations.join(' ')).toContain('semn mixt');
+    expect(focus?.limitations.join(' ')).toContain('cantitatea negativă');
+    expect(focus?.limitations.join(' ')).toContain('SUM(focus_quantity) / SUM(total_quantity)');
+  });
+
   it('documents signed-quantity guard differences instead of claiming one ratio rule', () => {
     const focus = getMetricDefinition('retail.focus.accessory_pct');
     const averageProduct = getMetricDefinition('retail.sales.avg_product_value');
