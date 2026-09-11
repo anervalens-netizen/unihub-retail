@@ -131,7 +131,7 @@ export function MetricFormulaInspector({
             {filterContext(context.filters).map(([label, filterValue]) => (
               <div key={label}>
                 <dt className="font-bold text-slate-500">{label}</dt>
-                <dd>{filterValue}</dd>
+                <dd className="break-all">{filterValue}</dd>
               </div>
             ))}
           </dl>
