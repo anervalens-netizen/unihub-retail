@@ -40,7 +40,10 @@ export interface MetricDefinition {
 }
 
 const REPORTING_FRESHNESS =
-  'Se actualizează odată cu read-modelurile de reporting după un import de vânzări finalizat; nu este calculat din browser în timp real.';
+  'Intrările din read-modelurile reporting se actualizează după un import de vânzări finalizat. Unele KPI-uri derivate pot fi recalculate în browser când UI agregă mai multe luni, dar acea recomputare folosește valorile serverului și nu schimbă freshness-ul datelor sursă.';
+
+const DERIVED_REPORTING_FRESHNESS =
+  'Intrările se actualizează odată cu read-modelurile reporting după un import de vânzări finalizat. La selecții multi-lună, UI recalculează această metrică în browser din totalurile sau ponderile primite de la server; recomputarea din browser nu schimbă freshness-ul datelor sursă.';
 
 const ORGANIZATION = {
   current:
@@ -160,7 +163,7 @@ export const METRIC_CATALOG = [
     exclusions: [],
     organizationSemantics: TARGET_ORGANIZATION,
     freshness:
-      'Combină două intrări cu freshness independent: vânzările se schimbă după rebuild-ul reporting, iar targeturile sunt citite la request din store_targets/agent_targets; procentul se poate modifica atunci când se schimbă oricare dintre ele.',
+      'Combină două intrări cu freshness independent: vânzările se schimbă după rebuild-ul reporting, iar targeturile sunt citite la request din store_targets/agent_targets. La selecții multi-lună, UI recalculează procentul în browser din totalurile primite; această recomputare nu schimbă freshness-ul celor două surse.',
     visualThresholds: null,
     implementationRefs: [
       'backend/repositories/dashboard.py::_summary_sql',
@@ -243,11 +246,16 @@ export const METRIC_CATALOG = [
     formula: '100 × receipt_2plus_count / receipt_count; null când receipt_count = 0.',
     granularities: ['dashboard', 'period-comparison', 'regional', 'asm', 'store', 'agent'],
     aggregation: 'Se recalculează ponderat din numărător și numitor; procentele copil nu se mediază simplu.',
-    sources: ['reporting_agent_day.receipt_2plus_count', 'reporting_agent_day.receipt_count'],
+    sources: [
+      'reporting_agent_day.receipt_2plus_count',
+      'reporting_agent_day.receipt_count',
+      'reporting_agent_month.receipt_2plus_count',
+      'reporting_agent_month.receipt_count',
+    ],
     inclusions: ['receipt_2plus_count numără bonurile cu net_quantity >= 2.'],
     exclusions: REPORTING_EXCLUSIONS,
     organizationSemantics: ORGANIZATION,
-    freshness: REPORTING_FRESHNESS,
+    freshness: DERIVED_REPORTING_FRESHNESS,
     visualThresholds: [
       { label: 'Critic', maxExclusive: 28 },
       { label: 'Atenție', minInclusive: 28, maxExclusive: 30 },
@@ -276,11 +284,17 @@ export const METRIC_CATALOG = [
       'Dashboard server și comparație perioade: 100 × focus_quantity / total_quantity când total_quantity != 0. RM/ASM/magazin/agent și agregările multi-lună frontend: formula este expusă numai când total_quantity > 0; altfel null.',
     granularities: ['dashboard', 'period-comparison', 'regional', 'asm', 'store', 'agent'],
     aggregation: 'Se recalculează ponderat din cantități; procentele copil nu se mediază simplu.',
-    sources: ['reporting_agent_day.focus_quantity', 'reporting_agent_day.total_quantity', 'focus_products'],
+    sources: [
+      'reporting_agent_day.focus_quantity',
+      'reporting_agent_day.total_quantity',
+      'reporting_agent_month.focus_quantity',
+      'reporting_agent_month.total_quantity',
+      'focus_products',
+    ],
     inclusions: ['focus_quantity include numai item_code-urile prezente în focus_products și păstrează semnul cantității.'],
     exclusions: REPORTING_EXCLUSIONS,
     organizationSemantics: ORGANIZATION,
-    freshness: REPORTING_FRESHNESS,
+    freshness: DERIVED_REPORTING_FRESHNESS,
     visualThresholds: [
       { label: 'Critic', maxExclusive: 6 },
       { label: 'Sub țintă', minInclusive: 6, maxExclusive: 7 },
@@ -321,7 +335,7 @@ export const METRIC_CATALOG = [
     inclusions: ['Moștenește semantica netă a valorii și cantității.'],
     exclusions: [],
     organizationSemantics: ORGANIZATION,
-    freshness: REPORTING_FRESHNESS,
+    freshness: DERIVED_REPORTING_FRESHNESS,
     visualThresholds: null,
     implementationRefs: [
       'backend/repositories/dashboard.py::_summary_sql',
@@ -352,7 +366,7 @@ export const METRIC_CATALOG = [
     inclusions: ['Numără numai zilele prezente în read-modelul Retail pentru grain-ul relevant.'],
     exclusions: REPORTING_EXCLUSIONS,
     organizationSemantics: ORGANIZATION,
-    freshness: REPORTING_FRESHNESS,
+    freshness: DERIVED_REPORTING_FRESHNESS,
     visualThresholds: null,
     implementationRefs: [
       'backend/repositories/dashboard.py::_summary_sql',
@@ -379,7 +393,7 @@ export const METRIC_CATALOG = [
     inclusions: ['În comparația de perioade formula este calculată server-side; Overview o afișează din aceleași două totaluri canonice.'],
     exclusions: [],
     organizationSemantics: ORGANIZATION,
-    freshness: REPORTING_FRESHNESS,
+    freshness: DERIVED_REPORTING_FRESHNESS,
     visualThresholds: null,
     implementationRefs: [
       'backend/services/dashboard/query_comparison.py::_fetch_comparison_point',
