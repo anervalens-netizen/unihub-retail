@@ -23,7 +23,7 @@ interface MainLayoutProps {
   setTheme: (theme: string) => void;
   showFilterButton?: boolean;
   mgmtSubTab: ManagementTab;
-  savedViewState: RetailContextUrlState | null;
+  savedViewState?: RetailContextUrlState | null;
   errorCount?: number;
   userEmail?: string;
   onLogout?: () => void;
@@ -32,7 +32,7 @@ interface MainLayoutProps {
 
 export function MainLayout({
   children, activeTab, setActiveTab, isFilterOpen, setIsFilterOpen, filters, setFilters,
-  filterMonth, theme, setTheme, showFilterButton = true, mgmtSubTab, savedViewState,
+  filterMonth, theme, setTheme, showFilterButton = true, mgmtSubTab, savedViewState = null,
   errorCount = 0, userEmail, onLogout, canAccessManagement = true,
 }: MainLayoutProps) {
   const filterModel = useMainLayoutFilters({
