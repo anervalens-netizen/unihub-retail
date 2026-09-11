@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { lazy, Suspense, type ReactNode } from 'react';
 
 import type { AppFilters } from '../lib/appFilters';
 import type { RetailContextUrlState } from '../lib/insightDeepLink';
@@ -7,8 +7,11 @@ import { cn } from '../lib/utils';
 import { DesktopSidebar } from './DesktopSidebar';
 import { DesktopTopBar } from './DesktopTopBar';
 import { MobileBottomNavigation, MobileFilterSheet, MobileFloatingFilter } from './MainLayoutMobile';
-import { SavedViewsControl } from './SavedViewsControl';
 import { useMainLayoutFilters } from './useMainLayoutFilters';
+
+const SavedViewsControl = lazy(() => import('./SavedViewsControl').then((module) => ({
+  default: module.SavedViewsControl,
+})));
 
 interface MainLayoutProps {
   children: ReactNode;
@@ -39,6 +42,17 @@ export function MainLayout({
     filterMonth, filters, setFilters, activeTab, mgmtSubTab, showFilterButton,
   });
   const hasSavedViews = savedViewState !== null;
+  const desktopSavedViews = hasSavedViews ? (
+    <Suspense fallback={null}>
+      <SavedViewsControl currentState={savedViewState} mode="desktop" />
+    </Suspense>
+  ) : undefined;
+  const mobileSavedViews = hasSavedViews ? (
+    <Suspense fallback={null}>
+      <SavedViewsControl currentState={savedViewState} mode="mobile" />
+    </Suspense>
+  ) : undefined;
+
   return <div className="flex h-dvh overflow-hidden bg-transparent">
     <DesktopSidebar activeTab={activeTab} setActiveTab={setActiveTab} theme={theme} setTheme={setTheme} errorCount={errorCount} canAccessManagement={canAccessManagement} />
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -48,7 +62,7 @@ export function MainLayout({
         showFilterButton={showFilterButton}
         onOpenFilter={() => setIsFilterOpen(true)}
         filters={filters}
-        savedViews={hasSavedViews ? <SavedViewsControl currentState={savedViewState} mode="desktop" /> : undefined}
+        savedViews={desktopSavedViews}
         userEmail={userEmail}
         onLogout={onLogout}
       />
@@ -61,7 +75,7 @@ export function MainLayout({
       setFilters={setFilters}
       model={filterModel}
       showFilters={filterModel.hasMobileFilters}
-      savedViews={hasSavedViews ? <SavedViewsControl currentState={savedViewState} mode="mobile" /> : undefined}
+      savedViews={mobileSavedViews}
     />
     <MobileBottomNavigation activeTab={activeTab} setActiveTab={setActiveTab} errorCount={errorCount} canAccessManagement={canAccessManagement} />
     {(filterModel.hasMobileFilters || hasSavedViews) && (
