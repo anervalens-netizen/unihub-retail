@@ -21,6 +21,7 @@ from repositories.filters import FiltersRepository
 from repositories.hr import HrRepository
 from repositories.imports import ImportsRepository
 from repositories.salarii import SalariiRepository
+from repositories.saved_views import SavedViewsRepository
 from repositories.store_pnl import StorePnlRepository
 from repositories.stores import StoresRepository
 from repositories.target_calculator import TargetCalculatorRepository
@@ -40,6 +41,7 @@ from services.grile_queries import GrileQueryService
 from services.hr import HrService
 from services.imports import ImportsService
 from services.salarii import SalariiService
+from services.saved_views import SavedViewsService
 from services.store_pnl import StorePnlService
 from services.stores import StoresService
 from services.target_calculator import TargetCalculatorService
@@ -117,6 +119,11 @@ async def build_salarii_service(
 ) -> SalariiService:
     resolved_pool = pool if pool is not None else await get_pool()
     return SalariiService(SalariiRepository(resolved_pool), person_id_key)
+
+
+async def build_saved_views_service() -> SavedViewsService:
+    pool = await get_pool()
+    return SavedViewsService(SavedViewsRepository(pool))
 
 
 async def build_store_pnl_service() -> StorePnlService:
