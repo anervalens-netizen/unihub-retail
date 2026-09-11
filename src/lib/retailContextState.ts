@@ -51,6 +51,7 @@ export function buildCurrentSavedViewState(
   if (input.activeTab === 'management') return null;
   if (input.activeTab === 'hub' && input.hubSection === 'visits') return null;
   if (input.activeTab === 'hub' && input.hubSection === 'history' && input.hubHistoryMonths.length !== 1) return null;
+  if (input.activeTab === 'focus' && input.campaignSection !== 'incentive') return null;
   if (input.activeTab === 'agents' && (input.agentsSection === 'grile' || input.agentsSection === 'analysis')) return null;
   return buildCurrentRetailContextState(input);
 }
