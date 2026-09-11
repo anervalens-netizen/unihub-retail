@@ -1,4 +1,4 @@
-import { type ReactNode, useState } from 'react';
+import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { ChevronDown, ChevronUp } from 'lucide-react';
 import type { AgentEvaluationOption, AgentEvaluationRow } from '../../api/agents';
 import { formatMonthLabel } from '../../lib/dates';
@@ -180,6 +180,19 @@ export function CompactSummary({
   );
 }
 
+function useDropdownDismiss(open: boolean, onClose: () => void) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const handlePointerDown = (event: PointerEvent) => {
+      if (event.target instanceof Node && !ref.current?.contains(event.target)) onClose();
+    };
+    document.addEventListener('pointerdown', handlePointerDown, true);
+    return () => document.removeEventListener('pointerdown', handlePointerDown, true);
+  }, [open, onClose]);
+  return ref;
+}
+
 export function MonthDropdown({
   months,
   selectedMonths,
@@ -192,6 +205,7 @@ export function MonthDropdown({
   onClear: () => void;
 }) {
   const [open, setOpen] = useState(false);
+  const dropdownRef = useDropdownDismiss(open, () => setOpen(false));
   const label = selectedMonths.length === 1
     ? formatMonthLabel(selectedMonths[0] ?? '', { month: 'long', year: 'full' })
     : selectedMonths.length
@@ -199,8 +213,9 @@ export function MonthDropdown({
       : 'Toate lunile';
 
   return (
-    <div className="relative">
+    <div ref={dropdownRef} className="relative">
       <button
+        aria-expanded={open}
         onClick={() => setOpen((value) => !value)}
         className="h-9 w-full rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-left text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 flex items-center justify-between gap-2"
       >
@@ -288,11 +303,13 @@ export function StoreDropdown({
   onClear: () => void;
 }) {
   const [open, setOpen] = useState(false);
+  const dropdownRef = useDropdownDismiss(open, () => setOpen(false));
   const label = selectedStores.length ? `${selectedStores.length} magazine` : 'Toate magazinele';
 
   return (
-    <div className="relative">
+    <div ref={dropdownRef} className="relative">
       <button
+        aria-expanded={open}
         onClick={() => setOpen((value) => !value)}
         className="h-9 w-full rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-left text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 flex items-center justify-between gap-2"
       >
