@@ -79,7 +79,8 @@
     "071_grile_store_hours.sql": "transactional",
     "072_grile_team_leader_base.sql": "transactional",
     "073_grile_compensation_inputs.sql": "transactional",
-    "074_salary_history_archive.sql": "transactional"
+    "074_salary_history_archive.sql": "transactional",
+    "075_store_pnl_estimated_promotion.sql": "transactional"
   },
   "migrations": {
     "001_add_cartela_composite_index.sql": "7f502462f585088286f9ae60d5c4ded69fccf745342ae6ddfc34c48241514b46",
@@ -155,6 +156,7 @@
     "071_grile_store_hours.sql": "051002f000d766e708956835e7c4a5c23a381527c8c74b19323b3e4420a91f23",
     "072_grile_team_leader_base.sql": "c8bc6c01ab513a19bac74f391309cc2c6e6ef299470755de24cd98929964fcd1",
     "073_grile_compensation_inputs.sql": "482727c8f87944b1754c8d02d6db07126c36b8a90bef4ea5ee05d3ed023a4cf1",
-    "074_salary_history_archive.sql": "5f23c8e82054b69f9114425078fa4a2ea9d6df5725e902dd22f8ac8ea92339b5"
+    "074_salary_history_archive.sql": "5f23c8e82054b69f9114425078fa4a2ea9d6df5725e902dd22f8ac8ea92339b5",
+    "075_store_pnl_estimated_promotion.sql": "b1cbc6552e67fdb9df4b270a2226691cd886d3ae39a2b0f64e5650d866f6b57f"
   }
 }
