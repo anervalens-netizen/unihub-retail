@@ -264,7 +264,8 @@ export const METRIC_CATALOG = [
     precision: 2,
     formula: '100 × receipt_2plus_count / receipt_count; null când receipt_count = 0.',
     granularities: ['dashboard', 'period-comparison', 'regional', 'asm', 'store', 'agent'],
-    aggregation: 'Se recalculează ponderat din numărător și numitor; procentele copil nu se mediază simplu.',
+    aggregation:
+      'Single-month server și agregarea multi-lună la agent folosesc numărătorul și numitorul brut. Pentru Dashboard/RM/ASM/magazin/comparație perioade multi-lună, frontendul reconstruiește un numărător aproximativ ca (proc_bon2acc rotunjit / 100) × receipt_count pentru fiecare lună și apoi îl însumează.',
     sources: [
       'reporting_agent_day.receipt_2plus_count',
       'reporting_agent_day.receipt_count',
@@ -290,7 +291,9 @@ export const METRIC_CATALOG = [
     verificationRefs: [
       'backend/tests/test_dashboard_summary_integration.py::test_reporting_uses_net_quantity_for_kpis_and_keeps_returns_separate',
     ],
-    limitations: [],
+    limitations: [
+      'În multi-lună pentru Dashboard/RM/ASM/magazin și comparație perioade, reconstruirea pornește din procente deja rotunjite la două zecimale, nu din receipt_2plus_count brut; rezultatul poate diferi de raportul canonic SUM(receipt_2plus_count) / SUM(receipt_count) și poate traversa un prag vizual cu aproximativ 0.01 puncte procentuale.',
+    ],
     version: 1,
   },
   {
@@ -300,9 +303,10 @@ export const METRIC_CATALOG = [
     unit: 'percent',
     precision: 2,
     formula:
-      'Dashboard server și comparație perioade: 100 × focus_quantity / total_quantity când total_quantity != 0. RM/ASM/magazin/agent și agregările multi-lună frontend: formula este expusă numai când total_quantity > 0; altfel null.',
+      'Single-month Dashboard server și comparație perioade: 100 × focus_quantity / total_quantity când total_quantity != 0. Single-month RM/ASM/magazin/agent: procentul este expus numai când total_quantity > 0. În multi-lună, agentul agregă raw acc_focus_qty/acc_qty_realizat; Dashboard/RM/ASM/magazin/comparație perioade reconstruiesc contribuția Focus din procentul lunar rotunjit × cantitatea lunară, iar un procent null este tratat ca zero în frontend.',
     granularities: ['dashboard', 'period-comparison', 'regional', 'asm', 'store', 'agent'],
-    aggregation: 'Se recalculează ponderat din cantități; procentele copil nu se mediază simplu.',
+    aggregation:
+      'Agent multi-lună recalculează din numărător și numitor brut. Celelalte suprafețe multi-lună folosesc o reconstrucție ponderată din procentul lunar deja rotunjit și cantitatea semnată; procentele null sunt convertite la zero înainte de ponderare.',
     sources: [
       'reporting_agent_day.focus_quantity',
       'reporting_agent_day.total_quantity',
@@ -336,7 +340,9 @@ export const METRIC_CATALOG = [
     ],
     limitations: [
       'Setul focus_products este o intrare de business și se poate modifica independent de catalog.',
-      'Pentru total_quantity negativ, Dashboard summary și comparația de perioade pot produce un procent semnat, în timp ce RM/ASM/magazin/agent și agregarea frontend returnează null; catalogul documentează comportamentul existent, nu o regulă unificată.',
+      'Pentru total_quantity negativ, Dashboard summary și comparația de perioade pot produce un procent semnat, în timp ce RM/ASM/magazin/agent returnează null; catalogul documentează comportamentul existent, nu o regulă unificată.',
+      'Într-o selecție multi-lună cu luni de semn mixt, RM/ASM/magazin pot avea o lună cu total_quantity <= 0 și prc_focus_acc_qty null; frontendul transformă acel null în 0 dar păstrează cantitatea negativă în denominatorul agregat. Rezultatul poate devia material de la SUM(focus_quantity) / SUM(total_quantity) chiar dacă total_quantity agregat este pozitiv.',
+      'Și pe lunile fără null, reconstrucția multi-lună pentru Dashboard/RM/ASM/magazin/comparație perioade pornește din procente Focus deja rotunjite, nu din focus_quantity brut.',
     ],
     version: 1,
   },
