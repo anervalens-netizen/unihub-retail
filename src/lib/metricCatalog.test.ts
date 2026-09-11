@@ -91,6 +91,34 @@ describe('Metric Catalog v1', () => {
     expect(returns?.limitations.join(' ')).toContain('nu îl tratează ca istoric-authoritative');
   });
 
+  it('does not publish the equal-agent target fallback as the canonical allocation rule', () => {
+    const target = getMetricDefinition('retail.target.value');
+    expect(target?.formula).toContain('zile_vânzare_magazin');
+    expect(target?.formula).toContain('zile_vânzare_agent');
+    expect(target?.formula).toContain('_agent_base_query');
+    expect(target?.limitations.join(' ')).toContain('active_agents');
+    expect(target?.limitations.join(' ')).toContain('deviație de implementare');
+  });
+
+  it('states that target attainment can refresh independently from sales reporting', () => {
+    const attainment = getMetricDefinition('retail.target.attainment_pct');
+    expect(attainment?.freshness).toContain('freshness independent');
+    expect(attainment?.freshness).toContain('store_targets/agent_targets');
+    expect(attainment?.limitations.join(' ')).toContain('retail.target.value');
+  });
+
+  it('documents signed-quantity guard differences instead of claiming one ratio rule', () => {
+    const focus = getMetricDefinition('retail.focus.accessory_pct');
+    const averageProduct = getMetricDefinition('retail.sales.avg_product_value');
+    for (const metric of [focus, averageProduct]) {
+      expect(metric?.formula).toContain('!= 0');
+      expect(metric?.formula).toContain('> 0');
+      expect(metric?.limitations.join(' ')).toContain('negativ');
+      expect(metric?.limitations.join(' ')).toContain('Dashboard');
+      expect(metric?.limitations.join(' ')).toContain('returnează null');
+    }
+  });
+
   it('searches by human name, id, formula source and granularity without mutating the catalog', () => {
     expect(searchMetricCatalog('Bon2Acc').map((metric) => metric.id)).toContain('retail.receipts.bon2acc_pct');
     expect(searchMetricCatalog('return_receipt_count').map((metric) => metric.id)).toContain('retail.receipts.return_count');
