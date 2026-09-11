@@ -121,7 +121,7 @@ const exportsModel = (overrides: Partial<ExportsModel> = {}): ExportsModel => ({
 });
 
 describe("Settings permission boundary", () => {
-  it("keeps restricted users on preferences and hides server operations", () => {
+  it("keeps restricted users on preferences, hides server operations and leaves the read-only KPI catalog available", () => {
     const client = new QueryClient();
     render(
       <QueryClientProvider client={client}>
@@ -145,9 +145,14 @@ describe("Settings permission boundary", () => {
     expect(
       screen.queryByRole("tab", { name: "Exporturi" }),
     ).not.toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Metrici" })).toBeInTheDocument();
     expect(
       screen.getByText(/disponibile doar rolurilor manageriale/),
     ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("tab", { name: "Metrici" }));
+    expect(screen.getByRole("heading", { name: "Catalog KPI" })).toBeInTheDocument();
+    expect(screen.getByText("v1 · 11 metrici")).toBeInTheDocument();
   });
 });
 
