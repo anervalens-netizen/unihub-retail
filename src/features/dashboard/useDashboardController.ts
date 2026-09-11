@@ -38,7 +38,10 @@ export function buildHistoryPerformanceOpen(
 }
 
 function useDashboardState(props: DashboardControllerProps) {
-  const { currentMonth, filters, initialSection, months, onSectionChange } = props;
+  const {
+    currentMonth, filters, initialSection, months, onSectionChange,
+    preferredHistoryMonth, onHistoryMonthsChange,
+  } = props;
   const { user } = useAuth();
   const [currentMode, setCurrentMode] = useState<'overview' | 'forecast'>('overview');
   const [historyYearFilter, setHistoryYearFilter] = useState<number | null>(null);
@@ -46,11 +49,10 @@ function useDashboardState(props: DashboardControllerProps) {
   const [includeClosedStores, setIncludeClosedStores] = useState(false);
   const performance = useDashboardPerformanceDetail({ currentMonth, firma: filters.firma });
   const historySelection = useDashboardHistorySelection({
-    currentMonth, months, initialSection: initialSection ?? 'current',
-    preferredHistoryMonth: props.preferredHistoryMonth,
+    currentMonth, months, initialSection: initialSection ?? 'current', preferredHistoryMonth,
   });
   const data = useDashboardData({
-    currentMonth: props.currentMonth, filters: props.filters,
+    currentMonth, filters,
     historyMonth: historySelection.historyMonth,
     selectedHistoryMonths: historySelection.selectedHistoryMonths,
     includeClosedStores, activeSection: historySelection.activeSection,
@@ -58,8 +60,8 @@ function useDashboardState(props: DashboardControllerProps) {
   });
   useEffect(() => { onSectionChange?.(historySelection.activeSection); }, [historySelection.activeSection, onSectionChange]);
   useEffect(() => {
-    props.onHistoryMonthsChange?.(historySelection.selectedHistoryMonths);
-  }, [historySelection.selectedHistoryMonths, props.onHistoryMonthsChange]);
+    onHistoryMonthsChange?.(historySelection.selectedHistoryMonths);
+  }, [historySelection.selectedHistoryMonths, onHistoryMonthsChange]);
   const availableYears = useMemo(() => {
     const currentYear = parseInt(currentMonth.slice(0, 4));
     return Array.from({ length: currentYear - HISTORY_START_YEAR + 1 }, (_, index) => HISTORY_START_YEAR + index);
