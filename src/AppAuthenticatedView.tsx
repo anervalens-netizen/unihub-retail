@@ -23,13 +23,16 @@ export function AppAuthenticatedView({ controller }: { controller: AppController
       ? data.setAgentsFilters : data.setHubFilters;
   const activeFilterMonth = navigation.activeTab === 'focus' ? data.focusFilterMonth || data.currentMonth : data.currentMonth;
   const staleBanner = data.availableMonths.status === 'stale' ? <div className="mb-3 flex items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-200"><span>Datele lunilor sunt din ultima încărcare validă și pot fi învechite.</span><button type="button" onClick={() => { void data.availableMonths.retry(); }} className="font-bold underline">Reîncearcă</button></div> : null;
+  const savedViewProps = navigation.activeTab === 'settings'
+    ? {}
+    : { savedViewState: controller.savedViewState };
   return <MainLayout
     activeTab={navigation.activeTab} setActiveTab={navigation.setActiveTab}
     isFilterOpen={controller.isFilterOpen} setIsFilterOpen={controller.setIsFilterOpen}
     filters={activeFilters} setFilters={setActiveFilters} filterMonth={activeFilterMonth}
     theme={navigation.theme} setTheme={navigation.setTheme}
     showFilterButton={!(navigation.activeTab === 'hub' && navigation.hubSection === 'visits')}
-    mgmtSubTab={navigation.mgmtSubTab} savedViewState={controller.savedViewState}
+    mgmtSubTab={navigation.mgmtSubTab} {...savedViewProps}
     userEmail={auth.user?.profile.email ?? undefined}
     onLogout={auth.logout} canAccessManagement={controller.hasManagementAccess}
   >
