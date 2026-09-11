@@ -75,6 +75,9 @@ const REPORTING_EXCLUSIONS = [
 const NET_RETURN_NOTE =
   'Retururile cu cantitate negativă reduc valorile nete; numărul bonurilor de retur este urmărit separat.';
 
+const LEGACY_ANNUAL_FALLBACK_LIMITATION =
+  'Fallback-ul historical_annual_sales este eligibil numai pentru anii <= 2023, numai fără filtru de agent și numai când niciun rând lunar nu are total_sales > 0 sau total_quantity > 0. project_year_history ascunde rândurile lunare pentru care sales, target și quantity sunt toate <= 0, iar agregatul anual este emis numai dacă total_sales anual > 0; o lună doar cu retururi sau alte valori nepozitive poate astfel dispărea și permite fallback-ul anual.';
+
 export const METRIC_CATALOG = [
   {
     id: 'retail.sales.net_value',
@@ -111,7 +114,8 @@ export const METRIC_CATALOG = [
       'backend/tests/test_dashboard_summary_integration.py::test_reporting_uses_net_quantity_for_kpis_and_keeps_returns_separate',
     ],
     limitations: [
-      'Year History poate combina reporting_agent_month cu historical_monthly_sales; pentru anii <= 2023, dacă nu există date lunare, poate folosi historical_annual_sales ca agregat legacy.',
+      'Year History poate combina reporting_agent_month cu historical_monthly_sales; historical_annual_sales este un fallback legacy cu condiții suplimentare de eligibilitate.',
+      LEGACY_ANNUAL_FALLBACK_LIMITATION,
       'Pe sursele legacy de Year History, firma poate rămâne cea stocată istoric, dar filtrele RM/ASM sunt rezolvate prin stores curent; un magazin mutat poate apărea sub ownership-ul managerial curent.',
     ],
     version: 1,
@@ -232,7 +236,8 @@ export const METRIC_CATALOG = [
       'backend/tests/test_dashboard_summary_integration.py::test_reporting_uses_net_quantity_for_kpis_and_keeps_returns_separate',
     ],
     limitations: [
-      'Year History poate combina reporting_agent_month.total_quantity cu historical_monthly_sales.total_qty; pentru anii <= 2023, dacă nu există date lunare, poate folosi historical_annual_sales.total_qty ca agregat legacy.',
+      'Year History poate combina reporting_agent_month.total_quantity cu historical_monthly_sales.total_qty; historical_annual_sales.total_qty este un fallback legacy cu condiții suplimentare de eligibilitate.',
+      LEGACY_ANNUAL_FALLBACK_LIMITATION,
       'Pe sursele legacy de Year History, firma poate rămâne cea stocată istoric, dar filtrele RM/ASM sunt rezolvate prin stores curent; un magazin mutat poate apărea sub ownership-ul managerial curent.',
     ],
     version: 1,
@@ -271,7 +276,8 @@ export const METRIC_CATALOG = [
     description: 'Ponderea bonurilor Retail cu cel puțin două accesorii nete.',
     unit: 'percent',
     precision: 2,
-    formula: '100 × receipt_2plus_count / receipt_count; null când receipt_count = 0.',
+    formula:
+      'Current/single-month server: 100 × receipt_2plus_count / receipt_count; null când receipt_count = 0. Monthly History: _monthly_history_sql aplică COALESCE(proc_bon2acc, 0), deci o lună fără bonuri pozitive expune 0% în loc de null.',
     granularities: ['dashboard', 'period-comparison', 'regional', 'asm', 'store', 'agent'],
     aggregation:
       'Single-month server și agregarea multi-lună la agent folosesc numărătorul și numitorul brut. Pentru Dashboard/RM/ASM/magazin/comparație perioade multi-lună, frontendul reconstruiește un numărător aproximativ ca (proc_bon2acc rotunjit / 100) × receipt_count pentru fiecare lună și apoi îl însumează.',
@@ -294,6 +300,7 @@ export const METRIC_CATALOG = [
     implementationRefs: [
       'backend/services/reporting_refresh_month.py::_REPORTING_MONTH_SQL_5',
       'backend/repositories/dashboard.py::_summary_sql',
+      'backend/repositories/dashboard.py::_monthly_history_sql',
       'src/features/dashboard/DashboardWidgets.tsx::getBon2AccTone',
       'src/features/dashboard/presenters.ts::aggregateSummary',
     ],
@@ -301,6 +308,7 @@ export const METRIC_CATALOG = [
       'backend/tests/test_dashboard_summary_integration.py::test_reporting_uses_net_quantity_for_kpis_and_keeps_returns_separate',
     ],
     limitations: [
+      'În Monthly History, o lună fără bonuri pozitive poate apărea ca 0% din cauza COALESCE și este astfel încadrată în banda vizuală Critic, chiar dacă current summary ar expune null.',
       'În multi-lună pentru Dashboard/RM/ASM/magazin și comparație perioade, reconstruirea pornește din procente deja rotunjite la două zecimale, nu din receipt_2plus_count brut; rezultatul poate diferi de raportul canonic SUM(receipt_2plus_count) / SUM(receipt_count) și poate traversa un prag vizual cu aproximativ 0.01 puncte procentuale.',
     ],
     version: 1,
@@ -336,6 +344,7 @@ export const METRIC_CATALOG = [
     implementationRefs: [
       'backend/services/reporting_refresh_month.py::_REPORTING_MONTH_SQL_5',
       'backend/repositories/dashboard.py::_summary_sql',
+      'backend/repositories/dashboard.py::_monthly_history_sql',
       'backend/services/dashboard/query_comparison.py::_fetch_comparison_point',
       'backend/services/dashboard/query_agents.py::_agent_base_query',
       'backend/services/dashboard/query_stores.py::_store_stats_query',
@@ -349,6 +358,7 @@ export const METRIC_CATALOG = [
     ],
     limitations: [
       'Setul focus_products este o intrare de business și se poate modifica independent de catalog.',
+      'Monthly History aplică COALESCE(prc_focus_acc_qty, 0), deci lipsa valorii poate fi expusă ca 0 în loc de null.',
       'Pentru total_quantity negativ, Dashboard summary și comparația de perioade pot produce un procent semnat, în timp ce RM/ASM/magazin/agent returnează null; catalogul documentează comportamentul existent, nu o regulă unificată.',
       'Într-o selecție multi-lună cu luni de semn mixt, RM/ASM/magazin pot avea o lună cu total_quantity <= 0 și prc_focus_acc_qty null; frontendul transformă acel null în 0 dar păstrează cantitatea negativă în denominatorul agregat. Rezultatul poate devia material de la SUM(focus_quantity) / SUM(total_quantity) chiar dacă total_quantity agregat este pozitiv.',
       'Și pe lunile fără null, reconstrucția multi-lună pentru Dashboard/RM/ASM/magazin/comparație perioade pornește din procente Focus deja rotunjite, nu din focus_quantity brut.',
@@ -373,6 +383,7 @@ export const METRIC_CATALOG = [
     visualThresholds: null,
     implementationRefs: [
       'backend/repositories/dashboard.py::_summary_sql',
+      'backend/repositories/dashboard.py::_monthly_history_sql',
       'backend/services/dashboard/query_comparison.py::_fetch_comparison_point',
       'backend/services/dashboard/query_agents.py::_agent_base_query',
       'backend/services/dashboard/query_stores.py::_store_stats_query',
@@ -382,6 +393,7 @@ export const METRIC_CATALOG = [
     ],
     verificationRefs: ['backend/tests/test_dashboard_queries.py'],
     limitations: [
+      'Monthly History aplică COALESCE(medie_produs, 0), deci lipsa valorii poate fi expusă ca 0 în loc de null.',
       'Pentru accesorii_nete negativ, Dashboard summary și comparația de perioade pot produce o valoare semnată, în timp ce RM/ASM/magazin/agent și agregarea frontend returnează null; catalogul documentează comportamentul existent.',
     ],
     version: 1,
@@ -404,6 +416,7 @@ export const METRIC_CATALOG = [
     visualThresholds: null,
     implementationRefs: [
       'backend/repositories/dashboard.py::_summary_sql',
+      'backend/repositories/dashboard.py::_monthly_history_sql',
       'backend/services/dashboard/query_comparison.py::_fetch_comparison_point',
       'backend/services/dashboard/query_agents.py::_agent_base_query',
       'backend/services/dashboard/query_managers.py::_regional_base_query',
@@ -411,7 +424,10 @@ export const METRIC_CATALOG = [
       'src/features/dashboard/DashboardWidgets.tsx::getStoreDailyAverage',
     ],
     verificationRefs: ['backend/tests/test_dashboard_queries.py'],
-    limitations: ['RM/ASM folosesc suma zilelor-agent, nu numărul de zile calendaristice distincte ale regiunii.'],
+    limitations: [
+      'Monthly History aplică COALESCE(daily_average, 0), deci lipsa valorii poate fi expusă ca 0 în loc de null.',
+      'RM/ASM folosesc suma zilelor-agent, nu numărul de zile calendaristice distincte ale regiunii.',
+    ],
     version: 1,
   },
   {
