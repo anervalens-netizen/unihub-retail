@@ -25,8 +25,11 @@ interface SavedViewsControlProps {
   navigate?: (url: string) => void;
 }
 
-export function SavedViewsControl({ currentState, mode, navigate }: SavedViewsControlProps) {
-  const [open, setOpen] = useState(false);
+function useSavedViewsModel(
+  currentState: RetailContextUrlState | null,
+  visible: boolean,
+  navigate?: (url: string) => void,
+) {
   const [loaded, setLoaded] = useState(false);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -34,7 +37,6 @@ export function SavedViewsControl({ currentState, mode, navigate }: SavedViewsCo
   const [name, setName] = useState('');
   const [views, setViews] = useState<SavedViewItem[]>([]);
   const [error, setError] = useState('');
-  const visible = mode === 'mobile' || open;
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -53,11 +55,9 @@ export function SavedViewsControl({ currentState, mode, navigate }: SavedViewsCo
     if (visible && !loaded && !loading) void load();
   }, [visible, loaded, loading, load]);
 
-  if (!currentState) return null;
-
   const save = async () => {
     const normalizedName = name.trim();
-    if (!normalizedName || saving) return;
+    if (!normalizedName || saving || !currentState) return;
     setSaving(true);
     setError('');
     try {
@@ -91,20 +91,55 @@ export function SavedViewsControl({ currentState, mode, navigate }: SavedViewsCo
     (navigate ?? ((target: string) => window.location.assign(target)))(url);
   };
 
-  const content = (
+  return {
+    apply, deletingId, error, loaded, loading, name, remove, save, saving, setName, views,
+  };
+}
+
+type SavedViewsModel = ReturnType<typeof useSavedViewsModel>;
+
+function SavedViewList({ model }: { model: SavedViewsModel }) {
+  if (model.loading || model.views.length === 0) return null;
+  return (
+    <ul className="max-h-64 space-y-1 overflow-y-auto" aria-label="Vederi salvate">
+      {model.views.map((view) => (
+        <li key={view.id} className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 p-2 dark:border-slate-700 dark:bg-slate-800/70">
+          <button type="button" onClick={() => model.apply(view)} className="min-w-0 flex-1 text-left">
+            <span className="block truncate text-xs font-bold text-slate-800 dark:text-slate-100">{view.name}</span>
+            <span className="block truncate text-[10px] text-slate-500 dark:text-slate-400">
+              {MODULE_LABELS[view.module_id]}{view.state.period ? ` · ${view.state.period}` : ''}
+            </span>
+          </button>
+          <button
+            type="button"
+            onClick={() => { void model.remove(view); }}
+            disabled={model.deletingId !== null}
+            aria-label={`Șterge vederea ${view.name}`}
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:bg-red-50 hover:text-red-600 disabled:opacity-50 dark:hover:bg-red-950/30"
+          >
+            {model.deletingId === view.id ? <LoaderCircle size={14} className="animate-spin" /> : <Trash2 size={14} />}
+          </button>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function SavedViewsPanel({ model, mode }: { model: SavedViewsModel; mode: 'desktop' | 'mobile' }) {
+  return (
     <div className={cn(mode === 'desktop' && 'w-80', 'space-y-3')}>
       <form
         className="flex gap-2"
         onSubmit={(event) => {
           event.preventDefault();
-          void save();
+          void model.save();
         }}
       >
         <label className="min-w-0 flex-1">
           <span className="sr-only">Numele vederii</span>
           <input
-            value={name}
-            onChange={(event) => setName(event.target.value)}
+            value={model.name}
+            onChange={(event) => model.setName(event.target.value)}
             maxLength={80}
             placeholder="Nume vedere..."
             className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs outline-none focus:border-indigo-400 dark:border-slate-700 dark:bg-slate-900"
@@ -112,43 +147,26 @@ export function SavedViewsControl({ currentState, mode, navigate }: SavedViewsCo
         </label>
         <button
           type="submit"
-          disabled={!name.trim() || saving}
+          disabled={!model.name.trim() || model.saving}
           className="flex items-center gap-1 rounded-xl bg-indigo-600 px-3 py-2 text-xs font-bold text-white disabled:cursor-not-allowed disabled:opacity-50"
         >
-          {saving ? <LoaderCircle size={13} className="animate-spin" /> : <Plus size={13} />}
+          {model.saving ? <LoaderCircle size={13} className="animate-spin" /> : <Plus size={13} />}
           Salvează
         </button>
       </form>
-
-      {error && <div role="alert" className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-300">{error}</div>}
-      {loading && <div role="status" className="flex items-center gap-2 py-2 text-xs text-slate-500"><LoaderCircle size={14} className="animate-spin" /> Se încarcă...</div>}
-      {!loading && loaded && views.length === 0 && !error && <p className="py-2 text-xs text-slate-500">Nu ai încă vederi salvate.</p>}
-
-      {!loading && views.length > 0 && (
-        <ul className="max-h-64 space-y-1 overflow-y-auto" aria-label="Vederi salvate">
-          {views.map((view) => (
-            <li key={view.id} className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 p-2 dark:border-slate-700 dark:bg-slate-800/70">
-              <button type="button" onClick={() => apply(view)} className="min-w-0 flex-1 text-left">
-                <span className="block truncate text-xs font-bold text-slate-800 dark:text-slate-100">{view.name}</span>
-                <span className="block truncate text-[10px] text-slate-500 dark:text-slate-400">
-                  {MODULE_LABELS[view.module_id]}{view.state.period ? ` · ${view.state.period}` : ''}
-                </span>
-              </button>
-              <button
-                type="button"
-                onClick={() => { void remove(view); }}
-                disabled={deletingId !== null}
-                aria-label={`Șterge vederea ${view.name}`}
-                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:bg-red-50 hover:text-red-600 disabled:opacity-50 dark:hover:bg-red-950/30"
-              >
-                {deletingId === view.id ? <LoaderCircle size={14} className="animate-spin" /> : <Trash2 size={14} />}
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
+      {model.error && <div role="alert" className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-300">{model.error}</div>}
+      {model.loading && <div role="status" className="flex items-center gap-2 py-2 text-xs text-slate-500"><LoaderCircle size={14} className="animate-spin" /> Se încarcă...</div>}
+      {!model.loading && model.loaded && model.views.length === 0 && !model.error && <p className="py-2 text-xs text-slate-500">Nu ai încă vederi salvate.</p>}
+      <SavedViewList model={model} />
     </div>
   );
+}
+
+export function SavedViewsControl({ currentState, mode, navigate }: SavedViewsControlProps) {
+  const [open, setOpen] = useState(false);
+  const visible = mode === 'mobile' || open;
+  const model = useSavedViewsModel(currentState, visible, navigate);
+  if (!currentState) return null;
 
   if (mode === 'mobile') {
     return (
@@ -157,7 +175,7 @@ export function SavedViewsControl({ currentState, mode, navigate }: SavedViewsCo
           <Bookmark size={15} className="text-indigo-500" />
           <h3 id="saved-views-mobile-title" className="text-sm font-bold">Vederi salvate</h3>
         </div>
-        {content}
+        <SavedViewsPanel model={model} mode={mode} />
       </section>
     );
   }
@@ -176,7 +194,7 @@ export function SavedViewsControl({ currentState, mode, navigate }: SavedViewsCo
       </button>
       {open && (
         <div id="saved-views-desktop-panel" className="absolute right-0 top-full z-50 mt-2 rounded-2xl border border-slate-200 bg-white p-3 shadow-xl dark:border-slate-700 dark:bg-slate-900">
-          {content}
+          <SavedViewsPanel model={model} mode={mode} />
         </div>
       )}
     </div>
