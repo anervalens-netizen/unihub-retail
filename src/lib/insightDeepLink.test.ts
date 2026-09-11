@@ -54,7 +54,12 @@ describe('Insight contextual deep links', () => {
         pathname: '/hub',
         search: '?source_context=retail&period=2026-08&section=history',
       } as Location),
-    ).toEqual({ tab: 'hub', hubSection: 'history', period: '2026-08', filters: {} });
+    ).toEqual({
+      tab: 'hub',
+      hubSection: 'history',
+      period: '2026-08',
+      filters: defaultAppFilters(),
+    });
     expect(parseInsightDeepLink({ pathname: '/hub', search: '?period=2026-08' } as Location)).toBeNull();
     expect(parseInsightDeepLink({ pathname: '/hub', search: '?source_context=unknown' } as Location)).toBeNull();
   });
@@ -71,6 +76,9 @@ describe('Insight contextual deep links', () => {
     const parsed = parseInsightDeepLink({ pathname: '/hub', search: `?${params}` } as Location);
     expect(parsed?.period).toBeUndefined();
     expect(parsed?.hubSection).toBe('current');
+    expect(parsed?.filters.firma).toBe('Toate');
+    expect(parsed?.filters.rm).toBe('Toti');
+    expect(parsed?.filters.magazin).toEqual([]);
     expect(parsed?.filters.agent).toHaveLength(50);
     expect(parsed?.filters.agent?.at(-1)).toBe('Agent 49');
   });
@@ -111,19 +119,19 @@ describe('Insight contextual deep links', () => {
       period: '2026-05',
       campaignSection: 'promo',
       filters,
-    }))).toEqual({ tab: 'focus', period: '2026-05', campaignSection: 'promo', filters: {} });
+    }))).toEqual({ tab: 'focus', period: '2026-05', campaignSection: 'promo', filters });
     expect(parseBuiltUrl(buildRetailContextUrl({
       tab: 'agents',
       period: '2026-05',
       agentsSection: 'analysis',
       filters,
-    }))).toEqual({ tab: 'agents', period: '2026-05', agentsSection: 'analysis', filters: {} });
+    }))).toEqual({ tab: 'agents', period: '2026-05', agentsSection: 'analysis', filters });
     expect(parseBuiltUrl(buildRetailContextUrl({
       tab: 'management',
       period: '2026-05',
       managementSubtab: 'pnl',
       filters,
-    }))).toEqual({ tab: 'management', period: '2026-05', managementSubtab: 'pnl', filters: {} });
+    }))).toEqual({ tab: 'management', period: '2026-05', managementSubtab: 'pnl', filters });
     expect(buildRetailContextUrl({
       tab: 'settings',
       period: '2026-05',
