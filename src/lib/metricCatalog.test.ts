@@ -5,6 +5,7 @@ import {
   METRIC_CATALOG,
   METRIC_CATALOG_VERSION,
   searchMetricCatalog,
+  type MetricThreshold,
 } from './metricCatalog';
 
 describe('Metric Catalog v1', () => {
@@ -73,7 +74,7 @@ describe('Metric Catalog v1', () => {
 
   it('keeps threshold ranges ordered and contiguous', () => {
     for (const metric of METRIC_CATALOG) {
-      const thresholds = metric.visualThresholds;
+      const thresholds = metric.visualThresholds as readonly MetricThreshold[] | null;
       if (!thresholds) continue;
       expect(thresholds[0]?.minInclusive).toBeUndefined();
       expect(thresholds.at(-1)?.maxExclusive).toBeUndefined();
