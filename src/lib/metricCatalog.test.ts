@@ -117,6 +117,18 @@ describe('Metric Catalog v1', () => {
     }
   });
 
+  it('documents legacy Year History sources, freshness and ownership for net sales', () => {
+    const sales = getMetricDefinition('retail.sales.net_value');
+    expect(sales?.sources).toContain('historical_monthly_sales.total_value');
+    expect(sales?.sources).toContain('historical_annual_sales.total_value');
+    expect(sales?.freshness).toContain('surse legacy');
+    expect(sales?.freshness).toContain('nu sunt reconstruite');
+    expect(sales?.organizationSemantics.historical).toContain('historical_monthly_sales');
+    expect(sales?.organizationSemantics.historical).toContain('stores curent');
+    expect(sales?.limitations.join(' ')).toContain('anii <= 2023');
+    expect(sales?.limitations.join(' ')).toContain('RM/ASM');
+  });
+
   it('documents signed-quantity guard differences instead of claiming one ratio rule', () => {
     const focus = getMetricDefinition('retail.focus.accessory_pct');
     const averageProduct = getMetricDefinition('retail.sales.avg_product_value');
