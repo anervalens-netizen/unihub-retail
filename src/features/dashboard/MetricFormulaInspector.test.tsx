@@ -47,7 +47,9 @@ describe('MetricFormulaInspector', () => {
     expect(within(inspector).getByText('S1')).toBeInTheDocument();
     expect(within(inspector).getByText('Ana')).toBeInTheDocument();
     expect(within(inspector).getByText(metric!.formula)).toBeInTheDocument();
-    expect(within(inspector).getByText(metric!.sources[0]!)).toBeInTheDocument();
+    const sourceBadge = within(inspector).getByText(metric!.sources[0]!);
+    expect(sourceBadge).toBeInTheDocument();
+    expect(sourceBadge).toHaveClass('break-all');
     expect(within(inspector).getByText(metric!.freshness)).toBeInTheDocument();
     expect(within(inspector).getByText(/Catalog KPI v1 · read-only/)).toBeInTheDocument();
   });
