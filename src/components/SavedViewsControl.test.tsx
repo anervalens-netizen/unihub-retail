@@ -11,7 +11,10 @@ const api = vi.hoisted(() => ({
   })),
 }));
 vi.mock('../api/savedViews', () => api);
-import { SavedViewsControl } from './SavedViewsControl';
+import { getApiErrorMessage } from '../api/client';
+import { SavedViewsControl, type SavedViewsApi } from './SavedViewsControl';
+
+const savedViewsApi = { ...api, getApiErrorMessage } as unknown as SavedViewsApi;
 
 const filters = { firma: 'Arsis', rm: 'RM Est', magazin: ['M1'], agent: ['A1'] };
 const currentState = { tab: 'hub' as const, period: '2026-09', filters, hubSection: 'history' as const };
@@ -30,7 +33,7 @@ describe('SavedViewsControl', () => {
 
   it('loads lazily on desktop and applies through the canonical Retail URL', async () => {
     const navigate = vi.fn();
-    render(<SavedViewsControl currentState={currentState} mode="desktop" navigate={navigate} />);
+    render(<SavedViewsControl currentState={currentState} mode="desktop" api={savedViewsApi} navigate={navigate} />);
     expect(api.listSavedViews).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: 'Vederi' }));
     expect(await screen.findByText('Istoric Est')).toBeInTheDocument();
@@ -42,7 +45,7 @@ describe('SavedViewsControl', () => {
   it('creates a named view from the exact current canonical state', async () => {
     const created = { ...view, id: 4, name: 'Noua vedere', state: { ...view.state, period: '2026-09' } };
     api.createSavedView.mockResolvedValue(created);
-    render(<SavedViewsControl currentState={currentState} mode="desktop" />);
+    render(<SavedViewsControl currentState={currentState} mode="desktop" api={savedViewsApi} />);
     fireEvent.click(screen.getByRole('button', { name: 'Vederi' }));
     await screen.findByText('Istoric Est');
     fireEvent.change(screen.getByPlaceholderText('Nume vedere...'), { target: { value: '  Noua vedere  ' } });
@@ -54,7 +57,7 @@ describe('SavedViewsControl', () => {
 
   it('deletes only after explicit confirmation', async () => {
     const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
-    render(<SavedViewsControl currentState={currentState} mode="desktop" />);
+    render(<SavedViewsControl currentState={currentState} mode="desktop" api={savedViewsApi} />);
     fireEvent.click(screen.getByRole('button', { name: 'Vederi' }));
     await screen.findByText('Istoric Est');
     fireEvent.click(screen.getByRole('button', { name: 'Șterge vederea Istoric Est' }));
@@ -65,14 +68,14 @@ describe('SavedViewsControl', () => {
 
   it('loads immediately in the mobile context sheet and surfaces errors', async () => {
     api.listSavedViews.mockRejectedValue(new Error('offline'));
-    render(<SavedViewsControl currentState={currentState} mode="mobile" />);
+    render(<SavedViewsControl currentState={currentState} mode="mobile" api={savedViewsApi} />);
     expect(screen.getByRole('heading', { name: 'Vederi salvate' })).toBeInTheDocument();
     expect(await screen.findByRole('alert')).toHaveTextContent('Vederile salvate nu au putut fi încărcate.');
   });
 
   it('keeps browse/apply available when the current screen is not saveable', async () => {
     const navigate = vi.fn();
-    render(<SavedViewsControl currentState={null} mode="desktop" navigate={navigate} />);
+    render(<SavedViewsControl currentState={null} mode="desktop" api={savedViewsApi} navigate={navigate} />);
     fireEvent.click(screen.getByRole('button', { name: 'Vederi' }));
     expect(await screen.findByText('Istoric Est')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Salvează' })).not.toBeInTheDocument();

@@ -1,5 +1,9 @@
 import { lazy, Suspense, type ReactNode } from 'react';
 
+import { getApiErrorMessage } from '../api/client';
+import {
+  createSavedView, deleteSavedView, listSavedViews, toRetailContextUrlState,
+} from '../api/savedViews';
 import type { AppFilters } from '../lib/appFilters';
 import type { RetailContextUrlState } from '../lib/insightDeepLink';
 import type { ManagementTab, TabId } from '../lib/tabs';
@@ -7,11 +11,20 @@ import { cn } from '../lib/utils';
 import { DesktopSidebar } from './DesktopSidebar';
 import { DesktopTopBar } from './DesktopTopBar';
 import { MobileBottomNavigation, MobileFilterSheet, MobileFloatingFilter } from './MainLayoutMobile';
+import type { SavedViewsApi } from './SavedViewsControl';
 import { useMainLayoutFilters } from './useMainLayoutFilters';
 
 const SavedViewsControl = lazy(() => import('./SavedViewsControl').then((module) => ({
   default: module.SavedViewsControl,
 })));
+
+/**
+ * The shell owns the Saved Views transport deliberately: see `SavedViewsApi`
+ * for why this lazy chunk must not import the api client itself.
+ */
+const SAVED_VIEWS_API: SavedViewsApi = {
+  createSavedView, deleteSavedView, getApiErrorMessage, listSavedViews, toRetailContextUrlState,
+};
 
 interface MainLayoutProps {
   children: ReactNode;
@@ -44,12 +57,12 @@ export function MainLayout({
   const hasSavedViewBrowser = savedViewState !== undefined;
   const desktopSavedViews = hasSavedViewBrowser ? (
     <Suspense fallback={null}>
-      <SavedViewsControl currentState={savedViewState} mode="desktop" />
+      <SavedViewsControl currentState={savedViewState} mode="desktop" api={SAVED_VIEWS_API} />
     </Suspense>
   ) : undefined;
   const mobileSavedViews = hasSavedViewBrowser ? (
     <Suspense fallback={null}>
-      <SavedViewsControl currentState={savedViewState} mode="mobile" />
+      <SavedViewsControl currentState={savedViewState} mode="mobile" api={SAVED_VIEWS_API} />
     </Suspense>
   ) : undefined;
 
