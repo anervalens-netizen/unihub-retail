@@ -84,6 +84,13 @@ describe('Metric Catalog v1', () => {
     }
   });
 
+  it('states the current-store ownership caveat for historical return counts', () => {
+    const returns = getMetricDefinition('retail.receipts.return_count');
+    expect(returns?.organizationSemantics.historical).toContain('stores.regional curent');
+    expect(returns?.limitations.join(' ')).toContain('magazin mutat între regiuni');
+    expect(returns?.limitations.join(' ')).toContain('nu îl tratează ca istoric-authoritative');
+  });
+
   it('searches by human name, id, formula source and granularity without mutating the catalog', () => {
     expect(searchMetricCatalog('Bon2Acc').map((metric) => metric.id)).toContain('retail.receipts.bon2acc_pct');
     expect(searchMetricCatalog('return_receipt_count').map((metric) => metric.id)).toContain('retail.receipts.return_count');
