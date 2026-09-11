@@ -103,64 +103,6 @@ export function SortHeader({
   );
 }
 
-export function V2SortHeader({
-  label,
-  sortKey,
-  align = 'left',
-  currentKey,
-  direction,
-  onSort,
-}: {
-  label: string;
-  sortKey: V2SortKey;
-  align?: 'left' | 'right';
-  currentKey: V2SortKey;
-  direction: 'asc' | 'desc';
-  onSort: (key: V2SortKey) => void;
-}) {
-  const active = currentKey === sortKey;
-  return (
-    <SortableTableHeader label={label} active={active} direction={direction} onClick={() => onSort(sortKey)} align={align} />
-  );
-}
-
-export type V2SortKey =
-  | 'agent'
-  | 'total_sales'
-  | 'total_score'
-  | 'target_pct'
-  | 'daily_vs_reference_pct'
-  | 'bonuri_pct'
-  | 'focus_pct'
-  | 'premium_glass_pct'
-  | 'value_reper'
-  | 'trend_daily_pct'
-  | 'eligibility_status';
-
-const V2_NUMERIC_SORT_KEYS = new Set<V2SortKey>([
-  'total_sales',
-  'total_score',
-  'target_pct',
-  'daily_vs_reference_pct',
-  'bonuri_pct',
-  'focus_pct',
-  'premium_glass_pct',
-  'value_reper',
-  'trend_daily_pct',
-]);
-
-export function getV2SortValue(row: AgentEvaluationV2Row, key: V2SortKey): string | number {
-  if (key === 'agent') return `${row.agent} ${row.locatie}`.toLowerCase();
-  if (key === 'target_pct') return row.target_pct ?? Number.NEGATIVE_INFINITY;
-  const value = row[key];
-  if (value === null || value === undefined) return Number.NEGATIVE_INFINITY;
-  if (V2_NUMERIC_SORT_KEYS.has(key)) {
-    const numeric = Number(value);
-    return Number.isFinite(numeric) ? numeric : Number.NEGATIVE_INFINITY;
-  }
-  return String(value).toLowerCase();
-}
-
 export function score100Color(score: number | null | undefined, status?: string) {
   if (status === 'insuficient') return 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-300';
   if (score === null || score === undefined) return 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-300';
@@ -201,104 +143,6 @@ export function targetSourceLabel(value: string) {
   if (value === 'agent_target') return 'target agent';
   if (value === 'partial_agent_target') return 'target mixt';
   return 'target pe zile';
-}
-
-export function ComponentScoreCell({
-  value,
-  score,
-  weight,
-  suffix = '%',
-  sub,
-}: {
-  value: number | null;
-  score: number | null;
-  weight: number;
-  suffix?: '%' | 'lei';
-  sub?: string;
-}) {
-  return (
-    <td className="px-2 py-2 text-right text-xs">
-      <div className="font-medium text-slate-700 dark:text-slate-200">
-        {suffix === 'lei' ? formatNumber(value, 0) : formatPct(value)}
-      </div>
-      {sub && <div className="text-[10px] text-slate-400">{sub}</div>}
-      <div className={`text-[10px] font-semibold ${score === null ? 'text-slate-400' : score >= weight * 0.66 ? 'text-green-600 dark:text-green-400' : score > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-red-600 dark:text-red-400'}`}>
-        {score === null ? '-' : `${Number(score).toFixed(1)}/${weight}`}
-      </div>
-    </td>
-  );
-}
-
-export function AgentV2Row({ row }: { row: AgentEvaluationV2Row }) {
-  const weights = componentWeights(row);
-  const targetValue = row.target_pct;
-  const trendClass = row.trend_direction === 'up'
-    ? 'text-green-600 dark:text-green-400'
-    : row.trend_direction === 'down'
-      ? 'text-red-600 dark:text-red-400'
-      : 'text-slate-500 dark:text-slate-400';
-
-  return (
-    <tr className="border-b border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/50">
-      <td className="px-3 py-2 whitespace-nowrap text-xs font-medium text-slate-600 dark:text-slate-300">
-        <MonthLabel month={row.month} />
-      </td>
-      <td className="px-2 py-2 min-w-[150px] max-w-[190px]">
-        <div className="truncate text-xs font-semibold text-slate-800 dark:text-slate-100">{row.agent}</div>
-        <div className="mt-0.5 flex items-center gap-1 min-w-0">
-          <FirmBadge firma={row.firma} />
-          <span className="truncate text-[10px] text-slate-400">{row.locatie}</span>
-        </div>
-      </td>
-      <td className="px-2 py-2 text-right text-xs text-slate-600 dark:text-slate-300">
-        <div className="font-semibold">{formatMoney(row.total_sales)}</div>
-        <div className="text-[10px] text-slate-400">{row.working_days} zile · {row.receipt_count} bonuri</div>
-      </td>
-      <td className="px-2 py-2 text-right whitespace-nowrap">
-        <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-bold tabular-nums ${score100Color(row.total_score, row.eligibility_status)}`}>
-          {row.total_score === null ? '-' : `${Number(row.total_score).toFixed(1)}`}
-        </span>
-        <div className="text-[10px] text-slate-400 mt-0.5">{row.rating}</div>
-      </td>
-      <td className="px-2 py-2 text-left min-w-[145px]">
-        <div className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold ${row.eligibility_status === 'eligibil' ? 'bg-green-50 text-green-700 dark:bg-green-950/40 dark:text-green-300' : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'}`}>
-          {row.eligibility_status}
-        </div>
-        <div className="mt-1 flex max-w-[155px] flex-wrap justify-start gap-1">
-          {row.confidence_flags.slice(0, 3).map((flag) => (
-            <span key={flag} className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[9px] text-slate-500 dark:bg-slate-800 dark:text-slate-400">
-              {flagLabel(flag)}
-            </span>
-          ))}
-        </div>
-      </td>
-      <ComponentScoreCell
-        value={targetValue}
-        score={row.target_score}
-        weight={weights.target}
-        sub={`${targetSourceLabel(row.target_source)} · punctaj lunar`}
-      />
-      <ComponentScoreCell
-        value={row.daily_vs_reference_pct}
-        score={row.daily_score}
-        weight={weights.daily}
-        sub={`${formatNumber(row.daily_average, 0)} lei/zi vs ${referenceLabel(row.daily_reference_type)}`}
-      />
-      <ComponentScoreCell value={row.bonuri_pct} score={row.bonuri_score} weight={weights.bonuri} />
-      <ComponentScoreCell value={row.focus_pct} score={row.focus_score} weight={weights.focus} />
-      <ComponentScoreCell
-        value={row.premium_glass_pct}
-        score={row.premium_glass_score}
-        weight={weights.premium}
-        sub={`${row.premium_glass_qty}/${row.glass_qty}`}
-      />
-      <ComponentScoreCell value={row.value_reper} score={row.value_reper_score} weight={weights.value} suffix="lei" />
-      <td className="px-2 py-2 text-right text-xs">
-        <div className={`font-semibold ${trendClass}`}>{row.trend_daily_pct === null ? '-' : `${Number(row.trend_daily_pct).toFixed(1)}%`}</div>
-        <div className="text-[10px] text-slate-400">vs 3 luni</div>
-      </td>
-    </tr>
-  );
 }
 
 export function AgentV2MobileCard({ row }: { row: AgentEvaluationV2Row }) {
@@ -363,4 +207,3 @@ export function AgentLegacyMobileCard({ row }: { row: AgentEvaluationRow }) {
     </article>
   );
 }
-
