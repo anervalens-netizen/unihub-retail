@@ -61,7 +61,9 @@ describe('retail context projection', () => {
 
   it('refuses Saved Views that schema v1 cannot represent exactly', () => {
     expect(buildCurrentSavedViewState({ ...base(), hubHistoryMonths: ['2026-07', '2026-08'] })).toBeNull();
+    expect(buildCurrentSavedViewState({ ...base(), hubSection: 'visits' })).toBeNull();
     expect(buildCurrentSavedViewState({ ...base(), activeTab: 'agents', agentsSection: 'grile' })).toBeNull();
+    expect(buildCurrentSavedViewState({ ...base(), activeTab: 'agents', agentsSection: 'analysis' })).toBeNull();
     expect(buildCurrentSavedViewState(base())?.period).toBe('2026-08');
   });
 });
