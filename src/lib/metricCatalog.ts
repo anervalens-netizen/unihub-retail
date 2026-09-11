@@ -76,7 +76,7 @@ const NET_RETURN_NOTE =
   'Retururile cu cantitate negativă reduc valorile nete; numărul bonurilor de retur este urmărit separat.';
 
 const LEGACY_ANNUAL_FALLBACK_LIMITATION =
-  'Fallback-ul historical_annual_sales este eligibil numai pentru anii <= 2023, numai fără filtru de agent și numai când niciun rând lunar nu are total_sales > 0 sau total_quantity > 0. project_year_history ascunde rândurile lunare pentru care sales, target și quantity sunt toate <= 0, iar agregatul anual este emis numai dacă total_sales anual > 0; o lună doar cu retururi sau alte valori nepozitive poate astfel dispărea și permite fallback-ul anual.';
+  'Fallback-ul historical_annual_sales este eligibil numai pentru anii <= 2023, numai fără filtru de agent și numai când niciun rând lunar nu are total_sales > 0 sau total_quantity > 0. Pentru anul 2023, historical_annual_sales este filtrat suplimentar la is_partial_year = TRUE. project_year_history ascunde rândurile lunare pentru care sales, target și quantity sunt toate <= 0, iar agregatul anual este emis numai dacă total_sales anual > 0; o lună doar cu retururi sau alte valori nepozitive poate astfel dispărea și permite fallback-ul anual.';
 
 export const METRIC_CATALOG = [
   {
