@@ -41,10 +41,10 @@ export function SavedViewsControl({ currentState, mode, navigate }: SavedViewsCo
     setError('');
     try {
       setViews(await listSavedViews());
-      setLoaded(true);
     } catch (caught) {
       setError(getApiErrorMessage(caught, 'Vederile salvate nu au putut fi încărcate.'));
     } finally {
+      setLoaded(true);
       setLoading(false);
     }
   }, []);
@@ -122,7 +122,7 @@ export function SavedViewsControl({ currentState, mode, navigate }: SavedViewsCo
 
       {error && <div role="alert" className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-300">{error}</div>}
       {loading && <div role="status" className="flex items-center gap-2 py-2 text-xs text-slate-500"><LoaderCircle size={14} className="animate-spin" /> Se încarcă...</div>}
-      {!loading && loaded && views.length === 0 && <p className="py-2 text-xs text-slate-500">Nu ai încă vederi salvate.</p>}
+      {!loading && loaded && views.length === 0 && !error && <p className="py-2 text-xs text-slate-500">Nu ai încă vederi salvate.</p>}
 
       {!loading && views.length > 0 && (
         <ul className="max-h-64 space-y-1 overflow-y-auto" aria-label="Vederi salvate">
