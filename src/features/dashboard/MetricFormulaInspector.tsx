@@ -85,11 +85,11 @@ export function MetricFormulaInspector({
   const metric = getMetricDefinition(metricId);
   if (!metric) return null;
 
-  const importCutoff = context.importedDayOfMonth == null
+  const scopedSalesCoverage = context.importedDayOfMonth == null
     ? 'Indisponibil în răspunsul curent'
     : context.daysInMonth == null
-      ? `Ziua ${context.importedDayOfMonth}`
-      : `Ziua ${context.importedDayOfMonth} din ${context.daysInMonth}`;
+      ? `Până la ziua ${context.importedDayOfMonth}`
+      : `Până la ziua ${context.importedDayOfMonth} din ${context.daysInMonth}`;
 
   return (
     <details
@@ -120,8 +120,8 @@ export function MetricFormulaInspector({
             <div className="mt-1 leading-relaxed text-slate-700 dark:text-slate-200">{context.lastSaleDate ?? 'Indisponibilă'}</div>
           </div>
           <div>
-            <div className="font-bold text-slate-500">Import lunar</div>
-            <div className="mt-1 leading-relaxed text-slate-700 dark:text-slate-200">{importCutoff}</div>
+            <div className="font-bold text-slate-500">Acoperire vânzări în scope</div>
+            <div className="mt-1 leading-relaxed text-slate-700 dark:text-slate-200">{scopedSalesCoverage}</div>
           </div>
         </div>
 
