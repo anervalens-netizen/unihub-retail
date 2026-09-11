@@ -27,10 +27,7 @@ function base() {
 describe('retail context projection', () => {
   it('uses the selected single Hub History month', () => {
     expect(buildCurrentRetailContextState(base())).toEqual({
-      tab: 'hub',
-      period: '2026-08',
-      filters: hubFilters,
-      hubSection: 'history',
+      tab: 'hub', period: '2026-08', filters: hubFilters, hubSection: 'history',
     });
   });
 
@@ -46,7 +43,7 @@ describe('retail context projection', () => {
     });
   });
 
-  it('uses agent filters only for Management salaries', () => {
+  it('uses agent filters only for Management salaries in canonical URL projection', () => {
     expect(buildCurrentRetailContextState({ ...base(), activeTab: 'management', managementSubtab: 'salarii' })).toEqual({
       tab: 'management', period: '2026-09', filters: agentsFilters, managementSubtab: 'salarii',
     });
@@ -64,6 +61,8 @@ describe('retail context projection', () => {
     expect(buildCurrentSavedViewState({ ...base(), hubSection: 'visits' })).toBeNull();
     expect(buildCurrentSavedViewState({ ...base(), activeTab: 'agents', agentsSection: 'grile' })).toBeNull();
     expect(buildCurrentSavedViewState({ ...base(), activeTab: 'agents', agentsSection: 'analysis' })).toBeNull();
+    expect(buildCurrentSavedViewState({ ...base(), activeTab: 'management', managementSubtab: 'asm' })).toBeNull();
+    expect(buildCurrentSavedViewState({ ...base(), activeTab: 'management', managementSubtab: 'salarii' })).toBeNull();
     expect(buildCurrentSavedViewState(base())?.period).toBe('2026-08');
   });
 });
