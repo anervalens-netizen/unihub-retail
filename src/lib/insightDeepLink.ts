@@ -106,7 +106,8 @@ export function buildRetailContextUrl(state: RetailContextUrlState): string {
 
 export function parseInsightDeepLink(location: Pick<Location, 'pathname' | 'search'>): InsightDeepLink | null {
   const params = new URLSearchParams(location.search);
-  if (!CONTEXT_SOURCES.has(params.get('source_context') ?? '')) return null;
+  const sourceContext = params.get('source_context') ?? '';
+  if (!CONTEXT_SOURCES.has(sourceContext)) return null;
 
   const path = location.pathname.replace(/\/+$/, '') || '/';
   let tab: TabId;
@@ -128,12 +129,19 @@ export function parseInsightDeepLink(location: Pick<Location, 'pathname' | 'sear
     ?.split(',') ?? [];
   const magazin = explicitStores.length > 0 ? explicitStores : canonicalSelection(storeList);
   const agents = repeatedValues(params, 'agent');
-  const filters: Partial<AppFilters> = {
-    ...(firma ? { firma } : {}),
-    ...(rm ? { rm } : {}),
-    ...(magazin.length ? { magazin } : {}),
-    ...(agents.length ? { agent: agents } : {}),
-  };
+  const filters: Partial<AppFilters> = sourceContext === 'retail'
+    ? {
+        firma: firma ?? ALL_FIRMS,
+        rm: rm ?? ALL_SCOPE,
+        magazin,
+        agent: agents,
+      }
+    : {
+        ...(firma ? { firma } : {}),
+        ...(rm ? { rm } : {}),
+        ...(magazin.length ? { magazin } : {}),
+        ...(agents.length ? { agent: agents } : {}),
+      };
   const section = bounded(params.get('section'), 40);
   const subtab = bounded(params.get('subtab'), 40);
 
