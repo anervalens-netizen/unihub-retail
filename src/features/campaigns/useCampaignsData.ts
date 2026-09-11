@@ -1,5 +1,5 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import {
   getCampaignSnapshot,
@@ -50,17 +50,33 @@ interface CampaignsDataInput {
   months: string[];
   filters: AppFilters;
   activeSection: CampaignSection;
+  preferredMonth?: string;
   onFilterMonthChange?: (month: string) => void;
 }
 
-function useCampaignSelection({ currentMonth, months, onFilterMonthChange }: Pick<CampaignsDataInput, "currentMonth" | "months" | "onFilterMonthChange">) {
+function availablePreferredMonth(preferredMonth: string | undefined, months: string[]) {
+  return preferredMonth && months.includes(preferredMonth) ? preferredMonth : undefined;
+}
+
+function useCampaignSelection({ currentMonth, months, preferredMonth, onFilterMonthChange }: Pick<CampaignsDataInput, "currentMonth" | "months" | "preferredMonth" | "onFilterMonthChange">) {
   const latestMonth = useMemo(() => months[0] ?? currentMonth, [months, currentMonth]);
-  const [historyMonth, setHistoryMonth] = useState(latestMonth);
-  const [promoMonth, setPromoMonth] = useState(latestMonth);
+  const initialPreferredMonth = availablePreferredMonth(preferredMonth, months);
+  const [historyMonth, setHistoryMonth] = useState(initialPreferredMonth ?? latestMonth);
+  const [promoMonth, setPromoMonth] = useState(initialPreferredMonth ?? latestMonth);
   const [selectedPromotionKey, setSelectedPromotionKey] = useState("");
   const [selectedContestKey, setSelectedContestKey] = useState("");
   const [premiumSurfaceMode, setPremiumSurfaceMode] = useState<PremiumGlassSurfaceMode>("all");
+  const preferredMonthApplied = useRef(Boolean(initialPreferredMonth));
   useEffect(() => {
+    const requestedMonth = availablePreferredMonth(preferredMonth, months);
+    if (requestedMonth) {
+      if (!preferredMonthApplied.current) {
+        preferredMonthApplied.current = true;
+        setHistoryMonth(requestedMonth);
+        setPromoMonth(requestedMonth);
+      }
+      return;
+    }
     const fallbackMonth = latestMonth || currentMonth;
     setHistoryMonth((previous) => months.includes(previous) ? previous : fallbackMonth);
     setPromoMonth((previous) => {
@@ -68,7 +84,7 @@ function useCampaignSelection({ currentMonth, months, onFilterMonthChange }: Pic
       if (!months.length || !previous || previous === currentMonth) return fallbackMonth;
       return months.includes(previous) ? previous : fallbackMonth;
     });
-  }, [months, currentMonth, latestMonth]);
+  }, [months, currentMonth, latestMonth, preferredMonth]);
   useEffect(() => { if (promoMonth) onFilterMonthChange?.(promoMonth); }, [promoMonth, onFilterMonthChange]);
   return { latestMonth, historyMonth, setHistoryMonth, promoMonth, setPromoMonth, selectedPromotionKey, setSelectedPromotionKey, selectedContestKey, setSelectedContestKey, premiumSurfaceMode, setPremiumSurfaceMode };
 }
@@ -131,9 +147,10 @@ export function useCampaignsData({
   months,
   filters,
   activeSection,
+  preferredMonth,
   onFilterMonthChange,
 }: CampaignsDataInput) {
-  const selection = useCampaignSelection({ currentMonth, months, onFilterMonthChange });
+  const selection = useCampaignSelection({ currentMonth, months, preferredMonth, onFilterMonthChange });
   const { latestMonth, historyMonth, setHistoryMonth, promoMonth, setPromoMonth, selectedPromotionKey, setSelectedPromotionKey, selectedContestKey, setSelectedContestKey, premiumSurfaceMode, setPremiumSurfaceMode } = selection;
   const buildQuery = useCallback(
     (month: string) => buildScopedMonthQuery(month, filters),
