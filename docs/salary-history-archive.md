@@ -68,3 +68,40 @@ Ferestrele Overview/Magazine citesc strict salary_records prin campurile deja
 permise rolului web. Ferestrele Istoric/Magazine si Istoric/Agenti citesc arhiva
 cu filtre exacte pentru magazin sau nume si firma. Ambele endpointuri folosesc
 acelasi require_salary_access; nu se extind granturile si nu se afiseaza CNP.
+
+
+## P&L: candidat de recalcul cu alocare HR reconciliata (2026-09-11)
+
+Ownerul a cerut recalcularea estimarilor istorice si iulie 2026, plus verificarea
+calculelor. UI-ul magazinelor afiseaza acum aceiasi cinci indicatori ca sumarul.
+Datele P&L recalculate sunt deocamdata **candidate de review**, nu valori live.
+
+`review_store_pnl_salary_history.py --through 2026-07 --output DIRECTORY`
+creeaza snapshot readonly repeatable-read, pre-image, totaluri per firma/luna,
+hashuri ale intrarilor, modelelor si iesirilor. Compara separat:
+
+1. modelul existent pe intrarile curente;
+2. corectia salariala cu interpretarea TVA existenta;
+3. corectia salariala cu TVA effective-dated, numai pentru review.
+
+Doar optiunea `include_salary_history=True` activeaza noile intrari. Traseul
+legacy/shadow implicit nu se schimba. Salariile oficiale nu sunt modificate.
+Pentru calibrarea pe magazin, distributia HR originala poate fi folosita numai
+cand firma/luna are o singura sursa/foaie selectata si numarul de randuri si
+suma coincid exact cu salariile inregistrate. Altfel se folosesc denumirea
+locatiei din inregistrare si aliasurile exacte deja confirmate. Cheia veche
+site_code nu este fallback: verificarea a demonstrat alocari intre magazine
+si firme diferite. Lunile fara payroll inregistrat citesc exclusiv view-ul
+`salary_history_estimation_inputs`, fara suprapunere cu salariile oficiale.
+
+Nu se aloca arbitrar randurile HR fara magazin. In iulie acestea sunt 4 pozitii
+Team Leader Mobiup, total 21.311 lei net+bonuri. Costul salarial c3 ramane o
+estimare a costului complet pe baza raportului istoric Finance / net+bonuri.
+Nu este echivalent cu suma HR neta si nu se dubleaza bonurile.
+
+Protectiile Finance/TVA nu au fost modificate. Scriptul nou nu are optiune apply;
+nu foloseste principalul de migrari si nu schimba granturi. Publicarea viitoare
+necesita o cale controlata pentru estimari: functiile Finance existente promoveaza
+numai actuale, Operations poate publica doar pointerul de review shadow, iar
+loginul web nu are DML pe store_pnl_monthly. Nu se ocolesc aceste limite prin
+ownerul schemei sau printr-un read-model live construit peste candidatul de review.
