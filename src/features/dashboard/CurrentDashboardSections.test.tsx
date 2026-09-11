@@ -142,7 +142,7 @@ describe('CurrentOverview composition', () => {
     expect(screen.getByText('Period table')).toBeInTheDocument();
     expect(screen.getByText('Daily trend 2026-09')).toBeInTheDocument();
     expect(screen.getByText('RM — Regional Manager')).toBeInTheDocument();
-    expect(screen.getByText('Magazine')).toBeInTheDocument();
+    expect(screen.getByText('Magazine', { selector: 'div' })).toBeInTheDocument();
     expect(screen.getByText('Agenti - Toti agentii')).toBeInTheDocument();
     expect(model.onSortRegionals).toHaveBeenCalledWith('regional');
     expect(model.onSortStores).toHaveBeenCalledWith('locatie');
