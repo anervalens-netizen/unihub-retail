@@ -12,9 +12,8 @@ import {
   MetricCell, MonthDropdown, MonthLabel, pointColor, scoreColor, StoreDropdown,
 } from './AgentEvaluationControls';
 import {
-  AgentLegacyMobileCard, AgentRow, AgentV2MobileCard, AgentV2Row, componentWeights,
-  ComponentScoreCell, flagLabel, getSortValue, getV2SortValue, referenceLabel, score100Color,
-  SortHeader, targetSourceLabel, V2SortHeader,
+  AgentLegacyMobileCard, AgentRow, AgentV2MobileCard, componentWeights,
+  flagLabel, getSortValue, referenceLabel, score100Color, SortHeader, targetSourceLabel,
 } from './AgentEvaluationTables';
 import { NewEvaluationSubsection } from './AgentEvaluationV2Table';
 
@@ -47,9 +46,9 @@ const v2Rows = [
 function model(overrides: Record<string, unknown> = {}) {
   return {
     mode: 'current', setMode: vi.fn(), selectedMonths: ['2026-07'], setSelectedMonths: vi.fn(), firma: '', setFirma: vi.fn(), asm: '', resetManager: vi.fn(), selectedStores: ['S1'], setSelectedStores: vi.fn(),
-    sortKey: 'total_points', sortDirection: 'desc', v2SortKey: 'total_score', v2SortDirection: 'desc', loading: false,
+    sortKey: 'total_points', sortDirection: 'desc', loading: false,
     mobileFiltersOpen: true, setMobileFiltersOpen: vi.fn(), load: vi.fn(), toggleMonth: vi.fn(), toggleStore: vi.fn(),
-    rows: [legacy], v2Rows, handleSort: vi.fn(), handleV2Sort: vi.fn(),
+    rows: [legacy], v2Rows, handleSort: vi.fn(),
     summary: { agents: 1, avgPoints: 16, totalSales: 12000, premiumRows: 1 },
     optionData: { months: [{ value: '2026-07', label: 'Iulie' }, { value: '2026-06', label: 'Iunie' }], firmas: [{ value: 'Mobicell', label: 'Mobicell' }, { value: 'Other', label: 'Other' }, { value: 'Mobiup', label: 'Mobiup' }], asms: [{ value: 'RM A', label: 'RM A' }], stores: [{ value: 'S1', label: 'Alfa' }, { value: 'S2', label: 'Beta' }] },
     ...overrides,
@@ -59,7 +58,7 @@ function model(overrides: Record<string, unknown> = {}) {
 describe('agent evaluation critical surfaces', () => {
   beforeEach(() => { vi.clearAllMocks(); controller.current = model(); });
 
-  it('covers formatting, colors, labels, weights and sorting edges', () => {
+  it('covers formatting, colors, labels, weights and legacy sorting edges', () => {
     expect(formatMoney(null)).toBe('-'); expect(formatMoney(10)).not.toBe('-');
     expect(formatPct(undefined)).toBe('-'); expect(formatPct(10)).toBe('10.0%');
     expect(formatNumber(null)).toBe('-'); expect(formatNumber(10.25, 1)).toBeTruthy();
@@ -71,7 +70,6 @@ describe('agent evaluation critical surfaces', () => {
     expect(referenceLabel('colegi')).toBe('colegi'); expect(referenceLabel('istoric_locatie')).toBe('locație'); expect(referenceLabel('media_manager')).toBe('manager'); expect(referenceLabel('none')).toBe('fără reper');
     expect(targetSourceLabel('agent_target')).toBe('target agent'); expect(targetSourceLabel('partial_agent_target')).toBe('target mixt'); expect(targetSourceLabel('other')).toBe('target pe zile');
     expect(getSortValue(legacy as never, 'agent')).toContain('ana'); expect(getSortValue({ ...legacy, target_pct: null } as never, 'target_pct')).toBe(Number.NEGATIVE_INFINITY); expect(getSortValue({ ...legacy, target_pct: 'bad' } as never, 'target_pct')).toBe(Number.NEGATIVE_INFINITY); expect(getSortValue(legacy as never, 'month')).toBe('2026-07');
-    expect(getV2SortValue(v2Rows[0] as never, 'agent')).toContain('ana'); expect(getV2SortValue(v2Rows[1] as never, 'target_pct')).toBe(Number.NEGATIVE_INFINITY); expect(getV2SortValue({ ...v2Base, total_score: 'bad' } as never, 'total_score')).toBe(Number.NEGATIVE_INFINITY); expect(getV2SortValue(v2Rows[0] as never, 'eligibility_status')).toBe('eligibil');
   });
 
   it('renders controls and executes dropdown/toggle branches', () => {
@@ -89,22 +87,26 @@ describe('agent evaluation critical surfaces', () => {
     expect(toggle).toHaveBeenCalled(); expect(clear).toHaveBeenCalled(); expect(firm).toHaveBeenCalledWith('');
   });
 
-  it('renders legacy and V2 rows/cards/cells and sorting callbacks', () => {
+  it('renders legacy row sorting and preserves V2 mobile cards', () => {
     const sort = vi.fn();
-    render(<table><tbody><AgentRow row={legacy as never} /><AgentV2Row row={v2Rows[0] as never} /><AgentV2Row row={v2Rows[1] as never} /><AgentV2Row row={v2Rows[2] as never} /><tr><ComponentScoreCell value={1} score={null} weight={10} /><ComponentScoreCell value={1} score={8} weight={10} /><ComponentScoreCell value={1} score={2} weight={10} /><ComponentScoreCell value={1} score={0} weight={10} /></tr></tbody><thead><tr><SortHeader label="Agent sort" sortKey="agent" currentKey="agent" direction="asc" onSort={sort} /><V2SortHeader label="Score sort" sortKey="total_score" currentKey="agent" direction="desc" onSort={sort} /></tr></thead></table>);
-    fireEvent.click(screen.getByRole('button', { name: 'Agent sort' })); fireEvent.click(screen.getByRole('button', { name: 'Score sort' }));
-    expect(sort).toHaveBeenCalledWith('agent'); expect(sort).toHaveBeenCalledWith('total_score');
+    render(<table><tbody><AgentRow row={legacy as never} /></tbody><thead><tr><SortHeader label="Agent sort" sortKey="agent" currentKey="agent" direction="asc" onSort={sort} /></tr></thead></table>);
+    fireEvent.click(screen.getByRole('button', { name: 'Agent sort' }));
+    expect(sort).toHaveBeenCalledWith('agent');
     const { rerender } = render(<><AgentLegacyMobileCard row={legacy as never} /><AgentV2MobileCard row={v2Rows[0] as never} /><AgentV2MobileCard row={v2Rows[2] as never} /></>);
     rerender(<AgentV2MobileCard row={{ ...v2Base, confidence_flags: [] } as never} />);
   });
 
-  it('renders new subsection rich/empty and opens mechanism', () => {
-    const onSort = vi.fn();
-    const { rerender } = render(<NewEvaluationSubsection rows={v2Rows as never[]} sortKey="total_score" sortDirection="desc" onSort={onSort} />);
+  it('renders V2 DataGrid with score-desc default, sorting and empty state', () => {
+    const { rerender } = render(<NewEvaluationSubsection rows={v2Rows as never[]} />);
     fireEvent.click(screen.getByRole('button', { name: /Cum se face evaluarea/ }));
     expect(screen.getByText('Regula generala')).toBeInTheDocument();
-    fireEvent.click(screen.getAllByRole('button', { name: 'Agent' })[0]!);
-    rerender(<NewEvaluationSubsection rows={[]} sortKey="agent" sortDirection="asc" onSort={onSort} />);
+    expect(screen.getByRole('heading', { name: 'Punctaj 0–100' })).toBeInTheDocument();
+    expect(screen.getAllByTestId('data-grid-row')[0]).toHaveTextContent('Ana');
+    const agentSort = screen.getByRole('button', { name: 'Sortează după Agent' });
+    fireEvent.click(agentSort);
+    fireEvent.click(agentSort);
+    expect(screen.getAllByTestId('data-grid-row')[0]).toHaveTextContent('Carmen');
+    rerender(<NewEvaluationSubsection rows={[]} />);
     expect(screen.getAllByText('Fără agenți pentru filtrele selectate.')).toHaveLength(2);
   });
 
