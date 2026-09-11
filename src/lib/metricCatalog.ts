@@ -49,6 +49,12 @@ const ORGANIZATION = {
     'În istoric, dimensiunile organizaționale stocate în reporting_* la import rămân autoritative; comparațiile istorice de perioadă păstrează cohorta de magazine din selecția curentă.',
 } as const;
 
+const NET_SALES_ORGANIZATION = {
+  current: ORGANIZATION.current,
+  historical:
+    'Istoricul modern din reporting_* păstrează dimensiunile organizaționale importate când current_scope este oprit. Year History poate combina însă surse legacy: historical_monthly_sales păstrează firma istorică, dar filtrează RM/ASM prin stores curent; fallback-ul historical_annual_sales păstrează firma istorică fără current_scope, dar folosește de asemenea stores curent pentru RM/ASM. Cu current_scope, ownership-ul curent din stores este folosit explicit.',
+} as const;
+
 const TARGET_ORGANIZATION = {
   current: ORGANIZATION.current,
   historical:
@@ -73,14 +79,23 @@ export const METRIC_CATALOG = [
     formula: 'SUM(total_sales)',
     granularities: ['dashboard', 'period-comparison', 'regional', 'asm', 'store', 'agent'],
     aggregation: 'Aditivă prin însumarea valorii nete la granularitatea selectată.',
-    sources: ['reporting_agent_day.total_sales', 'reporting_agent_month.total_sales'],
+    sources: [
+      'reporting_agent_day.total_sales',
+      'reporting_agent_month.total_sales',
+      'historical_monthly_sales.total_value',
+      'historical_annual_sales.total_value',
+    ],
     inclusions: [NET_RETURN_NOTE],
     exclusions: REPORTING_EXCLUSIONS,
-    organizationSemantics: ORGANIZATION,
-    freshness: REPORTING_FRESHNESS,
+    organizationSemantics: NET_SALES_ORGANIZATION,
+    freshness:
+      'Sursele reporting se actualizează după importul normal de vânzări. Year History poate citi separat historical_monthly_sales sau historical_annual_sales; aceste surse legacy urmează propriile importuri istorice și nu sunt reconstruite de un import normal de vânzări.',
     visualThresholds: null,
     implementationRefs: [
       'backend/repositories/dashboard.py::_summary_sql',
+      'backend/repositories/dashboard.py::DashboardRepository.fetch_year_history_monthly',
+      'backend/repositories/dashboard.py::DashboardRepository.fetch_year_history_agg',
+      'backend/services/dashboard/history.py::load_history_by_year',
       'backend/services/dashboard/query_agents.py::_agent_base_query',
       'backend/services/dashboard/query_stores.py::_store_stats_query',
       'backend/services/dashboard/query_managers.py::_regional_base_query',
@@ -90,7 +105,10 @@ export const METRIC_CATALOG = [
       'backend/tests/test_dashboard_summary_integration.py::test_cartela_does_not_contaminate_retail_totals',
       'backend/tests/test_dashboard_summary_integration.py::test_reporting_uses_net_quantity_for_kpis_and_keeps_returns_separate',
     ],
-    limitations: [],
+    limitations: [
+      'Year History poate combina reporting_agent_month cu historical_monthly_sales; pentru anii <= 2023, dacă nu există date lunare, poate folosi historical_annual_sales ca agregat legacy.',
+      'Pe sursele legacy de Year History, firma poate rămâne cea stocată istoric, dar filtrele RM/ASM sunt rezolvate prin stores curent; un magazin mutat poate apărea sub ownership-ul managerial curent.',
+    ],
     version: 1,
   },
   {
