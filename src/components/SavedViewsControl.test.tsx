@@ -52,7 +52,7 @@ describe('SavedViewsControl', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Vederi' }));
     expect(await screen.findByText('Istoric Est')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: /Istoric Est/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Aplică vederea Istoric Est' }));
 
     expect(api.toRetailContextUrlState).toHaveBeenCalledWith(view.state);
     expect(navigate).toHaveBeenCalledWith('/hub?source_context=retail&period=2026-08&firma=Arsis&rm=RM+Est&magazin=M1&agent=A1&section=history');
