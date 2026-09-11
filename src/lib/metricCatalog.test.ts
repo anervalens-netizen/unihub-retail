@@ -129,6 +129,32 @@ describe('Metric Catalog v1', () => {
     expect(sales?.limitations.join(' ')).toContain('RM/ASM');
   });
 
+  it('documents browser-side recomputation without overstating source freshness', () => {
+    for (const id of [
+      'retail.target.attainment_pct',
+      'retail.receipts.bon2acc_pct',
+      'retail.focus.accessory_pct',
+      'retail.sales.avg_product_value',
+      'retail.sales.daily_average',
+      'retail.sales.avg_receipt_value',
+    ]) {
+      const metric = getMetricDefinition(id);
+      expect(metric?.freshness).toContain('browser');
+      expect(metric?.freshness).toContain('freshness');
+      expect(metric?.freshness).toContain('nu schimbă');
+    }
+  });
+
+  it('includes the live monthly manager and agent sources for Bon2Acc and Focus', () => {
+    const bon2 = getMetricDefinition('retail.receipts.bon2acc_pct');
+    expect(bon2?.sources).toContain('reporting_agent_month.receipt_2plus_count');
+    expect(bon2?.sources).toContain('reporting_agent_month.receipt_count');
+
+    const focus = getMetricDefinition('retail.focus.accessory_pct');
+    expect(focus?.sources).toContain('reporting_agent_month.focus_quantity');
+    expect(focus?.sources).toContain('reporting_agent_month.total_quantity');
+  });
+
   it('documents signed-quantity guard differences instead of claiming one ratio rule', () => {
     const focus = getMetricDefinition('retail.focus.accessory_pct');
     const averageProduct = getMetricDefinition('retail.sales.avg_product_value');
