@@ -120,6 +120,27 @@ describe('MetricFormulaInspector', () => {
     expect(within(inspector).getByText('Toți managerii')).toBeInTheDocument();
   });
 
+  it('wraps long unbroken store and agent values on narrow layouts', () => {
+    const longStore = `S${'1'.repeat(179)}`;
+    const longAgent = `A${'2'.repeat(179)}`;
+    render(
+      <MetricFormulaInspector
+        metricId="retail.receipts.bon2acc_pct"
+        value={40}
+        context={{
+          ...context,
+          filters: { firma: 'Mobiup', rm: 'Nord', magazin: [longStore], agent: [longAgent] },
+        }}
+      />,
+    );
+
+    const inspector = screen.getByTestId('formula-inspector-retail.receipts.bon2acc_pct');
+    fireEvent.click(within(inspector).getByLabelText('Inspectează formula Bon2Acc'));
+
+    expect(within(inspector).getByText(longStore)).toHaveClass('break-all');
+    expect(within(inspector).getByText(longAgent)).toHaveClass('break-all');
+  });
+
   it('states unavailable scoped coverage instead of inventing data', () => {
     render(
       <MetricFormulaInspector
