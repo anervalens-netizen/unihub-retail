@@ -1,4 +1,4 @@
-import { lazy, Suspense } from 'react';
+import { lazy, Suspense, useEffect } from 'react';
 
 import type { AppFilters } from '../../lib/appFilters';
 import { ErrorBoundary } from '../../components/ErrorBoundary';
@@ -18,6 +18,7 @@ const OPTIONS: SegmentedTabOption<AgentsMainTab>[] = [
 interface AgentsProps {
   currentMonth: string; months: string[]; filters: AppFilters;
   preferredSection?: AgentsMainTab; preferredGrileMonth?: string;
+  onSectionChange?: (section: AgentsMainTab) => void;
 }
 
 function LazyAgentsSection({ model, currentMonth, months, preferredGrileMonth }: {
@@ -42,8 +43,9 @@ function LazyAgentsSection({ model, currentMonth, months, preferredGrileMonth }:
   />;
 }
 
-export function Agents({ currentMonth, months, filters, preferredSection, preferredGrileMonth }: AgentsProps) {
+export function Agents({ currentMonth, months, filters, preferredSection, preferredGrileMonth, onSectionChange }: AgentsProps) {
   const model = useAgentsPageController(currentMonth, filters, preferredSection);
+  useEffect(() => { onSectionChange?.(model.mainTab); }, [model.mainTab, onSectionChange]);
   if (model.selectedAgent) return <AgentDrawer agent={model.selectedAgent} currentMonth={currentMonth} isOpen onClose={() => model.setSelectedAgent(null)} />;
   return <div className="space-y-3 p-3 pb-24 pt-2 lg:space-y-4 lg:px-6 lg:py-3 lg:pb-6">
     <PageHeader className="lg:hidden" title="Agenti" description="Analiza echipei, miscare de personal si retentie" />
