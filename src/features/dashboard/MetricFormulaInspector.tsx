@@ -1,5 +1,5 @@
 import type { AppFilters } from '../../lib/appFilters';
-import { ALL_FIRMS, ALL_SCOPE } from '../../lib/filterValues';
+import { ALL_FIRMS, ALL_SCOPE, ALL_STORES } from '../../lib/filterValues';
 import {
   getMetricDefinition,
   type MetricDefinition,
@@ -32,12 +32,13 @@ function displayValue(metric: MetricDefinition, value: number | null): string {
 }
 
 function filterContext(filters: AppFilters) {
-  const hasStoreScope = filters.magazin.length > 0;
+  const storeScope = filters.magazin.filter((store) => store !== ALL_STORES);
+  const hasStoreScope = storeScope.length > 0;
   const overriddenByStore = 'Suprascris de Magazin';
   return [
     ['Firma', hasStoreScope ? overriddenByStore : filters.firma === ALL_FIRMS ? 'Toate firmele' : filters.firma],
     ['Manager', hasStoreScope ? overriddenByStore : filters.rm === ALL_SCOPE ? 'Toți managerii' : filters.rm],
-    ['Magazin', hasStoreScope ? filters.magazin.join(', ') : 'Toate magazinele din scope'],
+    ['Magazin', hasStoreScope ? storeScope.join(', ') : 'Toate magazinele din scope'],
     ['Agent', filters.agent.length > 0 ? filters.agent.join(', ') : 'Toți agenții din scope'],
   ] as const;
 }
