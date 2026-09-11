@@ -59,10 +59,15 @@ describe('retail context projection', () => {
   it('refuses Saved Views that schema v1 cannot represent exactly', () => {
     expect(buildCurrentSavedViewState({ ...base(), hubHistoryMonths: ['2026-07', '2026-08'] })).toBeNull();
     expect(buildCurrentSavedViewState({ ...base(), hubSection: 'visits' })).toBeNull();
+    expect(buildCurrentSavedViewState({ ...base(), activeTab: 'focus', campaignSection: 'promo' })).toBeNull();
+    expect(buildCurrentSavedViewState({ ...base(), activeTab: 'focus', campaignSection: 'concurs' })).toBeNull();
+    expect(buildCurrentSavedViewState({ ...base(), activeTab: 'focus', campaignSection: 'premium' })).toBeNull();
+    expect(buildCurrentSavedViewState({ ...base(), activeTab: 'focus', campaignSection: 'focus' })).toBeNull();
     expect(buildCurrentSavedViewState({ ...base(), activeTab: 'agents', agentsSection: 'grile' })).toBeNull();
     expect(buildCurrentSavedViewState({ ...base(), activeTab: 'agents', agentsSection: 'analysis' })).toBeNull();
     expect(buildCurrentSavedViewState({ ...base(), activeTab: 'management', managementSubtab: 'asm' })).toBeNull();
     expect(buildCurrentSavedViewState({ ...base(), activeTab: 'management', managementSubtab: 'salarii' })).toBeNull();
+    expect(buildCurrentSavedViewState({ ...base(), activeTab: 'focus', campaignSection: 'incentive' })?.period).toBe('2026-08');
     expect(buildCurrentSavedViewState(base())?.period).toBe('2026-08');
   });
 });
