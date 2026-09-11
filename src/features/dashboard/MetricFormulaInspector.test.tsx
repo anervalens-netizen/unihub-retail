@@ -70,14 +70,19 @@ describe('MetricFormulaInspector', () => {
     expect(within(inspector).getByText('Toate magazinele din scope')).toBeInTheDocument();
   });
 
-  it('ignores the Toate store sentinel when deriving effective hierarchy scope', () => {
+  it('mirrors API sentinel normalization before deriving displayed filter scope', () => {
     render(
       <MetricFormulaInspector
         metricId="retail.receipts.bon2acc_pct"
         value={40}
         context={{
           ...context,
-          filters: { ...context.filters, magazin: ['Toate'] },
+          filters: {
+            firma: 'Mobiup',
+            rm: 'Nord',
+            magazin: ['Toate', 'tOtI', 'Toți', 'ToÈ›I', 'ToÃˆâ€ºI', '   '],
+            agent: ['Toti'],
+          },
         }}
       />,
     );
@@ -88,7 +93,27 @@ describe('MetricFormulaInspector', () => {
     expect(within(inspector).getByText('Mobiup')).toBeInTheDocument();
     expect(within(inspector).getByText('Nord')).toBeInTheDocument();
     expect(within(inspector).getByText('Toate magazinele din scope')).toBeInTheDocument();
+    expect(within(inspector).getByText('Toți agenții din scope')).toBeInTheDocument();
     expect(within(inspector).queryByText('Suprascris de Magazin')).not.toBeInTheDocument();
+  });
+
+  it('normalizes scalar hierarchy sentinels like the API boundary', () => {
+    render(
+      <MetricFormulaInspector
+        metricId="retail.receipts.bon2acc_pct"
+        value={40}
+        context={{
+          ...context,
+          filters: { firma: 'TOATE', rm: 'toți', magazin: [], agent: [] },
+        }}
+      />,
+    );
+
+    const inspector = screen.getByTestId('formula-inspector-retail.receipts.bon2acc_pct');
+    fireEvent.click(within(inspector).getByLabelText('Inspectează formula Bon2Acc'));
+
+    expect(within(inspector).getByText('Toate firmele')).toBeInTheDocument();
+    expect(within(inspector).getByText('Toți managerii')).toBeInTheDocument();
   });
 
   it('states unavailable cutoff/import context instead of inventing data', () => {
