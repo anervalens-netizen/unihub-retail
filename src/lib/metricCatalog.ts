@@ -350,7 +350,12 @@ export const METRIC_CATALOG = [
     sources: ['reporting_agent_day.return_receipt_count', 'reporting_agent_month.return_receipt_count'],
     inclusions: ['Același bon_nr pe altă zi, magazin sau agent rămâne o identitate distinctă.'],
     exclusions: [...REPORTING_EXCLUSIONS, 'Pozițiile cu quantity >= 0 nu contribuie.'],
-    organizationSemantics: ORGANIZATION,
+    organizationSemantics: {
+      current:
+        'Subquery-urile de retur folosesc stores curent pentru scope; în current_scope acest lucru urmează ownership-ul organizațional curent.',
+      historical:
+        'Valoarea materializată aparține lunii/magazinului/agentului istoric, dar subquery-urile de retur filtrează prin stores curent; la nivel regional return_summary grupează explicit după stores.regional curent, nu după regionalul istoric din reporting_agent_month.',
+    },
     freshness: REPORTING_FRESHNESS,
     visualThresholds: null,
     implementationRefs: [
@@ -364,7 +369,10 @@ export const METRIC_CATALOG = [
       'backend/tests/test_lot23_return_read_model_materialization.py',
       'backend/tests/test_v3_return_read_model_parity_characterization.py',
     ],
-    limitations: ['Este separat de receipt_count; nu se scade încă o dată din numărul de bonuri pozitive.'],
+    limitations: [
+      'Este separat de receipt_count; nu se scade încă o dată din numărul de bonuri pozitive.',
+      'Pentru un magazin mutat între regiuni, bonurile retur ale unei luni istorice pot fi atribuite regionalului curent sau pot lipsi din rândul regional istoric; catalogul documentează comportamentul existent și nu îl tratează ca istoric-authoritative.',
+    ],
     version: 1,
   },
 ] as const satisfies readonly MetricDefinition[];
