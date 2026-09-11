@@ -35,14 +35,39 @@ describe('MetricFormulaInspector', () => {
     expect(within(inspector).getByText('2026-09')).toBeInTheDocument();
     expect(within(inspector).getByText('2026-09-10')).toBeInTheDocument();
     expect(within(inspector).getByText('Ziua 10 din 30')).toBeInTheDocument();
-    expect(within(inspector).getByText('Mobiup')).toBeInTheDocument();
-    expect(within(inspector).getByText('Nord')).toBeInTheDocument();
+    expect(within(inspector).getByText('Firma')).toBeInTheDocument();
+    expect(within(inspector).getByText('Manager')).toBeInTheDocument();
+    expect(within(inspector).getByText('Magazin')).toBeInTheDocument();
+    expect(within(inspector).getByText('Agent')).toBeInTheDocument();
+    expect(within(inspector).getAllByText('Suprascris de Magazin')).toHaveLength(2);
+    expect(within(inspector).queryByText('Mobiup')).not.toBeInTheDocument();
+    expect(within(inspector).queryByText('Nord')).not.toBeInTheDocument();
     expect(within(inspector).getByText('S1')).toBeInTheDocument();
     expect(within(inspector).getByText('Ana')).toBeInTheDocument();
     expect(within(inspector).getByText(metric!.formula)).toBeInTheDocument();
     expect(within(inspector).getByText(metric!.sources[0]!)).toBeInTheDocument();
     expect(within(inspector).getByText(metric!.freshness)).toBeInTheDocument();
     expect(within(inspector).getByText(/Catalog KPI v1 · read-only/)).toBeInTheDocument();
+  });
+
+  it('shows canonical hierarchy labels when store scope is not selected', () => {
+    render(
+      <MetricFormulaInspector
+        metricId="retail.receipts.bon2acc_pct"
+        value={40}
+        context={{
+          ...context,
+          filters: { ...context.filters, magazin: [] },
+        }}
+      />,
+    );
+
+    const inspector = screen.getByTestId('formula-inspector-retail.receipts.bon2acc_pct');
+    fireEvent.click(within(inspector).getByLabelText('Inspectează formula Bon2Acc'));
+
+    expect(within(inspector).getByText('Mobiup')).toBeInTheDocument();
+    expect(within(inspector).getByText('Nord')).toBeInTheDocument();
+    expect(within(inspector).getByText('Toate magazinele din scope')).toBeInTheDocument();
   });
 
   it('states unavailable cutoff/import context instead of inventing data', () => {
