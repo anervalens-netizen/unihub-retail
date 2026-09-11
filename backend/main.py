@@ -47,7 +47,7 @@ from session_auth import (
     init_session_runtime,
     router as session_router,
 )
-from routers import ai_forecast, agents, campaigns, contests, crm, dashboard, exports, filters, grile, health, hr, imports, salarii, store_pnl, stores, target_calculator, tasks, visits_report
+from routers import ai_forecast, agents, campaigns, contests, crm, dashboard, exports, filters, grile, health, hr, imports, salarii, saved_views, store_pnl, stores, target_calculator, tasks, visits_report
 from services.jobs import close_arq_pool, get_arq_pool
 from observability.prometheus import (
     canonical_handler,
@@ -292,6 +292,7 @@ app.include_router(
     salarii.router,
     dependencies=[Depends(require_salary_access)],
 )
+app.include_router(saved_views.router, dependencies=_auth)
 app.include_router(visits_report.router, dependencies=_auth)
 app.include_router(tasks.router, dependencies=_auth)
 app.include_router(hr.router, dependencies=[Depends(require_management_access)])
