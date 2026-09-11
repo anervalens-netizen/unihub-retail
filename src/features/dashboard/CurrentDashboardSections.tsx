@@ -9,9 +9,18 @@ import {
   CompactCurrency, CompactPieSection, DeltaCard, KpiPerformanceCard, PeriodTable,
   formatCompactDonutValue, getBon2AccTone, getFocusTone, sumChartValues,
 } from './DashboardWidgets';
+import { MetricFormulaInspector } from './MetricFormulaInspector';
 
 function CurrentSummary<R extends string, S extends string, A extends string>({ model }: { model: CurrentDashboardProps<R, S, A> }) {
   const summary = model.summary;
+  const inspectorContext = {
+    period: model.currentMonth,
+    filters: model.filters,
+    statusLabel: model.statusLabel,
+    lastSaleDate: summary.last_sale_date,
+    importedDayOfMonth: summary.imported_day_of_month,
+    daysInMonth: summary.days_in_month,
+  };
   return <div data-testid="hub-overview-card" className="glass min-w-0 space-y-3 rounded-3xl p-4">
     <div className="flex items-start justify-between gap-2"><div className="min-w-0"><h3 className="truncate text-sm font-bold">Overview — {model.currentMonth}</h3><p className="mt-0.5 text-[11px] leading-relaxed text-slate-500">{model.statusLabel}</p></div><span className="shrink-0 rounded-xl bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-600 dark:bg-slate-800 dark:text-slate-300">{summary.last_sale_date ?? '-'}</span></div>
     <div data-testid="hub-overview-layout" className="grid min-w-0 items-start gap-3 min-[1500px]:grid-cols-[minmax(0,2fr)_minmax(520px,1.5fr)]">
@@ -23,7 +32,10 @@ function CurrentSummary<R extends string, S extends string, A extends string>({ 
         </div><div className="relative h-3 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700"><div className="absolute inset-y-0 left-0 rounded-full bg-indigo-200 dark:bg-indigo-700" style={{ width: `${Math.min(Number(summary.forecast_target_progress_pct ?? 0), 100)}%` }} /><div className="absolute inset-y-0 left-0 rounded-full bg-indigo-600" style={{ width: `${Math.min(Number(summary.target_progress_pct ?? 0), 100)}%` }} /></div><div className="mt-1.5 flex justify-between text-[10px] font-semibold"><span className="text-indigo-600">Actual {formatPercent(summary.target_progress_pct)}</span><span className="text-slate-600 dark:text-slate-300">Forecast {formatPercent(summary.forecast_target_progress_pct)}</span></div></div>
         <div className="grid min-w-0 gap-2 [grid-template-columns:repeat(auto-fit,minmax(min(100%,78px),1fr))]"><Metric label="Bonuri" value={formatInt(summary.total_receipts)} compact /><Metric label="Accesorii nete" value={formatInt(summary.total_quantity)} compact /><Metric label="Magazine / Agenți" value={<span className="flex items-baseline gap-1 sm:gap-1.5"><span>{formatInt(summary.total_stores)}</span><span className="text-slate-300 dark:text-slate-600">/</span><span>{formatInt(summary.total_agents)}</span></span>} compact /><Metric label="Zile lucrate" value={formatInt(summary.working_days)} compact /><Metric label="Med. zilnica" value={formatAmount(summary.daily_average ?? 0)} compact /><Metric label="Medie produs" value={formatAmount(summary.medie_produs ?? 0)} compact /><Metric label="Val. medie bon" value={formatAmount(summary.total_receipts > 0 ? Number(summary.total_sales) / Number(summary.total_receipts) : 0)} compact /><Metric label="Cartele" value={formatInt(summary.cartele_qty ?? 0)} compact /></div>
       </div>
-      <div data-testid="hub-donut-grid" className="grid min-w-0 items-start gap-2.5 xl:grid-cols-2"><KpiPerformanceCard title="Bonuri cu accesorii" value={summary.proc_bon2acc} tone={getBon2AccTone(Number(summary.proc_bon2acc ?? 0))} chartData={model.receiptBucketChartData} dataKey="receipt_count" nameKey="bucket" formatValue={formatInt} /><KpiPerformanceCard title="Pondere produse Focus" value={summary.prc_focus_acc_qty} tone={getFocusTone(Number(summary.prc_focus_acc_qty ?? 0))} chartData={model.focusSubcategoryChartData} dataKey="quantity_total" nameKey="category" formatValue={formatInt} /></div>
+      <div data-testid="hub-donut-grid" className="grid min-w-0 items-start gap-2.5 xl:grid-cols-2">
+        <div className="min-w-0"><KpiPerformanceCard title="Bonuri cu accesorii" value={summary.proc_bon2acc} tone={getBon2AccTone(Number(summary.proc_bon2acc ?? 0))} chartData={model.receiptBucketChartData} dataKey="receipt_count" nameKey="bucket" formatValue={formatInt} /><MetricFormulaInspector metricId="retail.receipts.bon2acc_pct" value={summary.proc_bon2acc} context={inspectorContext} /></div>
+        <div className="min-w-0"><KpiPerformanceCard title="Pondere produse Focus" value={summary.prc_focus_acc_qty} tone={getFocusTone(Number(summary.prc_focus_acc_qty ?? 0))} chartData={model.focusSubcategoryChartData} dataKey="quantity_total" nameKey="category" formatValue={formatInt} /><MetricFormulaInspector metricId="retail.focus.accessory_pct" value={summary.prc_focus_acc_qty} context={inspectorContext} /></div>
+      </div>
     </div>
   </div>;
 }
