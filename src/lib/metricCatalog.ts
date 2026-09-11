@@ -94,7 +94,7 @@ export const METRIC_CATALOG = [
     unit: 'RON',
     precision: 2,
     formula:
-      'Dashboard/magazin/RM/ASM: SUM(store_targets.target_value). Agent: agent_targets.target_value dacă există; altfel targetul magazinului / numărul de agenți activi.',
+      'Dashboard/magazin/RM/ASM: SUM(store_targets.target_value). Agent: agent_targets.target_value dacă există. Regula canonică de business pentru fallback este target_magazin / zile_vânzare_magazin × zile_vânzare_agent; implementarea curentă din _agent_base_query încă împarte egal targetul magazinului la numărul de agenți activi când lipsește agent_targets.',
     granularities: ['dashboard', 'regional', 'asm', 'store', 'agent'],
     aggregation:
       'Aditivă la nivel de magazin/RM/ASM/dashboard. La agent se folosește effective_target, nu se derivează din procentul de realizare.',
@@ -102,7 +102,8 @@ export const METRIC_CATALOG = [
     inclusions: ['Sunt incluse numai magazinele prezente în scope-ul Retail al selecției.'],
     exclusions: REPORTING_EXCLUSIONS,
     organizationSemantics: ORGANIZATION,
-    freshness: 'Țintele sunt lunare; disponibilitatea lor urmează încărcarea/configurarea targeturilor pentru luna activă.',
+    freshness:
+      'Țintele sunt citite la request din store_targets/agent_targets și se pot modifica independent de read-modelurile de vânzări.',
     visualThresholds: null,
     implementationRefs: [
       'backend/repositories/dashboard.py::_summary_sql',
@@ -112,7 +113,10 @@ export const METRIC_CATALOG = [
       'backend/services/dashboard/query_managers.py::_fetch_asm_base_rows',
     ],
     verificationRefs: ['backend/tests/test_dashboard_queries.py'],
-    limitations: ['Targetul unui agent poate fi null dacă nu există nici target explicit, nici fallback distribuibil.'],
+    limitations: [
+      'Regula canonică Retail cere alocarea fallback a targetului agentului proporțional cu selling days; fallback-ul curent al Dashboard este încă egal pe active_agents și este o deviație de implementare, nu formula canonică.',
+      'Targetul unui agent poate fi null dacă nu există nici target explicit, nici fallback distribuibil.',
+    ],
     version: 1,
   },
   {
@@ -128,7 +132,8 @@ export const METRIC_CATALOG = [
     inclusions: ['Moștenește scope-ul și regulile celor două metrici sursă.'],
     exclusions: [],
     organizationSemantics: ORGANIZATION,
-    freshness: REPORTING_FRESHNESS,
+    freshness:
+      'Combină două intrări cu freshness independent: vânzările se schimbă după rebuild-ul reporting, iar targeturile sunt citite la request din store_targets/agent_targets; procentul se poate modifica atunci când se schimbă oricare dintre ele.',
     visualThresholds: null,
     implementationRefs: [
       'backend/repositories/dashboard.py::_summary_sql',
@@ -139,7 +144,10 @@ export const METRIC_CATALOG = [
       'src/features/dashboard/presenters.ts::aggregateSummary',
     ],
     verificationRefs: ['backend/tests/test_dashboard_queries.py'],
-    limitations: ['Nu există un prag vizual global oficial pentru această metrică în V3.'],
+    limitations: [
+      'Nu există un prag vizual global oficial pentru această metrică în V3.',
+      'La nivel agent, realizarea moștenește deviația fallback documentată la retail.target.value atunci când lipsește agent_targets.',
+    ],
     version: 1,
   },
   {
@@ -234,7 +242,8 @@ export const METRIC_CATALOG = [
     description: 'Ponderea cantității nete de produse Focus în cantitatea netă totală de accesorii.',
     unit: 'percent',
     precision: 2,
-    formula: '100 × focus_quantity / total_quantity; null când total_quantity = 0.',
+    formula:
+      'Dashboard server și comparație perioade: 100 × focus_quantity / total_quantity când total_quantity != 0. RM/ASM/magazin/agent și agregările multi-lună frontend: formula este expusă numai când total_quantity > 0; altfel null.',
     granularities: ['dashboard', 'period-comparison', 'regional', 'asm', 'store', 'agent'],
     aggregation: 'Se recalculează ponderat din cantități; procentele copil nu se mediază simplu.',
     sources: ['reporting_agent_day.focus_quantity', 'reporting_agent_day.total_quantity', 'focus_products'],
@@ -251,13 +260,21 @@ export const METRIC_CATALOG = [
     implementationRefs: [
       'backend/services/reporting_refresh_month.py::_REPORTING_MONTH_SQL_5',
       'backend/repositories/dashboard.py::_summary_sql',
+      'backend/services/dashboard/query_comparison.py::_fetch_comparison_point',
+      'backend/services/dashboard/query_agents.py::_agent_base_query',
+      'backend/services/dashboard/query_stores.py::_store_stats_query',
+      'backend/services/dashboard/query_managers.py::_regional_base_query',
+      'backend/services/dashboard/query_managers.py::_fetch_asm_base_rows',
       'src/features/dashboard/DashboardWidgets.tsx::getFocusTone',
       'src/features/dashboard/presenters.ts::aggregateSummary',
     ],
     verificationRefs: [
       'backend/tests/test_dashboard_summary_integration.py::test_reporting_uses_net_quantity_for_kpis_and_keeps_returns_separate',
     ],
-    limitations: ['Setul focus_products este o intrare de business și se poate modifica independent de catalog.'],
+    limitations: [
+      'Setul focus_products este o intrare de business și se poate modifica independent de catalog.',
+      'Pentru total_quantity negativ, Dashboard summary și comparația de perioade pot produce un procent semnat, în timp ce RM/ASM/magazin/agent și agregarea frontend returnează null; catalogul documentează comportamentul existent, nu o regulă unificată.',
+    ],
     version: 1,
   },
   {
@@ -266,7 +283,8 @@ export const METRIC_CATALOG = [
     description: 'Valoarea medie netă per accesoriu net.',
     unit: 'RON',
     precision: 2,
-    formula: 'vânzări_nete / accesorii_nete; null când accesorii_nete <= 0.',
+    formula:
+      'Dashboard server și comparație perioade: vânzări_nete / accesorii_nete când accesorii_nete != 0. RM/ASM/magazin/agent și agregările multi-lună frontend: formula este expusă numai când accesorii_nete > 0; altfel null.',
     granularities: ['dashboard', 'period-comparison', 'regional', 'asm', 'store', 'agent'],
     aggregation: 'Se recalculează din totalurile agregate; mediile copil nu se mediază simplu.',
     sources: ['retail.sales.net_value', 'retail.accessories.net_quantity'],
@@ -277,13 +295,17 @@ export const METRIC_CATALOG = [
     visualThresholds: null,
     implementationRefs: [
       'backend/repositories/dashboard.py::_summary_sql',
+      'backend/services/dashboard/query_comparison.py::_fetch_comparison_point',
       'backend/services/dashboard/query_agents.py::_agent_base_query',
       'backend/services/dashboard/query_stores.py::_store_stats_query',
       'backend/services/dashboard/query_managers.py::_regional_base_query',
       'backend/services/dashboard/query_managers.py::_fetch_asm_base_rows',
+      'src/features/dashboard/presenters.ts::aggregateSummary',
     ],
     verificationRefs: ['backend/tests/test_dashboard_queries.py'],
-    limitations: ['Dacă net quantity este zero sau negativ, metrica nu are sens și rămâne null.'],
+    limitations: [
+      'Pentru accesorii_nete negativ, Dashboard summary și comparația de perioade pot produce o valoare semnată, în timp ce RM/ASM/magazin/agent și agregarea frontend returnează null; catalogul documentează comportamentul existent.',
+    ],
     version: 1,
   },
   {
