@@ -106,14 +106,17 @@ These values are historical evidence, not the active blocking ratchet.
 
 The active `scripts/python-complexity-contract-v2.json` has been
 monotonically tightened through the Phase-C C1, C2 and C3 Target
-Calculator refactors. The current CI-measured production tree is:
+Calculator refactors and, most recently, by the V3 Lot 44 backend
+certification repair (the `regional_summary` projection was decomposed
+below the pinned new-function boundary). The current CI-measured
+production tree is:
 
 | Metric                     | Value |
 |----------------------------|-------|
-| production_functions       | 2989  |
-| complexity_proxy > 19      | 28    |
+| production_functions       | 3032  |
+| complexity_proxy > 19      | 27    |
 | complexity_proxy >= 30     | 0     |
-| maximum_complexity_proxy   | 28    |
+| maximum_complexity_proxy   | 27    |
 | new_function above 19      | 0     |
 
 Phase F2 adds ten bounded recovery functions across the controlled CIC
@@ -140,8 +143,18 @@ new-function ceiling.
 The Phase-C C1-C3 identities have therefore left the active
 locked/remediation set. `remediation_entries` is now empty. Remaining
 `entries[]` are ordinary >19 ratchet identities elsewhere in the
-production tree; the highest current identity is `regional_summary`
-at complexity proxy 28.
+production tree; the highest current identity is
+`backend/services/spreadsheet_safety.py::validate_spreadsheet_upload`
+at complexity proxy 27.
+
+`backend/services/target_calculator/serialization.py::regional_summary`
+was the highest identity at complexity proxy 28 through the Phase-C and
+Phase-F2 revisions. V3 Lot 44 decomposed its JSON-column projection into
+a bounded helper, dropping the identity to complexity proxy 3 — below
+the pinned new-function boundary — so its stale ceiling-28 entry was
+removed from `entries[]` under the "locked entry may disappear only if
+current is below 20" transition rule. It is no longer an active `> 19`
+locked identity.
 
 ## Current blocking ratchet
 
@@ -149,9 +162,9 @@ at complexity proxy 28.
 
 | Limit                                            | Value | Meaning |
 |--------------------------------------------------|------:|---------|
-| `complexity_proxy_gte_20_maximum`                | 29    | total functions with cp > 19 may not exceed 29 |
+| `complexity_proxy_gte_20_maximum`                | 27    | total functions with cp > 19 may not exceed 27 |
 | `complexity_proxy_gte_30_maximum`                | 0     | no production function may reach cp >= 30 |
-| `maximum_complexity_proxy`                       | 28    | the largest single function cp may not exceed 28 |
+| `maximum_complexity_proxy`                       | 27    | the largest single function cp may not exceed 27 |
 | `new_function_complexity_proxy_maximum`          | 19    | a new/unlocked function may not exceed cp 19 |
 
 The new-function threshold remains **pinned at 19** for v2. Both values
@@ -183,7 +196,7 @@ Informational, not blocking. Recorded in `future_target`:
 
 The future target does not raise any limit automatically. The active
 ratchet has already improved beyond those historical informational
-ceilings (`>19 = 29`, `>=30 = 0`, `max = 28`); the informational fields
+ceilings (`>19 = 27`, `>=30 = 0`, `max = 27`); the informational fields
 do not loosen or override the blocking contract. Further improvements
 continue only through explicit monotonic contract updates.
 

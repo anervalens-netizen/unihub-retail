@@ -97,13 +97,14 @@ def _empty_regional_summary() -> dict[str, Any]:
     }
 
 
+def _decode_json_column(value: Any) -> Any:
+    """Return a JSON-encoded column decoded, leaving other values untouched."""
+    return json.loads(value) if isinstance(value, str) else value
+
+
 def _regional_row_projection(row: dict[str, Any]) -> dict[str, Any]:
-    details = row.get("calculation_details") or {}
-    if isinstance(details, str):
-        details = json.loads(details)
-    history = row.get("history") or []
-    if isinstance(history, str):
-        history = json.loads(history)
+    details = _decode_json_column(row.get("calculation_details") or {})
+    history = _decode_json_column(row.get("history") or [])
 
     current_month = details.get("current_month")
     current_forecast = details.get("current_forecast")

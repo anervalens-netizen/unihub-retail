@@ -19,6 +19,7 @@ from db.connection import (
     verify_database_connection_authority,
 )
 from config import DATABASE_AUTHORITY_CONTRACTS
+from scripts.bootstrap_test_db import run_isolated_migrations
 from scripts.provision_runtime_database_role import provision
 
 
@@ -43,6 +44,17 @@ AUTHORITIES = (
     "unihub_salary_export",
     "unihub_migrate",
 )
+
+
+async def _existing_role_names(connection: asyncpg.Connection) -> set[str]:
+    """Role names already present, including the owner the migrations expect."""
+    return {
+        row["rolname"]
+        for row in await connection.fetch(
+            "SELECT rolname FROM pg_roles WHERE rolname = ANY($1::text[])",
+            [*AUTHORITIES, "unihub_schema_owner"],
+        )
+    }
 
 
 def _assert_base_authority_contract(sql: str) -> None:
@@ -610,17 +622,11 @@ async def test_fieldops_external_owner_pregrant_is_required_by_authenticated_mig
     fieldops_url = principal_url(fieldops_owner, fieldops_password)
     migrate_url = principal_url(migrate_principal, migrate_password)
     maintenance = await asyncpg.connect(maintenance_url)
-    existing_roles = {
-        row["rolname"]
-        for row in await maintenance.fetch(
-            "SELECT rolname FROM pg_roles WHERE rolname = ANY($1::text[])",
-            [*AUTHORITIES, "unihub_schema_owner"],
-        )
-    }
+    existing_roles = await _existing_role_names(maintenance)
     try:
         monkeypatch.delenv("UNIHUB_DB_PROCESS_AUTHORITY", raising=False)
         await maintenance.execute(f'CREATE DATABASE "{database}"')
-        await run_migrations(database_url)
+        await run_isolated_migrations(database_url)
 
         owner = await asyncpg.connect(database_url)
         try:
@@ -1008,13 +1014,7 @@ async def test_p1a_authority_matrix_and_controlled_cas_are_authenticated(
         (parsed.scheme, parsed.netloc, f"/{database}", parsed.query, parsed.fragment)
     )
     maintenance = await asyncpg.connect(maintenance_url)
-    existing_roles = {
-        row["rolname"]
-        for row in await maintenance.fetch(
-            "SELECT rolname FROM pg_roles WHERE rolname = ANY($1::text[])",
-            [*AUTHORITIES, "unihub_schema_owner"],
-        )
-    }
+    existing_roles = await _existing_role_names(maintenance)
     test_principals = {
         authority: (f"p1a_{authority.removeprefix('unihub_')}_{uuid4().hex[:12]}", token_urlsafe(48))
         for authority in AUTHORITIES
@@ -1022,7 +1022,7 @@ async def test_p1a_authority_matrix_and_controlled_cas_are_authenticated(
     principal_connections: dict[str, asyncpg.Connection] = {}
     try:
         await maintenance.execute(f'CREATE DATABASE "{database}"')
-        await run_migrations(database_url)
+        await run_isolated_migrations(database_url)
         connection = await asyncpg.connect(database_url)
         try:
             await connection.execute(
