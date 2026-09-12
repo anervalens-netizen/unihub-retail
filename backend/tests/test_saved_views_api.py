@@ -366,3 +366,93 @@ def test_application_registers_saved_views_routes_under_authentication() -> None
         assert require_auth in {
             dependency.call for dependency in context.dependant.dependencies
         }
+
+
+def _error_body_schema(response: dict[str, Any]) -> dict[str, Any]:
+    """The JSON schema the contract publishes as the body of an error response."""
+    return response["content"]["application/json"]["schema"]
+
+
+def test_openapi_declares_the_error_statuses_the_router_already_returns() -> None:
+    """The contract must publish the 404/409 the router already raises.
+
+    Create reports a duplicate name or an exhausted owner limit as 409; update
+    reports an absent/foreign view as 404 and a rename conflict as 409; delete
+    reports an absent/foreign view as 404. Each of them answers with the real
+    `{"detail": "..."}` body, so each must reference the error envelope instead
+    of degrading to `void`.
+    """
+    from main import app
+
+    paths = app.openapi()["paths"]
+    create = paths["/api/saved-views"]["post"]["responses"]
+    update = paths["/api/saved-views/{view_id}"]["patch"]["responses"]
+    delete = paths["/api/saved-views/{view_id}"]["delete"]["responses"]
+
+    assert set(create) >= {"201", "409", "422"}
+    assert set(update) >= {"200", "404", "409", "422"}
+    assert set(delete) >= {"200", "404", "422"}
+
+    for response in (create["409"], update["404"], update["409"], delete["404"]):
+        assert isinstance(response.get("description"), str) and response["description"]
+        assert _error_body_schema(response) == {
+            "$ref": "#/components/schemas/SavedViewErrorResponse"
+        }
+
+    # The single create conflict status covers both real situations.
+    documented = create["409"]["description"].casefold()
+    assert "conflict" in documented and "limit" in documented
+
+
+def test_openapi_publishes_the_saved_view_error_envelope_the_router_returns() -> None:
+    """The referenced component must describe FastAPI's real error body."""
+    from main import app
+    from schemas.saved_views import SavedViewErrorResponse
+
+    component = app.openapi()["components"]["schemas"]["SavedViewErrorResponse"]
+
+    assert component == SavedViewErrorResponse.model_json_schema()
+    assert component["type"] == "object"
+    assert component["required"] == ["detail"]
+    assert component["additionalProperties"] is False
+    assert component["properties"]["detail"]["type"] == "string"
+
+
+def test_openapi_leaves_the_saved_views_list_without_invented_errors() -> None:
+    """Listing is owner-scoped: there is no absent or conflicting view to report."""
+    from main import app
+
+    responses = app.openapi()["paths"]["/api/saved-views"]["get"]["responses"]
+
+    assert set(responses) >= {"200"}
+    assert not {"404", "409"} & set(responses)
+
+
+@pytest.mark.anyio
+async def test_runtime_error_bodies_validate_against_the_declared_envelope() -> None:
+    """A real 404 and a real 409 must return the body the contract promises."""
+    from schemas.saved_views import SavedViewErrorResponse
+
+    service = _InMemorySavedViewsService()
+    async with _client(service, subject="subject-a") as client:
+        created = await client.post(
+            "/api/saved-views", json={"name": "Dimineață", "state": STATE}
+        )
+        conflict = await client.post(
+            "/api/saved-views", json={"name": "dimineață", "state": STATE}
+        )
+        absent = await client.delete("/api/saved-views/999999")
+
+    assert [created.status_code, conflict.status_code, absent.status_code] == [
+        201,
+        409,
+        404,
+    ]
+
+    for response in (conflict, absent):
+        assert response.headers["content-type"].startswith("application/json")
+        body = response.json()
+        # `additionalProperties: false` in the declared envelope: no extra keys.
+        assert set(body) == {"detail"}
+        assert isinstance(body["detail"], str) and body["detail"]
+        assert SavedViewErrorResponse.model_validate(body).detail == body["detail"]

@@ -1,5 +1,5 @@
 /* GENERATED FILE. Run npm run contracts:generate; do not edit manually. */
-export const RETAIL_OPENAPI_SHA256 = '407cc49010138d37eff7990915dad052ec23697ca9ad7af6b9d372f8cb67943c' as const; // pragma: allowlist secret
+export const RETAIL_OPENAPI_SHA256 = 'cf9a906625f4a48f899774f2abdf465d303b668e06ff5bf0b74b085794c5c357' as const; // pragma: allowlist secret
 
 export type RetailDecimal = string & { readonly __retailDecimal: unique symbol };
 
@@ -1893,6 +1893,10 @@ export interface RetailSavedViewDeleteResponse {
   "ok": boolean;
 }
 
+export interface RetailSavedViewErrorResponse {
+  "detail": string;
+}
+
 export interface RetailSavedViewFilters {
   "agent"?: Array<string>;
   "firma": string;
@@ -2995,16 +2999,20 @@ export interface RetailOperationResponses {
 
   'create_saved_view_api_saved_views_post': {
     '201': RetailSavedViewItem;
+    '409': RetailSavedViewErrorResponse;
     '422': RetailHTTPValidationError;
   }
 
   'delete_saved_view_api_saved_views__view_id__delete': {
     '200': RetailSavedViewDeleteResponse;
+    '404': RetailSavedViewErrorResponse;
     '422': RetailHTTPValidationError;
   }
 
   'update_saved_view_api_saved_views__view_id__patch': {
     '200': RetailSavedViewItem;
+    '404': RetailSavedViewErrorResponse;
+    '409': RetailSavedViewErrorResponse;
     '422': RetailHTTPValidationError;
   }
 
@@ -3395,9 +3403,9 @@ export interface RetailOperationErrors {
   'upload_sales_file_api_import_sales_post': { '422': RetailHTTPValidationError };
   'promote_sales_generation_api_import_sales__snapshot_id__promote_post': { '422': RetailHTTPValidationError };
   'list_saved_views_api_saved_views_get': Record<never, never>;
-  'create_saved_view_api_saved_views_post': { '422': RetailHTTPValidationError };
-  'delete_saved_view_api_saved_views__view_id__delete': { '422': RetailHTTPValidationError };
-  'update_saved_view_api_saved_views__view_id__patch': { '422': RetailHTTPValidationError };
+  'create_saved_view_api_saved_views_post': { '409': RetailSavedViewErrorResponse; '422': RetailHTTPValidationError };
+  'delete_saved_view_api_saved_views__view_id__delete': { '404': RetailSavedViewErrorResponse; '422': RetailHTTPValidationError };
+  'update_saved_view_api_saved_views__view_id__patch': { '404': RetailSavedViewErrorResponse; '409': RetailSavedViewErrorResponse; '422': RetailHTTPValidationError };
   'annual_api_store_pnl_annual_get': { '422': RetailHTTPValidationError };
   'months_api_store_pnl_months_get': Record<never, never>;
   'overview_api_store_pnl_overview_get': { '422': RetailHTTPValidationError };
@@ -3648,12 +3656,16 @@ export const RETAIL_OPERATION_ERROR_STATUSES: { readonly [Id in RetailOperationI
   'list_saved_views_api_saved_views_get': new Set<string>([
   ]),
   'create_saved_view_api_saved_views_post': new Set<string>([
+    '409',
     '422',
   ]),
   'delete_saved_view_api_saved_views__view_id__delete': new Set<string>([
+    '404',
     '422',
   ]),
   'update_saved_view_api_saved_views__view_id__patch': new Set<string>([
+    '404',
+    '409',
     '422',
   ]),
   'annual_api_store_pnl_annual_get': new Set<string>([
