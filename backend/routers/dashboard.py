@@ -20,6 +20,7 @@ from schemas.dashboard import (
 )
 from schemas.premium_glass import PremiumGlassAnalysis
 from schemas.common import BoundedListItem100, BoundedText120, MonthStr, Year2018To2100
+from services.dashboard.errors import DashboardGenerationUnstable
 from services.dashboard_filters import canonical_dashboard_site_codes
 from services.dashboard_service import DashboardService
 from services.request_deadline import RequestDeadline, RequestDeadlineExceeded
@@ -49,6 +50,11 @@ async def _run_dashboard(
 ) -> Any:
     try:
         return await deadline.run(operation(deadline))
+    except DashboardGenerationUnstable:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Dashboard data changed during request. Retry.",
+        ) from None
     except RequestDeadlineExceeded:
         raise HTTPException(
             status_code=status.HTTP_504_GATEWAY_TIMEOUT,
