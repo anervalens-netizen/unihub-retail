@@ -285,11 +285,9 @@ class StorePnlRepository:
                 ), annual_coverage AS (
                     SELECT EXTRACT(YEAR FROM p.period)::integer AS year,
                            COUNT(DISTINCT CASE
-                               WHEN p.source_site_code <> '__FINANCE_UNALLOCATED__'
-                               THEN COALESCE(
-                                   p.canonical_site_code,
-                                   p.company_name || ':' || p.source_site_code
-                               )
+                               WHEN p.source_site_code = '__FINANCE_UNALLOCATED__' THEN NULL
+                               WHEN p.linked_site_code IS NOT NULL THEN p.canonical_site_code
+                               ELSE p.company_name || ':' || p.source_site_code
                            END)::integer AS year_store_count,
                            COUNT(DISTINCT p.period)::integer AS year_month_count
                     FROM preferred_rows p
@@ -299,11 +297,9 @@ class StorePnlRepository:
                        p.category_code,
                        SUM(p.amount) AS amount,
                        COUNT(DISTINCT CASE
-                           WHEN p.source_site_code <> '__FINANCE_UNALLOCATED__'
-                           THEN COALESCE(
-                               p.canonical_site_code,
-                               p.company_name || ':' || p.source_site_code
-                           )
+                           WHEN p.source_site_code = '__FINANCE_UNALLOCATED__' THEN NULL
+                           WHEN p.linked_site_code IS NOT NULL THEN p.canonical_site_code
+                           ELSE p.company_name || ':' || p.source_site_code
                        END)::integer AS store_count,
                        COUNT(DISTINCT p.period)::integer AS month_count,
                        coverage.year_store_count,
