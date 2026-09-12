@@ -366,3 +366,39 @@ def test_application_registers_saved_views_routes_under_authentication() -> None
         assert require_auth in {
             dependency.call for dependency in context.dependant.dependencies
         }
+
+
+def test_openapi_declares_the_error_statuses_the_router_already_returns() -> None:
+    """The contract must publish the 404/409 the router already raises.
+
+    Create reports a duplicate name or an exhausted owner limit as 409; update
+    reports an absent/foreign view as 404 and a rename conflict as 409; delete
+    reports an absent/foreign view as 404. All of them are description-only.
+    """
+    from main import app
+
+    paths = app.openapi()["paths"]
+    create = paths["/api/saved-views"]["post"]["responses"]
+    update = paths["/api/saved-views/{view_id}"]["patch"]["responses"]
+    delete = paths["/api/saved-views/{view_id}"]["delete"]["responses"]
+
+    assert set(create) >= {"201", "409", "422"}
+    assert set(update) >= {"200", "404", "409", "422"}
+    assert set(delete) >= {"200", "404", "422"}
+
+    for response in (create["409"], update["404"], update["409"], delete["404"]):
+        assert isinstance(response.get("description"), str) and response["description"]
+
+    # The single create conflict status covers both real situations.
+    documented = create["409"]["description"].casefold()
+    assert "conflict" in documented and "limit" in documented
+
+
+def test_openapi_leaves_the_saved_views_list_without_invented_errors() -> None:
+    """Listing is owner-scoped: there is no absent or conflicting view to report."""
+    from main import app
+
+    responses = app.openapi()["paths"]["/api/saved-views"]["get"]["responses"]
+
+    assert set(responses) >= {"200"}
+    assert not {"404", "409"} & set(responses)

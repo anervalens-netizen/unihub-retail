@@ -53,6 +53,7 @@ async def list_saved_views(
     "",
     response_model=SavedViewItem,
     status_code=status.HTTP_201_CREATED,
+    responses={409: {"description": "Saved view name conflict or limit reached"}},
 )
 async def create_saved_view(
     payload: SavedViewCreate,
@@ -72,7 +73,14 @@ async def create_saved_view(
     return SavedViewItem.model_validate(item)
 
 
-@router.patch("/{view_id}", response_model=SavedViewItem)
+@router.patch(
+    "/{view_id}",
+    response_model=SavedViewItem,
+    responses={
+        404: {"description": "Saved view not found"},
+        409: {"description": "Saved view name conflict"},
+    },
+)
 async def update_saved_view(
     view_id: int,
     payload: SavedViewUpdate,
@@ -97,7 +105,11 @@ async def update_saved_view(
     return SavedViewItem.model_validate(item)
 
 
-@router.delete("/{view_id}", response_model=SavedViewDeleteResponse)
+@router.delete(
+    "/{view_id}",
+    response_model=SavedViewDeleteResponse,
+    responses={404: {"description": "Saved view not found"}},
+)
 async def delete_saved_view(
     view_id: int,
     claims: AuthClaims = Depends(require_auth),
