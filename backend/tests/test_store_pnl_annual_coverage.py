@@ -14,8 +14,10 @@ from services.store_pnl import StorePnlService
 
 SITE_A = "PNLANN-A"
 SITE_B = "PNLANN-B"
+COLLISION_SITE = "PNLANN-COLLIDE"
 PERIOD_A = date(2095, 1, 1)
 PERIOD_B = date(2095, 2, 1)
+COLLISION_PERIOD = date(2094, 3, 1)
 
 pytestmark = pytest.mark.skipif(
     os.getenv("UNIHUB_TEST_DATABASE") != "1",
@@ -28,15 +30,15 @@ async def _reset_fixture() -> None:
     async with pool.acquire() as connection:
         await connection.execute(
             "DELETE FROM store_pnl_monthly WHERE source_site_code = ANY($1::text[])",
-            [SITE_A, SITE_B],
+            [SITE_A, SITE_B, COLLISION_SITE],
         )
         await connection.execute(
             "DELETE FROM store_pnl_site_links WHERE source_site_code = ANY($1::text[])",
-            [SITE_A, SITE_B],
+            [SITE_A, SITE_B, COLLISION_SITE],
         )
         await connection.execute(
             "DELETE FROM stores WHERE site_code = ANY($1::text[])",
-            [SITE_A, SITE_B],
+            [SITE_A, SITE_B, COLLISION_SITE],
         )
 
 
@@ -121,5 +123,65 @@ async def test_annual_counts_cover_union_across_disjoint_categories() -> None:
                 "is_estimated": False,
             }
         ]
+    finally:
+        await _reset_fixture()
+
+
+@pytest.mark.anyio
+async def test_annual_counts_keep_unlinked_company_collisions_separate() -> None:
+    await _reset_fixture()
+    pool = await get_pool()
+    try:
+        async with pool.acquire() as connection:
+            await connection.executemany(
+                """
+                INSERT INTO store_pnl_monthly (
+                    company_name, period, source_site_code,
+                    source_location_name, category_code, category_name,
+                    amount, data_kind, source_file, source_sha256
+                ) VALUES ($1, $2, $3, $4, 'v1', 'Revenue', $5,
+                          'actual', $6, $7)
+                """,
+                [
+                    (
+                        "Mobicell",
+                        COLLISION_PERIOD,
+                        COLLISION_SITE,
+                        "Mobicell collision",
+                        Decimal("10.00"),
+                        "collision-mobicell.xlsx",
+                        "c" * 64,
+                    ),
+                    (
+                        "Mobiup",
+                        COLLISION_PERIOD,
+                        COLLISION_SITE,
+                        "Mobiup collision",
+                        Decimal("20.00"),
+                        "collision-mobiup.xlsx",
+                        "d" * 64,
+                    ),
+                ],
+            )
+
+        repository = StorePnlRepository(pool)
+        rows = await repository.annual_rows(None, None)
+        revenue = next(
+            row
+            for row in rows
+            if row["year"] == 2094 and row["category_code"] == "v1"
+        )
+
+        assert revenue["amount"] == Decimal("30.00")
+        assert revenue["store_count"] == 2
+        assert revenue["year_store_count"] == 2
+        assert revenue["month_count"] == 1
+        assert revenue["year_month_count"] == 1
+
+        annual = await StorePnlService(repository).annual(None, None)
+        year = next(row for row in annual if row["year"] == "2094")
+        assert year["store_count"] == 2
+        assert year["month_count"] == 1
+        assert year["revenue"] == Decimal("30.00")
     finally:
         await _reset_fixture()
