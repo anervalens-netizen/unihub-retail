@@ -157,10 +157,10 @@ def _minimal_contract(
 def test_case_1_pass_on_exact_main(check, l1, real_v2_contract):
     result = check.evaluate(PR_B1_WORKTREE, real_v2_contract, l1)
     assert result["result"] == "PASS"
-    assert result["metrics"]["production_functions"] == 2992
-    assert result["metrics"]["complexity_proxy_gte_threshold"] == 28
+    assert result["metrics"]["production_functions"] == 3032
+    assert result["metrics"]["complexity_proxy_gte_threshold"] == 27
     assert result["metrics"]["complexity_proxy_gte_30"] == 0
-    assert result["metrics"]["maximum_complexity_proxy"] == 28
+    assert result["metrics"]["maximum_complexity_proxy"] == 27
     assert result["metrics"]["new_function_above_threshold"] == 0
     assert result["algorithm_runtime_match"] is True
 
@@ -262,15 +262,17 @@ def test_case_5_max_increase_fails(check, l1, real_v2_contract):
 
 
 def test_case_6_entry_exceeds_ceiling_fails(check, l1, real_v2_contract):
-    """Lower regional_summary's ceiling to 27. Actual is 28 -> FAIL."""
+    """Lower validate_spreadsheet_upload's ceiling to 26. Actual is 27 -> FAIL."""
     contract = copy.deepcopy(real_v2_contract)
     for entry in contract["entries"]:
-        if entry["function"] == "regional_summary":
-            entry["ceiling"] = 27
+        if entry["function"] == "validate_spreadsheet_upload":
+            entry["ceiling"] = 26
     _rehash(contract)
     result = check.evaluate(PR_B1_WORKTREE, contract, l1)
     assert result["result"] == "FAIL"
-    assert any("regional_summary" in v for v in result["entry_violations"])
+    assert any(
+        "validate_spreadsheet_upload" in v for v in result["entry_violations"]
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -533,7 +535,9 @@ def test_case_17_locked_entry_removal_while_still_ge20_fails(
     previous = copy.deepcopy(real_v2_contract)
     candidate = copy.deepcopy(real_v2_contract)
     candidate["entries"] = [
-        e for e in candidate["entries"] if e["function"] != "regional_summary"
+        e
+        for e in candidate["entries"]
+        if e["function"] != "validate_spreadsheet_upload"
     ]
     _rehash(candidate)
 
@@ -541,7 +545,10 @@ def test_case_17_locked_entry_removal_while_still_ge20_fails(
         PR_B1_WORKTREE, candidate, l1, previous_contract=previous
     )
     assert result["result"] == "FAIL"
-    assert any("regional_summary" in v for v in result["transition_violations"])
+    assert any(
+        "validate_spreadsheet_upload" in v
+        for v in result["transition_violations"]
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1068,7 +1075,7 @@ def test_cli_fail_returns_rc_1(tmp_path):
     import subprocess
 
     bad = json.loads(CONTRACT_PATH.read_text())
-    bad["release_b_gates"]["maximum_complexity_proxy"] = 27
+    bad["release_b_gates"]["maximum_complexity_proxy"] = 26
     _rehash(bad)
     bad_path = tmp_path / "bad.json"
     bad_path.write_text(json.dumps(bad, indent=2))

@@ -10,7 +10,7 @@ unset \
 export PYTHONNOUSERSITE=1 PYTHONSAFEPATH=1
 
 PYTHON="/usr/bin/python3.12"
-PYTHON_SHA256="a92f0f95e883390c7256b2e441484aac06b1002dbe1d924141a77c8d82f96223"
+PYTHON_SHA256="e50d468e8b0adfb05733f5b87b3cff34829c4a8c1aea50c865aa8bdfe4bb150f"
 [[ -x "$PYTHON" \
   && "$(sha256sum "$PYTHON" | awk '{print $1}')" == "$PYTHON_SHA256" ]] || {
   printf 'Pinned Python runtime unavailable.\n' >&2

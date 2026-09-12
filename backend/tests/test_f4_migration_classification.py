@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Any, cast
 
@@ -670,3 +671,114 @@ def test_schema_rejects_invalid_authorization_values() -> None:
         assert re.search(pattern, invalid) is None, (
             f"schema pattern must reject {invalid!r} but matched"
         )
+
+
+def _load_bootstrap_module() -> Any:
+    import importlib.util
+    import sys
+
+    root = Path(__file__).resolve().parents[1]
+    spec = importlib.util.spec_from_file_location(
+        "bootstrap_test_db_under_test",
+        root / "scripts/bootstrap_test_db.py",
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_isolated_bootstrap_authorizes_the_single_reviewed_maintenance_window(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Bootstrap must authorize the one maintenance-window migration, nothing else.
+
+    The constant is bound to the manifest's only maintenance-window entry, so a
+    future maintenance-window migration cannot be silently covered by widening
+    this value: the manifest/constant mismatch fails here first.
+    """
+    bootstrap = _load_bootstrap_module()
+    manifest = load_migration_manifest()
+
+    maintenance_window = sorted(
+        filename
+        for filename, execution_class in manifest.execution_classes.items()
+        if execution_class == MAINTENANCE_WINDOW_EXECUTION_CLASS
+    )
+    assert maintenance_window == ["074_v3_reporting_return_receipt_count.sql"]
+    assert bootstrap.TEST_MAINTENANCE_MIGRATION == maintenance_window[0]
+
+    monkeypatch.delenv(MAINTENANCE_WINDOW_AUTHORIZATION_ENV, raising=False)
+    with bootstrap.authorized_test_maintenance_migration():
+        assert (
+            os.environ[MAINTENANCE_WINDOW_AUTHORIZATION_ENV]
+            == "074_v3_reporting_return_receipt_count.sql"
+        )
+    assert MAINTENANCE_WINDOW_AUTHORIZATION_ENV not in os.environ
+
+
+def test_isolated_bootstrap_authorization_is_scoped_and_restored(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The authorization must not leak past the bootstrap window."""
+    bootstrap = _load_bootstrap_module()
+
+    monkeypatch.setenv(MAINTENANCE_WINDOW_AUTHORIZATION_ENV, "069_previous.sql")
+    with bootstrap.authorized_test_maintenance_migration():
+        assert (
+            os.environ[MAINTENANCE_WINDOW_AUTHORIZATION_ENV]
+            == bootstrap.TEST_MAINTENANCE_MIGRATION
+        )
+    assert os.environ[MAINTENANCE_WINDOW_AUTHORIZATION_ENV] == "069_previous.sql"
+
+    # An exception inside the window must still restore the previous state.
+    with pytest.raises(RuntimeError):
+        with bootstrap.authorized_test_maintenance_migration():
+            raise RuntimeError("bootstrap failed")
+    assert os.environ[MAINTENANCE_WINDOW_AUTHORIZATION_ENV] == "069_previous.sql"
+
+
+@pytest.mark.asyncio
+async def test_isolated_bootstrap_never_authorizes_a_future_maintenance_window(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A later maintenance-window migration stays fail-closed for bootstrap."""
+    import db.migration_runner as runner
+
+    bootstrap = _load_bootstrap_module()
+
+    reviewed = tmp_path / "074_v3_reporting_return_receipt_count.sql"
+    future = tmp_path / "077_future_maintenance.sql"
+    reviewed.write_text("SELECT 1;", encoding="utf-8")
+    future.write_text("SELECT 1;", encoding="utf-8")
+    manifest = MigrationManifest(
+        "a" * 64,
+        reviewed.name,
+        {reviewed.name: runner._sha256(reviewed), future.name: runner._sha256(future)},
+        execution_classes={
+            reviewed.name: MAINTENANCE_WINDOW_EXECUTION_CLASS,
+            future.name: MAINTENANCE_WINDOW_EXECUTION_CLASS,
+        },
+    )
+    applied_calls: list[dict[str, Any]] = []
+
+    async def fake_apply(_connection: object, **kwargs: Any) -> None:
+        applied_calls.append(kwargs)
+
+    monkeypatch.setattr(runner, "get_migrations_dir", lambda: tmp_path)
+    monkeypatch.setattr(runner, "_apply_transactional_migration", fake_apply)
+    monkeypatch.delenv(MAINTENANCE_WINDOW_AUTHORIZATION_ENV, raising=False)
+
+    with bootstrap.authorized_test_maintenance_migration():
+        with pytest.raises(MigrationError, match=MAINTENANCE_WINDOW_AUTHORIZATION_ENV):
+            await runner._apply_pending_migrations(  # type: ignore[arg-type]
+                object(),
+                manifest,
+                {},
+                cutover_bootstrap=False,
+            )
+
+    # Only the reviewed migration reached the executor; the future one refused.
+    assert [call["filename"] for call in applied_calls] == [reviewed.name]
