@@ -182,9 +182,17 @@ class StorePnlRepository:
                 JOIN stores s ON s.site_code = sales.site_code
                 WHERE sales.preference_rank = 1
                   AND sales.period BETWEEN $1 AND $2
-                  AND ($3::text IS NULL OR sales.company_name = $3)
-                  AND ($4::text IS NULL OR sales.site_code = $4)
-                  AND ($5::text IS NULL OR sales.company_name = $5)
+                  AND (
+                      (
+                          $4::text IS NULL
+                          AND ($3::text IS NULL OR sales.company_name = $3)
+                      )
+                      OR (
+                          $4::text IS NOT NULL
+                          AND sales.site_code = $4
+                          AND ($5::text IS NULL OR sales.company_name = $5)
+                      )
+                  )
                   AND ($6::text IS NULL OR s.regional = $6)
                 GROUP BY sales.period ORDER BY sales.period
                 """,
