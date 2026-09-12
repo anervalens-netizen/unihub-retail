@@ -25,6 +25,7 @@ from schemas.dashboard import (
 )
 from schemas.premium_glass import PremiumGlassAnalysis
 from services.campaigns import fetch_promo_incentive_summary, load_campaign_context
+from services.dashboard.errors import DashboardGenerationUnstable
 from services.dashboard.metrics import observe_dashboard_component
 from services.dashboard.ports import DashboardServicePort
 from services.dashboard.projections import public_stats_row
@@ -59,6 +60,16 @@ async def gather_dashboard_phase(
 ) -> dict[str, Any]:
     """Resolve one dependency phase through the shared Dashboard scheduler."""
     return await _gather_named(component_limit, global_limit, **components)
+
+
+async def _sales_generation_epoch(
+    service: DashboardServicePort,
+    deadline: RequestDeadline | None,
+) -> int:
+    """Read the scalar append-only sales promotion epoch through its fenced DB function."""
+    async with service._pool_for(deadline).acquire() as conn:
+        value = await conn.fetchval("SELECT public.current_sales_generation_epoch()")
+    return int(value or 0)
 
 
 @dataclass
@@ -301,9 +312,21 @@ async def load_dashboard_all(
     _history_projection: bool = False,
     deadline: RequestDeadline | None = None,
 ) -> DashboardAllResponse:
-    return await DashboardAllLoader(
-        service=service, month=month, firma=firma, regional=regional, asm=asm,
-        site_code=site_code, agent=agent, current_scope=current_scope,
-        include_closed_stores=include_closed_stores,
-        history_projection=_history_projection, deadline=deadline,
-    ).run()
+    async def load_once() -> DashboardAllResponse:
+        return await DashboardAllLoader(
+            service=service, month=month, firma=firma, regional=regional, asm=asm,
+            site_code=site_code, agent=agent, current_scope=current_scope,
+            include_closed_stores=include_closed_stores,
+            history_projection=_history_projection, deadline=deadline,
+        ).run()
+
+    for _attempt in range(2):
+        before = await _sales_generation_epoch(service, deadline)
+        response = await load_once()
+        after = await _sales_generation_epoch(service, deadline)
+        if before == after:
+            return response
+
+    raise DashboardGenerationUnstable(
+        "Sales/reporting generation changed during both dashboard load attempts"
+    )
