@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import time
 from pathlib import Path
+from urllib.parse import parse_qs, urlparse
 from unittest.mock import AsyncMock
 
 import httpx
@@ -88,8 +89,18 @@ def _install(redis: FakeRedis, http: FakeHttp | None = None) -> None:
     session_auth._http = http or FakeHttp()  # type: ignore[assignment]
 
 
-def _request(method: str, cookie: str, csrf: str | None = None, query: bytes = b"") -> Request:
-    headers = [(b"cookie", f"{session_auth.COOKIE_NAME}={cookie}".encode())]
+def _request(
+    method: str,
+    cookie: str,
+    csrf: str | None = None,
+    query: bytes = b"",
+    extra_cookies: dict[str, str] | None = None,
+) -> Request:
+    cookies = {session_auth.COOKIE_NAME: cookie}
+    if extra_cookies:
+        cookies.update(extra_cookies)
+    cookie_header = "; ".join(f"{name}={value}" for name, value in cookies.items())
+    headers = [(b"cookie", cookie_header.encode())]
     if csrf is not None:
         headers.append((b"x-csrf-token", csrf.encode()))
     return Request({
@@ -97,6 +108,39 @@ def _request(method: str, cookie: str, csrf: str | None = None, query: bytes = b
         "headers": headers, "client": ("127.0.0.1", 1), "scheme": "https",
         "server": ("retail.example.invalid", 443),
     })
+
+
+def _flow_state(response: session_auth.RedirectResponse) -> str:
+    return parse_qs(urlparse(response.headers["location"]).query)["state"][0]
+
+
+def _flow_cookie_name(state: str) -> str:
+    return session_auth._flow_cookie_name(_settings(), state)
+
+
+def _flow_cookie_value(response: session_auth.RedirectResponse, state: str) -> str:
+    marker = _flow_cookie_name(state) + "="
+    return response.headers["set-cookie"].split(marker, 1)[1].split(";", 1)[0]
+
+
+async def _store_bound_flow(
+    redis: FakeRedis,
+    state: str,
+    binding: str,
+    *,
+    nonce: str = "nonce",
+    verifier: str = "verifier",
+) -> None:
+    cipher = session_auth._cipher
+    assert cipher is not None
+    await redis.set(
+        session_auth.FLOW_PREFIX + state,
+        session_auth._pack(cipher, {
+            "nonce": nonce,
+            "verifier": verifier,
+            "browser_binding_hash": session_auth._flow_binding_digest(binding),
+        }),
+    )
 
 
 def test_session_settings_use_provider_endpoints_not_issuer_children() -> None:
@@ -190,6 +234,37 @@ async def test_login_stores_encrypted_pkce_flow_and_redirects() -> None:
 
 
 @pytest.mark.anyio
+async def test_login_sets_distinct_browser_binding_cookie_for_parallel_flows() -> None:
+    redis = FakeRedis()
+    _install(redis)
+
+    first = await session_auth.session_login()
+    second = await session_auth.session_login()
+    first_state, second_state = _flow_state(first), _flow_state(second)
+    first_binding = _flow_cookie_value(first, first_state)
+    second_binding = _flow_cookie_value(second, second_state)
+
+    assert first_state != second_state
+    assert _flow_cookie_name(first_state) != _flow_cookie_name(second_state)
+    assert first_binding != second_binding
+    assert len(redis.values) == 2
+    for response, state, binding in (
+        (first, first_state, first_binding),
+        (second, second_state, second_binding),
+    ):
+        cookie = response.headers["set-cookie"]
+        assert _flow_cookie_name(state) + "=" in cookie
+        assert "HttpOnly" in cookie and "Secure" in cookie and "SameSite=lax" in cookie
+        assert f"Max-Age={session_auth.FLOW_TTL_SECONDS}" in cookie
+        cipher = session_auth._cipher
+        assert cipher is not None
+        flow = session_auth._unpack(cipher, redis.values[session_auth.FLOW_PREFIX + state])
+        assert flow is not None
+        assert flow["browser_binding_hash"] == session_auth._flow_binding_digest(binding)
+        assert binding.encode() not in redis.values[session_auth.FLOW_PREFIX + state]
+
+
+@pytest.mark.anyio
 async def test_session_authentication_enforces_csrf_without_exposing_tokens() -> None:
     redis = FakeRedis()
     _install(redis)
@@ -220,17 +295,20 @@ async def test_callback_consumes_state_sets_host_cookie_and_stores_only_encrypte
         "refresh_token": "private-refresh-token",
     })
     _install(redis, http)
-    cipher = session_auth._cipher
-    assert cipher is not None
-    state = "t" * 43
-    await redis.set(session_auth.FLOW_PREFIX + state, session_auth._pack(cipher, {"nonce": "nonce", "verifier": "verifier"}))
+    state, binding = "t" * 43, "b" * 43
+    await _store_bound_flow(redis, state, binding)
     claims = AuthClaims(
         "subject", "user@example.invalid", "user", ["unihub-manager"],
         "issuer", "retail", int(time.time()) - 1, int(time.time()) + 600, {},
     )
     verify = AsyncMock(return_value=claims)
     monkeypatch.setattr(session_auth, "verify_oidc_token", verify)
-    response = await session_auth.session_callback(_request("GET", "x" * 43, query=f"code=code&state={state}".encode()))
+    response = await session_auth.session_callback(_request(
+        "GET",
+        "x" * 43,
+        query=f"code=code&state={state}".encode(),
+        extra_cookies={_flow_cookie_name(state): binding},
+    ))
     cookie = response.headers["set-cookie"]
     assert response.status_code == 303
     assert "__Host-unihub_session=" in cookie
@@ -250,6 +328,105 @@ async def test_callback_consumes_state_sets_host_cookie_and_stores_only_encrypte
 
 
 @pytest.mark.anyio
+async def test_foreign_browser_callback_cannot_consume_valid_flow(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    redis = FakeRedis()
+    http = FakeHttp({
+        "access_token": "access-token",
+        "id_token": "id-token",
+        "refresh_token": "refresh-token",
+    })
+    _install(redis, http)
+    login = await session_auth.session_login()
+    state = _flow_state(login)
+    binding = _flow_cookie_value(login, state)
+    flow_key = session_auth.FLOW_PREFIX + state
+
+    with pytest.raises(session_auth.HTTPException) as missing:
+        await session_auth.session_callback(_request(
+            "GET", "x" * 43, query=f"code=code&state={state}".encode(),
+        ))
+    assert missing.value.status_code == 400
+    assert flow_key in redis.values
+
+    with pytest.raises(session_auth.HTTPException) as wrong:
+        await session_auth.session_callback(_request(
+            "GET",
+            "x" * 43,
+            query=f"code=code&state={state}".encode(),
+            extra_cookies={_flow_cookie_name(state): "z" * 43},
+        ))
+    assert wrong.value.status_code == 400
+    assert flow_key in redis.values
+    assert http.posts == []
+
+    claims = AuthClaims(
+        "subject", "user@example.invalid", "user", ["unihub-manager"],
+        "issuer", "retail", int(time.time()) - 1, int(time.time()) + 600, {},
+    )
+    monkeypatch.setattr(session_auth, "verify_oidc_token", AsyncMock(return_value=claims))
+    valid_request = _request(
+        "GET",
+        "x" * 43,
+        query=f"code=code&state={state}".encode(),
+        extra_cookies={_flow_cookie_name(state): binding},
+    )
+    result = await session_auth.session_callback(valid_request)
+    assert result.status_code == 303
+    assert flow_key not in redis.values
+    assert len(http.posts) == 1
+
+    with pytest.raises(session_auth.HTTPException) as replay:
+        await session_auth.session_callback(valid_request)
+    assert replay.value.status_code == 400
+    assert len(http.posts) == 1
+
+
+@pytest.mark.anyio
+async def test_parallel_browser_bound_flows_can_complete_independently(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    redis = FakeRedis()
+    http = FakeHttp({
+        "access_token": "access-token",
+        "id_token": "id-token",
+        "refresh_token": "refresh-token",
+    })
+    _install(redis, http)
+    first = await session_auth.session_login()
+    second = await session_auth.session_login()
+    first_state, second_state = _flow_state(first), _flow_state(second)
+    first_binding = _flow_cookie_value(first, first_state)
+    second_binding = _flow_cookie_value(second, second_state)
+    claims = AuthClaims(
+        "subject", "user@example.invalid", "user", ["unihub-manager"],
+        "issuer", "retail", int(time.time()) - 1, int(time.time()) + 600, {},
+    )
+    monkeypatch.setattr(session_auth, "verify_oidc_token", AsyncMock(return_value=claims))
+
+    first_result = await session_auth.session_callback(_request(
+        "GET",
+        "x" * 43,
+        query=f"code=first&state={first_state}".encode(),
+        extra_cookies={_flow_cookie_name(first_state): first_binding},
+    ))
+    assert first_result.status_code == 303
+    assert session_auth.FLOW_PREFIX + second_state in redis.values
+
+    second_result = await session_auth.session_callback(_request(
+        "GET",
+        "x" * 43,
+        query=f"code=second&state={second_state}".encode(),
+        extra_cookies={_flow_cookie_name(second_state): second_binding},
+    ))
+    assert second_result.status_code == 303
+    assert len(http.posts) == 2
+    assert not any(key.startswith(session_auth.FLOW_PREFIX) for key in redis.values)
+    assert sum(key.startswith(session_auth.SESSION_PREFIX) for key in redis.values) == 2
+
+
+@pytest.mark.anyio
 @pytest.mark.parametrize("changed_field", ["sub", "iss"])
 async def test_callback_rejects_identity_mismatch_between_access_and_id_token(
     monkeypatch: pytest.MonkeyPatch,
@@ -261,13 +438,8 @@ async def test_callback_rejects_identity_mismatch_between_access_and_id_token(
         "id_token": "id-token",
         "refresh_token": "refresh-token",
     }))
-    cipher = session_auth._cipher
-    assert cipher is not None
-    state = "i" * 43
-    await redis.set(
-        session_auth.FLOW_PREFIX + state,
-        session_auth._pack(cipher, {"nonce": "nonce", "verifier": "verifier"}),
-    )
+    state, binding = "i" * 43, "c" * 43
+    await _store_bound_flow(redis, state, binding)
     now = int(time.time())
     access_claims = AuthClaims(
         "subject-a", "", "", [], "issuer-a", "retail", now, now + 600, {},
@@ -290,9 +462,12 @@ async def test_callback_rejects_identity_mismatch_between_access_and_id_token(
     )
 
     with pytest.raises(session_auth.HTTPException) as rejected:
-        await session_auth.session_callback(
-            _request("GET", "x" * 43, query=f"code=code&state={state}".encode())
-        )
+        await session_auth.session_callback(_request(
+            "GET",
+            "x" * 43,
+            query=f"code=code&state={state}".encode(),
+            extra_cookies={_flow_cookie_name(state): binding},
+        ))
 
     assert rejected.value.status_code == 502
     assert not any(key.startswith(session_auth.SESSION_PREFIX) for key in redis.values)
