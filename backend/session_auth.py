@@ -105,6 +105,8 @@ class ConcurrentSessionRefreshUnavailable(RuntimeError):
     """A waiter must not destroy state owned by an in-flight refresh."""
 
 
+
+
 _settings: SessionSettings | None = None
 _redis: Redis | None = None
 _cipher: Fernet | None = None
@@ -117,6 +119,7 @@ def _bounded_text(value: str | None, maximum: int) -> str:
     if not value or value != value.strip() or len(value) > maximum or any(not char.isprintable() for char in value):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid authentication response")
     return value
+
 
 
 def session_config_errors(production: bool) -> list[str]:
@@ -417,6 +420,8 @@ async def authenticate_session(request: Request) -> AuthClaims:
                     "Authentication required",
                 )
             else:
+                # Another owner changed the ciphertext after our read. Never
+                # delete that state; consume it only when it is now valid.
                 current = _unpack(cipher, await client.get(session_key))
                 if (
                     current is not None
