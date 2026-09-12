@@ -559,16 +559,41 @@ async def session_status(request: Request) -> JSONResponse:
     return JSONResponse(payload.model_dump(), headers={"Cache-Control": "no-store"})
 
 
+# Logout revokes the stored session directly and never refreshes: a failed refresh can
+# leave the session alive, and an in-flight one can rewrite the record after our delete
+# and resurrect it. Holding the shared refresh lock closes both windows.
 @router.post("/logout", response_model=SessionLogoutResponse)
 async def session_logout(request: Request) -> JSONResponse:
-    await authenticate_session(request)
-    settings, client, _, _ = _runtime()
+    settings, client, cipher, _ = _runtime()
     cookie_name = _cookie_name(settings)
     session_id = request.cookies.get(cookie_name, "")
-    await client.delete(SESSION_PREFIX + session_id)
-    payload = SessionLogoutResponse(
-        logout_url=settings.logout_url + "?" + urlencode({"post_logout_redirect_uri": settings.public_origin + "/"}),
-    )
-    response = JSONResponse(payload.model_dump())
-    response.delete_cookie(cookie_name, path="/", secure=settings.secure_cookie, httponly=True, samesite="lax")
-    return response
+    if not OPAQUE_RE.fullmatch(session_id):
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Authentication required")
+    session_key, lock_key = SESSION_PREFIX + session_id, LOCK_PREFIX + session_id
+    lock_token = secrets.token_urlsafe(24).encode("ascii")
+    if not await client.set(lock_key, lock_token, ex=REFRESH_LOCK_TTL_SECONDS, nx=True):
+        SESSION_REFRESH_CONTENTION_TOTAL.labels(scope="logout").inc()
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Session logout temporarily unavailable",
+                            headers={"Retry-After": str(REFRESH_RETRY_AFTER_SECONDS)})
+    try:
+        packed = await client.get(session_key)
+        record = _unpack(cipher, packed)
+        if record is None:  # Missing or unreadable: local revocation already stands.
+            await client.delete(session_key)
+        else:
+            supplied = request.headers.get("X-CSRF-Token", "")
+            expected = record.get("csrf", "")
+            if not isinstance(expected, str) or not hmac.compare_digest(supplied, expected):
+                raise HTTPException(status.HTTP_403_FORBIDDEN, "CSRF validation failed")
+            await client.delete(session_key)
+        payload = SessionLogoutResponse(
+            logout_url=settings.logout_url + "?" + urlencode({"post_logout_redirect_uri": settings.public_origin + "/"}),
+        )
+        response = JSONResponse(payload.model_dump())
+        response.delete_cookie(cookie_name, path="/", secure=settings.secure_cookie, httponly=True, samesite="lax")
+        return response
+    finally:
+        try:
+            await _release_refresh_lock(client, lock_key, lock_token)
+        except Exception:  # noqa: BLE001 - an expiring lock must not mask a completed revocation
+            logger.warning("Session logout lock release failed")

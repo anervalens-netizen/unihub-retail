@@ -28,8 +28,34 @@ interface AuthContextValue {
   user: SessionUser | null;
   isAuthenticated: boolean;
   isLoading: boolean;
+  logoutError: string | null;
   login: () => Promise<void>;
   logout: () => Promise<void>;
+}
+
+export const LOGOUT_UNCONFIRMED_MESSAGE = 'Deconectarea nu a putut fi confirmată. Încearcă din nou.';
+
+/**
+ * Ask the server to revoke the session. Resolves to the provider logout URL only
+ * when revocation is confirmed and the response carries a usable URL; every other
+ * outcome (network, timeout, non-2xx, invalid body, missing URL) throws or resolves
+ * to null so the caller never clears local state on an unconfirmed logout.
+ */
+async function requestServerLogout(csrfToken: string | null): Promise<string | null> {
+  const response = await fetch('/auth/session/logout', {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: csrfToken ? { 'X-CSRF-Token': csrfToken } : {},
+    signal: requestSignal(undefined, 10_000),
+  });
+  if (!response.ok) throw new Error(`Session logout failed: ${response.status}`);
+  const payload = decodeRetail<
+    'session_logout_auth_session_logout_post',
+    RetailSessionLogoutResponse
+  >('session_logout_auth_session_logout_post', await response.json());
+  return typeof payload.logout_url === 'string' && payload.logout_url.trim().length > 0
+    ? payload.logout_url
+    : null;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -45,6 +71,7 @@ export function AuthProvider({
   const [isLoading, setIsLoading] = useState(true);
   const [bootstrapError, setBootstrapError] = useState(false);
   const [bootstrapAttempt, setBootstrapAttempt] = useState(0);
+  const [logoutError, setLogoutError] = useState<string | null>(null);
   const csrfRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -91,32 +118,23 @@ export function AuthProvider({
   }, []);
 
   const logout = useCallback(async () => {
-    let redirect = '/auth/session/login';
+    setLogoutError(null);
+    let logoutUrl: string | null = null;
     try {
-      const response = await fetch('/auth/session/logout', {
-        method: 'POST',
-        credentials: 'same-origin',
-        headers: csrfRef.current ? { 'X-CSRF-Token': csrfRef.current } : {},
-        signal: requestSignal(undefined, 10_000),
-      });
-      if (response.ok) {
-        const payload = decodeRetail<
-          'session_logout_auth_session_logout_post',
-          RetailSessionLogoutResponse
-        >('session_logout_auth_session_logout_post', await response.json());
-        if (payload.logout_url) {
-          redirect = payload.logout_url;
-        }
-      }
+      logoutUrl = await requestServerLogout(csrfRef.current);
     } catch (error) {
       console.error('Session logout request failed', error);
-    } finally {
-      csrfRef.current = null;
-      setUser(null);
-      clearRetailBrowserSession();
-      onSessionCleared?.();
-      window.location.assign(redirect);
     }
+    if (logoutUrl === null) {
+      // The server session may still be alive: never pretend the logout happened.
+      setLogoutError(LOGOUT_UNCONFIRMED_MESSAGE);
+      return;
+    }
+    csrfRef.current = null;
+    setUser(null);
+    clearRetailBrowserSession();
+    onSessionCleared?.();
+    window.location.assign(logoutUrl);
   }, [onSessionCleared]);
 
   const retryBootstrap = useCallback(() => {
@@ -129,9 +147,10 @@ export function AuthProvider({
     user,
     isAuthenticated: user !== null,
     isLoading,
+    logoutError,
     login,
     logout,
-  }), [user, isLoading, login, logout]);
+  }), [user, isLoading, logoutError, login, logout]);
 
   if (isLoading) return null;
   if (bootstrapError) {
