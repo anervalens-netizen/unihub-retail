@@ -182,8 +182,8 @@ class StorePnlService:
         for row in await self.repository.annual_rows(company, site_code, site_company, regional):
             year = row["year"]
             add_amount(yearly[year], row["category_code"], row["amount"])
-            store_counts[year] = max(store_counts[year], row["store_count"])
-            month_counts[year] = max(month_counts[year], row["month_count"])
+            store_counts[year] = row["year_store_count"]
+            month_counts[year] = row["year_month_count"]
             if row["is_estimated"]:
                 estimate_years.add(year)
         return [
