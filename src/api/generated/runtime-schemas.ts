@@ -11761,6 +11761,234 @@ export const RETAIL_COMPONENT_SCHEMAS = {
     "title": "SalesSiteDayManifest",
     "type": "object"
   },
+  "SavedViewCreate": {
+    "additionalProperties": false,
+    "properties": {
+      "name": {
+        "maxLength": 80,
+        "minLength": 1,
+        "title": "Name",
+        "type": "string"
+      },
+      "state": {
+        "$ref": "#/components/schemas/SavedViewState"
+      }
+    },
+    "required": [
+      "name",
+      "state"
+    ],
+    "title": "SavedViewCreate",
+    "type": "object"
+  },
+  "SavedViewDeleteResponse": {
+    "additionalProperties": false,
+    "properties": {
+      "ok": {
+        "title": "Ok",
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "ok"
+    ],
+    "title": "SavedViewDeleteResponse",
+    "type": "object"
+  },
+  "SavedViewFilters": {
+    "additionalProperties": false,
+    "properties": {
+      "agent": {
+        "items": {
+          "type": "string"
+        },
+        "maxItems": 50,
+        "title": "Agent",
+        "type": "array"
+      },
+      "firma": {
+        "maxLength": 180,
+        "title": "Firma",
+        "type": "string"
+      },
+      "magazin": {
+        "items": {
+          "type": "string"
+        },
+        "maxItems": 50,
+        "title": "Magazin",
+        "type": "array"
+      },
+      "rm": {
+        "maxLength": 180,
+        "title": "Rm",
+        "type": "string"
+      }
+    },
+    "required": [
+      "firma",
+      "rm"
+    ],
+    "title": "SavedViewFilters",
+    "type": "object"
+  },
+  "SavedViewItem": {
+    "additionalProperties": false,
+    "properties": {
+      "created_at": {
+        "title": "Created At",
+        "type": "string"
+      },
+      "id": {
+        "minimum": 1.0,
+        "title": "Id",
+        "type": "integer"
+      },
+      "module_id": {
+        "enum": [
+          "hub",
+          "focus",
+          "agents",
+          "management"
+        ],
+        "title": "Module Id",
+        "type": "string"
+      },
+      "name": {
+        "title": "Name",
+        "type": "string"
+      },
+      "schema_version": {
+        "const": 1,
+        "title": "Schema Version",
+        "type": "integer"
+      },
+      "state": {
+        "$ref": "#/components/schemas/SavedViewState"
+      },
+      "updated_at": {
+        "title": "Updated At",
+        "type": "string"
+      }
+    },
+    "required": [
+      "id",
+      "module_id",
+      "name",
+      "state",
+      "schema_version",
+      "created_at",
+      "updated_at"
+    ],
+    "title": "SavedViewItem",
+    "type": "object"
+  },
+  "SavedViewListResponse": {
+    "additionalProperties": false,
+    "properties": {
+      "items": {
+        "items": {
+          "$ref": "#/components/schemas/SavedViewItem"
+        },
+        "title": "Items",
+        "type": "array"
+      }
+    },
+    "required": [
+      "items"
+    ],
+    "title": "SavedViewListResponse",
+    "type": "object"
+  },
+  "SavedViewState": {
+    "additionalProperties": false,
+    "properties": {
+      "filters": {
+        "$ref": "#/components/schemas/SavedViewFilters"
+      },
+      "period": {
+        "anyOf": [
+          {
+            "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Period"
+      },
+      "section": {
+        "anyOf": [
+          {
+            "maxLength": 40,
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Section"
+      },
+      "subtab": {
+        "anyOf": [
+          {
+            "maxLength": 40,
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Subtab"
+      },
+      "tab": {
+        "enum": [
+          "hub",
+          "focus",
+          "agents",
+          "management"
+        ],
+        "title": "Tab",
+        "type": "string"
+      }
+    },
+    "required": [
+      "tab",
+      "filters"
+    ],
+    "title": "SavedViewState",
+    "type": "object"
+  },
+  "SavedViewUpdate": {
+    "additionalProperties": false,
+    "properties": {
+      "name": {
+        "anyOf": [
+          {
+            "maxLength": 80,
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Name"
+      },
+      "state": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/SavedViewState"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "title": "SavedViewUpdate",
+    "type": "object"
+  },
   "SessionLogoutResponse": {
     "properties": {
       "logout_url": {
@@ -15879,6 +16107,12 @@ export const RETAIL_RESPONSE_SCHEMAS = {
   "create_salary_export_operation_salarii_exports_operations_post": {
     "$ref": "#/components/schemas/ExportOperationResponse"
   },
+  "create_saved_view_api_saved_views_post": {
+    "$ref": "#/components/schemas/SavedViewItem"
+  },
+  "delete_saved_view_api_saved_views__view_id__delete": {
+    "$ref": "#/components/schemas/SavedViewDeleteResponse"
+  },
   "download_export_api_exports_download_post": {},
   "download_export_operation_api_exports_operations__operation_id__download_get": {},
   "export_scenario_api_target_calculator_scenarios__scenario_id__export_get": {},
@@ -16133,6 +16367,9 @@ export const RETAIL_RESPONSE_SCHEMAS = {
     "title": "Response List Records Salarii Records Get",
     "type": "array"
   },
+  "list_saved_views_api_saved_views_get": {
+    "$ref": "#/components/schemas/SavedViewListResponse"
+  },
   "list_scenarios_api_target_calculator_scenarios_get": {
     "items": {
       "$ref": "#/components/schemas/TargetScenarioSummaryResponse"
@@ -16229,6 +16466,9 @@ export const RETAIL_RESPONSE_SCHEMAS = {
   },
   "update_final_targets_api_target_calculator_scenarios__scenario_id__rows_patch": {
     "$ref": "#/components/schemas/TargetScenarioResponse"
+  },
+  "update_saved_view_api_saved_views__view_id__patch": {
+    "$ref": "#/components/schemas/SavedViewItem"
   },
   "upload_promo_actuals_file_api_import_promo_actuals_post": {
     "$ref": "#/components/schemas/ImportJobStatus"

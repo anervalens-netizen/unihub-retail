@@ -1,5 +1,5 @@
 /* GENERATED FILE. Run npm run contracts:generate; do not edit manually. */
-export const RETAIL_OPENAPI_SHA256 = '99f5f29edb6daf2876cc30ae25cf73327b3f38f85caefebc6e3371e490913c20' as const; // pragma: allowlist secret
+export const RETAIL_OPENAPI_SHA256 = '407cc49010138d37eff7990915dad052ec23697ca9ad7af6b9d372f8cb67943c' as const; // pragma: allowlist secret
 
 export type RetailDecimal = string & { readonly __retailDecimal: unique symbol };
 
@@ -1884,6 +1884,49 @@ export interface RetailSalesSiteDayManifest {
   "value": string;
 }
 
+export interface RetailSavedViewCreate {
+  "name": string;
+  "state": RetailSavedViewState;
+}
+
+export interface RetailSavedViewDeleteResponse {
+  "ok": boolean;
+}
+
+export interface RetailSavedViewFilters {
+  "agent"?: Array<string>;
+  "firma": string;
+  "magazin"?: Array<string>;
+  "rm": string;
+}
+
+export interface RetailSavedViewItem {
+  "created_at": string;
+  "id": number;
+  "module_id": "hub" | "focus" | "agents" | "management";
+  "name": string;
+  "schema_version": number;
+  "state": RetailSavedViewState;
+  "updated_at": string;
+}
+
+export interface RetailSavedViewListResponse {
+  "items": Array<RetailSavedViewItem>;
+}
+
+export interface RetailSavedViewState {
+  "filters": RetailSavedViewFilters;
+  "period"?: string | null;
+  "section"?: string | null;
+  "subtab"?: string | null;
+  "tab": "hub" | "focus" | "agents" | "management";
+}
+
+export interface RetailSavedViewUpdate {
+  "name"?: string | null;
+  "state"?: RetailSavedViewState | null;
+}
+
 export interface RetailSessionLogoutResponse {
   "logout_url": string;
 }
@@ -2562,6 +2605,10 @@ export type RetailOperationId =
   'upload_promo_actuals_file_api_import_promo_actuals_post' |
   'upload_sales_file_api_import_sales_post' |
   'promote_sales_generation_api_import_sales__snapshot_id__promote_post' |
+  'list_saved_views_api_saved_views_get' |
+  'create_saved_view_api_saved_views_post' |
+  'delete_saved_view_api_saved_views__view_id__delete' |
+  'update_saved_view_api_saved_views__view_id__patch' |
   'annual_api_store_pnl_annual_get' |
   'months_api_store_pnl_months_get' |
   'overview_api_store_pnl_overview_get' |
@@ -2942,6 +2989,25 @@ export interface RetailOperationResponses {
     '422': RetailHTTPValidationError;
   }
 
+  'list_saved_views_api_saved_views_get': {
+    '200': RetailSavedViewListResponse;
+  }
+
+  'create_saved_view_api_saved_views_post': {
+    '201': RetailSavedViewItem;
+    '422': RetailHTTPValidationError;
+  }
+
+  'delete_saved_view_api_saved_views__view_id__delete': {
+    '200': RetailSavedViewDeleteResponse;
+    '422': RetailHTTPValidationError;
+  }
+
+  'update_saved_view_api_saved_views__view_id__patch': {
+    '200': RetailSavedViewItem;
+    '422': RetailHTTPValidationError;
+  }
+
   'annual_api_store_pnl_annual_get': {
     '200': RetailPnlAnnualResponse;
     '422': RetailHTTPValidationError;
@@ -3215,6 +3281,10 @@ export interface RetailOperationSuccesses {
   'upload_promo_actuals_file_api_import_promo_actuals_post': RetailImportJobStatus;
   'upload_sales_file_api_import_sales_post': RetailImportJobStatus;
   'promote_sales_generation_api_import_sales__snapshot_id__promote_post': RetailImportJobStatus;
+  'list_saved_views_api_saved_views_get': RetailSavedViewListResponse;
+  'create_saved_view_api_saved_views_post': RetailSavedViewItem;
+  'delete_saved_view_api_saved_views__view_id__delete': RetailSavedViewDeleteResponse;
+  'update_saved_view_api_saved_views__view_id__patch': RetailSavedViewItem;
   'annual_api_store_pnl_annual_get': RetailPnlAnnualResponse;
   'months_api_store_pnl_months_get': RetailPnlMonthsResponse;
   'overview_api_store_pnl_overview_get': RetailPnlOverviewResponse;
@@ -3324,6 +3394,10 @@ export interface RetailOperationErrors {
   'upload_promo_actuals_file_api_import_promo_actuals_post': { '422': RetailHTTPValidationError };
   'upload_sales_file_api_import_sales_post': { '422': RetailHTTPValidationError };
   'promote_sales_generation_api_import_sales__snapshot_id__promote_post': { '422': RetailHTTPValidationError };
+  'list_saved_views_api_saved_views_get': Record<never, never>;
+  'create_saved_view_api_saved_views_post': { '422': RetailHTTPValidationError };
+  'delete_saved_view_api_saved_views__view_id__delete': { '422': RetailHTTPValidationError };
+  'update_saved_view_api_saved_views__view_id__patch': { '422': RetailHTTPValidationError };
   'annual_api_store_pnl_annual_get': { '422': RetailHTTPValidationError };
   'months_api_store_pnl_months_get': Record<never, never>;
   'overview_api_store_pnl_overview_get': { '422': RetailHTTPValidationError };
@@ -3571,6 +3645,17 @@ export const RETAIL_OPERATION_ERROR_STATUSES: { readonly [Id in RetailOperationI
   'promote_sales_generation_api_import_sales__snapshot_id__promote_post': new Set<string>([
     '422',
   ]),
+  'list_saved_views_api_saved_views_get': new Set<string>([
+  ]),
+  'create_saved_view_api_saved_views_post': new Set<string>([
+    '422',
+  ]),
+  'delete_saved_view_api_saved_views__view_id__delete': new Set<string>([
+    '422',
+  ]),
+  'update_saved_view_api_saved_views__view_id__patch': new Set<string>([
+    '422',
+  ]),
   'annual_api_store_pnl_annual_get': new Set<string>([
     '422',
   ]),
@@ -3766,6 +3851,10 @@ export interface RetailOperationQueries {
   'upload_promo_actuals_file_api_import_promo_actuals_post': Record<never, never>;
   'upload_sales_file_api_import_sales_post': Record<never, never>;
   'promote_sales_generation_api_import_sales__snapshot_id__promote_post': Record<never, never>;
+  'list_saved_views_api_saved_views_get': Record<never, never>;
+  'create_saved_view_api_saved_views_post': Record<never, never>;
+  'delete_saved_view_api_saved_views__view_id__delete': Record<never, never>;
+  'update_saved_view_api_saved_views__view_id__patch': Record<never, never>;
   'annual_api_store_pnl_annual_get': { "company"?: string | null; "site_code"?: string | null; "site_company"?: string | null; "regional"?: string | null };
   'months_api_store_pnl_months_get': Record<never, never>;
   'overview_api_store_pnl_overview_get': { "start_month": string; "end_month": string; "company"?: string | null; "site_code"?: string | null; "site_company"?: string | null; "regional"?: string | null };
@@ -3875,6 +3964,10 @@ export interface RetailOperationPaths {
   'upload_promo_actuals_file_api_import_promo_actuals_post': Record<never, never>;
   'upload_sales_file_api_import_sales_post': Record<never, never>;
   'promote_sales_generation_api_import_sales__snapshot_id__promote_post': { "snapshot_id": number };
+  'list_saved_views_api_saved_views_get': Record<never, never>;
+  'create_saved_view_api_saved_views_post': Record<never, never>;
+  'delete_saved_view_api_saved_views__view_id__delete': { "view_id": number };
+  'update_saved_view_api_saved_views__view_id__patch': { "view_id": number };
   'annual_api_store_pnl_annual_get': Record<never, never>;
   'months_api_store_pnl_months_get': Record<never, never>;
   'overview_api_store_pnl_overview_get': Record<never, never>;
@@ -3984,6 +4077,10 @@ export interface RetailOperationBodies {
   'upload_promo_actuals_file_api_import_promo_actuals_post': FormData;
   'upload_sales_file_api_import_sales_post': FormData;
   'promote_sales_generation_api_import_sales__snapshot_id__promote_post': RetailSalesGenerationPromotionRequest;
+  'list_saved_views_api_saved_views_get': undefined;
+  'create_saved_view_api_saved_views_post': RetailSavedViewCreate;
+  'delete_saved_view_api_saved_views__view_id__delete': undefined;
+  'update_saved_view_api_saved_views__view_id__patch': RetailSavedViewUpdate;
   'annual_api_store_pnl_annual_get': undefined;
   'months_api_store_pnl_months_get': undefined;
   'overview_api_store_pnl_overview_get': undefined;
@@ -4093,6 +4190,10 @@ export interface RetailOperationMeta {
   'upload_promo_actuals_file_api_import_promo_actuals_post': { method: 'post'; path: '/api/import/promo-actuals'; responseType: 'json' };
   'upload_sales_file_api_import_sales_post': { method: 'post'; path: '/api/import/sales'; responseType: 'json' };
   'promote_sales_generation_api_import_sales__snapshot_id__promote_post': { method: 'post'; path: '/api/import/sales/{snapshot_id}/promote'; responseType: 'json' };
+  'list_saved_views_api_saved_views_get': { method: 'get'; path: '/api/saved-views'; responseType: 'json' };
+  'create_saved_view_api_saved_views_post': { method: 'post'; path: '/api/saved-views'; responseType: 'json' };
+  'delete_saved_view_api_saved_views__view_id__delete': { method: 'delete'; path: '/api/saved-views/{view_id}'; responseType: 'json' };
+  'update_saved_view_api_saved_views__view_id__patch': { method: 'patch'; path: '/api/saved-views/{view_id}'; responseType: 'json' };
   'annual_api_store_pnl_annual_get': { method: 'get'; path: '/api/store-pnl/annual'; responseType: 'json' };
   'months_api_store_pnl_months_get': { method: 'get'; path: '/api/store-pnl/months'; responseType: 'json' };
   'overview_api_store_pnl_overview_get': { method: 'get'; path: '/api/store-pnl/overview'; responseType: 'json' };
@@ -4782,6 +4883,14 @@ export const RETAIL_DECIMAL_PATHS: { readonly [Id in RetailOperationId]: Readonl
     'erp_result/metrics/*/difference',
     'erp_result/metrics/*/report_value',
     'erp_result/metrics/*/retail_value',
+  ]),
+  'list_saved_views_api_saved_views_get': new Set<string>([
+  ]),
+  'create_saved_view_api_saved_views_post': new Set<string>([
+  ]),
+  'delete_saved_view_api_saved_views__view_id__delete': new Set<string>([
+  ]),
+  'update_saved_view_api_saved_views__view_id__patch': new Set<string>([
   ]),
   'annual_api_store_pnl_annual_get': new Set<string>([
     'annual/*/cogs',
@@ -5610,6 +5719,14 @@ export const RETAIL_DATE_PATHS: { readonly [Id in RetailOperationId]: ReadonlySe
     'result/manifest/max_sale_date',
     'result/manifest/site_days/*/sale_date',
   ]),
+  'list_saved_views_api_saved_views_get': new Set<string>([
+  ]),
+  'create_saved_view_api_saved_views_post': new Set<string>([
+  ]),
+  'delete_saved_view_api_saved_views__view_id__delete': new Set<string>([
+  ]),
+  'update_saved_view_api_saved_views__view_id__patch': new Set<string>([
+  ]),
   'annual_api_store_pnl_annual_get': new Set<string>([
   ]),
   'months_api_store_pnl_months_get': new Set<string>([
@@ -5883,6 +6000,14 @@ export const RETAIL_DATETIME_PATHS: { readonly [Id in RetailOperationId]: Readon
   ]),
   'promote_sales_generation_api_import_sales__snapshot_id__promote_post': new Set<string>([
   ]),
+  'list_saved_views_api_saved_views_get': new Set<string>([
+  ]),
+  'create_saved_view_api_saved_views_post': new Set<string>([
+  ]),
+  'delete_saved_view_api_saved_views__view_id__delete': new Set<string>([
+  ]),
+  'update_saved_view_api_saved_views__view_id__patch': new Set<string>([
+  ]),
   'annual_api_store_pnl_annual_get': new Set<string>([
   ]),
   'months_api_store_pnl_months_get': new Set<string>([
@@ -6035,6 +6160,10 @@ export const RETAIL_OPERATION_ROUTES = {
   'upload_promo_actuals_file_api_import_promo_actuals_post': { method: 'post', path: '/api/import/promo-actuals', responseType: 'json' },
   'upload_sales_file_api_import_sales_post': { method: 'post', path: '/api/import/sales', responseType: 'json' },
   'promote_sales_generation_api_import_sales__snapshot_id__promote_post': { method: 'post', path: '/api/import/sales/{snapshot_id}/promote', responseType: 'json' },
+  'list_saved_views_api_saved_views_get': { method: 'get', path: '/api/saved-views', responseType: 'json' },
+  'create_saved_view_api_saved_views_post': { method: 'post', path: '/api/saved-views', responseType: 'json' },
+  'delete_saved_view_api_saved_views__view_id__delete': { method: 'delete', path: '/api/saved-views/{view_id}', responseType: 'json' },
+  'update_saved_view_api_saved_views__view_id__patch': { method: 'patch', path: '/api/saved-views/{view_id}', responseType: 'json' },
   'annual_api_store_pnl_annual_get': { method: 'get', path: '/api/store-pnl/annual', responseType: 'json' },
   'months_api_store_pnl_months_get': { method: 'get', path: '/api/store-pnl/months', responseType: 'json' },
   'overview_api_store_pnl_overview_get': { method: 'get', path: '/api/store-pnl/overview', responseType: 'json' },
