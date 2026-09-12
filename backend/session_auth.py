@@ -47,9 +47,8 @@ FLOW_COOKIE_PREFIX = "__Host-unihub_oidc_"
 SESSION_PREFIX = "unihub:retail:session:v1:"
 LOCK_PREFIX = "unihub:retail:session-refresh:v1:"
 TOKEN_EXCHANGE_TIMEOUT_SECONDS = 15.0
-# Refresh is a distributed single-flight operation: the owner is cancelled before the
-# provider's own 15s transport bound so one slow call cannot consume the complete browser
-# API timeout, while non-owners fail fast and retry instead of queueing behind the lock.
+# Refresh is a distributed single-flight operation: the owner is cancelled before the provider's 15s
+# transport bound, so no slow call consumes the browser API timeout; non-owners fail fast and retry rather than queue.
 REFRESH_OWNER_TIMEOUT_SECONDS = 10.0
 REFRESH_LOCK_TTL_SECONDS = 15
 REFRESH_WAIT_SECONDS = 1.0
@@ -559,10 +558,11 @@ async def session_status(request: Request) -> JSONResponse:
     return JSONResponse(payload.model_dump(), headers={"Cache-Control": "no-store"})
 
 
-def _logout_response(settings: SessionSettings, cookie_name: str) -> JSONResponse:
+def _logout_response(settings: SessionSettings, cookie_name: str | None) -> JSONResponse:
     url = settings.logout_url + "?" + urlencode({"post_logout_redirect_uri": settings.public_origin + "/"})
     response = JSONResponse(SessionLogoutResponse(logout_url=url).model_dump())
-    response.delete_cookie(cookie_name, path="/", secure=settings.secure_cookie, httponly=True, samesite="lax")
+    if cookie_name is not None:  # Only clear a cookie the browser actually sent: Set-Cookie applies cross-site.
+        response.delete_cookie(cookie_name, path="/", secure=settings.secure_cookie, httponly=True, samesite="lax")
     return response
 
 
@@ -573,8 +573,8 @@ async def session_logout(request: Request) -> JSONResponse:
     settings, client, cipher, _ = _runtime()
     cookie_name = _cookie_name(settings)
     session_id = request.cookies.get(cookie_name, "")
-    if not session_id:  # Already dropped (lost response body): retry still ends the IdP session.
-        return _logout_response(settings, cookie_name)
+    if not session_id:  # Already dropped (lost response body): end the IdP session, never touch the cookie.
+        return _logout_response(settings, None)
     if not OPAQUE_RE.fullmatch(session_id):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Authentication required")
     session_key, lock_key = SESSION_PREFIX + session_id, LOCK_PREFIX + session_id

@@ -23,9 +23,11 @@ KEY = "MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA="
 class FakeRedis:
     def __init__(self) -> None:
         self.values: dict[str, bytes] = {}
+        self.writes: list[tuple[str, str]] = []
         self.closed = False
 
     async def set(self, key: str, value: bytes, **_kwargs: object) -> bool:
+        self.writes.append(("set", key))
         if _kwargs.get("nx") and key in self.values:
             return False
         self.values[key] = value
@@ -35,9 +37,11 @@ class FakeRedis:
         return self.values.get(key)
 
     async def getdel(self, key: str) -> bytes | None:
+        self.writes.append(("getdel", key))
         return self.values.pop(key, None)
 
     async def delete(self, key: str) -> int:
+        self.writes.append(("delete", key))
         return int(self.values.pop(key, None) is not None)
 
     async def eval(
@@ -47,6 +51,7 @@ class FakeRedis:
         key: str,
         token: str | bytes,
     ) -> int:
+        self.writes.append(("eval", key))
         expected = token if isinstance(token, bytes) else token.encode("ascii")
         if self.values.get(key) != expected:
             return 0
@@ -117,6 +122,15 @@ def _request_without_session_cookie() -> Request:
         "type": "http", "method": "POST", "path": "/", "query_string": b"",
         "headers": [(b"cookie", b"__Host-unihub_oidc_flow_unrelated=kept")],
         "client": ("127.0.0.1", 1), "scheme": "https",
+        "server": ("retail.example.invalid", 443),
+    })
+
+
+def _cross_site_request() -> Request:
+    """SameSite=Lax withholds the session cookie entirely from a cross-site POST."""
+    return Request({
+        "type": "http", "method": "POST", "path": "/", "query_string": b"",
+        "headers": [], "client": ("127.0.0.1", 1), "scheme": "https",
         "server": ("retail.example.invalid", 443),
     })
 
@@ -992,7 +1006,7 @@ async def test_a_logged_out_session_cannot_be_revived_by_a_later_request(
 async def test_logout_without_a_session_cookie_is_an_idempotent_success(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A retry whose cookie was already deleted must still end the provider session."""
+    """A retry whose cookie was already deleted still ends the provider session, cookie untouched."""
     redis, http = FakeRedis(), FakeHttp({"access_token": "rotated-access"})
     _install(redis, http)
     refresh = AsyncMock(return_value=None)
@@ -1002,6 +1016,7 @@ async def test_logout_without_a_session_cookie_is_an_idempotent_success(
 
     for label, request in (
         ("absent", _request_without_session_cookie()),
+        ("cross-site", _cross_site_request()),
         ("empty", _request("POST", "", "csrf")),
         ("stripped", _request("POST", " ", "csrf")),
     ):
@@ -1009,11 +1024,42 @@ async def test_logout_without_a_session_cookie_is_an_idempotent_success(
 
         assert response.status_code == 200, label
         assert json.loads(bytes(response.body))["logout_url"] == LOGOUT_URL, label
-        cookie = response.headers["set-cookie"]
-        assert cookie.startswith(session_auth.COOKIE_NAME + "="), label
-        assert "Max-Age=0" in cookie and "HttpOnly" in cookie and "SameSite=lax" in cookie, label
+        assert response.headers.get("set-cookie") is None, label
         assert not redis.values, label
+        assert redis.writes == [], label
 
+    assert refresh.await_count == 0
+    assert distributed.await_count == 0
+    assert http.posts == []
+
+
+@pytest.mark.anyio
+async def test_cross_site_cookie_less_logout_cannot_clear_the_browser_cookie(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A cross-site POST cannot reach the session cookie, so it must not delete it either."""
+    redis, http = FakeRedis(), FakeHttp({"access_token": "rotated-access"})
+    _install(redis, http)
+    session_id = "S" * 43
+    session_key = session_auth.SESSION_PREFIX + session_id
+    lock_key = session_auth.LOCK_PREFIX + session_id
+    await session_auth._store_session(session_id, _session_record(expires_in=600))
+    stored = await redis.get(session_key)
+    assert stored is not None
+    redis.writes.clear()  # Setup only: everything after this must leave Redis untouched.
+    refresh = AsyncMock(return_value=None)
+    distributed = AsyncMock(return_value=None)
+    monkeypatch.setattr(session_auth, "_refresh", refresh)
+    monkeypatch.setattr(session_auth, "_refresh_distributed", distributed)
+
+    response = await session_auth.session_logout(_cross_site_request())
+
+    assert response.status_code == 200
+    assert json.loads(bytes(response.body))["logout_url"] == LOGOUT_URL
+    assert response.headers.get("set-cookie") is None
+    assert await redis.get(session_key) == stored
+    assert lock_key not in redis.values
+    assert redis.writes == []
     assert refresh.await_count == 0
     assert distributed.await_count == 0
     assert http.posts == []
