@@ -113,3 +113,12 @@ class SavedViewListResponse(StrictApiModel):
 
 class SavedViewDeleteResponse(StrictApiModel):
     ok: bool
+
+
+class SavedViewErrorResponse(StrictApiModel):
+    # Body FastAPI's `HTTPException` handler already returns for 404 and 409.
+    # Declaring it keeps the published contract honest: those statuses answer
+    # with `{"detail": "..."}` at runtime, so the generated client must type a
+    # JSON body instead of `void`. Deliberately local to Saved Views rather than
+    # a shared envelope, because no other module has adopted one yet.
+    detail: str

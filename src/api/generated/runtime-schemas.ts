@@ -11795,6 +11795,20 @@ export const RETAIL_COMPONENT_SCHEMAS = {
     "title": "SavedViewDeleteResponse",
     "type": "object"
   },
+  "SavedViewErrorResponse": {
+    "additionalProperties": false,
+    "properties": {
+      "detail": {
+        "title": "Detail",
+        "type": "string"
+      }
+    },
+    "required": [
+      "detail"
+    ],
+    "title": "SavedViewErrorResponse",
+    "type": "object"
+  },
   "SavedViewFilters": {
     "additionalProperties": false,
     "properties": {

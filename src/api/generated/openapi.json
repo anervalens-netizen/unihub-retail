@@ -11794,6 +11794,20 @@
         "title": "SavedViewDeleteResponse",
         "type": "object"
       },
+      "SavedViewErrorResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          }
+        },
+        "required": [
+          "detail"
+        ],
+        "title": "SavedViewErrorResponse",
+        "type": "object"
+      },
       "SavedViewFilters": {
         "additionalProperties": false,
         "properties": {
@@ -21520,6 +21534,13 @@
             "description": "Successful Response"
           },
           "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SavedViewErrorResponse"
+                }
+              }
+            },
             "description": "Saved view name conflict or limit reached"
           },
           "422": {
@@ -21570,6 +21591,13 @@
             "description": "Successful Response"
           },
           "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SavedViewErrorResponse"
+                }
+              }
+            },
             "description": "Saved view not found"
           },
           "422": {
@@ -21628,9 +21656,23 @@
             "description": "Successful Response"
           },
           "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SavedViewErrorResponse"
+                }
+              }
+            },
             "description": "Saved view not found"
           },
           "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SavedViewErrorResponse"
+                }
+              }
+            },
             "description": "Saved view name conflict"
           },
           "422": {

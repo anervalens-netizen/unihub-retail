@@ -15,6 +15,7 @@ from composition import build_saved_views_service
 from schemas.saved_views import (
     SavedViewCreate,
     SavedViewDeleteResponse,
+    SavedViewErrorResponse,
     SavedViewItem,
     SavedViewListResponse,
     SavedViewUpdate,
@@ -53,7 +54,12 @@ async def list_saved_views(
     "",
     response_model=SavedViewItem,
     status_code=status.HTTP_201_CREATED,
-    responses={409: {"description": "Saved view name conflict or limit reached"}},
+    responses={
+        409: {
+            "model": SavedViewErrorResponse,
+            "description": "Saved view name conflict or limit reached",
+        }
+    },
 )
 async def create_saved_view(
     payload: SavedViewCreate,
@@ -77,8 +83,14 @@ async def create_saved_view(
     "/{view_id}",
     response_model=SavedViewItem,
     responses={
-        404: {"description": "Saved view not found"},
-        409: {"description": "Saved view name conflict"},
+        404: {
+            "model": SavedViewErrorResponse,
+            "description": "Saved view not found",
+        },
+        409: {
+            "model": SavedViewErrorResponse,
+            "description": "Saved view name conflict",
+        },
     },
 )
 async def update_saved_view(
@@ -108,7 +120,12 @@ async def update_saved_view(
 @router.delete(
     "/{view_id}",
     response_model=SavedViewDeleteResponse,
-    responses={404: {"description": "Saved view not found"}},
+    responses={
+        404: {
+            "model": SavedViewErrorResponse,
+            "description": "Saved view not found",
+        }
+    },
 )
 async def delete_saved_view(
     view_id: int,
