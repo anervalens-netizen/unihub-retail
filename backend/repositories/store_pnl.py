@@ -175,11 +175,21 @@ class StorePnlRepository:
                         PARTITION BY company_name, period, site_code ORDER BY priority DESC
                     ) AS preference_rank
                     FROM sales_sources
+                ), selected_site_scope AS (
+                    SELECT CASE
+                        WHEN $4::text IS NULL THEN NULL
+                        ELSE EXISTS (
+                            SELECT 1
+                            FROM store_pnl_site_links link
+                            WHERE link.site_code = $4
+                        )
+                    END AS is_linked
                 )
                 SELECT sales.period,
                        SUM(sales.amount) AS gross_amount
                 FROM preferred_sales sales
                 JOIN stores s ON s.site_code = sales.site_code
+                CROSS JOIN selected_site_scope scope
                 WHERE sales.preference_rank = 1
                   AND sales.period BETWEEN $1 AND $2
                   AND (
@@ -190,7 +200,13 @@ class StorePnlRepository:
                       OR (
                           $4::text IS NOT NULL
                           AND sales.site_code = $4
-                          AND ($5::text IS NULL OR sales.company_name = $5)
+                          AND (
+                              scope.is_linked
+                              OR (
+                                  NOT scope.is_linked
+                                  AND sales.company_name = COALESCE($5, $3)
+                              )
+                          )
                       )
                   )
                   AND ($6::text IS NULL OR s.regional = $6)
@@ -274,22 +290,30 @@ class StorePnlRepository:
                                    p.canonical_site_code,
                                    p.company_name || ':' || p.source_site_code
                                )
-                           END)::integer AS store_count,
-                           COUNT(DISTINCT p.period)::integer AS month_count
+                           END)::integer AS year_store_count,
+                           COUNT(DISTINCT p.period)::integer AS year_month_count
                     FROM preferred_rows p
                     GROUP BY EXTRACT(YEAR FROM p.period)
                 )
                 SELECT EXTRACT(YEAR FROM p.period)::integer AS year,
                        p.category_code,
                        SUM(p.amount) AS amount,
-                       coverage.store_count,
-                       coverage.month_count,
+                       COUNT(DISTINCT CASE
+                           WHEN p.source_site_code <> '__FINANCE_UNALLOCATED__'
+                           THEN COALESCE(
+                               p.canonical_site_code,
+                               p.company_name || ':' || p.source_site_code
+                           )
+                       END)::integer AS store_count,
+                       COUNT(DISTINCT p.period)::integer AS month_count,
+                       coverage.year_store_count,
+                       coverage.year_month_count,
                        BOOL_OR(p.data_kind = 'estimated') AS is_estimated
                 FROM preferred_rows p
                 JOIN annual_coverage coverage
                   ON coverage.year = EXTRACT(YEAR FROM p.period)::integer
                 GROUP BY EXTRACT(YEAR FROM p.period), p.category_code,
-                         coverage.store_count, coverage.month_count
+                         coverage.year_store_count, coverage.year_month_count
                 ORDER BY year, p.category_code
                 """,
                 company,
