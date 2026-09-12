@@ -47,10 +47,9 @@ FLOW_COOKIE_PREFIX = "__Host-unihub_oidc_"
 SESSION_PREFIX = "unihub:retail:session:v1:"
 LOCK_PREFIX = "unihub:retail:session-refresh:v1:"
 TOKEN_EXCHANGE_TIMEOUT_SECONDS = 15.0
-# Refresh is a distributed single-flight operation.  The provider client still
-# has its own 15s transport bound, but the refresh owner is cancelled earlier
-# so one slow identity-provider call cannot consume the complete browser API
-# timeout.  Non-owners fail fast and retry instead of queueing behind the lock.
+# Refresh is a distributed single-flight operation: the owner is cancelled before the
+# provider's own 15s transport bound so one slow call cannot consume the complete browser
+# API timeout, while non-owners fail fast and retry instead of queueing behind the lock.
 REFRESH_OWNER_TIMEOUT_SECONDS = 10.0
 REFRESH_LOCK_TTL_SECONDS = 15
 REFRESH_WAIT_SECONDS = 1.0
@@ -105,8 +104,6 @@ class ConcurrentSessionRefreshUnavailable(RuntimeError):
     """A waiter must not destroy state owned by an in-flight refresh."""
 
 
-
-
 _settings: SessionSettings | None = None
 _redis: Redis | None = None
 _cipher: Fernet | None = None
@@ -119,7 +116,6 @@ def _bounded_text(value: str | None, maximum: int) -> str:
     if not value or value != value.strip() or len(value) > maximum or any(not char.isprintable() for char in value):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid authentication response")
     return value
-
 
 
 def session_config_errors(production: bool) -> list[str]:
@@ -305,7 +301,7 @@ async def _wait_for_distributed_refresh(
     raise ConcurrentSessionRefreshUnavailable
 
 
-async def _refresh_distributed(session_id: str, record: dict[str, Any]) -> dict[str, Any] | None:
+async def _refresh_distributed(session_id: str, record: dict[str, Any] | None) -> dict[str, Any] | None:
     settings, client, cipher, http = _runtime()
     lock_key = LOCK_PREFIX + session_id
     lock_token = secrets.token_urlsafe(24).encode("ascii")
@@ -315,6 +311,10 @@ async def _refresh_distributed(session_id: str, record: dict[str, Any]) -> dict[
     owner_started = time.monotonic()
     try:
         async with asyncio.timeout(REFRESH_OWNER_TIMEOUT_SECONDS):
+            # Snapshot only: a session revoked while we waited for the lock must not be rebuilt.
+            record = _unpack(cipher, await client.get(SESSION_PREFIX + session_id))
+            if record is None:
+                return None
             refresh_token = record.get("refresh_token")
             if not isinstance(refresh_token, str) or not refresh_token:
                 return None
@@ -559,14 +559,22 @@ async def session_status(request: Request) -> JSONResponse:
     return JSONResponse(payload.model_dump(), headers={"Cache-Control": "no-store"})
 
 
-# Logout revokes the stored session directly and never refreshes: a failed refresh can
-# leave the session alive, and an in-flight one can rewrite the record after our delete
-# and resurrect it. Holding the shared refresh lock closes both windows.
+def _logout_response(settings: SessionSettings, cookie_name: str) -> JSONResponse:
+    url = settings.logout_url + "?" + urlencode({"post_logout_redirect_uri": settings.public_origin + "/"})
+    response = JSONResponse(SessionLogoutResponse(logout_url=url).model_dump())
+    response.delete_cookie(cookie_name, path="/", secure=settings.secure_cookie, httponly=True, samesite="lax")
+    return response
+
+
+# Logout revokes directly and never refreshes: a failed refresh can leave the session alive,
+# and one already in flight can rewrite the record after our delete. The lock fences both.
 @router.post("/logout", response_model=SessionLogoutResponse)
 async def session_logout(request: Request) -> JSONResponse:
     settings, client, cipher, _ = _runtime()
     cookie_name = _cookie_name(settings)
     session_id = request.cookies.get(cookie_name, "")
+    if not session_id:  # Already dropped (lost response body): retry still ends the IdP session.
+        return _logout_response(settings, cookie_name)
     if not OPAQUE_RE.fullmatch(session_id):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Authentication required")
     session_key, lock_key = SESSION_PREFIX + session_id, LOCK_PREFIX + session_id
@@ -576,24 +584,16 @@ async def session_logout(request: Request) -> JSONResponse:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Session logout temporarily unavailable",
                             headers={"Retry-After": str(REFRESH_RETRY_AFTER_SECONDS)})
     try:
-        packed = await client.get(session_key)
-        record = _unpack(cipher, packed)
-        if record is None:  # Missing or unreadable: local revocation already stands.
-            await client.delete(session_key)
-        else:
+        record = _unpack(cipher, await client.get(session_key))
+        if record is not None:
             supplied = request.headers.get("X-CSRF-Token", "")
             expected = record.get("csrf", "")
             if not isinstance(expected, str) or not hmac.compare_digest(supplied, expected):
                 raise HTTPException(status.HTTP_403_FORBIDDEN, "CSRF validation failed")
-            await client.delete(session_key)
-        payload = SessionLogoutResponse(
-            logout_url=settings.logout_url + "?" + urlencode({"post_logout_redirect_uri": settings.public_origin + "/"}),
-        )
-        response = JSONResponse(payload.model_dump())
-        response.delete_cookie(cookie_name, path="/", secure=settings.secure_cookie, httponly=True, samesite="lax")
-        return response
+        await client.delete(session_key)  # Missing or unreadable: revocation already stands.
     finally:
         try:
             await _release_refresh_lock(client, lock_key, lock_token)
         except Exception:  # noqa: BLE001 - an expiring lock must not mask a completed revocation
             logger.warning("Session logout lock release failed")
+    return _logout_response(settings, cookie_name)

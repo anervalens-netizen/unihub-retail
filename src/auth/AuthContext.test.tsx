@@ -206,6 +206,45 @@ describe('AuthProvider logout confirmation', () => {
     expect(onSessionCleared).toHaveBeenCalledOnce();
   });
 
+  it('completes logout on an idempotent retry when the revoked session lost its success body', async () => {
+    const onSessionCleared = vi.fn();
+    const logoutUrl = 'https://auth.example.invalid/application/o/unihub-retail/end-session/?post_logout_redirect_uri=x';
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    fetchMock
+      .mockResolvedValueOnce(sessionResponse())
+      .mockResolvedValueOnce(new Response('', { status: 200 }))
+      .mockResolvedValueOnce(logoutResponse({ logout_url: logoutUrl }));
+
+    renderHarness(onSessionCleared);
+    expect(await screen.findByTestId('auth-state')).toHaveTextContent('autentificat');
+
+    // The server revoked the session and deleted the cookie, but the body never arrived.
+    await clickLogout();
+
+    await waitFor(() => expect(screen.getByTestId('logout-error')).toHaveTextContent(LOGOUT_UNCONFIRMED_MESSAGE));
+    expect(screen.getByTestId('auth-state')).toHaveTextContent('autentificat');
+    expect(assignMock).not.toHaveBeenCalled();
+
+    // The cookie is gone, so the idempotent retry still returns the provider logout URL.
+    await clickLogout();
+
+    await waitFor(() => expect(assignMock).toHaveBeenCalledWith(logoutUrl));
+    expect(assignMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[2]?.[1]).toMatchObject({
+      method: 'POST',
+      headers: { 'X-CSRF-Token': 'csrf' },
+    });
+    expect(screen.getByTestId('logout-error')).toHaveTextContent('fără eroare');
+    expect(screen.getByTestId('auth-state')).toHaveTextContent('anonim');
+    expect(onSessionCleared).toHaveBeenCalledOnce();
+
+    // The CSRF token is dropped only after the confirmation, so the next attempt has none.
+    fetchMock.mockResolvedValueOnce(logoutResponse({ logout_url: logoutUrl }));
+    await clickLogout();
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(4));
+    expect(fetchMock.mock.calls[3]?.[1]?.headers).toEqual({});
+  });
+
   it('never rejects towards the caller when logout cannot be confirmed', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
     fetchMock.mockResolvedValueOnce(sessionResponse()).mockRejectedValue(new TypeError('offline'));

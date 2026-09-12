@@ -111,6 +111,16 @@ def _request(
     })
 
 
+def _request_without_session_cookie() -> Request:
+    """A browser that already dropped the session cookie kept its unrelated cookies."""
+    return Request({
+        "type": "http", "method": "POST", "path": "/", "query_string": b"",
+        "headers": [(b"cookie", b"__Host-unihub_oidc_flow_unrelated=kept")],
+        "client": ("127.0.0.1", 1), "scheme": "https",
+        "server": ("retail.example.invalid", 443),
+    })
+
+
 def _flow_state(response: session_auth.RedirectResponse) -> str:
     return parse_qs(urlparse(response.headers["location"]).query)["state"][0]
 
@@ -936,15 +946,22 @@ async def test_logout_is_idempotent_when_the_session_is_already_revoked(
 
 
 @pytest.mark.anyio
-async def test_logout_rejects_missing_or_non_opaque_session_cookie() -> None:
+async def test_logout_rejects_a_non_empty_non_opaque_session_cookie() -> None:
+    """Only a genuinely dropped cookie is idempotent: junk still fails closed."""
     redis = FakeRedis()
     _install(redis)
 
-    for label, cookie in (("empty", ""), ("short", "short"), ("illegal", "!" * 43)):
+    for label, cookie in (
+        ("short", "short"),
+        ("illegal", "!" * 43),
+        ("dots", "." * 43),
+        ("too long", "x" * 44),
+    ):
         with pytest.raises(session_auth.HTTPException) as rejected:
             await session_auth.session_logout(_request("POST", cookie, "csrf"))
         assert rejected.value.status_code == 401, label
-        assert not any(key.startswith(session_auth.LOCK_PREFIX) for key in redis.values), label
+        assert str(rejected.value.detail) == "Authentication required", label
+        assert not redis.values, label
 
 
 @pytest.mark.anyio
@@ -969,3 +986,68 @@ async def test_a_logged_out_session_cannot_be_revived_by_a_later_request(
     assert refresh.await_count == 0
     assert http.posts == []
     assert not any(key.startswith(session_auth.SESSION_PREFIX) for key in redis.values)
+
+
+@pytest.mark.anyio
+async def test_logout_without_a_session_cookie_is_an_idempotent_success(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A retry whose cookie was already deleted must still end the provider session."""
+    redis, http = FakeRedis(), FakeHttp({"access_token": "rotated-access"})
+    _install(redis, http)
+    refresh = AsyncMock(return_value=None)
+    distributed = AsyncMock(return_value=None)
+    monkeypatch.setattr(session_auth, "_refresh", refresh)
+    monkeypatch.setattr(session_auth, "_refresh_distributed", distributed)
+
+    for label, request in (
+        ("absent", _request_without_session_cookie()),
+        ("empty", _request("POST", "", "csrf")),
+        ("stripped", _request("POST", " ", "csrf")),
+    ):
+        response = await session_auth.session_logout(request)
+
+        assert response.status_code == 200, label
+        assert json.loads(bytes(response.body))["logout_url"] == LOGOUT_URL, label
+        cookie = response.headers["set-cookie"]
+        assert cookie.startswith(session_auth.COOKIE_NAME + "="), label
+        assert "Max-Age=0" in cookie and "HttpOnly" in cookie and "SameSite=lax" in cookie, label
+        assert not redis.values, label
+
+    assert refresh.await_count == 0
+    assert distributed.await_count == 0
+    assert http.posts == []
+
+
+@pytest.mark.anyio
+async def test_stale_refresh_snapshot_cannot_resurrect_a_logged_out_session(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Codex P1: a refresh holding a pre-logout snapshot must never write it back."""
+    redis, http = FakeRedis(), FakeHttp({"access_token": "rotated-access"})
+    _install(redis, http)
+    session_id = "R" * 43
+    session_key = session_auth.SESSION_PREFIX + session_id
+    lock_key = session_auth.LOCK_PREFIX + session_id
+    await session_auth._store_session(session_id, _session_record(expires_in=-600))
+    stale_record = session_auth._unpack(session_auth._cipher, await redis.get(session_key))  # type: ignore[arg-type]
+    assert stale_record is not None and stale_record["refresh_token"] == "refresh-token"
+    now = int(time.time())
+    verify = AsyncMock(return_value=AuthClaims(
+        "subject", "user@example.invalid", "user", ["unihub-manager"],
+        "issuer", "retail", now, now + 600, {},
+    ))
+    monkeypatch.setattr(session_auth, "verify_oidc_token", verify)
+
+    revoked = await session_auth.session_logout(_request("POST", session_id, "csrf"))
+    assert revoked.status_code == 200
+    assert session_key not in redis.values
+
+    # The suspended refresh now acquires the lock it was waiting for with its stale snapshot.
+    result = await session_auth._refresh_distributed(session_id, stale_record)
+
+    assert result is None
+    assert http.posts == []
+    assert verify.await_count == 0
+    assert session_key not in redis.values
+    assert lock_key not in redis.values
