@@ -20,6 +20,7 @@ TEST_ESTIMATED_SITE = "PNLPREF-ESTIMATED"
 UNALLOCATED_SOURCE = "__FINANCE_UNALLOCATED__"
 TEST_OLD_COMPANY_PERIOD = date(2096, 7, 1)
 TEST_PERIOD = date(2097, 7, 1)
+TEST_SALES_MONTH = "2097-07"
 
 pytestmark = pytest.mark.skipif(
     os.getenv("UNIHUB_TEST_DATABASE") != "1",
@@ -47,8 +48,13 @@ async def _reset_fixture() -> None:
             [TEST_SITE, TEST_OLD_SOURCE, TEST_OLD_COMPANY_SOURCE, TEST_ESTIMATED_SITE],
         )
         await connection.execute(
+            "DELETE FROM historical_monthly_sales WHERE site_code = ANY($1::text[]) AND import_month = $2",
+            [TEST_SITE, TEST_UNMAPPED_SOURCE],
+            TEST_SALES_MONTH,
+        )
+        await connection.execute(
             "DELETE FROM stores WHERE site_code = ANY($1::text[])",
-            [TEST_SITE, TEST_ESTIMATED_SITE],
+            [TEST_SITE, TEST_ESTIMATED_SITE, TEST_UNMAPPED_SOURCE],
         )
 
 
@@ -384,5 +390,187 @@ async def test_rows_prefer_actual_over_estimate_for_same_business_key() -> None:
                 "is_estimated": True,
             }
         ]
+    finally:
+        await _reset_fixture()
+
+
+@pytest.mark.anyio
+async def test_sales_rows_align_with_pnl_reconciliation_population() -> None:
+    """Retail sales must use the same population rules as the P&L rows."""
+    await _reset_fixture()
+    pool = await get_pool()
+    repository = StorePnlRepository(pool)
+    try:
+        async with pool.acquire() as connection:
+            await connection.executemany(
+                """
+                INSERT INTO stores (
+                    site_code, locatie, firma, regional, asm,
+                    first_seen_month, last_seen_month
+                ) VALUES ($1, $2, 'Mobicell', $3, 'P&L Test ASM', '2097-07', '2097-07')
+                """,
+                [
+                    (TEST_SITE, "P&L precedence test", "P&L Test Region"),
+                    (TEST_UNMAPPED_SOURCE, "P&L unmapped sales test", "P&L Unmapped Region"),
+                ],
+            )
+            await connection.executemany(
+                """
+                INSERT INTO historical_monthly_sales (
+                    site_code, import_month, firma, total_value,
+                    source_file, source_store_name
+                ) VALUES ($1, $2, $3, $4, $5, $6)
+                """,
+                [
+                    (
+                        TEST_SITE,
+                        TEST_SALES_MONTH,
+                        "Mobicell SRL",
+                        Decimal("300.00"),
+                        "sales-mobicell.xlsx",
+                        "P&L precedence test",
+                    ),
+                    (
+                        TEST_SITE,
+                        TEST_SALES_MONTH,
+                        "Mobiup SRL",
+                        Decimal("50.00"),
+                        "sales-mobiup.xlsx",
+                        "P&L previous-company history",
+                    ),
+                    (
+                        TEST_UNMAPPED_SOURCE,
+                        TEST_SALES_MONTH,
+                        "Mobicell SRL",
+                        Decimal("10.00"),
+                        "sales-unmapped-mobicell.xlsx",
+                        "P&L unmapped sales test",
+                    ),
+                    (
+                        TEST_UNMAPPED_SOURCE,
+                        TEST_SALES_MONTH,
+                        "Mobiup SRL",
+                        Decimal("20.00"),
+                        "sales-unmapped-mobiup.xlsx",
+                        "P&L unmapped sales test",
+                    ),
+                ],
+            )
+            # The canonical site links both companies, so P&L revenue already
+            # consolidates them; retail sales must report the same population.
+            await connection.executemany(
+                """
+                INSERT INTO store_pnl_site_links (
+                    company_name, source_site_code, source_location_name,
+                    site_code, match_method, confidence, reviewed
+                ) VALUES ($1, $2, $3, $4, $5, 1, true)
+                """,
+                [
+                    ("Mobicell", TEST_SITE, "P&L precedence test", TEST_SITE, "exact_code"),
+                    (
+                        "Mobiup",
+                        TEST_OLD_COMPANY_SOURCE,
+                        "P&L previous-company history",
+                        TEST_SITE,
+                        "manual_alias",
+                    ),
+                ],
+            )
+            await connection.executemany(
+                """
+                INSERT INTO store_pnl_monthly (
+                    company_name, period, source_site_code,
+                    source_location_name, category_code, category_name,
+                    amount, data_kind, source_file, source_sha256
+                ) VALUES ($1, $2, $3, $4, 'v1', 'Revenue', $5, 'actual', $6, $7)
+                """,
+                [
+                    (
+                        "Mobicell",
+                        TEST_PERIOD,
+                        TEST_SITE,
+                        "P&L precedence test",
+                        Decimal("125.00"),
+                        "pnl-mobicell.xlsx",
+                        "p" * 64,
+                    ),
+                    (
+                        "Mobiup",
+                        TEST_PERIOD,
+                        TEST_OLD_COMPANY_SOURCE,
+                        "P&L previous-company history",
+                        Decimal("77.00"),
+                        "pnl-mobiup.xlsx",
+                        "q" * 64,
+                    ),
+                ],
+            )
+
+        # A. A canonical mapped site consolidates both companies, exactly like rows().
+        consolidated = await repository.sales_rows(
+            TEST_PERIOD,
+            TEST_PERIOD,
+            "Mobicell",
+            TEST_SITE,
+            None,
+            None,
+        )
+        assert [row["gross_amount"] for row in consolidated] == [Decimal("350.00")]
+
+        # B. Without site_code the company filter still applies (no cross-company leak).
+        company_only = await repository.sales_rows(
+            TEST_PERIOD,
+            TEST_PERIOD,
+            "Mobicell",
+            None,
+            None,
+            None,
+        )
+        assert [row["gross_amount"] for row in company_only] == [Decimal("310.00")]
+
+        # C. Unlinked collision: site_company remains the explicit disambiguator.
+        unlinked_mobicell = await repository.sales_rows(
+            TEST_PERIOD,
+            TEST_PERIOD,
+            None,
+            TEST_UNMAPPED_SOURCE,
+            "Mobicell",
+            None,
+        )
+        assert [row["gross_amount"] for row in unlinked_mobicell] == [Decimal("10.00")]
+
+        unlinked_mobiup = await repository.sales_rows(
+            TEST_PERIOD,
+            TEST_PERIOD,
+            None,
+            TEST_UNMAPPED_SOURCE,
+            "Mobiup",
+            None,
+        )
+        assert [row["gross_amount"] for row in unlinked_mobiup] == [Decimal("20.00")]
+
+        # D. Regional scoping is unchanged.
+        assert await repository.sales_rows(
+            TEST_PERIOD,
+            TEST_PERIOD,
+            "Mobicell",
+            TEST_SITE,
+            None,
+            "P&L Unmapped Region",
+        ) == []
+
+        # E. The reconciliation block reports the same retail population as P&L.
+        overview = await StorePnlService(repository).overview(
+            TEST_PERIOD,
+            TEST_PERIOD,
+            "Mobicell",
+            TEST_SITE,
+        )
+        assert len(overview["reconciliation"]) == 1
+        reconciliation = overview["reconciliation"][0]
+        assert reconciliation["month"] == "2097-07"
+        assert reconciliation["pnl_revenue"] == Decimal("202.00")
+        assert reconciliation["retail_sales_gross"] == Decimal("350.00")
+        assert reconciliation["retail_sales_gross"] == consolidated[0]["gross_amount"]
     finally:
         await _reset_fixture()
