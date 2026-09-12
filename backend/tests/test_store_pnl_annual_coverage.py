@@ -97,7 +97,13 @@ async def test_annual_counts_cover_union_across_disjoint_categories() -> None:
         year_rows = [row for row in rows if row["year"] == 2095]
 
         assert {row["category_code"] for row in year_rows} == {"v1", "c1"}
-        assert {(row["store_count"], row["month_count"]) for row in year_rows} == {(2, 2)}
+        # Preserve the existing category-local repository contract.
+        assert {(row["store_count"], row["month_count"]) for row in year_rows} == {(1, 1)}
+        # The API-facing service uses the true year-level union instead.
+        assert {
+            (row["year_store_count"], row["year_month_count"])
+            for row in year_rows
+        } == {(2, 2)}
 
         annual = await StorePnlService(repository).annual("Mobicell", None)
         assert annual == [
