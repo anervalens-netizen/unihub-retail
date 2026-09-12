@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from decimal import Decimal
+from typing import Any
 
 from services.target_calculator.serialization import regional_summary
 
@@ -200,7 +201,7 @@ def test_regional_summary_falls_back_to_history_exactly() -> None:
 def test_regional_summary_empty_inputs_and_last_truthy_month_semantics() -> None:
     assert regional_summary([]) == []
 
-    rows = [
+    rows: list[dict[str, Any]] = [
         {
             "regional": "Regional A",
             "floor_target": None,

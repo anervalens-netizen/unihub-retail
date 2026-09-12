@@ -31,6 +31,7 @@ from services.dashboard.queries import (
     _fetch_regional_stats,
     _fetch_store_stats_rows,
 )
+from services.dashboard_service import DashboardService
 from services.receipt_identity import canonical_receipt_identity_sql
 from services.reporting_refresh_month import rebuild_reporting_month
 
@@ -73,13 +74,11 @@ _EXPECTED_MONTH_RETURNS: dict[tuple[str, str], int] = {
 }
 
 
-class _HistoryServiceShim:
-    def __init__(self, pool: asyncpg.Pool) -> None:
-        self.repo = DashboardRepository(pool)
-        self.pool = pool
+class _HistoryServiceShim(DashboardService):
+    """History-only double: the real service surface bound to the test pool."""
 
-    def _pool_for(self, _deadline: object | None) -> asyncpg.Pool:
-        return self.pool
+    def __init__(self, pool: asyncpg.Pool) -> None:
+        super().__init__(DashboardRepository(pool), pool)
 
 
 async def _cleanup(conn: asyncpg.Connection) -> None:
