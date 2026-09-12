@@ -262,25 +262,34 @@ class StorePnlRepository:
                         OR (
                             n.linked_site_code IS NULL
                             AND n.source_site_code = $2
-                          AND n.company_name = COALESCE($3, $1)
+                            AND n.company_name = COALESCE($3, $1)
                         )
                     )
                     AND ($4::text IS NULL OR n.regional = $4)
+                ), annual_coverage AS (
+                    SELECT EXTRACT(YEAR FROM p.period)::integer AS year,
+                           COUNT(DISTINCT CASE
+                               WHEN p.source_site_code <> '__FINANCE_UNALLOCATED__'
+                               THEN COALESCE(
+                                   p.canonical_site_code,
+                                   p.company_name || ':' || p.source_site_code
+                               )
+                           END)::integer AS store_count,
+                           COUNT(DISTINCT p.period)::integer AS month_count
+                    FROM preferred_rows p
+                    GROUP BY EXTRACT(YEAR FROM p.period)
                 )
                 SELECT EXTRACT(YEAR FROM p.period)::integer AS year,
                        p.category_code,
                        SUM(p.amount) AS amount,
-                       COUNT(DISTINCT CASE
-                           WHEN p.source_site_code <> '__FINANCE_UNALLOCATED__'
-                           THEN COALESCE(
-                               p.canonical_site_code,
-                               p.company_name || ':' || p.source_site_code
-                           )
-                       END)::integer AS store_count,
-                       COUNT(DISTINCT p.period)::integer AS month_count,
+                       coverage.store_count,
+                       coverage.month_count,
                        BOOL_OR(p.data_kind = 'estimated') AS is_estimated
                 FROM preferred_rows p
-                GROUP BY EXTRACT(YEAR FROM p.period), p.category_code
+                JOIN annual_coverage coverage
+                  ON coverage.year = EXTRACT(YEAR FROM p.period)::integer
+                GROUP BY EXTRACT(YEAR FROM p.period), p.category_code,
+                         coverage.store_count, coverage.month_count
                 ORDER BY year, p.category_code
                 """,
                 company,
