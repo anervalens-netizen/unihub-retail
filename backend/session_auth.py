@@ -42,6 +42,8 @@ from session_settings import (
 
 COOKIE_NAME = "__Host-unihub_session"
 FLOW_PREFIX = "unihub:retail:oidc-flow:v1:"
+FLOW_TTL_SECONDS = 600
+FLOW_COOKIE_PREFIX = "__Host-unihub_oidc_"
 SESSION_PREFIX = "unihub:retail:session:v1:"
 LOCK_PREFIX = "unihub:retail:session-refresh:v1:"
 TOKEN_EXCHANGE_TIMEOUT_SECONDS = 15.0
@@ -103,8 +105,6 @@ class ConcurrentSessionRefreshUnavailable(RuntimeError):
     """A waiter must not destroy state owned by an in-flight refresh."""
 
 
-
-
 _settings: SessionSettings | None = None
 _redis: Redis | None = None
 _cipher: Fernet | None = None
@@ -117,7 +117,6 @@ def _bounded_text(value: str | None, maximum: int) -> str:
     if not value or value != value.strip() or len(value) > maximum or any(not char.isprintable() for char in value):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid authentication response")
     return value
-
 
 
 def session_config_errors(production: bool) -> list[str]:
@@ -137,6 +136,15 @@ def session_config_errors(production: bool) -> list[str]:
 
 def _cookie_name(settings: SessionSettings) -> str:
     return COOKIE_NAME if settings.secure_cookie else "unihub_session_dev"
+
+
+def _flow_cookie_name(settings: SessionSettings, state: str) -> str:
+    prefix = FLOW_COOKIE_PREFIX if settings.secure_cookie else "unihub_oidc_flow_"
+    return prefix + state
+
+
+def _flow_binding_digest(binding: str) -> str:
+    return hashlib.sha256(binding.encode("ascii")).hexdigest()
 
 
 async def init_session_runtime() -> None:
@@ -208,6 +216,29 @@ def _unpack(cipher: Fernet, payload: bytes | None) -> dict[str, Any] | None:
     except (InvalidToken, UnicodeError, json.JSONDecodeError):
         return None
     return result if isinstance(result, dict) else None
+
+
+async def _consume_bound_flow(
+    request: Request,
+    settings: SessionSettings,
+    client: Redis,
+    cipher: Fernet,
+    state: str,
+) -> dict[str, Any]:
+    binding = request.cookies.get(_flow_cookie_name(settings, state), "")
+    if not OPAQUE_RE.fullmatch(binding):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid authentication response")
+    key = FLOW_PREFIX + state
+    flow = _unpack(cipher, await client.get(key))
+    expected = flow.get("browser_binding_hash") if flow is not None else None
+    digest = _flow_binding_digest(binding)
+    if not isinstance(expected, str) or not hmac.compare_digest(digest, expected):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid authentication response")
+    consumed = _unpack(cipher, await client.getdel(key))
+    consumed_expected = consumed.get("browser_binding_hash") if consumed is not None else None
+    if not isinstance(consumed_expected, str) or not hmac.compare_digest(digest, consumed_expected):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid authentication response")
+    return consumed
 
 
 async def _store_session(session_id: str, payload: dict[str, Any]) -> None:
@@ -386,8 +417,6 @@ async def authenticate_session(request: Request) -> AuthClaims:
                     "Authentication required",
                 )
             else:
-                # Another owner changed the ciphertext after our read. Never
-                # delete that state; consume it only when it is now valid.
                 current = _unpack(cipher, await client.get(session_key))
                 if (
                     current is not None
@@ -417,16 +446,33 @@ router = APIRouter(
 @router.get("/login")
 async def session_login() -> RedirectResponse:
     settings, client, cipher, _ = _runtime()
-    state, nonce, verifier = secrets.token_urlsafe(32), secrets.token_urlsafe(32), secrets.token_urlsafe(64)
+    state = secrets.token_urlsafe(32)
+    nonce = secrets.token_urlsafe(32)
+    verifier = secrets.token_urlsafe(64)
+    browser_binding = secrets.token_urlsafe(32)
     challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode("ascii")).digest()).rstrip(b"=").decode("ascii")
-    await client.set(FLOW_PREFIX + state, _pack(cipher, {"nonce": nonce, "verifier": verifier}), ex=600, nx=True)
+    await client.set(
+        FLOW_PREFIX + state,
+        _pack(cipher, {
+            "nonce": nonce,
+            "verifier": verifier,
+            "browser_binding_hash": _flow_binding_digest(browser_binding),
+        }),
+        ex=FLOW_TTL_SECONDS,
+        nx=True,
+    )
     query = urlencode({
         "client_id": settings.client_id, "redirect_uri": settings.redirect_uri,
         "response_type": "code", "scope": "openid profile email offline_access",
         "state": state, "nonce": nonce, "code_challenge": challenge,
         "code_challenge_method": "S256",
     })
-    return RedirectResponse(f"{settings.authorize_url}?{query}", status_code=302)
+    result = RedirectResponse(f"{settings.authorize_url}?{query}", status_code=302)
+    result.set_cookie(
+        _flow_cookie_name(settings, state), browser_binding, max_age=FLOW_TTL_SECONDS,
+        secure=settings.secure_cookie, httponly=True, samesite="lax", path="/",
+    )
+    return result
 
 
 async def session_callback(request: Request) -> RedirectResponse:
@@ -435,9 +481,7 @@ async def session_callback(request: Request) -> RedirectResponse:
     state = _bounded_text(request.query_params.get("state"), 128)
     if not OPAQUE_RE.fullmatch(state):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid authentication response")
-    flow = _unpack(cipher, await client.getdel(FLOW_PREFIX + state))
-    if flow is None:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid authentication response")
+    flow = await _consume_bound_flow(request, settings, client, cipher, state)
     try:
         response = await http.post(settings.token_url, data={
             "grant_type": "authorization_code", "code": code,
@@ -479,6 +523,10 @@ async def session_callback(request: Request) -> RedirectResponse:
     result.set_cookie(
         _cookie_name(settings), session_id, max_age=settings.session_ttl_seconds,
         secure=settings.secure_cookie, httponly=True, samesite="lax", path="/",
+    )
+    result.delete_cookie(
+        _flow_cookie_name(settings, state), path="/", secure=settings.secure_cookie,
+        httponly=True, samesite="lax",
     )
     return result
 
