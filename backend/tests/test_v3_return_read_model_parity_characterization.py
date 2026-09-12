@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from datetime import date
 import os
+from typing import TypedDict, cast
 
 import asyncpg
 import pytest
@@ -27,6 +28,7 @@ from services.dashboard.queries import (
     _fetch_store_stats_rows,
 )
 from services.dashboard.utils import _expand_current_manager_scope
+from services.dashboard_service import DashboardService
 from services.filters import build_scoped_params, scoped_clauses
 from services.receipt_identity import canonical_receipt_identity_sql
 from services.reporting_refresh_month import _REPORTING_MONTH_SQL_5
@@ -50,13 +52,11 @@ _AGENT_B = "V3 Lot22 Agent B"
 _AGENT_KEY_SQL = "COALESCE(NULLIF(BTRIM(st.agent), ''), '<unknown>')"
 
 
-class _HistoryServiceShim:
-    def __init__(self, pool: asyncpg.Pool) -> None:
-        self.repo = DashboardRepository(pool)
-        self.pool = pool
+class _HistoryServiceShim(DashboardService):
+    """History-only double: the real service surface bound to the test pool."""
 
-    def _pool_for(self, _deadline: object | None) -> asyncpg.Pool:
-        return self.pool
+    def __init__(self, pool: asyncpg.Pool) -> None:
+        super().__init__(DashboardRepository(pool), pool)
 
 
 async def _cleanup(conn: asyncpg.Connection) -> None:
@@ -218,6 +218,24 @@ async def _sale(
     )
 
 
+class _ScopeKwargs(TypedDict, total=False):
+    """Scope keywords accepted by ``_scope_parts``.
+
+    ``total=False`` mirrors the parameter defaults: each caller selects the
+    dimensions it exercises and omits the rest.  The pass-through helpers below
+    keep ``**scope: object`` so untyped case tables stay usable, and re-assert
+    this shape at the single boundary they forward to.
+    """
+
+    firma: str | None
+    regional: str | None
+    asm: str | None
+    site_code: str | None
+    agent: str | None
+    current_scope: bool
+    include_closed_stores: bool
+
+
 def _scope_parts(
     *,
     firma: str | None = None,
@@ -255,7 +273,7 @@ def _scope_parts(
 
 async def _scoped_count(conn: asyncpg.Connection, **scope: object) -> int:
     identity = canonical_receipt_identity_sql("st")
-    clauses, params = _scope_parts(**scope)
+    clauses, params = _scope_parts(**cast(_ScopeKwargs, scope))
     value = await conn.fetchval(
         f"""
         SELECT COUNT(DISTINCT {identity})::INT
@@ -269,7 +287,7 @@ async def _scoped_count(conn: asyncpg.Connection, **scope: object) -> int:
 
 
 async def _bucket_sum(conn: asyncpg.Connection, **scope: object) -> int:
-    clauses, params = _scope_parts(**scope)
+    clauses, params = _scope_parts(**cast(_ScopeKwargs, scope))
     value = await conn.fetchval(
         f"""
         WITH return_agent_day AS (

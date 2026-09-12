@@ -852,7 +852,7 @@ async def test_logout_revokes_an_expired_session_without_refreshing(
     assert distributed.await_count == 0
     assert verify.await_count == 0
     assert http.posts == []
-    assert json.loads(response.body)["logout_url"] == LOGOUT_URL
+    assert json.loads(bytes(response.body))["logout_url"] == LOGOUT_URL
     cookie = response.headers["set-cookie"]
     assert cookie.startswith(session_auth.COOKIE_NAME + "=")
     assert "Max-Age=0" in cookie and "HttpOnly" in cookie and "SameSite=lax" in cookie
@@ -944,7 +944,7 @@ async def test_logout_is_idempotent_when_the_session_is_already_revoked(
     response = await session_auth.session_logout(_request("POST", session_id, "csrf"))
 
     assert response.status_code == 200
-    assert json.loads(response.body)["logout_url"] == LOGOUT_URL
+    assert json.loads(bytes(response.body))["logout_url"] == LOGOUT_URL
     assert response.headers["set-cookie"].startswith(session_auth.COOKIE_NAME + "=")
     assert session_auth.LOCK_PREFIX + session_id not in redis.values
     assert refresh.await_count == 0
@@ -954,7 +954,7 @@ async def test_logout_is_idempotent_when_the_session_is_already_revoked(
     retried = await session_auth.session_logout(_request("POST", session_id, "csrf"))
 
     assert retried.status_code == 200
-    assert json.loads(retried.body)["logout_url"] == LOGOUT_URL
+    assert json.loads(bytes(retried.body))["logout_url"] == LOGOUT_URL
     assert session_key not in redis.values
     assert refresh.await_count == 0
 

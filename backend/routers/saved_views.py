@@ -44,7 +44,9 @@ async def list_saved_views(
     claims: AuthClaims = Depends(require_auth),
     svc: SavedViewsService = Depends(get_saved_views_service),
 ) -> SavedViewListResponse:
-    return SavedViewListResponse(items=await svc.list_views(claims.sub))
+    return SavedViewListResponse(
+        items=[SavedViewItem.model_validate(item) for item in await svc.list_views(claims.sub)]
+    )
 
 
 @router.post(

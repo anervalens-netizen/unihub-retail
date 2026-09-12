@@ -84,7 +84,7 @@ def test_migration_check_reuses_static_manifest_validators(
 
 
 def test_dirty_worktree_is_warning_not_failure(monkeypatch: Any) -> None:
-    outputs = {
+    outputs: dict[tuple[str, ...], str] = {
         ("git", "branch", "--show-current"): "v3/example\n",
         ("git", "rev-parse", "HEAD"): "a" * 40 + "\n",
         ("git", "rev-parse", "HEAD^{tree}"): "b" * 40 + "\n",

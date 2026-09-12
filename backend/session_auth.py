@@ -234,7 +234,7 @@ async def _consume_bound_flow(
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid authentication response")
     consumed = _unpack(cipher, await client.getdel(key))
     consumed_expected = consumed.get("browser_binding_hash") if consumed is not None else None
-    if not isinstance(consumed_expected, str) or not hmac.compare_digest(digest, consumed_expected):
+    if consumed is None or not isinstance(consumed_expected, str) or not hmac.compare_digest(digest, consumed_expected):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid authentication response")
     return consumed
 
