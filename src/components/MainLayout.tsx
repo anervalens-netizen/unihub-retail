@@ -44,12 +44,13 @@ interface MainLayoutProps {
   userEmail?: string;
   onLogout?: () => void;
   canAccessManagement?: boolean;
+  logoutError?: string | null;
 }
 
 export function MainLayout({
   children, activeTab, setActiveTab, isFilterOpen, setIsFilterOpen, filters, setFilters,
   filterMonth, theme, setTheme, showFilterButton = true, mgmtSubTab, savedViewState,
-  errorCount = 0, userEmail, onLogout, canAccessManagement = true,
+  errorCount = 0, userEmail, onLogout, canAccessManagement = true, logoutError = null,
 }: MainLayoutProps) {
   const filterModel = useMainLayoutFilters({
     filterMonth, filters, setFilters, activeTab, mgmtSubTab, showFilterButton,
@@ -79,6 +80,14 @@ export function MainLayout({
         userEmail={userEmail}
         onLogout={onLogout}
       />
+      {logoutError ? (
+        <div
+          role="alert"
+          className="border-b border-red-200 bg-red-50 px-4 py-2 text-sm font-medium text-red-700 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-200"
+        >
+          {logoutError}
+        </div>
+      ) : null}
       <main className={cn('min-h-0 flex-1', 'overflow-y-auto pb-24 lg:pb-6')}><div className="mx-auto w-full max-w-6xl lg:max-w-[1600px]">{children}</div></main>
     </div>
     <MobileFilterSheet

@@ -35,6 +35,7 @@ export function AppAuthenticatedView({ controller }: { controller: AppController
     mgmtSubTab={navigation.mgmtSubTab} {...savedViewProps}
     userEmail={auth.user?.profile.email ?? undefined}
     onLogout={auth.logout} canAccessManagement={controller.hasManagementAccess}
+    logoutError={auth.logoutError}
   >
     {staleBanner}
     <AppScreens controller={controller} />
