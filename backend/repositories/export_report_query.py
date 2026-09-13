@@ -43,6 +43,7 @@ def _scope_parameters(
     ]
     if not include_closed_stores:
         clauses.append("s.is_active = TRUE")
+        historical.append("s.is_active = TRUE")
     columns = {
         "firma": "s.firma", "regional": "s.regional", "asm": "s.asm",
         "site_code": "agg.site_code", "agent": "agg.agent",
