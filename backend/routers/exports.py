@@ -10,7 +10,11 @@ from starlette.background import BackgroundTask
 
 from auth import AuthClaims
 from composition import build_export_operations_service, build_exports_service
-from models import ExportOperationResponse, ExportOperationUnavailableResponse
+from models import (
+    ExportOperationResponse,
+    ExportOperationUnavailableResponse,
+    ReportingUnavailableResponse,
+)
 from permissions import require_report_export_access
 from rate_limits import REPORT_EXPORT_LIMIT, rate_limit
 from domain.export_operations import ExportOperationCapacityError
@@ -22,8 +26,19 @@ from services.export_operations import (
     ExportOperationsService,
 )
 from services.exports import ExportValidationError, ExportsService
+from services.reporting_consistency import (
+    REPORTING_GENERATION_UNSTABLE_DETAIL,
+    ReportingGenerationUnstable,
+)
 
 router = APIRouter(prefix="/api/exports", tags=["exports"])
+
+GENERATION_UNSTABLE_RESPONSE: dict[int | str, dict[str, Any]] = {
+    503: {
+        "model": ReportingUnavailableResponse,
+        "description": "Generatia de vanzari s-a modificat in timpul compunerii exportului",
+    }
+}
 
 
 class ExportFilters(StrictApiModel):
@@ -109,7 +124,7 @@ async def get_catalog(
     return ExportCatalogResponse.model_validate(svc.catalog())
 
 
-@router.post("/preview", response_model=ExportPreviewResponse)
+@router.post("/preview", response_model=ExportPreviewResponse, responses=GENERATION_UNSTABLE_RESPONSE)
 async def preview_export(
     body: ExportRequest,
     _rate_limit: None = Depends(rate_limit(REPORT_EXPORT_LIMIT)),
@@ -119,6 +134,11 @@ async def preview_export(
         return ExportPreviewResponse.model_validate(await svc.preview(body.model_dump()))
     except ExportValidationError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except ReportingGenerationUnstable:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=REPORTING_GENERATION_UNSTABLE_DETAIL,
+        ) from None
 
 
 @router.post(
@@ -130,7 +150,8 @@ async def preview_export(
                     "schema": {"type": "string", "format": "binary"}
                 }
             }
-        }
+        },
+        **GENERATION_UNSTABLE_RESPONSE,
     },
 )
 async def download_export(
@@ -147,6 +168,11 @@ async def download_export(
         artifact = await svc.build_xlsx_artifact(body.model_dump())
     except ExportValidationError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except ReportingGenerationUnstable:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=REPORTING_GENERATION_UNSTABLE_DETAIL,
+        ) from None
 
     return StreamingResponse(
         artifact.iter_chunks(),

@@ -19,6 +19,7 @@ from schemas.ai_forecast import (
     AiForecastSummary,
 )
 from repositories.ai_forecast import AiForecastRepository
+from services.reporting_consistency import load_reporting_result_once_stable
 
 
 def _delta_pct(actual: Decimal, expected: Decimal) -> Decimal | None:
@@ -80,6 +81,36 @@ class AiForecastService:
         asm: str | None,
         site_code: FilterInput,
     ) -> AiForecastResponse | None:
+        """Load one current-month forecast fenced to a single sales generation.
+
+        The latest run selection, the reporting cutoff, the aggregate actuals,
+        the expected-to-date totals and the daily series are one logical result:
+        they are rebuilt from scratch unless the sales promotion epoch held
+        across every statement of the load.
+        """
+
+        async def load_once() -> AiForecastResponse | None:
+            return await self._load_current(
+                month=month, metric=metric, firma=firma, regional=regional,
+                asm=asm, site_code=site_code,
+            )
+
+        return await load_reporting_result_once_stable(
+            read_epoch=self.repo.fetch_sales_generation_epoch,
+            load=load_once,
+            operation="AI forecast",
+        )
+
+    async def _load_current(
+        self,
+        *,
+        month: str,
+        metric: Literal["sales_value", "units"],
+        firma: str | None,
+        regional: str | None,
+        asm: str | None,
+        site_code: FilterInput,
+    ) -> AiForecastResponse | None:
         run = await self.repo.fetch_latest_run(month, metric=metric)
         if run is None:
             return None
@@ -123,6 +154,13 @@ class AiForecastService:
         asm: str | None,
         site_code: FilterInput,
     ) -> AiForecastRollingResponse | None:
+        """Load the rolling-12 view.
+
+        Deliberately not generation-fenced: ``fetch_rolling_rows`` obtains every
+        actual month in a single SQL statement, so all sales-derived data of one
+        response already comes from one snapshot. The run selection reads
+        ``ai_forecast_runs``, which is not sales-generation derived.
+        """
         start_month = add_month(month, 1)
         end_month = add_month(month, 12)
         runs = await self.repo.fetch_latest_rolling_runs(

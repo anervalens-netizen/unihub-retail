@@ -15,6 +15,12 @@ class ExportsRepository:
     def __init__(self, pool: asyncpg.Pool):
         self.pool = pool
 
+    async def fetch_sales_generation_epoch(self) -> int:
+        """Read the append-only sales promotion epoch used to fence composed exports."""
+        async with self.pool.acquire() as conn:
+            value = await conn.fetchval("SELECT public.current_sales_generation_epoch()")
+        return int(value or 0)
+
     async def fetch_incentive_product_rows(
         self,
         *,

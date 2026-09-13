@@ -1,5 +1,5 @@
 /* GENERATED FILE. Run npm run contracts:generate; do not edit manually. */
-export const RETAIL_OPENAPI_SHA256 = 'cf9a906625f4a48f899774f2abdf465d303b668e06ff5bf0b74b085794c5c357' as const; // pragma: allowlist secret
+export const RETAIL_OPENAPI_SHA256 = '4b4493290ae6d52f1ad8989643d83bab82e984df2bf1960d6fecc0f9cd3cebc2' as const; // pragma: allowlist secret
 
 export type RetailDecimal = string & { readonly __retailDecimal: unique symbol };
 
@@ -1714,6 +1714,10 @@ export interface RetailRegionalStats {
   "zile_active": number;
 }
 
+export interface RetailReportingUnavailableResponse {
+  "detail": string;
+}
+
 export interface RetailSalaryAgentSummaryPublic {
   "avg_month_count": number;
   "avg_salary": RetailDecimal;
@@ -2697,6 +2701,7 @@ export interface RetailOperationResponses {
   'get_current_ai_forecast_api_ai_forecast_current_get': {
     '200': RetailAiForecastResponse;
     '422': RetailHTTPValidationError;
+    '503': RetailReportingUnavailableResponse;
   }
 
   'get_rolling_12_ai_forecast_api_ai_forecast_rolling_12_get': {
@@ -2801,6 +2806,7 @@ export interface RetailOperationResponses {
   'download_export_api_exports_download_post': {
     '200': Blob;
     '422': RetailHTTPValidationError;
+    '503': RetailReportingUnavailableResponse;
   }
 
   'create_export_operation_api_exports_operations_post': {
@@ -2839,6 +2845,7 @@ export interface RetailOperationResponses {
   'preview_export_api_exports_preview_post': {
     '200': RetailExportPreviewResponse;
     '422': RetailHTTPValidationError;
+    '503': RetailReportingUnavailableResponse;
   }
 
   'get_available_months_api_filters_months_get': {
@@ -3343,7 +3350,7 @@ export interface RetailOperationErrors {
   'get_agents_overview_api_agents_overview_get': { '422': RetailHTTPValidationError };
   'get_agent_profile_api_agents_profile_get': { '422': RetailHTTPValidationError };
   'get_stores_coverage_api_agents_stores_coverage_get': { '422': RetailHTTPValidationError };
-  'get_current_ai_forecast_api_ai_forecast_current_get': { '422': RetailHTTPValidationError };
+  'get_current_ai_forecast_api_ai_forecast_current_get': { '422': RetailHTTPValidationError; '503': RetailReportingUnavailableResponse };
   'get_rolling_12_ai_forecast_api_ai_forecast_rolling_12_get': { '422': RetailHTTPValidationError };
   'get_focus_history_api_campaigns_history_get': { '422': RetailHTTPValidationError };
   'get_campaign_overview_api_campaigns_overview_get': { '422': RetailHTTPValidationError };
@@ -3364,13 +3371,13 @@ export interface RetailOperationErrors {
   'get_special_cards_api_dashboard_special_cards_get': { '422': RetailHTTPValidationError };
   'get_summary_api_dashboard_summary_get': { '422': RetailHTTPValidationError };
   'get_catalog_api_exports_catalog_get': Record<never, never>;
-  'download_export_api_exports_download_post': { '422': RetailHTTPValidationError };
+  'download_export_api_exports_download_post': { '422': RetailHTTPValidationError; '503': RetailReportingUnavailableResponse };
   'create_export_operation_api_exports_operations_post': { '400': void; '409': void; '422': RetailHTTPValidationError; '503': RetailExportOperationUnavailableResponse };
   'get_resumable_export_operation_api_exports_operations_resumable_get': Record<never, never>;
   'get_export_operation_api_exports_operations__operation_id__get': { '404': void; '422': RetailHTTPValidationError };
   'cancel_export_operation_api_exports_operations__operation_id__cancel_post': { '404': void; '409': void; '422': RetailHTTPValidationError };
   'download_export_operation_api_exports_operations__operation_id__download_get': { '404': void; '409': void; '410': void; '422': RetailHTTPValidationError };
-  'preview_export_api_exports_preview_post': { '422': RetailHTTPValidationError };
+  'preview_export_api_exports_preview_post': { '422': RetailHTTPValidationError; '503': RetailReportingUnavailableResponse };
   'get_available_months_api_filters_months_get': Record<never, never>;
   'get_filter_options_api_filters_options_get': { '422': RetailHTTPValidationError };
   'grile_agent_targets_diff_api_grile_agent_targets_diff_post': { '422': RetailHTTPValidationError };
@@ -3474,6 +3481,7 @@ export const RETAIL_OPERATION_ERROR_STATUSES: { readonly [Id in RetailOperationI
   ]),
   'get_current_ai_forecast_api_ai_forecast_current_get': new Set<string>([
     '422',
+    '503',
   ]),
   'get_rolling_12_ai_forecast_api_ai_forecast_rolling_12_get': new Set<string>([
     '422',
@@ -3536,6 +3544,7 @@ export const RETAIL_OPERATION_ERROR_STATUSES: { readonly [Id in RetailOperationI
   ]),
   'download_export_api_exports_download_post': new Set<string>([
     '422',
+    '503',
   ]),
   'create_export_operation_api_exports_operations_post': new Set<string>([
     '400',
@@ -3562,6 +3571,7 @@ export const RETAIL_OPERATION_ERROR_STATUSES: { readonly [Id in RetailOperationI
   ]),
   'preview_export_api_exports_preview_post': new Set<string>([
     '422',
+    '503',
   ]),
   'get_available_months_api_filters_months_get': new Set<string>([
   ]),

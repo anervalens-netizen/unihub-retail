@@ -10543,6 +10543,21 @@
         "title": "RegionalStats",
         "type": "object"
       },
+      "ReportingUnavailableResponse": {
+        "additionalProperties": false,
+        "description": "Bounded body for a composed sales-derived read that could not be fenced.",
+        "properties": {
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          }
+        },
+        "required": [
+          "detail"
+        ],
+        "title": "ReportingUnavailableResponse",
+        "type": "object"
+      },
       "SalaryAgentSummaryPublic": {
         "additionalProperties": false,
         "properties": {
@@ -17132,6 +17147,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportingUnavailableResponse"
+                }
+              }
+            },
+            "description": "Generatia de vanzari s-a modificat in timpul incarcarii forecastului"
           }
         },
         "security": [
@@ -19583,6 +19608,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportingUnavailableResponse"
+                }
+              }
+            },
+            "description": "Generatia de vanzari s-a modificat in timpul compunerii exportului"
           }
         },
         "security": [
@@ -19888,6 +19923,16 @@
               }
             },
             "description": "Validation Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportingUnavailableResponse"
+                }
+              }
+            },
+            "description": "Generatia de vanzari s-a modificat in timpul compunerii exportului"
           }
         },
         "security": [

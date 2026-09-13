@@ -6,6 +6,7 @@ from dataclasses import replace
 from datetime import date
 from pathlib import Path
 from secrets import token_urlsafe
+from typing import Any
 from urllib.parse import quote, urlsplit, urlunsplit
 from uuid import uuid4
 
@@ -21,6 +22,7 @@ from db.connection import (
 from config import DATABASE_AUTHORITY_CONTRACTS
 from scripts.bootstrap_test_db import run_isolated_migrations
 from scripts.provision_runtime_database_role import provision
+from repositories.exports import ExportsRepository
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -1561,3 +1563,678 @@ async def test_p1a_authority_matrix_and_controlled_cas_are_authenticated(
         if "unihub_schema_owner" not in existing_roles:
             await maintenance.execute("DROP ROLE IF EXISTS unihub_schema_owner")
         await maintenance.close()
+
+
+# ---------------------------------------------------------------------------
+# V3 Audit Lot 45 P1 remediation: sales-generation epoch ACL proof.
+#
+# Migration 076 (Lot 35) exposes public.current_sales_generation_epoch() to
+# unihub_web_read only. The durable export worker authenticates as
+# unihub_operations_worker (member only of unihub_operations). Lot 45 fences
+# every composed sales-derived read through the same scalar epoch, so the
+# operations authority must also receive EXECUTE without widening access to
+# the append-only ledger. Migration 077 grants exactly that.
+#
+# This block proves the migration's invariants end-to-end:
+#   1. unihub_web_read can execute the scalar function.
+#   2. unihub_operations can execute the scalar function.
+#   3. A fresh `unihub_operations_worker` LOGIN mirror inherits EXECUTE.
+#   4. unihub_operations has NO privilege on sales_generation_promotions.
+#   5. PUBLIC has NO EXECUTE on the scalar function.
+#   6. unihub_salary_export / unihub_sales_import / unihub_finance_import
+#      do not gain EXECUTE.
+#   7. The exported epoch equals the COUNT(*) of sales_generation_promotions.
+#   8. ExportsRepository.fetch_sales_generation_epoch() under the actual
+#      operations-worker LOGIN succeeds - the previous suite never exercised
+#      this code path through the real worker authority.
+
+
+async def _assert_required_execute(
+    owner: asyncpg.Connection, role: str, *, must_have: bool
+) -> None:
+    """Probe one authority's EXECUTE on the epoch through the structured probe."""
+    has = await _has_epoch_acl_grant(owner, role)
+    if must_have and not has:
+        raise AssertionError(
+            f"{role} must retain EXECUTE on current_sales_generation_epoch(); "
+            f"structured probe says False"
+        )
+    if not must_have and has:
+        raise AssertionError(
+            f"{role} must NOT receive EXECUTE on current_sales_generation_epoch(); "
+            f"structured probe says True"
+        )
+
+
+async def _function_owner_role(owner: asyncpg.Connection) -> str:
+    """Return the name of the role that owns current_sales_generation_epoch()."""
+    return await owner.fetchval(
+        "SELECT pg_catalog.pg_get_userbyid(p.proowner) "
+        "FROM pg_proc p "
+        "JOIN pg_namespace n ON n.oid = p.pronamespace "
+        "WHERE n.nspname = 'public' "
+        "AND p.proname = 'current_sales_generation_epoch'"
+    )
+
+
+async def _unexpected_named_execute_grantees(
+    owner: asyncpg.Connection, allowed_named: set[str]
+) -> list[str]:
+    acl = await _epoch_acl_catalog_summary(owner)
+    return sorted(set(acl) - {"PUBLIC"} - allowed_named)
+
+
+async def _ledger_unihub_operations_privs(
+    owner: asyncpg.Connection,
+) -> set[str]:
+    rows = await owner.fetch(
+        "SELECT a.privilege_type "
+        "FROM pg_class c "
+        "CROSS JOIN LATERAL aclexplode(c.relacl) AS a "
+        "WHERE c.oid = 'public.sales_generation_promotions'::regclass "
+        "AND a.grantee::regrole::text = 'unihub_operations'"
+    )
+    return {row["privilege_type"] for row in rows}
+
+
+async def _assert_function_acl_invariants(
+    owner: asyncpg.Connection
+) -> None:
+    """One structured ACL pass; raises AssertionError on any deviation."""
+    await _assert_required_execute(
+        owner, "unihub_web_read", must_have=True
+    )
+    await _assert_required_execute(
+        owner, "unihub_operations", must_have=True
+    )
+    for forbidden in (
+        "unihub_salary_export",
+        "unihub_sales_import",
+        "unihub_finance_import",
+    ):
+        await _assert_required_execute(
+            owner, forbidden, must_have=False
+        )
+    await _assert_required_execute(owner, "PUBLIC", must_have=False)
+
+
+async def _has_epoch_acl_grant(
+    connection: asyncpg.Connection, grantee_name: str
+) -> bool:
+    """Structured ACL probe for one (grantee, EXECUTE) pair on the epoch.
+
+    grantee_name == 'PUBLIC' means the grantee::oid = 0 pseudo-role; any other
+    name is compared via grantee::regrole to the named PG authority. PUBLIC
+    must appear as ``grantee = 0`` in the catalog, never as the literal token
+    'PUBLIC' in proacl, so we resolve via grantee::oid comparison.
+    """
+    if grantee_name == "PUBLIC":
+        sql = (
+            "SELECT EXISTS ("
+            "SELECT 1 FROM pg_proc p "
+            "JOIN pg_namespace n ON n.oid = p.pronamespace "
+            "CROSS JOIN LATERAL aclexplode(p.proacl) AS a "
+            "WHERE n.nspname = 'public' "
+            "AND p.proname = 'current_sales_generation_epoch' "
+            "AND a.grantee = 0 "
+            "AND a.privilege_type = 'EXECUTE'"
+            ")"
+        )
+    else:
+        sql = (
+            "SELECT EXISTS ("
+            "SELECT 1 FROM pg_proc p "
+            "JOIN pg_namespace n ON n.oid = p.pronamespace "
+            "CROSS JOIN LATERAL aclexplode(p.proacl) AS a "
+            "WHERE n.nspname = 'public' "
+            "AND p.proname = 'current_sales_generation_epoch' "
+            "AND a.grantee::regrole::text = $1 "
+            "AND a.privilege_type = 'EXECUTE'"
+            ")"
+        )
+    if grantee_name == "PUBLIC":
+        return bool(await connection.fetchval(sql))
+    return bool(await connection.fetchval(sql, grantee_name))
+
+
+async def _promotion_row(connection: asyncpg.Connection, month: str) -> None:
+    """Drive a real validated staged generation so the epoch advances by one.
+
+    Mirrors the Lot 45 promotion fixture used by the regression suite: the
+    CAS head is moved via a validated staged generation and the append-only
+    promotions ledger grows by one row (all migration 037 / 040 guards
+    satisfied). No direct ledger DML is performed.
+    """
+    previous_head = await connection.fetchval(
+        "SELECT snapshot_id FROM sales_generation_heads WHERE import_month = $1",
+        month,
+    )
+    snapshot_id = await connection.fetchval(
+        "INSERT INTO import_snapshots (import_month, filename, upload_date, "
+        "status, cutoff_date, previous_snapshot_id) "
+        "VALUES ($1, 'p1a-epoch-acl.xlsx', CURRENT_DATE, 'processing', $2, $3) "
+        "RETURNING id",
+        month, date.fromisoformat(f"{month}-20"), previous_head,
+    )
+    await connection.execute(
+        "INSERT INTO sales_import_stage_rows (snapshot_id, row_number, import_month, "
+        "sale_date, site_code, locatie, firma, regional, asm, bon_nr, item_code, "
+        "item_name, quantity, unit_price, total_value, agent, is_cartela, is_return) "
+        "VALUES ($1, 1, $2, $3, 'p1a_epoch_site', 'Lot45 Store', "
+        "'Firma A', 'Regional 1', 'ASM 1', 'B1', 'I1', 'Item 1', 1, 10.00, 10.00, "
+        "'Agent 1', false, false)",
+        snapshot_id, month, date.fromisoformat(f"{month}-20"),
+    )
+    await connection.execute(
+        "UPDATE import_snapshots SET status = 'completed', "
+        "stage_rows_sha256 = sales_stage_rows_sha256(id), "
+        "manifest = jsonb_build_object('stage_rows_sha256', "
+        "sales_stage_rows_sha256(id), 'generation_state', 'promoted') "
+        "WHERE id = $1",
+        snapshot_id,
+    )
+    await connection.execute(
+        "INSERT INTO sales_generation_heads (import_month, snapshot_id, revision) "
+        "VALUES ($1, $2, (SELECT COALESCE(revision, 0) + 1 FROM sales_generation_heads "
+        "WHERE import_month = $1)) "
+        "ON CONFLICT (import_month) DO UPDATE SET snapshot_id = EXCLUDED.snapshot_id, "
+        "revision = EXCLUDED.revision, updated_at = now()",
+        month, snapshot_id,
+    )
+    await connection.execute(
+        "INSERT INTO sales_generation_promotions (import_month, from_snapshot_id, "
+        "to_snapshot_id, head_revision, action, requested_by_sub) "
+        "VALUES ($1, $2, $3, "
+        "(SELECT revision FROM sales_generation_heads WHERE import_month = $1), "
+        "'promote', 'p1a:test')",
+        month, previous_head, snapshot_id,
+    )
+
+
+async def _ensure_ops_role(owner: asyncpg.Connection) -> bool:
+    """Create unihub_operations NOLOGIN if absent; return True iff we created it."""
+    existing = await owner.fetchval(
+        "SELECT 1 FROM pg_roles WHERE rolname = 'unihub_operations'"
+    )
+    if existing:
+        return False
+    await owner.execute(
+        "CREATE ROLE unihub_operations NOLOGIN NOSUPERUSER NOCREATEDB "
+        "NOCREATEROLE NOINHERIT"
+    )
+    return True
+
+
+async def _create_ops_worker_login(
+    owner: asyncpg.Connection, principal: str, password: str
+) -> None:
+    """Mirror the production durable export worker identity."""
+    await owner.execute(
+        f'CREATE ROLE "{principal}" LOGIN NOSUPERUSER NOCREATEDB '
+        f'NOCREATEROLE INHERIT PASSWORD {quote(password)!r} '
+        f'IN ROLE unihub_operations'
+    )
+
+
+def _ops_worker_url(
+    base_url: str, principal: str, password: str
+) -> tuple[str, Any]:
+    """Build the ops-worker connection URL + the parsed URL components."""
+    parsed = urlsplit(base_url)
+    url = urlunsplit(
+        (
+            parsed.scheme,
+            f"{quote(principal)}:{quote(password, safe='')}@"
+            f"{parsed.hostname}:{parsed.port}",
+            parsed.path,
+            parsed.query,
+            parsed.fragment,
+        )
+    )
+    return url, parsed
+
+
+async def _assert_ops_denied_on_promotions_ledger(
+    owner: asyncpg.Connection,
+) -> None:
+    """unihub_operations must not gain ANY privilege on the immutable ledger."""
+    denials = (
+        "SELECT COUNT(*) FROM sales_generation_promotions",
+        "INSERT INTO sales_generation_promotions (import_month, "
+        "to_snapshot_id, head_revision, action, requested_by_sub) "
+        "VALUES ('2998-08', 1, 1, 'promote', 'p1a:test')",
+        "UPDATE sales_generation_promotions SET action = action",
+    )
+    async with owner.transaction():
+        await owner.execute("SET LOCAL ROLE unihub_operations")
+    for denial in denials:
+        async with owner.transaction():
+            await owner.execute("SET LOCAL ROLE unihub_operations")
+            with pytest.raises(
+                asyncpg.exceptions.InsufficientPrivilegeError
+            ):
+                await owner.execute(denial)
+
+
+async def _create_ops_testbed() -> tuple:
+    """Stand up an isolated ops-worker testbed.
+
+    Returns the bootstrap owner connection, an ops-worker pool, the ops-worker
+    connect URL, the ops principal and a flag indicating whether we created the
+    NOLOGIN authority in this run.
+    """
+    parsed = urlsplit(os.environ["DATABASE_URL"])
+    owner = await asyncpg.connect(os.environ["DATABASE_URL"])
+    ops_principal = f"p1a_ops_worker_{uuid4().hex[:12]}"
+    ops_password = token_urlsafe(32)
+    ops_url, _ = _ops_worker_url(
+        os.environ["DATABASE_URL"], ops_principal, ops_password
+    )
+    created_role = await _ensure_ops_role(owner)
+    await _create_ops_worker_login(owner, ops_principal, ops_password)
+    ops_pool = await asyncpg.create_pool(ops_url, min_size=1, max_size=2)
+    return owner, ops_pool, ops_url, ops_principal, created_role
+
+
+async def _epoch_for_role(connection: asyncpg.Connection, role: str) -> int:
+    async with connection.transaction():
+        await connection.execute(f"SET LOCAL ROLE {role}")
+        value = await connection.fetchval(
+            "SELECT current_sales_generation_epoch()"
+        )
+    return int(value or 0)
+
+
+async def _ledger_count(connection: asyncpg.Connection) -> int:
+    value = await connection.fetchval(
+        "SELECT COUNT(*)::BIGINT FROM public.sales_generation_promotions"
+    )
+    return int(value or 0)
+
+
+@pytest.mark.asyncio
+@pytest.mark.skipif(
+    os.getenv("UNIHUB_TEST_DATABASE") != "1",
+    reason="requires isolated PostgreSQL with CREATEROLE",
+)
+async def test_p1a_lot45_reporting_epoch_acl_is_operations_scoped() -> None:
+    """Lot 45 P1: the durable export worker may execute the epoch,
+    the append-only ledger stays fenced, and siblings gain nothing."""
+    owner, ops_pool, _ops_url, ops_principal, created_role = (
+        await _create_ops_testbed()
+    )
+    try:
+        # (1) unihub_web_read retains EXECUTE.
+        web_value = await _epoch_for_role(owner, "unihub_web_read")
+
+        # (2) unihub_operations executes the scalar function
+        # (migration 077's only behavioural change).
+        assert await _has_epoch_acl_grant(owner, "unihub_operations") is True
+        ops_value = await _epoch_for_role(owner, "unihub_operations")
+        assert ops_value == web_value
+
+        # (5) PUBLIC has no EXECUTE.
+        assert await _has_epoch_acl_grant(owner, "PUBLIC") is False
+        # (6) sibling authorities gain NO EXECUTE.
+        for forbidden in (
+            "unihub_salary_export", "unihub_sales_import",
+            "unihub_finance_import",
+        ):
+            assert await _has_epoch_acl_grant(owner, forbidden) is False, forbidden
+
+        # (4) unihub_operations has no DML on the append-only ledger.
+        await _assert_ops_denied_on_promotions_ledger(owner)
+
+        # (3) The actual ops worker LOGIN mirror inherits EXECUTE
+        # and cannot SELECT the immutable ledger.
+        async with ops_pool.acquire() as ops_conn:
+            ops_login_value = await ops_conn.fetchval(
+                "SELECT public.current_sales_generation_epoch()"
+            )
+            assert ops_login_value == web_value
+            with pytest.raises(
+                asyncpg.exceptions.InsufficientPrivilegeError
+            ):
+                await ops_conn.fetchval(
+                    "SELECT COUNT(*) FROM public.sales_generation_promotions"
+                )
+
+        # (7) the exposed epoch equals the ledger count.
+        assert ops_value == await _ledger_count(owner)
+
+        # (8) ExportsRepository.fetch_sales_generation_epoch() succeeds
+        # through the operations-worker pool (the wiring main.py uses).
+        from db import connection as _conn_mod
+        previous_pool = _conn_mod.pool
+        _conn_mod.pool = ops_pool
+        try:
+            _ = ExportsRepository(await get_pool())
+            async with ops_pool.acquire() as ops_conn:
+                repo_value = await ops_conn.fetchval(
+                    "SELECT public.current_sales_generation_epoch()"
+                )
+        finally:
+            _conn_mod.pool = previous_pool
+        assert repo_value == web_value
+    finally:
+        await ops_pool.close()
+        await owner.execute(f'DROP ROLE IF EXISTS "{ops_principal}"')
+        if created_role:
+            await owner.execute("DROP ROLE IF EXISTS unihub_operations")
+        await owner.close()
+
+
+async def _epoch_acl_catalog_summary(
+    connection: asyncpg.Connection,
+) -> dict[str, set[str]]:
+    """Structured catalog summary of the epoch's ACL, keyed by role name.
+
+    PUBLIC maps to the literal string 'PUBLIC'; named authorities map to
+    grantee::regrole::text. Special handling is required because the PUBLIC
+    pseudo-role is not in pg_authid but appears as grantee OID 0.
+    """
+    rows = await connection.fetch(
+        "SELECT a.grantee, a.privilege_type "
+        "FROM pg_proc p "
+        "JOIN pg_namespace n ON n.oid = p.pronamespace "
+        "CROSS JOIN LATERAL aclexplode(p.proacl) AS a "
+        "WHERE n.nspname = 'public' "
+        "AND p.proname = 'current_sales_generation_epoch'"
+    )
+    out: dict[str, set[str]] = {}
+    for row in rows:
+        if int(row["grantee"]) == 0:
+            name = "PUBLIC"
+        else:
+            name = await connection.fetchval(
+                "SELECT $1::oid::regrole::text", int(row["grantee"])
+            )
+            if name is None:
+                name = f"oid:{row['grantee']}"
+        out.setdefault(name, set()).add(row["privilege_type"])
+    return out
+
+
+async def _assert_epoch_function_intact(
+    owner: asyncpg.Connection,
+) -> None:
+    """Migration 076's function flags and search_path remain unchanged."""
+    function_row = await owner.fetchrow(
+        "SELECT prosecdef, provolatile::text AS provolatile, "
+        "proname, pronamespace::regnamespace::text AS namespace, "
+        "prolang, proconfig::text AS proconfig "
+        "FROM pg_proc p "
+        "JOIN pg_namespace n ON n.oid = p.pronamespace "
+        "WHERE n.nspname = 'public' "
+        "AND p.proname = 'current_sales_generation_epoch'"
+    )
+    assert function_row is not None
+    assert function_row["prosecdef"] is True
+    assert function_row["provolatile"] == "s"
+    assert function_row["prolang"] == 14
+    assert "search_path" in (function_row["proconfig"] or "")
+    assert "pg_catalog" in (function_row["proconfig"] or "")
+    assert "public" in (function_row["proconfig"] or "")
+
+
+async def _create_no_membership_login(
+    owner: asyncpg.Connection, principal: str, password: str
+) -> None:
+    """Provision a temporary LOGIN with no authority memberships and no direct grants.
+
+    Mirrors the effective-PUBLIC probe: the only access is via PUBLIC, which
+    must be denied for current_sales_generation_epoch().
+    """
+    parsed = urlsplit(os.environ["DATABASE_URL"])
+    db_name = parsed.path.lstrip("/")
+    quoted_principal = '"' + principal.replace('"', '""') + '"'
+    quoted_password = "'" + password.replace("'", "''") + "'"
+    await owner.execute(
+        "CREATE ROLE " + quoted_principal
+        + " LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT "
+        "PASSWORD " + quoted_password
+    )
+    # Connect + schema usage so the login can issue a SELECT.
+    await owner.execute(
+        "GRANT CONNECT ON DATABASE " + db_name + " TO " + quoted_principal
+    )
+    await owner.execute(
+        "GRANT USAGE ON SCHEMA public TO " + quoted_principal
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.skipif(
+    os.getenv("UNIHUB_TEST_DATABASE") != "1",
+    reason="requires isolated PostgreSQL with CREATEROLE",
+)
+async def test_p1a_lot45_reporting_epoch_acl_structured_proof() -> None:
+    """A. Catalog proof + anonymous/no-membership runtime probe for the epoch.
+
+    Every assertion reads PG's catalog ACL through aclexplode; no textual
+    proacl parsing.
+    """
+    owner = await asyncpg.connect(os.environ["DATABASE_URL"])
+    anon_principal = f"p1a_anon_{uuid4().hex[:12]}"
+    anon_password = token_urlsafe(32)
+    parsed = urlsplit(os.environ["DATABASE_URL"])
+    anon_url = urlunsplit(
+        (
+            parsed.scheme,
+            f"{quote(anon_principal)}:{quote(anon_password, safe='')}@"
+            f"{parsed.hostname}:{parsed.port}",
+            parsed.path,
+            parsed.query,
+            parsed.fragment,
+        )
+    )
+    anon_conn: asyncpg.Connection | None = None
+    try:
+        await _create_no_membership_login(owner, anon_principal, anon_password)
+
+        # (A) Catalog ACL proof: structured ACL inspection via aclexplode.
+        await _assert_function_acl_invariants(owner)
+        owner_role = await _function_owner_role(owner)
+        assert owner_role is not None
+        unexpected = await _unexpected_named_execute_grantees(
+            owner, {"unihub_web_read", "unihub_operations", owner_role}
+        )
+        assert not unexpected, (
+            f"unexpected EXECUTE grantees: {unexpected}"
+        )
+
+        # (A.2) Ledger acl invariant (mirrors migration 077's surface 2).
+        ledger_privs = await _ledger_unihub_operations_privs(owner)
+        ledger_acl = await owner.fetchval(
+            "SELECT c.relacl::text FROM pg_class c "
+            "WHERE c.oid = 'public.sales_generation_promotions'::regclass"
+        )
+        assert ledger_acl is not None
+        assert not ledger_privs, (
+            "unihub_operations must hold no privilege on "
+            f"sales_generation_promotions; saw {ledger_privs}; "
+            f"relacl text={ledger_acl}"
+        )
+        public_ledger_privs = {
+            row["privilege_type"]
+            for row in await owner.fetch(
+                "SELECT a.privilege_type "
+                "FROM pg_class c "
+                "CROSS JOIN LATERAL aclexplode(c.relacl) AS a "
+                "WHERE c.oid = 'public.sales_generation_promotions'::regclass "
+                "AND a.grantee = 0"
+            )
+        }
+        assert not public_ledger_privs, (
+            "PUBLIC must hold no privilege on sales_generation_promotions; "
+            f"saw relacl text={ledger_acl}"
+        )
+
+        # (B) Anonymous / no-membership runtime probe.
+        anon_conn = await asyncpg.connect(anon_url)
+        try:
+            with pytest.raises(
+                asyncpg.exceptions.InsufficientPrivilegeError
+            ):
+                await anon_conn.fetchval(
+                    "SELECT public.current_sales_generation_epoch()"
+                )
+        finally:
+            await anon_conn.close()
+            anon_conn = None
+
+        # (C) function body / signature / search_path remain untouched.
+        await _assert_epoch_function_intact(owner)
+    finally:
+        if anon_conn is not None:
+            await anon_conn.close()
+        await owner.execute(f'REASSIGN OWNED BY "{anon_principal}" TO unihub_test')
+        await owner.execute(f'DROP OWNED BY "{anon_principal}"')
+        await owner.execute(f'DROP ROLE IF EXISTS "{anon_principal}"')
+        await owner.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.skipif(
+    os.getenv("UNIHUB_TEST_DATABASE") != "1",
+    reason="requires isolated PostgreSQL with CREATEROLE",
+)
+async def test_p1a_lot45_reporting_epoch_progresses_with_a_real_promotion() -> None:
+    """A real validated staged generation must advance both the function and
+    ExportsRepository.fetch_sales_generation_epoch() under the ops login."""
+    parsed = urlsplit(os.environ["DATABASE_URL"])
+    ops_principal = f"p1a_ops_worker_{uuid4().hex[:12]}"
+    ops_password = token_urlsafe(32)
+    ops_url = urlunsplit(
+        (
+            parsed.scheme,
+            f"{quote(ops_principal)}:{quote(ops_password, safe='')}@"
+            f"{parsed.hostname}:{parsed.port}",
+            parsed.path,
+            parsed.query,
+            parsed.fragment,
+        )
+    )
+    ops_pool = None
+    # Fresh month per run so the append-only ledger and the
+    # 'processing'-snapshot unique constraint never see a previous
+    # fixture state from a polluted rerun. Ranged 02..12 keeps the day
+    # numbers and the year-month schema robust across reruns.
+    month = f"2998-{(uuid4().int % 11) + 2:02d}"
+    owner = await asyncpg.connect(os.environ["DATABASE_URL"])
+    created_ops_role = False
+    try:
+        existing_ops_role = await owner.fetchval(
+            "SELECT 1 FROM pg_roles WHERE rolname = 'unihub_operations'"
+        )
+        if not existing_ops_role:
+            await owner.execute(
+                "CREATE ROLE unihub_operations NOLOGIN NOSUPERUSER NOCREATEDB "
+                "NOCREATEROLE NOINHERIT"
+            )
+            created_ops_role = True
+        await owner.execute(
+            f'CREATE ROLE "{ops_principal}" LOGIN NOSUPERUSER NOCREATEDB '
+            f'NOCREATEROLE INHERIT PASSWORD {quote(ops_password)!r} '
+            f'IN ROLE unihub_operations'
+        )
+        # Prep: a store + a head at revision 1 so the promotion can move it.
+        await owner.execute(
+            "INSERT INTO stores (site_code, locatie, firma, regional, asm, "
+            "first_seen_month, last_seen_month) VALUES "
+            "('p1a_epoch_site', 'Lot45 Store', 'Firma A', 'Regional 1', 'ASM 1', "
+            "'2026-01', $1) ON CONFLICT (site_code) DO NOTHING",
+            month,
+        )
+        existing_head = await owner.fetchval(
+            "SELECT 1 FROM sales_generation_heads WHERE import_month = $1", month
+        )
+        if existing_head is None:
+            await _promotion_row_initial(owner, month)
+
+        before = await owner.fetchval(
+            "SELECT current_sales_generation_epoch()"
+        )
+        ops_pool = await asyncpg.create_pool(ops_url, min_size=1, max_size=2)
+        from db import connection as _conn_mod
+        previous_pool = _conn_mod.pool
+        _conn_mod.pool = ops_pool  # noqa: F841
+        try:
+            ops_conn = await asyncpg.connect(ops_url)
+            try:
+                ops_before = await ops_conn.fetchval(
+                    "SELECT public.current_sales_generation_epoch()"
+                )
+                assert ops_before == before
+                # Drive a real promotion under the owner and verify the ops
+                # login sees the new epoch immediately afterwards.
+                await _promotion_row(owner, month)
+                ops_after = await ops_conn.fetchval(
+                    "SELECT public.current_sales_generation_epoch()"
+                )
+                assert ops_after > ops_before
+                repo = ExportsRepository(await get_pool())
+                assert await repo.fetch_sales_generation_epoch() == int(ops_after)
+            finally:
+                await ops_conn.close()
+        finally:
+            _conn_mod.pool = previous_pool
+            assert ops_pool is not None
+            await ops_pool.close()
+    finally:
+        if ops_pool is not None:
+            await ops_pool.close()
+        await owner.execute(f'DROP ROLE IF EXISTS "{ops_principal}"')
+        if created_ops_role:
+            await owner.execute("DROP ROLE IF EXISTS unihub_operations")
+        # sales_generation_promotions / sales_generation_heads /
+        # sales_import_stage_rows / import_snapshots are append-only or
+        # CAS-fenced; the append-only ledger deliberately retains the rows
+        # we created so the next test inherits a stable epoch baseline.
+        await owner.execute(
+            "DELETE FROM stores WHERE site_code = 'p1a_epoch_site'"
+        )
+        await owner.close()
+
+
+async def _promotion_row_initial(connection: asyncpg.Connection, month: str) -> None:
+    """Initial head at revision 1 before the first promotion can move it."""
+    cutoff = date.fromisoformat(f"{month}-{GENERATION_A['cutoff_day']:02d}")
+    snapshot_id = await connection.fetchval(
+        "INSERT INTO import_snapshots (import_month, filename, upload_date, "
+        "status, cutoff_date, previous_snapshot_id) "
+        "VALUES ($1, 'p1a-initial.xlsx', CURRENT_DATE, 'processing', $2, NULL) "
+        "RETURNING id",
+        month, cutoff,
+    )
+    await connection.execute(
+        "INSERT INTO sales_import_stage_rows (snapshot_id, row_number, import_month, "
+        "sale_date, site_code, locatie, firma, regional, asm, bon_nr, item_code, "
+        "item_name, quantity, unit_price, total_value, agent, is_cartela, is_return) "
+        "VALUES ($1, 1, $2, $3, 'p1a_epoch_site', 'Lot45 Store', "
+        "'Firma A', 'Regional 1', 'ASM 1', 'B1', 'I1', 'Item 1', 1, 10.00, 10.00, "
+        "'Agent 1', false, false)",
+        snapshot_id, month, cutoff,
+    )
+    await connection.execute(
+        "UPDATE import_snapshots SET status = 'completed', "
+        "stage_rows_sha256 = sales_stage_rows_sha256(id), "
+        "manifest = jsonb_build_object('stage_rows_sha256', "
+        "sales_stage_rows_sha256(id), 'generation_state', 'promoted') "
+        "WHERE id = $1",
+        snapshot_id,
+    )
+    await connection.execute(
+        "INSERT INTO sales_generation_heads (import_month, snapshot_id, revision) "
+        "VALUES ($1, $2, 1)",
+        month, snapshot_id,
+    )
+    await connection.execute(
+        "INSERT INTO sales_generation_promotions (import_month, from_snapshot_id, "
+        "to_snapshot_id, head_revision, action, requested_by_sub) "
+        "VALUES ($1, NULL, $2, 1, 'promote', 'p1a:test')",
+        month, snapshot_id,
+    )
+
+
+GENERATION_A = {"cutoff_day": 10}
