@@ -757,6 +757,3 @@ async def test_calculate_scores_for_month_returns_expected_site_and_score(
 
 
 # --- Negative-rollback probe (no orphan projections in store_scores) ------
-
-
-

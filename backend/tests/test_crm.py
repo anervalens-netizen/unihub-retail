@@ -217,4 +217,3 @@ async def test_get_scores_persisted_row_count_matches_site_set() -> None:
     for row in rows:
         if row["site_code"] == SITE:
             assert row["score"] == 45
-
