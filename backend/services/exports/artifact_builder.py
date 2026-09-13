@@ -11,6 +11,7 @@ from .validation import (
     EXPORT_MAX_ROWS,
     ExportValidationError,
 )
+from ..reporting_consistency import load_reporting_result_once_stable
 
 
 EXPORT_COMPLEX_SEMAPHORE = asyncio.Semaphore(1)
@@ -29,6 +30,11 @@ class ExportArtifactBuilder:
         _daily_comparison_params: Any
         _daily_comparison_table: Any
         _validate_export_budget: Any
+        _build_incentive_products_report: Any
+        _report_plan: Any
+        _load_report: Any
+        _finalize_report: Any
+        _sales_generation_epoch_reader: Any
 
     async def build_xlsx(self, request: dict[str, Any]) -> tuple[bytes, str]:
         """Compatibility helper for in-process callers and focused tests."""
@@ -44,23 +50,14 @@ class ExportArtifactBuilder:
         if request.get("export_mode") == "daily_comparison":
             return await self._build_daily_comparison_xlsx(request)
 
-        result = await self.build_report(request)
-        selected_days = self._selected_days(request)
-        daily_rows: list[Any] | None = None
-        if request.get("daily_metrics"):
-            filters = self._normalize_filters(request.get("filters") or {})
-            daily_rows = await self.repo.fetch_daily_evolution_rows(
-                months=request["months"],
-                filters=filters,
-                include_closed_stores=bool(request.get("include_closed_stores", False)),
-                campaign_codes_by_month={},
-                campaign_exclusions_by_month={},
-                selected_days=selected_days,
-                include_campaign_metrics=False,
-                limit=EXPORT_MAX_ROWS + 1,
-            )
-            if len(daily_rows) > EXPORT_MAX_ROWS:
-                raise ExportValidationError("Exportul depaseste limita de randuri pentru evolutia zilnica.")
+        async def load_once() -> tuple[dict[str, Any], list[int] | None, list[Any] | None]:
+            return await self._load_artifact_rows(request)
+
+        result, selected_days, daily_rows = await load_reporting_result_once_stable(
+            read_epoch=self._sales_generation_epoch_reader(),
+            load=load_once,
+            operation="export artifact",
+        )
         if daily_rows is not None:
             return await self._build_daily_metrics_xlsx(
                 request=request,
@@ -69,6 +66,48 @@ class ExportArtifactBuilder:
                 daily_rows=daily_rows,
             )
         return await asyncio.to_thread(self._render_simple_table_xlsx, request, result, selected_days, None)
+
+    async def _load_artifact_rows(
+        self, request: dict[str, Any]
+    ) -> tuple[dict[str, Any], list[int] | None, list[Any] | None]:
+        """Every DB read feeding one table XLSX; rendering stays outside the fence."""
+        plan = self._report_plan(request)
+        selected_days = self._selected_days(request)
+        if plan.dataset == "incentive_products":
+            result, _ = await self._build_incentive_products_report(
+                months=plan.months,
+                filters=plan.filters,
+                include_closed_stores=plan.include_closed_stores,
+                selected_days=plan.selected_days,
+                row_limit=EXPORT_MAX_ROWS + 1,
+                preview_limit=None,
+            )
+            return result, selected_days, None
+        loaded = await self._load_report(
+            plan, row_limit=EXPORT_MAX_ROWS + 1, preview_limit=None
+        )
+        result, _ = self._finalize_report(loaded.plan, loaded.rows, loaded.total_records, None)
+        return result, selected_days, await self._load_daily_evolution_rows(request, selected_days)
+
+    async def _load_daily_evolution_rows(
+        self, request: dict[str, Any], selected_days: list[int] | None
+    ) -> list[Any] | None:
+        if not request.get("daily_metrics"):
+            return None
+        filters = self._normalize_filters(request.get("filters") or {})
+        daily_rows = await self.repo.fetch_daily_evolution_rows(
+            months=request["months"],
+            filters=filters,
+            include_closed_stores=bool(request.get("include_closed_stores", False)),
+            campaign_codes_by_month={},
+            campaign_exclusions_by_month={},
+            selected_days=selected_days,
+            include_campaign_metrics=False,
+            limit=EXPORT_MAX_ROWS + 1,
+        )
+        if len(daily_rows) > EXPORT_MAX_ROWS:
+            raise ExportValidationError("Exportul depaseste limita de randuri pentru evolutia zilnica.")
+        return daily_rows
 
     async def _build_daily_metrics_xlsx(
         self,
@@ -103,6 +142,12 @@ class ExportArtifactBuilder:
         *,
         limit: int,
     ) -> dict[str, Any]:
+        """Preview one comparison level.
+
+        Deliberately not generation-fenced: the preview issues a single
+        statement for one level, so it is already atomic. The XLSX variant
+        issues one statement per sheet and is therefore fenced.
+        """
         months, metrics, levels, filters, include_closed_stores, selected_days = self._daily_comparison_params(request)
         campaign_codes_by_month: dict[str, list[str]] = {}
         preview_level = "general" if "general" in levels else levels[0]
@@ -159,7 +204,11 @@ class ExportArtifactBuilder:
                     )
                 return level, records
 
-        level_records = await asyncio.gather(*(load_level(level) for level in levels))
+        level_records = await load_reporting_result_once_stable(
+            read_epoch=self._sales_generation_epoch_reader(),
+            load=lambda: asyncio.gather(*(load_level(level) for level in levels)),
+            operation="daily comparison export",
+        )
         tables: list[tuple[str, dict[str, Any]]] = []
         for level, records in level_records:
             table = await asyncio.to_thread(

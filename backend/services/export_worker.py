@@ -6,6 +6,8 @@ import logging
 from typing import TYPE_CHECKING, Any, Callable, Coroutine, Literal
 from uuid import uuid4
 
+from services.reporting_consistency import ReportingGenerationUnstable
+
 if TYPE_CHECKING:
     from services.export_operations import StoredExportArtifact
     from services.exports import XlsxArtifact
@@ -279,6 +281,12 @@ async def run_durable_export_job(
             )
         )
         raise
+    except ReportingGenerationUnstable:
+        await _fail_execution(
+            execution,
+            error_code="reporting_generation_unstable",
+        )
+        raise RuntimeError("Complex export sales generation was unstable") from None
     except Exception:
         await _fail_execution(
             execution,

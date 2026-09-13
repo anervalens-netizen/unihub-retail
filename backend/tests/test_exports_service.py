@@ -31,6 +31,10 @@ class FakeRepo:
         self.report_calls: list[dict[str, Any]] = []
         self.daily_comparison_calls: list[dict[str, Any]] = []
         self.daily_evolution_rows: list[dict[str, Any]] = []
+        self.sales_generation_epoch = 1
+
+    async def fetch_sales_generation_epoch(self) -> int:
+        return self.sales_generation_epoch
 
     async def fetch_report_rows(self, **kwargs: Any) -> list[dict[str, Any]]:
         self.report_calls.append(kwargs)

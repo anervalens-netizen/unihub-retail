@@ -44,6 +44,12 @@ class AiForecastRepository:
             return f"SUM({alias}.total_quantity)::NUMERIC(14, 2)"
         return f"SUM({alias}.total_sales)::NUMERIC(14, 2)"
 
+    async def fetch_sales_generation_epoch(self) -> int:
+        """Read the append-only sales promotion epoch used to fence composed loads."""
+        async with self.pool.acquire() as conn:
+            value = await conn.fetchval("SELECT public.current_sales_generation_epoch()")
+        return int(value or 0)
+
     async def fetch_latest_run(
         self,
         month: str,

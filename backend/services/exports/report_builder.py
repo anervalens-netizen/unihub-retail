@@ -22,6 +22,7 @@ from .validation import (
     valid_keys,
     validate_budget,
 )
+from ..reporting_consistency import load_reporting_result_once_stable
 
 
 EXPORT_COMPLEX_SEMAPHORE = asyncio.Semaphore(1)
@@ -42,6 +43,15 @@ class _ReportPlan:
     monthly_campaign_metrics: bool
 
 
+@dataclass(slots=True)
+class _LoadedReport:
+    """One report's complete DB-read result, before any rendering happens."""
+
+    plan: _ReportPlan
+    rows: dict[tuple[Any, ...], dict[str, Any]]
+    total_records: list[Any]
+
+
 class ReportBuilder:
     if TYPE_CHECKING:
         repo: Any
@@ -54,6 +64,7 @@ class ReportBuilder:
         _public_row: Any
         _record_total_count: Any
         _build_incentive_products_report: Any
+        _incentive_pool: Any
 
     @staticmethod
     def _report_plan(request: dict[str, Any]) -> _ReportPlan:
@@ -279,14 +290,37 @@ class ReportBuilder:
     ) -> tuple[dict[str, Any], int]:
         plan = self._report_plan(request)
         if plan.dataset == "incentive_products":
-            return await self._build_incentive_products_report(
-                months=plan.months,
-                filters=plan.filters,
-                include_closed_stores=plan.include_closed_stores,
-                selected_days=plan.selected_days,
+            return await self._load_incentive_report_once_stable(
+                plan,
                 row_limit=row_limit,
                 preview_limit=preview_limit,
             )
+        loaded = await self._load_report_once_stable(
+            plan,
+            row_limit=row_limit,
+            preview_limit=preview_limit,
+        )
+        return self._finalize_report(
+            loaded.plan, loaded.rows, loaded.total_records, preview_limit
+        )
+
+    def _sales_generation_epoch_reader(self) -> Any:
+        """Resolve the fenced sales-generation epoch reader from the repository."""
+        reader = getattr(self.repo, "fetch_sales_generation_epoch", None)
+        if reader is None:
+            raise RuntimeError(
+                "Export repository does not expose the sales generation epoch"
+            )
+        return reader
+
+    async def _load_report(
+        self,
+        plan: _ReportPlan,
+        *,
+        row_limit: int,
+        preview_limit: int | None,
+    ) -> _LoadedReport:
+        """Perform every composed DB read for one report; nothing is rendered here."""
         campaign_codes, exclusions = await self._campaign_inputs(plan)
         total_records, rows = await self._load_total_records(
             plan,
@@ -300,4 +334,42 @@ class ReportBuilder:
         )
         periods = await self._await_period_records(loaders, period_limit, preview_limit)
         self._attach_period_records(plan, rows, periods)
-        return self._finalize_report(plan, rows, total_records, preview_limit)
+        return _LoadedReport(plan=plan, rows=rows, total_records=total_records)
+
+    async def _load_report_once_stable(
+        self,
+        plan: _ReportPlan,
+        *,
+        row_limit: int,
+        preview_limit: int | None,
+    ) -> _LoadedReport:
+        """Fence the whole total/month/day composition to one sales generation."""
+        return await load_reporting_result_once_stable(
+            read_epoch=self._sales_generation_epoch_reader(),
+            load=lambda: self._load_report(
+                plan, row_limit=row_limit, preview_limit=preview_limit
+            ),
+            operation="export report",
+        )
+
+    async def _load_incentive_report_once_stable(
+        self,
+        plan: _ReportPlan,
+        *,
+        row_limit: int,
+        preview_limit: int | None,
+    ) -> tuple[dict[str, Any], int]:
+        """Fence every per-month sales read of one incentive report."""
+        self._incentive_pool()
+        return await load_reporting_result_once_stable(
+            read_epoch=self._sales_generation_epoch_reader(),
+            load=lambda: self._build_incentive_products_report(
+                months=plan.months,
+                filters=plan.filters,
+                include_closed_stores=plan.include_closed_stores,
+                selected_days=plan.selected_days,
+                row_limit=row_limit,
+                preview_limit=preview_limit,
+            ),
+            operation="incentive export",
+        )

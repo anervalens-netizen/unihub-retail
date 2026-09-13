@@ -25,8 +25,29 @@ def _assert_no_untrusted_formula_xml(content: bytes, allowed: set[str] = set()) 
 
 
 class _ExportsRepo:
+    async def fetch_sales_generation_epoch(self) -> int:
+        return 1
+
+    async def fetch_report_rows(self, **_kwargs: object) -> list[dict[str, object]]:
+        return []
+
+    async def fetch_daily_evolution_rows(self, **_kwargs: object) -> list[dict[str, object]]:
+        return []
+
     async def fetch_daily_comparison_rows(self, **_kwargs: object) -> list[dict[str, object]]:
         return []
+
+
+def _stub_report_payload() -> dict[str, object]:
+    return {
+        "columns": [
+            {"key": "agent", "label": "Agent", "type": "text"},
+            {"key": "locatie", "label": "Locatie", "type": "text"},
+            {"key": "asm", "label": "ASM", "type": "text"},
+            {"key": "sales", "label": "Vanzari", "type": "currency"},
+        ],
+        "rows": [{"agent": '=HYPERLINK("https://example.invalid","x")', "locatie": "+SUM(1,1)", "asm": "@SUM(1,1)", "sales": 12}],
+    }
 
 
 def _block_raw_append(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -39,15 +60,14 @@ def _block_raw_append(monkeypatch: pytest.MonkeyPatch) -> None:
 @pytest.mark.asyncio
 async def test_exports_standard_and_daily_writers_use_boundary_and_neutralize_xml(monkeypatch: pytest.MonkeyPatch) -> None:
     service = ExportsService(_ExportsRepo())  # type: ignore[arg-type]
-    monkeypatch.setattr(service, "build_report", AsyncMock(return_value={
-        "columns": [
-            {"key": "agent", "label": "Agent", "type": "text"},
-            {"key": "locatie", "label": "Locatie", "type": "text"},
-            {"key": "asm", "label": "ASM", "type": "text"},
-            {"key": "sales", "label": "Vanzari", "type": "currency"},
-        ],
-        "rows": [{"agent": '=HYPERLINK("https://example.invalid","x")', "locatie": "+SUM(1,1)", "asm": "@SUM(1,1)", "sales": 12}],
-    }))
+    # The XLSX path fences the report rows and the daily-evolution rows as one
+    # composition, so it presents the report through _finalize_report instead of
+    # the already-fenced public build_report. The writers under test are the same.
+    monkeypatch.setattr(
+        service,
+        "_finalize_report",
+        lambda *_args, **_kwargs: (_stub_report_payload(), 1),
+    )
     _block_raw_append(monkeypatch)
 
     standard, _ = await service.build_xlsx({"dataset": "stores", "months": ["2026-06"]})

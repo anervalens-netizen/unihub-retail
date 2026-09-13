@@ -108,12 +108,14 @@ The active `scripts/python-complexity-contract-v2.json` has been
 monotonically tightened through the Phase-C C1, C2 and C3 Target
 Calculator refactors and, most recently, by the V3 Lot 44 backend
 certification repair (the `regional_summary` projection was decomposed
-below the pinned new-function boundary). The current CI-measured
-production tree is:
+below the pinned new-function boundary). V3 Lot 45 adds the shared
+sales-generation fence plus the bounded export load/present split, all
+below the pinned new-function ceiling, so every aggregate ceiling and
+locked entry is unchanged. The current CI-measured production tree is:
 
 | Metric                     | Value |
 |----------------------------|-------|
-| production_functions       | 3032  |
+| production_functions       | 3045  |
 | complexity_proxy > 19      | 27    |
 | complexity_proxy >= 30     | 0     |
 | maximum_complexity_proxy   | 27    |

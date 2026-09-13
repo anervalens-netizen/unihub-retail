@@ -206,6 +206,15 @@ class IncentiveReportBuilder:
         if achievement is not None and achievement >= 0.9:
             row["qualified_ui_quantity"] += eligible
 
+    def _incentive_pool(self) -> Any:
+        """Require the repository pool before any fenced incentive read starts."""
+        pool = getattr(self.repo, "pool", None)
+        if pool is None:
+            raise ExportValidationError(
+                "Exportul incentive nu are conexiune la baza de date."
+            )
+        return pool
+
     async def _month_rows(
         self,
         *,
@@ -217,11 +226,7 @@ class IncentiveReportBuilder:
         preview_limit: int | None,
         current_rows: int,
     ) -> tuple[list[Any], dict[tuple[str, str, str], int], dict[str, Any], dict[str, Any]]:
-        pool = getattr(self.repo, "pool", None)
-        if pool is None:
-            raise ExportValidationError(
-                "Exportul incentive nu are conexiune la baza de date."
-            )
+        pool = self._incentive_pool()
         campaign, multipliers, achievements = await self._store_context(
             pool, month, filters, include_closed_stores
         )

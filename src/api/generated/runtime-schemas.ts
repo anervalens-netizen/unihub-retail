@@ -10544,6 +10544,21 @@ export const RETAIL_COMPONENT_SCHEMAS = {
     "title": "RegionalStats",
     "type": "object"
   },
+  "ReportingUnavailableResponse": {
+    "additionalProperties": false,
+    "description": "Bounded body for a composed sales-derived read that could not be fenced.",
+    "properties": {
+      "detail": {
+        "title": "Detail",
+        "type": "string"
+      }
+    },
+    "required": [
+      "detail"
+    ],
+    "title": "ReportingUnavailableResponse",
+    "type": "object"
+  },
   "SalaryAgentSummaryPublic": {
     "additionalProperties": false,
     "properties": {

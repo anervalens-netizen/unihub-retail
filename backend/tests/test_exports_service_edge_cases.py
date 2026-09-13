@@ -41,6 +41,9 @@ class IncentiveRepo:
         self.records = records or []
         self.calls: list[dict[str, Any]] = []
 
+    async def fetch_sales_generation_epoch(self) -> int:
+        return 1
+
     async def fetch_incentive_product_rows(self, **kwargs: Any) -> list[dict[str, Any]]:
         self.calls.append(kwargs)
         return self.records

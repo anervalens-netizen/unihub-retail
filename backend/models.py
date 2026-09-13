@@ -303,6 +303,12 @@ class ExportOperationUnavailableResponse(StrictApiModel):
     detail: str | ExportOperationPublishUncertainDetail
 
 
+class ReportingUnavailableResponse(StrictApiModel):
+    """Bounded body for a composed sales-derived read that could not be fenced."""
+
+    detail: str
+
+
 class StoreActivityChangeRequest(StrictApiModel):
     model_config = ConfigDict(extra="forbid")
 

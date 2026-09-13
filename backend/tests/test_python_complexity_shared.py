@@ -443,8 +443,8 @@ def test_zero_drift_across_all_production_functions(l1):
         )
 
 
-def test_total_production_function_count_is_3032(l1):
-    """Production tree must contain exactly 3032 measured functions.
+def test_total_production_function_count_is_3045(l1):
+    """Production tree must contain exactly 3045 measured functions.
 
     The C6 Target Calculator repository decomposition intentionally
     adds 8 focused helper functions (+2 in target_calculator_sources.py,
@@ -462,11 +462,14 @@ def test_total_production_function_count_is_3032(l1):
     backend/scripts/oidc_e2e_stub.py; baseline moves from 2990 to 2992. V3
     Lots 43/44 add the Saved Views error-contract surface and the bounded
     isolated-migration/JSON-decoding helpers; baseline moves from 2992 to 3032.
-    The exact snapshot rejects unrelated production-function drift.
+    Lot 45 adds the shared sales-generation fence, the two repository epoch
+    readers and the bounded export load/present split; baseline moves from
+    3032 to 3045. The exact snapshot rejects unrelated production-function
+    drift.
     """
     metrics = l1.collect_metrics(PR_B1_WORKTREE)
-    assert len(metrics) == 3032, (
-        f"production count drift: expected 3032, got {len(metrics)}"
+    assert len(metrics) == 3045, (
+        f"production count drift: expected 3045, got {len(metrics)}"
     )
 
 
