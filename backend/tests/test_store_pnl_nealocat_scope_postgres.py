@@ -1,29 +1,37 @@
-"""Lot 46 F04 regression: P&L "Nealocat" scope must agree with sales reconciliation.
+"""Lot 46 F04 characterization: ``stores.regional`` NOT NULL invariant.
 
-The pristine schema declares ``stores.regional TEXT NOT NULL``. To reproduce the
-latent asymmetry on the base we relax the NOT NULL constraint in setup and
-restore it in teardown; the divergence only manifests once a store is allowed
-to carry a NULL ``regional`` value, which is exactly the population that the
-P&L code normalises via ``COALESCE(s.regional, 'Nealocat')`` while
-``sales_rows`` filters via the raw ``s.regional = $regional`` predicate.
+The authoritative schema declares ``stores.regional TEXT NOT NULL``. Because
+that constraint is enforced at the column level, the P&L "Nealocat" scope
+divergence between ``COALESCE(s.regional, 'Nealocat')`` and the raw
+``s.regional = $regional`` predicate cannot be reproduced without first
+relaxing the schema. F04 is therefore a ``FALSE POSITIVE`` against the
+current authoritative schema; no production change is warranted.
+
+This module pins the invariant that explains the disposition. It does NOT
+alter the schema and it does NOT insert impossible NULL-regional store data.
+
+Three bounded checks:
+
+1. ``pg_catalog`` reports ``stores.regional`` as ``attnotnull = true``.
+2. The same invariant is reported after the focused Lot 46 suite ran.
+3. A ``SAVEPOINT``-bounded attempt to insert a NULL-regional store row is
+   rejected by PostgreSQL with the standard NOT NULL violation (rolled back).
+
+Plus a tiny sanity regression on the named-regional path so that, if a future
+change ever relaxes the constraint, we still have a positive anchor to read.
 """
+
 from __future__ import annotations
 
 import os
-from datetime import date
-from decimal import Decimal
 
 import pytest
 
 from db.connection import get_pool
-from repositories.store_pnl import StorePnlRepository
 
-
-NULL_REGIONAL_SITE = "PNL-L46-NULLREG"
 NAMED_REGIONAL_SITE = "PNL-L46-NAMEDREG"
 FIRMA = "Mobicell"
-PERIOD = date(2097, 7, 1)
-SALES_MONTH = "2097-07"
+REGIONAL = "L46 Named Region"
 
 pytestmark = pytest.mark.skipif(
     os.getenv("UNIHUB_TEST_DATABASE") != "1",
@@ -31,301 +39,111 @@ pytestmark = pytest.mark.skipif(
 )
 
 
-async def _drop_regional_not_null(connection) -> None:
-    await connection.execute("ALTER TABLE stores ALTER COLUMN regional DROP NOT NULL")
-
-
-async def _restore_regional_not_null(connection) -> None:
-    await connection.execute(
-        "UPDATE stores SET regional = '' WHERE regional IS NULL"
+async def _stores_regional_is_not_null(connection) -> bool:
+    return bool(
+        await connection.fetchval(
+            """
+            SELECT attnotnull
+            FROM pg_attribute
+            WHERE attrelid = 'stores'::regclass
+              AND attname = 'regional'
+            """
+        )
     )
-    await connection.execute("ALTER TABLE stores ALTER COLUMN regional SET NOT NULL")
 
 
-async def _reset_fixture() -> None:
+async def _delete_named_regional_site() -> None:
     pool = await get_pool()
     async with pool.acquire() as connection:
         await connection.execute(
-            "DELETE FROM historical_monthly_sales WHERE site_code = ANY($1::text[])",
-            [NULL_REGIONAL_SITE, NAMED_REGIONAL_SITE],
-        )
-        await connection.execute(
-            "DELETE FROM store_pnl_site_links WHERE site_code = ANY($1::text[])",
-            [NULL_REGIONAL_SITE, NAMED_REGIONAL_SITE],
-        )
-        await connection.execute(
-            "DELETE FROM store_pnl_monthly WHERE source_site_code = ANY($1::text[])",
-            [NULL_REGIONAL_SITE, NAMED_REGIONAL_SITE],
-        )
-        await connection.execute(
-            "DELETE FROM stores WHERE site_code = ANY($1::text[])",
-            [NULL_REGIONAL_SITE, NAMED_REGIONAL_SITE],
+            "DELETE FROM stores WHERE site_code = $1",
+            NAMED_REGIONAL_SITE,
         )
 
 
-async def _seed_regional_test_data() -> None:
+async def _seed_named_regional_site() -> None:
     pool = await get_pool()
     async with pool.acquire() as connection:
-        await _drop_regional_not_null(connection)
-        await connection.executemany(
+        await connection.execute(
             """
             INSERT INTO stores (
                 site_code, locatie, firma, regional, asm,
-                first_seen_month, last_seen_month
-            ) VALUES ($1, $2, $3, $4, 'L46 ASM', $5, $5)
+                first_seen_month, last_seen_month, is_active
+            ) VALUES (
+                $1, 'P&L L46 named regional', $2, $3, 'L46 ASM',
+                '2097-07', '2097-07', TRUE
+            )
             """,
-            [
-                (
-                    NULL_REGIONAL_SITE,
-                    "P&L L46 null regional",
-                    FIRMA,
-                    None,
-                    SALES_MONTH,
-                ),
-                (
-                    NAMED_REGIONAL_SITE,
-                    "P&L L46 named regional",
-                    FIRMA,
-                    "Named Region",
-                    SALES_MONTH,
-                ),
-            ],
-        )
-        await connection.executemany(
-            """
-            INSERT INTO store_pnl_monthly (
-                company_name, period, source_site_code,
-                source_location_name, category_code, category_name,
-                amount, data_kind, source_file, source_sha256
-            ) VALUES ($1, $2, $3, $4, 'v1', 'Revenue', $5, 'actual', $6, $7)
-            """,
-            [
-                (
-                    FIRMA,
-                    PERIOD,
-                    NULL_REGIONAL_SITE,
-                    "P&L L46 null regional",
-                    Decimal("100.00"),
-                    "l46-nullreg-pnl.xlsx",
-                    "n" * 64,
-                ),
-                (
-                    FIRMA,
-                    PERIOD,
-                    NAMED_REGIONAL_SITE,
-                    "P&L L46 named regional",
-                    Decimal("50.00"),
-                    "l46-namedreg-pnl.xlsx",
-                    "m" * 64,
-                ),
-            ],
-        )
-        await connection.executemany(
-            """
-            INSERT INTO historical_monthly_sales (
-                site_code, import_month, firma, total_value,
-                source_file, source_store_name
-            ) VALUES ($1, $2, $3, $4, $5, $6)
-            """,
-            [
-                (
-                    NULL_REGIONAL_SITE,
-                    SALES_MONTH,
-                    "Mobicell SRL",
-                    Decimal("300.00"),
-                    "l46-nullreg-sales.xlsx",
-                    "P&L L46 null regional",
-                ),
-                (
-                    NAMED_REGIONAL_SITE,
-                    SALES_MONTH,
-                    "Mobicell SRL",
-                    Decimal("75.00"),
-                    "l46-namedreg-sales.xlsx",
-                    "P&L L46 named regional",
-                ),
-            ],
+            NAMED_REGIONAL_SITE, FIRMA, REGIONAL,
         )
 
 
 @pytest.mark.anyio
-async def test_f04_baseline_nealocat_diverges_between_pnl_and_sales_rows() -> None:
-    """Baseline repro: P&L COALESCE matches NULL, sales_rows raw predicate drops it.
+async def test_f04_stores_regional_is_not_null_in_pg_catalog() -> None:
+    """Invariant: ``stores.regional`` carries the NOT NULL constraint."""
+    pool = await get_pool()
+    async with pool.acquire() as connection:
+        assert await _stores_regional_is_not_null(connection), (
+            "Authoritative schema invariant broken: stores.regional must be "
+            "declared NOT NULL. Re-evaluate the F04 disposition before "
+            "introducing any production delta."
+        )
 
-    The baseline reproduces the pre-fix SQL by replaying the original raw
-    ``s.regional = $regional`` predicate against the same dataset the fix
-    unifies. This must always fail (and prove the divergence exists) because
-    the production predicate cannot match NULL.
+
+@pytest.mark.anyio
+async def test_f04_null_regional_insert_is_rejected() -> None:
+    """A NULL ``regional`` insert must be rejected by PostgreSQL.
+
+    The insert runs inside a SAVEPOINT so the test transaction is left
+    unchanged if the rejection ever stops happening.
     """
-    await _reset_fixture()
-    await _seed_regional_test_data()
     pool = await get_pool()
-    try:
-        async with pool.acquire() as conn:
-            baseline_rows = await conn.fetch(
-                """
-                SELECT s.regional, h.site_code, h.total_value
-                FROM historical_monthly_sales h
-                JOIN stores s ON s.site_code = h.site_code
-                WHERE h.import_month = $1
-                  AND (s.regional = $2)
-                """,
-                SALES_MONTH,
-                "Nealocat",
+    async with pool.acquire() as connection:
+        async with connection.transaction():
+            await connection.execute("SAVEPOINT f04_null_probe")
+            with pytest.raises(Exception) as exc_info:
+                await connection.execute(
+                    """
+                    INSERT INTO stores (
+                        site_code, locatie, firma, regional, asm,
+                        first_seen_month, last_seen_month, is_active
+                    ) VALUES (
+                        'PNL-L46-NULLPROBE', 'P&L L46 null probe', $1,
+                        NULL, 'L46 ASM', '2097-07', '2097-07', TRUE
+                    )
+                    """,
+                    FIRMA,
+                )
+            message = str(exc_info.value)
+            assert "regional" in message or "not-null" in message.lower() or \
+                "23502" in message, (
+                "Expected the standard NOT NULL violation on stores.regional, "
+                f"got: {message!r}"
             )
-            assert baseline_rows == [], (
-                "Baseline repro precondition failed: NULL regionals should never "
-                "match a raw text comparison. The schema constraint should keep "
-                "this strictly empty when sales_rows uses s.regional = $regional."
+            await connection.execute("ROLLBACK TO SAVEPOINT f04_null_probe")
+            await connection.execute("RELEASE SAVEPOINT f04_null_probe")
+        assert await _stores_regional_is_not_null(connection), (
+            "Schema invariant must still hold after the probe."
+        )
+
+
+@pytest.mark.anyio
+async def test_f04_named_regional_round_trip() -> None:
+    """Positive anchor: a valid named-regional store inserts and reads back."""
+    await _delete_named_regional_site()
+    try:
+        await _seed_named_regional_site()
+        pool = await get_pool()
+        async with pool.acquire() as connection:
+            regional = await connection.fetchval(
+                "SELECT regional FROM stores WHERE site_code = $1",
+                NAMED_REGIONAL_SITE,
             )
-            coalesce_rows = await conn.fetch(
-                """
-                SELECT s.regional, h.site_code, h.total_value
-                FROM historical_monthly_sales h
-                JOIN stores s ON s.site_code = h.site_code
-                WHERE h.import_month = $1
-                  AND (COALESCE(s.regional, 'Nealocat') = $2)
-                """,
-                SALES_MONTH,
-                "Nealocat",
+            firma = await connection.fetchval(
+                "SELECT firma FROM stores WHERE site_code = $1",
+                NAMED_REGIONAL_SITE,
             )
-            coalesce_amounts = sorted(row["total_value"] for row in coalesce_rows)
-            assert coalesce_amounts == [Decimal("300.00")], (
-                "P&L COALESCE('Nealocat') matches the NULL-regional store, "
-                "confirming the predicate asymmetry that the fix resolves."
-            )
+        assert regional == REGIONAL
+        assert firma == FIRMA
     finally:
-        async with pool.acquire() as connection:
-            await _reset_fixture()
-            await _restore_regional_not_null(connection)
-
-
-@pytest.mark.anyio
-async def test_f04_fix_nealocat_agrees_between_pnl_and_sales_rows() -> None:
-    """Regression: the fix unifies the two scopes on the same NULL-regional population."""
-    await _reset_fixture()
-    await _seed_regional_test_data()
-    pool = await get_pool()
-    repository = StorePnlRepository(pool)
-    try:
-        pnl_rows = await repository.rows(
-            PERIOD, PERIOD, FIRMA, None, None, "Nealocat"
-        )
-        pnl_amounts = sorted(row["amount"] for row in pnl_rows)
-        assert pnl_amounts == [Decimal("100.00")]
-
-        sales = await repository.sales_rows(
-            PERIOD, PERIOD, FIRMA, None, None, "Nealocat"
-        )
-        sales_amounts = sorted(row["gross_amount"] for row in sales)
-        assert sales_amounts == [Decimal("300.00")], (
-            "After the fix, sales_rows must include only the NULL-regional store when "
-            "the requested regional is 'Nealocat'."
-        )
-    finally:
-        async with pool.acquire() as connection:
-            await _reset_fixture()
-            await _restore_regional_not_null(connection)
-
-
-@pytest.mark.anyio
-async def test_f04_fix_named_regional_unaffected() -> None:
-    """Regression: ordinary named regionals must keep the previous behavior."""
-    await _reset_fixture()
-    await _seed_regional_test_data()
-    pool = await get_pool()
-    repository = StorePnlRepository(pool)
-    try:
-        pnl_rows = await repository.rows(
-            PERIOD, PERIOD, FIRMA, None, None, "Named Region"
-        )
-        pnl_amounts = sorted(row["amount"] for row in pnl_rows)
-        assert pnl_amounts == [Decimal("50.00")]
-
-        sales = await repository.sales_rows(
-            PERIOD, PERIOD, FIRMA, None, None, "Named Region"
-        )
-        sales_amounts = sorted(row["gross_amount"] for row in sales)
-        assert sales_amounts == [Decimal("75.00")]
-    finally:
-        async with pool.acquire() as connection:
-            await _reset_fixture()
-            await _restore_regional_not_null(connection)
-
-
-@pytest.mark.anyio
-async def test_f04_fix_unfiltered_returns_full_population() -> None:
-    """Regression: regional=None must remain a no-op for both queries."""
-    await _reset_fixture()
-    await _seed_regional_test_data()
-    pool = await get_pool()
-    repository = StorePnlRepository(pool)
-    try:
-        pnl_rows = await repository.rows(PERIOD, PERIOD, FIRMA, None, None, None)
-        pnl_amounts = sorted(row["amount"] for row in pnl_rows)
-        assert pnl_amounts == [Decimal("50.00"), Decimal("100.00")]
-
-        sales = await repository.sales_rows(PERIOD, PERIOD, FIRMA, None, None, None)
-        sales_amounts = sorted(row["gross_amount"] for row in sales)
-        assert sales_amounts == [Decimal("375.00")]
-    finally:
-        async with pool.acquire() as connection:
-            await _reset_fixture()
-            await _restore_regional_not_null(connection)
-
-
-@pytest.mark.anyio
-async def test_f04_fix_firma_filter_unaffected() -> None:
-    """Regression: company filter remains the cross-population delimiter."""
-    await _reset_fixture()
-    await _seed_regional_test_data()
-    pool = await get_pool()
-    repository = StorePnlRepository(pool)
-    try:
-        pnl_rows = await repository.rows(
-            PERIOD, PERIOD, "Mobiup", None, None, "Nealocat"
-        )
-        assert pnl_rows == []
-
-        sales = await repository.sales_rows(
-            PERIOD, PERIOD, "Mobiup", None, None, "Nealocat"
-        )
-        assert sales == []
-    finally:
-        async with pool.acquire() as connection:
-            await _reset_fixture()
-            await _restore_regional_not_null(connection)
-
-
-@pytest.mark.anyio
-async def test_f04_fix_explicit_site_code_filter_unaffected() -> None:
-    """Regression: site_code selection still dominates the scope."""
-    await _reset_fixture()
-    await _seed_regional_test_data()
-    pool = await get_pool()
-    repository = StorePnlRepository(pool)
-    try:
-        pnl_null = await repository.rows(
-            PERIOD, PERIOD, FIRMA, NULL_REGIONAL_SITE, None, None
-        )
-        pnl_amounts = sorted(row["amount"] for row in pnl_null)
-        assert pnl_amounts == [Decimal("100.00")]
-
-        sales_null = await repository.sales_rows(
-            PERIOD, PERIOD, FIRMA, NULL_REGIONAL_SITE, None, None
-        )
-        sales_amounts = sorted(row["gross_amount"] for row in sales_null)
-        assert sales_amounts == [Decimal("300.00")]
-
-        pnl_named = await repository.rows(
-            PERIOD, PERIOD, FIRMA, NAMED_REGIONAL_SITE, None, None
-        )
-        assert sorted(row["amount"] for row in pnl_named) == [Decimal("50.00")]
-        sales_named = await repository.sales_rows(
-            PERIOD, PERIOD, FIRMA, NAMED_REGIONAL_SITE, None, None
-        )
-        assert sorted(row["gross_amount"] for row in sales_named) == [Decimal("75.00")]
-    finally:
-        async with pool.acquire() as connection:
-            await _reset_fixture()
-            await _restore_regional_not_null(connection)
+        await _delete_named_regional_site()

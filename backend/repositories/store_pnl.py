@@ -209,7 +209,7 @@ class StorePnlRepository:
                           )
                       )
                   )
-                  AND ($6::text IS NULL OR COALESCE(s.regional, 'Nealocat') = $6)
+                  AND ($6::text IS NULL OR s.regional = $6)
                 GROUP BY sales.period ORDER BY sales.period
                 """,
                 start,
