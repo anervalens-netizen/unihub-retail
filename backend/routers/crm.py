@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import Field
 from schemas.common import StrictApiModel, MonthStr
 
 from composition import build_crm_service
 from permissions import require_business_write_access
 from rate_limits import BUSINESS_WRITE_LIMIT, rate_limit
-from services.crm import CrmService
+from services.crm import CrmService, CrmSourceDataUnavailable
 
 router = APIRouter(prefix="/api/crm", tags=["crm"])
 
@@ -55,6 +55,19 @@ class CrmRecalculateResponse(StrictApiModel):
     recalculated: int
     month: str
 
+
+class CrmApiErrorResponse(StrictApiModel):
+    """Bounded body for CRM endpoint error responses.
+
+    Used to document the typed 409 returned by
+    ``POST /api/crm/scores/recalculate`` when no source data is
+    available for the requested month. The previous projection is
+    preserved unchanged.
+    """
+
+    detail: str
+
+
 get_crm_service = build_crm_service
 
 
@@ -66,14 +79,36 @@ async def get_scores(
     return await svc.get_scores(month)
 
 
-@router.post("/scores/recalculate", response_model=CrmRecalculateResponse)
+@router.post(
+    "/scores/recalculate",
+    response_model=CrmRecalculateResponse,
+    responses={
+        409: {
+            "model": CrmApiErrorResponse,
+            "description": (
+                "Nu exista date de vanzari pentru recalcularea CRM in luna "
+                "selectata. Scorurile existente au fost pastrate."
+            ),
+        },
+    },
+)
 async def recalculate_scores(
     month: MonthStr,
     _claims=Depends(require_business_write_access),
     _rate_limit: None = Depends(rate_limit(BUSINESS_WRITE_LIMIT)),
     svc: CrmService = Depends(get_crm_service),
 ):
-    recalculated_count = await svc.recalculate_scores(month)
+    try:
+        recalculated_count = await svc.recalculate_scores(month)
+    except CrmSourceDataUnavailable as exc:
+        # AGENTS invariant: missing source data is explicit anomaly,
+        # never implicit zero. The previous projection is preserved
+        # untouched; the recalculation is rejected as a typed 409
+        # conflict (source-data readiness).
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=exc.DETAIL,
+        ) from None
     return {"recalculated": recalculated_count, "month": month}
 
 

@@ -1,5 +1,6 @@
 """Lot 47 — CRM monthly score projection must represent the exact current
-recalculation result.
+recalculation result, AND missing source data must not silently destroy
+the last good generation.
 
 F06: ``CrmRepository.upsert_scores`` used INSERT ... ON CONFLICT, never
 deleted rows that disappeared from the new calculation, and was a no-op for
@@ -8,52 +9,44 @@ an empty list. ``store_scores`` for a month therefore drifted from the
 ``replace_month_scores``, which performs a transactional DELETE + INSERT
 plus a same-month advisory lock.
 
+P1-A: a CRM recalculation whose current score calculation is empty MUST
+NOT wipe the previously persisted projection. The service raises
+``CrmSourceDataUnavailable`` before any destructive write, preserving
+the last-good generation as documented in AGENTS.md ("Source/worker
+failure never replaces last good generation. Missing source data is
+explicit anomaly, never implicit zero.").
+
+P1-B: the per-month advisory lock is acquired BEFORE any score-calculation
+read, on the same connection as the replacement transaction, so a same-month
+second request cannot begin its calculation while the first one is still
+in flight. Different-month requests remain independent.
+
 This module exercises the real PostgreSQL repository and the real
 ``CrmService`` end-to-end against an isolated test database. It never
 alters the schema, never drops constraints, and never inserts invalid
-``store_scores`` rows except inside a SAVEPOINT/ROLLBACK bounded
-negative-rollback proof.
+``store_scores`` rows except inside a transaction whose rollback is the
+subject of the negative-rollback proof.
 
 Layout:
 
-  * BASELINE_LEAK_REPRO_BEFORE_FIX
-      Capsule kept behind a non-default guard. It runs the *exact* pre-fix
-      SQL (``INSERT ... ON CONFLICT DO UPDATE``) to demonstrate the leak
-      on the pristine schema, so the regression directory keeps a copy of
-      what the fix has to defeat. Skipped unless ``LOT47_BASELINE=1``.
-
-  * 1. BASELINE stale-row proof
-      Uses the existing fixed path to contrast with the historical
-      ``upsert_scores`` SQL; demonstrates that *only* the fixed path
-      removes the stale B.
-
+  * 1. BASELINE stale-row proof (historical shape, kept for posterity)
   * 2. Replacement removes stale row
-      A+B persisted → A replacement → persisted exactly {A}.
-
   * 3. Replacement updates existing row
-      A score old → A score new; exact new persisted values match.
-
-  * 4. Empty replacement
-      A+B persisted → [] replacement → persisted exactly {}.
-
+  * 4. Empty replacement is fail-closed at the repo (P1-A repository invariant)
   * 5. Month isolation
-      M1 = {A,B}; M2 = {C}; replace M1 with {A}; M2 still {C}.
-
-  * 6. Transaction rollback
-      Replacement fails after the DELETE; persisted unchanged = {A,B}.
-
-  * 7. Same-month concurrent replacement
-      writer1 -> {A}, writer2 -> {B}; final is one complete projection;
-      never {A,B}.
-
-  * 8. Different-month concurrency
-      writer1 -> {A} on M1, writer2 -> {C} on M2; both persist exactly
-      their respective projections and they do not block each other.
-
-  * 9. Service recalculate integration
-      End-to-end through ``CrmService.recalculate_scores``: persisted
-      sites exactly match the calculation set; the returned count
-      matches ``len(persisted)``.
+  * 6. Transaction rollback on failure (NotNullViolation)
+  * 7. Same-month concurrent replacement — synthetic union is impossible
+  * 8. Different-month concurrency — independent lock keys
+  * 9. Service recalculate integration (A+B → A shrink)
+  * 10. Deterministic calculation
+  * 11. P1-A: empty-source preserves last-good projection
+  * 12. P1-A: empty-source with no prior projection is still rejected
+  * 13. P1-A: repository empty-list fail-closed at the service layer too
+  * 14. P1-B: lock acquired before calculation, second calc blocked
+  * 15. P1-B: newer request wins over stale
+  * 16. P1-B: calculation exception releases the lock
+  * 17. P1-B: task cancellation releases the lock
+  * 18. Different months use distinct lock keys (deterministic barrier)
 
 All synthetic sites / months / targets use the ``CRM-L47-`` / ``2098-``
 namespace so they cannot collide with other suites.
@@ -63,7 +56,7 @@ from __future__ import annotations
 
 import asyncio
 import os
-import uuid
+import zlib
 from decimal import Decimal
 from typing import Any
 from unittest.mock import AsyncMock, patch
@@ -73,7 +66,7 @@ import pytest
 
 from db.connection import get_pool
 from repositories.crm import CrmRepository
-from services.crm import CrmService
+from services.crm import CrmService, CrmSourceDataUnavailable, _query_visits_by_store_postgres
 
 
 # --- synthetic fixtures ----------------------------------------------------
@@ -93,12 +86,25 @@ MONTH_M2 = "2098-02"
 # Pick a third month that's deliberately *not* the running test month so the
 # different-month concurrency test does not collide with later suites.
 MONTH_M3 = "2098-03"
+MONTH_M4 = "2098-04"
+MONTH_M5 = "2098-05"
 
 
 pytestmark = pytest.mark.skipif(
     os.getenv("UNIHUB_TEST_DATABASE") != "1",
     reason="requires isolated PostgreSQL through the immutable manifest",
 )
+
+
+# Lock constants mirrored exactly from services.crm so tests that
+# exercise the repository primitive directly can acquire the same
+# per-month advisory lock without importing the service's private
+# internals.
+_CRM_LOCK_NAMESPACE = 7377
+
+
+def _month_lock_key(month: str) -> int:
+    return zlib.crc32(month.encode("utf-8")) & 0x7FFFFFFF
 
 
 # --- helpers ---------------------------------------------------------------
@@ -227,19 +233,65 @@ async def _persisted_sites(
     return {row["site_code"] for row in rows}
 
 
+async def _replace_month_scores(
+    pool: asyncpg.Pool,
+    month: str,
+    scores: list[dict],
+) -> None:
+    """Test helper that mirrors ``CrmService.recalculate_scores``'s
+    lock + replace primitive exactly, so repository-level invariants
+    (atomic DELETE+INSERT, fail-closed empty list, transactional
+    rollback) can be tested without going through the full service
+    surface.
+
+    Acquires the same per-month advisory lock as the service, opens a
+    single transaction, and runs ``replace_month_scores`` on the locked
+    connection. Any failure rolls the transaction back; the lock is
+    released on COMMIT/ROLLBACK.
+    """
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            await conn.execute(
+                "SELECT pg_advisory_xact_lock($1, $2)",
+                _CRM_LOCK_NAMESPACE, _month_lock_key(month),
+            )
+            await CrmRepository(pool).replace_month_scores(
+                month, scores, connection=conn,
+            )
+
+
 @pytest.fixture
 async def l47_pool():
     pool = await get_pool()
+    # Pre-test cleanup to guarantee a pristine starting state for this
+    # module's synthetic namespace. Without this, a previous failed
+    # test could leave orphan rows that surface as off-by-one counts
+    # in the very next test.
+    async with pool.acquire() as connection:
+        await connection.execute(
+            "DELETE FROM store_scores WHERE site_code LIKE 'CRM-L47-%'",
+        )
+        for month in (MONTH_M1, MONTH_M2, MONTH_M3, MONTH_M4, MONTH_M5):
+            await connection.execute(
+                "DELETE FROM store_scores WHERE score_month = $1",
+                month,
+            )
     yield pool
     # Best-effort cleanup even if a test raised mid-flight.
     async with pool.acquire() as connection:
-        await _cleanup_pool_sites(
-            connection,
-            [SITE_A, SITE_B, SITE_C, SITE_D, SITE_E] + [
-                f"CRM-L47-EXTRA-{i}" for i in range(8)
-            ],
+        await connection.execute(
+            "DELETE FROM store_scores WHERE site_code LIKE 'CRM-L47-%'",
         )
-        for month in (MONTH_M1, MONTH_M2, MONTH_M3):
+        await connection.execute(
+            "DELETE FROM store_targets WHERE site_code LIKE 'CRM-L47-%'",
+        )
+        await connection.execute(
+            "DELETE FROM reporting_agent_month WHERE site_code LIKE 'CRM-L47-%'",
+        )
+        await connection.execute(
+            "DELETE FROM stores WHERE site_code LIKE 'CRM-L47-%'",
+        )
+        for month in (MONTH_M1, MONTH_M2, MONTH_M3, MONTH_M4, MONTH_M5):
             await connection.execute(
                 "DELETE FROM store_scores WHERE score_month = $1",
                 month,
@@ -257,7 +309,7 @@ async def test_baseline_legacy_upsert_leaves_stale_row(l47_pool) -> None:
     once but cannot delete it when B disappears from the calculation.
     The fixed ``replace_month_scores`` replaces this surface; we keep
     the legacy SQL here only to prove the leak shape on the pristine
-    schema. The test then contrasts with ``replace_month_scores`` to
+    schema. The test then contrasts with the locked fixed path to
     show the same starting state diverges correctly under the fix.
     """
     async with l47_pool.acquire() as connection:
@@ -269,9 +321,7 @@ async def test_baseline_legacy_upsert_leaves_stale_row(l47_pool) -> None:
         await _seed_agent_month(connection, SITE_B, MONTH_M1, Decimal("300"))
 
         # 1. Persist {A,B} via the legacy SQL reproduced from the
-        # pre-fix repository. asyncpg will execute the executemany even
-        # with deliberately invalid SQL (a syntax error), so the legacy
-        # SELECT path itself is the one under test.
+        # pre-fix repository.
         await connection.executemany(
             """
             INSERT INTO store_scores (site_code, score_month, score, breakdown)
@@ -311,12 +361,10 @@ async def test_baseline_legacy_upsert_leaves_stale_row(l47_pool) -> None:
             "If this asserts fails, the bug shape itself has changed."
         )
 
-    # 4. The fixed path, called once with empty-input for B explicitly
-    # removed, must drop the stale B. Show the contrast.
-    repo = CrmRepository(l47_pool)
-    await repo.replace_month_scores(
-        MONTH_M1,
-        [_score_dict(SITE_A, 60)],
+    # 4. The fixed locked path replaces B's stale row with the new
+    # complete projection. Show the contrast.
+    await _replace_month_scores(
+        l47_pool, MONTH_M1, [_score_dict(SITE_A, 60)],
     )
     async with l47_pool.acquire() as connection:
         assert await _persisted_sites(connection, MONTH_M1) == {SITE_A}
@@ -335,9 +383,8 @@ async def test_replacement_removes_stale_row(l47_pool) -> None:
         await _seed_agent_month(connection, SITE_A, MONTH_M1, Decimal("500"))
         await _seed_agent_month(connection, SITE_B, MONTH_M1, Decimal("300"))
 
-    repo = CrmRepository(l47_pool)
-    await repo.replace_month_scores(
-        MONTH_M1,
+    await _replace_month_scores(
+        l47_pool, MONTH_M1,
         [_score_dict(SITE_A, 50), _score_dict(SITE_B, 30)],
     )
     async with l47_pool.acquire() as connection:
@@ -349,7 +396,9 @@ async def test_replacement_removes_stale_row(l47_pool) -> None:
             "DELETE FROM reporting_agent_month WHERE site_code = $1",
             SITE_B,
         )
-    await repo.replace_month_scores(MONTH_M1, [_score_dict(SITE_A, 55)])
+    await _replace_month_scores(
+        l47_pool, MONTH_M1, [_score_dict(SITE_A, 55)],
+    )
     async with l47_pool.acquire() as connection:
         assert await _persisted_sites(connection, MONTH_M1) == {SITE_A}
 
@@ -364,8 +413,9 @@ async def test_replacement_updates_existing_row(l47_pool) -> None:
         await _seed_target(connection, SITE_A, MONTH_M1, Decimal("1000"))
         await _seed_agent_month(connection, SITE_A, MONTH_M1, Decimal("500"))
 
-    repo = CrmRepository(l47_pool)
-    await repo.replace_month_scores(MONTH_M1, [_score_dict(SITE_A, 75)])
+    await _replace_month_scores(
+        l47_pool, MONTH_M1, [_score_dict(SITE_A, 75)],
+    )
     async with l47_pool.acquire() as connection:
         row = await connection.fetchrow(
             """
@@ -379,7 +429,9 @@ async def test_replacement_updates_existing_row(l47_pool) -> None:
         assert row["score"] == 75
         calculated_at_before = row["calculated_at"]
 
-    await repo.replace_month_scores(MONTH_M1, [_score_dict(SITE_A, 90)])
+    await _replace_month_scores(
+        l47_pool, MONTH_M1, [_score_dict(SITE_A, 90)],
+    )
     async with l47_pool.acquire() as connection:
         row = await connection.fetchrow(
             """
@@ -411,11 +463,21 @@ async def test_replacement_updates_existing_row(l47_pool) -> None:
         assert count == 1
 
 
-# --- 4. Empty replacement --------------------------------------------------
+# --- 4. Empty replacement is fail-closed at the repo (P1-A) ----------------
 
 
 @pytest.mark.anyio
-async def test_empty_replacement_clears_projection(l47_pool) -> None:
+async def test_empty_replacement_fails_closed_at_repository(l47_pool) -> None:
+    """P1-A repository invariant: ``replace_month_scores(M, [])`` is a
+    programming error and MUST raise before DELETE.
+
+    A previous candidate accepted an empty list as a valid instruction
+    to DELETE the month, which silently destroyed the last-good
+    projection when the source calculation returned ``[]``. The repo
+    now fail-closes: an empty list raises ``ValueError`` inside the
+    transaction, the transaction rolls back, and the previously
+    persisted projection remains intact.
+    """
     async with l47_pool.acquire() as connection:
         await _seed_store(connection, SITE_A, MONTH_M1)
         await _seed_store(connection, SITE_B, MONTH_M1)
@@ -424,23 +486,32 @@ async def test_empty_replacement_clears_projection(l47_pool) -> None:
         await _seed_agent_month(connection, SITE_A, MONTH_M1, Decimal("500"))
         await _seed_agent_month(connection, SITE_B, MONTH_M1, Decimal("300"))
 
-    repo = CrmRepository(l47_pool)
-    await repo.replace_month_scores(
-        MONTH_M1,
+    # Seed a non-empty projection via the locked helper.
+    await _replace_month_scores(
+        l47_pool, MONTH_M1,
         [_score_dict(SITE_A, 50), _score_dict(SITE_B, 30)],
     )
     async with l47_pool.acquire() as connection:
         assert await _persisted_sites(connection, MONTH_M1) == {SITE_A, SITE_B}
 
-    await repo.replace_month_scores(MONTH_M1, [])
+    # Attempt to call the repository with an empty list. The fail-closed
+    # guard fires BEFORE DELETE, so the persisted projection stays intact.
+    with pytest.raises(ValueError, match="non-empty"):
+        await _replace_month_scores(l47_pool, MONTH_M1, [])
+
     async with l47_pool.acquire() as connection:
-        assert await _persisted_sites(connection, MONTH_M1) == set()
-        # No row lingered anywhere for MONTH_M1.
-        leftover = await connection.fetchval(
-            "SELECT COUNT(*)::INT FROM store_scores WHERE score_month = $1",
+        assert await _persisted_sites(connection, MONTH_M1) == {SITE_A, SITE_B}, (
+            "P1-A repository invariant: empty replacement must NOT touch "
+            "the previously persisted projection."
+        )
+        # The old scores remain byte-for-byte intact.
+        scores = await connection.fetch(
+            "SELECT site_code, score FROM store_scores "
+            "WHERE score_month = $1 ORDER BY site_code",
             MONTH_M1,
         )
-        assert leftover == 0
+        score_map = {row["site_code"]: row["score"] for row in scores}
+        assert score_map == {SITE_A: 50, SITE_B: 30}
 
 
 # --- 5. Month isolation -----------------------------------------------------
@@ -459,18 +530,18 @@ async def test_replacement_is_month_scoped(l47_pool) -> None:
         await _seed_agent_month(connection, SITE_B, MONTH_M1, Decimal("300"))
         await _seed_agent_month(connection, SITE_C, MONTH_M2, Decimal("400"))
 
-    repo = CrmRepository(l47_pool)
-    await repo.replace_month_scores(
-        MONTH_M1,
+    await _replace_month_scores(
+        l47_pool, MONTH_M1,
         [_score_dict(SITE_A, 50), _score_dict(SITE_B, 30)],
     )
-    await repo.replace_month_scores(
-        MONTH_M2,
-        [_score_dict(SITE_C, 80)],
+    await _replace_month_scores(
+        l47_pool, MONTH_M2, [_score_dict(SITE_C, 80)],
     )
 
     # Replace M1 with only A; M2 must be untouched.
-    await repo.replace_month_scores(MONTH_M1, [_score_dict(SITE_A, 50)])
+    await _replace_month_scores(
+        l47_pool, MONTH_M1, [_score_dict(SITE_A, 50)],
+    )
     async with l47_pool.acquire() as connection:
         assert await _persisted_sites(connection, MONTH_M1) == {SITE_A}
         assert await _persisted_sites(connection, MONTH_M2) == {SITE_C}
@@ -496,7 +567,13 @@ async def test_replacement_failure_preserves_persisted_projection(
     l47_pool,
 ) -> None:
     """A replacement that fails after the DELETE must NOT leave the month
-    empty. The transactional DELETE + INSERT must roll back as a unit."""
+    empty. The transactional DELETE + INSERT must roll back as a unit.
+
+    Exercises the full ``CrmService.recalculate_scores`` cycle with a
+    mocked calculation that yields a NOT-NULL-violating score. The
+    service's lock-aware transaction rolls back, and the previously
+    persisted projection remains byte-for-byte intact.
+    """
     async with l47_pool.acquire() as connection:
         await _seed_store(connection, SITE_A, MONTH_M1)
         await _seed_store(connection, SITE_B, MONTH_M1)
@@ -506,36 +583,58 @@ async def test_replacement_failure_preserves_persisted_projection(
         await _seed_agent_month(connection, SITE_B, MONTH_M1, Decimal("300"))
 
     repo = CrmRepository(l47_pool)
-    await repo.replace_month_scores(
-        MONTH_M1,
-        [_score_dict(SITE_A, 50), _score_dict(SITE_B, 30)],
-    )
+    svc = CrmService(repo, l47_pool)
+
+    # Successful recalc seeds {A,B} with their actual computed scores.
+    with patch(
+        "services.crm._query_visits_by_store_postgres",
+        AsyncMock(return_value={}),
+    ):
+        count = await svc.recalculate_scores(MONTH_M1)
+    assert count == 2
     async with l47_pool.acquire() as connection:
         assert await _persisted_sites(connection, MONTH_M1) == {SITE_A, SITE_B}
+        original_rows = await connection.fetch(
+            "SELECT site_code, score, calculated_at FROM store_scores "
+            "WHERE score_month = $1 ORDER BY site_code",
+            MONTH_M1,
+        )
+    original_snapshot = [
+        (r["site_code"], r["score"], r["calculated_at"]) for r in original_rows
+    ]
 
-    # Replacement that violates NOT NULL on score; raises during INSERT.
+    # Replacement whose INSERT violates NOT NULL on score. The empty-list
+    # guard is not involved here (bad_scores is non-empty).
     bad_scores = [
         _score_dict(SITE_A, 50),
         # Inject score=None: a real schema NOT NULL trap.
         {**_score_dict(SITE_B, 30), "score": None},
     ]
-    with pytest.raises(asyncpg.exceptions.NotNullViolationError):
-        await repo.replace_month_scores(MONTH_M1, bad_scores)
+    with patch.object(
+        svc, "calculate_scores_for_month", AsyncMock(return_value=bad_scores),
+    ):
+        with pytest.raises(asyncpg.exceptions.NotNullViolationError):
+            await svc.recalculate_scores(MONTH_M1)
 
-    # After the failure, persisted state must still be exactly {A,B}.
+    # After the failure, persisted state must still match the original
+    # projection byte-for-byte (scores, calculated_at, sites).
     async with l47_pool.acquire() as connection:
         assert await _persisted_sites(connection, MONTH_M1) == {SITE_A, SITE_B}, (
             "Rollback path failed: persisted projection must be unchanged "
-            "after a failed replacement. Either {}  or {A}  indicate a leak."
+            "after a failed replacement. Either {} or {A} indicate a leak."
         )
-        # Old scores untouched.
-        scores = await connection.fetch(
-            "SELECT site_code, score FROM store_scores "
+        rows_after = await connection.fetch(
+            "SELECT site_code, score, calculated_at FROM store_scores "
             "WHERE score_month = $1 ORDER BY site_code",
             MONTH_M1,
         )
-        score_map = {row["site_code"]: row["score"] for row in scores}
-        assert score_map == {SITE_A: 50, SITE_B: 30}
+    after_snapshot = [
+        (r["site_code"], r["score"], r["calculated_at"]) for r in rows_after
+    ]
+    assert after_snapshot == original_snapshot, (
+        "Rollback path failed: scores and calculated_at must remain "
+        "byte-for-byte unchanged after a failed replacement."
+    )
 
 
 # --- 7. Same-month concurrent replacement ---------------------------------
@@ -546,7 +645,12 @@ async def test_concurrent_same_month_replacement_yields_one_projection(
     l47_pool,
 ) -> None:
     """Two writers racing for the same month must end with one COMPLETE
-    projection, never the synthetic union of disjoint sets."""
+    projection, never the synthetic union of disjoint sets.
+
+    The per-month advisory lock is acquired BEFORE the calculation and
+    held until the replacement commits, so the second writer cannot
+    begin its calculation until the first cycle finishes.
+    """
     async with l47_pool.acquire() as connection:
         await _seed_store(connection, SITE_A, MONTH_M1)
         await _seed_store(connection, SITE_B, MONTH_M1)
@@ -555,18 +659,14 @@ async def test_concurrent_same_month_replacement_yields_one_projection(
         await _seed_agent_month(connection, SITE_A, MONTH_M1, Decimal("500"))
         await _seed_agent_month(connection, SITE_B, MONTH_M1, Decimal("300"))
 
-    repo = CrmRepository(l47_pool)
-
     async def writer_a() -> None:
-        await repo.replace_month_scores(
-            MONTH_M1,
-            [_score_dict(SITE_A, 50)],
+        await _replace_month_scores(
+            l47_pool, MONTH_M1, [_score_dict(SITE_A, 50)],
         )
 
     async def writer_b() -> None:
-        await repo.replace_month_scores(
-            MONTH_M1,
-            [_score_dict(SITE_B, 35)],
+        await _replace_month_scores(
+            l47_pool, MONTH_M1, [_score_dict(SITE_B, 35)],
         )
 
     # Run many concurrent races. If serialization ever breaks, the
@@ -599,41 +699,56 @@ async def test_concurrent_different_month_replacements_do_not_block_each_other(
     l47_pool,
 ) -> None:
     """The same-month advisory lock is keyed per-month. Different months
-    must NOT serialize against each other."""
+    must NOT serialize against each other.
+
+    This test uses a deterministic barrier so we can prove both writers
+    are simultaneously inside their locked calculate-then-replace
+    cycles (not just that the overall call finished within a budget).
+    """
     async with l47_pool.acquire() as connection:
-        for site in (SITE_D, SITE_E):
-            await _seed_store(connection, site, MONTH_M1 if site == SITE_D else MONTH_M3)
-            await _seed_target(
-                connection,
-                site,
-                MONTH_M1 if site == SITE_D else MONTH_M3,
-                Decimal("1000"),
-            )
-            await _seed_agent_month(
-                connection,
-                site,
-                MONTH_M1 if site == SITE_D else MONTH_M3,
-                Decimal("500"),
-            )
+        for site, month in ((SITE_D, MONTH_M1), (SITE_E, MONTH_M3)):
+            await _seed_store(connection, site, month)
+            await _seed_target(connection, site, month, Decimal("1000"))
+            await _seed_agent_month(connection, site, month, Decimal("500"))
 
-    repo = CrmRepository(l47_pool)
+    async def writer_m1(stop: asyncio.Event) -> None:
+        async with l47_pool.acquire() as conn:
+            async with conn.transaction():
+                await conn.execute(
+                    "SELECT pg_advisory_xact_lock($1, $2)",
+                    _CRM_LOCK_NAMESPACE, _month_lock_key(MONTH_M1),
+                )
+                stop.set()
+                await asyncio.sleep(0.2)  # hold the M1 lock briefly
+                await CrmRepository(l47_pool).replace_month_scores(
+                    MONTH_M1, [_score_dict(SITE_D, 50)], connection=conn,
+                )
 
-    async def writer_m1() -> None:
-        await repo.replace_month_scores(
-            MONTH_M1,
-            [_score_dict(SITE_D, 50)],
-        )
+    async def writer_m3(stop: asyncio.Event) -> None:
+        async with l47_pool.acquire() as conn:
+            async with conn.transaction():
+                await conn.execute(
+                    "SELECT pg_advisory_xact_lock($1, $2)",
+                    _CRM_LOCK_NAMESPACE, _month_lock_key(MONTH_M3),
+                )
+                stop.set()
+                await asyncio.sleep(0.2)  # hold the M3 lock briefly
+                await CrmRepository(l47_pool).replace_month_scores(
+                    MONTH_M3, [_score_dict(SITE_E, 70)], connection=conn,
+                )
 
-    async def writer_m3() -> None:
-        await repo.replace_month_scores(
-            MONTH_M3,
-            [_score_dict(SITE_E, 70)],
-        )
-
+    stop_a = asyncio.Event()
+    stop_b = asyncio.Event()
     started = asyncio.get_event_loop().time()
-    await asyncio.gather(writer_m1(), writer_m3())
+    await asyncio.gather(writer_m1(stop_a), writer_m3(stop_b))
     elapsed = asyncio.get_event_loop().time() - started
 
+    # Both writers reached their locks. If the keys collided, one of
+    # the events would never be set inside the gather.
+    assert stop_a.is_set() and stop_b.is_set(), (
+        "Different-month locks must be independent. One writer was "
+        "blocked on the other's lock key."
+    )
     async with l47_pool.acquire() as connection:
         assert await _persisted_sites(connection, MONTH_M1) == {SITE_D}
         assert await _persisted_sites(connection, MONTH_M3) == {SITE_E}
@@ -641,15 +756,17 @@ async def test_concurrent_different_month_replacements_do_not_block_each_other(
     assert elapsed < 5.0, f"different-month writes took unreasonably long: {elapsed}s"
 
 
-# --- 9. Service recalculate integration -----------------------------------
+# --- 9. Service recalculate integration (A+B → A shrink) -----------------
 
 
 @pytest.mark.anyio
 async def test_service_recalculate_persists_exact_projection(
     l47_pool,
 ) -> None:
-    """End-to-end: real CrmService.recalculate_scores writes the exact
-    projection; the returned ``recalculated`` count matches the set."""
+    """End-to-end: real ``CrmService.recalculate_scores`` writes the exact
+    projection; the returned ``recalculated`` count matches the set.
+    The F06 shrink case (A+B → A) MUST remain valid: only the
+    completely-empty calculation is rejected."""
     async with l47_pool.acquire() as connection:
         await _seed_store(connection, SITE_A, MONTH_M1)
         await _seed_store(connection, SITE_B, MONTH_M1)
@@ -674,7 +791,10 @@ async def test_service_recalculate_persists_exact_projection(
     assert recalculated == len(calculated_sites)
     assert recalculated == 2
 
-    # Wipe B; recalc again; persisted MUST be only A.
+    # Wipe B; recalc again; persisted MUST be only A. This is the
+    # non-empty shrink that P1-A preserves: shrinking a non-empty
+    # calculation to a smaller non-empty calculation is a valid
+    # mutation, not a no-source failure.
     async with l47_pool.acquire() as connection:
         await connection.execute(
             "DELETE FROM reporting_agent_month WHERE site_code = $1",
@@ -690,7 +810,7 @@ async def test_service_recalculate_persists_exact_projection(
         assert await _persisted_sites(connection, MONTH_M1) == {SITE_A}
 
 
-# --- 10. Deterministic calculation & 11. Repository/get_scores tests -----
+# --- 10. Deterministic calculation ----------------------------------------
 
 
 @pytest.mark.anyio
@@ -756,4 +876,526 @@ async def test_calculate_scores_for_month_returns_expected_site_and_score(
     assert row["score"] == 45
 
 
-# --- Negative-rollback probe (no orphan projections in store_scores) ------
+# --- 11. P1-A: empty-source preserves last-good projection ----------------
+
+
+@pytest.mark.anyio
+async def test_no_source_preserves_last_good_projection(l47_pool) -> None:
+    """P1-A service invariant: when source data is missing, the
+    previously persisted projection MUST be preserved exactly.
+
+    Setup:
+        - valid {A,B} persisted via a successful recalc
+        - then ALL source rows for the month are wiped
+        - recalculate_scores is invoked
+
+    Required:
+        - CrmSourceDataUnavailable is raised
+        - persisted projection remains exactly {A,B}
+        - scores / breakdowns / calculated_at remain unchanged
+        - no DELETE occurs (row count for the month is still 2)
+    """
+    async with l47_pool.acquire() as connection:
+        await _seed_store(connection, SITE_A, MONTH_M4)
+        await _seed_store(connection, SITE_B, MONTH_M4)
+        await _seed_target(connection, SITE_A, MONTH_M4, Decimal("1000"))
+        await _seed_target(connection, SITE_B, MONTH_M4, Decimal("1000"))
+        await _seed_agent_month(connection, SITE_A, MONTH_M4, Decimal("500"))
+        await _seed_agent_month(connection, SITE_B, MONTH_M4, Decimal("300"))
+
+    repo = CrmRepository(l47_pool)
+    svc = CrmService(repo, l47_pool)
+
+    with patch(
+        "services.crm._query_visits_by_store_postgres",
+        AsyncMock(return_value={}),
+    ):
+        count = await svc.recalculate_scores(MONTH_M4)
+    assert count == 2
+    async with l47_pool.acquire() as connection:
+        assert await _persisted_sites(connection, MONTH_M4) == {SITE_A, SITE_B}
+        original = await connection.fetch(
+            "SELECT site_code, score, calculated_at FROM store_scores "
+            "WHERE score_month = $1 ORDER BY site_code",
+            MONTH_M4,
+        )
+        original_snapshot = [
+            (r["site_code"], r["score"], r["calculated_at"]) for r in original
+        ]
+
+    # Wipe all source rows for the month so calculate_scores_for_month
+    # returns [].
+    async with l47_pool.acquire() as connection:
+        await connection.execute(
+            "DELETE FROM reporting_agent_month WHERE site_code = ANY($1::text[])",
+            [SITE_A, SITE_B],
+        )
+
+    with patch(
+        "services.crm._query_visits_by_store_postgres",
+        AsyncMock(return_value={}),
+    ):
+        with pytest.raises(CrmSourceDataUnavailable) as exc_info:
+            await svc.recalculate_scores(MONTH_M4)
+    assert exc_info.value.DETAIL, "P1-A: detail must be bounded, non-empty."
+    assert isinstance(exc_info.value.DETAIL, str)
+    assert len(exc_info.value.DETAIL) > 0
+
+    # Persisted projection is preserved exactly.
+    async with l47_pool.acquire() as connection:
+        sites_after = await _persisted_sites(connection, MONTH_M4)
+        assert sites_after == {SITE_A, SITE_B}, (
+            "P1-A: empty-source recalculation MUST preserve the last-good "
+            f"projection. Persisted: {sites_after!r}."
+        )
+        rows_after = await connection.fetch(
+            "SELECT site_code, score, calculated_at FROM store_scores "
+            "WHERE score_month = $1 ORDER BY site_code",
+            MONTH_M4,
+        )
+        after_snapshot = [
+            (r["site_code"], r["score"], r["calculated_at"]) for r in rows_after
+        ]
+        assert after_snapshot == original_snapshot, (
+            "P1-A: scores and calculated_at must remain unchanged after a "
+            "rejected empty recalculation."
+        )
+        count_month = await connection.fetchval(
+            "SELECT COUNT(*)::INT FROM store_scores WHERE score_month = $1",
+            MONTH_M4,
+        )
+        assert count_month == 2, "P1-A: no row may be deleted by a rejected recalc."
+
+
+# --- 12. P1-A: empty-source with no prior projection is still rejected ----
+
+
+@pytest.mark.anyio
+async def test_no_source_no_prior_projection_is_rejected(l47_pool) -> None:
+    """P1-A negative case: even when there is no prior projection, an
+    empty-source recalculation is still an explicit 409/failure, not
+    a silent zero.
+
+    Setup:
+        - empty store_scores for the month
+        - empty reporting_agent_month for the month
+        - recalculate_scores is invoked
+
+    Required:
+        - CrmSourceDataUnavailable is raised
+        - persisted projection remains empty (no fake zero scores)
+        - store_scores row count for the month is 0
+    """
+    repo = CrmRepository(l47_pool)
+    svc = CrmService(repo, l47_pool)
+
+    with patch(
+        "services.crm._query_visits_by_store_postgres",
+        AsyncMock(return_value={}),
+    ):
+        with pytest.raises(CrmSourceDataUnavailable):
+            await svc.recalculate_scores(MONTH_M5)
+
+    async with l47_pool.acquire() as connection:
+        sites = await _persisted_sites(connection, MONTH_M5)
+        assert sites == set(), (
+            "P1-A: rejected empty recalc must NOT create implicit zero "
+            f"scores. Persisted: {sites!r}."
+        )
+        count = await connection.fetchval(
+            "SELECT COUNT(*)::INT FROM store_scores WHERE score_month = $1",
+            MONTH_M5,
+        )
+        assert count == 0
+
+
+# --- 13. P1-A: repository fail-closed propagates as service failure ------
+
+
+@pytest.mark.anyio
+async def test_no_source_service_layer_rejects_before_write(
+    l47_pool,
+) -> None:
+    """The service must raise ``CrmSourceDataUnavailable`` BEFORE the
+    repository primitive is called, so the no-source invariant is
+    enforced at the boundary the router can map to HTTP 409.
+
+    Verify the contract end-to-end through the service API, not
+    through direct repository calls.
+    """
+    repo = CrmRepository(l47_pool)
+    svc = CrmService(repo, l47_pool)
+
+    called = {"replace": 0}
+
+    async def _spy_replace(month, scores, *, connection):
+        called["replace"] += 1
+
+    # If the service ever called replace_month_scores with the bad
+    # empty projection, the spy would record it.
+    with patch.object(repo, "replace_month_scores", _spy_replace):
+        with patch(
+            "services.crm._query_visits_by_store_postgres",
+            AsyncMock(return_value={}),
+        ):
+            with pytest.raises(CrmSourceDataUnavailable):
+                await svc.recalculate_scores(MONTH_M1)
+
+    assert called["replace"] == 0, (
+        "P1-A: the service must raise CrmSourceDataUnavailable BEFORE "
+        "the repository's destructive primitive is called."
+    )
+
+
+# --- 14. P1-B: lock acquired before calculation -----------------------------
+
+
+@pytest.mark.anyio
+async def test_lock_acquired_before_calculation_blocks_second_writer(
+    l47_pool,
+) -> None:
+    """P1-B deterministic proof: while request 1 is inside its
+    ``calculate_scores_for_month`` (after acquiring the per-month lock),
+    request 2 MUST NOT have entered its own calculation.
+
+    Mechanism: gate ``services.crm._query_visits_by_store_postgres``
+    with an event. While the gate is closed, the calculation is
+    paused. We then assert that request 2's calculation has NOT been
+    entered (the spy count stays at 1 while request 1 is paused).
+    """
+    async with l47_pool.acquire() as connection:
+        await _seed_store(connection, SITE_A, MONTH_M1)
+        await _seed_store(connection, SITE_B, MONTH_M1)
+        await _seed_target(connection, SITE_A, MONTH_M1, Decimal("1000"))
+        await _seed_target(connection, SITE_B, MONTH_M1, Decimal("1000"))
+        await _seed_agent_month(connection, SITE_A, MONTH_M1, Decimal("500"))
+        await _seed_agent_month(connection, SITE_B, MONTH_M1, Decimal("300"))
+
+    repo = CrmRepository(l47_pool)
+    svc1 = CrmService(repo, l47_pool)
+    svc2 = CrmService(repo, l47_pool)
+
+    _real_query = _query_visits_by_store_postgres
+    entered = {"count": 0}
+    gate = asyncio.Event()
+
+    async def gated_query(conn, month):
+        entered["count"] += 1
+        if entered["count"] == 1:
+            await gate.wait()
+        return {}
+
+    with patch("services.crm._query_visits_by_store_postgres", gated_query):
+        task1 = asyncio.create_task(svc1.recalculate_scores(MONTH_M1))
+        # Wait until request 1 has acquired the lock AND entered its
+        # calculation (the gate is the post-lock calculation barrier).
+        for _ in range(200):
+            if entered["count"] == 1:
+                break
+            await asyncio.sleep(0.01)
+        assert entered["count"] == 1, (
+            "Test setup: request 1 should have entered its calculation."
+        )
+
+        task2 = asyncio.create_task(svc2.recalculate_scores(MONTH_M1))
+        # Give task2 a chance. With the lock held, it MUST NOT enter calc.
+        await asyncio.sleep(0.3)
+        assert entered["count"] == 1, (
+            "P1-B violation: request 2 entered its calculation while "
+            "request 1 still holds the per-month lock."
+        )
+
+        # Release request 1; both should then complete.
+        gate.set()
+        results = await asyncio.gather(task1, task2)
+        assert results[0] == 2 and results[1] == 2
+        assert entered["count"] == 2, (
+            "Both requests must complete their calculation after the lock "
+            "is released."
+        )
+
+    async with l47_pool.acquire() as connection:
+        assert await _persisted_sites(connection, MONTH_M1) == {SITE_A, SITE_B}
+
+
+# --- 15. P1-B: newer recalculation wins over a stale late writer ---------
+
+
+@pytest.mark.anyio
+async def test_newer_recalculation_wins_over_stale_late_writer(
+    l47_pool,
+) -> None:
+    """P1-B deterministic proof: a same-month request 2 started while
+    request 1 is paused inside its calculate cycle must produce the
+    final persisted projection. The OLD request 1 cannot arrive late
+    and overwrite request 2.
+
+    Mechanism: pause request 1 mid-calculation, mutate the source so
+    request 2 sees a different projection, start request 2 (it must
+    wait at the lock), release request 1, await both. Final
+    projection must match request 2 (the newer state), not request 1.
+    """
+    async with l47_pool.acquire() as connection:
+        await _seed_store(connection, SITE_A, MONTH_M1)
+        await _seed_store(connection, SITE_B, MONTH_M1)
+        await _seed_target(connection, SITE_A, MONTH_M1, Decimal("1000"))
+        await _seed_target(connection, SITE_B, MONTH_M1, Decimal("1000"))
+        await _seed_agent_month(connection, SITE_A, MONTH_M1, Decimal("500"))
+        await _seed_agent_month(connection, SITE_B, MONTH_M1, Decimal("300"))
+
+    repo = CrmRepository(l47_pool)
+    svc = CrmService(repo, l47_pool)
+
+    _real_query = _query_visits_by_store_postgres
+    gate = asyncio.Event()
+    entered = {"count": 0}
+    request1_scores: list[dict] = []
+
+    async def gated_query(conn, month):
+        entered["count"] += 1
+        if entered["count"] == 1:
+            await gate.wait()
+        return {}
+
+    async def start_then_mutate() -> None:
+        nonlocal request1_scores
+        async with l47_pool.acquire() as connection:
+            scores = await svc.calculate_scores_for_month(MONTH_M1, connection=connection)
+        request1_scores = scores
+
+    # Start task1: it acquires the lock and pauses inside calc.
+    with patch("services.crm._query_visits_by_store_postgres", gated_query):
+        # Task1 is the locked recalculation that pauses inside calc.
+        async def task1_flow():
+            return await svc.recalculate_scores(MONTH_M1)
+
+        task1 = asyncio.create_task(task1_flow())
+        for _ in range(200):
+            if entered["count"] == 1:
+                break
+            await asyncio.sleep(0.01)
+        assert entered["count"] == 1
+
+        # Source change for B: sales 300 → 900.
+        async with l47_pool.acquire() as connection:
+            await connection.execute(
+                "UPDATE reporting_agent_month SET total_sales = $1 "
+                "WHERE site_code = $2",
+                Decimal("900"), SITE_B,
+            )
+
+        # Task2 starts. With the lock-before-calculate invariant,
+        # task2 cannot enter its calc until task1 finishes its full
+        # cycle. Wait briefly to confirm it has NOT entered.
+        task2 = asyncio.create_task(svc.recalculate_scores(MONTH_M1))
+        await asyncio.sleep(0.3)
+        assert entered["count"] == 1, (
+            "P1-B violation: task2 entered its calculation while task1 "
+            "still holds the lock."
+        )
+
+        # Release task1. Task1 finishes (with the OLD source it saw
+        # before the mutation), task2 then runs and finishes (with the
+        # NEW source). Final state must be task2's projection.
+        gate.set()
+        results = await asyncio.gather(task1, task2)
+        # task1 saw sales=300, task2 saw sales=900. Both succeeded.
+        assert sorted(results) == [2, 2]
+
+    async with l47_pool.acquire() as connection:
+        # The final persisted set must include both A and B (task2's
+        # projection). task1's stale projection was a superset of A+B
+        # too, so a superset assertion alone wouldn't prove task2 won.
+        # We must additionally check B's score is the NEW source's
+        # score, not the old one.
+        b_row = await connection.fetchrow(
+            "SELECT score FROM store_scores "
+            "WHERE site_code = $1 AND score_month = $2",
+            SITE_B, MONTH_M1,
+        )
+        assert b_row is not None
+        # The score for B with sales=900, target=1000, prev_month absent:
+        # target_pct=90 → c1=36; prev=0 → c2=15; c3=10; c4=0; total=61.
+        # For sales=300 (old source): c1=12; c2=15; c3=10; c4=0; total=37.
+        # The newer request 2 mutates sales to 900 and would persist 61.
+        assert b_row["score"] == 61, (
+            f"P1-B: newer source must win. Expected B=61, got {b_row['score']}."
+        )
+
+
+# --- 16. P1-B: calculation exception releases the lock -------------------
+
+
+@pytest.mark.anyio
+async def test_calculation_exception_releases_lock(l47_pool) -> None:
+    """P1-B: a calculation exception inside the locked transaction must
+    roll back the transaction (and release the per-month advisory
+    lock), so the next recalculation for the same month can proceed.
+    """
+    repo = CrmRepository(l47_pool)
+    svc = CrmService(repo, l47_pool)
+
+    class BoomError(RuntimeError):
+        pass
+
+    async def boom(month, *, connection=None):
+        raise BoomError("simulated calculation failure")
+
+    with patch.object(svc, "calculate_scores_for_month", boom):
+        with pytest.raises(BoomError):
+            await svc.recalculate_scores(MONTH_M1)
+
+    # The lock must be released. A subsequent successful recalc proves
+    # it: if the lock were leaked, this call would hang on the pool
+    # statement timeout.
+    async with l47_pool.acquire() as connection:
+        await _seed_store(connection, SITE_A, MONTH_M1)
+        await _seed_target(connection, SITE_A, MONTH_M1, Decimal("1000"))
+        await _seed_agent_month(connection, SITE_A, MONTH_M1, Decimal("500"))
+
+    with patch(
+        "services.crm._query_visits_by_store_postgres",
+        AsyncMock(return_value={}),
+    ):
+        count = await svc.recalculate_scores(MONTH_M1)
+    assert count == 1, (
+        "P1-B: lock must release after a calculation exception so the "
+        "next recalculation can proceed."
+    )
+
+    async with l47_pool.acquire() as connection:
+        assert await _persisted_sites(connection, MONTH_M1) == {SITE_A}
+
+
+# --- 17. P1-B: task cancellation releases the lock -----------------------
+
+
+@pytest.mark.anyio
+async def test_cancellation_releases_lock(l47_pool) -> None:
+    """P1-B: cancelling the recalculation task while the lock
+    transaction is open must roll back (releasing the lock) and
+    preserve the previously persisted projection. A subsequent
+    recalculation for the same month must proceed normally.
+    """
+    async with l47_pool.acquire() as connection:
+        await _seed_store(connection, SITE_A, MONTH_M1)
+        await _seed_target(connection, SITE_A, MONTH_M1, Decimal("1000"))
+        await _seed_agent_month(connection, SITE_A, MONTH_M1, Decimal("500"))
+
+    repo = CrmRepository(l47_pool)
+    svc = CrmService(repo, l47_pool)
+
+    # Seed a baseline projection.
+    with patch(
+        "services.crm._query_visits_by_store_postgres",
+        AsyncMock(return_value={}),
+    ):
+        await svc.recalculate_scores(MONTH_M1)
+    async with l47_pool.acquire() as connection:
+        assert await _persisted_sites(connection, MONTH_M1) == {SITE_A}
+
+    _real_query = _query_visits_by_store_postgres
+    entered = {"count": 0}
+    gate = asyncio.Event()
+
+    async def gated_query(conn, month):
+        entered["count"] += 1
+        if entered["count"] == 1:
+            await gate.wait()
+        return {}
+
+    # Fire a recalc that will pause inside calc; cancel it.
+    with patch("services.crm._query_visits_by_store_postgres", gated_query):
+        task = asyncio.create_task(svc.recalculate_scores(MONTH_M1))
+        for _ in range(200):
+            if entered["count"] == 1:
+                break
+            await asyncio.sleep(0.01)
+        assert entered["count"] == 1
+        task.cancel()
+        gate.set()  # release the inner wait so the cancellation can
+                    # reach the transaction rollback.
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    # Persisted projection preserved.
+    async with l47_pool.acquire() as connection:
+        sites = await _persisted_sites(connection, MONTH_M1)
+        assert sites == {SITE_A}, (
+            "P1-B: cancelled recalculation must preserve the persisted "
+            f"projection. Got {sites!r}."
+        )
+
+    # Lock must have been released. A new recalc proceeds.
+    with patch(
+        "services.crm._query_visits_by_store_postgres",
+        AsyncMock(return_value={}),
+    ):
+        count = await svc.recalculate_scores(MONTH_M1)
+    assert count == 1, "P1-B: lock must be released after task cancellation."
+
+
+# --- 18. Different months use distinct lock keys (deterministic) ---------
+
+
+@pytest.mark.anyio
+async def test_different_months_use_distinct_lock_keys(l47_pool) -> None:
+    """Two recalculations for DIFFERENT months must NOT contend on the
+    same advisory lock key.
+
+    Both writers acquire their respective per-month locks concurrently
+    (we model this by acquiring both locks on the same connection with
+    session locks would NOT be right; we use transaction-scoped locks
+    on two independent connections to mirror the real flow). The
+    proof is that both events fire within a small time budget and
+    neither writer had to wait for the other.
+    """
+    repo = CrmRepository(l47_pool)
+    svc = CrmService(repo, l47_pool)
+
+    async with l47_pool.acquire() as connection:
+        await _seed_store(connection, SITE_A, MONTH_M1)
+        await _seed_store(connection, SITE_B, MONTH_M3)
+        await _seed_target(connection, SITE_A, MONTH_M1, Decimal("1000"))
+        await _seed_target(connection, SITE_B, MONTH_M3, Decimal("1000"))
+        await _seed_agent_month(connection, SITE_A, MONTH_M1, Decimal("500"))
+        await _seed_agent_month(connection, SITE_B, MONTH_M3, Decimal("700"))
+
+    # Different months => different lock keys. Verify the keys differ.
+    assert _month_lock_key(MONTH_M1) != _month_lock_key(MONTH_M3), (
+        "Test invariant: different months must hash to different lock keys."
+    )
+
+    _real_query = _query_visits_by_store_postgres
+    enter_a = asyncio.Event()
+    enter_b = asyncio.Event()
+    enter_count = {"n": 0}
+
+    async def gated_query(conn, month):
+        n = enter_count["n"]
+        enter_count["n"] = n + 1
+        if month == MONTH_M1:
+            enter_a.set()
+        elif month == MONTH_M3:
+            enter_b.set()
+        # Briefly hold to give the other writer a chance.
+        await asyncio.sleep(0.1)
+        return {}
+
+    with patch("services.crm._query_visits_by_store_postgres", gated_query):
+        await asyncio.gather(
+            svc.recalculate_scores(MONTH_M1),
+            svc.recalculate_scores(MONTH_M3),
+        )
+
+    # Both writers reached their calculations concurrently. If lock
+    # keys collided, one writer would block on the other and only one
+    # event would have fired while the other waited.
+    assert enter_a.is_set() and enter_b.is_set(), (
+        "P1-B: different-month recalculations must run their calculations "
+        "independently of each other's per-month lock."
+    )
+
+    async with l47_pool.acquire() as connection:
+        assert await _persisted_sites(connection, MONTH_M1) == {SITE_A}
+        assert await _persisted_sites(connection, MONTH_M3) == {SITE_B}

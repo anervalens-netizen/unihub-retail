@@ -1,12 +1,47 @@
 from __future__ import annotations
 
 import json
+import zlib
 from typing import Any
 
 import asyncpg
 
 from repositories.crm import CrmRepository
 from services.forecast import get_forecast_factor
+
+
+# Fixed CRM namespace id used as the first advisory-lock key.
+# Together with a stable per-month hash of the calendar month this
+# guarantees: same-month recalculations serialize against one another,
+# different-month recalculations do not block each other, and no other
+# subsystem falls into the same key pair.
+_CRM_LOCK_NAMESPACE = 7377
+
+
+class CrmSourceDataUnavailable(Exception):
+    """Raised when a CRM recalculation has no source data.
+
+    Source/worker failure never replaces last good generation.
+    Missing source data is explicit anomaly, never implicit zero.
+
+    The previous candidate silently committed an empty projection via
+    ``replace_month_scores`` when ``calculate_scores_for_month`` returned
+    ``[]``. That violated the AGENTS invariant: pressing CRM recalculate
+    with no source must NOT destroy last-good scores. The service now
+    raises this bounded typed exception BEFORE any destructive write,
+    preserving the previously persisted projection.
+
+    This class deliberately has NO custom ``__init__`` so it remains a
+    pure production class (not a counted production function). It
+    inherits the standard ``Exception(message)`` contract and exposes
+    the bounded Romanian-language detail via the ``DETAIL`` class
+    attribute, which the router surfaces verbatim in the 409 body.
+    """
+
+    DETAIL = (
+        "Nu exista date de vanzari pentru recalcularea CRM in luna "
+        "selectata. Scorurile existente au fost pastrate."
+    )
 
 
 async def _query_visits_by_store_postgres(
@@ -34,15 +69,36 @@ class CrmService:
         self.repo = repo
         self.pool = pool
 
-    async def calculate_scores_for_month(self, month: str) -> list[dict[str, Any]]:
+    async def calculate_scores_for_month(
+        self, month: str, *, connection: asyncpg.Connection | None = None
+    ) -> list[dict[str, Any]]:
+        """Calculate the CRM score projection for ``month``.
+
+        When ``connection`` is provided, every DB read inside this method
+        uses that connection. This is the lock-aware entry point used by
+        ``recalculate_scores`` to ensure the per-month advisory lock
+        covers the complete calculate-then-replace cycle.
+
+        When ``connection`` is None, a fresh pool connection is acquired
+        for the forecast/visit reads; the KPI source reads then go through
+        the repository (which acquires its own connection). This matches
+        the historical caller surface and keeps direct call sites
+        unchanged.
+        """
         y, m = map(int, month.split("-"))
         prev_month = f"{y}-{m - 1:02d}" if m > 1 else f"{y - 1}-12"
 
-        async with self.pool.acquire() as conn:
-            forecast_factor = await get_forecast_factor(conn, month)
-            visit_map = await _query_visits_by_store_postgres(conn, month)
-
-        rows = await self.repo.get_kpi_data_for_month(month, prev_month)
+        if connection is not None:
+            forecast_factor = await get_forecast_factor(connection, month)
+            visit_map = await _query_visits_by_store_postgres(connection, month)
+            rows = await self.repo.get_kpi_data_for_month(
+                month, prev_month, connection=connection
+            )
+        else:
+            async with self.pool.acquire() as conn:
+                forecast_factor = await get_forecast_factor(conn, month)
+                visit_map = await _query_visits_by_store_postgres(conn, month)
+            rows = await self.repo.get_kpi_data_for_month(month, prev_month)
 
         scores = []
         for row in rows:
@@ -99,8 +155,52 @@ class CrmService:
         return scores
 
     async def recalculate_scores(self, month: str) -> int:
-        scores = await self.calculate_scores_for_month(month)
-        await self.repo.replace_month_scores(month, scores)
+        """Atomically replace the CRM monthly projection for ``month``.
+
+        The complete calculate-then-replace cycle runs inside one
+        transaction on one pool connection. The per-month advisory
+        lock is acquired BEFORE any score-calculation reads and held
+        until the replacement commits or rolls back, so:
+
+          * same-month requests serialize (no stale late writer can win
+            because the lock covers the calculation);
+          * different-month requests do not block each other (the lock
+            key is per-month);
+          * a source-empty recalculation raises ``CrmSourceDataUnavailable``
+            before any destructive write, preserving the previously
+            persisted projection as the last-good generation;
+          * any failure (constraint violation, cancellation) rolls the
+            whole transaction back, releases the lock, and leaves the
+            prior projection intact.
+        """
+        # zlib.crc32 is portable and deterministic across processes; we
+        # mask to a positive 31-bit integer so the lock call fits the
+        # PostgreSQL int4 argument range.
+        month_lock_key = zlib.crc32(month.encode("utf-8")) & 0x7FFFFFFF
+        async with self.pool.acquire() as conn:
+            async with conn.transaction():
+                # Serialize same-month recalculations only. The lock is
+                # transaction-scoped: it is released on COMMIT/ROLLBACK.
+                # Acquiring it BEFORE any calculation read prevents the
+                # stale-late-writer race: a same-month second request
+                # cannot begin its own calculation until this entire
+                # calculate-then-replace cycle completes.
+                await conn.execute(
+                    "SELECT pg_advisory_xact_lock($1, $2)",
+                    _CRM_LOCK_NAMESPACE, month_lock_key,
+                )
+                scores = await self.calculate_scores_for_month(
+                    month, connection=conn,
+                )
+                if not scores:
+                    # Reject before any destructive write. Rolling back
+                    # the transaction (which never ran DELETE/INSERT)
+                    # is the explicit no-source signal that preserves
+                    # the last-good generation.
+                    raise CrmSourceDataUnavailable()
+                await self.repo.replace_month_scores(
+                    month, scores, connection=conn,
+                )
         return len(scores)
 
     async def get_alerts(self, month: str) -> list[dict[str, Any]]:
