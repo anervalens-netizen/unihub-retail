@@ -1,7 +1,17 @@
 from __future__ import annotations
 
 import json
+import zlib
+
 import asyncpg
+
+
+# Fixed CRM namespace id used as the first advisory-lock key.
+# Together with a stable per-month hash of the calendar month this
+# guarantees: same-month recalculations serialize against one another,
+# different-month recalculations do not block each other, and no other
+# subsystem falls into the same key pair.
+_CRM_LOCK_NAMESPACE = 7377
 
 
 class CrmRepository:
@@ -61,19 +71,56 @@ class CrmRepository:
                 prev_month,
             )
 
-    async def upsert_scores(self, month: str, scores: list[dict]) -> None:
+    async def replace_month_scores(
+        self, month: str, scores: list[dict]
+    ) -> None:
+        """Atomically replace every ``store_scores`` row for ``month``.
+
+        After a successful call, ``store_scores`` for the given month
+        holds exactly the rows described by ``scores`` (no stale rows,
+        no partial replacement, no touch on other months).
+
+        - The DELETE + INSERT pair runs inside one transaction.
+        - A transaction-scoped advisory lock keyed by the CRM namespace
+          and a stable per-month hash serializes same-month calls and
+          leaves different-month calls independent.
+        - A ``scores`` of length zero is honoured as "this month has no
+          current projection" — only the DELETE runs and the transaction
+          commits an empty projection for the month.
+        """
+        # zlib.crc32 is portable and deterministic across processes; we
+        # mask to a positive 31-bit integer so the lock call fits the
+        # PostgreSQL int4 argument range.
+        month_lock_key = zlib.crc32(month.encode("utf-8")) & 0x7FFFFFFF
         async with self.pool.acquire() as conn:
             async with conn.transaction():
-                await conn.executemany(
-                    """
-                    INSERT INTO store_scores (site_code, score_month, score, breakdown)
-                    VALUES ($1, $2, $3, $4::jsonb)
-                    ON CONFLICT (site_code, score_month)
-                    DO UPDATE SET score = EXCLUDED.score, breakdown = EXCLUDED.breakdown,
-                                  calculated_at = now()
-                    """,
-                    [(s["site_code"], month, s["score"], json.dumps(s["breakdown"])) for s in scores],
+                # Serialize same-month recalculations only. The lock is
+                # transaction-scoped: it is released on COMMIT/ROLLBACK.
+                await conn.execute(
+                    "SELECT pg_advisory_xact_lock($1, $2)",
+                    _CRM_LOCK_NAMESPACE, month_lock_key,
                 )
+                await conn.execute(
+                    "DELETE FROM store_scores WHERE score_month = $1",
+                    month,
+                )
+                if scores:
+                    await conn.executemany(
+                        """
+                        INSERT INTO store_scores (
+                            site_code, score_month, score, breakdown
+                        ) VALUES ($1, $2, $3, $4::jsonb)
+                        """,
+                        [
+                            (
+                                s["site_code"],
+                                month,
+                                s["score"],
+                                json.dumps(s["breakdown"]),
+                            )
+                            for s in scores
+                        ],
+                    )
 
     async def get_alerts_data(self, month: str, prev_month: str) -> list[asyncpg.Record]:
         async with self.pool.acquire() as conn:
@@ -86,7 +133,8 @@ class CrmRepository:
                 ),
                 prev AS (
                     SELECT site_code, SUM(total_sales) AS val
-                    FROM reporting_agent_month WHERE import_month = $2
+                    FROM reporting_agent_month
+                    WHERE import_month = $2
                     GROUP BY site_code
                 ),
                 scores AS (

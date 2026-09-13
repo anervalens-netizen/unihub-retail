@@ -100,7 +100,7 @@ class CrmService:
 
     async def recalculate_scores(self, month: str) -> int:
         scores = await self.calculate_scores_for_month(month)
-        await self.repo.upsert_scores(month, scores)
+        await self.repo.replace_month_scores(month, scores)
         return len(scores)
 
     async def get_alerts(self, month: str) -> list[dict[str, Any]]:
