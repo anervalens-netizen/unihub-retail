@@ -153,6 +153,6 @@
     "074_v3_reporting_return_receipt_count.sql": "ee9d9f90fd3772d6634c9a5de7bffe58dd5c46491a393ec5f368a599aa13666e",
     "075_v3_saved_views.sql": "6ffc7bf571001b993af3849bb2a8170af826dc4737bdd643cdb876ee87b8d856",
     "076_v3_dashboard_generation_epoch.sql": "22c2df0116596c51438b369d1f6329111a4f3682b9e7ecf555493c94dc952337",
-    "077_v3_reporting_epoch_operations_acl.sql": "780e6c6bbb1d9a64a0e098c1d42d50878c34f1f8b7a6a3fec3cf5ac525a96b4f"
+    "077_v3_reporting_epoch_operations_acl.sql": "46af12600bf4bf5e05a73ead476864a6ad356010c7cf8108cde5096fd8a44805"
   }
 }

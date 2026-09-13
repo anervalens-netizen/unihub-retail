@@ -1589,20 +1589,112 @@ async def test_p1a_authority_matrix_and_controlled_cas_are_authenticated(
 #      this code path through the real worker authority.
 
 
-async def _proacl_text(connection: asyncpg.Connection) -> str:
-    return await connection.fetchval(
-        "SELECT p.proacl::text FROM pg_proc p "
+async def _assert_required_execute(
+    owner: asyncpg.Connection, role: str, *, must_have: bool
+) -> None:
+    """Probe one authority's EXECUTE on the epoch through the structured probe."""
+    has = await _has_epoch_acl_grant(owner, role)
+    if must_have and not has:
+        raise AssertionError(
+            f"{role} must retain EXECUTE on current_sales_generation_epoch(); "
+            f"structured probe says False"
+        )
+    if not must_have and has:
+        raise AssertionError(
+            f"{role} must NOT receive EXECUTE on current_sales_generation_epoch(); "
+            f"structured probe says True"
+        )
+
+
+async def _function_owner_role(owner: asyncpg.Connection) -> str:
+    """Return the name of the role that owns current_sales_generation_epoch()."""
+    return await owner.fetchval(
+        "SELECT pg_catalog.pg_get_userbyid(p.proowner) "
+        "FROM pg_proc p "
         "JOIN pg_namespace n ON n.oid = p.pronamespace "
         "WHERE n.nspname = 'public' "
         "AND p.proname = 'current_sales_generation_epoch'"
     )
 
 
-async def _has_proacl_dispatch(connection: asyncpg.Connection, grantee: str) -> bool:
-    text = await _proacl_text(connection)
-    if grantee == "PUBLIC":
-        return f"PUBLIC=X" in text or f"PUBLIC=U" in text
-    return f"{grantee}=X" in text
+async def _unexpected_named_execute_grantees(
+    owner: asyncpg.Connection, allowed_named: set[str]
+) -> list[str]:
+    acl = await _epoch_acl_catalog_summary(owner)
+    return sorted(set(acl) - {"PUBLIC"} - allowed_named)
+
+
+async def _ledger_unihub_operations_privs(
+    owner: asyncpg.Connection,
+) -> set[str]:
+    rows = await owner.fetch(
+        "SELECT a.privilege_type "
+        "FROM pg_class c "
+        "CROSS JOIN LATERAL aclexplode(c.relacl) AS a "
+        "WHERE c.oid = 'public.sales_generation_promotions'::regclass "
+        "AND a.grantee::regrole::text = 'unihub_operations'"
+    )
+    return {row["privilege_type"] for row in rows}
+
+
+async def _assert_function_acl_invariants(
+    owner: asyncpg.Connection
+) -> None:
+    """One structured ACL pass; raises AssertionError on any deviation."""
+    await _assert_required_execute(
+        owner, "unihub_web_read", must_have=True
+    )
+    await _assert_required_execute(
+        owner, "unihub_operations", must_have=True
+    )
+    for forbidden in (
+        "unihub_salary_export",
+        "unihub_sales_import",
+        "unihub_finance_import",
+    ):
+        await _assert_required_execute(
+            owner, forbidden, must_have=False
+        )
+    await _assert_required_execute(owner, "PUBLIC", must_have=False)
+
+
+async def _has_epoch_acl_grant(
+    connection: asyncpg.Connection, grantee_name: str
+) -> bool:
+    """Structured ACL probe for one (grantee, EXECUTE) pair on the epoch.
+
+    grantee_name == 'PUBLIC' means the grantee::oid = 0 pseudo-role; any other
+    name is compared via grantee::regrole to the named PG authority. PUBLIC
+    must appear as ``grantee = 0`` in the catalog, never as the literal token
+    'PUBLIC' in proacl, so we resolve via grantee::oid comparison.
+    """
+    if grantee_name == "PUBLIC":
+        sql = (
+            "SELECT EXISTS ("
+            "SELECT 1 FROM pg_proc p "
+            "JOIN pg_namespace n ON n.oid = p.pronamespace "
+            "CROSS JOIN LATERAL aclexplode(p.proacl) AS a "
+            "WHERE n.nspname = 'public' "
+            "AND p.proname = 'current_sales_generation_epoch' "
+            "AND a.grantee = 0 "
+            "AND a.privilege_type = 'EXECUTE'"
+            ")"
+        )
+    else:
+        sql = (
+            "SELECT EXISTS ("
+            "SELECT 1 FROM pg_proc p "
+            "JOIN pg_namespace n ON n.oid = p.pronamespace "
+            "CROSS JOIN LATERAL aclexplode(p.proacl) AS a "
+            "WHERE n.nspname = 'public' "
+            "AND p.proname = 'current_sales_generation_epoch' "
+            "AND a.grantee::regrole::text = $1 "
+            "AND a.privilege_type = 'EXECUTE'"
+            ")"
+        )
+    if grantee_name == "PUBLIC":
+        return bool(await connection.fetchval(sql))
+    return bool(await connection.fetchval(sql, grantee_name))
 
 
 async def _promotion_row(connection: asyncpg.Connection, month: str) -> None:
@@ -1777,18 +1869,18 @@ async def test_p1a_lot45_reporting_epoch_acl_is_operations_scoped() -> None:
 
         # (2) unihub_operations executes the scalar function
         # (migration 077's only behavioural change).
-        assert await _has_proacl_dispatch(owner, "unihub_operations") is True
+        assert await _has_epoch_acl_grant(owner, "unihub_operations") is True
         ops_value = await _epoch_for_role(owner, "unihub_operations")
         assert ops_value == web_value
 
         # (5) PUBLIC has no EXECUTE.
-        assert await _has_proacl_dispatch(owner, "PUBLIC") is False
+        assert await _has_epoch_acl_grant(owner, "PUBLIC") is False
         # (6) sibling authorities gain NO EXECUTE.
         for forbidden in (
             "unihub_salary_export", "unihub_sales_import",
             "unihub_finance_import",
         ):
-            assert await _has_proacl_dispatch(owner, forbidden) is False, forbidden
+            assert await _has_epoch_acl_grant(owner, forbidden) is False, forbidden
 
         # (4) unihub_operations has no DML on the append-only ledger.
         await _assert_ops_denied_on_promotions_ledger(owner)
@@ -1829,6 +1921,176 @@ async def test_p1a_lot45_reporting_epoch_acl_is_operations_scoped() -> None:
         await owner.execute(f'DROP ROLE IF EXISTS "{ops_principal}"')
         if created_role:
             await owner.execute("DROP ROLE IF EXISTS unihub_operations")
+        await owner.close()
+
+
+async def _epoch_acl_catalog_summary(
+    connection: asyncpg.Connection,
+) -> dict[str, set[str]]:
+    """Structured catalog summary of the epoch's ACL, keyed by role name.
+
+    PUBLIC maps to the literal string 'PUBLIC'; named authorities map to
+    grantee::regrole::text. Special handling is required because the PUBLIC
+    pseudo-role is not in pg_authid but appears as grantee OID 0.
+    """
+    rows = await connection.fetch(
+        "SELECT a.grantee, a.privilege_type "
+        "FROM pg_proc p "
+        "JOIN pg_namespace n ON n.oid = p.pronamespace "
+        "CROSS JOIN LATERAL aclexplode(p.proacl) AS a "
+        "WHERE n.nspname = 'public' "
+        "AND p.proname = 'current_sales_generation_epoch'"
+    )
+    out: dict[str, set[str]] = {}
+    for row in rows:
+        if int(row["grantee"]) == 0:
+            name = "PUBLIC"
+        else:
+            name = await connection.fetchval(
+                "SELECT $1::oid::regrole::text", int(row["grantee"])
+            )
+            if name is None:
+                name = f"oid:{row['grantee']}"
+        out.setdefault(name, set()).add(row["privilege_type"])
+    return out
+
+
+async def _assert_epoch_function_intact(
+    owner: asyncpg.Connection,
+) -> None:
+    """Migration 076's function flags and search_path remain unchanged."""
+    function_row = await owner.fetchrow(
+        "SELECT prosecdef, provolatile::text AS provolatile, "
+        "proname, pronamespace::regnamespace::text AS namespace, "
+        "prolang, proconfig::text AS proconfig "
+        "FROM pg_proc p "
+        "JOIN pg_namespace n ON n.oid = p.pronamespace "
+        "WHERE n.nspname = 'public' "
+        "AND p.proname = 'current_sales_generation_epoch'"
+    )
+    assert function_row is not None
+    assert function_row["prosecdef"] is True
+    assert function_row["provolatile"] == "s"
+    assert function_row["prolang"] == 14
+    assert "search_path" in (function_row["proconfig"] or "")
+    assert "pg_catalog" in (function_row["proconfig"] or "")
+    assert "public" in (function_row["proconfig"] or "")
+
+
+async def _create_no_membership_login(
+    owner: asyncpg.Connection, principal: str, password: str
+) -> None:
+    """Provision a temporary LOGIN with no authority memberships and no direct grants.
+
+    Mirrors the effective-PUBLIC probe: the only access is via PUBLIC, which
+    must be denied for current_sales_generation_epoch().
+    """
+    parsed = urlsplit(os.environ["DATABASE_URL"])
+    db_name = parsed.path.lstrip("/")
+    quoted_principal = '"' + principal.replace('"', '""') + '"'
+    quoted_password = "'" + password.replace("'", "''") + "'"
+    await owner.execute(
+        "CREATE ROLE " + quoted_principal
+        + " LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT "
+        "PASSWORD " + quoted_password
+    )
+    # Connect + schema usage so the login can issue a SELECT.
+    await owner.execute(
+        "GRANT CONNECT ON DATABASE " + db_name + " TO " + quoted_principal
+    )
+    await owner.execute(
+        "GRANT USAGE ON SCHEMA public TO " + quoted_principal
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.skipif(
+    os.getenv("UNIHUB_TEST_DATABASE") != "1",
+    reason="requires isolated PostgreSQL with CREATEROLE",
+)
+async def test_p1a_lot45_reporting_epoch_acl_structured_proof() -> None:
+    """A. Catalog proof + anonymous/no-membership runtime probe for the epoch.
+
+    Every assertion reads PG's catalog ACL through aclexplode; no textual
+    proacl parsing.
+    """
+    owner = await asyncpg.connect(os.environ["DATABASE_URL"])
+    anon_principal = f"p1a_anon_{uuid4().hex[:12]}"
+    anon_password = token_urlsafe(32)
+    parsed = urlsplit(os.environ["DATABASE_URL"])
+    anon_url = urlunsplit(
+        (
+            parsed.scheme,
+            f"{quote(anon_principal)}:{quote(anon_password, safe='')}@"
+            f"{parsed.hostname}:{parsed.port}",
+            parsed.path,
+            parsed.query,
+            parsed.fragment,
+        )
+    )
+    anon_conn: asyncpg.Connection | None = None
+    try:
+        await _create_no_membership_login(owner, anon_principal, anon_password)
+
+        # (A) Catalog ACL proof: structured ACL inspection via aclexplode.
+        await _assert_function_acl_invariants(owner)
+        owner_role = await _function_owner_role(owner)
+        assert owner_role is not None
+        unexpected = await _unexpected_named_execute_grantees(
+            owner, {"unihub_web_read", "unihub_operations", owner_role}
+        )
+        assert not unexpected, (
+            f"unexpected EXECUTE grantees: {unexpected}"
+        )
+
+        # (A.2) Ledger acl invariant (mirrors migration 077's surface 2).
+        ledger_privs = await _ledger_unihub_operations_privs(owner)
+        ledger_acl = await owner.fetchval(
+            "SELECT c.relacl::text FROM pg_class c "
+            "WHERE c.oid = 'public.sales_generation_promotions'::regclass"
+        )
+        assert ledger_acl is not None
+        assert not ledger_privs, (
+            "unihub_operations must hold no privilege on "
+            f"sales_generation_promotions; saw {ledger_privs}; "
+            f"relacl text={ledger_acl}"
+        )
+        public_ledger_privs = {
+            row["privilege_type"]
+            for row in await owner.fetch(
+                "SELECT a.privilege_type "
+                "FROM pg_class c "
+                "CROSS JOIN LATERAL aclexplode(c.relacl) AS a "
+                "WHERE c.oid = 'public.sales_generation_promotions'::regclass "
+                "AND a.grantee = 0"
+            )
+        }
+        assert not public_ledger_privs, (
+            "PUBLIC must hold no privilege on sales_generation_promotions; "
+            f"saw relacl text={ledger_acl}"
+        )
+
+        # (B) Anonymous / no-membership runtime probe.
+        anon_conn = await asyncpg.connect(anon_url)
+        try:
+            with pytest.raises(
+                asyncpg.exceptions.InsufficientPrivilegeError
+            ):
+                await anon_conn.fetchval(
+                    "SELECT public.current_sales_generation_epoch()"
+                )
+        finally:
+            await anon_conn.close()
+            anon_conn = None
+
+        # (C) function body / signature / search_path remain untouched.
+        await _assert_epoch_function_intact(owner)
+    finally:
+        if anon_conn is not None:
+            await anon_conn.close()
+        await owner.execute(f'REASSIGN OWNED BY "{anon_principal}" TO unihub_test')
+        await owner.execute(f'DROP OWNED BY "{anon_principal}"')
+        await owner.execute(f'DROP ROLE IF EXISTS "{anon_principal}"')
         await owner.close()
 
 
