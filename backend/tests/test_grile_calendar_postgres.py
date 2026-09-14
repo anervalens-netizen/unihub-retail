@@ -11,7 +11,7 @@ import pytest
 import pytest_asyncio
 
 from db.connection import validate_test_database_url
-from grile.calendar_models import CalendarChanges, CalendarDayInput, RosterInput
+from grile.calendar_models import CalendarChanges, CalendarClosureInput, CalendarDayInput, RosterInput
 from repositories.grile_calendar import CalendarConflict, GrileCalendarRepository
 from services.grile_calendar import GrileCalendarService
 
@@ -83,6 +83,23 @@ async def test_atomic_replacement_leave_and_reassignment_keep_revisions(repo):
     counts = {row.agent_code: row for row in (await service.read(MONTH)).attendance}
     assert counts[AG1].work_days_by_site == {B: 1}
     assert counts[AG1].leave_days == 0
+
+
+async def test_combined_day_and_closure_rolls_back_on_closure_failure(repo, monkeypatch):
+    await confirm(repo)
+    await repo.save_days([day()], "manager")
+
+    async def injected_failure(*_args, **_kwargs):
+        raise CalendarConflict("injected closure failure")
+
+    monkeypatch.setattr(repo, "_save_closures_in_transaction", injected_failure)
+    closure = CalendarClosureInput(work_date=date(2196, 9, 1), site_code=A, expected_revision=0)
+    with pytest.raises(CalendarConflict, match="injected"):
+        await repo.save_days([day(status="cancelled", revision=1)], "manager", [closure])
+
+    rows = (await repo.read(MONTH))["days"]
+    assert len(rows) == 1 and rows[0]["status"] == "work" and rows[0]["revision"] == 1
+    assert (await repo.read(MONTH))["closures"] == []
 
 
 async def test_conflicting_batch_rolls_back_original_schedule(repo):

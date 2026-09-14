@@ -7,7 +7,7 @@ from repositories.grile_calendar import GrileCalendarRepository
 from retail_filters import distribution_location_clause
 
 
-async def read_earnings_sources(pool: asyncpg.Pool, month: str) -> dict[str, Any]:
+async def read_earnings_sources(pool: asyncpg.Pool, month: str, *, incentive_reader) -> dict[str, Any]:
     async with pool.acquire() as conn:
         async with conn.transaction(isolation="repeatable_read", readonly=True):
             calendar = await GrileCalendarRepository.read_on_connection(conn, month)
@@ -36,8 +36,9 @@ async def read_earnings_sources(pool: asyncpg.Pool, month: str) -> dict[str, Any
                       AND concat_ws(' ',t.item_name,t.item_code) !~* '(RECHARGE|REINCARC|REÎNCĂRC|TOP[ -]?UP)'
                     GROUP BY t.site_code,t.sale_date""", month,
             )
-            from repositories.grile_incentives import read_incentives
-            incentives, incentives_complete = await read_incentives(conn, month, calendar, source['cutoff_date'] if source else None)
+            incentives, incentives_complete = await incentive_reader(
+                conn, month, calendar, source['cutoff_date'] if source else None,
+            )
             targets = await conn.fetch(
                 f"""SELECT t.site_code, t.target_value FROM store_targets t
                     JOIN stores s USING (site_code)

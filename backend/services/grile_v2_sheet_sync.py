@@ -8,10 +8,15 @@ from datetime import datetime, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 from repositories.grile_earnings import read_earnings_sources
+from services.grile_incentives import read_incentives
 from services.grile_calendar import GrileCalendarService
 from grile.earnings_projection import project_earnings
 from services.grile_monthly import build_google_services
 from services.grile_v2_sheet_render import render_requests
+from repositories.grile_v2_sheet_exports import (
+    fence_alive, list_exports, mark_failed, mark_running, mark_source_unavailable,
+    mark_succeeded, mark_unchanged_succeeded, read_store_catalog, run_fenced,
+)
 
 logger = logging.getLogger(__name__)
 LOCK_KEY = 84620260914
@@ -20,14 +25,12 @@ TEMPLATE_PATH = Path(__file__).with_name('grile_v2_sheet_template.json')
 
 
 async def snapshots(pool, month, sites):
-    source = await read_earnings_sources(pool, month)
+    source = await read_earnings_sources(pool, month, incentive_reader=read_incentives)
     if not source.get('source') or not source['source'].get('cutoff_date'):
         raise ValueError('published_sales_cutoff_missing')
     calendar = GrileCalendarService.project_calendar(month, source['calendar'])
     earnings = project_earnings(calendar, source)
-    async with pool.acquire() as conn:
-        stores = {r['site_code']: dict(r) for r in await conn.fetch(
-            'SELECT site_code,locatie,firma,regional FROM stores WHERE site_code=ANY($1::text[])', sites)}
+    stores = await read_store_catalog(pool, sites)
     result = {}
     for site in sites:
         if site not in stores or site not in earnings.stores:
@@ -68,54 +71,52 @@ async def _google(fn):
 
 async def sync_pilot(pool):
     template = json.loads(TEMPLATE_PATH.read_text(encoding='utf-8'))
+    return await run_fenced(pool, LOCK_KEY, lambda fence: _sync_locked(pool, fence, template))
+
+
+async def _sync_locked(pool, fence, template):
     result = {'updated': 0, 'unchanged': 0, 'failed': 0}
-    async with pool.acquire() as fence:
-        if not await fence.fetchval('SELECT pg_try_advisory_lock($1)', LOCK_KEY):
-            return {'skipped': 'writer_active'}
+    exports = await list_exports(fence)
+    if not exports:
+        return result
+    sheets, _drive = await _google(build_google_services)
+    for month in sorted({r['run_month'] for r in exports}):
+        mappings = [r for r in exports if r['run_month'] == month]
         try:
-            exports = [dict(r) for r in await fence.fetch('SELECT * FROM grile_v2_sheet_exports ORDER BY run_month,site_code')]
-            if not exports:
-                return result
-            sheets, _drive = await _google(build_google_services)
-            for month in sorted({r['run_month'] for r in exports}):
-                mappings = [r for r in exports if r['run_month'] == month]
-                try:
-                    data = await snapshots(pool, month, [r['site_code'] for r in mappings])
-                except Exception:
-                    await fence.execute("UPDATE grile_v2_sheet_exports SET status='failed',last_error_at=now(),last_error_code='source_unavailable',last_error_message='Datele sursă nu au putut fi citite; ultima grilă validă se păstrează.',updated_at=now() WHERE run_month=$1", month)
-                    raise
-                for mapping in mappings:
-                    site, file_id = mapping['site_code'], mapping['file_id']
-                    snapshot = data[site]
-                    digest = content_hash(snapshot)
-                    if digest == mapping['published_hash']:
-                        result['unchanged'] += 1
-                        if mapping['status'] != 'succeeded':
-                            await fence.execute("UPDATE grile_v2_sheet_exports SET status='succeeded',last_error_code=NULL,last_error_message=NULL,updated_at=now() WHERE id=$1", mapping['id'])
-                        continue
-                    await fence.execute("UPDATE grile_v2_sheet_exports SET source_hash=$2,status='running',last_attempt_at=now(),updated_at=now() WHERE id=$1", mapping['id'], digest)
-                    try:
-                        meta = await _google(lambda: sheets.spreadsheets().get(spreadsheetId=file_id, fields='sheets(properties,conditionalFormats,protectedRanges,merges)').execute())
-                        at = datetime.now(ZoneInfo('Europe/Bucharest')).strftime('%d.%m.%Y %H:%M')
-                        requests = render_requests(snapshot, template, meta, at)
-                        # Verify DB connection/fence is still alive immediately before remote write.
-                        await fence.fetchval('SELECT 1')
-                        await _google(lambda: sheets.spreadsheets().batchUpdate(spreadsheetId=file_id, body={'requests':requests}).execute())
-                        await fence.execute("UPDATE grile_v2_sheet_exports SET published_hash=$2,status='succeeded',last_success_at=now(),last_error_code=NULL,last_error_message=NULL,updated_at=now() WHERE id=$1 AND source_hash=$2", mapping['id'], digest)
-                        result['updated'] += 1
-                        logger.info('Grile V2 published month=%s site=%s', month, site)
-                    except Exception as exc:
-                        code = 'google_rate_limited' if getattr(getattr(exc,'resp',None),'status',None) == 429 else 'publication_failed'
-                        await fence.execute("UPDATE grile_v2_sheet_exports SET status='failed',last_error_at=now(),last_error_code=$2,last_error_message='Publicare nereușită; se reîncearcă automat.',updated_at=now() WHERE id=$1", mapping['id'], code)
-                        logger.error('Grile V2 publication failed month=%s site=%s type=%s',month,site,type(exc).__name__)
-                        result['failed'] += 1
-                        if code == 'google_rate_limited':
-                            return result
-                    # Keep comfortably below Sheets per-user write limits, also during first publication.
-                    await asyncio.sleep(2)
-            return result
-        finally:
-            await fence.execute('SELECT pg_advisory_unlock($1)', LOCK_KEY)
+            data = await snapshots(pool, month, [r['site_code'] for r in mappings])
+        except Exception:
+            await mark_source_unavailable(fence, month)
+            raise
+        for mapping in mappings:
+            site, file_id = mapping['site_code'], mapping['file_id']
+            snapshot = data[site]
+            digest = content_hash(snapshot)
+            if digest == mapping['published_hash']:
+                result['unchanged'] += 1
+                if mapping['status'] != 'succeeded':
+                    await mark_unchanged_succeeded(fence, mapping['id'])
+                continue
+            await mark_running(fence, mapping['id'], digest)
+            try:
+                meta = await _google(lambda: sheets.spreadsheets().get(spreadsheetId=file_id, fields='sheets(properties,conditionalFormats,protectedRanges,merges)').execute())
+                at = datetime.now(ZoneInfo('Europe/Bucharest')).strftime('%d.%m.%Y %H:%M')
+                requests = render_requests(snapshot, template, meta, at)
+                # Verify DB connection/fence is still alive immediately before remote write.
+                await fence_alive(fence)
+                await _google(lambda: sheets.spreadsheets().batchUpdate(spreadsheetId=file_id, body={'requests':requests}).execute())
+                await mark_succeeded(fence, mapping['id'], digest)
+                result['updated'] += 1
+                logger.info('Grile V2 published month=%s site=%s', month, site)
+            except Exception as exc:
+                code = 'google_rate_limited' if getattr(getattr(exc,'resp',None),'status',None) == 429 else 'publication_failed'
+                await mark_failed(fence, mapping['id'], code)
+                logger.error('Grile V2 publication failed month=%s site=%s type=%s',month,site,type(exc).__name__)
+                result['failed'] += 1
+                if code == 'google_rate_limited':
+                    return result
+            # Keep comfortably below Sheets per-user write limits, also during first publication.
+            await asyncio.sleep(2)
+    return result
 
 
 async def _main():

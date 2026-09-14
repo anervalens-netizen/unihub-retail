@@ -14,6 +14,7 @@ from grile.calendar_models import (
 from grile.earnings_models import EarningsMonth
 from grile.earnings_projection import project_earnings
 from repositories.grile_earnings import read_earnings_sources
+from services.grile_incentives import read_incentives
 from grile.calendar_projection import attendance_by_agent_and_store, attendance_days, project_calendar as _project_calendar
 from repositories.grile_calendar import CalendarConflict, GrileCalendarRepository
 
@@ -89,11 +90,11 @@ class GrileCalendarService:
         return self.project_calendar(month, data)
 
     async def save_days(self, month: str, payload: CalendarChanges, actor: str) -> list[CalendarDay]:
-        if any(day.work_date.strftime("%Y-%m") != month for day in payload.days):
+        if any(day.work_date.strftime("%Y-%m") != month for day in payload.days) or any(c.work_date.strftime("%Y-%m") != month for c in payload.closures):
             raise HTTPException(422, "Every changed day must belong to the selected month")
         try:
-            rows = await self.repository.save_days(payload.days, actor) if payload.days else []
-            if payload.closures:
+            rows = await self.repository.save_days(payload.days, actor, payload.closures) if payload.days else []
+            if payload.closures and not payload.days:
                 await self.repository.save_closures(payload.closures, actor)
         except CalendarConflict as exc:
             raise HTTPException(409, str(exc)) from exc
@@ -124,14 +125,14 @@ class GrileCalendarService:
         return await run_in_threadpool(build_attendance_zip, data)
 
     async def earnings(self, month: str) -> EarningsMonth:
-        sources = await read_earnings_sources(self.repository.pool, month)
+        sources = await read_earnings_sources(self.repository.pool, month, incentive_reader=read_incentives)
         calendar = self.project_calendar(month, sources["calendar"])
         return project_earnings(calendar, sources)
 
     async def export_earnings(self, month: str, expected_revision: str):
         from starlette.concurrency import run_in_threadpool
         from services.grile_earnings_export import build_earnings_zip
-        sources = await read_earnings_sources(self.repository.pool, month)
+        sources = await read_earnings_sources(self.repository.pool, month, incentive_reader=read_incentives)
         calendar = self.project_calendar(month, sources['calendar'])
         earnings = project_earnings(calendar, sources)
         if earnings.projection_revision != expected_revision:

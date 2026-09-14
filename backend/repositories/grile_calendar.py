@@ -212,7 +212,37 @@ class GrileCalendarRepository:
             if not home["regional"] or home["regional"] != worked["regional"]:
                 raise CalendarConflict("Supplemental store must be in the agent's home region")
 
-    async def save_days(self, days: list[CalendarDayInput], actor: str) -> list[dict[str, Any]]:
+    async def _save_closures_in_transaction(self, conn, closures, actor: str) -> list[dict[str, Any]]:
+        result = []
+        for closure in closures:
+            await self._store(conn, closure.site_code)
+            if closure.closed and await conn.fetchval(
+                "SELECT EXISTS(SELECT 1 FROM grile_calendar_days WHERE work_date=$1 AND site_code=$2 AND status='work')",
+                closure.work_date, closure.site_code,
+            ):
+                raise CalendarConflict("Schimbă mai întâi agentul programat sau închide ziua după anularea alocării")
+            if closure.closed:
+                row = await conn.fetchrow(
+                    """INSERT INTO grile_calendar_closures(month,work_date,site_code,revision,updated_by_sub)
+                       VALUES ($1,$2,$3,1,$4)
+                       ON CONFLICT (month,work_date,site_code) DO UPDATE SET
+                         revision=grile_calendar_closures.revision+1,updated_by_sub=EXCLUDED.updated_by_sub,updated_at=now()
+                       WHERE grile_calendar_closures.revision=$5 RETURNING work_date,site_code,revision""",
+                    closure.work_date.strftime('%Y-%m'), closure.work_date, closure.site_code,
+                    actor, closure.expected_revision,
+                )
+            else:
+                row = await conn.fetchrow(
+                    "DELETE FROM grile_calendar_closures WHERE month=$1 AND work_date=$2 AND site_code=$3 AND revision=$4 RETURNING work_date,site_code,revision",
+                    closure.work_date.strftime('%Y-%m'), closure.work_date, closure.site_code,
+                    closure.expected_revision,
+                )
+            if row is None:
+                raise CalendarConflict("Închiderea zilei s-a schimbat; reîncarcă calendarul")
+            result.append(dict(row))
+        return result
+
+    async def save_days(self, days: list[CalendarDayInput], actor: str, closures=None) -> list[dict[str, Any]]:
         ordered = sorted(days, key=lambda day: (day.agent_code, day.work_date, day.site_code))
         slots: dict[tuple[str, object, str], str] = {}
         allocation_sites: dict[tuple[str, object, str], str] = {}
@@ -262,6 +292,8 @@ class GrileCalendarRepository:
                             None if day.site_code == "TL" else day.site_code, day.status, day.supplemental, actor,
                         )
                         result.append(dict(row, site_code=row["site_code"] or "TL"))
+                    if closures:
+                        await self._save_closures_in_transaction(conn, closures, actor)
                     return result
         except asyncpg.UniqueViolationError as exc:
             raise CalendarConflict("A store already has an assigned agent on that day") from exc
@@ -269,21 +301,7 @@ class GrileCalendarRepository:
     async def save_closures(self, closures, actor: str) -> list[dict[str, Any]]:
         async with self.pool.acquire() as conn:
             async with conn.transaction():
-                result = []
-                for closure in closures:
-                    await self._store(conn, closure.site_code)
-                    if closure.closed and await conn.fetchval("SELECT EXISTS(SELECT 1 FROM grile_calendar_days WHERE work_date=$1 AND site_code=$2 AND status='work')", closure.work_date, closure.site_code):
-                        raise CalendarConflict("Schimbă mai întâi agentul programat sau închide ziua după anularea alocării")
-                    if closure.closed:
-                        row = await conn.fetchrow("""INSERT INTO grile_calendar_closures(month,work_date,site_code,revision,updated_by_sub)
-                            VALUES ($1,$2,$3,1,$4) ON CONFLICT (month,work_date,site_code) DO UPDATE SET revision=grile_calendar_closures.revision+1,updated_by_sub=EXCLUDED.updated_by_sub,updated_at=now()
-                            WHERE grile_calendar_closures.revision=$5 RETURNING work_date,site_code,revision""", closure.work_date.strftime('%Y-%m'), closure.work_date, closure.site_code, actor, closure.expected_revision)
-                    else:
-                        row = await conn.fetchrow("DELETE FROM grile_calendar_closures WHERE month=$1 AND work_date=$2 AND site_code=$3 AND revision=$4 RETURNING work_date,site_code,revision", closure.work_date.strftime('%Y-%m'), closure.work_date, closure.site_code, closure.expected_revision)
-                    if row is None:
-                        raise CalendarConflict("Închiderea zilei s-a schimbat; reîncarcă calendarul")
-                    result.append(dict(row))
-                return result
+                return await self._save_closures_in_transaction(conn, closures, actor)
 
     async def save_hours(self, month: str, site_code: str, payload: StoreHoursInput, actor: str) -> dict[str, Any]:
         async with self.pool.acquire() as conn:

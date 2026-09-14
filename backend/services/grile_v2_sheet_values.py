@@ -53,37 +53,7 @@ def _date(month: str, day: int) -> str:
     return f"{month}-{day:02d}"
 
 
-def build_values(snapshot: dict[str, Any], synced_at: str) -> dict[str, Any]:
-    """Map a snapshot to values updates and layout metadata.
-
-    No business metrics are recomputed here.  Decimal strings become numeric
-    cell values; percentage metrics are divided by 100 for Sheets formatting.
-    """
-    d = snapshot
-    store = d.get("store", {})
-    month = d.get("month") or date.today().strftime("%Y-%m")
-    month_names = ('Ianuarie','Februarie','Martie','Aprilie','Mai','Iunie','Iulie','August','Septembrie','Octombrie','Noiembrie','Decembrie')
-    display_month = f"{month_names[int(month[5:])-1]} {month[:4]}"
-    site = store.get("site_code", "")
-    data: list[dict[str, Any]] = []
-
-    data += [_cell("Grilă", 1, 0, store.get("locatie", "")),
-             _cell("Grilă", 2, 0, f"{store.get('firma', '')} · {display_month} · {site}"),
-             ]
-    sp = d.get("store_performance") or {}
-    for i, (label, key, is_pct) in enumerate((
-        ("Target", "target", False), ("Realizat", "sales", False),
-        ("Forecast", "forecast", False), ("Daily 90%", "daily_90", False),
-        ("Daily 100%", "daily_100", False))):
-        col = i * 5
-        _put_metric(data, "Grilă", 5, col, label, sp.get(key))
-        if key in ("sales", "forecast"):
-            data.append(_cell("Grilă", 7, col, _pct(sp.get("progress" if key == "sales" else "forecast_progress"))))
-    data += [_cell("Grilă", 4, 0, "Performanță magazin"),
-             _cell("Grilă", 4, 14, f"Vânzări până la {'.'.join(str(d.get('cutoff', '')).split('-')[::-1])}")]
-    layout: dict[str, Any] = {"agent_pairs": [], "card_rows": {}, "supplement_row": 0,
-                              "note_row": 0, "calendar_weeks": [], "calendar_sections": {}}
-    agents = d.get("agents", [])
+def _agent_values(data: list[dict[str, Any]], layout: dict[str, Any], agents: list[dict[str, Any]], synced_at: str) -> None:
     for i, agent in enumerate(agents):
         pair, slot = divmod(i, 2)
         row = 9 + pair * 24
@@ -103,9 +73,9 @@ def build_values(snapshot: dict[str, Any], synced_at: str) -> dict[str, Any]:
             for offset, (label, key, pct) in ((0, items[0]), (6, items[1])):
                 data += [_cell("Grilă", rr, col + offset, label),
                          _cell("Grilă", rr, col + offset + 4, _pct(p.get(key)) if pct else _num(p.get(key)))]
-        for j, pct in enumerate((80, 100, 120)):
-            data += [_cell("Grilă", row + 8, col + 3 + j * 3, pct / 100),
-                     _cell("Grilă", row + 9, col + 3 + j * 3, _num(p.get(f"daily_{pct}")))]
+        for j, threshold in enumerate((80, 100, 120)):
+            data += [_cell("Grilă", row + 8, col + 3 + j * 3, threshold / 100),
+                     _cell("Grilă", row + 9, col + 3 + j * 3, _num(p.get(f"daily_{threshold}")))]
         data.append(_cell("Grilă", row + 8, col, "Daily"))
         data.append(_cell("Grilă", row + 11, col, "Salariu — detaliere și proiecție"))
         salary_metrics = (("Salariu bază", k.get("salary_base")), ("Tichete masă", k.get("vouchers")),
@@ -129,6 +99,8 @@ def build_values(snapshot: dict[str, Any], synced_at: str) -> dict[str, Any]:
              _cell("Grilă", layout["supplement_row"] + 1, 0, "\n".join(extras) if extras else "Fără zile suplimentare."),
              _cell("Grilă", layout["note_row"], 0, f"Sincronizare pilot · {synced_at}")]
 
+
+def _calendar_values(data: list[dict[str, Any]], layout: dict[str, Any], d: dict[str, Any], store: dict[str, Any], agents: list[dict[str, Any]], site: str, month: str, display_month: str, synced_at: str) -> None:
     cal = d.get("calendar", {})
     roster = {x.get("agent_code"): x.get("display_name", x.get("agent_code")) for x in cal.get("roster", [])}
     hours = (cal.get("store_hours") or [{}])[0]
@@ -173,7 +145,7 @@ def build_values(snapshot: dict[str, Any], synced_at: str) -> dict[str, Any]:
     codes = list(dict.fromkeys([a.get("agent_code") for a in agents] + [x.get("agent_code") for x in attendance]))
     for i, code in enumerate(codes):
         row = 7 + i * 3
-        data += [_cell("Pontaj", row, 0, _name(roster, code)), _cell("Pontaj", row + 1, 0, f"COD {code} · interval"), _cell("Pontaj", row + 2, 0, "Pauză (ore)")]
+        data += [_cell("Pontaj", row, 0, _name(roster, code or "")), _cell("Pontaj", row + 1, 0, f"COD {code} · interval"), _cell("Pontaj", row + 2, 0, "Pauză (ore)")]
         for day in range(1, days_in_month + 1):
             item = by_agent_day.get((code, _date(month, day)))
             if not item:
@@ -185,4 +157,41 @@ def build_values(snapshot: dict[str, Any], synced_at: str) -> dict[str, Any]:
         total = totals.get(code)
         data.append(_cell("Pontaj", row, 32, _num(total.get("worked_minutes", 0)) / 60 if total else ""))
     layout["synced_at"] = synced_at
+    return None
+
+
+def build_values(snapshot: dict[str, Any], synced_at: str) -> dict[str, Any]:
+    """Map a snapshot to values updates and layout metadata.
+
+    No business metrics are recomputed here.  Decimal strings become numeric
+    cell values; percentage metrics are divided by 100 for Sheets formatting.
+    """
+    d = snapshot
+    store = d.get("store", {})
+    month = d.get("month") or date.today().strftime("%Y-%m")
+    month_names = ('Ianuarie','Februarie','Martie','Aprilie','Mai','Iunie','Iulie','August','Septembrie','Octombrie','Noiembrie','Decembrie')
+    display_month = f"{month_names[int(month[5:])-1]} {month[:4]}"
+    site = store.get("site_code", "")
+    data: list[dict[str, Any]] = []
+
+    data += [_cell("Grilă", 1, 0, store.get("locatie", "")),
+             _cell("Grilă", 2, 0, f"{store.get('firma', '')} · {display_month} · {site}"),
+             ]
+    sp = d.get("store_performance") or {}
+    for i, (label, key, is_pct) in enumerate((
+        ("Target", "target", False), ("Realizat", "sales", False),
+        ("Forecast", "forecast", False), ("Daily 90%", "daily_90", False),
+        ("Daily 100%", "daily_100", False))):
+        col = i * 5
+        _put_metric(data, "Grilă", 5, col, label, sp.get(key))
+        if key in ("sales", "forecast"):
+            data.append(_cell("Grilă", 7, col, _pct(sp.get("progress" if key == "sales" else "forecast_progress"))))
+    data += [_cell("Grilă", 4, 0, "Performanță magazin"),
+             _cell("Grilă", 4, 14, f"Vânzări până la {'.'.join(str(d.get('cutoff', '')).split('-')[::-1])}")]
+    layout: dict[str, Any] = {"agent_pairs": [], "card_rows": {}, "supplement_row": 0,
+                              "note_row": 0, "calendar_weeks": [], "calendar_sections": {}}
+    agents = d.get("agents", [])
+    _agent_values(data, layout, agents, synced_at)
+
+    _calendar_values(data, layout, d, store, agents, site, month, display_month, synced_at)
     return {"data": data, "layout": layout}

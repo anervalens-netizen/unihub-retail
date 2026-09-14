@@ -112,6 +112,9 @@ async def test_service_fences_unknown_codes_wrong_month_and_repository_conflict(
     with pytest.raises(HTTPException) as error:
         await service.save_days("2026-10", CalendarChanges(days=[change()]), "manager-sub")
     assert error.value.status_code == 422
+    with pytest.raises(HTTPException) as error:
+        await service.save_days("2026-09", CalendarChanges(closures=[{"work_date": "2026-10-01", "site_code": "A", "expected_revision": 0}]), "manager-sub")
+    assert error.value.status_code == 422
     repository.save_days.assert_not_awaited()
     repository.save_days.side_effect = CalendarConflict("stale")
     with pytest.raises(HTTPException) as error:

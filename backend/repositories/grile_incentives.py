@@ -1,11 +1,11 @@
 """Credit eligible incentive products to the calendar worker, including TL POS sales."""
 from collections import defaultdict
 from decimal import Decimal
-from services.campaigns.loader import load_campaign_configuration
-from services.campaigns.summary import get_store_incentive_multipliers
-from services.promotion_evaluation import evaluate_promotion, scope_promotion_definition_to_interval
-
-async def read_incentives(conn, month, calendar, cutoff):
+async def read_incentives(
+    conn, month, calendar, cutoff, *, load_campaign_configuration,
+    get_store_incentive_multipliers, evaluate_promotion,
+    scope_promotion_definition_to_interval,
+):
     if cutoff is None:
         return {}, False
     workers = {(d['site_code'], d['work_date']): d['agent_code'] for d in calendar['days'] if d['status'] == 'work' and d['work_date'] <= cutoff}
