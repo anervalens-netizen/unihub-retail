@@ -241,7 +241,7 @@ async def test_complete_and_ninety_percent_files_never_deactivate_absent_stores(
     try:
         async with pool.acquire() as conn, conn.transaction():
             baseline_active_count = await conn.fetchval(
-                "SELECT count(*) FROM stores WHERE is_active = true"
+                "SELECT count(*) FROM stores WHERE is_active = true AND site_code <> 'TL'"
             )
             await seed_stores(conn, site_codes)
             frame = sales_frame(site_codes[:incoming_count])

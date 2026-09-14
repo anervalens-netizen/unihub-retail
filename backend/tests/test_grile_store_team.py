@@ -19,7 +19,7 @@ def roster(code,home):
 async def test_pair_keeps_history_and_releases_outgoing_atomically():
     conn=Connection(); conn.fetch=AsyncMock(return_value=[])
     calendar=SimpleNamespace(projection_revision='a'*64,roster=[roster('A1','A'),roster('A2','A'),roster('B1','B')])
-    with patch('repositories.grile_store_team.GrileCalendarRepository.read_on_connection',new=AsyncMock(return_value={})), patch('repositories.grile_store_team.GrileCalendarRepository._store',new=AsyncMock()), patch('services.grile_calendar.GrileCalendarService.project_calendar',return_value=calendar):
+    with patch('repositories.grile_store_team.GrileCalendarRepository.read_on_connection',new=AsyncMock(return_value={})), patch('repositories.grile_store_team.GrileCalendarRepository._store',new=AsyncMock()), patch('repositories.grile_store_team.project_calendar',return_value=calendar):
         await save_store_team(Pool(conn),'2026-09','A',payload(),'manager',set())
     events=[c.args for c in conn.execute.await_args_list if 'INSERT INTO grile_calendar_transfers' in c.args[0]]
     assert [(c[2],c[4]) for c in events] == [('A2',None),('B1','A')]
@@ -32,7 +32,7 @@ async def test_pair_keeps_history_and_releases_outgoing_atomically():
 @pytest.mark.asyncio
 async def test_stale_pair_rolls_back_without_any_assignment_write():
     conn=Connection();conn.fetch=AsyncMock(return_value=[])
-    with patch('repositories.grile_store_team.GrileCalendarRepository.read_on_connection',new=AsyncMock(return_value={})), patch('services.grile_calendar.GrileCalendarService.project_calendar',return_value=SimpleNamespace(projection_revision='b'*64)):
+    with patch('repositories.grile_store_team.GrileCalendarRepository.read_on_connection',new=AsyncMock(return_value={})), patch('repositories.grile_store_team.project_calendar',return_value=SimpleNamespace(projection_revision='b'*64, roster=[])):
         with pytest.raises(CalendarConflict):
             await save_store_team(Pool(conn),'2026-09','A',payload(),'manager',set())
     assert conn.rollback

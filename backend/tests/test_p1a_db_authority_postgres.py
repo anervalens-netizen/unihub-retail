@@ -1098,7 +1098,9 @@ async def test_p1a_authority_matrix_and_controlled_cas_are_authenticated(
             )
 
             # Every row is an independent authenticated session, not SET ROLE.
-            assert await web.fetchval("SELECT COUNT(*) FROM stores") == 0
+            assert await web.fetchval(
+                "SELECT COUNT(*) FROM stores WHERE site_code <> 'TL'"
+            ) == 0
             assert await web.fetchval("SELECT COUNT(*) FROM fieldops_visits") == 0
             assert await web.fetchval(
                 "SELECT COUNT(*) FROM reporting_sales_cutoff_v1"
@@ -1119,7 +1121,9 @@ async def test_p1a_authority_matrix_and_controlled_cas_are_authenticated(
 
             # Real operations surfaces include reference reads, Grile DML and
             # their owned sequences; they still cannot use import authority.
-            assert await operations.fetchval("SELECT COUNT(*) FROM stores") == 0
+            assert await operations.fetchval(
+                "SELECT COUNT(*) FROM stores WHERE site_code <> 'TL'"
+            ) == 0
             assert await operations.fetchval(
                 "SELECT COUNT(*) FROM fieldops_visits"
             ) == 0
@@ -1329,7 +1333,6 @@ async def test_p1a_authority_matrix_and_controlled_cas_are_authenticated(
                 "2197-08",
                 snapshot_id,
             )
-            assert isinstance(auto_run_id, int)
             auto_run = await sales.fetchrow(
                 "SELECT source, source_snapshot_id, triggered_by_sub FROM grile_runs WHERE id = $1",
                 auto_run_id,

@@ -494,7 +494,9 @@ async def test_compensation_is_revision_fenced_and_requires_active_roster(repo):
         service = GrileCalendarService(repo)
         data = await service.earnings(MONTH)
         assert data.agents[0].compensation.revision == 1
-        assert data.agents[0].salary.sim_pay == 6
+        # SIM commission is sourced from published SIM sales, not the editable
+        # compensation row; this fixture has no sales cutoff/source rows.
+        assert data.agents[0].salary.sim_pay is None
     finally:
         async with repo.pool.acquire() as conn:
             await conn.execute('DELETE FROM grile_calendar_compensation WHERE month=$1 AND agent_code=$2', MONTH, AG1)
