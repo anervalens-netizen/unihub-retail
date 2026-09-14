@@ -1,5 +1,5 @@
 /* GENERATED FILE. Run npm run contracts:generate; do not edit manually. */
-export const RETAIL_OPENAPI_SHA256 = 'a0cf26b5c59fc793617c162d18ec13101c44f9f05c08eb208f71301dfb5a08ed' as const; // pragma: allowlist secret
+export const RETAIL_OPENAPI_SHA256 = 'd767d046c98c392805945525f748ef2546ba525c74bd388e72b3e4e4e6408859' as const; // pragma: allowlist secret
 
 export type RetailDecimal = string & { readonly __retailDecimal: unique symbol };
 
@@ -2536,6 +2536,15 @@ export interface RetailVisitTreeResponse {
   "team_leaders": Array<RetailTeamLeaderGroup>;
 }
 
+export interface RetailVisitsSourceUnavailableDetail {
+  "code": string;
+  "message": string;
+}
+
+export interface RetailVisitsSourceUnavailableResponse {
+  "detail": RetailVisitsSourceUnavailableDetail;
+}
+
 export interface RetailYearHistoryPoint {
   "is_aggregate": boolean;
   "label": string;
@@ -3145,21 +3154,25 @@ export interface RetailOperationResponses {
   'get_visits_report_api_visits_report_get': {
     '200': RetailVisitReportResponse;
     '422': RetailHTTPValidationError;
+    '503': RetailVisitsSourceUnavailableResponse;
   }
 
   'get_visit_photo_api_visits_report_photo__visit_id___filename__get': {
     '200': Blob;
     '422': RetailHTTPValidationError;
+    '503': RetailVisitsSourceUnavailableResponse;
   }
 
   'get_visits_tree_api_visits_report_tree_get': {
     '200': RetailVisitTreeResponse;
     '422': RetailHTTPValidationError;
+    '503': RetailVisitsSourceUnavailableResponse;
   }
 
   'get_visit_detail_api_visits_report_visit__visit_id__get': {
     '200': RetailVisitDetail;
     '422': RetailHTTPValidationError;
+    '503': RetailVisitsSourceUnavailableResponse;
   }
 
   'session_status_auth_session_get': {
@@ -3439,10 +3452,10 @@ export interface RetailOperationErrors {
   'post_task_api_tasks_post': { '422': RetailHTTPValidationError };
   'remove_task_api_tasks__task_id__delete': { '422': RetailHTTPValidationError };
   'patch_task_api_tasks__task_id__patch': { '422': RetailHTTPValidationError };
-  'get_visits_report_api_visits_report_get': { '422': RetailHTTPValidationError };
-  'get_visit_photo_api_visits_report_photo__visit_id___filename__get': { '422': RetailHTTPValidationError };
-  'get_visits_tree_api_visits_report_tree_get': { '422': RetailHTTPValidationError };
-  'get_visit_detail_api_visits_report_visit__visit_id__get': { '422': RetailHTTPValidationError };
+  'get_visits_report_api_visits_report_get': { '422': RetailHTTPValidationError; '503': RetailVisitsSourceUnavailableResponse };
+  'get_visit_photo_api_visits_report_photo__visit_id___filename__get': { '422': RetailHTTPValidationError; '503': RetailVisitsSourceUnavailableResponse };
+  'get_visits_tree_api_visits_report_tree_get': { '422': RetailHTTPValidationError; '503': RetailVisitsSourceUnavailableResponse };
+  'get_visit_detail_api_visits_report_visit__visit_id__get': { '422': RetailHTTPValidationError; '503': RetailVisitsSourceUnavailableResponse };
   'session_status_auth_session_get': Record<never, never>;
   'session_login_auth_session_login_get': Record<never, never>;
   'session_logout_auth_session_logout_post': Record<never, never>;
@@ -3758,15 +3771,19 @@ export const RETAIL_OPERATION_ERROR_STATUSES: { readonly [Id in RetailOperationI
   ]),
   'get_visits_report_api_visits_report_get': new Set<string>([
     '422',
+    '503',
   ]),
   'get_visit_photo_api_visits_report_photo__visit_id___filename__get': new Set<string>([
     '422',
+    '503',
   ]),
   'get_visits_tree_api_visits_report_tree_get': new Set<string>([
     '422',
+    '503',
   ]),
   'get_visit_detail_api_visits_report_visit__visit_id__get': new Set<string>([
     '422',
+    '503',
   ]),
   'session_status_auth_session_get': new Set<string>([
   ]),

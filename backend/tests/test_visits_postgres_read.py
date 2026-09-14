@@ -3,7 +3,9 @@ from __future__ import annotations
 from datetime import date
 from unittest.mock import AsyncMock, MagicMock
 
+import asyncpg
 import pytest
+from fastapi import HTTPException
 
 import repositories.visits_report_postgres as postgres_repository_module
 import services.visits_report as visits_service_module
@@ -38,6 +40,38 @@ async def test_service_reads_only_fieldops_postgres(monkeypatch: pytest.MonkeyPa
 
     assert response.total_vizite == 1
     postgres_repo.query_report.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_missing_fieldops_relation_is_a_typed_unavailable_state(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    postgres_repo = MagicMock()
+    postgres_repo.query_report = AsyncMock(side_effect=asyncpg.exceptions.UndefinedTableError("fieldops_visits is missing"))
+    service = VisitsReportService(postgres_repo)
+    monkeypatch.setattr(service, "_resolve_store_scope", AsyncMock(return_value=({}, None)))
+
+    with pytest.raises(HTTPException) as caught:
+        await service.get_visits_report("2026-07", None, None, None, None)
+
+    assert caught.value.status_code == 503
+    assert caught.value.detail == {
+        "code": "visits_source_unavailable",
+        "message": "Sursa FieldOps pentru vizite nu este disponibilă momentan.",
+    }
+
+
+@pytest.mark.asyncio
+async def test_unexpected_fieldops_read_failure_is_not_masked_as_unavailable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    postgres_repo = MagicMock()
+    postgres_repo.query_report = AsyncMock(side_effect=RuntimeError("database protocol failure"))
+    service = VisitsReportService(postgres_repo)
+    monkeypatch.setattr(service, "_resolve_store_scope", AsyncMock(return_value=({}, None)))
+
+    with pytest.raises(RuntimeError, match="database protocol failure"):
+        await service.get_visits_report("2026-07", None, None, None, None)
 
 
 @pytest.mark.asyncio

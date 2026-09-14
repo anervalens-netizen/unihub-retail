@@ -309,6 +309,15 @@ class ReportingUnavailableResponse(StrictApiModel):
     detail: str
 
 
+class VisitsSourceUnavailableDetail(StrictApiModel):
+    code: Literal["visits_source_unavailable"]
+    message: str
+
+
+class VisitsSourceUnavailableResponse(StrictApiModel):
+    detail: VisitsSourceUnavailableDetail
+
+
 class StoreActivityChangeRequest(StrictApiModel):
     model_config = ConfigDict(extra="forbid")
 

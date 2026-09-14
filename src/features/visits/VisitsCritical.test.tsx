@@ -2,6 +2,7 @@
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { ApiError } from '../../api/client';
 import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -9,7 +10,7 @@ const api = vi.hoisted(() => ({ report: vi.fn(), tree: vi.fn(), detail: vi.fn(),
 vi.mock('../../api/visitsReport', async (importOriginal) => ({ ...(await importOriginal<typeof import('../../api/visitsReport')>()), getVisitsReport: api.report, getVisitsTree: api.tree, getVisitDetail: api.detail, getVisitPhoto: api.photo }));
 vi.mock('../../api/filters', () => ({ getFilterOptions: api.filters }));
 
-import { VisiteSubtab } from '../../components/VisiteSubtab';
+import { isVisitsSourceUnavailable, VisiteSubtab } from '../../components/VisiteSubtab';
 import { CompletionBadge, VisitDrawer } from './VisitDrawer';
 import { MonthPicker, TeamLeaderRow } from './VisitsTree';
 
@@ -77,7 +78,8 @@ describe('visits critical surfaces', () => {
     resolveReport(summary); resolveTree({ team_leaders: [] });
     await waitFor(() => expect(api.report).toHaveBeenCalled());
 
-    api.report.mockRejectedValueOnce(new Error('offline')); api.tree.mockResolvedValueOnce({ team_leaders: [] });
+    api.report.mockReset(); api.tree.mockReset(); api.filters.mockReset();
+    api.report.mockRejectedValue(new Error('offline')); api.tree.mockResolvedValue({ team_leaders: [] }); api.filters.mockResolvedValue({ magazine: [] });
     rerender(wrapper(<VisiteSubtab key="error" currentMonth="2026-07" months={['2026-07']} />));
     expect(await screen.findByText('offline')).toBeInTheDocument();
 
@@ -88,6 +90,18 @@ describe('visits critical surfaces', () => {
     rerender(wrapper(<VisiteSubtab key="empty" currentMonth="2026-06" months={['2026-06']} />));
     expect(await screen.findByText('Nicio vizita pentru luna selectata')).toBeInTheDocument();
     expect(screen.getByText('univers indisponibil')).toBeInTheDocument();
+  });
+
+  it('renders source unavailable without retrying the missing FieldOps relation', async () => {
+    const unavailable = new ApiError(503, 'FieldOps unavailable', { detail: { code: 'visits_source_unavailable', message: 'unavailable' } });
+    expect(isVisitsSourceUnavailable(unavailable)).toBe(true);
+    api.report.mockRejectedValue(unavailable);
+    api.tree.mockRejectedValue(unavailable);
+    const client = new QueryClient({ defaultOptions: { queries: { gcTime: 0, retry: 3 } } });
+    render(<QueryClientProvider client={client}><VisiteSubtab currentMonth="2026-08" months={['2026-08']} /></QueryClientProvider>);
+    expect(await screen.findByText('Vizitele nu sunt disponibile momentan.')).toBeInTheDocument();
+    expect(api.report).toHaveBeenCalledOnce();
+    expect(api.tree).toHaveBeenCalledOnce();
   });
 
   it('covers drawer empty financial/photos and outside-close paths', async () => {

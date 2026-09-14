@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import mimetypes
 from pathlib import Path
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse
@@ -10,6 +11,7 @@ from models import (
     VisitDetail,
     VisitReportResponse,
     VisitTreeResponse,
+    VisitsSourceUnavailableResponse,
 )
 from composition import build_visits_service
 from schemas.common import BoundedListItem100, BoundedText120, MonthStr
@@ -18,9 +20,12 @@ from services.visits_report import VisitsReportService
 router = APIRouter(prefix="/api/visits-report", tags=["visits-report"])
 
 get_visits_service = build_visits_service
+VISITS_SOURCE_UNAVAILABLE_RESPONSES: dict[int | str, dict[str, Any]] = {
+    503: {"model": VisitsSourceUnavailableResponse},
+}
 
 
-@router.get("", response_model=VisitReportResponse)
+@router.get("", response_model=VisitReportResponse, responses=VISITS_SOURCE_UNAVAILABLE_RESPONSES)
 async def get_visits_report(
     month: MonthStr,
     firma: BoundedText120 | None = None,
@@ -32,7 +37,7 @@ async def get_visits_report(
     return await svc.get_visits_report(month, firma, rm, asm, magazin)
 
 
-@router.get("/tree", response_model=VisitTreeResponse)
+@router.get("/tree", response_model=VisitTreeResponse, responses=VISITS_SOURCE_UNAVAILABLE_RESPONSES)
 async def get_visits_tree(
     month: MonthStr,
     firma: BoundedText120 | None = None,
@@ -44,7 +49,7 @@ async def get_visits_tree(
     return await svc.get_visits_tree(firma, rm, asm, magazin, month)
 
 
-@router.get("/visit/{visit_id}", response_model=VisitDetail)
+@router.get("/visit/{visit_id}", response_model=VisitDetail, responses=VISITS_SOURCE_UNAVAILABLE_RESPONSES)
 async def get_visit_detail(
     visit_id: str,
     svc: VisitsReportService = Depends(get_visits_service),
@@ -55,6 +60,7 @@ async def get_visit_detail(
 @router.get(
     "/photo/{visit_id}/{filename}",
     responses={
+        **VISITS_SOURCE_UNAVAILABLE_RESPONSES,
         200: {
             "content": {
                 "image/*": {"schema": {"type": "string", "format": "binary"}}

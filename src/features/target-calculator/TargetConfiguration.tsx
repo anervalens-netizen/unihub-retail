@@ -29,7 +29,10 @@ export function TargetConfiguration({
   minFloor, setMinFloor, seasonalityMode, selectSeasonalityMode, handleCalculate,
   logicOpen, setLogicOpen,
 }: TargetConfigurationProps) {
-  if (!context?.can_finalize) return null;
+  if (context && !context.can_finalize) {
+    return <div className="glass rounded-2xl border border-amber-200 p-4 dark:border-amber-900/60" role="status" aria-live="polite"><h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">Calculator Target</h2><p className="mt-2 text-sm text-slate-600 dark:text-slate-300">Nu ai permisiunea de a configura sau finaliza targeturi. Poți consulta restul aplicației, dar acțiunile de calcul și finalizare rămân dezactivate.</p></div>;
+  }
+  if (!context) return null;
 
   return (
     <div className="glass space-y-3 rounded-2xl p-3 sm:p-4">
