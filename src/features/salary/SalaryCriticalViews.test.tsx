@@ -114,6 +114,7 @@ const asmSalary = {
 describe('salary critical views', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    Object.defineProperty(HTMLDialogElement.prototype, 'showModal', { configurable: true, value: function() { this.open = true; } }); Object.defineProperty(HTMLDialogElement.prototype, 'close', { configurable: true, value: function() { this.open = false; } });
     controller.current = richController();
     salaryApi.history.mockResolvedValue(history);
     hrApi.asmSalary.mockResolvedValue(asmSalary);

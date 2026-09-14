@@ -1,32 +1,38 @@
 """Replace a store pair atomically, retaining dated history and attendance."""
 from datetime import date
 from grile.roster_history import home_on
+from grile.calendar_projection import project_calendar
 from repositories.grile_calendar import CalendarConflict, GrileCalendarRepository
 
+
+def _validate_team_change(calendar, site, value, candidate_codes):
+    roster = {r.agent_code: r for r in calendar.roster}
+    selected = set(value.agent_codes)
+    for code in selected:
+        old = roster.get(code)
+        if old and (not old.active or old.home_site_code == 'TL'):
+            raise CalendarConflict("Select an active physical-store agent")
+        if old is None and code not in candidate_codes:
+            raise CalendarConflict("Agent is not in the confirmed candidate catalog")
+    if any(t.effective_from > value.effective_from and t.home_site_code == site
+           for r in calendar.roster if r.agent_code not in selected for t in r.transfers):
+        raise CalendarConflict("A later transfer enters this store; review it before replacing the team")
+    outgoing = {r.agent_code for r in calendar.roster if r.active and home_on(r, value.effective_from) == site} - selected
+    return roster, selected, outgoing
+
+
 async def save_store_team(pool, month, site, value, actor, candidate_codes):
-    from services.grile_calendar import GrileCalendarService
     async with pool.acquire() as conn:
         async with conn.transaction():
             # Include inserts and edits in the same fence; normal writes take row locks.
             await conn.execute("LOCK TABLE grile_calendar_roster IN SHARE ROW EXCLUSIVE MODE")
             await conn.fetch("SELECT agent_code FROM grile_calendar_roster WHERE month=$1 ORDER BY agent_code FOR UPDATE", month)
             raw = await GrileCalendarRepository.read_on_connection(conn, month)
-            calendar = GrileCalendarService.project_calendar(month, raw)
+            calendar = project_calendar(month, raw)
             if calendar.projection_revision != value.expected_revision:
                 raise CalendarConflict("Calendar changed; reload before saving the team")
             await GrileCalendarRepository._store(conn, site)
-            roster = {r.agent_code: r for r in calendar.roster}
-            selected = set(value.agent_codes)
-            for code in selected:
-                old = roster.get(code)
-                if old and (not old.active or old.home_site_code == 'TL'):
-                    raise CalendarConflict("Select an active physical-store agent")
-                if old is None and code not in candidate_codes:
-                    raise CalendarConflict("Agent is not in the confirmed candidate catalog")
-            if any(t.effective_from > value.effective_from and t.home_site_code == site
-                   for r in calendar.roster if r.agent_code not in selected for t in r.transfers):
-                raise CalendarConflict("A later transfer enters this store; review it before replacing the team")
-            outgoing = {r.agent_code for r in calendar.roster if r.active and home_on(r, value.effective_from) == site} - selected
+            roster, selected, outgoing = _validate_team_change(calendar, site, value, candidate_codes)
             for code in sorted(selected | outgoing):
                 old = roster.get(code)
                 destination = site if code in selected else None

@@ -39,16 +39,13 @@ it('opens grouped store, shows attendance, and reopens calendar', async () => {
   await openStore();
   expect(screen.getByRole('button', { name: 'Editează 2026-09-01' })).toBeInTheDocument();
 });
-it('saves leave and reloads the shared calendar', async () => {
+it('saves an explicit work assignment and reloads the shared calendar', async () => {
   mount(); await openStore();
   await userEvent.click(screen.getByRole('button', { name: 'Editează 2026-09-01' }));
-  await userEvent.selectOptions(screen.getByLabelText('Tip zi'), 'leave');
+  await userEvent.selectOptions(screen.getByLabelText('Agent pentru zi'), 'AG1');
   api.saveCalendarDays.mockResolvedValue([]);
-  api.readCalendar.mockResolvedValue({ month: '2026-09', roster, days: [{ ...day, status: 'leave', revision: 2 }], attendance: [] });
   await userEvent.click(screen.getByRole('button', { name: 'Salvează ziua' }));
-  await waitFor(() => expect(api.saveCalendarDays).toHaveBeenCalledWith('2026-09', [expect.objectContaining({ agent_code: 'AG1', status: 'leave', expected_revision: 1 })]));
-  await waitFor(() => expect(screen.queryByRole('button', { name: 'Salvează ziua' })).not.toBeInTheDocument());
-  expect(screen.getByRole('button', { name: 'Editează 2026-09-01' })).toHaveTextContent('Concediu');
+  await waitFor(() => expect(api.saveCalendarDays).toHaveBeenCalledWith('2026-09', { days: [expect.objectContaining({ agent_code: 'AG1', status: 'work', expected_revision: 1 })] }));
 });
 it('requires explicit reload after a conflict', async () => {
   mount(); await openStore();
@@ -114,7 +111,6 @@ it('closes the old day snapshot after a home-store correction', async () => {
   mount(); await openStore();
   await userEvent.click(screen.getByRole('button', { name: 'Editează 2026-09-01' }));
   await userEvent.selectOptions(screen.getByLabelText('Agent pentru zi'), 'AG1');
-  expect(screen.getByLabelText('Zi suplimentară plătită')).toBeChecked();
   await userEvent.click(screen.getByText('Confirmă agenții și magazinul de bază'));
   await userEvent.selectOptions(screen.getByLabelText('Cod agent pentru confirmare'), 'AG1');
   api.readCalendar.mockResolvedValue({ month: '2026-09', roster: [{ ...roster[0], revision: 2 }], days: [], attendance: [] });
@@ -124,7 +120,6 @@ it('closes the old day snapshot after a home-store correction', async () => {
   await waitFor(() => expect(screen.getByLabelText('Cod agent pentru confirmare')).toHaveValue(''));
   await userEvent.click(screen.getByRole('button', { name: 'Editează 2026-09-01' }));
   await userEvent.selectOptions(screen.getByLabelText('Agent pentru zi'), 'AG1');
-  expect(screen.getByLabelText('Zi suplimentară plătită')).not.toBeChecked();
 });
 it('keeps unavailable scheduled stores accessible only for cancellation', async () => {
   api.calendarStores.mockResolvedValue([]);
@@ -135,11 +130,9 @@ it('keeps unavailable scheduled stores accessible only for cancellation', async 
   expect(screen.queryByText('Confirmă agenții și magazinul de bază')).not.toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Editează 2026-09-02' })).toBeDisabled();
   await userEvent.click(screen.getByRole('button', { name: 'Editează 2026-09-01' }));
-  expect(screen.getByLabelText('Tip zi')).toHaveValue('cancelled');
-  expect(screen.queryByRole('option', { name: 'Lucrează' })).not.toBeInTheDocument();
-  api.saveCalendarDays.mockResolvedValue([]);
-  await userEvent.click(screen.getByRole('button', { name: 'Salvează ziua' }));
-  await waitFor(() => expect(api.saveCalendarDays).toHaveBeenCalledWith('2026-09', [{ agent_code: 'AG1', work_date: '2026-09-01', site_code: 'S1', status: 'cancelled', supplemental: false, expected_revision: 1 }]));
+  await userEvent.selectOptions(screen.getByLabelText('Agent pentru zi'), '');
+  await userEvent.click(screen.getAllByRole('button', { name: 'Închide ziua' })[1]!);
+  await waitFor(() => expect(api.saveCalendarDays).toHaveBeenCalledWith('2026-09', { days: [expect.objectContaining({ agent_code: 'AG1', status: 'cancelled', expected_revision: 1 })], closures: [{ work_date: '2026-09-01', site_code: 'S1', closed: true, expected_revision: 0 }] }));
 });
 it('keeps date switching locked until a slow day save completes', async () => {
   let finish!: (value: unknown[]) => void;

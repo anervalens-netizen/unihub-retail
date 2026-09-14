@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 class SalaryArchiveQueries:
-    async def fetch_salary_archive(self, *, year=None, month=None, search=None,
-                                   company_name=None, site_code=None, regional=None,
-                                   asm=None, limit=100, offset=0, summary=False, name_exact=None, location_exact=None, person_id=None, source_company=None, data_source="history", location_unmapped=False):
+    def _filters(self, *, year=None, month=None, search=None, company_name=None,
+                 site_code=None, regional=None, asm=None, name_exact=None,
+                 location_exact=None, person_id=None, source_company=None,
+                 location_unmapped=False):
         clauses, args = [], []
         def add(sql, value):
             args.append(value)
@@ -33,7 +34,28 @@ class SalaryArchiveQueries:
                 add('s.regional = ?', regional)
             if asm:
                 add('s.asm = ?', asm)
-        where = ' AND '.join(clauses) or 'TRUE'
+        return ' AND '.join(clauses) or 'TRUE', args
+
+    async def _summary(self, conn, base, args):
+        eligible = base + ' AND h.selected AND h.total_amount IS NOT NULL AND h.period IS NOT NULL AND h.company_name IS NOT NULL'
+        overview = await conn.fetchrow('SELECT count(*) AS rows, COALESCE(sum(h.total_amount),0) AS total, count(DISTINCT h.period) AS months'+eligible, *args)
+        excluded = await conn.fetchval('SELECT count(*)'+base+' AND NOT (h.selected AND h.total_amount IS NOT NULL AND h.period IS NOT NULL AND h.company_name IS NOT NULL)', *args)
+        monthly = await conn.fetch('SELECT h.period, h.company_name, count(*) AS rows, sum(h.total_amount) AS total'+eligible+' GROUP BY h.period,h.company_name ORDER BY h.period DESC,h.company_name', *args)
+        stores = await conn.fetch("SELECT h.site_code, min(COALESCE(NULLIF(BTRIM(h.location),''),h.site_code,'Fără magazin precizat')) AS location, bool_and(h.site_code IS NULL AND NULLIF(BTRIM(h.location),'') IS NULL) AS location_unmapped, h.company_name, count(*) AS rows, count(DISTINCT h.period) AS months, sum(h.total_amount) AS total"+eligible+" GROUP BY h.site_code,CASE WHEN h.site_code IS NULL THEN NULLIF(BTRIM(h.location),'') END,h.company_name ORDER BY total DESC", *args)
+        agents = await conn.fetch("SELECT min(full_name) AS full_name,company_name,sum(month_total) AS total,count(*) AS months,sum(rows)::integer AS rows,COALESCE(avg(month_total) FILTER(WHERE month_total>=2000),0) AS avg_salary FROM (SELECT min(h.full_name) AS full_name,upper(regexp_replace(trim(h.full_name),'\\s+',' ','g')) AS name_key,h.company_name,h.period,sum(h.total_amount) AS month_total,count(*) AS rows"+eligible+" GROUP BY upper(regexp_replace(trim(h.full_name),'\\s+',' ','g')),h.company_name,h.period) a GROUP BY name_key,company_name ORDER BY total DESC", *args)
+        return {'agents':[dict(row) for row in agents],'total':overview['total'],'rows':overview['rows'],'months':overview['months'],'excluded_rows':excluded,'monthly':[dict(row) for row in monthly],'stores':[dict(row) for row in stores]}
+
+    async def _items(self, conn, base, fields, args, limit, offset):
+        total = await conn.fetchval('SELECT count(*)'+base, *args)
+        rows = await conn.fetch('SELECT '+fields+base+
+            ' ORDER BY h.period DESC NULLS LAST,h.company_name,h.full_name,h.source_row_key'
+            +f' LIMIT ${len(args)+1} OFFSET ${len(args)+2}', *args, limit, offset)
+        return {'items':[dict(row) for row in rows], 'total_rows':total}
+
+    async def fetch_salary_archive(self, *, year=None, month=None, search=None,
+                                   company_name=None, site_code=None, regional=None,
+                                   asm=None, limit=100, offset=0, summary=False, name_exact=None, location_exact=None, person_id=None, source_company=None, data_source="history", location_unmapped=False):
+        where, args = self._filters(year=year, month=month, search=search, company_name=company_name, site_code=site_code, regional=regional, asm=asm, name_exact=name_exact, location_exact=location_exact, person_id=person_id, source_company=source_company, location_unmapped=location_unmapped)
         if data_source == 'recorded':
             source = """(SELECT id::text AS source_row_key,
                 to_char(year,'FM0000') || '-' || to_char(month,'FM00') AS period,
@@ -57,15 +79,5 @@ class SalaryArchiveQueries:
         async with self.pool.acquire() as conn:
             async with conn.transaction(isolation='repeatable_read', readonly=True):
                 if summary:
-                    eligible = base + ' AND h.selected AND h.total_amount IS NOT NULL AND h.period IS NOT NULL AND h.company_name IS NOT NULL'
-                    overview = await conn.fetchrow('SELECT count(*) AS rows, COALESCE(sum(h.total_amount),0) AS total, count(DISTINCT h.period) AS months'+eligible, *args)
-                    excluded = await conn.fetchval('SELECT count(*)'+base+' AND NOT (h.selected AND h.total_amount IS NOT NULL AND h.period IS NOT NULL AND h.company_name IS NOT NULL)', *args)
-                    monthly = await conn.fetch('SELECT h.period, h.company_name, count(*) AS rows, sum(h.total_amount) AS total'+eligible+' GROUP BY h.period,h.company_name ORDER BY h.period DESC,h.company_name', *args)
-                    stores = await conn.fetch("SELECT h.site_code, min(COALESCE(NULLIF(BTRIM(h.location),''),h.site_code,'Fără magazin precizat')) AS location, bool_and(h.site_code IS NULL AND NULLIF(BTRIM(h.location),'') IS NULL) AS location_unmapped, h.company_name, count(*) AS rows, count(DISTINCT h.period) AS months, sum(h.total_amount) AS total"+eligible+" GROUP BY h.site_code,CASE WHEN h.site_code IS NULL THEN NULLIF(BTRIM(h.location),'') END,h.company_name ORDER BY total DESC", *args)
-                    agents = await conn.fetch("SELECT min(full_name) AS full_name,company_name,sum(month_total) AS total,count(*) AS months,sum(rows)::integer AS rows,COALESCE(avg(month_total) FILTER(WHERE month_total>=2000),0) AS avg_salary FROM (SELECT min(h.full_name) AS full_name,upper(regexp_replace(trim(h.full_name),'\\s+',' ','g')) AS name_key,h.company_name,h.period,sum(h.total_amount) AS month_total,count(*) AS rows"+eligible+" GROUP BY upper(regexp_replace(trim(h.full_name),'\\s+',' ','g')),h.company_name,h.period) a GROUP BY name_key,company_name ORDER BY total DESC", *args)
-                    return {'agents':[dict(row) for row in agents],'total':overview['total'],'rows':overview['rows'],'months':overview['months'],'excluded_rows':excluded,'monthly':[dict(row) for row in monthly],'stores':[dict(row) for row in stores]}
-                total = await conn.fetchval('SELECT count(*)'+base, *args)
-                rows = await conn.fetch('SELECT '+fields+base+
-                    ' ORDER BY h.period DESC NULLS LAST,h.company_name,h.full_name,h.source_row_key'
-                    +f' LIMIT ${len(args)+1} OFFSET ${len(args)+2}', *args,limit,offset)
-        return {'items':[dict(row) for row in rows], 'total_rows':total}
+                    return await self._summary(conn, base, args)
+                return await self._items(conn, base, fields, args, limit, offset)

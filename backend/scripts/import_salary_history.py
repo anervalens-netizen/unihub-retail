@@ -37,7 +37,7 @@ def money(value):
         raise ValueError('Invalid amount precision/range')
     return number
 
-def prepare_row(row, batch_hash):
+def _validate_row(row):
     if row.get('schema_version') != 1:
         raise ValueError('Unsupported row schema')
     period = row.get('period')
@@ -46,9 +46,15 @@ def prepare_row(row, batch_hash):
     company = row.get('company')
     if company not in (None,'Mobiup','Mobicell'):
         raise ValueError('Invalid company')
+    return period, company
+
+def _validate_amounts(row):
     amounts = [money(row.get(k)) for k in ('salary_amount','meal_vouchers','total_amount')]
     if row.get('value_status') == 'valid' and (None in amounts or amounts[0]+amounts[1] != amounts[2]):
         raise ValueError('Amount control mismatch')
+    return amounts
+
+def _validate_identity(row, company):
     person = row.get('candidate_person_id')
     if person and (row.get('identity_status') != 'verified_existing_identity' or not re.fullmatch(r'sp1_[0-9a-f]{64}',person)):
         raise ValueError('Unverified person link')
@@ -59,6 +65,9 @@ def prepare_row(row, batch_hash):
         and row.get('value_status') == 'valid' and row.get('version_status') == 'unique_or_equivalent'
         and row.get('scope') == 'retail' and not already):
         raise ValueError('Unsafe estimation eligibility')
+    return person, selected, eligible, already
+
+def _validate_provenance(row):
     reasons = [str(x) for k in ('value_issues','identity_issues') for x in row.get(k,[])]
     if row.get('inclusion_status') != 'selected':
         reasons.append(str(row.get('inclusion_status')))
@@ -72,6 +81,14 @@ def prepare_row(row, batch_hash):
         raise ValueError('Invalid source hash')
     if not isinstance(row.get('source_row'),int) or row['source_row']<1:
         raise ValueError('Invalid source row')
+    return reasons, source_sha
+
+def prepare_row(row, batch_hash):
+    period, company = _validate_row(row)
+    amounts = _validate_amounts(row)
+    person, selected, eligible, already = _validate_identity(row, company)
+    reasons, source_sha = _validate_provenance(row)
+    name = row['full_name']
     result = dict(zip(COLUMNS, [row['source_row_key'],batch_hash,'',period,company,
         name,row.get('location'),row.get('site_code'),*amounts,person,
         'verified_existing' if person else row['identity_status'],reasons,selected,

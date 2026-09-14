@@ -14,7 +14,7 @@ from grile.calendar_models import (
 from grile.earnings_models import EarningsMonth
 from grile.earnings_projection import project_earnings
 from repositories.grile_earnings import read_earnings_sources
-from grile.calendar_projection import attendance_by_agent_and_store, attendance_days
+from grile.calendar_projection import attendance_by_agent_and_store, attendance_days, project_calendar as _project_calendar
 from repositories.grile_calendar import CalendarConflict, GrileCalendarRepository
 
 
@@ -51,16 +51,7 @@ class GrileCalendarService:
 
     @staticmethod
     def project_calendar(month: str, data: dict) -> CalendarMonth:
-        roster = [RosterEntry.model_validate(row) for row in data["roster"]]
-        days = [CalendarDay.model_validate(row) for row in data["days"]]
-        closures = [CalendarClosure.model_validate(row) for row in data.get("closures", [])]
-        hours = [StoreHours.model_validate(row) for row in data.get("store_hours", [])]
-        attendance, stores = attendance_by_agent_and_store(roster, days, hours)
-        result = CalendarMonth(month=month, roster=roster, days=days, closures=closures, attendance=attendance,
-                               store_hours=hours, attendance_by_store=stores,
-                               attendance_days=attendance_days(days, hours))
-        result.projection_revision = sha256(result.model_dump_json().encode()).hexdigest()
-        return result
+        return _project_calendar(month, data)
 
     async def save_roster(self, month: str, agent_code: str, payload: RosterInput, actor: str) -> RosterEntry:
         if payload.expected_revision == 0 and payload.home_site_code != "TL":

@@ -13,6 +13,7 @@ vi.mock('../../api/agents', async (importOriginal) => ({
   fetchAgentProfile: api.profile,
   fetchAgentHistory: api.history,
 }));
+vi.mock('../../auth/AuthContext', () => ({ useAuth: () => ({ user: { profile: { groups: ['unihub-manager'] } } }) }));
 vi.mock('./useAgentsPageController', () => ({ useAgentsPageController: () => controller.current }));
 vi.mock('recharts', () => {
   const Element = ({ children }: { children?: ReactNode }) => <div>{children}</div>;
@@ -95,7 +96,7 @@ describe('agents critical views', () => {
 
   it('composes overview and executes section/list/filter/selection controls', () => {
     const props = viewProps();
-    render(<AgentsOverviewView {...props as unknown as ComponentProps<typeof AgentsOverviewView>} />);
+    render(queryWrapper(<AgentsOverviewView {...props as unknown as ComponentProps<typeof AgentsOverviewView>} />));
     expect(screen.getByText('Snapshot — 2026-08')).toBeInTheDocument();
     expect(screen.getByText('Magazine active (1)')).toBeInTheDocument();
     expect(screen.getByText('Lista Agenti')).toBeInTheDocument();

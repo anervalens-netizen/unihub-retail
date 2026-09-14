@@ -1,7 +1,7 @@
 import { client } from './client';
 import { generatedGet, generatedPatch } from './generated/client';
 import { decodeRetail } from './generated/decoded';
-import type { RetailCalendarChanges, RetailCalendarDayInput, RetailRosterInput, RetailCalendarClosureInput } from './generated/contracts';
+import type { RetailCalendarChanges, RetailCalendarDayInput, RetailRosterInput } from './generated/contracts';
 
 export const readCalendar = (month: string, signal?: AbortSignal) => generatedGet('read_calendar_api_grile_calendar__month__get', { pathParams: { month }, signal });
 export const calendarCandidates = (month: string, signal?: AbortSignal) => generatedGet('candidates_api_grile_calendar__month__candidates_get', { pathParams: { month }, signal });

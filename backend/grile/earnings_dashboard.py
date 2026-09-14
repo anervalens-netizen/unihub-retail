@@ -35,35 +35,43 @@ def salary(agent, inputs, metrics):
         potential_100=whole_ron(rest + potential_100) if rest is not None and potential_100 is not None else None,
         potential_120=whole_ron(rest + potential_120) if rest is not None and potential_120 is not None else None)
 
+def _prepare_agent_compensation(agent, result, calendar, sources, inputs):
+    agent.compensation = inputs.get(agent.agent_code, CompensationEntry(month=result.month, agent_code=agent.agent_code, revision=0))
+    if agent.home_site_code != 'TL':
+        salary_home = agent.home_site_code
+        if salary_home == 'UNASSIGNED':
+            entry = next(r for r in calendar.roster if r.agent_code == agent.agent_code)
+            salary_home = entry.home_site_code
+            for transfer in sorted(entry.transfers, key=lambda t: (t.effective_from, t.roster_revision)):
+                if transfer.effective_from.isoformat() <= business_today().isoformat() and transfer.home_site_code != 'UNASSIGNED':
+                    salary_home = transfer.home_site_code
+        agent.compensation.salary_base = base_salary(salary_home)
+    if agent.compensation.vouchers is None:
+        agent.compensation.vouchers = D(480)
+    for field in ('epay_under_50', 'epay_over_50', 'adjustment'):
+        if getattr(agent.compensation, field) is None:
+            setattr(agent.compensation, field, D(0) if field == 'adjustment' else 0)
+    if 'sim' in sources:
+        by_day = {(r['site_code'], r['sale_date']): r['quantity'] for r in sources['sim']}
+        agent.compensation.sim_quantity = max(0, sum(int(by_day.get((d.site_code, d.work_date), 0)) for d in agent.days if result.cutoff and d.work_date <= result.cutoff)) if result.cutoff else None
+    if 'incentives' in sources:
+        agent.compensation.incentive = sources['incentives'].get(agent.agent_code, D(0)) if sources.get('incentives_complete') and result.cutoff else None
+
+
+def _enrich_agent(agent, result, calendar, sources, inputs):
+    home = [d for d in agent.days if not d.away]
+    elapsed = [d for d in home if result.cutoff and d.work_date <= result.cutoff]
+    leave = sum(d.status == 'leave' and d.agent_code == agent.agent_code for d in calendar.days)
+    metrics = performance(agent.home_target, agent.home_sales, len(home), len(elapsed), leave, sum(d.supplemental for d in agent.days))
+    agent.performance = metrics
+    _prepare_agent_compensation(agent, result, calendar, sources, inputs)
+    agent.salary = salary(agent, agent.compensation, metrics)
+
+
 def enrich_dashboard(result, calendar, sources):
     inputs = {row['agent_code']: CompensationEntry.model_validate(row) for row in sources.get('compensation', [])}
     for agent in result.agents:
-        home = [d for d in agent.days if not d.away]
-        elapsed = [d for d in home if result.cutoff and d.work_date <= result.cutoff]
-        leave = sum(d.status == 'leave' and d.agent_code == agent.agent_code for d in calendar.days)
-        metrics = performance(agent.home_target, agent.home_sales, len(home), len(elapsed), leave, sum(d.supplemental for d in agent.days))
-        agent.performance = metrics
-        agent.compensation = inputs.get(agent.agent_code, CompensationEntry(month=result.month, agent_code=agent.agent_code, revision=0))
-        if agent.home_site_code != 'TL':
-            salary_home = agent.home_site_code
-            if salary_home == 'UNASSIGNED':
-                entry = next(r for r in calendar.roster if r.agent_code == agent.agent_code)
-                salary_home = entry.home_site_code
-                for transfer in sorted(entry.transfers, key=lambda t: (t.effective_from, t.roster_revision)):
-                    if transfer.effective_from.isoformat() <= business_today().isoformat() and transfer.home_site_code != 'UNASSIGNED':
-                        salary_home = transfer.home_site_code
-            agent.compensation.salary_base = base_salary(salary_home)
-        if agent.compensation.vouchers is None:
-            agent.compensation.vouchers = D(480)
-        for field in ('epay_under_50', 'epay_over_50', 'adjustment'):
-            if getattr(agent.compensation, field) is None:
-                setattr(agent.compensation, field, D(0) if field == 'adjustment' else 0)
-        if 'sim' in sources:
-            by_day = {(r['site_code'], r['sale_date']): r['quantity'] for r in sources['sim']}
-            agent.compensation.sim_quantity = max(0, sum(int(by_day.get((d.site_code, d.work_date), 0)) for d in agent.days if result.cutoff and d.work_date <= result.cutoff)) if result.cutoff else None
-        if 'incentives' in sources:
-            agent.compensation.incentive = sources['incentives'].get(agent.agent_code, D(0)) if sources.get('incentives_complete') and result.cutoff else None
-        agent.salary = salary(agent, agent.compensation, metrics)
+        _enrich_agent(agent, result, calendar, sources, inputs)
     enrich_store_performance(result, calendar, sources)
 
 def enrich_store_performance(result, calendar, sources):

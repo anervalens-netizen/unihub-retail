@@ -58,3 +58,4 @@ backend/config/google/*.json
 
 # Local pre-change frontend backups are not source artifacts.
 /dist-before-*/
+.mypy_cache/

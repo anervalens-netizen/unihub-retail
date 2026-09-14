@@ -55,3 +55,21 @@ def test_store_forecast_is_unavailable_for_extra_out_of_calendar_sales():
 @pytest.mark.parametrize('payload', [{'sim_quantity':-1},{'epay_under_50':1.5},{'salary_base':'NaN'},{'incentive':'0.001'}])
 def test_invalid_manual_inputs_are_rejected(payload):
     with pytest.raises(ValueError): CompensationInput(expected_revision=0,**payload)
+
+
+def test_store_daily_uses_all_real_sales_and_only_remaining_scheduled_days():
+    data = sources()
+    data['source']['cutoff_date'] = date(2026, 9, 2)
+    baseline = project(data).stores['A']
+    # A missing past assignment invalidates elapsed-day averages, but it does
+    # not remove real store sales or change the one remaining scheduled day.
+    data['calendar']['days'] = [row for row in data['calendar']['days']
+                                if not (row['site_code'] == 'A' and row['work_date'] == date(2026, 9, 2))]
+    actual = project(data).stores['A']
+
+    assert actual.sales == baseline.sales == D(1600)
+    assert actual.forecast is None
+    assert actual.scheduled_days - actual.worked_days == 1
+    for field, rate in [('daily_80', '0.8'), ('daily_90', '0.9'), ('daily_100', '1'), ('daily_120', '1.2')]:
+        required = D(3000) * D(rate) - D(1600)
+        assert getattr(actual, field) == getattr(baseline, field) == required
