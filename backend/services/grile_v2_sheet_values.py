@@ -186,4 +186,3 @@ def build_values(snapshot: dict[str, Any], synced_at: str) -> dict[str, Any]:
         data.append(_cell("Pontaj", row, 32, _num(total.get("worked_minutes", 0)) / 60 if total else ""))
     layout["synced_at"] = synced_at
     return {"data": data, "layout": layout}
-
