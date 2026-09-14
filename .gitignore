@@ -55,3 +55,7 @@ backend/config/google/*.json
 /docs/Campanii-promo/**/*.[xX][lL][sS][mM]
 /docs/Campanii-promo/**/*.[pP][pP][tT]
 /docs/Campanii-promo/**/*.[pP][pP][tT][xX]
+
+# Local pre-change frontend backups are not source artifacts.
+/dist-before-*/
+.mypy_cache/

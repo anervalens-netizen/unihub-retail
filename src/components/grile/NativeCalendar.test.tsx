@@ -4,7 +4,7 @@ import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { ApiError } from '../../api/client';
-const api = vi.hoisted(() => ({ saveStoreHours: vi.fn(), downloadAttendance: vi.fn(), readCalendar: vi.fn(), calendarStores: vi.fn(), calendarCandidates: vi.fn(), confirmCalendarAgent: vi.fn(), saveCalendarDays: vi.fn() }));
+const api = vi.hoisted(() => ({ readEarnings: vi.fn(), saveStoreHours: vi.fn(), downloadAttendance: vi.fn(), readCalendar: vi.fn(), calendarStores: vi.fn(), calendarCandidates: vi.fn(), confirmCalendarAgent: vi.fn(), saveCalendarDays: vi.fn() }));
 const auth = vi.hoisted(() => ({ profile: { groups: ['unihub-manager'] } }));
 vi.mock('../../api/grileCalendar', () => api);
 vi.mock('../../auth/AuthContext', () => ({ useAuth: () => ({ user: auth }) }));
@@ -15,6 +15,7 @@ const day = { agent_code: 'AG1', work_date: '2026-09-01', site_code: 'S1', statu
 beforeEach(() => {
   vi.resetAllMocks();
   auth.profile.groups = ['unihub-manager'];
+  api.readEarnings.mockResolvedValue({ month: '2026-09', agents: [], unassigned_sales: [], selling_days: {}, stores: {}, calendar_revision: undefined });
   HTMLDialogElement.prototype.showModal = function () { this.open = true; };
   HTMLDialogElement.prototype.close = function () { this.open = false; };
   api.calendarStores.mockResolvedValue([store]);
@@ -23,10 +24,10 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 function mount() { return render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })}><NativeCalendar initialMonth="2026-09" /></QueryClientProvider>); }
-async function openStore() { await userEvent.click(await screen.findByRole('button', { name: /Magazin Alpha/ })); }
+async function openStore() { await userEvent.click(await screen.findByRole('button', { name: /Magazin Alpha/ })); expect(screen.getByRole('tab', { name: 'Grile' })).toHaveAttribute('aria-selected', 'true'); await userEvent.click(screen.getByRole('tab', { name: 'Calendar' })); }
 it('exposes TL management in a month with no confirmed Team Leaders', async () => {
   mount();
-  expect(await screen.findByRole('button', { name: 'TL · Grile Team Leaders' })).toBeInTheDocument();
+  expect(await screen.findByRole('button', { name: 'Grile TL' })).toBeInTheDocument();
 });
 it('opens grouped store, shows attendance, and reopens calendar', async () => {
   mount(); await openStore();
@@ -38,16 +39,13 @@ it('opens grouped store, shows attendance, and reopens calendar', async () => {
   await openStore();
   expect(screen.getByRole('button', { name: 'Editează 2026-09-01' })).toBeInTheDocument();
 });
-it('saves leave and reloads the shared calendar', async () => {
+it('saves an explicit work assignment and reloads the shared calendar', async () => {
   mount(); await openStore();
   await userEvent.click(screen.getByRole('button', { name: 'Editează 2026-09-01' }));
-  await userEvent.selectOptions(screen.getByLabelText('Tip zi'), 'leave');
+  await userEvent.selectOptions(screen.getByLabelText('Agent pentru zi'), 'AG1');
   api.saveCalendarDays.mockResolvedValue([]);
-  api.readCalendar.mockResolvedValue({ month: '2026-09', roster, days: [{ ...day, status: 'leave', revision: 2 }], attendance: [] });
   await userEvent.click(screen.getByRole('button', { name: 'Salvează ziua' }));
-  await waitFor(() => expect(api.saveCalendarDays).toHaveBeenCalledWith('2026-09', [expect.objectContaining({ agent_code: 'AG1', status: 'leave', expected_revision: 1 })]));
-  await waitFor(() => expect(screen.queryByRole('button', { name: 'Salvează ziua' })).not.toBeInTheDocument());
-  expect(screen.getByRole('button', { name: 'Editează 2026-09-01' })).toHaveTextContent('Concediu');
+  await waitFor(() => expect(api.saveCalendarDays).toHaveBeenCalledWith('2026-09', { days: [expect.objectContaining({ agent_code: 'AG1', status: 'work', expected_revision: 1 })] }));
 });
 it('requires explicit reload after a conflict', async () => {
   mount(); await openStore();
@@ -113,8 +111,6 @@ it('closes the old day snapshot after a home-store correction', async () => {
   mount(); await openStore();
   await userEvent.click(screen.getByRole('button', { name: 'Editează 2026-09-01' }));
   await userEvent.selectOptions(screen.getByLabelText('Agent pentru zi'), 'AG1');
-  await userEvent.click(screen.getByLabelText('Zi suplimentară plătită'));
-  expect(screen.getByLabelText('Zi suplimentară plătită')).toBeChecked();
   await userEvent.click(screen.getByText('Confirmă agenții și magazinul de bază'));
   await userEvent.selectOptions(screen.getByLabelText('Cod agent pentru confirmare'), 'AG1');
   api.readCalendar.mockResolvedValue({ month: '2026-09', roster: [{ ...roster[0], revision: 2 }], days: [], attendance: [] });
@@ -124,21 +120,19 @@ it('closes the old day snapshot after a home-store correction', async () => {
   await waitFor(() => expect(screen.getByLabelText('Cod agent pentru confirmare')).toHaveValue(''));
   await userEvent.click(screen.getByRole('button', { name: 'Editează 2026-09-01' }));
   await userEvent.selectOptions(screen.getByLabelText('Agent pentru zi'), 'AG1');
-  expect(screen.getByLabelText('Zi suplimentară plătită')).not.toBeChecked();
 });
 it('keeps unavailable scheduled stores accessible only for cancellation', async () => {
   api.calendarStores.mockResolvedValue([]);
   mount();
   await userEvent.click(await screen.findByRole('button', { name: /S1 · doar corectări/ }));
+  await userEvent.click(screen.getByRole('tab', { name: 'Calendar' }));
   expect(screen.getByText(/Magazin indisponibil pentru programări noi/)).toBeInTheDocument();
   expect(screen.queryByText('Confirmă agenții și magazinul de bază')).not.toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Editează 2026-09-02' })).toBeDisabled();
   await userEvent.click(screen.getByRole('button', { name: 'Editează 2026-09-01' }));
-  expect(screen.getByLabelText('Tip zi')).toHaveValue('cancelled');
-  expect(screen.queryByRole('option', { name: 'Lucrează' })).not.toBeInTheDocument();
-  api.saveCalendarDays.mockResolvedValue([]);
-  await userEvent.click(screen.getByRole('button', { name: 'Salvează ziua' }));
-  await waitFor(() => expect(api.saveCalendarDays).toHaveBeenCalledWith('2026-09', [{ agent_code: 'AG1', work_date: '2026-09-01', site_code: 'S1', status: 'cancelled', supplemental: false, expected_revision: 1 }]));
+  await userEvent.selectOptions(screen.getByLabelText('Agent pentru zi'), '');
+  await userEvent.click(screen.getAllByRole('button', { name: 'Închide ziua' })[1]!);
+  await waitFor(() => expect(api.saveCalendarDays).toHaveBeenCalledWith('2026-09', { days: [expect.objectContaining({ agent_code: 'AG1', status: 'cancelled', expected_revision: 1 })], closures: [{ work_date: '2026-09-01', site_code: 'S1', closed: true, expected_revision: 0 }] }));
 });
 it('keeps date switching locked until a slow day save completes', async () => {
   let finish!: (value: unknown[]) => void;
@@ -166,8 +160,7 @@ it('blocks day opening and saving until roster confirmation settles', async () =
   await userEvent.selectOptions(screen.getByLabelText('Cod agent pentru confirmare'), 'AG1');
   await userEvent.click(screen.getByRole('button', { name: 'Confirmă în Magazin Alpha' }));
   expect(screen.getByRole('button', { name: 'Editează 2026-09-02' })).toBeDisabled();
-  expect(screen.getByRole('button', { name: 'Salvează ziua' })).toBeDisabled();
-  await userEvent.click(screen.getByRole('button', { name: 'Salvează ziua' }));
+  expect(screen.queryByRole('button', { name: 'Salvează ziua' })).not.toBeInTheDocument();
   expect(api.saveCalendarDays).not.toHaveBeenCalled();
   finish({});
   await waitFor(() => expect(screen.getByRole('button', { name: 'Editează 2026-09-02' })).not.toBeDisabled());
@@ -196,10 +189,10 @@ it('downloads the displayed projection revision', async () => {
 it('keeps confirmed names and stable codes visible in the calendar and roster', async () => {
   api.readCalendar.mockResolvedValue({ month: '2026-09', roster: [{ ...roster[0], display_name: 'Nume Confirmat', identity_status: 'confirmed' }], days: [day], attendance: [] });
   mount();
-  await userEvent.click(await screen.findByRole('button', { name: /Magazin Alpha/ }));
+  await openStore();
   expect(screen.getByRole('button', { name: 'Editează 2026-09-01' })).toHaveTextContent('Nume Confirmat · AG1');
   await userEvent.click(screen.getByText('Confirmă agenții și magazinul de bază'));
-  expect(screen.getByRole('option', { name: /Nume Confirmat · AG1/ })).toHaveValue('AG1');
+  expect(screen.getAllByRole('option', { name: /Nume Confirmat · AG1/ }).every(option => (option as HTMLOptionElement).value === 'AG1')).toBe(true);
 });
 it('filters managers, companies and stores without changing the monthly export scope', async () => {
   api.calendarStores.mockResolvedValue([store, { ...store, site_code: 'S2', locatie: 'Magazin Beta', firma: 'Other' }, { ...store, site_code: 'S3', locatie: 'Magazin Gamma', regional: 'Manager G' }, { ...store, site_code: 'S4', locatie: 'Magazin Delta', regional: '' }]);

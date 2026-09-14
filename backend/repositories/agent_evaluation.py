@@ -135,6 +135,7 @@ monthly_base AS (
         ram.receipt_2plus_count,
         ram.working_days,
         COALESCE(st.target_value, 0) AS store_target,
+        atg.target_value AS agent_target,
         mm.forecast_factor,
         (mm.is_final = false) AS is_partial,
         mm.available_days,
@@ -149,6 +150,8 @@ monthly_base AS (
     LEFT JOIN store_targets st
       ON st.import_month = ram.import_month
      AND st.site_code = ram.site_code
+    LEFT JOIN reporting_effective_agent_targets_v2 atg
+      ON atg.import_month=ram.import_month AND atg.site_code=ram.site_code AND atg.agent=ram.agent
     WHERE ram.import_month >= '{AGENT_LIFECYCLE_BASELINE_MONTH}'
       AND ($1::TEXT IS NULL OR ram.import_month = ANY(string_to_array($1::TEXT, ',')))
       AND ($2::TEXT IS NULL OR LOWER(ca.firma) = LOWER($2))
@@ -162,11 +165,11 @@ monthly_base AS (
 monthly_targets AS (
     SELECT
         *,
-        CASE
+        COALESCE(agent_target, CASE
             WHEN location_working_days > 0
             THEN ROUND(store_target * working_days / location_working_days, 2)
             ELSE 0
-        END AS effective_target
+        END) AS effective_target
     FROM monthly_base
 ),
 monthly_scored AS (
@@ -207,6 +210,7 @@ agent_period AS (
         COALESCE(SUM(receipt_2plus_count), 0)::INT AS receipt_2plus_count,
         COALESCE(SUM(working_days), 0)::INT AS working_days,
         COALESCE(SUM(effective_target), 0) AS target_value,
+        BOOL_OR(agent_target IS NOT NULL) AS uses_individual_target,
         COALESCE(MAX(forecast_factor), 1) AS forecast_factor,
         BOOL_OR(is_partial) AS is_partial,
         COALESCE(SUM(available_days), 0)::INT AS available_days,
@@ -234,7 +238,7 @@ agent_period AS (
 agent_metrics AS (
     SELECT
         *,
-        'allocated_store_target'::TEXT AS target_source,
+        CASE WHEN uses_individual_target THEN 'individual_agent_target' ELSE 'allocated_store_target' END::TEXT AS target_source,
         CASE WHEN target_value > 0 THEN ROUND(total_sales * 100.0 / target_value, 2) END AS target_pct,
         CASE WHEN target_value > 0 THEN ROUND(forecast_sales * 100.0 / target_value, 2) END AS target_forecast_pct,
         CASE WHEN working_days > 0 THEN ROUND(total_sales / working_days, 2) END AS daily_average,
@@ -387,6 +391,8 @@ scoped AS (
     SELECT DISTINCT ram.import_month AS month, ca.firma, ca.regional, ca.asm, ca.site_code, ca.locatie
     FROM reporting_agent_month ram
     JOIN current_agents ca ON ca.agent = ram.agent
+    LEFT JOIN reporting_effective_agent_targets_v2 atg
+      ON atg.import_month=ram.import_month AND atg.site_code=ram.site_code AND atg.agent=ram.agent
     WHERE ram.import_month >= '{AGENT_LIFECYCLE_BASELINE_MONTH}'
 )
 SELECT 'month' AS type, month AS value, month AS label FROM scoped

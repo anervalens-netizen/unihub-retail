@@ -12,7 +12,7 @@ from schemas.common import StrictApiModel, MonthStr
 StoreCoverageStatus = Literal["covered", "uncovered", "closed", "inactive"]
 AgentCurrentStatus = Literal["active", "inactive_recent", "churned"]
 AgentQualifier = Literal["Excelent", "Foarte Bun", "Bun", "Mediu", "Scazut"]
-TargetSource = Literal["partial_agent_target", "allocated_store_target"]
+TargetSource = Literal["partial_agent_target", "allocated_store_target", "individual_agent_target"]
 DailyReferenceType = Literal["colegi", "istoric_locatie", "media_manager", "none"]
 TrendDirection = Literal["up", "down", "flat"]
 EligibilityStatus = Literal["eligibil", "insuficient"]
@@ -82,6 +82,9 @@ class AgentMovementResponse(StrictApiModel):
 
 class AgentListItem(StrictApiModel):
     agent: str
+    display_name: str | None = None
+    home_site_code: str | None = None
+    home_store_name: str | None = None
     store_name: str | None = None
     firma: str | None = None
     active_in_month: bool

@@ -11,7 +11,7 @@ import pytest
 import pytest_asyncio
 
 from db.connection import validate_test_database_url
-from grile.calendar_models import CalendarChanges, CalendarDayInput, RosterInput
+from grile.calendar_models import CalendarChanges, CalendarClosureInput, CalendarDayInput, RosterInput
 from repositories.grile_calendar import CalendarConflict, GrileCalendarRepository
 from services.grile_calendar import GrileCalendarService
 
@@ -83,6 +83,23 @@ async def test_atomic_replacement_leave_and_reassignment_keep_revisions(repo):
     counts = {row.agent_code: row for row in (await service.read(MONTH)).attendance}
     assert counts[AG1].work_days_by_site == {B: 1}
     assert counts[AG1].leave_days == 0
+
+
+async def test_combined_day_and_closure_rolls_back_on_closure_failure(repo, monkeypatch):
+    await confirm(repo)
+    await repo.save_days([day()], "manager")
+
+    async def injected_failure(*_args, **_kwargs):
+        raise CalendarConflict("injected closure failure")
+
+    monkeypatch.setattr(repo, "_save_closures_in_transaction", injected_failure)
+    closure = CalendarClosureInput(work_date=date(2196, 9, 1), site_code=A, expected_revision=0)
+    with pytest.raises(CalendarConflict, match="injected"):
+        await repo.save_days([day(status="cancelled", revision=1)], "manager", [closure])
+
+    rows = (await repo.read(MONTH))["days"]
+    assert len(rows) == 1 and rows[0]["status"] == "work" and rows[0]["revision"] == 1
+    assert (await repo.read(MONTH))["closures"] == []
 
 
 async def test_conflicting_batch_rolls_back_original_schedule(repo):
@@ -445,7 +462,9 @@ async def test_calendar_identity_is_effective_scoped_and_web_readable(repo, web_
     if other_person == person and expected == 'confirmed':
         async with repo.pool.acquire() as conn:
             await conn.execute("DELETE FROM agent_salary_links WHERE agent_code=$1 AND site_code=$2", AG1, A)
-        assert (await service.read(MONTH)).roster[0].display_name is None
+        known_person = (await service.read(MONTH)).roster[0]
+        # The name is known; home salary identity remains unconfirmed.
+        assert (known_person.display_name, known_person.identity_status) == ('Other store name', 'unavailable')
 
 
 async def test_normal_shift_swap_preserves_store_hours_without_supplement(repo):
@@ -455,3 +474,27 @@ async def test_normal_shift_swap_preserves_store_hours_without_supplement(repo):
     assert calendar.days[0].site_code == B and not calendar.days[0].supplemental
     assert calendar.attendance[0].work_days_by_site == {B: 1}
     assert calendar.attendance[0].worked_minutes == 660
+
+
+async def test_compensation_is_revision_fenced_and_requires_active_roster(repo):
+    from grile.compensation_models import CompensationInput
+    from repositories.grile_compensation import save_compensation
+    with pytest.raises(CalendarConflict, match='active agent'):
+        await save_compensation(repo.pool, MONTH, AG1, CompensationInput(expected_revision=0), 'manager')
+    await confirm(repo)
+    try:
+        values = CompensationInput(expected_revision=0, vouchers=480, sim_quantity=2,
+            epay_under_50=0, epay_over_50=1, incentive=0, adjustment=0)
+        outcomes = await asyncio.gather(
+            save_compensation(repo.pool, MONTH, AG1, values, 'first-manager'),
+            save_compensation(repo.pool, MONTH, AG1, values, 'second-manager'), return_exceptions=True)
+        assert sum(isinstance(row, CalendarConflict) for row in outcomes) == 1
+        saved = next(row for row in outcomes if not isinstance(row, Exception))
+        assert saved['revision'] == 1 and saved['sim_quantity'] == 2
+        service = GrileCalendarService(repo)
+        data = await service.earnings(MONTH)
+        assert data.agents[0].compensation.revision == 1
+        assert data.agents[0].salary.sim_pay == 6
+    finally:
+        async with repo.pool.acquire() as conn:
+            await conn.execute('DELETE FROM grile_calendar_compensation WHERE month=$1 AND agent_code=$2', MONTH, AG1)

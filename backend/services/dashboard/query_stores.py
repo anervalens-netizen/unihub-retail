@@ -87,6 +87,7 @@ def _store_stats_query(
             fd.asm,
             COALESCE(SUM(fd.total_sales), 0) AS total_vanzari,
             COALESCE(SUM(fd.total_quantity), 0)::INT AS qty_total,
+            COALESCE(SUM(fd.focus_quantity), 0)::INT AS focus_quantity,
             COALESCE(SUM(fd.receipt_count), 0)::INT AS nr_bonuri,
             COUNT(DISTINCT fd.agent)::INT AS nr_agenti,
             COUNT(DISTINCT fd.sale_date)::INT AS zile_active,

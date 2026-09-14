@@ -13,7 +13,7 @@ import type { BreakdownColumn } from "./BreakdownTable";
 import type { HistoryPointView } from "./HistoryDashboard";
 import type * as dashboardPresenters from "./presenters";
 
-export type DashboardSection = "current" | "history" | "visits";
+export type DashboardSection = "current" | "history";
 export type StoreSortKey =
   | "locatie"
   | "site_code"
@@ -24,6 +24,7 @@ export type StoreSortKey =
   | "promo_qty"
   | "incentive_qty"
   | "qty_total"
+  | "focus_quantity"
   | "nr_bonuri"
   | "nr_agenti"
   | "zile_active"
@@ -41,6 +42,7 @@ export type AgentSortKey =
   | "promo_qty"
   | "incentive_qty"
   | "acc_qty_realizat"
+  | "acc_focus_qty"
   | "nr_bonuri"
   | "zile_lucrate"
   | "medie_zilnica"
@@ -57,6 +59,7 @@ export type RegionalSortKey =
   | "promo_qty"
   | "incentive_qty"
   | "qty_total"
+  | "focus_quantity"
   | "nr_bonuri"
   | "medie_zilnica"
   | "medie_produs"

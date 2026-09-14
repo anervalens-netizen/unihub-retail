@@ -114,6 +114,8 @@ def _confidence_flags(row: Mapping[str, Any], basis: EvaluationBasis) -> list[st
     source = row["target_source"]
     if source == "partial_agent_target":
         flags.append("target_partial_din_grile")
+    elif source == "individual_agent_target":
+        flags.append("target_individual")
     elif source == "allocated_store_target":
         flags.append("target_alocat_din_magazin")
     reference_type = row["daily_reference_type"]

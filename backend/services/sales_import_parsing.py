@@ -395,7 +395,8 @@ async def build_import_coverage_report(
 ) -> dict[str, Any]:
     incoming = {str(value) for value in df["SiteCode"].unique()}
     active_rows = await conn.fetch(
-        "SELECT site_code, locatie, firma, regional, asm FROM stores WHERE is_active = true"
+        "SELECT site_code, locatie, firma, regional, asm FROM stores "
+        "WHERE is_active = true AND site_code <> 'TL'"
     )
     all_rows = await conn.fetch(
         "SELECT site_code, locatie, firma, regional, asm FROM stores"

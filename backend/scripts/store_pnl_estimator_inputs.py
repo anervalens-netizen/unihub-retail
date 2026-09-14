@@ -8,10 +8,59 @@ import asyncpg
 from services.fiscal_rules import gross_to_net, legacy_gross_to_net
 
 
+async def _load_historical_salary_inputs(connection, *, cutoff, stores):
+    from scripts.store_pnl_salary_inputs import (
+        prefer_reconciled_hr_allocations, salary_inputs_by_source_location,
+    )
+    source_salary_rows = await connection.fetch(
+        """
+        SELECT CASE WHEN company_name ILIKE 'mobicell%' THEN 'Mobicell' ELSE 'Mobiup' END AS company_name,
+               make_date(year, month, 1) AS period, locatie AS location,
+               SUM(total_salary)::numeric AS amount, COUNT(*) AS row_count
+        FROM salary_records
+        WHERE make_date(year, month, 1) <= $1
+        GROUP BY 1, 2, 3
+        """, cutoff)
+    salaries = salary_inputs_by_source_location(source_salary_rows, stores)
+    archive_allocations = await connection.fetch(
+        """
+        WITH scopes AS (
+            SELECT company_name, period,
+                   COUNT(DISTINCT (source_sha256, source_sheet)) AS source_count
+            FROM salary_history_rows
+            WHERE selected AND to_date(period || '-01', 'YYYY-MM-DD') <= $1
+            GROUP BY company_name, period
+            HAVING BOOL_AND(total_amount IS NOT NULL)
+        )
+        SELECT h.company_name, to_date(h.period || '-01', 'YYYY-MM-DD') AS period,
+               h.site_code, SUM(h.total_amount)::numeric AS amount,
+               COUNT(*) AS row_count, s.source_count
+        FROM salary_history_rows h
+        JOIN scopes s USING (company_name, period)
+        WHERE h.selected
+        GROUP BY h.company_name, h.period, h.site_code, s.source_count
+        """, cutoff)
+    salaries = prefer_reconciled_hr_allocations(source_salary_rows, salaries, archive_allocations)
+    historical_salaries = await connection.fetch(
+        """
+        SELECT company_name, to_date(period || '-01', 'YYYY-MM-DD') AS period,
+               site_code, SUM(total_amount)::numeric AS amount
+        FROM salary_history_estimation_inputs
+        WHERE site_code IS NOT NULL AND btrim(site_code) <> ''
+          AND to_date(period || '-01', 'YYYY-MM-DD') <= $1
+        GROUP BY company_name, period, site_code
+        """, cutoff)
+    recorded_keys = {(r['company_name'], r['period'], r['site_code']) for r in salaries}
+    if any((r['company_name'], r['period'], r['site_code']) in recorded_keys for r in historical_salaries):
+        raise ValueError('Historical salary input overlaps recorded payroll')
+    return [*salaries, *historical_salaries]
+
+
 async def load_inputs(
     connection: asyncpg.Connection,
     *,
     input_cutoff: date | None = None,
+    include_salary_history: bool = False,
 ):
     """Read raw estimator inputs without selecting a VAT interpretation.
 
@@ -73,6 +122,8 @@ async def load_inputs(
         cutoff,
     )
     stores = await connection.fetch("SELECT site_code, locatie, firma FROM stores")
+    if include_salary_history:
+        salaries = await _load_historical_salary_inputs(connection, cutoff=cutoff, stores=stores)
     return actual, gross_sales, salaries, stores
 
 

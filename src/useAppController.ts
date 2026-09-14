@@ -16,9 +16,9 @@ import { usePersistentState } from './lib/usePersistentState';
 import { MGMT_SUBTABS, type ManagementTab, type TabId } from './lib/tabs';
 
 export type CampaignsSection = 'incentive' | 'promo' | 'concurs' | 'premium' | 'focus';
-export type HubSection = 'current' | 'history' | 'visits';
+export type HubSection = 'current' | 'history';
 const CAMPAIGNS_SECTIONS: CampaignsSection[] = ['incentive', 'promo', 'concurs', 'premium', 'focus'];
-const HUB_SECTIONS: HubSection[] = ['current', 'history', 'visits'];
+const HUB_SECTIONS: HubSection[] = ['current', 'history'];
 const FILTER_KEYS = { hub: 'unihub_hub_filters', focus: 'unihub_focus_filters', agents: 'unihub_agents_filters' } as const;
 
 function parseHubSection(value: string): HubSection { return HUB_SECTIONS.includes(value as HubSection) ? value as HubSection : 'current'; }

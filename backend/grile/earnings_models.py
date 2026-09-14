@@ -4,6 +4,9 @@ from decimal import Decimal
 from typing import Literal
 
 from pydantic import BaseModel, Field
+from grile.compensation_models import CompensationEntry
+from grile.target_models import AgentTargetState
+from grile.dashboard_models import PerformanceMetrics, SalaryMetrics
 
 
 class EarningsDay(BaseModel):
@@ -20,6 +23,10 @@ class EarningsDay(BaseModel):
 
 
 class AgentEarnings(BaseModel):
+    target_setting: AgentTargetState | None = None
+    performance: PerformanceMetrics | None = None
+    compensation: CompensationEntry | None = None
+    salary: SalaryMetrics | None = None
     display_name: str | None = None
     identity_status: Literal["confirmed", "unavailable", "conflicting"] = "unavailable"
     agent_code: str
@@ -42,6 +49,7 @@ class UnassignedSales(BaseModel):
 
 
 class EarningsMonth(BaseModel):
+    stores: dict[str, PerformanceMetrics] = Field(default_factory=dict)
     month: str
     status: Literal["provisional"] = "provisional"
     projection_revision: str

@@ -1,5 +1,27 @@
 # Grile V2 nativ Retail — contract de produs
 
+## Clarificări aprobate la 2026-09-11
+
+Aceste clarificări au prioritate față de descrierile anterioare ale formularului:
+- Fereastra magazinului pornește în Grile și folosește afișare compactă.
+- SIM: toate cartelele SIM, inclusiv cu credit; exclus recharge/reîncărcări,
+  telefoane și pungi. Cantități nete din DB, atribuite agentului programat.
+- Epay: zero implicit, câte un dropdown 0–15 pentru fiecare categorie,
+  fără input numeric suplimentar. Salvarea nu suprascrie alte componente.
+- Editorul zilei se deschide lângă celula zilei. Agenții de bază apar primii;
+  alegerea unui alt agent bifează automat suplimentarea. Salvarea actualizează
+  aceeași înregistrare folosită în tabelul de suplimentări și grila persoanei.
+- Alocarea magazinului are doi agenți, cu căutare în fiecare dropdown.
+  Perechea se salvează atomic de la data aleasă. Agentul înlocuit rămâne în
+  catalog fără magazin alocat, cu istoricul și programările păstrate.
+- Transferul efectiv poate preceda activarea codului POS. Programul confirmat
+  atribuie vânzarea persoanei prezente inclusiv când vânzarea este pe cont TL.
+  Bonusul lunar este calculat o singură dată pentru agentul transferat.
+- Importul Bogdana Costan, septembrie: 12 magazine / 24 agenți / 720 zile,
+  3.960 ore verificate cu Excel. Totalurile agregate «Zile la plata» nu definesc
+  date de suplimentare; acestea nu sunt deduse automat din totaluri.
+
+
 La 2026-09-07 proprietarul a ales implementarea directă în Retail. Repository-ul
 standalone UniHub Grile se arhivează; pilotul Sheets din august 2026 este retras.
 Acest document păstrează cerințele aprobate, fără a importa arhitectura veche.
@@ -13,6 +35,54 @@ joburi. Modulul nou deține explicit programul, suplimentările și proiecția c
 persoană/zi/magazin. Ecranul, totalurile, Google și Excel folosesc această proiecție.
 Google nu calculează o autoritate salarială separată. Nu se adaugă un serviciu,
 un sistem de autentificare sau o coadă nouă pentru acest modul.
+
+## Structura operațională confirmată — 10 septembrie 2026
+
+Sursa acestor reguli este confirmarea explicită a proprietarului în sesiunea
+Retail din 2026-09-10. Se aplică planificării din septembrie 2026 și continuării
+dezvoltării; istoricul nu se rescrie după structura curentă.
+
+- Rețeaua curentă: **70 magazine și 6 manageri regionali**.
+- Andrei Stancu are în subordine **3 Team Leaders**; celelalte regiuni nu
+  primesc artificial un nivel TL.
+- Fiecare magazin are **2 agenți de bază** în structura țintă curentă.
+  **Sun Plaza are 2 din septembrie 2026**, după 3 anterior.
+- Agenții lucrează alternativ, fiecare zi întreagă, conform programului
+  confirmat. Alternanța nu autorizează generarea automată a pontajului:
+  concediile, schimburile și suplimentările sunt excepții explicite.
+- Cei doi agenți de bază nu limitează la două persoane pontajul magazinului:
+  TL și suplimentarii pot participa în zilele lor efective.
+- `site_code` identifică magazinul; `agent_code` identifică codul de vânzare.
+  Persoana stabilă, codurile ei și alocarea lunară la magazin sunt noțiuni
+  separate. Numele complet provine din identitatea HR asociată, nu din
+  interpretarea codului, asemănarea numelor sau suma vânzărilor.
+- Lista agenților, catalogul Grile și alocarea pe magazine trebuie să consume
+  aceeași identitate confirmată. Legătura existentă este
+  `agent_salary_links.person_id -> salary_private.people.person_id`; sursa
+  numelui salarial este `salary_records`. Nu se publică CNP sau valori salariale
+  pentru a afișa numele în lista de personal.
+- Magazinul de bază confirmat se păstrează în `grile_calendar_roster` pentru
+  luna respectivă. Magazinul cu cele mai multe vânzări este doar o observație,
+  nu dovada apartenenței. Fără vânzări nu înseamnă automat agent plecat.
+- O asociere istorică `auto/medium` nu devine o confirmare nouă a proprietarului.
+  Identitățile lipsă/ambigue, aliasurile de cod și alocările neconfirmate trebuie
+  rezolvate explicit înainte de a declara catalogul exact.
+- Firmele Mobiup și MobiCell rămân distincte; unificarea persoanei nu contopește
+  salariile sau obligațiile celor două firme.
+
+Verificare read-only la 2026-09-10: catalogul comercial confirmă 70 magazine /
+6 manageri. Septembrie are 142 coduri cu vânzări (145 perechi cod/magazin),
+121 cu legătură salarială existentă, 21 fără; 6 dintre cele 121 folosesc cel
+puțin o asociere `auto/medium`. Ultimele salarii importate sunt iunie 2026.
+Grile are 42 agenți de bază în 21 magazine plus 3 TL confirmați pentru septembrie.
+Aceste cifre sunt un snapshot, nu valori de introdus în cod și nici dovada că
+restul magazinelor nu au personal. Restul de 49 magazine necesită reconcilierea
+catalogului lunar. Proprietarul a confirmat ulterior în aceeași sesiune că `LAUR` și
+`CLAURENTIU` sunt Laurențiu Cernat, cu cod canonic `CLAURENTIU`. Corectarea
+tranzacțională a catalogului din septembrie a păstrat cele două zile existente
+și componentele salariale, cu pre-image privat. Asocierea salarială folosește
+identitatea existentă unică pentru CERNAT LAURENTIU. `CHIRILAC` există în catalogul lunar fără vânzări în
+septembrie la data verificării și nu se elimină din acest motiv.
 
 ## Reguli de business confirmate
 
@@ -137,3 +207,37 @@ Acest lot produce **pontaje provizorii**, nu închide luna. Arhiva oficială cu
 Grile/Calendar/Pontaj, Google și centralizatorul salarial rămân în etapele
 următoare. Nicio migrație, publicare Sheets sau promovare în producție nu este
 implicită în implementarea R3.
+
+### Salariu de bază — regulă explicită a proprietarului (9 septembrie 2026)
+
+- **București, Constanța și Cluj: 2.600 lei.**
+- **Toate celelalte orașe: 2.400 lei.**
+- Se folosește orașul magazinului de bază al agentului. O zi lucrată în alt
+  magazin, normală sau suplimentară, nu schimbă salariul de bază și nu îl dublează.
+- Ziua suplimentară plătită se marchează explicit de manager; schimbul de tură
+  ori schimbarea magazinului nu activează automat sporul.
+- Componente V1: SIM 3 lei/bucată, E-pay sub 50 lei 5 lei/bucată,
+  E-pay de la 50 lei inclusiv 12 lei/bucată. Cantitățile și corecțiile sunt
+  confirmate de manager, iar un câmp necompletat nu înseamnă zero confirmat.
+
+- **Carrefour Bălotești (MCRFBAL) este inclus explicit la București: 2.600 lei**, confirmat de proprietar.
+
+### Clarificare 2026-09-14: conturi TL partajate
+
+Conturile confirmate cu baza virtuală TL pot fi selectate în mai multe magazine din regiunea lor în aceeași zi, inclusiv în calendar și editorul de suplimentare. Fiecare alocare are revizie și anulare independente pe magazin. Agenții obișnuiți păstrează o singură alocare pe zi. Un magazin păstrează un singur ocupant pe zi; vânzările rămân atribuite contului selectat pentru acea locație și dată. Mai multe alocări TL reprezintă folosirea contului în mai multe locații, nu dovada prezenței fizice simultane a persoanei.
+
+
+## Target individual automat / manager (2026-09-14)
+
+Managerul poate selecta pe agent și lună `automatic` sau `manual` în grilă.
+Manualul este pozitiv, persistă până la revenirea explicită la automat și are
+revizie optimistă și istoric separat. Targetul magazinului nu este redistribuit
+automat între colegi. Revenirea la automat folosește calendarul curent.
+`reporting_grile_agent_targets_v2` rezolvă contribuțiile pe magazin fizic; la
+transfer, targetul manual lunar se distribuie proporțional cu contribuțiile
+automate (zile dacă nu există o bază pozitivă). Suplimentarele în altă locație
+rămân separate. Conturile partajate TL nu primesc target lunar manual.
+Vânzări, analiza agenților și exporturile folosesc `reporting_effective_agent_targets_v2`:
+target V2 pentru agent/lună/magazin confirmat, altfel sursa legacy și fallback-ul
+existent. Importurile Google V1 nu pot suprascrie setarea managerului.
+Pilotul Google Sheets folosește registrul lunar și sincronizarea automată descrise în [runbookul pilotului](grile-v2-sheets-pilot.md). Fișierele publicate sunt proiecții pentru consultare; editarea targetelor rămâne în Retail.

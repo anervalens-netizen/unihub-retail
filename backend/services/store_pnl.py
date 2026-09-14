@@ -5,7 +5,7 @@ from datetime import date
 from decimal import Decimal, ROUND_HALF_UP
 
 from repositories.store_pnl import StorePnlRepository
-from services.fiscal_rules import runtime_gross_to_net
+from services.fiscal_rules import gross_to_net
 
 REVENUE_CODES = {"v1", "v11", "v2", "v3"}
 COGS_CODES = {"c1", "c11", "c2"}
@@ -122,7 +122,7 @@ class StorePnlService:
             gross_amount = Decimal(row["gross_amount"] or 0)
             sales_by_month[row["period"]] = (
                 gross_amount,
-                runtime_gross_to_net(gross_amount, row["period"]),
+                gross_to_net(gross_amount, row["period"]),
             )
         reconciliation = []
         for period, values in sorted(monthly.items()):

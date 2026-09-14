@@ -1,5 +1,3 @@
-import { lazy, Suspense } from 'react';
-
 import { PageHeader } from '../../components/common/DesktopLayout';
 import { SegmentedTabs, type SegmentedTabOption } from '../../components/common/SegmentedTabs';
 import { ErrorCard, LoadingCard } from '../../components/common/DataDisplay';
@@ -10,9 +8,7 @@ import type { DashboardSection, DashboardViewProps } from './dashboardTypes';
 
 const SECTIONS: SegmentedTabOption<DashboardSection>[] = [
   { value: 'current', label: 'Luna în curs' }, { value: 'history', label: 'Istoric' },
-  { value: 'visits', label: 'Vizite' },
 ];
-const VisiteSubtab = lazy(async () => ({ default: (await import('../../components/VisiteSubtab')).VisiteSubtab }));
 
 function CurrentSection({ model }: { model: DashboardViewProps }) {
   if (!model.summary) return null;
@@ -70,7 +66,6 @@ function HistorySection({ model }: { model: DashboardViewProps }) {
 }
 
 function DashboardContent({ model }: { model: DashboardViewProps }) {
-  if (model.activeSection === 'visits') return <Suspense fallback={<LoadingCard label="Se incarca modulul Vizite..." />}><VisiteSubtab currentMonth={model.currentMonth} months={model.months} /></Suspense>;
   if (model.loading) return <LoadingCard label="Se incarca luna in curs..." />;
   if (model.error || !model.summary) return <ErrorCard message={model.error ?? 'Datele pentru luna in curs nu au putut fi incarcate.'} onRetry={model.onRetryCurrent} />;
   return model.activeSection === 'current' ? <CurrentSection model={model} /> : <HistorySection model={model} />;
@@ -78,8 +73,8 @@ function DashboardContent({ model }: { model: DashboardViewProps }) {
 
 export function DashboardSurface(model: DashboardViewProps) {
   return <div className="space-y-3 p-3 pb-24 pt-2 lg:space-y-4 lg:px-6 lg:py-3 lg:pb-6 xl:px-8">
-    <PageHeader className="lg:hidden" title="Sales Hub" description={<>Luna in curs este fixata pe {model.currentMonth}, iar istoricul se analizeaza separat.</>} />
-    <SegmentedTabs<DashboardSection> ariaLabel="Secțiuni Sales Hub" className="glass" options={SECTIONS} value={model.activeSection} onChange={model.onSectionChange} />
+    <PageHeader className="lg:hidden" title="Vânzări" description={<>Luna in curs este fixata pe {model.currentMonth}, iar istoricul se analizeaza separat.</>} />
+    <SegmentedTabs<DashboardSection> ariaLabel="Secțiuni Vânzări" className="glass" options={SECTIONS} value={model.activeSection} onChange={model.onSectionChange} />
     <DashboardContent model={model} />
     <PerformanceDetailDrawer open={model.performanceSelection !== null} selection={model.performanceSelection} detail={model.performanceDetail} loading={model.performanceLoading} error={model.performanceError} canViewSalaries={model.canViewSalaries} onClose={() => model.onClosePerformance(null)} />
   </div>;

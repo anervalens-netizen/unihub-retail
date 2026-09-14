@@ -1,3 +1,4 @@
+import { TeamAssignments } from '../../components/grile/TeamAssignments';
 import {
   SegmentedTabs,
   type SegmentedTabOption,
@@ -32,6 +33,7 @@ export function AgentsOverviewView({
           onChange={selectOverviewSection}
         />
       </div>
+      <TeamAssignments month={props.currentMonth} />
       <AgentsTeamMovementView
         currentMonth={props.currentMonth}
         filterLabel={props.filterLabel}

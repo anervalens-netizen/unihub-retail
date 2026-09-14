@@ -332,7 +332,7 @@ class AgentsService:
 
         search_clause = ""
         if search:
-            search_clause = f" AND p.agent ILIKE ${len(params) + 1}"
+            search_clause = f" AND (p.agent ILIKE ${len(params) + 1} OR identity.display_name ILIKE ${len(params) + 1})"
             params.append(f"%{search}%")
 
         query = f"""
@@ -353,6 +353,9 @@ class AgentsService:
             )
             SELECT
                 p.agent,
+                identity.display_name,
+                CASE WHEN roster.agent_code IS NOT NULL THEN COALESCE(effective_home.home_site_code, COALESCE(roster.home_site_code, 'TL')) END AS home_site_code,
+                CASE WHEN roster.agent_code IS NOT NULL THEN COALESCE(home.locatie, 'Team Leaders') END AS home_store_name,
                 ts.store_name,
                 ts.firma,
                 (lc.import_month IS NOT NULL) AS active_in_month,
@@ -370,6 +373,24 @@ class AgentsService:
             LEFT JOIN reporting_agent_lifecycle_month lc
               ON lc.agent = sa.agent AND lc.import_month = $1
             LEFT JOIN top_store ts ON ts.agent = sa.agent
+            LEFT JOIN grile_calendar_roster roster
+              ON roster.agent_code=p.agent AND roster.month=$1 AND roster.active
+            LEFT JOIN LATERAL (
+                SELECT COALESCE(t.home_site_code, 'TL') AS home_site_code
+                FROM grile_calendar_transfers t
+                WHERE t.month=$1 AND t.agent_code=roster.agent_code
+                ORDER BY t.effective_from DESC, t.roster_revision DESC
+                LIMIT 1
+            ) effective_home ON TRUE
+            LEFT JOIN stores home ON home.site_code=COALESCE(effective_home.home_site_code, COALESCE(roster.home_site_code, 'TL'))
+            LEFT JOIN LATERAL (
+                SELECT CASE WHEN COUNT(DISTINCT person_id)=1
+                                 AND COUNT(DISTINCT NULLIF(btrim(salary_full_name), ''))=1
+                            THEN MIN(NULLIF(btrim(salary_full_name), '')) END AS display_name
+                FROM agent_salary_links
+                WHERE agent_code=p.agent AND match_status='confirmed'
+                  AND person_id IS NOT NULL AND effective_from_month<=$1
+            ) identity ON TRUE
             WHERE 1=1 {search_clause}
             ORDER BY active_in_month DESC, lc.total_sales DESC NULLS LAST, p.agent ASC
             LIMIT 200
@@ -379,6 +400,9 @@ class AgentsService:
         items = [
             AgentListItem(
                 agent=row["agent"],
+                display_name=row.get("display_name"),
+                home_site_code=row.get("home_site_code"),
+                home_store_name=row.get("home_store_name"),
                 store_name=row["store_name"],
                 firma=row["firma"],
                 active_in_month=row["active_in_month"],

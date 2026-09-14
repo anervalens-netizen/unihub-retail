@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { lazy, Suspense, useState } from 'react';
 import { ASMSubtab } from './ASMSubtab';
 import { TargetCalculatorSubtab } from '../features/target-calculator/TargetCalculatorPage';
 import { SalariiSubtab } from './SalariiSubtab';
@@ -8,11 +8,14 @@ import type { AppFilters } from '../lib/appFilters';
 import { SegmentedTabs, type SegmentedTabOption } from './common/SegmentedTabs';
 import { PageHeader } from './common/DesktopLayout';
 import { cn } from '../lib/utils';
+function LoadingFieldOps() { return <div className="flex min-h-32 items-center justify-center text-sm font-semibold text-slate-500">Se incarca FieldOps...</div>; }
 
+const VisiteSubtab = lazy(async () => ({ default: (await import('./VisiteSubtab')).VisiteSubtab }));
 const TABS: SegmentedTabOption<ManagementTab>[] = [
   { value: 'asm', label: 'Manageri' },
   { value: 'target-calculator', label: 'Calculator Target' },
   { value: 'salarii', label: 'Salarii' },
+  { value: 'fieldops', label: 'FieldOps' },
   { value: 'pnl', label: 'P&L' },
 ];
 
@@ -21,10 +24,11 @@ interface Props {
   setActiveSubTab?: (tab: ManagementTab) => void;
   hasPnlAccess?: boolean;
   currentMonth?: string;
+  months?: string[];
   salaryFilters: AppFilters;
 }
 
-export function Management({ activeSubTab, setActiveSubTab, hasPnlAccess = false, currentMonth, salaryFilters }: Props) {
+export function Management({ activeSubTab, setActiveSubTab, hasPnlAccess = false, currentMonth, months = [], salaryFilters }: Props) {
   const [localTab, setLocalTab] = useState<ManagementTab>('asm');
 
   const activeTab = activeSubTab ?? localTab;
@@ -54,6 +58,7 @@ export function Management({ activeSubTab, setActiveSubTab, hasPnlAccess = false
         {activeTab === 'asm' && <ASMSubtab currentMonth={currentMonth} />}
         {activeTab === 'target-calculator' && <TargetCalculatorSubtab />}
         {activeTab === 'salarii' && <SalariiSubtab globalFilters={salaryFilters} />}
+        {activeTab === 'fieldops' && currentMonth && <Suspense fallback={<LoadingFieldOps />}><VisiteSubtab currentMonth={currentMonth} months={months} /></Suspense>}
         {activeTab === 'pnl' && hasPnlAccess && <PnlSubtab />}
       </div>
     </div>

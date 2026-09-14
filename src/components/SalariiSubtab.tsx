@@ -1,8 +1,19 @@
+import { useState } from 'react';
+import { SegmentedTabs } from './common/SegmentedTabs';
+import { SalaryArchivePanel } from '../features/salary/SalaryArchivePanel';
 import type { AppFilters } from '../lib/appFilters';
 import { SalaryAgentsPanel, SalaryAreaPanel, SalaryHeader, SalaryOverviewStats, SalaryTrendPanel, StoreSummaryPanel } from '../features/salary/SalaryViews';
 import { useSalaryController } from '../features/salary/useSalaryController';
 
-export function SalariiSubtab({ globalFilters }: { globalFilters?: AppFilters }) {
+function OfficialSalaryPanel({ globalFilters }: { globalFilters?: AppFilters }) {
   const model = useSalaryController(globalFilters);
   return <div className="space-y-4 px-4 pb-4 pt-0"><SalaryHeader model={model} /><SalaryOverviewStats model={model} /><StoreSummaryPanel model={model} /><SalaryTrendPanel model={model} /><SalaryAreaPanel model={model} /><SalaryAgentsPanel model={model} /></div>;
+}
+
+export function SalariiSubtab({ globalFilters }: { globalFilters?: AppFilters }) {
+  const [view, setView] = useState<'official' | 'archive'>('official');
+  return <div className="space-y-4 pt-4">
+    <SegmentedTabs ariaLabel="Vizualizare salarii oficiale" level="secondary" options={[{ value: 'official', label: 'Overview' }, { value: 'archive', label: 'Istoric' }]} value={view} onChange={setView} className="mx-auto max-w-lg" />
+    {view === 'archive' ? <SalaryArchivePanel globalFilters={globalFilters} /> : <OfficialSalaryPanel globalFilters={globalFilters} />}
+  </div>;
 }

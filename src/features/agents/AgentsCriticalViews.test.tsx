@@ -13,6 +13,7 @@ vi.mock('../../api/agents', async (importOriginal) => ({
   fetchAgentProfile: api.profile,
   fetchAgentHistory: api.history,
 }));
+vi.mock('../../auth/AuthContext', () => ({ useAuth: () => ({ user: { profile: { groups: ['unihub-manager'] } } }) }));
 vi.mock('./useAgentsPageController', () => ({ useAgentsPageController: () => controller.current }));
 vi.mock('recharts', () => {
   const Element = ({ children }: { children?: ReactNode }) => <div>{children}</div>;
@@ -95,14 +96,14 @@ describe('agents critical views', () => {
 
   it('composes overview and executes section/list/filter/selection controls', () => {
     const props = viewProps();
-    render(<AgentsOverviewView {...props as unknown as ComponentProps<typeof AgentsOverviewView>} />);
+    render(queryWrapper(<AgentsOverviewView {...props as unknown as ComponentProps<typeof AgentsOverviewView>} />));
     expect(screen.getByText('Snapshot — 2026-08')).toBeInTheDocument();
     expect(screen.getByText('Magazine active (1)')).toBeInTheDocument();
     expect(screen.getByText('Lista Agenti')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('tab', { name: 'Acoperire magazine' }));
     fireEvent.click(screen.getByRole('button', { name: /Cu Modificări/ }));
     fireEvent.click(screen.getByRole('button', { name: 'Miscari' }));
-    fireEvent.change(screen.getByPlaceholderText('Cauta dupa nume agent...'), { target: { value: 'bog' } });
+    fireEvent.change(screen.getByPlaceholderText('Caută după nume sau cod agent...'), { target: { value: 'bog' } });
     const selects = screen.getAllByRole('combobox');
     fireEvent.change(selects[0]!, { target: { value: 'Mobicell' } });
     fireEvent.change(selects[1]!, { target: { value: 'Beta' } });

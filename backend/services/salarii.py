@@ -54,6 +54,9 @@ class SalariiService:
         self.repo = repo
         self.person_id_key = person_id_key
 
+    async def get_salary_archive(self, **filters) -> dict:
+        return await self.repo.fetch_salary_archive(**filters)
+
     async def get_overview(
         self,
         company_name: str | None,

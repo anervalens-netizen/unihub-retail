@@ -23,3 +23,58 @@
 .native-calendar .text-slate-400 { color: #64748b; }
 .dark .native-calendar .text-slate-500, .dark .native-calendar [role="tab"][aria-selected="false"] { color: #cbd5e1; }
 .dark .native-calendar .text-slate-400 { color: #94a3b8; }
+
+/* Compact overview controls; store editors retain their touch-friendly sizing. */
+.calendar-summary .native-field { min-height: 36px; margin-top: .25rem; padding: .375rem .625rem; border-radius: .5rem; }
+.calendar-summary .native-secondary { min-height: 36px; padding: .375rem .75rem; border-radius: .5rem; }
+.calendar-summary .calendar-month { display: flex; align-items: center; gap: .5rem; }
+.calendar-summary .calendar-month .native-field { width: auto; margin-top: 0; }
+@media (pointer: coarse) {
+  .calendar-summary .native-field, .calendar-summary .native-secondary { min-height: 44px; }
+  .calendar-groups summary { min-height: 44px; }
+}
+
+/* Keep every store tab at a stable height; shorter views leave intentional empty space. */
+.grile-store-dialog { height: 90dvh; }
+
+/* Compact store window while retaining larger controls on touch devices. */
+.grile-store-dialog .native-field { min-height: 34px; margin-top: .2rem; padding: .35rem .5rem; border-radius: .5rem; }
+.grile-store-dialog .native-primary, .grile-store-dialog .native-secondary { min-height: 34px; padding: .35rem .7rem; border-radius: .5rem; }
+.grile-store-dialog > header, .grile-store-dialog > div.mb-4 { margin-bottom: .65rem; }
+.grile-epay select { width: 100%; }
+@media (pointer: coarse) {
+  .grile-store-dialog .native-field, .grile-store-dialog .native-primary, .grile-store-dialog .native-secondary { min-height: 44px; }
+}
+
+.grile-store-summary { padding: .45rem .65rem; border: 1px solid #e2e8f0; border-radius: .65rem; font-size: .75rem; }
+.grile-metrics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .15rem .85rem; padding: .4rem 0; }
+.grile-metrics > div { display: flex; align-items: baseline; justify-content: space-between; gap: .35rem; min-width: 0; padding: .15rem 0; }
+.grile-metrics dt { color: #475569; font-size: .75rem; line-height: 1.15; }
+.grile-metrics dd { margin: 0; font-size: .875rem; line-height: 1.15; font-weight: 700; text-align: right; white-space: nowrap; }
+.grile-day-counts { display: flex; flex-wrap: wrap; gap: .2rem .85rem; padding: .4rem 0 .15rem; font-size: .75rem; line-height: 1.15; color: #475569; }
+.grile-day-counts b { margin-left: .2rem; color: #0f172a; }
+.grile-thresholds { display: grid; grid-template-columns: 1.15fr repeat(3, 1fr); align-items: stretch; gap: .35rem; padding: .45rem 0; border-block: 1px solid #f1f5f9; }
+.grile-daily-label { display: flex; align-items: center; align-self: stretch; gap: .3rem; width: 100%; padding: .25rem .4rem; border-radius: .45rem; background: #eef2ff; color: #4338ca; font-size: .8125rem; font-weight: 800; line-height: 1.15; }
+.grile-thresholds > span:not(:first-child) { display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: .1rem; min-width: 0; padding: .25rem .35rem; border-radius: .4rem; background: #eef2ff; font-size: .75rem; }
+.grile-thresholds > span:not(:first-child) b { font-size: .9rem; font-weight: 800; line-height: 1.15; color: #0f172a; }
+.grile-thresholds small { font-size: .6875rem; color: #475569; }
+.grile-section-title { display: flex; align-items: center; gap: .35rem; margin: .45rem 0 0; font-size: .8125rem; font-weight: 700; }
+.grile-store-dialog .grile-epay { padding-block: .25rem; }
+.dark .grile-store-summary { border-color: #334155; }
+.dark .grile-metrics dt, .dark .grile-day-counts, .dark .grile-thresholds small { color: #cbd5e1; }
+.dark .grile-day-counts b { color: #f1f5f9; }
+.dark .grile-thresholds > span:not(:first-child) { background: #312e81; }
+.dark .grile-thresholds > span:not(:first-child) b { color: #f8fafc; }
+.dark .grile-thresholds { border-color: #334155; }
+.dark .grile-daily-label { background: #312e81; color: #e0e7ff; }
+@media (max-width: 480px) {
+  .grile-metrics { gap: .15rem .65rem; }
+  .grile-metrics > div { flex-wrap: wrap; }
+}
+
+.grile-day-agent-select.is-closed { color: #8b1e1e; font-size: 1.05rem; font-weight: 700; }
+.grile-day-agent-select option[value=""] { color: #8b1e1e; font-size: 1.05rem; font-weight: 700; }
+.dark .grile-day-agent-select.is-closed, .dark .grile-day-agent-select option[value=""] { color: #fca5a5; }
+
+.grile-agent-card { font-size: .875rem; }
+.grile-agent-card header p { font-size: .6875rem; }

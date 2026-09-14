@@ -190,11 +190,14 @@ async def load_data(
     *,
     effective_vat: bool = False,
     input_cutoff: date | None = None,
+    include_salary_history: bool = False,
 ):
     """Compatibility wrapper for legacy estimator callers."""
+    input_options = {"include_salary_history": True} if include_salary_history else {}
     actual, gross_sales, salaries, stores = await load_inputs(
         connection,
         input_cutoff=input_cutoff,
+        **input_options,
     )
     return actual, normalize_sales(gross_sales, effective_vat=effective_vat), salaries, stores
 

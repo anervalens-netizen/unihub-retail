@@ -33,7 +33,7 @@ def test_inputs_reject_ambiguous_or_unbounded_changes():
     with pytest.raises(ValidationError, match="Only a working"):
         change(status="leave", supplemental=True)
     with pytest.raises(ValidationError, match="only once"):
-        CalendarChanges(days=[change(), change(site_code="B")])
+        CalendarChanges(days=[change(), change()])
     with pytest.raises(ValidationError):
         change(agent_code=" ")
     with pytest.raises(ValidationError):
@@ -112,6 +112,9 @@ async def test_service_fences_unknown_codes_wrong_month_and_repository_conflict(
     with pytest.raises(HTTPException) as error:
         await service.save_days("2026-10", CalendarChanges(days=[change()]), "manager-sub")
     assert error.value.status_code == 422
+    with pytest.raises(HTTPException) as error:
+        await service.save_days("2026-09", CalendarChanges(closures=[{"work_date": "2026-10-01", "site_code": "A", "expected_revision": 0}]), "manager-sub")
+    assert error.value.status_code == 422
     repository.save_days.assert_not_awaited()
     repository.save_days.side_effect = CalendarConflict("stale")
     with pytest.raises(HTTPException) as error:
@@ -151,7 +154,11 @@ def test_agents_leaders_and_hr_cannot_write_calendar(api, role):
     assert client.put("/api/grile/calendar/2026-09/roster/AG1", json={"home_site_code": "A", "expected_revision": 0}).status_code == 403
     assert client.patch("/api/grile/calendar/2026-09/days", json={"days": [change().model_dump(mode="json")]}).status_code == 403
     service.save_days.assert_not_awaited()
+    assert client.put("/api/grile/calendar/2026-09/transfers/AG1", json={"home_site_code":"B","effective_from":"2026-09-03","expected_revision":1}).status_code == 403
+    assert client.put("/api/grile/calendar/2026-09/epay/AG1", json={"expected_revision":0}).status_code == 403
+    assert client.put("/api/grile/calendar/2026-09/store-team/A", json={"agent_codes":["A1","A2"],"effective_from":"2026-09-12","expected_revision":"a"*64}).status_code == 403
     assert client.put("/api/grile/calendar/2026-09/store-hours/A", json={"expected_revision": 0}).status_code == 403
+    assert client.put("/api/grile/calendar/2026-09/compensation/AG1", json={"expected_revision": 0}).status_code == 403
 
 
 def test_manager_routes_preserve_actor_and_typed_contract(api):
@@ -180,6 +187,7 @@ def test_calendar_reads_are_management_only(api, role):
     set_role(app, role)
     assert TestClient(app).get("/api/grile/calendar/2026-09").status_code == 403
     assert TestClient(app).get("/api/grile/calendar/2026-09/earnings").status_code == 403
+    assert TestClient(app).put("/api/grile/calendar/2026-09/compensation/AG1", json={"expected_revision": 0}).status_code == 403
     assert TestClient(app).get("/api/grile/calendar/2026-09/attendance.zip", params={"expected_revision": "a" * 64}).status_code == 403
     assert TestClient(app).get("/api/grile/calendar/2026-09/earnings.zip", params={"expected_revision": "a" * 64}).status_code == 403
 

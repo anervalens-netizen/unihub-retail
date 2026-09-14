@@ -1,7 +1,22 @@
 """One attendance aggregation for calendar, store views and future exports."""
 from __future__ import annotations
 
-from grile.calendar_models import AttendanceDay, CalendarAttendance, CalendarDay, RosterEntry, StoreHours
+from hashlib import sha256
+
+from grile.calendar_models import AttendanceDay, CalendarAttendance, CalendarClosure, CalendarDay, CalendarMonth, RosterEntry, StoreHours
+
+
+def project_calendar(month: str, data: dict) -> CalendarMonth:
+    roster = [RosterEntry.model_validate(row) for row in data["roster"]]
+    days = [CalendarDay.model_validate(row) for row in data["days"]]
+    closures = [CalendarClosure.model_validate(row) for row in data.get("closures", [])]
+    hours = [StoreHours.model_validate(row) for row in data.get("store_hours", [])]
+    attendance, stores = attendance_by_agent_and_store(roster, days, hours)
+    result = CalendarMonth(month=month, roster=roster, days=days, closures=closures, attendance=attendance,
+                           store_hours=hours, attendance_by_store=stores,
+                           attendance_days=attendance_days(days, hours))
+    result.projection_revision = sha256(result.model_dump_json().encode()).hexdigest()
+    return result
 
 
 def attendance_by_agent_and_store(

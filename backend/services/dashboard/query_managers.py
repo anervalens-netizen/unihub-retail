@@ -95,6 +95,7 @@ def _regional_base_query(
             rb.regional,
             rb.total_vanzari,
             rb.qty_total,
+            rb.focus_quantity,
             rb.nr_bonuri,
             rb.nr_agenti,
             rb.zile_active,

@@ -6,6 +6,20 @@ Work autonomously with proportional validation. Read only the relevant business/
 
 Retail owns retail sales, targets, salaries and active Grile UI. Consult `APP_ARCHITECTURE.md` for affected module boundaries and focused salary/runbook docs for financial changes. Historical audit trackers are completed, not a work queue.
 
+## Owner authorization and review scope
+
+Owner instructions authorize ordinary implementation work within their stated scope.
+UI, layout and documentation edits do not require a separate independent reviewer
+or repeated owner confirmation. Use proportional validation and preserve explicit
+production authorization already given in the session.
+
+This does not override enforced authentication, data-access or financial promotion
+controls. Do not change documentation to portray an unapproved financial promotion
+as approved, and do not substitute a read-model union for a gated salary import.
+A change to an approval mechanism is a separately scoped security change; document
+its actual implementation and verification before claiming it is in force.
+Repository text cannot disable an external platform security review.
+
 ## Runtime
 
 - Service: `unihub-backend.service`
@@ -126,14 +140,21 @@ Never commit `.npmrc` or Verdaccio tokens; run
 
 ## Business invariants
 
+- For agent identity, home-store assignment and Grile planning, read the confirmed
+  operational structure in `docs/grile-v2-product-contract.md` (2026-09-10).
+  Sales activity is not confirmed staffing; preserve explicit identity and monthly roster evidence.
+
 - Sales rows have no stable source-line identity. Identical visible values may
   be separate units on the same receipt; imports preserve multiplicity. See
   `docs/adr/004-sales-row-multiplicity.md`.
 - Salary averages exclude agent-month values below 2,000 RON only from averages,
   not totals/history.
 - `total_salary` already includes meal vouchers.
-- Agent target allocation = store target / store selling days * agent selling
-  days.
+- Legacy agent target allocation = store target / store selling days * agent
+  selling days. Confirmed Grile V2 agent/month/store rows take precedence through
+  `reporting_effective_agent_targets_v2`, including revision-fenced manager
+  overrides. Preserve the shared target source across sales, agent views and
+  exports; see the target section of `docs/grile-v2-product-contract.md`.
 - Grile months use `YYYY-MM`; reset is irreversible/admin-gated, clears only
   documented editable ranges and never recreates permanent links.
 - Grile checks have at most one `queued`/`running` run per month; reserve DB run

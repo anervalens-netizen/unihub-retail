@@ -84,7 +84,7 @@ export function AgentsListView({
         <input
           value={search}
           onChange={(event) => setSearch(event.target.value)}
-          placeholder="Cauta dupa nume agent..."
+          placeholder="Caută după nume sau cod agent..."
           className="w-full bg-transparent outline-none placeholder:text-slate-400"
         />
       </label>
@@ -138,7 +138,9 @@ export function AgentsListView({
 }
 
 const EXPORT_COLUMNS = [
-  { header: "Agent", value: (row: AgentListItem) => row.agent },
+  { header: "Nume", value: (row: AgentListItem) => row.display_name ?? "" },
+  { header: "Cod agent", value: (row: AgentListItem) => row.agent },
+  { header: "Magazin de bază confirmat", value: (row: AgentListItem) => row.home_store_name ?? "" },
   { header: "Firma", value: (row: AgentListItem) => row.firma ?? "" },
   { header: "Magazin", value: (row: AgentListItem) => row.store_name ?? "" },
   { header: "Status", value: (row: AgentListItem) => row.current_status },
@@ -217,10 +219,12 @@ function AgentRow({
     >
       <div>
         <div className="font-bold text-slate-800 dark:text-slate-200">
-          {agent.agent}
+          {agent.display_name || agent.agent}
         </div>
+        <div className="text-xs text-slate-500">{agent.display_name ? `Cod: ${agent.agent}` : 'Nume neasociat încă'}</div>
+        {agent.home_store_name && <div className="text-xs text-indigo-600 dark:text-indigo-300">Bază confirmată: {agent.home_store_name}</div>}
         {agent.store_name && (
-          <div className="text-[10px] text-slate-500">{agent.store_name}</div>
+          <div className="text-[10px] text-slate-500">Vânzări: {agent.store_name}</div>
         )}
         <div className="mt-1 flex items-center gap-2">
           {agent.current_status === "active" && (

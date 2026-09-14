@@ -43,6 +43,7 @@ function store(month: string, siteCode: string): StoreStat {
     asm: 'ASM',
     total_vanzari: 0,
     qty_total: 0,
+    focus_quantity: 0,
     nr_bonuri: 0,
     nr_agenti: 1,
     zile_active: 1,

@@ -21,15 +21,20 @@ class GrileCalendarRepository:
         async with self.pool.acquire() as conn:
             rows = await conn.fetch(
                 f"""SELECT DISTINCT r.import_month, btrim(r.agent) AS agent_code,
-                          r.site_code, s.regional, s.firma
+                          r.site_code, s.regional, s.firma,
+                          (SELECT CASE WHEN COUNT(DISTINCT person_id)=1 AND COUNT(DISTINCT salary_full_name)=1
+                             THEN MIN(salary_full_name) END FROM agent_salary_links l
+                           WHERE l.agent_code=btrim(r.agent) AND l.match_status='confirmed'
+                             AND NULLIF(btrim(l.person_id),'') IS NOT NULL
+                             AND l.effective_from_month <= $2) AS display_name
                    FROM reporting_agent_month r JOIN stores s USING (site_code)
                    WHERE r.import_month = ANY($1::text[]) AND s.is_active
                      AND btrim(r.agent) NOT IN ('', '-')
                      AND btrim(r.agent) NOT ILIKE 'TR%'
                      AND {distribution_location_clause("s")}
-                     AND s.site_code <> 'Cartele'
+                     AND s.site_code NOT IN ('Cartele', 'TL')
                    ORDER BY agent_code, r.import_month DESC, r.site_code""",
-                [source_month, previous_month],
+                [source_month, previous_month], source_month,
             )
         return [dict(row) for row in rows]
 
@@ -51,7 +56,7 @@ class GrileCalendarRepository:
                    HAVING COUNT(DISTINCT person_id) > 1
                )
                SELECT r.*,
-                      CASE WHEN c.agent_code IS NULL THEN l.name END AS display_name,
+                      CASE WHEN c.agent_code IS NULL THEN COALESCE(l.name, catalog.name) END AS display_name,
                       CASE WHEN c.agent_code IS NOT NULL THEN 'conflicting'
                            WHEN l.name IS NOT NULL THEN 'confirmed'
                            ELSE 'unavailable' END AS identity_status
@@ -62,24 +67,41 @@ class GrileCalendarRepository:
                    WHERE agent_code=r.agent_code
                      AND (r.home_site_code IS NULL OR site_code=r.home_site_code)
                ) l ON TRUE
+               LEFT JOIN LATERAL (
+                   SELECT CASE WHEN COUNT(DISTINCT name)=1 THEN MIN(name) END AS name
+                   FROM eligible WHERE agent_code=r.agent_code
+               ) catalog ON TRUE
                LEFT JOIN conflicts c ON c.agent_code=r.agent_code
                WHERE r.month=$1 ORDER BY r.agent_code""", month,
         )
         days = await conn.fetch(
-            "SELECT * FROM grile_calendar_days WHERE month=$1 ORDER BY work_date, agent_code", month,
+            """SELECT d.* FROM grile_calendar_days d
+               JOIN grile_calendar_roster r USING (month, agent_code)
+               WHERE d.month=$1 AND (d.status <> 'cancelled' OR d.allocation_site =
+                   CASE WHEN r.home_site_code IS NULL THEN COALESCE(d.site_code, 'TL') ELSE '' END)
+               ORDER BY d.work_date, d.agent_code, d.site_code""", month,
         )
         hours = await conn.fetch(
             "SELECT * FROM grile_calendar_store_hours WHERE month=$1 ORDER BY site_code", month,
         )
-        return {"roster": [dict(row, home_site_code=row["home_site_code"] or "TL") for row in roster],
+        closures = await conn.fetch(
+            "SELECT work_date,site_code,revision FROM grile_calendar_closures WHERE month=$1 ORDER BY work_date,site_code", month,
+        )
+        transfers = await conn.fetch(
+            """SELECT DISTINCT ON (agent_code,effective_from) * FROM grile_calendar_transfers
+               WHERE month=$1 ORDER BY agent_code,effective_from,roster_revision DESC""", month,
+        )
+        return {"roster": [dict(row, home_site_code=row["home_site_code"] or "TL",
+                               transfers=[dict(t, home_site_code=t["home_site_code"] or "UNASSIGNED") for t in transfers if t["agent_code"] == row["agent_code"]]) for row in roster],
                 "days": [dict(row, site_code=row["site_code"] or "TL") for row in days],
-                "store_hours": [dict(row) for row in hours]}
+                "store_hours": [dict(row) for row in hours],
+                "closures": [dict(row) for row in closures]}
 
     @staticmethod
     async def _store(conn: asyncpg.Connection, site_code: str) -> asyncpg.Record:
         row = await conn.fetchrow(
             f"""SELECT site_code, regional FROM stores WHERE site_code=$1 AND is_active
-               AND {distribution_location_clause()} AND site_code <> 'Cartele' FOR SHARE""", site_code,
+               AND {distribution_location_clause()} AND site_code NOT IN ('Cartele', 'TL') FOR SHARE""", site_code,
         )
         if row is None:
             raise CalendarConflict("Store is not active")
@@ -96,9 +118,35 @@ class GrileCalendarRepository:
             return
         if not regional or not await conn.fetchval(
             f"""SELECT EXISTS(SELECT 1 FROM stores WHERE is_active AND regional=$1
-                AND {distribution_location_clause()} AND site_code <> 'Cartele')""", regional,
+                AND {distribution_location_clause()} AND site_code NOT IN ('Cartele', 'TL'))""", regional,
         ):
             raise CalendarConflict("Team Leader requires an active regional scope")
+
+    async def _validate_roster_changes(
+        self, conn: asyncpg.Connection, month: str, agent_code: str,
+        stored_home: str | None, active: bool, old: asyncpg.Record | None,
+        regional: str | None,
+    ) -> None:
+        changed = old and (old["home_site_code"] != stored_home or old["regional"] != regional or not active)
+        if changed and await conn.fetchval(
+            "SELECT EXISTS(SELECT 1 FROM grile_calendar_transfers WHERE month=$1 AND agent_code=$2)",
+            month, agent_code,
+        ):
+            raise CalendarConflict("Agent has dated transfers; use the team transfer editor")
+        membership_changed = old and (not active or old["home_site_code"] != stored_home or old["regional"] != regional)
+        if membership_changed and await conn.fetchval(
+            """SELECT EXISTS(SELECT 1 FROM grile_calendar_days
+               WHERE month=$1 AND agent_code=$2 AND status <> 'cancelled')""",
+            month, agent_code,
+        ):
+            raise CalendarConflict("Cancel scheduled days before changing roster membership")
+
+    @staticmethod
+    async def _lock_store_day(conn: asyncpg.Connection, work_date, site_code: str) -> None:
+        await conn.fetchval(
+            "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
+            f"{site_code}:{work_date.isoformat()}",
+        )
 
     async def save_roster(
         self, month: str, agent_code: str, home_site_code: str, active: bool,
@@ -116,14 +164,7 @@ class GrileCalendarRepository:
                     if (old["revision"] if old else 0) != expected_revision:
                         raise CalendarConflict("Roster revision changed; reload the calendar")
                     await self._validate_roster_base(conn, home_site_code, regional, active, old)
-                    if old and (not active or old["home_site_code"] != stored_home or old["regional"] != regional):
-                        used = await conn.fetchval(
-                            """SELECT EXISTS(SELECT 1 FROM grile_calendar_days
-                               WHERE month=$1 AND agent_code=$2 AND status <> 'cancelled')""",
-                            month, agent_code,
-                        )
-                        if used:
-                            raise CalendarConflict("Cancel scheduled days before changing roster membership")
+                    await self._validate_roster_changes(conn, month, agent_code, stored_home, active, old, regional)
                     row = await conn.fetchrow(
                         """INSERT INTO grile_calendar_roster
                            (month, agent_code, home_site_code, active, revision, updated_by_sub, regional)
@@ -151,9 +192,11 @@ class GrileCalendarRepository:
     async def _validate_day(
         self, conn: asyncpg.Connection, day: CalendarDayInput, roster: asyncpg.Record,
     ) -> None:
+        await self._lock_store_day(conn, day.work_date, day.site_code)
         old = await conn.fetchrow(
-            "SELECT revision, site_code FROM grile_calendar_days WHERE agent_code=$1 AND work_date=$2 FOR UPDATE",
-            day.agent_code, day.work_date,
+            """SELECT revision, site_code FROM grile_calendar_days
+               WHERE agent_code=$1 AND work_date=$2 AND allocation_site=$3 FOR UPDATE""",
+            day.agent_code, day.work_date, day.site_code if roster["home_site_code"] is None else "",
         )
         if (old["revision"] if old else 0) != day.expected_revision:
             raise CalendarConflict("Day revision changed; reload the calendar")
@@ -171,18 +214,61 @@ class GrileCalendarRepository:
             if day.status != "work" or worked["regional"] != roster["regional"]:
                 raise CalendarConflict("Team Leader work must stay in the confirmed region")
             return
-        home = await self._store(conn, roster["home_site_code"])
+        dated_home = await conn.fetchval(
+            """SELECT COALESCE(home_site_code, 'UNASSIGNED') FROM grile_calendar_transfers
+               WHERE month=$1 AND agent_code=$2 AND effective_from <= $3
+               ORDER BY effective_from DESC,roster_revision DESC LIMIT 1""",
+            day.work_date.strftime("%Y-%m"), day.agent_code, day.work_date,
+        )
+        if dated_home == 'UNASSIGNED':
+            raise CalendarConflict("Agent has no home allocation on this date; assign a store first")
+        home = await self._store(conn, dated_home or roster["home_site_code"])
         if day.site_code != home["site_code"]:
             if day.status != "work":
                 raise CalendarConflict("Only work can be assigned at another store")
             if not home["regional"] or home["regional"] != worked["regional"]:
                 raise CalendarConflict("Supplemental store must be in the agent's home region")
 
-    async def save_days(self, days: list[CalendarDayInput], actor: str) -> list[dict[str, Any]]:
-        ordered = sorted(days, key=lambda day: (day.agent_code, day.work_date))
+    async def _save_closures_in_transaction(self, conn, closures, actor: str) -> list[dict[str, Any]]:
+        result = []
+        for closure in sorted(closures, key=lambda item: (item.work_date, item.site_code)):
+            await self._lock_store_day(conn, closure.work_date, closure.site_code)
+            await self._store(conn, closure.site_code)
+            if closure.closed and await conn.fetchval(
+                "SELECT EXISTS(SELECT 1 FROM grile_calendar_days WHERE work_date=$1 AND site_code=$2 AND status='work')",
+                closure.work_date, closure.site_code,
+            ):
+                raise CalendarConflict("Schimbă mai întâi agentul programat sau închide ziua după anularea alocării")
+            if closure.closed:
+                row = await conn.fetchrow(
+                    """INSERT INTO grile_calendar_closures(month,work_date,site_code,revision,updated_by_sub)
+                       VALUES ($1,$2,$3,1,$4)
+                       ON CONFLICT (month,work_date,site_code) DO UPDATE SET
+                         revision=grile_calendar_closures.revision+1,updated_by_sub=EXCLUDED.updated_by_sub,updated_at=now()
+                       WHERE grile_calendar_closures.revision=$5 RETURNING work_date,site_code,revision""",
+                    closure.work_date.strftime('%Y-%m'), closure.work_date, closure.site_code,
+                    actor, closure.expected_revision,
+                )
+            else:
+                row = await conn.fetchrow(
+                    "DELETE FROM grile_calendar_closures WHERE month=$1 AND work_date=$2 AND site_code=$3 AND revision=$4 RETURNING work_date,site_code,revision",
+                    closure.work_date.strftime('%Y-%m'), closure.work_date, closure.site_code,
+                    closure.expected_revision,
+                )
+            if row is None:
+                raise CalendarConflict("Închiderea zilei s-a schimbat; reîncarcă calendarul")
+            result.append(dict(row))
+        return result
+
+    async def save_days(self, days: list[CalendarDayInput], actor: str, closures=None) -> list[dict[str, Any]]:
+        ordered = sorted(days, key=lambda day: (day.agent_code, day.work_date, day.site_code))
+        slots: dict[tuple[str, object, str], str] = {}
+        allocation_sites: dict[tuple[str, object, str], str] = {}
         try:
             async with self.pool.acquire() as conn:
                 async with conn.transaction():
+                    for work_date, site_code in sorted({(day.work_date, day.site_code) for day in ordered}):
+                        await self._lock_store_day(conn, work_date, site_code)
                     # Roster locks also serialize concurrent home/active changes.
                     for day in ordered:
                         roster = await conn.fetchrow(
@@ -192,13 +278,23 @@ class GrileCalendarRepository:
                         )
                         if roster is None:
                             raise CalendarConflict("Confirm the agent's monthly roster first")
+                        slot = day.site_code if roster["home_site_code"] is None else ""
+                        key = (day.agent_code, day.work_date, slot)
+                        if key in slots:
+                            raise CalendarConflict("Only TL accounts can have several stores on the same day")
+                        slots[key] = slot
+                        allocation_sites[(day.agent_code, day.work_date, day.site_code)] = slot
                         await self._validate_day(conn, day, roster)
                     # Temporarily release only affected slots inside this transaction.
                     # This permits A/B swaps without exposing an intermediate empty day.
                     for day in ordered:
+                        if day.status == "work":
+                            await conn.execute("DELETE FROM grile_calendar_closures WHERE month=$1 AND work_date=$2 AND site_code=$3", day.work_date.strftime("%Y-%m"), day.work_date, day.site_code)
                         await conn.execute(
                             """UPDATE grile_calendar_days SET status='cancelled', supplemental=FALSE
-                               WHERE agent_code=$1 AND work_date=$2""", day.agent_code, day.work_date,
+                               WHERE agent_code=$1 AND work_date=$2 AND allocation_site=$3""",
+                            day.agent_code, day.work_date,
+                            allocation_sites[(day.agent_code, day.work_date, day.site_code)],
                         )
                     result = []
                     for day in ordered:
@@ -206,7 +302,7 @@ class GrileCalendarRepository:
                             """INSERT INTO grile_calendar_days
                                (month,work_date,agent_code,site_code,status,supplemental,revision,updated_by_sub)
                                VALUES ($1,$2,$3,$4,$5,$6,1,$7)
-                               ON CONFLICT (agent_code,work_date) DO UPDATE SET
+                               ON CONFLICT (agent_code,work_date,allocation_site) DO UPDATE SET
                                  site_code=EXCLUDED.site_code,status=EXCLUDED.status,
                                  supplemental=EXCLUDED.supplemental,
                                  revision=grile_calendar_days.revision+1,
@@ -216,9 +312,16 @@ class GrileCalendarRepository:
                             None if day.site_code == "TL" else day.site_code, day.status, day.supplemental, actor,
                         )
                         result.append(dict(row, site_code=row["site_code"] or "TL"))
+                    if closures:
+                        await self._save_closures_in_transaction(conn, closures, actor)
                     return result
         except asyncpg.UniqueViolationError as exc:
             raise CalendarConflict("A store already has an assigned agent on that day") from exc
+
+    async def save_closures(self, closures, actor: str) -> list[dict[str, Any]]:
+        async with self.pool.acquire() as conn:
+            async with conn.transaction():
+                return await self._save_closures_in_transaction(conn, closures, actor)
 
     async def save_hours(self, month: str, site_code: str, payload: StoreHoursInput, actor: str) -> dict[str, Any]:
         async with self.pool.acquire() as conn:

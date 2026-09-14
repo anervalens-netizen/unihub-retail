@@ -1,0 +1,104 @@
+# Istoric salarial HR — import separat
+
+La cererea ownerului din 10 septembrie 2026, documentele istorice din Outlook
+HR/Cristina sunt pastrate in `salary_history_rows`, separat de `salary_records`.
+Acest flux nu este promovare de salarii oficiale si nu modifica registrul privat
+al persoanelor sau mecanismul de aprobare semnata al importatorului oficial.
+
+- Sursa unica este randul fizic `(source_sha256, source_sheet, source_row)`.
+  Copiile binare sunt colapsate; componentele repetate legitime raman distincte.
+- Orice `candidate_person_id` trebuie verificat prin identificator valid in sursa
+  si nume unic concordant cu persoana existenta. Numele singur nu creeaza o persoana.
+- Sumele sunt Decimal, net plus bonuri; nu reprezinta costul total al angajatorului.
+- Perioada/firma/versiunile incerte raman arhiva de verificat. Grupurile lunare
+  cu versiuni contradictorii sunt excluse integral din estimari.
+- `salary_history_estimation_inputs` exclude si dinamic orice luna/firma deja
+  prezenta in salariile oficiale. Nu se aduna arhiva cu acoperirea oficiala.
+- Sursele Vodafone si cele cu acoperire istorica neconfirmata sunt excluse.
+- Nu se completeaza lunile lipsa cu zero. Pauza din 2018–2023 este explicata de
+  delegarea ownerului in alta tara; nu este dovada de lipsa cheltuielii salariale.
+- Arhiva poate fi consultata numai prin accesul salarial existent, in
+  Management > Salarii > Istoric HR. Nu expune CNP sau cai private ale surselor.
+
+Importatorul `backend/scripts/import_salary_history.py` primeste `--plan`,
+`--expected-sha256`, `--applied-by`, optional `--apply`. Verifica planul si toate
+hashurile sursa, apoi foloseste principalul de migrari si tranzactie atomica.
+Repetarea aceluiasi plan nu dubleaza randurile. Reinterpretarea unui rand deja
+arhivat este refuzata; necesita o revizie explicita viitoare, nu overwrite tacit.
+Rolurile runtime au numai SELECT pe arhiva.
+
+Lotul initial are hash
+`f6368840e81508ac379f525638e78fc46955bc17ddcefbd5a953d0a220722564`:
+12.288 randuri, 5.178 legaturi verificate la persoane existente si 5.291 randuri
+eligibile pentru estimari in 45 combinatii luna/firma. 25 grupuri cu versiuni
+contradictorii raman neeligibile. Artefactele si provenienta originalelor sunt
+private in `/opt/Mobiup/docs/comisioane/outlook-cristina-20260910/`.
+
+Acest lot pregateste intrari pentru estimari; nu recalculeaza si nu promoveaza
+automat P&L. Estimarile viitoare trebuie sa declare acoperirea si conversia de la
+net+bonuri la cost complet; sumele istorice nu inlocuiesc contabilitatea.
+
+## Clarificare owner: provenienta HR si codul ERP
+
+Ownerul confirma ca fisierele din mail sunt sursele oficiale HR folosite pentru
+tabul salarial existent. Istoricul se afiseaza implicit in Salarii oficiale >
+Istoric state HR, inclusiv pentru fosti angajati fara cod ERP. Absenta codului
+ERP nu invalideaza statul. Legatura cu persoana din aplicatie ramane distincta
+de provenienta oficiala a documentului. Sinteza existenta pastreaza separat
+perioadele deja calculate; aceasta schimbare de prezentare nu promoveaza
+randuri in salary_records si nu modifica verificarea semnata a importului.
+
+## Iulie in arhiva
+
+Randurile HR selectate pentru iulie raman disponibile in arhiva istorica si in
+fluxul de revizuire. Citirile lunare oficiale folosesc exclusiv `salary_records`;
+randurile arhivate nu sunt substitut pentru importul salarial aprobat si nu intra
+in overview/evolution/trend pana la o promovare explicita prin fluxul de import.
+
+## Navigare si detalii agregate
+
+Overview este prima vizualizare, Istoric a doua. In Istoric, magazinele sunt
+grupate pe cod locatie si firma, iar numele pe text normalizat si firma. Sunt
+grupari de consultare, nu uniri de identitate. Totalurile si mediile pornesc
+de la lunile selectate; detaliile arata separat si variantele nealese.
+Ferestrele Overview/Magazine citesc strict salary_records prin campurile deja
+permise rolului web. Ferestrele Istoric/Magazine si Istoric/Agenti citesc arhiva
+cu filtre exacte pentru magazin sau nume si firma. Ambele endpointuri folosesc
+acelasi require_salary_access; nu se extind granturile si nu se afiseaza CNP.
+
+
+## P&L: candidat de recalcul cu alocare HR reconciliata (2026-09-11)
+
+Ownerul a cerut recalcularea estimarilor istorice si iulie 2026, plus verificarea
+calculelor. UI-ul magazinelor afiseaza acum aceiasi cinci indicatori ca sumarul.
+Datele P&L recalculate sunt deocamdata **candidate de review**, nu valori live.
+
+`review_store_pnl_salary_history.py --through 2026-07 --output DIRECTORY`
+creeaza snapshot readonly repeatable-read, pre-image, totaluri per firma/luna,
+hashuri ale intrarilor, modelelor si iesirilor. Compara separat:
+
+1. modelul existent pe intrarile curente;
+2. corectia salariala cu interpretarea TVA existenta;
+3. corectia salariala cu TVA effective-dated, numai pentru review.
+
+Doar optiunea `include_salary_history=True` activeaza noile intrari. Traseul
+legacy/shadow implicit nu se schimba. Salariile oficiale nu sunt modificate.
+Pentru calibrarea pe magazin, distributia HR originala poate fi folosita numai
+cand firma/luna are o singura sursa/foaie selectata si numarul de randuri si
+suma coincid exact cu salariile inregistrate. Altfel se folosesc denumirea
+locatiei din inregistrare si aliasurile exacte deja confirmate. Cheia veche
+site_code nu este fallback: verificarea a demonstrat alocari intre magazine
+si firme diferite. Lunile fara payroll inregistrat citesc exclusiv view-ul
+`salary_history_estimation_inputs`, fara suprapunere cu salariile oficiale.
+
+Nu se aloca arbitrar randurile HR fara magazin. In iulie acestea sunt 4 pozitii
+Team Leader Mobiup, total 21.311 lei net+bonuri. Costul salarial c3 ramane o
+estimare a costului complet pe baza raportului istoric Finance / net+bonuri.
+Nu este echivalent cu suma HR neta si nu se dubleaza bonurile.
+
+Protectiile Finance/TVA nu au fost modificate. Scriptul nou nu are optiune apply;
+nu foloseste principalul de migrari si nu schimba granturi. Publicarea viitoare
+necesita o cale controlata pentru estimari: functiile Finance existente promoveaza
+numai actuale, Operations poate publica doar pointerul de review shadow, iar
+loginul web nu are DML pe store_pnl_monthly. Nu se ocolesc aceste limite prin
+ownerul schemei sau printr-un read-model live construit peste candidatul de review.

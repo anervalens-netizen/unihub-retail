@@ -29,6 +29,7 @@ from services.jobs import (
     verify_sales_import_artifact,
 )
 setup_logging()
+GRILE_STARTUP_RECONCILIATION_TIMEOUT_SECONDS = 60
 logger = logging.getLogger(__name__)
 VISITS_SNAPSHOT_REFRESH_SECONDS = 15 * 60
 EXPORT_CLEANUP_SECONDS = 5 * 60
@@ -405,7 +406,13 @@ async def _startup_runtime(ctx: dict, *, worker_role: str) -> None:
     adapter = GoogleSyncAdapter()
     ctx["grile_monthly_google"] = adapter
     await adapter.start()
-    await grile_supervisor.reconcile_once(pool, adapter)
+    try:
+        await asyncio.wait_for(
+            grile_supervisor.reconcile_once(pool, adapter),
+            timeout=GRILE_STARTUP_RECONCILIATION_TIMEOUT_SECONDS,
+        )
+    except Exception:
+        logger.exception("Initial Grile monthly reconciliation failed; worker will continue")
     ctx["grile_monthly_reconcile_stop"] = asyncio.Event()
     ctx["grile_monthly_reconcile_task"] = asyncio.create_task(
         grile_supervisor.run_monthly_reconciliation_loop(ctx),
@@ -426,6 +433,9 @@ async def _startup_runtime(ctx: dict, *, worker_role: str) -> None:
         stop=ctx["grile_run_reconcile_stop"],
         name="grile-run-reconciler",
     )
+    from services.grile_v2_sync_runtime import start_grile_v2_sync_loop
+
+    start_grile_v2_sync_loop(ctx)
 
 
 async def build_complex_export_background(
@@ -477,7 +487,9 @@ async def shutdown(ctx: dict) -> None:
     from db.connection import close_db_pool
     from services.jobs import close_arq_pool
     from services.outbox_worker import stop_outbox_dispatcher
+    from services.grile_v2_sync_runtime import stop_grile_v2_sync_loop
     await stop_outbox_dispatcher(ctx)
+    await stop_grile_v2_sync_loop(ctx)
     queue_metrics_stop = ctx.get("queue_metrics_stop")
     queue_metrics_task = ctx.get("queue_metrics_task")
     if queue_metrics_stop is not None:

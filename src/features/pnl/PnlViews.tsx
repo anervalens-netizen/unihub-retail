@@ -60,13 +60,53 @@ function CategoryBreakdown({ model }: { model: PnlController }) {
 }
 
 function StoreCard({ store }: { store: PnlController['filteredStores'][number] }) {
-  return <article className="rounded-2xl border border-slate-200 bg-slate-50/70 p-3 dark:border-slate-700 dark:bg-slate-800/40"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="truncate text-sm font-bold">{store.location}</p><p className="truncate text-[11px] text-slate-500">{store.company} · {store.site_code}</p></div><div className={`shrink-0 text-right text-sm font-black tabular-nums ${store.ebit < 0 ? 'text-rose-600' : 'text-emerald-600'}`}>{money.format(store.ebit)}<p className="text-[10px] font-medium text-slate-400">EBIT</p></div></div><div className="mt-2 grid grid-cols-2 gap-2 text-xs"><div><p className="text-[10px] text-slate-400">Venituri</p><p className="font-bold tabular-nums">{money.format(store.revenue)}</p></div><div className="text-right"><p className="text-[10px] text-slate-400">EBITDA</p><p className={store.ebitda < 0 ? 'font-bold text-rose-600' : 'font-bold'}>{money.format(store.ebitda)}</p></div></div></article>;
+  return (
+    <article className="rounded-2xl border border-slate-200 bg-slate-50/70 p-3 dark:border-slate-700 dark:bg-slate-800/40">
+      <p className="text-sm font-bold">{store.location}</p>
+      <p className="mt-0.5 text-[11px] text-slate-500">{store.company} · {store.site_code}{store.has_estimates && <span className="ml-1 rounded bg-amber-100 px-1.5 py-0.5 text-amber-700">estimat</span>}</p>
+      <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-3 text-xs">
+        <div><dt className="text-slate-500">Venituri</dt><dd className="mt-0.5 font-bold tabular-nums">{money.format(store.revenue)}</dd></div>
+        <div className="text-right"><dt className="text-slate-500">Marjă brută</dt><dd className="mt-0.5 font-bold tabular-nums">{money.format(store.gross_margin)}</dd></div>
+        <div><dt className="text-slate-500">Costuri operaționale</dt><dd className="mt-0.5 font-bold tabular-nums">{money.format(store.operating_costs)}</dd></div>
+        <div className="text-right"><dt className="text-slate-500">EBITDA</dt><dd className={`mt-0.5 font-bold tabular-nums ${store.ebitda < 0 ? 'text-rose-600' : ''}`}>{money.format(store.ebitda)}</dd></div>
+        <div className="col-span-2 flex items-center justify-between border-t border-slate-200 pt-2 dark:border-slate-700"><dt className="font-semibold text-slate-500">EBIT</dt><dd className={`text-sm font-black tabular-nums ${store.ebit < 0 ? 'text-rose-600' : 'text-emerald-600'}`}>{money.format(store.ebit)}</dd></div>
+      </dl>
+    </article>
+  );
 }
 
 function StoresPanel({ model }: { model: PnlController }) {
-  return <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900"><div className="flex items-center justify-between gap-3 border-b border-slate-200 p-4 dark:border-slate-700"><div><h3 className="font-semibold">Magazine</h3><p className="text-xs text-slate-500">ordonate după EBIT</p></div><input value={model.storeSearch} onChange={(event) => model.setStoreSearch(event.target.value)} placeholder="Caută magazin…" className="w-44 rounded-xl border border-slate-200 bg-transparent px-3 py-2 text-sm dark:border-slate-700" /></div><div className="space-y-2 p-3 lg:hidden">{model.filteredStores.map((store) => <StoreCard key={`${store.company}-${store.source_site_code}:mobile`} store={store} />)}</div><div className="hidden max-h-[580px] overflow-auto lg:block"><table className="w-full text-sm"><thead className="sticky top-0 bg-slate-50 text-slate-500 dark:bg-slate-800"><tr><TableHeaderCell>Magazin</TableHeaderCell><TableHeaderCell align="right">Venituri</TableHeaderCell><TableHeaderCell align="right">EBITDA</TableHeaderCell><TableHeaderCell align="right">EBIT</TableHeaderCell></tr></thead><tbody>{model.filteredStores.map((store) => <tr key={`${store.company}-${store.source_site_code}`} className="border-t border-slate-100 dark:border-slate-800"><td className="px-3 py-2"><div className="font-medium">{store.location}</div><div className="text-xs text-slate-500">{store.company} · {store.site_code}{store.has_estimates && <span className="ml-1 rounded bg-amber-100 px-1.5 py-0.5 text-amber-700">estimat</span>}</div></td><td className="px-3 py-2 text-right tabular-nums">{money.format(store.revenue)}</td><td className={`px-3 py-2 text-right tabular-nums ${store.ebitda < 0 ? 'text-rose-600' : ''}`}>{money.format(store.ebitda)}</td><td className={`px-3 py-2 text-right font-semibold tabular-nums ${store.ebit < 0 ? 'text-rose-600' : 'text-emerald-600'}`}>{money.format(store.ebit)}</td></tr>)}</tbody></table></div></div>;
+  return (
+    <div className="min-w-0 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 p-4 dark:border-slate-700">
+        <div><h3 className="font-semibold">Magazine</h3><p className="text-xs text-slate-500">ordonate după EBIT</p></div>
+        <input value={model.storeSearch} onChange={(event) => model.setStoreSearch(event.target.value)} placeholder="Caută magazin…" aria-label="Caută magazin în P&L" className="w-44 rounded-xl border border-slate-200 bg-transparent px-3 py-2 text-sm dark:border-slate-700" />
+      </div>
+      <div className="space-y-2 p-3 lg:hidden">{model.filteredStores.map((store) => <StoreCard key={`${store.company}-${store.source_site_code}:mobile`} store={store} />)}</div>
+      <div className="hidden max-h-[580px] overflow-auto lg:block">
+        <table className="w-full min-w-[800px] text-[13px]">
+          <thead className="sticky top-0 z-10 bg-slate-50 text-slate-500 dark:bg-slate-800"><tr>
+            <TableHeaderCell className="min-w-[180px]">Magazin</TableHeaderCell>
+            <TableHeaderCell align="right">Venituri</TableHeaderCell>
+            <TableHeaderCell align="right">Marjă brută</TableHeaderCell>
+            <TableHeaderCell align="right">Costuri operaționale</TableHeaderCell>
+            <TableHeaderCell align="right">EBITDA</TableHeaderCell>
+            <TableHeaderCell align="right">EBIT</TableHeaderCell>
+          </tr></thead>
+          <tbody>{model.filteredStores.map((store) => <tr key={`${store.company}-${store.source_site_code}`} className="border-t border-slate-100 dark:border-slate-800">
+            <td className="px-3 py-2"><div className="font-medium">{store.location}</div><div className="text-xs text-slate-500">{store.company} · {store.site_code}{store.has_estimates && <span className="ml-1 rounded bg-amber-100 px-1.5 py-0.5 text-amber-700">estimat</span>}</div></td>
+            <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">{money.format(store.revenue)}</td>
+            <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">{money.format(store.gross_margin)}</td>
+            <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">{money.format(store.operating_costs)}</td>
+            <td className={`whitespace-nowrap px-3 py-2 text-right tabular-nums ${store.ebitda < 0 ? 'text-rose-600' : ''}`}>{money.format(store.ebitda)}</td>
+            <td className={`whitespace-nowrap px-3 py-2 text-right font-semibold tabular-nums ${store.ebit < 0 ? 'text-rose-600' : 'text-emerald-600'}`}>{money.format(store.ebit)}</td>
+          </tr>)}</tbody>
+        </table>
+      </div>
+    </div>
+  );
 }
 
 export function PnlDataView({ model }: { model: PnlController }) {
-  return <><FinancialSummary model={model} /><div className="grid gap-4 xl:grid-cols-[7fr_5fr] xl:items-stretch"><MonthlyChart model={model} /><AnnualChart model={model} /></div><div className="grid gap-4 xl:grid-cols-[0.8fr_1.2fr]"><CategoryBreakdown model={model} /><StoresPanel model={model} /></div></>;
+  return <><FinancialSummary model={model} /><div className="grid gap-4 xl:grid-cols-[7fr_5fr] xl:items-stretch"><MonthlyChart model={model} /><AnnualChart model={model} /></div><div className="grid gap-4 xl:grid-cols-[minmax(260px,0.75fr)_minmax(0,2fr)]"><CategoryBreakdown model={model} /><StoresPanel model={model} /></div></>;
 }

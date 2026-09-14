@@ -8,9 +8,11 @@ from starlette.responses import StreamingResponse
 from auth import AuthClaims
 from composition import build_grile_calendar_service
 from grile.calendar_models import (
-    AgentCandidate, CalendarChanges, CalendarDay, CalendarMonth, CalendarMonthKey, Code, RosterEntry, RosterInput, StoreHours, StoreHoursInput,
+    StoreTeamInput, TransferInput, AgentCandidate, CalendarChanges, CalendarDay, CalendarMonth, CalendarMonthKey, Code, RosterEntry, RosterInput, StoreHours, StoreHoursInput,
 )
 from grile.earnings_models import EarningsMonth
+from grile.target_models import AgentTargetInput, AgentTargetEntry
+from grile.compensation_models import CompensationEntry, CompensationInput, EpayInput
 from permissions import require_business_write_access, require_management_access
 from rate_limits import BUSINESS_WRITE_LIMIT, REPORT_EXPORT_LIMIT, rate_limit
 from services.grile_calendar import GrileCalendarService
@@ -107,3 +109,53 @@ async def export_earnings(
     return StreamingResponse(artifact.iter_chunks(), media_type="application/zip",
                              headers={"Content-Disposition": f'attachment; filename="{artifact.filename}"'},
                              background=BackgroundTask(artifact.close))
+
+
+@router.put('/{month}/compensation/{agent_code}', response_model=CompensationEntry)
+async def save_compensation(
+    month: CalendarMonthKey, agent_code: Code, payload: CompensationInput,
+    claims: AuthClaims = Depends(require_business_write_access),
+    _limit: None = Depends(rate_limit(BUSINESS_WRITE_LIMIT)),
+    svc: GrileCalendarService = Depends(build_grile_calendar_service),
+) -> CompensationEntry:
+    return await svc.save_compensation(month, agent_code, payload, claims.sub)
+
+
+@router.put('/{month}/transfers/{agent_code}', response_model=CalendarMonth)
+async def save_transfer(
+    month: CalendarMonthKey, agent_code: Code, payload: TransferInput,
+    claims: AuthClaims = Depends(require_business_write_access),
+    _limit: None = Depends(rate_limit(BUSINESS_WRITE_LIMIT)),
+    svc: GrileCalendarService = Depends(build_grile_calendar_service),
+) -> CalendarMonth:
+    return await svc.save_transfer(month, agent_code, payload, claims.sub)
+
+
+@router.put('/{month}/epay/{agent_code}', response_model=CompensationEntry)
+async def save_epay(
+    month: CalendarMonthKey, agent_code: Code, payload: EpayInput,
+    claims: AuthClaims = Depends(require_business_write_access),
+    _limit: None = Depends(rate_limit(BUSINESS_WRITE_LIMIT)),
+    svc: GrileCalendarService = Depends(build_grile_calendar_service),
+) -> CompensationEntry:
+    return await svc.save_epay(month, agent_code, payload, claims.sub)
+
+
+@router.put('/{month}/store-team/{site_code}', response_model=CalendarMonth)
+async def save_store_team(
+    month: CalendarMonthKey, site_code: Code, payload: StoreTeamInput,
+    claims: AuthClaims = Depends(require_business_write_access),
+    _limit: None = Depends(rate_limit(BUSINESS_WRITE_LIMIT)),
+    svc: GrileCalendarService = Depends(build_grile_calendar_service),
+) -> CalendarMonth:
+    return await svc.save_store_team(month, site_code, payload, claims.sub)
+
+
+@router.put('/{month}/target/{agent_code}', response_model=AgentTargetEntry)
+async def save_agent_target(
+    month: CalendarMonthKey, agent_code: Code, payload: AgentTargetInput,
+    claims: AuthClaims = Depends(require_business_write_access),
+    _limit: None = Depends(rate_limit(BUSINESS_WRITE_LIMIT)),
+    svc: GrileCalendarService = Depends(build_grile_calendar_service),
+) -> AgentTargetEntry:
+    return await svc.save_target(month, agent_code, payload, claims.sub)

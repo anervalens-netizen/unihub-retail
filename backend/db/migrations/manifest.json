@@ -77,7 +77,20 @@
     "069_ai_cohort_and_transactional_outbox.sql": "transactional",
     "070_grile_native_calendar.sql": "transactional",
     "071_grile_store_hours.sql": "transactional",
-    "072_grile_team_leader_base.sql": "transactional"
+    "072_grile_team_leader_base.sql": "transactional",
+    "073_grile_compensation_inputs.sql": "transactional",
+    "074_salary_history_archive.sql": "transactional",
+    "075_store_pnl_estimated_promotion.sql": "transactional",
+    "076_add_tl_pnl_location.sql": "transactional",
+    "077_grile_dated_transfers.sql": "transactional",
+    "078_grile_store_team_unassigned.sql": "transactional",
+    "079_grile_calendar_closures.sql": "transactional",
+    "080_grile_tl_multistore_days.sql": "transactional",
+    "081_grile_individual_targets.sql": "transactional",
+    "082_agent_evaluation_org_read.sql": "transactional",
+    "083_agent_evaluation_product_read.sql": "transactional",
+    "084_grile_v2_sheet_exports.sql": "transactional",
+    "085_grile_v2_operations_source_reads.sql": "transactional"
   },
   "migrations": {
     "001_add_cartela_composite_index.sql": "7f502462f585088286f9ae60d5c4ded69fccf745342ae6ddfc34c48241514b46",
@@ -151,6 +164,19 @@
     "069_ai_cohort_and_transactional_outbox.sql": "e2f3f1ff09c14cbba577ac40ba476250a7b746ebbe0bdf373c6ebf4e552fc8a0",
     "070_grile_native_calendar.sql": "5eeeb63af9d38ff6ee5c66503612267c74e3fafff3eae14891e9f23d2c144773",
     "071_grile_store_hours.sql": "051002f000d766e708956835e7c4a5c23a381527c8c74b19323b3e4420a91f23",
-    "072_grile_team_leader_base.sql": "c8bc6c01ab513a19bac74f391309cc2c6e6ef299470755de24cd98929964fcd1"
+    "072_grile_team_leader_base.sql": "c8bc6c01ab513a19bac74f391309cc2c6e6ef299470755de24cd98929964fcd1",
+    "073_grile_compensation_inputs.sql": "482727c8f87944b1754c8d02d6db07126c36b8a90bef4ea5ee05d3ed023a4cf1",
+    "074_salary_history_archive.sql": "5f23c8e82054b69f9114425078fa4a2ea9d6df5725e902dd22f8ac8ea92339b5",
+    "075_store_pnl_estimated_promotion.sql": "b1cbc6552e67fdb9df4b270a2226691cd886d3ae39a2b0f64e5650d866f6b57f",
+    "076_add_tl_pnl_location.sql": "49ba572699bf281abb65cf203b890bc9773905484792e4b8d7da360dd1375e2b",
+    "077_grile_dated_transfers.sql": "c87aefcc0ebe194bc555a33dbec742ba9d81c52cb984859ed511a96975e895ae",
+    "078_grile_store_team_unassigned.sql": "ba5851e1faa9eecd5d15597f62fe21f28dfe4af2eeba7dfbc27ee2a9114a8ea3",
+    "079_grile_calendar_closures.sql": "59a64fc595e61dc1c8204ebfa75086156a0183660d696837606baf1a82c24cee",
+    "080_grile_tl_multistore_days.sql": "07854603a58e7e95b93ece3ab3be0164095e601366ac590fb2b766b9cdd0302f",
+    "081_grile_individual_targets.sql": "ec5927e862643c50302149231ac99997fbbae06442eb302d88e6a24b04c274b2",
+    "082_agent_evaluation_org_read.sql": "1eacb63ee698015113b47e834dbccded81e1a0d67493e339d0ce97b885351516",
+    "083_agent_evaluation_product_read.sql": "f4e81b93998a1c3d3064f6f2cd4eed901ac788948b451121ab14f385b67559cd",
+    "084_grile_v2_sheet_exports.sql": "4f18d8393346a63f1216e857f2b2c2585d64377578f3dc26ed600d10a6c03e3c",
+    "085_grile_v2_operations_source_reads.sql": "ce5b951658ce772fbc67e1f5e9b30fd10cf3b2c8ccfea026646787bef3c505ed"
   }
 }

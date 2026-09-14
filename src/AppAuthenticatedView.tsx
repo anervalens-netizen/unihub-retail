@@ -28,7 +28,7 @@ export function AppAuthenticatedView({ controller }: { controller: AppController
     isFilterOpen={controller.isFilterOpen} setIsFilterOpen={controller.setIsFilterOpen}
     filters={activeFilters} setFilters={setActiveFilters} filterMonth={activeFilterMonth}
     theme={navigation.theme} setTheme={navigation.setTheme}
-    showFilterButton={!(navigation.activeTab === 'hub' && navigation.hubSection === 'visits')}
+    showFilterButton={!(navigation.activeTab === 'management' && navigation.mgmtSubTab === 'fieldops')}
     mgmtSubTab={navigation.mgmtSubTab} userEmail={auth.user?.profile.email ?? undefined}
     onLogout={auth.logout} canAccessManagement={controller.hasManagementAccess}
   >
@@ -43,7 +43,7 @@ function AppScreens({ controller }: { controller: AppController }) {
     {navigation.activeTab === 'hub' && data.currentMonth && <Dashboard currentMonth={data.currentMonth} months={data.availableMonths.months} filters={data.hubFilters} initialSection={navigation.hubSection} onSectionChange={navigation.setHubSection} />}
     {navigation.activeTab === 'focus' && data.currentMonth && <Campaigns currentMonth={data.currentMonth} months={data.availableMonths.months} filters={data.focusFilters} preferredSection={navigation.campaignsSection} onSectionChange={navigation.setCampaignsSection} onFilterMonthChange={data.setFocusFilterMonth} />}
     {navigation.activeTab === 'agents' && data.currentMonth && <Agents currentMonth={data.currentMonth} months={data.availableMonths.months} filters={data.agentsFilters} preferredSection={controller.deepLink?.agentsSection} preferredGrileMonth={controller.deepLink?.period} />}
-    {navigation.activeTab === 'management' && <ErrorBoundary title="Secțiunea Management nu a putut fi afișată" description="Datele din celelalte secțiuni sunt în siguranță. Reîncearcă încărcarea ecranului Management."><Management activeSubTab={navigation.mgmtSubTab} setActiveSubTab={navigation.setMgmtSubTab} hasPnlAccess={controller.hasPnlAccess} currentMonth={data.currentMonth} salaryFilters={data.agentsFilters} /></ErrorBoundary>}
+    {navigation.activeTab === 'management' && <ErrorBoundary title="Secțiunea Management nu a putut fi afișată" description="Datele din celelalte secțiuni sunt în siguranță. Reîncearcă încărcarea ecranului Management."><Management activeSubTab={navigation.mgmtSubTab} setActiveSubTab={navigation.setMgmtSubTab} hasPnlAccess={controller.hasPnlAccess} currentMonth={data.currentMonth} months={data.availableMonths.months} salaryFilters={data.agentsFilters} /></ErrorBoundary>}
     {navigation.activeTab === 'settings' && <Settings theme={navigation.theme} setTheme={navigation.setTheme} onImportCompleted={(month) => {
       data.availableMonths.setMonths((previous) => {
         const next = previous.includes(month) ? previous : [...previous, month];

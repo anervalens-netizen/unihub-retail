@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncpg
 
+
 class StoresRepository:
     def __init__(self, pool: asyncpg.Pool):
         self.pool = pool
@@ -12,7 +13,7 @@ class StoresRepository:
                 """
                 SELECT site_code, locatie, firma, regional, asm
                 FROM stores
-                WHERE is_active = true
+                WHERE is_active = true AND site_code <> 'TL'
                 ORDER BY locatie
                 """,
             )
