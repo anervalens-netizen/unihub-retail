@@ -237,7 +237,7 @@ automat între colegi. Revenirea la automat folosește calendarul curent.
 transfer, targetul manual lunar se distribuie proporțional cu contribuțiile
 automate (zile dacă nu există o bază pozitivă). Suplimentarele în altă locație
 rămân separate. Conturile partajate TL nu primesc target lunar manual.
-Hub, analiza agenților și exporturile folosesc `reporting_effective_agent_targets_v2`:
+Vânzări, analiza agenților și exporturile folosesc `reporting_effective_agent_targets_v2`:
 target V2 pentru agent/lună/magazin confirmat, altfel sursa legacy și fallback-ul
 existent. Importurile Google V1 nu pot suprascrie setarea managerului.
-Fișierul Google Sheets de test rămâne o captură; nu are sincronizare automată.
+Pilotul Google Sheets folosește registrul lunar și sincronizarea automată descrise în [runbookul pilotului](grile-v2-sheets-pilot.md). Fișierele publicate sunt proiecții pentru consultare; editarea targetelor rămâne în Retail.

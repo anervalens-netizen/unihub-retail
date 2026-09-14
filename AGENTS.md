@@ -150,8 +150,11 @@ Never commit `.npmrc` or Verdaccio tokens; run
 - Salary averages exclude agent-month values below 2,000 RON only from averages,
   not totals/history.
 - `total_salary` already includes meal vouchers.
-- Agent target allocation = store target / store selling days * agent selling
-  days.
+- Legacy agent target allocation = store target / store selling days * agent
+  selling days. Confirmed Grile V2 agent/month/store rows take precedence through
+  `reporting_effective_agent_targets_v2`, including revision-fenced manager
+  overrides. Preserve the shared target source across sales, agent views and
+  exports; see the target section of `docs/grile-v2-product-contract.md`.
 - Grile months use `YYYY-MM`; reset is irreversible/admin-gated, clears only
   documented editable ranges and never recreates permanent links.
 - Grile checks have at most one `queued`/`running` run per month; reserve DB run
