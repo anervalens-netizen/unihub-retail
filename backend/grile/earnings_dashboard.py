@@ -1,5 +1,6 @@
 """Projections use calendar-confirmed days; V1 manual values remain explicit."""
 from decimal import Decimal
+from business_clock import business_today
 from grile.compensation_models import CompensationEntry
 from grile.base_salary import base_salary
 from grile.dashboard_models import PerformanceMetrics, SalaryMetrics
@@ -26,11 +27,13 @@ def salary(agent, inputs, metrics):
     fixed = [inputs.salary_base, inputs.vouchers, sim, epay, inputs.incentive, inputs.adjustment, agent.away_commission, agent.supplemental_pay]
     rest = sum(fixed, D(0)) if all(p is not None for p in fixed) else None
     forecast_commission = monthly_commission(metrics.forecast, metrics.target) if metrics.forecast is not None and metrics.target else None
-    potential = monthly_commission(metrics.target * D('1.2'), metrics.target) if metrics.target else None
+    potential_100 = monthly_commission(metrics.target, metrics.target) if metrics.target else None
+    potential_120 = monthly_commission(metrics.target * D('1.2'), metrics.target) if metrics.target else None
     return SalaryMetrics(sim_pay=sim, epay_pay=epay, commission_total=commission,
         current_total=whole_ron(rest + agent.home_commission) if rest is not None and agent.home_commission is not None else None,
         forecast_total=whole_ron(rest + forecast_commission) if rest is not None and forecast_commission is not None else None,
-        potential_120=whole_ron(rest + potential) if rest is not None and potential is not None else None)
+        potential_100=whole_ron(rest + potential_100) if rest is not None and potential_100 is not None else None,
+        potential_120=whole_ron(rest + potential_120) if rest is not None and potential_120 is not None else None)
 
 def enrich_dashboard(result, calendar, sources):
     inputs = {row['agent_code']: CompensationEntry.model_validate(row) for row in sources.get('compensation', [])}
@@ -42,9 +45,24 @@ def enrich_dashboard(result, calendar, sources):
         agent.performance = metrics
         agent.compensation = inputs.get(agent.agent_code, CompensationEntry(month=result.month, agent_code=agent.agent_code, revision=0))
         if agent.home_site_code != 'TL':
-            agent.compensation.salary_base = base_salary(agent.home_site_code)
+            salary_home = agent.home_site_code
+            if salary_home == 'UNASSIGNED':
+                entry = next(r for r in calendar.roster if r.agent_code == agent.agent_code)
+                salary_home = entry.home_site_code
+                for transfer in sorted(entry.transfers, key=lambda t: (t.effective_from, t.roster_revision)):
+                    if transfer.effective_from.isoformat() <= business_today().isoformat() and transfer.home_site_code != 'UNASSIGNED':
+                        salary_home = transfer.home_site_code
+            agent.compensation.salary_base = base_salary(salary_home)
         if agent.compensation.vouchers is None:
             agent.compensation.vouchers = D(480)
+        for field in ('epay_under_50', 'epay_over_50', 'adjustment'):
+            if getattr(agent.compensation, field) is None:
+                setattr(agent.compensation, field, D(0) if field == 'adjustment' else 0)
+        if 'sim' in sources:
+            by_day = {(r['site_code'], r['sale_date']): r['quantity'] for r in sources['sim']}
+            agent.compensation.sim_quantity = max(0, sum(int(by_day.get((d.site_code, d.work_date), 0)) for d in agent.days if result.cutoff and d.work_date <= result.cutoff)) if result.cutoff else None
+        if 'incentives' in sources:
+            agent.compensation.incentive = sources['incentives'].get(agent.agent_code, D(0)) if sources.get('incentives_complete') and result.cutoff else None
         agent.salary = salary(agent, agent.compensation, metrics)
     enrich_store_performance(result, calendar, sources)
 

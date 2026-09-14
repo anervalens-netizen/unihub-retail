@@ -1,6 +1,7 @@
 """Calendar owns attribution; physical store/day sales are credited once."""
 from collections import Counter
 from datetime import date
+from calendar import monthrange
 from decimal import Decimal
 from hashlib import sha256
 import json
@@ -10,6 +11,9 @@ from grile.calendar_models import CalendarDay, CalendarMonth, RosterEntry
 from grile.earnings_models import AgentEarnings, EarningsDay, EarningsMonth
 from grile.earnings_rules import daily_commission, monthly_commission
 from grile.earnings_dashboard import enrich_dashboard
+from grile.roster_history import home_on
+from grile.target_models import AgentTargetState
+from business_clock import business_today
 
 
 def _day_earnings(
@@ -84,10 +88,40 @@ def project_earnings(calendar: CalendarMonth, sources: dict[str, Any]) -> Earnin
     sales = {(row["site_code"], row["sale_date"]): row["sales"] for row in sources["sales"]}
     agents = []
     for entry in calendar.roster:
-        days = [_day_earnings(day, entry.home_site_code, cutoff, sales, daily_targets)
+        days = [_day_earnings(day, home_on(entry, day.work_date), cutoff, sales, daily_targets)
                 for day in work if day.agent_code == entry.agent_code]
         if entry.active or days:
-            agents.append(_agent_earnings(entry, days, daily_targets.get(entry.home_site_code, (None, 0)), cutoff is not None))
+            current_home = home_on(entry, min(max(business_today(), date.fromisoformat(calendar.month + '-01')), date.fromisoformat(calendar.month + '-01').replace(day=monthrange(int(calendar.month[:4]), int(calendar.month[5:]))[1])))
+            projected = _agent_earnings(entry, days, daily_targets.get(entry.home_site_code, (None, 0)), cutoff is not None)
+            if entry.transfers:
+                parts = [_home_components([d for d in days if d.site_code == site], *daily_targets.get(site, (None, 0)))
+                         for site in sorted({d.site_code for d in days if not d.away})]
+                values = [sum((p[i] for p in parts), Decimal(0)) if all(p[i] is not None for p in parts) else None for i in range(3)]
+                projected.home_target, projected.home_sales = values[:2]
+                projected.home_commission = monthly_commission(projected.home_sales, projected.home_target) if projected.home_sales is not None and projected.home_target else (Decimal(0) if not parts else None)
+                if cutoff is None:
+                    projected.home_sales = projected.home_commission = None
+                components = [projected.home_commission, projected.away_commission, projected.supplemental_pay]
+                projected.known_earnings = sum(components, Decimal(0)) if all(c is not None for c in components) else None
+            setting = next((r for r in sources.get("target_settings", []) if r["agent_code"] == entry.agent_code and r["month"] == calendar.month), {})
+            projected.target_setting = AgentTargetState(
+                month=calendar.month, agent_code=entry.agent_code,
+                mode=setting.get("mode", "automatic"), manual_target=setting.get("manual_target"),
+                revision=setting.get("revision", 0), automatic_target=projected.home_target,
+            )
+            # The shared reporting view is also the runtime source for Hub/analysis/exports.
+            home_sites = {entry.home_site_code} | {d.site_code for d in days if not d.away}
+            resolved = [r for r in sources.get("agent_target_rows", []) if r["agent"] == entry.agent_code and r["import_month"] == calendar.month and r["site_code"] in home_sites]
+            if resolved:
+                projected.home_target = sum((r["target_value"] for r in resolved), Decimal(0)) if all(r["target_value"] is not None for r in resolved) else None
+            elif projected.target_setting.mode == "manual":
+                projected.home_target = projected.target_setting.manual_target
+            if resolved or projected.target_setting.mode == "manual":
+                projected.home_commission = monthly_commission(projected.home_sales, projected.home_target) if projected.home_sales is not None and projected.home_target else (Decimal(0) if projected.home_target == 0 and projected.home_sales == 0 else None)
+                components = [projected.home_commission, projected.away_commission, projected.supplemental_pay]
+                projected.known_earnings = sum(components, Decimal(0)) if all(c is not None for c in components) else None
+            projected.home_site_code = current_home
+            agents.append(projected)
     assigned = {(day.site_code, day.work_date) for day in work}
     unassigned = [row for row in sources["sales"] if (row["site_code"], row["sale_date"]) not in assigned]
     result = EarningsMonth(

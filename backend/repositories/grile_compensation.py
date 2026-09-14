@@ -24,3 +24,20 @@ async def save_compensation(pool: asyncpg.Pool, month: str, agent: str, value: C
                 revision=grile_calendar_compensation.revision+1,updated_at=now()
                 RETURNING month,agent_code,salary_base,vouchers,sim_quantity,epay_under_50,epay_over_50,incentive,adjustment,revision''',
                 month,agent,value.salary_base,value.vouchers,value.sim_quantity,value.epay_under_50,value.epay_over_50,value.incentive,value.adjustment,actor)
+
+
+async def save_epay(pool, month, agent, value, actor):
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            active = await conn.fetchval('SELECT active FROM grile_calendar_roster WHERE month=$1 AND agent_code=$2 FOR UPDATE', month, agent)
+            if not active:
+                raise CalendarConflict('Confirm the active agent before editing E-pay')
+            revision = await conn.fetchval('SELECT revision FROM grile_calendar_compensation WHERE month=$1 AND agent_code=$2', month, agent)
+            if (revision or 0) != value.expected_revision:
+                raise CalendarConflict('E-pay changed; reload the grid')
+            return await conn.fetchrow("""INSERT INTO grile_calendar_compensation
+                (month,agent_code,epay_under_50,epay_over_50,updated_by_sub)
+                VALUES ($1,$2,$3,$4,$5)
+                ON CONFLICT (month,agent_code) DO UPDATE SET epay_under_50=$3,epay_over_50=$4,
+                    revision=grile_calendar_compensation.revision+1,updated_by_sub=$5,updated_at=now()
+                RETURNING *""", month, agent, value.epay_under_50, value.epay_over_50, actor)

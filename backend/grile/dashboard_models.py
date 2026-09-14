@@ -23,4 +23,5 @@ class SalaryMetrics(BaseModel):
     commission_total: Decimal | None = None
     current_total: Decimal | None = None
     forecast_total: Decimal | None = None
+    potential_100: Decimal | None = None
     potential_120: Decimal | None = None

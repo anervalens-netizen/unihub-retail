@@ -198,7 +198,7 @@ export function referenceLabel(value: string) {
 }
 
 export function targetSourceLabel(value: string) {
-  if (value === 'agent_target') return 'target agent';
+  if (value === 'agent_target' || value === 'individual_agent_target') return 'target agent';
   if (value === 'partial_agent_target') return 'target mixt';
   return 'target pe zile';
 }
@@ -363,4 +363,3 @@ export function AgentLegacyMobileCard({ row }: { row: AgentEvaluationRow }) {
     </article>
   );
 }
-

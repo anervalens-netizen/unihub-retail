@@ -18,10 +18,10 @@ export function Earnings({ month, site, calendarRevision, calendar, stores = [],
   if (data.calendar_revision !== calendarRevision) return <p role="alert">Calendarul s-a schimbat. Reîncarcă programul pentru a vedea câștigurile aceleiași revizii.</p>;
   const agents = data.agents.filter(agent => agent.home_site_code === site);
   const store = stores.find(s => s.site_code === site) ?? { site_code: site, locatie: site, firma: '', regional: '', asm: '' };
-  return <section className="space-y-5">
+  return <section className="space-y-3">
     <StorePerformance data={data} store={store} />
     {site !== 'TL' && <details><summary className="cursor-pointer text-sm">Vânzări și alocări pe magazin</summary><StoreSalesSummary data={data} site={site} /></details>}
-    <div className="grid gap-4 xl:grid-cols-2">{agents.map((agent, index) => <div key={agent.agent_code} className="space-y-2">{agent.issues.map(issue => <p role="alert" key={issue} className="text-sm text-amber-700">{issues[issue] ?? issue}</p>)}{agent.identity_status === 'conflicting' && <p className="text-sm text-amber-700">Codul are identități salariale contradictorii. Este necesară reconcilierea.</p>}<AgentPerformance agent={agent} writable={writable} index={index} /></div>)}</div>
+    <div className="grid gap-3 min-[900px]:grid-cols-2">{agents.map((agent, index) => <div key={agent.agent_code} className="space-y-2">{agent.issues.map(issue => <p role="alert" key={issue} className="text-sm text-amber-700">{issues[issue] ?? issue}</p>)}{agent.identity_status === 'conflicting' && <p className="text-sm text-amber-700">Codul are identități salariale contradictorii. Este necesară reconcilierea.</p>}<AgentPerformance agent={agent} writable={writable} index={index} /></div>)}</div>
     {!agents.length && <p>Nu există agenți de bază confirmați pentru acest magazin.</p>}
     <PersonalSupplements data={data} calendar={calendar} stores={stores} site={site} writable={writable} />
     {data.unassigned_sales.some(row => row.site_code === site) && <p role="alert">Există vânzări ale magazinului fără persoană alocată în calendar. Completează programul; aceste sume nu au fost atribuite automat.</p>}

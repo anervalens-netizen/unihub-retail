@@ -5,7 +5,7 @@ import { SupplementEditor } from './CalendarExtras';
 
 export function PersonalSupplements({ data, calendar, stores, site, writable }: { data: Awaited<ReturnType<typeof readEarnings>>; calendar?: CalendarData; stores: CalendarStore[]; site: string; writable: boolean }) {
   const agents = data.agents.filter(a => a.home_site_code === site);
-  return <section className="overflow-hidden rounded-2xl border border-violet-200 dark:border-violet-800"><h4 className="bg-violet-600 px-4 py-3 font-bold text-white">Zile suplimentare · agenții magazinului</h4><div className="grid gap-4 p-4 xl:grid-cols-2">{agents.map(agent => {
+  return <section className="overflow-hidden rounded-2xl border border-violet-200 dark:border-violet-800"><h4 className="bg-violet-600 px-3 py-2 font-bold text-white">Zile suplimentare · agenții magazinului</h4><div className="grid gap-3 p-3 xl:grid-cols-2">{agents.map(agent => {
     const days = agent.days.filter(d => d.supplemental);
     const elapsed = days.filter(d => d.issue !== 'after_cutoff');
     const total = elapsed.some(d => d.supplemental_pay == null || (d.away && d.commission == null)) ? null : elapsed.reduce((sum, d) => sum + Number(d.supplemental_pay ?? 0) + (d.away ? Number(d.commission ?? 0) : 0), 0);

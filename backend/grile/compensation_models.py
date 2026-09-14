@@ -16,6 +16,12 @@ class CompensationValues(BaseModel):
     incentive: Amount | None = None
     adjustment: Annotated[Decimal, Field(ge=-1000000, le=1000000, max_digits=12, decimal_places=2)] | None = None
 
+class EpayInput(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    epay_under_50: Annotated[int, Field(ge=0, le=15)] = 0
+    epay_over_50: Annotated[int, Field(ge=0, le=15)] = 0
+    expected_revision: int = Field(ge=0)
+
 class CompensationInput(CompensationValues):
     expected_revision: int = Field(ge=0)
 

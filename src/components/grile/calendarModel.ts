@@ -9,9 +9,20 @@ export function monthDays(month: string) {
   return { offset: (start.getUTCDay() + 6) % 7, dates: Array.from({ length: count }, (_, i) => `${month}-${String(i + 1).padStart(2, '0')}`) };
 }
 
-// Every affected person/day carries the revision seen when the editor opened.
+// TL accounts have independent revisions for each store/date.
+export function calendarDayAt(data: CalendarData, code: string, date: string, site: string) {
+  const sharedTL = data.roster.some(r => r.agent_code === code && r.home_site_code === 'TL');
+  return data.days.find(d => d.agent_code === code && d.work_date === date && (!sharedTL || d.site_code === site));
+}
+
+export function conflictingCalendarDay(data: CalendarData, code: string, date: string, site: string) {
+  if (data.roster.some(r => r.agent_code === code && r.home_site_code === 'TL')) return undefined;
+  return data.days.find(d => d.agent_code === code && d.work_date === date && d.status !== 'cancelled' && d.site_code !== site);
+}
+
+// Every affected allocation carries the revision seen when the editor opened.
 export function dayChanges(data: CalendarData, input: Omit<RetailCalendarDayInput, 'expected_revision'>): RetailCalendarDayInput[] {
-  const existing = data.days.find(d => d.agent_code === input.agent_code && d.work_date === input.work_date);
+  const existing = calendarDayAt(data, input.agent_code, input.work_date, input.site_code);
   const changes: RetailCalendarDayInput[] = [];
   if (input.status === 'work') {
     const occupant = data.days.find(d => d.work_date === input.work_date && d.site_code === input.site_code && d.status === 'work' && d.agent_code !== input.agent_code);

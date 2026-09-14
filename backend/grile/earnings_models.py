@@ -5,6 +5,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 from grile.compensation_models import CompensationEntry
+from grile.target_models import AgentTargetState
 from grile.dashboard_models import PerformanceMetrics, SalaryMetrics
 
 
@@ -22,6 +23,7 @@ class EarningsDay(BaseModel):
 
 
 class AgentEarnings(BaseModel):
+    target_setting: AgentTargetState | None = None
     performance: PerformanceMetrics | None = None
     compensation: CompensationEntry | None = None
     salary: SalaryMetrics | None = None

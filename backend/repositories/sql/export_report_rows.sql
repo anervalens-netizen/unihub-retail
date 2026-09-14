@@ -154,7 +154,7 @@
                     LEFT JOIN store_agent_counts sac
                         ON sac.import_month = agg.import_month
                         AND sac.site_code = agg.raw_site_code
-                    LEFT JOIN agent_targets atg
+                    LEFT JOIN reporting_effective_agent_targets_v2 atg
                         ON atg.import_month = agg.import_month
                         AND atg.site_code = agg.raw_site_code
                         AND atg.agent = agg.raw_agent

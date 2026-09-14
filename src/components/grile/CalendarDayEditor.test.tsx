@@ -7,15 +7,15 @@ import type { CalendarData } from '../../api/grileCalendar';
 afterEach(cleanup);
 const store = { site_code: 'S1', locatie: 'Store 1', firma: 'Firm', regional: 'R', asm: '' };
 const other = { ...store, site_code: 'S2' };
-const data: CalendarData = { attendance_by_store: {}, attendance_days: [], store_hours: [], projection_revision: '', month: '2026-09', attendance: [], roster: [
-  { regional: null, display_name: null, identity_status: 'unavailable', month: '2026-09', agent_code: 'A', home_site_code: 'S1', active: true, revision: 1 },
-  { regional: null, display_name: null, identity_status: 'unavailable', month: '2026-09', agent_code: 'B', home_site_code: 'S2', active: true, revision: 1 },
+const data: CalendarData = { attendance_by_store: {}, attendance_days: [], closures: [], store_hours: [], projection_revision: '', month: '2026-09', attendance: [], roster: [
+  { regional: null, display_name: null, transfers: [], identity_status: 'unavailable', month: '2026-09', agent_code: 'A', home_site_code: 'S1', active: true, revision: 1 },
+  { regional: null, display_name: null, transfers: [], identity_status: 'unavailable', month: '2026-09', agent_code: 'B', home_site_code: 'S2', active: true, revision: 1 },
 ], days: [{ agent_code: 'A', work_date: '2026-09-01', site_code: 'S1', status: 'work', supplemental: false, revision: 3 }] };
 const props = { data, store, stores: [store, other], date: '2026-09-01', busy: false, writable: true };
 it('records a TL absence at the virtual base without offering a work day', async () => {
   const onSave = vi.fn();
   const leader = { ...data.roster[0]!, agent_code: 'LEADER', home_site_code: 'TL', regional: 'R' };
-  render(<CalendarDayEditor {...props} store={{ ...store, site_code: 'TL', regional: '', virtualBase: true }} data={{ ...data, roster: [leader], days: [] }} onSave={onSave} />);
+  render(<CalendarDayEditor {...props} store={{ ...store, site_code: 'TL', regional: '', virtualBase: true }} data={{ ...data, roster: [leader], days: [], closures: [] }} onSave={onSave} />);
   await userEvent.selectOptions(screen.getByLabelText('Agent pentru zi'), 'LEADER');
   expect(screen.queryByRole('option', { name: 'Lucrează' })).not.toBeInTheDocument();
   await userEvent.click(screen.getByRole('button', { name: 'Salvează ziua' }));
@@ -27,6 +27,8 @@ it('offers a virtual TL only within the confirmed region and permits normally pa
   render(<CalendarDayEditor {...props} data={{ ...data, roster: [...data.roster, leader, { ...leader, agent_code: 'OTHER-TL', regional: 'OTHER' }] }} onSave={onSave} />);
   expect(screen.queryByRole('option', { name: /OTHER-TL/ })).not.toBeInTheDocument();
   await userEvent.selectOptions(screen.getByLabelText('Agent pentru zi'), 'LEADER');
+  expect(screen.getByRole('checkbox')).toBeChecked();
+  await userEvent.click(screen.getByRole('checkbox'));
   expect(screen.getByRole('checkbox')).not.toBeChecked();
   expect(screen.getByRole('checkbox')).toBeEnabled();
   await userEvent.click(screen.getByRole('button', { name: 'Salvează ziua' }));
@@ -44,6 +46,8 @@ it('allows a normal shift swap at another home store', async () => {
   const onSave = vi.fn();
   render(<CalendarDayEditor {...props} onSave={onSave} />);
   await userEvent.selectOptions(screen.getByLabelText('Agent pentru zi'), 'B');
+  expect(screen.getByRole('checkbox')).toBeChecked();
+  await userEvent.click(screen.getByRole('checkbox'));
   expect(screen.getByRole('checkbox')).not.toBeChecked();
   await userEvent.click(screen.getByRole('button', { name: 'Salvează ziua' }));
   expect(onSave.mock.calls[0]![0][1]).toMatchObject({ agent_code: 'B', supplemental: false });
@@ -81,12 +85,23 @@ it('does not inherit another occupants supplemental classification', async () =>
   await userEvent.click(screen.getByRole('button', { name: 'Salvează ziua' }));
   expect(onSave.mock.calls[0]![0][1]).toMatchObject({ agent_code: 'B', supplemental: false });
 });
-
-it('lets a manager explicitly mark away work as a paid supplement', async () => {
+it('automatically marks an external agent as a paid supplement', async () => {
   const onSave = vi.fn();
   render(<CalendarDayEditor {...props} onSave={onSave} />);
   await userEvent.selectOptions(screen.getByLabelText('Agent pentru zi'), 'B');
-  await userEvent.click(screen.getByRole('checkbox'));
+  expect(screen.getByRole('checkbox')).toBeChecked();
   await userEvent.click(screen.getByRole('button', { name: 'Salvează ziua' }));
   expect(onSave.mock.calls[0]![0][1]).toMatchObject({ agent_code: 'B', supplemental: true });
+});
+
+it('puts dated home agents first and searches names without accents', async () => {
+  const transfer = { effective_from: '2026-09-02', home_site_code: 'S1', location_code_active_from: '2026-09-10', roster_revision: 2 };
+  const roster = [data.roster[0]!, { ...data.roster[1]!, display_name: 'Ștefan', transfers: [transfer] }];
+  render(<CalendarDayEditor {...props} date="2026-09-03" data={{ ...data, roster }} onSave={vi.fn()} />);
+  const groups = screen.getAllByRole('group');
+  expect(groups[0]).toHaveAccessibleName('Agenții magazinului');
+  expect(groups[0]).toHaveTextContent('Ștefan');
+  await userEvent.type(screen.getByLabelText('Caută agent'), 'stefan');
+  expect(screen.getByRole('option', { name: 'Ștefan · B' })).toBeInTheDocument();
+  expect(screen.queryByRole('option', { name: 'A' })).not.toBeInTheDocument();
 });

@@ -8,7 +8,7 @@ import type { CalendarData } from '../../api/grileCalendar';
 const api=vi.hoisted(() => ({ saveCalendarDays: vi.fn().mockResolvedValue([]) }));
 vi.mock('../../api/grileCalendar', () => api);
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
-const data: CalendarData={ month:'2026-09', projection_revision:'r', roster:[{agent_code:'A',home_site_code:'S1',active:true,revision:1,month:'2026-09',regional:null,display_name:null,identity_status:'unavailable'}], days:[{agent_code:'A',site_code:'S1',work_date:'2026-09-04',revision:3,status:'work',supplemental:false}],store_hours:[],attendance:[],attendance_by_store:{},attendance_days:[] };
+const data: CalendarData={ month:'2026-09', projection_revision:'r', roster:[{agent_code:'A',home_site_code:'S1',active:true,revision:1,month:'2026-09',regional:null,display_name:null,transfers: [], identity_status:'unavailable'}], days:[{agent_code:'A',site_code:'S1',work_date:'2026-09-04',revision:3,status:'work',supplemental:false}],store_hours:[],closures:[],attendance:[],attendance_by_store:{},attendance_days:[] };
 it('writes leave on weekdays only using observed revisions', () => {
   expect(leaveChanges(data,'S1','A','2026-09-03','2026-09-07')).toEqual([
     expect.objectContaining({work_date:'2026-09-03',status:'leave',expected_revision:0,supplemental:false}),

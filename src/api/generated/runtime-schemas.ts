@@ -8,6 +8,17 @@ export const RETAIL_COMPONENT_SCHEMAS = {
         "title": "Agent Code",
         "type": "string"
       },
+      "display_name": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Display Name"
+      },
       "needs_active_confirmation": {
         "title": "Needs Active Confirmation",
         "type": "boolean"
@@ -188,6 +199,16 @@ export const RETAIL_COMPONENT_SCHEMAS = {
           }
         ],
         "title": "Supplemental Pay"
+      },
+      "target_setting": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/AgentTargetState"
+          },
+          {
+            "type": "null"
+          }
+        ]
       }
     },
     "required": [
@@ -848,7 +869,8 @@ export const RETAIL_COMPONENT_SCHEMAS = {
       "target_source": {
         "enum": [
           "partial_agent_target",
-          "allocated_store_target"
+          "allocated_store_target",
+          "individual_agent_target"
         ],
         "title": "Target Source",
         "type": "string"
@@ -1642,6 +1664,91 @@ export const RETAIL_COMPONENT_SCHEMAS = {
     "title": "AgentStats",
     "type": "object"
   },
+  "AgentTargetEntry": {
+    "properties": {
+      "agent_code": {
+        "title": "Agent Code",
+        "type": "string"
+      },
+      "manual_target": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Manual Target"
+      },
+      "mode": {
+        "default": "automatic",
+        "enum": [
+          "automatic",
+          "manual"
+        ],
+        "title": "Mode",
+        "type": "string"
+      },
+      "month": {
+        "title": "Month",
+        "type": "string"
+      },
+      "revision": {
+        "default": 0,
+        "title": "Revision",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "month",
+      "agent_code"
+    ],
+    "title": "AgentTargetEntry",
+    "type": "object"
+  },
+  "AgentTargetInput": {
+    "additionalProperties": false,
+    "properties": {
+      "expected_revision": {
+        "minimum": 0.0,
+        "title": "Expected Revision",
+        "type": "integer"
+      },
+      "manual_target": {
+        "anyOf": [
+          {
+            "exclusiveMinimum": 0.0,
+            "maximum": 1000000.0,
+            "type": "number"
+          },
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,10}|(?=[\\d.]{1,13}0*$)\\d{0,10}\\.\\d{0,2}0*$)",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Manual Target"
+      },
+      "mode": {
+        "enum": [
+          "automatic",
+          "manual"
+        ],
+        "title": "Mode",
+        "type": "string"
+      }
+    },
+    "required": [
+      "mode",
+      "expected_revision"
+    ],
+    "title": "AgentTargetInput",
+    "type": "object"
+  },
   "AgentTargetRunRequest": {
     "additionalProperties": false,
     "properties": {
@@ -1655,6 +1762,62 @@ export const RETAIL_COMPONENT_SCHEMAS = {
       "month"
     ],
     "title": "AgentTargetRunRequest",
+    "type": "object"
+  },
+  "AgentTargetState": {
+    "properties": {
+      "agent_code": {
+        "title": "Agent Code",
+        "type": "string"
+      },
+      "automatic_target": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Automatic Target"
+      },
+      "manual_target": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Manual Target"
+      },
+      "mode": {
+        "default": "automatic",
+        "enum": [
+          "automatic",
+          "manual"
+        ],
+        "title": "Mode",
+        "type": "string"
+      },
+      "month": {
+        "title": "Month",
+        "type": "string"
+      },
+      "revision": {
+        "default": 0,
+        "title": "Revision",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "month",
+      "agent_code"
+    ],
+    "title": "AgentTargetState",
     "type": "object"
   },
   "AgentsOverviewResponse": {
@@ -2757,20 +2920,81 @@ export const RETAIL_COMPONENT_SCHEMAS = {
   "CalendarChanges": {
     "additionalProperties": false,
     "properties": {
+      "closures": {
+        "items": {
+          "$ref": "#/components/schemas/CalendarClosureInput"
+        },
+        "maxItems": 31,
+        "title": "Closures",
+        "type": "array"
+      },
       "days": {
         "items": {
           "$ref": "#/components/schemas/CalendarDayInput"
         },
         "maxItems": 93,
-        "minItems": 1,
         "title": "Days",
         "type": "array"
       }
     },
-    "required": [
-      "days"
-    ],
     "title": "CalendarChanges",
+    "type": "object"
+  },
+  "CalendarClosure": {
+    "properties": {
+      "revision": {
+        "title": "Revision",
+        "type": "integer"
+      },
+      "site_code": {
+        "title": "Site Code",
+        "type": "string"
+      },
+      "work_date": {
+        "format": "date",
+        "title": "Work Date",
+        "type": "string"
+      }
+    },
+    "required": [
+      "work_date",
+      "site_code",
+      "revision"
+    ],
+    "title": "CalendarClosure",
+    "type": "object"
+  },
+  "CalendarClosureInput": {
+    "additionalProperties": false,
+    "properties": {
+      "closed": {
+        "default": true,
+        "title": "Closed",
+        "type": "boolean"
+      },
+      "expected_revision": {
+        "minimum": 0.0,
+        "title": "Expected Revision",
+        "type": "integer"
+      },
+      "site_code": {
+        "maxLength": 80,
+        "minLength": 1,
+        "title": "Site Code",
+        "type": "string"
+      },
+      "work_date": {
+        "format": "date",
+        "title": "Work Date",
+        "type": "string"
+      }
+    },
+    "required": [
+      "work_date",
+      "site_code",
+      "expected_revision"
+    ],
+    "title": "CalendarClosureInput",
     "type": "object"
   },
   "CalendarDay": {
@@ -2893,6 +3117,13 @@ export const RETAIL_COMPONENT_SCHEMAS = {
           "$ref": "#/components/schemas/AttendanceDay"
         },
         "title": "Attendance Days",
+        "type": "array"
+      },
+      "closures": {
+        "items": {
+          "$ref": "#/components/schemas/CalendarClosure"
+        },
+        "title": "Closures",
         "type": "array"
       },
       "days": {
@@ -4927,6 +5158,35 @@ export const RETAIL_COMPONENT_SCHEMAS = {
       "agents"
     ],
     "title": "EarningsMonth",
+    "type": "object"
+  },
+  "EpayInput": {
+    "additionalProperties": false,
+    "properties": {
+      "epay_over_50": {
+        "default": 0,
+        "maximum": 15.0,
+        "minimum": 0.0,
+        "title": "Epay Over 50",
+        "type": "integer"
+      },
+      "epay_under_50": {
+        "default": 0,
+        "maximum": 15.0,
+        "minimum": 0.0,
+        "title": "Epay Under 50",
+        "type": "integer"
+      },
+      "expected_revision": {
+        "minimum": 0.0,
+        "title": "Expected Revision",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "expected_revision"
+    ],
+    "title": "EpayInput",
     "type": "object"
   },
   "ErpReconciliationAppMetric": {
@@ -11264,6 +11524,11 @@ export const RETAIL_COMPONENT_SCHEMAS = {
   "RegionalStats": {
     "additionalProperties": false,
     "properties": {
+      "focus_quantity": {
+        "default": 0,
+        "title": "Focus Quantity",
+        "type": "integer"
+      },
       "forecast_target_pct": {
         "anyOf": [
           {
@@ -11457,6 +11722,13 @@ export const RETAIL_COMPONENT_SCHEMAS = {
       "revision": {
         "title": "Revision",
         "type": "integer"
+      },
+      "transfers": {
+        "items": {
+          "$ref": "#/components/schemas/TransferEntry"
+        },
+        "title": "Transfers",
+        "type": "array"
       }
     },
     "required": [
@@ -12312,6 +12584,18 @@ export const RETAIL_COMPONENT_SCHEMAS = {
           }
         ],
         "title": "Forecast Total"
+      },
+      "potential_100": {
+        "anyOf": [
+          {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Potential 100"
       },
       "potential_120": {
         "anyOf": [
@@ -13490,6 +13774,11 @@ export const RETAIL_COMPONENT_SCHEMAS = {
         "title": "Firma",
         "type": "string"
       },
+      "focus_quantity": {
+        "default": 0,
+        "title": "Focus Quantity",
+        "type": "integer"
+      },
       "forecast_target_pct": {
         "anyOf": [
           {
@@ -13687,6 +13976,51 @@ export const RETAIL_COMPONENT_SCHEMAS = {
       "inserted"
     ],
     "title": "StoreTargetsSaveResponse",
+    "type": "object"
+  },
+  "StoreTeamInput": {
+    "additionalProperties": false,
+    "properties": {
+      "agent_codes": {
+        "items": {
+          "maxLength": 80,
+          "minLength": 1,
+          "type": "string"
+        },
+        "maxItems": 2,
+        "minItems": 2,
+        "title": "Agent Codes",
+        "type": "array"
+      },
+      "effective_from": {
+        "format": "date",
+        "title": "Effective From",
+        "type": "string"
+      },
+      "expected_revision": {
+        "pattern": "^[a-f0-9]{64}$",
+        "title": "Expected Revision",
+        "type": "string"
+      },
+      "location_code_active_from": {
+        "anyOf": [
+          {
+            "format": "date",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Location Code Active From"
+      }
+    },
+    "required": [
+      "agent_codes",
+      "effective_from",
+      "expected_revision"
+    ],
+    "title": "StoreTeamInput",
     "type": "object"
   },
   "TargetApiErrorResponse": {
@@ -16495,6 +16829,82 @@ export const RETAIL_COMPONENT_SCHEMAS = {
     "title": "TeamLeaderGroup",
     "type": "object"
   },
+  "TransferEntry": {
+    "properties": {
+      "effective_from": {
+        "format": "date",
+        "title": "Effective From",
+        "type": "string"
+      },
+      "home_site_code": {
+        "title": "Home Site Code",
+        "type": "string"
+      },
+      "location_code_active_from": {
+        "anyOf": [
+          {
+            "format": "date",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Location Code Active From"
+      },
+      "roster_revision": {
+        "title": "Roster Revision",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "effective_from",
+      "home_site_code",
+      "roster_revision"
+    ],
+    "title": "TransferEntry",
+    "type": "object"
+  },
+  "TransferInput": {
+    "additionalProperties": false,
+    "properties": {
+      "effective_from": {
+        "format": "date",
+        "title": "Effective From",
+        "type": "string"
+      },
+      "expected_revision": {
+        "minimum": 1.0,
+        "title": "Expected Revision",
+        "type": "integer"
+      },
+      "home_site_code": {
+        "maxLength": 80,
+        "minLength": 1,
+        "title": "Home Site Code",
+        "type": "string"
+      },
+      "location_code_active_from": {
+        "anyOf": [
+          {
+            "format": "date",
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Location Code Active From"
+      }
+    },
+    "required": [
+      "home_site_code",
+      "effective_from",
+      "expected_revision"
+    ],
+    "title": "TransferInput",
+    "type": "object"
+  },
   "UnassignedSales": {
     "properties": {
       "sale_date": {
@@ -17696,6 +18106,9 @@ export const RETAIL_RESPONSE_SCHEMAS = {
   "salary_archive_summary_salarii_archive_summary_get": {
     "$ref": "#/components/schemas/SalaryArchiveSummary"
   },
+  "save_agent_target_api_grile_calendar__month__target__agent_code__put": {
+    "$ref": "#/components/schemas/AgentTargetEntry"
+  },
   "save_compensation_api_grile_calendar__month__compensation__agent_code__put": {
     "$ref": "#/components/schemas/CompensationEntry"
   },
@@ -17706,14 +18119,23 @@ export const RETAIL_RESPONSE_SCHEMAS = {
     "title": "Response Save Days Api Grile Calendar  Month  Days Patch",
     "type": "array"
   },
+  "save_epay_api_grile_calendar__month__epay__agent_code__put": {
+    "$ref": "#/components/schemas/CompensationEntry"
+  },
   "save_roster_api_grile_calendar__month__roster__agent_code__put": {
     "$ref": "#/components/schemas/RosterEntry"
   },
   "save_store_hours_api_grile_calendar__month__store_hours__site_code__put": {
     "$ref": "#/components/schemas/StoreHours"
   },
+  "save_store_team_api_grile_calendar__month__store_team__site_code__put": {
+    "$ref": "#/components/schemas/CalendarMonth"
+  },
   "save_targets_api_stores_targets_post": {
     "$ref": "#/components/schemas/StoreTargetsSaveResponse"
+  },
+  "save_transfer_api_grile_calendar__month__transfers__agent_code__put": {
+    "$ref": "#/components/schemas/CalendarMonth"
   },
   "session_login_auth_session_login_get": {},
   "session_logout_auth_session_logout_post": {

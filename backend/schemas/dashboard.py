@@ -132,6 +132,7 @@ class StoreStats(StrictApiModel):
     asm: str
     total_vanzari: Decimal
     qty_total: int | None
+    focus_quantity: int = 0
     nr_bonuri: int
     nr_agenti: int
     zile_active: int
@@ -153,6 +154,7 @@ class RegionalStats(StrictApiModel):
     regional: str
     total_vanzari: Decimal
     qty_total: int
+    focus_quantity: int = 0
     nr_bonuri: int
     nr_agenti: int
     zile_active: int

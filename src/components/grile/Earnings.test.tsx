@@ -45,7 +45,7 @@ it('shows missing input instead of zero earnings', async () => {
   api.readEarnings.mockResolvedValue({ ...data, agents: [{ ...data.agents[0], home_sales: null, home_commission: null, known_earnings: null, issues: ['missing_sales'] }] });
   mount();
   expect(await screen.findByRole('alert')).toHaveTextContent('nu sunt considerate zero');
-  expect(screen.getAllByText('De completat').length).toBeGreaterThan(3);
+  expect(screen.getAllByText('Indisponibil').length).toBeGreaterThan(3);
 });
 it('retries a failed read without writing business data', async () => {
   api.readEarnings.mockRejectedValueOnce(new Error('offline'));

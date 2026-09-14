@@ -8,6 +8,7 @@ from uuid import uuid4
 from request_context import bind_request_id, reset_request_id
 
 
+GRILE_AGENT_TARGET_SYNC_TIMEOUT_SECONDS = 5 * 60
 logger = logging.getLogger(__name__)
 
 
@@ -43,7 +44,10 @@ async def grile_check_background(
             )
             agent_targets: dict | None = None
             try:
-                result = await sync_agent_targets_from_grile(pool, month=month)
+                result = await asyncio.wait_for(
+                    sync_agent_targets_from_grile(pool, month=month),
+                    timeout=GRILE_AGENT_TARGET_SYNC_TIMEOUT_SECONDS,
+                )
                 agent_targets = result.as_dict()
             except Exception:  # noqa: BLE001 - diff-ul agentilor nu invalideaza verificarea grilelor
                 agent_targets = {"status": "failed", "error": "Grile target diff failed"}

@@ -55,17 +55,74 @@ class CalendarDayInput(BaseModel):
 
 class CalendarChanges(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    days: list[CalendarDayInput] = Field(min_length=1, max_length=93)
+    days: list[CalendarDayInput] = Field(default_factory=list, max_length=93)
+    closures: list["CalendarClosureInput"] = Field(default_factory=list, max_length=31)
 
     @model_validator(mode="after")
     def validate_distinct_days(self) -> CalendarChanges:
-        keys = {(day.work_date, day.agent_code) for day in self.days}
+        if not self.days and not self.closures:
+            raise ValueError("At least one day or closure is required")
+        keys = {(day.work_date, day.agent_code, day.site_code) for day in self.days}
         if len(keys) != len(self.days):
-            raise ValueError("An agent/date may occur only once in a change")
+            raise ValueError("An agent/date/store may occur only once in a change")
         return self
 
 
+class CalendarClosureInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    work_date: date
+    site_code: Code
+    closed: bool = True
+    expected_revision: int = Field(ge=0)
+
+
+class CalendarClosure(BaseModel):
+    work_date: date
+    site_code: str
+    revision: int
+
+
+class TransferInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    home_site_code: Code
+    effective_from: date
+    location_code_active_from: date | None = None
+    expected_revision: int = Field(ge=1)
+
+    @model_validator(mode="after")
+    def validate_activation(self):
+        if self.home_site_code == "TL":
+            raise ValueError("Use Team Leader membership for the virtual base")
+        if self.location_code_active_from and self.location_code_active_from < self.effective_from:
+            raise ValueError("Location activation cannot precede this transfer")
+        return self
+
+
+class StoreTeamInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    agent_codes: list[Code] = Field(min_length=2, max_length=2)
+    effective_from: date
+    location_code_active_from: date | None = None
+    expected_revision: str = Field(pattern="^[a-f0-9]{64}$")
+
+    @model_validator(mode="after")
+    def validate_pair(self):
+        if len(set(self.agent_codes)) != 2:
+            raise ValueError("Choose two different agents")
+        if self.location_code_active_from and self.location_code_active_from < self.effective_from:
+            raise ValueError("Location activation cannot precede the allocation")
+        return self
+
+
+class TransferEntry(BaseModel):
+    effective_from: date
+    home_site_code: str
+    location_code_active_from: date | None = None
+    roster_revision: int
+
+
 class RosterEntry(BaseModel):
+    transfers: list[TransferEntry] = Field(default_factory=list)
     display_name: str | None = None
     identity_status: Literal["confirmed", "unavailable", "conflicting"] = "unavailable"
     month: str
@@ -86,6 +143,7 @@ class CalendarDay(BaseModel):
 
 
 class AgentCandidate(BaseModel):
+    display_name: str | None = None
     agent_code: str
     source_month: str
     site_codes: list[str]
@@ -151,6 +209,7 @@ class CalendarMonth(BaseModel):
     month: str
     roster: list[RosterEntry]
     days: list[CalendarDay]
+    closures: list[CalendarClosure] = Field(default_factory=list)
     attendance: list[CalendarAttendance]
     store_hours: list[StoreHours] = Field(default_factory=list)
     attendance_by_store: dict[str, list[CalendarAttendance]] = Field(default_factory=dict)
