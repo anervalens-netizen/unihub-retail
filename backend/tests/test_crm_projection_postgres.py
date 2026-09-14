@@ -56,7 +56,6 @@ from __future__ import annotations
 
 import asyncio
 import os
-import zlib
 from decimal import Decimal
 from typing import Any
 from unittest.mock import AsyncMock, patch
@@ -67,6 +66,7 @@ import pytest
 from db.connection import get_pool
 from repositories.crm import CrmRepository
 from services.crm import CrmService, CrmSourceDataUnavailable, _query_visits_by_store_postgres
+from services.sales_generation import acquire_month_fence, month_fence_key
 
 
 # --- synthetic fixtures ----------------------------------------------------
@@ -95,16 +95,6 @@ pytestmark = pytest.mark.skipif(
     reason="requires isolated PostgreSQL through the immutable manifest",
 )
 
-
-# Lock constants mirrored exactly from services.crm so tests that
-# exercise the repository primitive directly can acquire the same
-# per-month advisory lock without importing the service's private
-# internals.
-_CRM_LOCK_NAMESPACE = 7377
-
-
-def _month_lock_key(month: str) -> int:
-    return zlib.crc32(month.encode("utf-8")) & 0x7FFFFFFF
 
 
 # --- helpers ---------------------------------------------------------------
@@ -251,10 +241,7 @@ async def _replace_month_scores(
     """
     async with pool.acquire() as conn:
         async with conn.transaction():
-            await conn.execute(
-                "SELECT pg_advisory_xact_lock($1, $2)",
-                _CRM_LOCK_NAMESPACE, _month_lock_key(month),
-            )
+            await acquire_month_fence(conn, month)
             await CrmRepository(pool).replace_month_scores(
                 month, scores, connection=conn,
             )
@@ -714,10 +701,7 @@ async def test_concurrent_different_month_replacements_do_not_block_each_other(
     async def writer_m1(stop: asyncio.Event) -> None:
         async with l47_pool.acquire() as conn:
             async with conn.transaction():
-                await conn.execute(
-                    "SELECT pg_advisory_xact_lock($1, $2)",
-                    _CRM_LOCK_NAMESPACE, _month_lock_key(MONTH_M1),
-                )
+                await acquire_month_fence(conn, MONTH_M1)
                 stop.set()
                 await asyncio.sleep(0.2)  # hold the M1 lock briefly
                 await CrmRepository(l47_pool).replace_month_scores(
@@ -727,10 +711,7 @@ async def test_concurrent_different_month_replacements_do_not_block_each_other(
     async def writer_m3(stop: asyncio.Event) -> None:
         async with l47_pool.acquire() as conn:
             async with conn.transaction():
-                await conn.execute(
-                    "SELECT pg_advisory_xact_lock($1, $2)",
-                    _CRM_LOCK_NAMESPACE, _month_lock_key(MONTH_M3),
-                )
+                await acquire_month_fence(conn, MONTH_M3)
                 stop.set()
                 await asyncio.sleep(0.2)  # hold the M3 lock briefly
                 await CrmRepository(l47_pool).replace_month_scores(
@@ -1362,7 +1343,7 @@ async def test_different_months_use_distinct_lock_keys(l47_pool) -> None:
         await _seed_agent_month(connection, SITE_B, MONTH_M3, Decimal("700"))
 
     # Different months => different lock keys. Verify the keys differ.
-    assert _month_lock_key(MONTH_M1) != _month_lock_key(MONTH_M3), (
+    assert month_fence_key(MONTH_M1) != month_fence_key(MONTH_M3), (
         "Test invariant: different months must hash to different lock keys."
     )
 

@@ -1,21 +1,13 @@
 from __future__ import annotations
 
 import json
-import zlib
 from typing import Any
 
 import asyncpg
 
 from repositories.crm import CrmRepository
 from services.forecast import get_forecast_factor
-
-
-# Fixed CRM namespace id used as the first advisory-lock key.
-# Together with a stable per-month hash of the calendar month this
-# guarantees: same-month recalculations serialize against one another,
-# different-month recalculations do not block each other, and no other
-# subsystem falls into the same key pair.
-_CRM_LOCK_NAMESPACE = 7377
+from services.sales_generation import acquire_month_fence
 
 
 class CrmSourceDataUnavailable(Exception):
@@ -173,22 +165,13 @@ class CrmService:
             whole transaction back, releases the lock, and leaves the
             prior projection intact.
         """
-        # zlib.crc32 is portable and deterministic across processes; we
-        # mask to a positive 31-bit integer so the lock call fits the
-        # PostgreSQL int4 argument range.
-        month_lock_key = zlib.crc32(month.encode("utf-8")) & 0x7FFFFFFF
         async with self.pool.acquire() as conn:
             async with conn.transaction():
-                # Serialize same-month recalculations only. The lock is
-                # transaction-scoped: it is released on COMMIT/ROLLBACK.
-                # Acquiring it BEFORE any calculation read prevents the
-                # stale-late-writer race: a same-month second request
-                # cannot begin its own calculation until this entire
-                # calculate-then-replace cycle completes.
-                await conn.execute(
-                    "SELECT pg_advisory_xact_lock($1, $2)",
-                    _CRM_LOCK_NAMESPACE, month_lock_key,
-                )
+                # The shared transaction-scoped fence is acquired BEFORE any
+                # authoritative CRM source read. Sales promotion uses the
+                # same month identity and protocol, so a same-month promotion
+                # cannot advance/rebuild between CRM reads.
+                await acquire_month_fence(conn, month)
                 scores = await self.calculate_scores_for_month(
                     month, connection=conn,
                 )
