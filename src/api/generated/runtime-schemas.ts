@@ -3167,6 +3167,21 @@ export const RETAIL_COMPONENT_SCHEMAS = {
     "title": "CrmAlertResponse",
     "type": "object"
   },
+  "CrmApiErrorResponse": {
+    "additionalProperties": false,
+    "description": "Bounded body for CRM endpoint error responses.\n\nUsed to document the typed 409 returned by\n``POST /api/crm/scores/recalculate`` when no source data is\navailable for the requested month. The previous projection is\npreserved unchanged.",
+    "properties": {
+      "detail": {
+        "title": "Detail",
+        "type": "string"
+      }
+    },
+    "required": [
+      "detail"
+    ],
+    "title": "CrmApiErrorResponse",
+    "type": "object"
+  },
   "CrmBreakdownResponse": {
     "additionalProperties": false,
     "properties": {

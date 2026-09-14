@@ -1,5 +1,5 @@
 /* GENERATED FILE. Run npm run contracts:generate; do not edit manually. */
-export const RETAIL_OPENAPI_SHA256 = '4b4493290ae6d52f1ad8989643d83bab82e984df2bf1960d6fecc0f9cd3cebc2' as const; // pragma: allowlist secret
+export const RETAIL_OPENAPI_SHA256 = 'a0cf26b5c59fc793617c162d18ec13101c44f9f05c08eb208f71301dfb5a08ed' as const; // pragma: allowlist secret
 
 export type RetailDecimal = string & { readonly __retailDecimal: unique symbol };
 
@@ -529,6 +529,10 @@ export interface RetailCrmAlertResponse {
   "regional"?: string | null;
   "score": number;
   "site_code": string;
+}
+
+export interface RetailCrmApiErrorResponse {
+  "detail": string;
 }
 
 export interface RetailCrmBreakdownResponse {
@@ -2746,6 +2750,7 @@ export interface RetailOperationResponses {
 
   'recalculate_scores_api_crm_scores_recalculate_post': {
     '200': RetailCrmRecalculateResponse;
+    '409': RetailCrmApiErrorResponse;
     '422': RetailHTTPValidationError;
   }
 
@@ -3359,7 +3364,7 @@ export interface RetailOperationErrors {
   'get_active_contests_api_contests_active_all_get': { '422': RetailHTTPValidationError };
   'get_alerts_api_crm_alerts_get': { '422': RetailHTTPValidationError };
   'get_scores_api_crm_scores_get': { '422': RetailHTTPValidationError };
-  'recalculate_scores_api_crm_scores_recalculate_post': { '422': RetailHTTPValidationError };
+  'recalculate_scores_api_crm_scores_recalculate_post': { '409': RetailCrmApiErrorResponse; '422': RetailHTTPValidationError };
   'get_dashboard_all_api_dashboard_all_get': { '422': RetailHTTPValidationError };
   'get_dashboard_all_batch_api_dashboard_all_batch_post': { '422': RetailHTTPValidationError };
   'get_daily_sales_api_dashboard_daily_get': { '422': RetailHTTPValidationError };
@@ -3508,6 +3513,7 @@ export const RETAIL_OPERATION_ERROR_STATUSES: { readonly [Id in RetailOperationI
     '422',
   ]),
   'recalculate_scores_api_crm_scores_recalculate_post': new Set<string>([
+    '409',
     '422',
   ]),
   'get_dashboard_all_api_dashboard_all_get': new Set<string>([

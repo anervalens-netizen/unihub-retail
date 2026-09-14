@@ -9,17 +9,46 @@ import json
 import re
 from typing import Any, Mapping
 import unicodedata
+import zlib
 
 import asyncpg
 import pandas as pd
 
 
 MONEY_QUANTUM = Decimal("0.01")
+MONTH_FENCE_NAMESPACE = 7377
+_MONTH_FENCE_MONTH_PATTERN = re.compile(r"^\d{4}-(0[1-9]|1[0-2])$")
 SOURCE_SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 DEFAULT_ROW_REGRESSION_PCT = Decimal("5")
 DEFAULT_RECEIPT_REGRESSION_PCT = Decimal("5")
 DEFAULT_VALUE_REGRESSION_PCT = Decimal("10")
 DEFAULT_QUANTITY_REGRESSION_PCT = Decimal("10")
+
+
+def month_fence_key(month: str) -> int:
+    """Return the stable per-month advisory-lock key after validation."""
+    if not isinstance(month, str) or _MONTH_FENCE_MONTH_PATTERN.fullmatch(month) is None:
+        raise ValueError(f"Invalid business month: {month!r}")
+    try:
+        date.fromisoformat(f"{month}-01")
+    except ValueError as exc:
+        raise ValueError(f"Invalid business month: {month!r}") from exc
+    return zlib.crc32(month.encode("utf-8")) & 0x7FFFFFFF
+
+
+async def acquire_month_fence(conn: asyncpg.Connection, month: str) -> None:
+    """Acquire the shared transaction-scoped fence for ``month``.
+
+    The caller must already be inside the transaction whose complete
+    read/calculate/publish or promote/rebuild cycle must be fenced. PostgreSQL
+    releases this lock automatically on transaction COMMIT or ROLLBACK,
+    including cancellation-triggered rollback.
+    """
+    await conn.execute(
+        "SELECT pg_advisory_xact_lock($1, $2)",
+        MONTH_FENCE_NAMESPACE,
+        month_fence_key(month),
+    )
 
 
 class SalesAnomalyClassification(str, Enum):

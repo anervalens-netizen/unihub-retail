@@ -16,6 +16,7 @@ from services.reporting_refresh import (
 from services.sales_generation import (
     SalesGenerationConflictError,
     SalesGenerationValidationError,
+    acquire_month_fence,
     copy_staged_generation_to_live,
     manifest_requires_override,
 )
@@ -473,8 +474,14 @@ async def promote_sales_generation(
             raise SalesGenerationValidationError(
                 "Promovarea este blocată de contradicții structurale ale generației"
             )
-        await _verify_stage_controls(conn, snapshot_id=snapshot_id, manifest=manifest)
         import_month = str(row["import_month"])
+        # Resolve and validate the target month before taking the shared
+        # transaction-scoped fence. From this point until commit/rollback,
+        # every same-month authoritative mutation (head, live sales, and
+        # reporting rebuilds) is serialized with CRM's source-read/publish
+        # cycle.
+        await acquire_month_fence(conn, import_month)
+        await _verify_stage_controls(conn, snapshot_id=snapshot_id, manifest=manifest)
         previous_snapshot_id, revision = await _advance_sales_head(
             conn,
             import_month=import_month,
