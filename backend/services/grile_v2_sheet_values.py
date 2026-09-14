@@ -100,62 +100,80 @@ def _agent_values(data: list[dict[str, Any]], layout: dict[str, Any], agents: li
              _cell("Grilă", layout["note_row"], 0, f"Sincronizare pilot · {synced_at}")]
 
 
-def _calendar_values(data: list[dict[str, Any]], layout: dict[str, Any], d: dict[str, Any], store: dict[str, Any], agents: list[dict[str, Any]], site: str, month: str, display_month: str, synced_at: str) -> None:
-    cal = d.get("calendar", {})
-    roster = {x.get("agent_code"): x.get("display_name", x.get("agent_code")) for x in cal.get("roster", [])}
+def _calendar_program(cal: dict[str, Any], site: str) -> str:
     hours = (cal.get("store_hours") or [{}])[0]
     if not hours:
         effective = [x for x in cal.get('attendance_days', []) if x.get('site_code') == site and x.get('status') == 'work']
         hours = effective[0] if effective else {}
-    program = (f"{hours.get('opens')}–{hours.get('closes')} · pauză {hours.get('break_minutes')} min"
-               if hours.get("opens") and hours.get("closes") else "neconfigurat")
-    data += [_cell("Calendar", 1, 0, store.get("locatie", "")),
-             _cell("Calendar", 2, 0, f"{store.get('firma', '')} · {display_month} · {site}"),
-             _cell("Calendar", 3, 0, f"Program magazin {program}")]
+    return (f"{hours.get('opens')}–{hours.get('closes')} · pauză {hours.get('break_minutes')} min"
+            if hours.get("opens") and hours.get("closes") else "neconfigurat")
+
+
+def _calendar_grid_values(data: list[dict[str, Any]], cal: dict[str, Any], roster: dict[str, str], site: str, month: str) -> int:
     first_weekday, days_in_month = date.fromisoformat(month + "-01").weekday(), monthrange(*map(int, month.split("-")))[1]
     data += [_cell("Calendar", 5, i, name) for i, name in enumerate(("Luni", "Marți", "Miercuri", "Joi", "Vineri", "Sâmbătă", "Duminică"))]
-    workers = {(x.get("work_date"), x.get("agent_code")): x for x in cal.get("days", []) if x.get("site_code") == site}
-    closures = {x.get("work_date") for x in cal.get("closures", [])}
     for day in range(1, days_in_month + 1):
         idx, col = first_weekday + day - 1, (first_weekday + day - 1) % 7
         row = 6 + (idx // 7) * 3
         current = _date(month, day)
         names = [_name(roster, x.get("agent_code")) for x in cal.get("days", []) if x.get("work_date") == current and x.get("site_code") == site and x.get("status") == "work"]
-        state = "Închisă" if current in closures else ("\n".join(names) if names else "Fără agent")
+        state = "Închisă" if current in {x.get("work_date") for x in cal.get("closures", [])} else ("\n".join(names) if names else "Fără agent")
         data += [_cell("Calendar", row, col, day), _cell("Calendar", row + 1, col, state)]
-    weeks = (first_weekday + days_in_month + 6) // 7
-    layout["calendar_weeks"] = [{"week": i + 1, "start_row": 6 + i * 3} for i in range(weeks)]
+    return days_in_month, (first_weekday + days_in_month + 6) // 7
+
+
+def _calendar_sections(data: list[dict[str, Any]], cal: dict[str, Any], roster: dict[str, str], site: str, weeks: int) -> dict[str, int]:
     leave_row, supplement_row = 6 + weeks * 3 + 1, 6 + weeks * 3 + 4
-    layout["calendar_sections"] = {"leave_row": leave_row, "supplement_row": supplement_row}
     leave = [f"{_name(roster, x.get('agent_code'))} · {x.get('work_date')}" for x in cal.get("days", []) if x.get("status") == "leave"]
     incoming = [f"{_name(roster, x.get('agent_code'))} · {x.get('work_date')}" for x in cal.get("days", []) if x.get("site_code") == site and x.get("status") == "work" and x.get("supplemental")]
     data += [_cell("Calendar", leave_row, 0, "Concedii · agenții magazinului"), _cell("Calendar", leave_row + 1, 0, "\n".join(leave) if leave else "Nu sunt concedii înregistrate."),
-             _cell("Calendar", supplement_row, 0, "Suplimentari în această locație"), _cell("Calendar", supplement_row + 1, 0, "\n".join(incoming) if incoming else "Nu sunt zile suplimentare programate."),
-             _cell("Calendar", supplement_row + 3, 0, f"Sincronizare pilot · {synced_at}")]
+             _cell("Calendar", supplement_row, 0, "Suplimentari în această locație"), _cell("Calendar", supplement_row + 1, 0, "\n".join(incoming) if incoming else "Nu sunt zile suplimentare programate.")]
+    return {"leave_row": leave_row, "supplement_row": supplement_row}
 
-    data += [_cell("Pontaj", 1, 0, store.get("locatie", "")),
-             _cell("Pontaj", 2, 0, f"{store.get('firma', '')} · {display_month} · {site}"),
+
+def _attendance_row(data: list[dict[str, Any]], by_agent_day: dict[tuple[Any, Any], dict[str, Any]], roster: dict[str, str], code: str, month: str, days_in_month: int, row: int, total: dict[str, Any] | None) -> None:
+    data += [_cell("Pontaj", row, 0, _name(roster, code or "")), _cell("Pontaj", row + 1, 0, f"COD {code} · interval"), _cell("Pontaj", row + 2, 0, "Pauză (ore)")]
+    for day in range(1, days_in_month + 1):
+        item = by_agent_day.get((code, _date(month, day)))
+        if not item:
+            continue
+        status = item.get("status")
+        val = "CO" if status == "leave" else (_num(item.get("worked_minutes", 0)) / 60 if status == "work" else "")
+        data += [_cell("Pontaj", row, day, val), _cell("Pontaj", row + 1, day, f"{item.get('opens')}–{item.get('closes')}" if status == "work" else ""),
+                 _cell("Pontaj", row + 2, day, _num(item.get("break_minutes", 0)) / 60 if status == "work" else "")]
+    data.append(_cell("Pontaj", row, 32, _num(total.get("worked_minutes", 0)) / 60 if total else ""))
+
+
+def _pontaj_values(data: list[dict[str, Any]], cal: dict[str, Any], roster: dict[str, str], agents: list[dict[str, Any]], month: str, days_in_month: int, site: str, program: str) -> None:
+    data += [_cell("Pontaj", 1, 0, cal.get("store_name", "")),
+             _cell("Pontaj", 2, 0, cal.get("store_subtitle", "")),
              _cell("Pontaj", 3, 0, "Pontaj provizoriu · ore la locația efectivă · CO = concediu"),
              _cell("Pontaj", 4, 0, f"Program magazin {program}")]
     attendance = [x for x in cal.get("attendance_days", []) if x.get("site_code") == site]
     data += [_cell("Pontaj", 6, 0, "Nume / Cod agent"), _cell("Pontaj", 6, 32, "Total ore")]
-    data += [_cell("Pontaj", 6, day, day) for day in range(1, days_in_month+1)]
+    data += [_cell("Pontaj", 6, day, day) for day in range(1, days_in_month + 1)]
     by_agent_day = {(x.get("agent_code"), x.get("work_date")): x for x in attendance}
     totals = {x.get("agent_code"): x for x in cal.get("attendance_by_store", [])}
     codes = list(dict.fromkeys([a.get("agent_code") for a in agents] + [x.get("agent_code") for x in attendance]))
     for i, code in enumerate(codes):
-        row = 7 + i * 3
-        data += [_cell("Pontaj", row, 0, _name(roster, code or "")), _cell("Pontaj", row + 1, 0, f"COD {code} · interval"), _cell("Pontaj", row + 2, 0, "Pauză (ore)")]
-        for day in range(1, days_in_month + 1):
-            item = by_agent_day.get((code, _date(month, day)))
-            if not item:
-                continue
-            status = item.get("status")
-            val = "CO" if status == "leave" else (_num(item.get("worked_minutes", 0)) / 60 if status == "work" else "")
-            data += [_cell("Pontaj", row, day, val), _cell("Pontaj", row + 1, day, f"{item.get('opens')}–{item.get('closes')}" if status == "work" else ""),
-                     _cell("Pontaj", row + 2, day, _num(item.get("break_minutes", 0)) / 60 if status == "work" else "")]
-        total = totals.get(code)
-        data.append(_cell("Pontaj", row, 32, _num(total.get("worked_minutes", 0)) / 60 if total else ""))
+        _attendance_row(data, by_agent_day, roster, code, month, days_in_month, 7 + i * 3, totals.get(code))
+
+
+def _calendar_values(data: list[dict[str, Any]], layout: dict[str, Any], d: dict[str, Any], store: dict[str, Any], agents: list[dict[str, Any]], site: str, month: str, display_month: str, synced_at: str) -> None:
+    cal = d.get("calendar", {})
+    roster = {x.get("agent_code"): x.get("display_name", x.get("agent_code")) for x in cal.get("roster", [])}
+    program = _calendar_program(cal, site)
+    data += [_cell("Calendar", 1, 0, store.get("locatie", "")),
+             _cell("Calendar", 2, 0, f"{store.get('firma', '')} · {display_month} · {site}"),
+             _cell("Calendar", 3, 0, f"Program magazin {program}")]
+    days_in_month, weeks = _calendar_grid_values(data, cal, roster, site, month)
+    layout["calendar_weeks"] = [{"week": i + 1, "start_row": 6 + i * 3} for i in range(weeks)]
+    layout["calendar_sections"] = _calendar_sections(data, cal, roster, site, weeks)
+    leave_row = layout["calendar_sections"]["leave_row"]
+    supplement_row = layout["calendar_sections"]["supplement_row"]
+    data.append(_cell("Calendar", supplement_row + 3, 0, f"Sincronizare pilot · {synced_at}"))
+    cal_with_labels = {**cal, "store_name": store.get("locatie", ""), "store_subtitle": f"{store.get('firma', '')} · {display_month} · {site}"}
+    _pontaj_values(data, cal_with_labels, roster, agents, month, days_in_month, site, program)
     layout["synced_at"] = synced_at
     return None
 
