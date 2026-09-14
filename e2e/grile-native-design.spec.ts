@@ -21,7 +21,7 @@ for (const viewport of [{ width: 360, height: 800 }, { width: 390, height: 844 }
     await page.goto('/');
     await page.getByRole('button', { name: 'Agenti', exact: true }).first().click();
     await page.getByRole('tab', { name: 'Grile', exact: true }).click();
-    await page.getByRole('tab', { name: 'Program V2', exact: true }).click();
+    await page.getByRole('tab', { name: 'v2', exact: true }).click();
     await page.getByLabel('Luna programului').fill('2026-09');
     await expect(page.getByRole('heading', { name: 'Programul echipei' })).toBeVisible();
     await page.getByLabel('Manager program').selectOption('Adrian Badea');
@@ -37,10 +37,11 @@ for (const viewport of [{ width: 360, height: 800 }, { width: 390, height: 844 }
     await page.getByLabel('Manager program').selectOption('Adrian Badea');
     await page.getByRole('button', { name: /BÂRLAD CARREFOUR/ }).click();
     await expect(page.getByRole('dialog')).toBeVisible();
+    await page.getByRole('tab', { name: 'Calendar', exact: true }).click();
     await page.getByRole('button', { name: 'Editează 2026-09-01' }).click();
     await expect(page.getByLabel('Agent pentru zi')).toHaveValue('AG1');
     await expect(page.getByRole('button', { name: 'Salvează ziua' })).toBeEnabled();
-    expect(await page.getByRole('dialog').evaluate(el => el.scrollWidth <= el.clientWidth + 1)).toBe(true);
+    expect(await page.locator('dialog[aria-labelledby="calendar-store-title"]').evaluate(el => el.scrollWidth <= el.clientWidth + 1)).toBe(true);
     await page.screenshot({ path: testInfo.outputPath('calendar.png'), fullPage: true });
     expect((await new AxeBuilder({ page }).include('dialog').withTags(['wcag2a', 'wcag2aa']).analyze()).violations).toEqual([]);
     await page.getByRole('button', { name: 'Închide magazinul' }).click();
@@ -52,6 +53,7 @@ for (const viewport of [{ width: 360, height: 800 }, { width: 390, height: 844 }
       await page.screenshot({ path: testInfo.outputPath('dark.png'), fullPage: true });
       expect((await new AxeBuilder({ page }).include('.native-calendar').withTags(['wcag2a', 'wcag2aa']).analyze()).violations).toEqual([]);
       await page.getByRole('button', { name: /BÂRLAD CARREFOUR/ }).click();
+      await page.getByRole('tab', { name: 'Calendar', exact: true }).click();
       await page.getByRole('button', { name: 'Editează 2026-09-01' }).click();
       await page.screenshot({ path: testInfo.outputPath('dark-calendar.png'), fullPage: true });
       expect((await new AxeBuilder({ page }).include('dialog').withTags(['wcag2a', 'wcag2aa']).analyze()).violations).toEqual([]);

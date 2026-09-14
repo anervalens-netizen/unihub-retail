@@ -262,6 +262,19 @@ export async function setupBaseMocks(context: BrowserContext) {
     retailWire('get_history_by_year_api_dashboard_history_year_get', MOCK_DASHBOARD_YEAR_HISTORY),
   );
   await mockApiRoute(context, 'GET', /\/api\/stores$/, []);
+  await mockApiRoute(context, 'GET', /\/api\/grile\/calendar\/\d{4}-\d{2}$/, {
+    month: '2026-05',
+    roster: [],
+    days: [],
+    attendance: [],
+    closures: [],
+    projection_revision: 'a'.repeat(64),
+    store_hours: [],
+    attendance_days: [],
+    attendance_by_store: {},
+  });
+  await mockApiRoute(context, 'GET', /\/api\/grile\/calendar\/.*\/candidates$/, []);
+
   await mockApiRoute(context, 'GET', /\/api\/hr\/asm-performance/, []);
   await mockApiRoute(context, 'GET', /\/api\/hr\/manager-overview/, []);
   await mockApiRoute(context, 'GET', /\/api\/crm\/scores/, []);
