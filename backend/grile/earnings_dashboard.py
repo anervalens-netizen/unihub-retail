@@ -71,7 +71,13 @@ def enrich_store_performance(result, calendar, sources):
     for site in targets.keys() | result.selling_days.keys():
         work = [d for d in calendar.days if d.site_code == site and d.status == 'work']
         elapsed = [d for d in work if result.cutoff and d.work_date <= result.cutoff]
+        elapsed_dates = {d.work_date for d in elapsed}
         sales_rows = [r for r in sources['sales'] if r['site_code'] == site and result.cutoff and r['sale_date'] <= result.cutoff]
         covered = {r['sale_date'] for r in sales_rows}
         sales = sum((r['sales'] for r in sales_rows), D(0)) if result.cutoff and sales_rows and all(d.work_date in covered for d in elapsed) else None
-        result.stores[site] = performance(targets.get(site), sales, len(work), len(elapsed))
+        metrics = performance(targets.get(site), sales, len(work), len(elapsed))
+        if sales is not None and covered != elapsed_dates:
+            metrics.average = None
+            metrics.forecast = None
+            metrics.forecast_progress = None
+        result.stores[site] = metrics

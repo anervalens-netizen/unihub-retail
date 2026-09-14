@@ -1,3 +1,4 @@
+from datetime import date
 from decimal import Decimal as D
 from grile.base_salary import base_salary
 from grile.compensation_models import CompensationInput
@@ -36,6 +37,20 @@ def test_daily_remaining_thresholds_and_forecast_use_scheduled_days():
     assert p.worked_days == 1 and p.scheduled_days == 2
     assert p.average == 800 and p.forecast == 1600
     assert p.daily_80 == 800 and p.daily_100 == 1200 and p.daily_120 == 1600
+
+
+def test_store_forecast_is_unavailable_for_extra_out_of_calendar_sales():
+    data = sources()
+    data['source']['cutoff_date'] = date(2026, 9, 5)
+    baseline = project(data).stores['A']
+
+    data['sales'].append(dict(site_code='A', sale_date=date(2026, 9, 4), sales=D(9999)))
+    actual = project(data).stores['A']
+
+    assert actual.sales == D(12799)
+    assert actual.average is None
+    assert actual.forecast is None
+    assert actual.forecast_progress is None
 
 @pytest.mark.parametrize('payload', [{'sim_quantity':-1},{'epay_under_50':1.5},{'salary_base':'NaN'},{'incentive':'0.001'}])
 def test_invalid_manual_inputs_are_rejected(payload):
