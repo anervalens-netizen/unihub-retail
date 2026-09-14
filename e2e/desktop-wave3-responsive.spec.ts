@@ -120,6 +120,7 @@ const AGENT_PROFILE = { agent: 'Ana Popescu', first_seen_month: '2025-05', last_
   avg_monthly_sales: 1000, best_month: '2026-05', best_month_sales: 12000, current_status: 'active' };
 const AGENT_HISTORY = { history: [{ month: '2026-05', total_sales: 12000, total_quantity: 120, receipt_count: 80, active_store_count: 1, is_active: true }] };
 const GRILE = { month: '2026-05', total_sheets: 0, run: null, summary: { business_ok: 0, business_problems: 0, business_unknown: 0, provider_fresh: 0, provider_errors: 0, provider_stale: 0, provider_unknown: 0, legacy_completion_windows: 0 }, managers: [] };
+const GRILE_CALENDAR = { month: '2026-05', projection_revision: 'calendar-test', roster: [], days: [], attendance: [], closures: [], store_hours: [] };
 const MANAGERS = [{ manager: 'Mihai Condorateanu', regional: 'Regional 1', month: '2026-05', reporting_available: true,
   active_stores: 1, active_agents: 1, previous_active_agents: 1, agent_delta: 0, agents_added: 0, agents_left: 0,
   stores_without_agents: 0, agents_per_store: 1, visits_available: true, total_visits: 1, visited_stores: 1,
@@ -184,6 +185,7 @@ async function installRoutes(context: BrowserContext) {
   await jsonRoute(context, 'GET', /\/api\/agents\/profile(?:\?|$)/, AGENT_PROFILE);
   await jsonRoute(context, 'GET', /\/api\/agents\/history(?:\?|$)/, AGENT_HISTORY);
   await jsonRoute(context, 'GET', /\/api\/grile\/overview(?:\?|$)/, GRILE);
+  await jsonRoute(context, 'GET', /\/api\/grile\/calendar\/[^/?]+$/, GRILE_CALENDAR);
   await jsonRoute(context, 'GET', /\/api\/grile\/run-status(?:\?|$)/, { run: null });
   await jsonRoute(context, 'GET', /\/api\/grile\/monthly\/permissions$/, { can_run: false });
   await jsonRoute(context, 'GET', /\/api\/hr\/manager-overview(?:\?|$)/, MANAGERS);
@@ -283,7 +285,7 @@ for (const viewport of VIEWPORTS) {
       await expect(page.getByRole('button', { name: 'Vânzări' }).first()).toBeVisible({ timeout: 15000 });
 
       await page.getByRole('button', { name: 'Vânzări' }).first().click();
-      const hubIntro = page.getByRole('heading', { name: 'Sales Hub', exact: true, level: 1 });
+      const hubIntro = page.getByRole('heading', { name: 'Vânzări', exact: true, level: 1 });
       if (viewport.width < 1024) {
         await expect(hubIntro).toBeVisible();
       } else {
@@ -336,11 +338,6 @@ for (const viewport of VIEWPORTS) {
         expect((historyStoresBox?.y ?? 0)).toBeGreaterThan(historyRmBox?.y ?? 0);
         expect((historyAgentsBox?.y ?? 0)).toBeGreaterThan(historyStoresBox?.y ?? 0);
       }
-      await page.getByRole('tab', { name: 'Vizite', exact: true }).click();
-      await expect(page.getByRole('tab', { name: 'Vizite', exact: true })).toHaveAttribute('aria-selected', 'true');
-      await expect(page.getByText('Vizite pe Team Leader', { exact: true })).toBeVisible();
-      await assertNoPageOverflow(page);
-
       await page.getByRole('button', { name: 'Agenti' }).first().click();
       const agentsIntro = page.getByRole('heading', { name: 'Agenti', exact: true, level: 1 });
       if (viewport.width < 1024) {
@@ -354,6 +351,7 @@ for (const viewport of VIEWPORTS) {
       await page.locator('div.fixed.inset-0').getByRole('button').click();
       await expect(page.getByText('Profil agent', { exact: true })).toHaveCount(0);
       await page.getByRole('tab', { name: 'Acoperire magazine', exact: true }).click();
+      await page.getByRole('button', { name: /^Active/ }).click();
       await expect(page.getByText('Magazin Unirii', { exact: true }).first()).toBeVisible();
       await page.getByRole('tab', { name: 'Grile', exact: true }).click();
       await expect(page.getByText('Nicio dată. Rulează o verificare pentru luna selectată.', { exact: true })).toBeVisible();
@@ -376,6 +374,12 @@ for (const viewport of VIEWPORTS) {
       await expect(managerButton).toBeVisible();
       await managerButton.click();
       await expect(managerButton).toHaveAttribute('aria-expanded', 'true');
+      await page.getByRole('tab', { name: 'FieldOps', exact: true }).click();
+      await expect(page.getByRole('tab', { name: 'FieldOps', exact: true })).toHaveAttribute('aria-selected', 'true');
+      await expect(page.getByText('Vizite pe Team Leader', { exact: true })).toBeVisible();
+      await assertNoPageOverflow(page);
+      await page.getByRole('tab', { name: 'Manageri', exact: true }).click();
+      await expect(page.getByRole('tab', { name: 'Manageri', exact: true })).toHaveAttribute('aria-selected', 'true');
       await page.getByRole('tab', { name: 'Calculator Target', exact: true }).click();
       await expect(page.getByRole('tab', { name: 'Calculator Target', exact: true })).toHaveAttribute('aria-selected', 'true');
       await page.getByRole('tab', { name: 'Salarii', exact: true }).click();
