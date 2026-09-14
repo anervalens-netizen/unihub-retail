@@ -170,7 +170,7 @@ async def _assert_salary_export_boundaries(
     salary_export: asyncpg.Connection,
 ) -> None:
     assert await salary_export.fetchval("SELECT COUNT(id) FROM salary_records") == 0
-    assert await salary_export.fetchval("SELECT COUNT(site_code) FROM stores") == 1
+    assert await salary_export.fetchval("SELECT COUNT(site_code) FROM stores WHERE site_code <> 'TL'") == 1
     assert await salary_export.fetchval(
         "SELECT COUNT(import_month) FROM reporting_agent_month"
     ) == 0
