@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from calendar import monthrange
 from datetime import date
-from typing import Any
+from typing import Any, cast
 
 
 def _col(n: int) -> str:
@@ -109,7 +109,7 @@ def _calendar_program(cal: dict[str, Any], site: str) -> str:
             if hours.get("opens") and hours.get("closes") else "neconfigurat")
 
 
-def _calendar_grid_values(data: list[dict[str, Any]], cal: dict[str, Any], roster: dict[str, str], site: str, month: str) -> int:
+def _calendar_grid_values(data: list[dict[str, Any]], cal: dict[str, Any], roster: dict[str, str], site: str, month: str) -> tuple[int, int]:
     first_weekday, days_in_month = date.fromisoformat(month + "-01").weekday(), monthrange(*map(int, month.split("-")))[1]
     data += [_cell("Calendar", 5, i, name) for i, name in enumerate(("Luni", "Marți", "Miercuri", "Joi", "Vineri", "Sâmbătă", "Duminică"))]
     for day in range(1, days_in_month + 1):
@@ -155,7 +155,8 @@ def _pontaj_values(data: list[dict[str, Any]], cal: dict[str, Any], roster: dict
     by_agent_day = {(x.get("agent_code"), x.get("work_date")): x for x in attendance}
     totals = {x.get("agent_code"): x for x in cal.get("attendance_by_store", [])}
     codes = list(dict.fromkeys([a.get("agent_code") for a in agents] + [x.get("agent_code") for x in attendance]))
-    for i, code in enumerate(codes):
+    for i, raw_code in enumerate(codes):
+        code = cast(str, raw_code)
         _attendance_row(data, by_agent_day, roster, code, month, days_in_month, 7 + i * 3, totals.get(code))
 
 
@@ -169,7 +170,6 @@ def _calendar_values(data: list[dict[str, Any]], layout: dict[str, Any], d: dict
     days_in_month, weeks = _calendar_grid_values(data, cal, roster, site, month)
     layout["calendar_weeks"] = [{"week": i + 1, "start_row": 6 + i * 3} for i in range(weeks)]
     layout["calendar_sections"] = _calendar_sections(data, cal, roster, site, weeks)
-    leave_row = layout["calendar_sections"]["leave_row"]
     supplement_row = layout["calendar_sections"]["supplement_row"]
     data.append(_cell("Calendar", supplement_row + 3, 0, f"Sincronizare pilot · {synced_at}"))
     cal_with_labels = {**cal, "store_name": store.get("locatie", ""), "store_subtitle": f"{store.get('firma', '')} · {display_month} · {site}"}
