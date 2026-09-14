@@ -280,9 +280,9 @@ for (const viewport of VIEWPORTS) {
 
     test('keeps Hub, Agents and Management operator flows available without page overflow', async ({ page }) => {
       await page.goto('/');
-      await expect(page.getByRole('button', { name: 'Hub' }).first()).toBeVisible({ timeout: 15000 });
+      await expect(page.getByRole('button', { name: 'Vânzări' }).first()).toBeVisible({ timeout: 15000 });
 
-      await page.getByRole('button', { name: 'Hub' }).first().click();
+      await page.getByRole('button', { name: 'Vânzări' }).first().click();
       const hubIntro = page.getByRole('heading', { name: 'Sales Hub', exact: true, level: 1 });
       if (viewport.width < 1024) {
         await expect(hubIntro).toBeVisible();

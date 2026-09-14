@@ -8,7 +8,7 @@ test.describe('E2E: Management & Settings', () => {
 
   test('navigates to Management tab and shows sub-tabs', async ({ page }) => {
     await page.goto('/');
-    await expect(page.getByRole('button', { name: 'Hub' }).first()).toBeVisible({ timeout: 15000 });
+    await expect(page.getByRole('button', { name: 'Vânzări' }).first()).toBeVisible({ timeout: 15000 });
 
     await page.getByRole('button', { name: 'Management' }).first().click();
 
@@ -67,7 +67,7 @@ test.describe('E2E: Management & Settings', () => {
     await mockApiRoute(context, 'GET', /\/salarii\/agents\/summary/, { items: [], total: 0 });
 
     await page.goto('/');
-    await expect(page.getByRole('button', { name: 'Hub' }).first()).toBeVisible({ timeout: 15000 });
+    await expect(page.getByRole('button', { name: 'Vânzări' }).first()).toBeVisible({ timeout: 15000 });
     await page.getByRole('button', { name: 'Management' }).first().click();
     await page.getByRole('tab', { name: 'Salarii' }).click();
 
@@ -115,7 +115,7 @@ test.describe('E2E: Management & Settings', () => {
 
   test('navigates to Setari tab and shows import section', async ({ page }) => {
     await page.goto('/');
-    await expect(page.getByRole('button', { name: 'Hub' }).first()).toBeVisible({ timeout: 15000 });
+    await expect(page.getByRole('button', { name: 'Vânzări' }).first()).toBeVisible({ timeout: 15000 });
 
     await page.getByRole('button', { name: /Setari/i }).first().click();
 

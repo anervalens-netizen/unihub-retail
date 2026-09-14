@@ -12,7 +12,7 @@ test.describe('E2E: Focus / Campaigns', () => {
 
   test('navigates to Focus tab', async ({ page }) => {
     await page.goto('/');
-    await expect(page.getByRole('button', { name: 'Hub' }).first()).toBeVisible({ timeout: 15000 });
+    await expect(page.getByRole('button', { name: 'Vânzări' }).first()).toBeVisible({ timeout: 15000 });
 
     await page.getByRole('button', { name: 'Focus' }).first().click();
 
@@ -21,7 +21,7 @@ test.describe('E2E: Focus / Campaigns', () => {
 
   test('Focus tab renders campaign section', async ({ page }) => {
     await page.goto('/');
-    await expect(page.getByRole('button', { name: 'Hub' }).first()).toBeVisible({ timeout: 15000 });
+    await expect(page.getByRole('button', { name: 'Vânzări' }).first()).toBeVisible({ timeout: 15000 });
 
     await page.getByRole('button', { name: 'Focus' }).first().click();
 
@@ -42,7 +42,7 @@ test.describe('E2E: Focus / Campaigns', () => {
     });
 
     await page.goto('/');
-    await expect(page.getByRole('button', { name: 'Hub' }).first()).toBeVisible({ timeout: 15000 });
+    await expect(page.getByRole('button', { name: 'Vânzări' }).first()).toBeVisible({ timeout: 15000 });
 
     await page.getByRole('button', { name: 'Focus' }).first().click();
     await page.getByRole('tab', { name: 'Promo' }).click();

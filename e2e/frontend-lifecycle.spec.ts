@@ -16,7 +16,7 @@ test.beforeEach(async ({ context }) => setupBaseMocks(context));
 
 async function boot(page: Page) {
   await page.goto('/');
-  await expect(page.getByRole('button', { name: 'Hub' }).first()).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByRole('button', { name: 'Vânzări' }).first()).toBeVisible({ timeout: 15_000 });
 }
 
 async function mockSession(context: BrowserContext, groups: string[]) {

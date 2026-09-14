@@ -9,7 +9,7 @@ test.describe('E2E: Excel Import (Settings)', () => {
 
   test('navigates to Settings and shows import heading', async ({ page }) => {
     await page.goto('/');
-    await expect(page.getByRole('button', { name: 'Hub' }).first()).toBeVisible({ timeout: 15000 });
+    await expect(page.getByRole('button', { name: 'Vânzări' }).first()).toBeVisible({ timeout: 15000 });
 
     await page.getByRole('button', { name: /Setari/i }).first().click();
 
@@ -18,7 +18,7 @@ test.describe('E2E: Excel Import (Settings)', () => {
 
   test('shows import button', async ({ page }) => {
     await page.goto('/');
-    await expect(page.getByRole('button', { name: 'Hub' }).first()).toBeVisible({ timeout: 15000 });
+    await expect(page.getByRole('button', { name: 'Vânzări' }).first()).toBeVisible({ timeout: 15000 });
 
     await page.getByRole('button', { name: /Setari/i }).first().click();
 
@@ -67,7 +67,7 @@ test.describe('E2E: Excel Import (Settings)', () => {
     await mockApiRoute(context, 'GET', /\/api\/import\/history/, history);
 
     await page.goto('/');
-    await expect(page.getByRole('button', { name: 'Hub' }).first()).toBeVisible({ timeout: 15000 });
+    await expect(page.getByRole('button', { name: 'Vânzări' }).first()).toBeVisible({ timeout: 15000 });
 
     await page.getByRole('button', { name: /Setari/i }).first().click();
 
