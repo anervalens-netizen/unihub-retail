@@ -12,7 +12,7 @@ test.describe('E2E: accessibility smoke', () => {
   for (const surface of ['Hub', 'Management'] as const) {
     test(`${surface} has no serious WCAG A/AA violations`, async ({ page }) => {
       await page.goto('/');
-      await expect(page.getByRole('button', { name: 'Hub' }).first()).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Vânzări' }).first()).toBeVisible();
       if (surface === 'Hub') {
         await expect(page.getByText('2026-05-06', { exact: true })).toBeVisible();
       } else {

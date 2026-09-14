@@ -37,7 +37,7 @@ async function asPersona(
 test('real OIDC BFF session reaches the built dashboard', async ({ page, request }) => {
   const response = await page.goto('/auth/session/login');
   expect(response?.ok()).toBeTruthy();
-  await expect(page.getByRole('button', { name: 'Hub' }).first()).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Vânzări' }).first()).toBeVisible();
 
   const session = await request.get('/auth/session');
   expect(session.status()).toBe(401);
