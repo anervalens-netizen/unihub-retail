@@ -122,6 +122,25 @@ class GrileCalendarRepository:
         ):
             raise CalendarConflict("Team Leader requires an active regional scope")
 
+    async def _validate_roster_changes(
+        self, conn: asyncpg.Connection, month: str, agent_code: str,
+        stored_home: str | None, active: bool, old: asyncpg.Record | None,
+        regional: str | None,
+    ) -> None:
+        changed = old and (old["home_site_code"] != stored_home or old["regional"] != regional or not active)
+        if changed and await conn.fetchval(
+            "SELECT EXISTS(SELECT 1 FROM grile_calendar_transfers WHERE month=$1 AND agent_code=$2)",
+            month, agent_code,
+        ):
+            raise CalendarConflict("Agent has dated transfers; use the team transfer editor")
+        membership_changed = old and (not active or old["home_site_code"] != stored_home or old["regional"] != regional)
+        if membership_changed and await conn.fetchval(
+            """SELECT EXISTS(SELECT 1 FROM grile_calendar_days
+               WHERE month=$1 AND agent_code=$2 AND status <> 'cancelled')""",
+            month, agent_code,
+        ):
+            raise CalendarConflict("Cancel scheduled days before changing roster membership")
+
     async def save_roster(
         self, month: str, agent_code: str, home_site_code: str, active: bool,
         expected_revision: int, actor: str,
@@ -138,17 +157,7 @@ class GrileCalendarRepository:
                     if (old["revision"] if old else 0) != expected_revision:
                         raise CalendarConflict("Roster revision changed; reload the calendar")
                     await self._validate_roster_base(conn, home_site_code, regional, active, old)
-                    if old and (old["home_site_code"] != stored_home or old["regional"] != regional or not active):
-                        if await conn.fetchval("SELECT EXISTS(SELECT 1 FROM grile_calendar_transfers WHERE month=$1 AND agent_code=$2)", month, agent_code):
-                            raise CalendarConflict("Agent has dated transfers; use the team transfer editor")
-                    if old and (not active or old["home_site_code"] != stored_home or old["regional"] != regional):
-                        used = await conn.fetchval(
-                            """SELECT EXISTS(SELECT 1 FROM grile_calendar_days
-                               WHERE month=$1 AND agent_code=$2 AND status <> 'cancelled')""",
-                            month, agent_code,
-                        )
-                        if used:
-                            raise CalendarConflict("Cancel scheduled days before changing roster membership")
+                    await self._validate_roster_changes(conn, month, agent_code, stored_home, active, old, regional)
                     row = await conn.fetchrow(
                         """INSERT INTO grile_calendar_roster
                            (month, agent_code, home_site_code, active, revision, updated_by_sub, regional)

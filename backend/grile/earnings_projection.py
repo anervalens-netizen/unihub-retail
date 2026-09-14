@@ -90,23 +90,33 @@ def _apply_transfer_projection(projected, entry, days, daily_targets, cutoff):
     projected.known_earnings = sum(components, Decimal(0)) if all(c is not None for c in components) else None
 
 
-def _apply_target_setting(projected, entry, days, calendar, sources):
+def _target_setting_inputs(projected, entry, days, calendar, sources):
     setting: dict[str, Any] = next((r for r in sources.get("target_settings", []) if r["agent_code"] == entry.agent_code and r["month"] == calendar.month), {})
-    projected.target_setting = AgentTargetState(
+    target_setting = AgentTargetState(
         month=calendar.month, agent_code=entry.agent_code,
         mode=setting.get("mode", "automatic"), manual_target=setting.get("manual_target"),
         revision=setting.get("revision", 0), automatic_target=projected.home_target,
     )
     home_sites = {entry.home_site_code} | {d.site_code for d in days if not d.away}
     resolved = [r for r in sources.get("agent_target_rows", []) if r["agent"] == entry.agent_code and r["import_month"] == calendar.month and r["site_code"] in home_sites]
+    return target_setting, resolved
+
+
+def _refresh_target_earnings(projected):
+    projected.home_commission = monthly_commission(projected.home_sales, projected.home_target) if projected.home_sales is not None and projected.home_target else (Decimal(0) if projected.home_target == 0 and projected.home_sales == 0 else None)
+    components = [projected.home_commission, projected.away_commission, projected.supplemental_pay]
+    projected.known_earnings = sum(components, Decimal(0)) if all(c is not None for c in components) else None
+
+
+def _apply_target_setting(projected, entry, days, calendar, sources):
+    target_setting, resolved = _target_setting_inputs(projected, entry, days, calendar, sources)
+    projected.target_setting = target_setting
     if resolved:
         projected.home_target = sum((r["target_value"] for r in resolved), Decimal(0)) if all(r["target_value"] is not None for r in resolved) else None
-    elif projected.target_setting.mode == "manual":
-        projected.home_target = projected.target_setting.manual_target
-    if resolved or projected.target_setting.mode == "manual":
-        projected.home_commission = monthly_commission(projected.home_sales, projected.home_target) if projected.home_sales is not None and projected.home_target else (Decimal(0) if projected.home_target == 0 and projected.home_sales == 0 else None)
-        components = [projected.home_commission, projected.away_commission, projected.supplemental_pay]
-        projected.known_earnings = sum(components, Decimal(0)) if all(c is not None for c in components) else None
+    elif target_setting.mode == "manual":
+        projected.home_target = target_setting.manual_target
+    if resolved or target_setting.mode == "manual":
+        _refresh_target_earnings(projected)
 
 
 def _project_agent(entry, calendar, work, daily_targets, cutoff, sales, sources):

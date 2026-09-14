@@ -19,6 +19,13 @@ def performance(target, sales, scheduled, elapsed, leave=0, supplemental=0):
         average=average, forecast=forecast, forecast_progress=forecast / target * 100 if forecast is not None and target else None,
         scheduled_days=scheduled, worked_days=elapsed, leave_days=leave, supplemental_days=supplemental, **values)
 
+def _salary_projections(metrics):
+    forecast_commission = monthly_commission(metrics.forecast, metrics.target) if metrics.forecast is not None and metrics.target else None
+    potential_100 = monthly_commission(metrics.target, metrics.target) if metrics.target else None
+    potential_120 = monthly_commission(metrics.target * D('1.2'), metrics.target) if metrics.target else None
+    return forecast_commission, potential_100, potential_120
+
+
 def salary(agent, inputs, metrics):
     sim = D(inputs.sim_quantity) * 3 if inputs.sim_quantity is not None else None
     epay = D(inputs.epay_under_50) * 5 + D(inputs.epay_over_50) * 12 if inputs.epay_under_50 is not None and inputs.epay_over_50 is not None else None
@@ -26,9 +33,7 @@ def salary(agent, inputs, metrics):
     commission = sum(parts, D(0)) if all(p is not None for p in parts) else None
     fixed = [inputs.salary_base, inputs.vouchers, sim, epay, inputs.incentive, inputs.adjustment, agent.away_commission, agent.supplemental_pay]
     rest = sum(fixed, D(0)) if all(p is not None for p in fixed) else None
-    forecast_commission = monthly_commission(metrics.forecast, metrics.target) if metrics.forecast is not None and metrics.target else None
-    potential_100 = monthly_commission(metrics.target, metrics.target) if metrics.target else None
-    potential_120 = monthly_commission(metrics.target * D('1.2'), metrics.target) if metrics.target else None
+    forecast_commission, potential_100, potential_120 = _salary_projections(metrics)
     return SalaryMetrics(sim_pay=sim, epay_pay=epay, commission_total=commission,
         current_total=whole_ron(rest + agent.home_commission) if rest is not None and agent.home_commission is not None else None,
         forecast_total=whole_ron(rest + forecast_commission) if rest is not None and forecast_commission is not None else None,
