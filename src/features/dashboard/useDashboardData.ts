@@ -151,7 +151,7 @@ export function useDashboardData({
   const currentQuery = useQuery({
     queryKey: queryKeys.dashboard.current(currentMonth, currentQueryParams),
     queryFn: ({ signal }) => getDashboardAll(currentQueryParams, signal),
-    enabled: activeSection !== "visits",
+    enabled: true,
     staleTime: DASHBOARD_STALE_MS,
   });
   const historyQuery = useQuery({

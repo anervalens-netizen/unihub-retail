@@ -13,7 +13,7 @@ import type { BreakdownColumn } from "./BreakdownTable";
 import type { HistoryPointView } from "./HistoryDashboard";
 import type * as dashboardPresenters from "./presenters";
 
-export type DashboardSection = "current" | "history" | "visits";
+export type DashboardSection = "current" | "history";
 export type StoreSortKey =
   | "locatie"
   | "site_code"

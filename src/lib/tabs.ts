@@ -1,10 +1,10 @@
 import { BadgeDollarSign, Briefcase, Calculator, LayoutDashboard, Settings, Sparkles, Users } from 'lucide-react';
 
 export type TabId = 'hub' | 'focus' | 'agents' | 'management' | 'settings';
-export type ManagementTab = 'asm' | 'target-calculator' | 'salarii' | 'pnl';
+export type ManagementTab = 'asm' | 'target-calculator' | 'salarii' | 'fieldops' | 'pnl';
 
 export const ALL_TABS = [
-  { id: 'hub', icon: LayoutDashboard, label: 'Hub' },
+  { id: 'hub', icon: LayoutDashboard, label: 'Vânzări' },
   { id: 'focus', icon: Sparkles, label: 'Focus' },
   { id: 'agents', icon: Users, label: 'Agenti' },
   { id: 'management', icon: Briefcase, label: 'Management' },
@@ -15,11 +15,12 @@ export const MGMT_SUBTABS = [
   { id: 'asm' as ManagementTab, label: 'Manageri', icon: Users },
   { id: 'target-calculator' as ManagementTab, label: 'Calculator Target', icon: Calculator },
   { id: 'salarii' as ManagementTab, label: 'Salarii', icon: BadgeDollarSign },
+  { id: 'fieldops' as ManagementTab, label: 'FieldOps', icon: LayoutDashboard },
   { id: 'pnl' as ManagementTab, label: 'P&L', icon: BadgeDollarSign, ownerOnly: true },
 ];
 
 export const TAB_LABELS: Record<TabId, string> = {
-  hub: 'Sales Hub',
+  hub: 'Vânzări',
   focus: 'Focus & Campanii',
   agents: 'Agenți',
   management: 'Management',
@@ -30,5 +31,6 @@ export const MGMT_SUBTAB_LABELS: Record<ManagementTab, string> = {
   asm: 'Manageri',
   'target-calculator': 'Calculator Target',
   salarii: 'Salarii',
+  fieldops: 'FieldOps',
   pnl: 'P&L',
 };

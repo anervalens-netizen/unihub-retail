@@ -1,7 +1,7 @@
 import type { AppFilters } from './appFilters';
 import type { ManagementTab, TabId } from './tabs';
 
-export type InsightHubSection = 'current' | 'history' | 'visits';
+export type InsightHubSection = 'current' | 'history';
 export type InsightCampaignSection = 'incentive' | 'promo' | 'concurs' | 'premium' | 'focus';
 export type InsightAgentsSection = 'overview' | 'grile' | 'analysis';
 
@@ -16,7 +16,7 @@ export interface InsightDeepLink {
 }
 
 const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
-const HUB_SECTIONS = new Set<InsightHubSection>(['current', 'history', 'visits']);
+const HUB_SECTIONS = new Set<InsightHubSection>(['current', 'history']);
 const CAMPAIGN_SECTIONS = new Set<InsightCampaignSection>([
   'incentive',
   'promo',
@@ -25,7 +25,7 @@ const CAMPAIGN_SECTIONS = new Set<InsightCampaignSection>([
   'focus',
 ]);
 const AGENTS_SECTIONS = new Set<InsightAgentsSection>(['overview', 'grile', 'analysis']);
-const MANAGEMENT_SUBTABS = new Set<ManagementTab>(['asm', 'target-calculator', 'salarii', 'pnl']);
+const MANAGEMENT_SUBTABS = new Set<ManagementTab>(['asm', 'target-calculator', 'salarii', 'fieldops', 'pnl']);
 
 function bounded(value: string | null, maximum: number): string | undefined {
   const normalized = value?.trim();
@@ -74,6 +74,7 @@ export function parseInsightDeepLink(location: Pick<Location, 'pathname' | 'sear
   const subtab = bounded(params.get('subtab'), 40);
 
   if (tab === 'hub') {
+    if (section === 'visits') return { tab: 'management', managementSubtab: 'fieldops', filters, ...(period ? { period } : {}) };
     const hubSection = HUB_SECTIONS.has(section as InsightHubSection)
       ? (section as InsightHubSection)
       : 'current';

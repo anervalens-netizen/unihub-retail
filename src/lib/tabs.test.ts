@@ -9,9 +9,11 @@ describe('navigation contract', () => {
       'asm',
       'target-calculator',
       'salarii',
+      'fieldops',
       'pnl',
     ]);
     expect(MGMT_SUBTAB_LABELS.salarii).toBe('Salarii');
+    expect(MGMT_SUBTAB_LABELS.fieldops).toBe('FieldOps');
     expect(ids).not.toContain('grile');
   });
 });

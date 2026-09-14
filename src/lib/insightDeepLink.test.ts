@@ -22,6 +22,7 @@ describe('Insight contextual deep links', () => {
     ['/focus', 'section=promo', { tab: 'focus', campaignSection: 'promo', filters: {} }],
     ['/agenti', 'section=grile', { tab: 'agents', agentsSection: 'grile', filters: {} }],
     ['/management', 'subtab=salarii', { tab: 'management', managementSubtab: 'salarii', filters: {} }],
+    ['/management', 'subtab=fieldops', { tab: 'management', managementSubtab: 'fieldops', filters: {} }],
     ['/management/pnl', '', { tab: 'management', managementSubtab: 'pnl', filters: {} }],
   ] as const)('maps %s to the requested operational surface', (pathname, query, expected) => {
     expect(
@@ -30,6 +31,10 @@ describe('Insight contextual deep links', () => {
         search: `?source_context=insight${query ? `&${query}` : ''}`,
       } as Location),
     ).toEqual(expected);
+  });
+
+  it('redirects legacy Hub visits links to Management FieldOps', () => {
+    expect(parseInsightDeepLink({ pathname: '/hub', search: '?source_context=insight&section=visits&period=2026-08' } as Location)).toEqual({ tab: 'management', managementSubtab: 'fieldops', period: '2026-08', filters: {} });
   });
 
   it('preserves and deduplicates a multi-store scope', () => {
