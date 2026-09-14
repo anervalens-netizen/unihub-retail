@@ -354,7 +354,7 @@ class AgentsService:
             SELECT
                 p.agent,
                 identity.display_name,
-                CASE WHEN roster.agent_code IS NOT NULL THEN COALESCE(roster.home_site_code, 'TL') END AS home_site_code,
+                CASE WHEN roster.agent_code IS NOT NULL THEN COALESCE(effective_home.home_site_code, COALESCE(roster.home_site_code, 'TL')) END AS home_site_code,
                 CASE WHEN roster.agent_code IS NOT NULL THEN COALESCE(home.locatie, 'Team Leaders') END AS home_store_name,
                 ts.store_name,
                 ts.firma,
@@ -375,7 +375,14 @@ class AgentsService:
             LEFT JOIN top_store ts ON ts.agent = sa.agent
             LEFT JOIN grile_calendar_roster roster
               ON roster.agent_code=p.agent AND roster.month=$1 AND roster.active
-            LEFT JOIN stores home ON home.site_code=roster.home_site_code
+            LEFT JOIN LATERAL (
+                SELECT COALESCE(t.home_site_code, 'TL') AS home_site_code
+                FROM grile_calendar_transfers t
+                WHERE t.month=$1 AND t.agent_code=roster.agent_code
+                ORDER BY t.effective_from DESC, t.roster_revision DESC
+                LIMIT 1
+            ) effective_home ON TRUE
+            LEFT JOIN stores home ON home.site_code=COALESCE(effective_home.home_site_code, COALESCE(roster.home_site_code, 'TL'))
             LEFT JOIN LATERAL (
                 SELECT CASE WHEN COUNT(DISTINCT person_id)=1
                                  AND COUNT(DISTINCT NULLIF(btrim(salary_full_name), ''))=1

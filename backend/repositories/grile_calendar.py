@@ -141,6 +141,13 @@ class GrileCalendarRepository:
         ):
             raise CalendarConflict("Cancel scheduled days before changing roster membership")
 
+    @staticmethod
+    async def _lock_store_day(conn: asyncpg.Connection, work_date, site_code: str) -> None:
+        await conn.fetchval(
+            "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
+            f"{site_code}:{work_date.isoformat()}",
+        )
+
     async def save_roster(
         self, month: str, agent_code: str, home_site_code: str, active: bool,
         expected_revision: int, actor: str,
@@ -185,6 +192,7 @@ class GrileCalendarRepository:
     async def _validate_day(
         self, conn: asyncpg.Connection, day: CalendarDayInput, roster: asyncpg.Record,
     ) -> None:
+        await self._lock_store_day(conn, day.work_date, day.site_code)
         old = await conn.fetchrow(
             """SELECT revision, site_code FROM grile_calendar_days
                WHERE agent_code=$1 AND work_date=$2 AND allocation_site=$3 FOR UPDATE""",
@@ -223,7 +231,8 @@ class GrileCalendarRepository:
 
     async def _save_closures_in_transaction(self, conn, closures, actor: str) -> list[dict[str, Any]]:
         result = []
-        for closure in closures:
+        for closure in sorted(closures, key=lambda item: (item.work_date, item.site_code)):
+            await self._lock_store_day(conn, closure.work_date, closure.site_code)
             await self._store(conn, closure.site_code)
             if closure.closed and await conn.fetchval(
                 "SELECT EXISTS(SELECT 1 FROM grile_calendar_days WHERE work_date=$1 AND site_code=$2 AND status='work')",
@@ -258,6 +267,8 @@ class GrileCalendarRepository:
         try:
             async with self.pool.acquire() as conn:
                 async with conn.transaction():
+                    for work_date, site_code in sorted({(day.work_date, day.site_code) for day in ordered}):
+                        await self._lock_store_day(conn, work_date, site_code)
                     # Roster locks also serialize concurrent home/active changes.
                     for day in ordered:
                         roster = await conn.fetchrow(

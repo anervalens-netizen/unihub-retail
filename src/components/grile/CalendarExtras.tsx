@@ -23,8 +23,8 @@ function leaveIntervals(dates: string[]) {
   return ranges;
 }
 export function CalendarExtras({ data, store, stores, writable }: { data: CalendarData; store: CalendarStore; stores: CalendarStore[]; writable: boolean }) {
-  const home = data.roster.filter(r => homeOn(r, rosterDate(data.month)) === store.site_code && r.active);
-  const leaves = data.days.filter(d => d.site_code === store.site_code && d.status === 'leave' && home.some(r => r.agent_code === d.agent_code));
+  const home = data.roster.filter(r => r.active && monthDays(data.month).dates.some(date => homeOn(r, date) === store.site_code));
+  const leaves = data.days.filter(d => d.site_code === store.site_code && d.status === 'leave' && home.some(r => r.agent_code === d.agent_code && homeOn(r, d.work_date) === store.site_code));
   const extras = data.days.filter(d => d.site_code === store.site_code && d.status === 'work' && d.supplemental);
   const cache = useQueryClient(); const [code, setCode] = useState(''); const [from, setFrom] = useState(''); const [until, setUntil] = useState('');
   const save = useMutation({ mutationFn: () => saveCalendarDays(data.month, leaveChanges(data, store.site_code, code, from, until)), onSuccess: async () => { await cache.invalidateQueries({ queryKey: ['native-calendar', data.month] }); setFrom(''); setUntil(''); } });
@@ -49,7 +49,7 @@ export function SupplementEditor({ data, stores, fixedStore, fixedAgent }: { dat
   const elsewhere = conflictingCalendarDay(data, code, date, site);
   const occupant = data.days.find(d => d.site_code === site && d.work_date === date && d.status === 'work' && d.agent_code !== code);
   const save = useMutation({ mutationFn: () => saveCalendarDays(data.month, dayChanges(data, { work_date: date, agent_code: code, site_code: site, status: 'work', supplemental: paid })), onSuccess: async () => { await cache.invalidateQueries({ queryKey: ['native-calendar', data.month] }); await cache.invalidateQueries({ queryKey: ['native-earnings', data.month] }); } });
-  return <details className="mt-4 rounded-xl border border-violet-200 p-3 dark:border-violet-800"><summary className="cursor-pointer text-sm font-semibold">Programează o zi suplimentară</summary><form className="mt-3 space-y-3" onSubmit={e => { e.preventDefault(); if (paid && !elsewhere) save.mutate(); }}><div className="grid gap-3 sm:grid-cols-3">
+  return <details className="mt-4 rounded-xl border border-violet-200 p-3 dark:border-violet-800"><summary className="cursor-pointer text-sm font-semibold">Programează o zi suplimentară</summary><form className="mt-3 space-y-3" onSubmit={e => { e.preventDefault(); if (!elsewhere) save.mutate(); }}><div className="grid gap-3 sm:grid-cols-3">
     {!fixedAgent && <label className="native-label">Agent<select required className="native-field" value={code} onChange={e => setCode(e.target.value)}><option value="">Alege persoana</option>{candidates.map(r => <option key={r.agent_code} value={r.agent_code}>{agentLabel(r)}</option>)}</select></label>}
     {!fixedStore && <label className="native-label">Magazin lucrat<select required className="native-field" value={site} onChange={e => setSite(e.target.value)}><option value="">Alege magazinul</option>{destinations.map(s => <option key={s.site_code} value={s.site_code}>{s.firma} · {s.locatie}</option>)}</select></label>}
     <label className="native-label">Data<input required type="date" className="native-field" min={`${data.month}-01`} max={monthDays(data.month).dates.at(-1)} value={date} onChange={e => setDate(e.target.value)} /></label></div>

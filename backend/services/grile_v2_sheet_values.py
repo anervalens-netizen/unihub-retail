@@ -124,7 +124,7 @@ def _calendar_grid_values(data: list[dict[str, Any]], cal: dict[str, Any], roste
 
 def _calendar_sections(data: list[dict[str, Any]], cal: dict[str, Any], roster: dict[str, str], site: str, weeks: int) -> dict[str, int]:
     leave_row, supplement_row = 6 + weeks * 3 + 1, 6 + weeks * 3 + 4
-    leave = [f"{_name(roster, x.get('agent_code'))} · {x.get('work_date')}" for x in cal.get("days", []) if x.get("status") == "leave"]
+    leave = [f"{_name(roster, x.get('agent_code'))} · {x.get('work_date')}" for x in cal.get("days", []) if x.get("status") == "leave" and x.get("site_code") == site]
     incoming = [f"{_name(roster, x.get('agent_code'))} · {x.get('work_date')}" for x in cal.get("days", []) if x.get("site_code") == site and x.get("status") == "work" and x.get("supplemental")]
     data += [_cell("Calendar", leave_row, 0, "Concedii · agenții magazinului"), _cell("Calendar", leave_row + 1, 0, "\n".join(leave) if leave else "Nu sunt concedii înregistrate."),
              _cell("Calendar", supplement_row, 0, "Suplimentari în această locație"), _cell("Calendar", supplement_row + 1, 0, "\n".join(incoming) if incoming else "Nu sunt zile suplimentare programate.")]

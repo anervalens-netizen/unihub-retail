@@ -10,7 +10,7 @@ export function CalendarDayEditor({ data, store, stores, date, busy, writable, o
   anchor?: HTMLElement | null; onClose?: () => void; busy: boolean; writable: boolean; onSave: (days: RetailCalendarDayInput[]) => void; onCloseDay?: (closure: import('../../api/generated/contracts').RetailCalendarClosureInput, occupant?: { agent_code: string; site_code: string; revision: number }) => void;
 }) {
   const [snapshot] = useState(data);
-  const occupant = snapshot.days.find(d => d.work_date === date && d.site_code === store.site_code && d.status === 'work');
+  const occupant = snapshot.days.find(d => d.work_date === date && d.site_code === store.site_code && (d.status === 'work' || (store.virtualBase && (d.status === 'leave' || d.status === 'off'))));
   const closure = snapshot.closures?.find(c => c.work_date === date && c.site_code === store.site_code);
   const [code, setCode] = useState(occupant?.agent_code ?? '');
   const [status, setStatus] = useState<'leave' | 'off'>(occupant?.status === 'off' ? 'off' : 'leave');
