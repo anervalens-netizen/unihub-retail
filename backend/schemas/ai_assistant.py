@@ -78,6 +78,7 @@ class RuntimeTurnRequest(StrictApiModel):
 
 class RuntimeSteerRequest(StrictApiModel):
     text: str
+    order_key: int = Field(ge=1)
     current_view: dict[str, Any] | None = None
     uploads: list[RuntimeUpload] = Field(default_factory=list)
 
