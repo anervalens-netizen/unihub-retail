@@ -28,6 +28,8 @@ from services.ai_assistant import AiArtifactNotFound, AiAssistantService, AiConv
 
 router = APIRouter(prefix="/api/ai", tags=["ai-assistant"])
 get_ai_service = build_ai_assistant_service
+_STREAM_TIMEOUT = httpx.Timeout(connect=5.0, read=None, write=30.0, pool=5.0)
+_CONTROL_TIMEOUT = httpx.Timeout(15.0)
 
 
 def can_access_ai_assistant(claims: AuthClaims) -> bool:
@@ -70,6 +72,20 @@ def _parse_current_view(raw: str | None) -> dict[str, Any] | None:
 
 def _line(payload: dict[str, Any]) -> bytes:
     return (json.dumps(payload, ensure_ascii=False, separators=(",", ":")) + "\n").encode("utf-8")
+
+
+async def _record_runtime_error(
+    service: AiAssistantService,
+    owner_subject: str,
+    conversation_id: UUID,
+    message: str,
+) -> None:
+    try:
+        await service.record_error_message(owner_subject, conversation_id, message)
+    except Exception:
+        # Transport failure must remain visible to the caller even if durable
+        # error bookkeeping itself fails.
+        return
 
 
 @router.get("/conversations", response_model=AiConversationListResponse)
@@ -120,12 +136,13 @@ async def run_turn(
     claims: AuthClaims = Depends(require_ai_owner),
     service: AiAssistantService = Depends(get_ai_service),
 ) -> StreamingResponse:
+    del request
     resolved_files = files or []
     if not text.strip() and not resolved_files:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "AI turn requires text or a file")
     parsed_current_view = _parse_current_view(current_view)
     try:
-        user_message, uploads, previous_response_id = await service.begin_user_message(
+        user_message, uploads, previous_response_id, _ = await service.begin_user_message(
             claims.sub,
             conversation_id,
             text=text,
@@ -150,7 +167,7 @@ async def run_turn(
     async def stream():
         yield _line({"type": "user_message", "message": user_message.model_dump(mode="json")})
         try:
-            async with httpx.AsyncClient(timeout=None) as client:
+            async with httpx.AsyncClient(timeout=_STREAM_TIMEOUT) as client:
                 async with client.stream(
                     "POST",
                     runtime_url,
@@ -158,7 +175,9 @@ async def run_turn(
                 ) as response:
                     if response.status_code != status.HTTP_200_OK:
                         detail = (await response.aread()).decode("utf-8", errors="replace")[:500]
-                        yield _line({"type": "error", "message": detail or "AI runtime unavailable"})
+                        message = detail or "AI runtime unavailable"
+                        await _record_runtime_error(service, claims.sub, conversation_id, message)
+                        yield _line({"type": "error", "message": message})
                         return
                     async for raw_line in response.aiter_lines():
                         if not raw_line:
@@ -168,6 +187,11 @@ async def run_turn(
                         except json.JSONDecodeError:
                             continue
                         if not isinstance(event, dict):
+                            continue
+                        if event.get("type") == "error":
+                            message = str(event.get("message") or "UniHub AI nu a putut finaliza cererea.")
+                            await _record_runtime_error(service, claims.sub, conversation_id, message)
+                            yield _line({"type": "error", "message": message})
                             continue
                         if event.get("type") != "complete":
                             yield _line(event)
@@ -188,7 +212,9 @@ async def run_turn(
                             }
                         )
         except httpx.HTTPError:
-            yield _line({"type": "error", "message": "UniHub AI runtime nu este disponibil."})
+            message = "UniHub AI runtime nu este disponibil."
+            await _record_runtime_error(service, claims.sub, conversation_id, message)
+            yield _line({"type": "error", "message": message})
 
     return StreamingResponse(
         stream(),
@@ -203,22 +229,25 @@ async def run_turn(
 )
 async def steer(
     conversation_id: UUID,
-    text: str = Form(min_length=1, max_length=50_000),
+    text: str = Form(default="", max_length=50_000),
     current_view: str | None = Form(default=None),
     files: list[UploadFile] | None = File(default=None),
     claims: AuthClaims = Depends(require_ai_owner),
     service: AiAssistantService = Depends(get_ai_service),
 ) -> AiSteerResponse:
+    resolved_files = files or []
+    if not text.strip() and not resolved_files:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "AI steer requires text or a file")
     parsed_current_view = _parse_current_view(current_view)
     try:
         conversation = await service.require_conversation(claims.sub, conversation_id)
         effort = cast(AiReasoningEffort, conversation["effort"])
-        user_message, uploads, _ = await service.begin_user_message(
+        user_message, uploads, _, order_key = await service.begin_user_message(
             claims.sub,
             conversation_id,
             text=text,
             effort=effort,
-            files=files or [],
+            files=resolved_files,
         )
     except AiConversationNotFound as exc:
         raise _not_found() from exc
@@ -226,19 +255,24 @@ async def steer(
         raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, str(exc)) from exc
     payload = RuntimeSteerRequest(
         text=text,
+        order_key=order_key,
         current_view=parsed_current_view,
         uploads=uploads,
     )
     try:
-        async with httpx.AsyncClient(timeout=15.0) as client:
+        async with httpx.AsyncClient(timeout=_CONTROL_TIMEOUT) as client:
             response = await client.post(
                 f"{service.settings.runtime_url}/internal/ai/{conversation_id}/steer",
                 json=payload.model_dump(mode="json"),
             )
             if response.status_code != status.HTTP_200_OK:
-                raise HTTPException(status.HTTP_409_CONFLICT, "Nu există un run AI activ care poate fi ghidat.")
+                message = "Nu există un run AI activ care poate fi ghidat."
+                await _record_runtime_error(service, claims.sub, conversation_id, message)
+                raise HTTPException(status.HTTP_409_CONFLICT, message)
     except httpx.HTTPError as exc:
-        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "UniHub AI runtime nu este disponibil.") from exc
+        message = "UniHub AI runtime nu este disponibil."
+        await _record_runtime_error(service, claims.sub, conversation_id, message)
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, message) from exc
     return AiSteerResponse(accepted=True, message=user_message)
 
 
@@ -256,7 +290,7 @@ async def stop(
     except AiConversationNotFound as exc:
         raise _not_found() from exc
     try:
-        async with httpx.AsyncClient(timeout=15.0) as client:
+        async with httpx.AsyncClient(timeout=_CONTROL_TIMEOUT) as client:
             response = await client.post(
                 f"{service.settings.runtime_url}/internal/ai/{conversation_id}/stop"
             )
