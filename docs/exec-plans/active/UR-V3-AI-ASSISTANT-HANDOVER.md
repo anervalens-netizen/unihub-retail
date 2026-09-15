@@ -6,180 +6,132 @@ tracker: "#403"
 branch: v3/ai-assistant
 ---
 
-# Purpose
+# Resume first
 
-This file is the durable handover for the V3 AI Assistant work while the implementation is active. It exists specifically so a new ChatGPT session can recover the working method, current state, boundaries and next step without relying on chat history.
+This file exists so a fresh ChatGPT session can continue without relying on chat history.
+GitHub current state is authoritative: always re-fetch `main`, `v3/main`, `v3/ai-assistant`, open PRs and #403 before acting.
 
-GitHub current state remains the source of truth. Re-fetch refs before acting if this file and GitHub disagree.
+Read together:
+- #403 — active AI feature tracker;
+- #267 — current V3 master authority;
+- `docs/exec-plans/active/UR-V3-AI-ASSISTANT-20260915.md` — product/architecture plan.
 
 # Working model
 
-ChatGPT is the control plane / principal engineer for this feature.
+ChatGPT is principal engineer/control plane and should author/review code directly through GitHub tooling whenever practical.
+Dell/DSH is only for real local execution gaps: dependency locking, Docker/runtime, actual SDK execution, browser/full-stack tests, performance evidence and exact-candidate certification.
+Codex is not the default V3 development path.
+GitHub Actions/reviews are milestone gates, not iteration loops.
 
-Preferred workflow:
-
-1. ChatGPT inspects GitHub directly and performs design, review, issue/tracker maintenance and code authoring through repository tooling whenever practical.
-2. Do not use Codex as the default development path for this feature.
-3. Dell/DSH is used only when real local execution is needed: dependency resolution/locking, Docker build/runtime, shell-level integration, browser/full-stack execution, local performance/capacity evidence, or exact-candidate certification.
-4. Dell/DSH should not redesign the feature or expand scope unless explicitly instructed. It executes bounded prompts and returns evidence.
-5. After each Dell report, ChatGPT reviews the evidence and GitHub diff independently before deciding the next change.
-6. GitHub Actions and external AI reviews are milestone gates, not iteration loops.
-7. Production `main` remains read-only during AI implementation. Final `main -> V3` compatibility integration is done once, after #403 is complete and V3 is otherwise ready.
-
-# Dell prompt difficulty convention
-
-Every future Dell/DSH prompt must start with an explicit difficulty header so the owner can select the most efficient agent/model.
-
-Use this scale:
-
-- 1–3 / 10 — LOW: mechanical/simple execution; fast inexpensive agent is sufficient.
-- 4–6 / 10 — MEDIUM: normal coding/integration work; standard coding agent.
-- 7–8 / 10 — HIGH: multi-surface execution/debugging; strong coding agent with medium-high reasoning.
-- 9 / 10 — VERY HIGH: difficult architecture/concurrency/debugging; one of the strongest available agents.
-- 10 / 10 — CRITICAL: highest-risk/most ambiguous technical work; strongest available agent and normally an independent review.
-
-Difficulty is about reasoning/integration risk, not prompt length. A long deterministic certification prompt can be easier than a short concurrency/debugging task.
-
-Each Dell prompt should include, near the top:
+Every Dell prompt must start with:
 
 ```text
-DIFFICULTY: N/10 — <LOW|MEDIUM|HIGH|VERY HIGH|CRITICAL>
-TYPE: <execution|integration|debugging|certification|migration|...>
-RECOMMENDED AGENT: <brief recommendation>
-TOP-TIER REQUIRED: YES/NO
-ESCALATE IF: <specific conditions>
+DIFFICULTY: N/10 — LOW|MEDIUM|HIGH|VERY HIGH|CRITICAL
+TYPE: ...
+RECOMMENDED AGENT: ...
+TOP-TIER REQUIRED: YES|NO
+ESCALATE IF: ...
 ```
 
-# Capability-first product policy
+Scale: 1–3 LOW, 4–6 MEDIUM, 7–8 HIGH, 9 VERY HIGH, 10 CRITICAL. Difficulty measures reasoning/integration risk, not prompt length.
 
-The owner explicitly prefers a capability-first implementation.
+# Owner/product policy
 
-- OpenAI Sandbox Agents beta is accepted for this private owner-only feature.
-- Avoid speculative harness restrictions that reduce capability or consume tokens without protecting a real irreversible boundary.
-- Real boundaries are technical: dedicated server-side API key, Retail business DB role is read-only, no write-capable production credentials in the sandbox, sandbox workspace separated from application source/runtime, no autonomous background execution in V1.
-- Inside those boundaries, the agent should have broad shell/filesystem/network/package-install/data-analysis/artifact-generation capability.
-- The agent should do the work when it can, not merely explain how to do it.
-
-# Chosen V1 architecture
-
-- model: `gpt-5.6-luna`;
-- OpenAI Agents SDK SandboxAgent beta path;
+Capability-first, private owner-only AI:
+- `gpt-5.6-luna`;
+- OpenAI Agents SDK `SandboxAgent` beta accepted;
 - `DockerSandboxClient`;
-- reasoning effort selectable in UI: none/low/medium/high/xhigh/max;
+- effort `none|low|medium|high|xhigh|max`;
 - lean custom base instructions;
-- persistent/resumable workspace per conversation where practical;
-- workspace layout: `/workspace/knowledge`, `/workspace/input`, `/workspace/work`, `/workspace/output`;
-- direct PostgreSQL access using a dedicated read-only Retail DSN;
-- capable Docker image with Python/data/Office/PDF/HTML/browser/shell tooling and normal outbound network access;
-- streaming chat with Stop and Steer;
-- file/image upload and generated artifact attachments;
-- desktop right sidebar, tablet drawer, mobile full-screen chat;
-- minimal conversation/message/artifact persistence owned by UniHub.
+- direct PostgreSQL through a dedicated technically read-only DSN;
+- broad sandbox shell/filesystem/network/package-install capability;
+- `/workspace/{knowledge,input,work,output}`;
+- uploads, generated artifacts, streaming, Stop and Steer;
+- persistent conversations/artifacts;
+- desktop sidebar, tablet drawer, mobile full-screen chat.
 
-Do not add multi-agent orchestration, generic workflow engines, approval frameworks, MCP infrastructure, autonomous scheduling or voice to V1 unless a concrete requirement appears.
+Do not add multi-agent orchestration, generic workflow/approval systems, generic MCP infrastructure, background autonomy, scheduler or voice in V1 without a concrete owner request.
 
-# Current GitHub checkpoint (2026-09-15)
+Hard boundaries are technical only: API key server-side, no write-capable Retail DB credential in the sandbox, no production/deploy credentials in the sandbox, no autonomous background run.
 
-Reverify before use.
+# Repository authority
 
-- `v3/main`: `d2980c4704d059e832a1a10b8f44aba60f2ed655`
-- `v3/ai-assistant`: `1490393091a0d8b2fcb189e9322f0216c1f366e5`
-- active tracker: #403
-- parent V3 tracker: #267
-- previous V3 finalization tracker #391: closed/completed
-- stale Dependabot PR #398: closed/not planned
-- open PR count after cleanup: zero at the time of this handover
-- production `main` last observed: `8c0bcd69a61fdf26aec746da2651de4c2aa3f020`; do not rely on this SHA without re-fetching
+At the latest known stable checkpoint before the current direct runtime slice:
+- production `main`: `8c0bcd69a61fdf26aec746da2651de4c2aa3f020` — owner has frozen parallel main work until V3 is complete;
+- `v3/main`: `d2980c4704d059e832a1a10b8f44aba60f2ed655`;
+- sandbox execution foundation: `v3/ai-assistant@41b731acdb7c0a6688ffb3bb27957a43244d7b8d`, tree `5f6ec5d4d4ea498d1eed72708af11ff48fa52fbb`.
 
-The AI branch already contains the directly authored UI shell, tests, design/exec-plan documentation, knowledge bundle, sandbox Dockerfile/tooling definition and pinned direct dependency declaration for the Agents SDK.
+Re-fetch because the current runtime authoring commit may be newer than the SHA above.
 
-# Current external execution task
+No V3 work merges to `main` during implementation. Final flow is: complete #403 -> certify -> merge to `v3/main` -> freeze feature work -> one controlled `main -> V3` compatibility integration -> full final certification -> explicit owner decision for any `V3 -> main` production integration.
 
-Status at this checkpoint: WAITING FOR DELL/DSH REPORT.
+# Completed AI foundation
 
-The active Dell task is named:
+- responsive owner-only UI shell/composer;
+- context toggle and all Luna effort levels;
+- uploads + artifact UI;
+- Send/Steer/Stop controls;
+- knowledge bundle;
+- `openai-agents[docker]==0.22.2` hash-locked;
+- hash-locked sandbox Python environment;
+- pinned Docker base and successful sandbox build;
+- sandbox toolchain + runtime package install + outbound HTTPS proven;
+- XLSX/PPTX/PDF/HTML/PNG and CSV->XLSX artifact smoke proven;
+- installed SDK 0.22.2 directly proved SandboxAgent/DockerSandboxClient, `max_turns=None`, cancel, after_turn, `to_state()` and `RunState.add_input()`;
+- stale AI temporary branch deleted.
 
-`UniHub Retail V3 — AI ASSISTANT FIRST EXECUTION CHECKPOINT`
+# Current direct-authoring slice
 
-Difficulty:
+ChatGPT is wiring the actual vertical runtime on `v3/ai-assistant`:
+- owner-only `/api/ai` FastAPI boundary;
+- conversation/message/artifact persistence;
+- input/output host storage;
+- loopback single-worker `unihub-ai` runtime;
+- live SandboxAgent/DockerSandboxClient construction;
+- read-only DSN injection into sandbox;
+- streaming NDJSON proxy;
+- Stop + Steer run-state handling;
+- current-view and uploaded-file staging;
+- generated artifact discovery/download;
+- frontend hook/API transport replacing the previous no-op shell wiring;
+- migration `086_v3_ai_assistant.sql`;
+- systemd/runtime env definitions.
 
-- DIFFICULTY: 8/10 — HIGH
-- TYPE: execution / integration / certification
-- RECOMMENDED AGENT: strong coding/execution agent with medium-high reasoning
-- TOP-TIER REQUIRED: NO for the first attempt
-- ESCALATE IF: dependency resolution conflicts, Sandbox Agents beta API differs materially from documented expectations, Docker build/runtime fails non-mechanically, or steering/run-state APIs require architectural reinterpretation
+This slice is not certified merely because it exists in Git. The immediate next local checkpoint must compile/test it, update the immutable migration manifest mechanically for 086, run the migration on an isolated database, exercise the runtime with Docker, and run a tiny live Luna end-to-end probe only if the dedicated API key is explicitly configured.
 
-The Dell task must only:
+# Data identity
 
-1. validate the authored frontend AI shell;
-2. generate canonical backend dependency lock including `openai-agents[docker]==0.22.2`;
-3. generate the sandbox Python requirements lock;
-4. resolve/pin the Docker base image digest and build the sandbox image;
-5. prove the sandbox toolchain, writable workspace, package install capability and outbound network;
-6. generate XLSX/PPTX/PDF/HTML/PNG smoke artifacts;
-7. inspect the installed Agents SDK 0.22.2 API exactly, including SandboxAgent, DockerSandboxClient, effort=max, max_turns=None, cancel/after_turn/to_state and RunState steering semantics;
-8. optionally run one tiny live Luna sandbox probe only if an API key is already explicitly configured in the isolated test environment;
-9. safely delete only stale branches proven redundant;
-10. push only mechanical lock/digest/test corrections to `v3/ai-assistant`.
+The sandbox read-only login should be provisioned as a dedicated LOGIN with only read authority (for example membership in the existing `unihub_web_read` surface), not a business-write/migration/operations role. The model may query directly with `psql`/Python/pandas, but the database itself must reject writes.
 
-Dell must NOT implement the FastAPI AI runtime, persistence or migrations in this checkpoint.
+The application's normal web role may write only AI conversation/message/artifact metadata through the new AI tables; that does not grant the sandbox write authority.
 
-# Next step after the Dell report
+# Dell/local execution rule for the next checkpoint
 
-If the execution foundation is green:
+Expected difficulty: 8/10 HIGH; integration/debugging/certification; strong coding agent with medium-high reasoning; top-tier not required initially.
+Escalate only for material SDK-beta incompatibility, Docker lifecycle/snapshot semantics that contradict the proven 0.22.2 API, migration authority conflicts, or a real Stop/Steer concurrency defect.
 
-1. ChatGPT independently verifies the resulting `v3/ai-assistant` head/diff.
-2. ChatGPT authors the runtime layer directly where practical:
-   - owner-only FastAPI AI boundary;
-   - SandboxAgent/DockerSandboxClient construction;
-   - model settings/effort mapping;
-   - streaming transport;
-   - Stop/Steer run-state handling;
-   - upload/input workspace mapping;
-   - output/artifact discovery;
-   - current-view context injection.
-3. Then add the smallest persistence/files layer required for durable conversations and artifacts.
-4. Dell returns only when real local Docker/live API/browser execution is again required.
-5. Once #403 is functionally complete: exact-candidate certification, merge AI work into `v3/main`, then one controlled `main -> V3` compatibility integration, resolve/test once, final candidate certification, and only then discuss production merge/deploy.
+Dell may make only bounded mechanical corrections demonstrated by failing compile/test/runtime evidence. It must not redesign the AI feature or touch `main`, `v3/main`, production services/DB/Valkey, deployment, tags/releases, Codex, or unrelated code.
 
-# Safety / branch boundaries
+# Session recovery
 
-Until explicitly changed:
+1. Re-fetch current refs.
+2. Read this file, #403, #267 and the primary AI plan.
+3. Inspect open PRs/issues; current GitHub wins over stored SHAs.
+4. If a Dell report exists, independently match its claimed head/tree/diff.
+5. Continue from the first unfinished item; do not repeat green evidence on unchanged trees.
+6. Keep #403 and this handover current at material checkpoints.
 
-- write only to `v3/ai-assistant` for this feature;
-- merge target is `v3/main` only;
-- never merge V3 into production `main` during feature development;
-- no production DB/Valkey/service/deploy/tag/release changes;
-- no production secrets in the sandbox;
-- no force-push/rebase/squash unless explicitly authorized;
-- preserve exact-head evidence before calling a candidate clean.
+# #403 stop condition
 
-# Session recovery checklist
-
-A fresh ChatGPT session should do this before continuing:
-
-1. Read this file.
-2. Read #403 and the main exec plan `docs/exec-plans/active/UR-V3-AI-ASSISTANT-20260915.md`.
-3. Re-fetch `main`, `v3/main`, `v3/ai-assistant`, open PRs and open V3-relevant issues.
-4. Compare actual GitHub state to the checkpoint above; GitHub wins on drift.
-5. If a Dell report is supplied, verify its claimed SHA/tree/diff before acting.
-6. Continue from the first unfinished step; do not rebuild already completed slices from memory.
-7. Every new Dell prompt must include the difficulty metadata convention above.
-
-# Stop condition for this feature
-
-#403 is ready to close only when the owner-facing AI assistant works end-to-end on the exact V3 candidate with:
-
+Do not close #403 until exact-candidate evidence proves end-to-end:
 - live Luna SandboxAgent;
 - real Docker workspace;
-- read-only Retail data access;
-- current-page context;
+- technically read-only Retail DB access and failed-write proof;
+- current page context;
 - uploads;
 - streaming;
 - Stop and Steer;
 - durable conversation/artifact behavior;
-- XLSX/PPTX/PDF-or-HTML/image artifact proof;
-- responsive desktop/tablet/mobile UI;
+- downloadable XLSX/PPTX/PDF-or-HTML/image artifacts;
+- responsive desktop/tablet/mobile behavior;
 - no known Critical/High or release-blocking Medium defect.
-
-After that, freeze the AI feature, merge it into `v3/main`, perform the one controlled production-main compatibility sync into V3, and certify the final V3 candidate.
