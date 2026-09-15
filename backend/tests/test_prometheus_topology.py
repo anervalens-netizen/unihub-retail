@@ -110,6 +110,11 @@ def _assert_exact_write_paths(units: dict[str, str]) -> None:
     operations, imports = units["operations"], units["imports"]
     grile, exports = units["grile"], units["exports"]
     salary_exports, migrations = units["salary_exports"], units["migrations"]
+    ai = units["ai"]
+    assert _write_paths(ai) == {
+        "/var/lib/unihub-retail/ai-sandbox-slots/slot-0/workspace",
+        "/var/lib/unihub-retail/ai-sandbox-slots/slot-1/workspace",
+    }
     assert "ReadWritePaths=/opt/Mobiup/unihub-retail/data/import_spool" in web
     assert "ReadWritePaths=" not in operations
     assert "ReadWritePaths=" not in migrations
@@ -168,6 +173,8 @@ def _assert_no_broad_write_paths(units: dict[str, str]) -> None:
         "/opt/Mobiup/unihub-retail/data/export_artifacts",
         "/opt/Mobiup/unihub-retail/data/export_artifacts/salary",
         "/var/lib/unihub-retail/ai-assistant",
+        "/var/lib/unihub-retail/ai-sandbox-slots/slot-0/workspace",
+        "/var/lib/unihub-retail/ai-sandbox-slots/slot-1/workspace",
     }
     for unit in units.values():
         write_paths = _write_paths(unit)
@@ -187,14 +194,31 @@ def _assert_state_directory_provisioning(units: dict[str, str]) -> None:
     application code. StateDirectory= provisions the path first and is the only
     versioned mechanism this repository uses for that namespace.
     """
+    externally_provisioned = {
+        "/var/lib/unihub-retail/ai-sandbox-slots/slot-0/workspace",
+        "/var/lib/unihub-retail/ai-sandbox-slots/slot-1/workspace",
+    }
     for name, unit in units.items():
         unmanaged = {path for path in _write_paths(unit) if path.startswith("/var/lib/")}
+        if name == "ai":
+            assert externally_provisioned <= unmanaged
+            unmanaged -= externally_provisioned
+            lines = unit.splitlines()
+            assert any(
+                line.startswith("Requires=") and "unihub-ai-storage.service" in line.split()
+                for line in lines
+            )
+            assert any(
+                line.startswith("After=") and "unihub-ai-storage.service" in line.split()
+                for line in lines
+            )
         assert unmanaged <= _state_directory_paths(unit), name
     for name in ("web", "ai"):
         assert _state_directory_paths(units[name]) == {"/var/lib/unihub-retail/ai-assistant"}
         assert "StateDirectory=unihub-retail/ai-assistant" in units[name]
         assert "StateDirectoryMode=0770" in units[name]
-        assert _write_paths(units[name]) >= {"/var/lib/unihub-retail/ai-assistant"}
+    assert _write_paths(units["web"]) >= {"/var/lib/unihub-retail/ai-assistant"}
+    assert "/var/lib/unihub-retail/ai-assistant" not in _write_paths(units["ai"])
 
 
 def _assert_ai_state_path_matches_settings(units: dict[str, str]) -> None:
