@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import ipaddress
 import os
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from runtime_config import _is_production
 
@@ -27,6 +29,7 @@ class AiAssistantSettings:
     knowledge_root: Path
     sandbox_image: str
     max_artifact_bytes: int
+    setup_timeout_seconds: int
 
 
 def _positive_int(name: str, default: int) -> int:
@@ -38,6 +41,56 @@ def _positive_int(name: str, default: int) -> int:
     if value < 1024 * 1024:
         raise RuntimeError(f"{name} must be at least 1 MiB")
     return value
+
+
+def _bounded_seconds(name: str, default: int) -> int:
+    raw = os.getenv(name, str(default)).strip()
+    try:
+        value = int(raw)
+    except ValueError as exc:
+        raise RuntimeError(f"{name} must be an integer") from exc
+    if value < 5 or value > 300:
+        raise RuntimeError(f"{name} must be between 5 and 300 seconds")
+    return value
+
+
+def _validated_loopback_runtime_url(raw: str) -> str:
+    try:
+        parsed = urlsplit(raw)
+        port = parsed.port
+    except ValueError as exc:
+        raise RuntimeError(f"{AI_RUNTIME_URL_ENV} is invalid") from exc
+    if parsed.scheme != "http" or parsed.username is not None or parsed.password is not None:
+        raise RuntimeError(f"{AI_RUNTIME_URL_ENV} must be an unauthenticated loopback HTTP URL")
+    if parsed.hostname not in {"127.0.0.1", "localhost", "::1"}:
+        raise RuntimeError(f"{AI_RUNTIME_URL_ENV} must be loopback-only")
+    if port is None or parsed.path not in {"", "/"} or parsed.query or parsed.fragment:
+        raise RuntimeError(f"{AI_RUNTIME_URL_ENV} must contain only loopback host and port")
+    return raw.rstrip("/")
+
+
+def _validate_sandbox_readonly_dsn(raw: str) -> None:
+    try:
+        parsed = urlsplit(raw)
+        host = parsed.hostname
+        _ = parsed.port
+    except ValueError as exc:
+        raise RuntimeError(f"{AI_READONLY_DSN_ENV} must be a valid PostgreSQL DSN") from exc
+    if parsed.scheme not in {"postgresql", "postgres"} or not host:
+        raise RuntimeError(f"{AI_READONLY_DSN_ENV} must be a PostgreSQL DSN")
+    normalized = host.casefold()
+    if normalized == "localhost":
+        raise RuntimeError(
+            f"{AI_READONLY_DSN_ENV} must use a database host reachable from the Docker sandbox, not localhost"
+        )
+    try:
+        address = ipaddress.ip_address(host)
+    except ValueError:
+        return
+    if address.is_loopback or address.is_unspecified:
+        raise RuntimeError(
+            f"{AI_READONLY_DSN_ENV} must use a database host reachable from the Docker sandbox, not loopback"
+        )
 
 
 def load_ai_assistant_settings(*, runtime: bool = False) -> AiAssistantSettings:
@@ -52,19 +105,14 @@ def load_ai_assistant_settings(*, runtime: bool = False) -> AiAssistantSettings:
     snapshot_root = Path(
         os.getenv(AI_SNAPSHOT_ROOT_ENV, str(storage_root / "snapshots"))
     ).expanduser().resolve()
-    runtime_url = os.getenv(
-        AI_RUNTIME_URL_ENV, "http://127.0.0.1:9911"
-    ).strip().rstrip("/")
-    if not runtime_url.startswith(
-        ("http://127.0.0.1:", "http://localhost:", "http://[::1]:")
-    ):
-        raise RuntimeError(f"{AI_RUNTIME_URL_ENV} must be loopback-only")
+    runtime_url = _validated_loopback_runtime_url(
+        os.getenv(AI_RUNTIME_URL_ENV, "http://127.0.0.1:9911").strip()
+    )
     if runtime:
         if not os.getenv(OPENAI_API_KEY_ENV, "").strip():
             raise RuntimeError(f"{OPENAI_API_KEY_ENV} is required by the AI runtime")
         readonly_dsn = os.getenv(AI_READONLY_DSN_ENV, "").strip()
-        if not readonly_dsn.startswith(("postgresql://", "postgres://")):
-            raise RuntimeError(f"{AI_READONLY_DSN_ENV} must be a PostgreSQL DSN")
+        _validate_sandbox_readonly_dsn(readonly_dsn)
     settings = AiAssistantSettings(
         model=AI_MODEL,
         runtime_url=runtime_url,
@@ -77,6 +125,7 @@ def load_ai_assistant_settings(*, runtime: bool = False) -> AiAssistantSettings:
         max_artifact_bytes=_positive_int(
             "AI_ASSISTANT_MAX_ARTIFACT_BYTES", 256 * 1024 * 1024
         ),
+        setup_timeout_seconds=_bounded_seconds("AI_ASSISTANT_SETUP_TIMEOUT_SECONDS", 90),
     )
     settings.storage_root.mkdir(parents=True, exist_ok=True)
     settings.snapshot_root.mkdir(parents=True, exist_ok=True)
