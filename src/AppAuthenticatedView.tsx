@@ -33,6 +33,8 @@ export function AppAuthenticatedView({ controller }: { controller: AppController
     theme={navigation.theme} setTheme={navigation.setTheme}
     showFilterButton={!(navigation.activeTab === 'hub' && navigation.hubSection === 'visits')}
     mgmtSubTab={navigation.mgmtSubTab} {...savedViewProps}
+    aiContext={controller.retailContextState}
+    canAccessAiAssistant={controller.hasPnlAccess}
     userEmail={auth.user?.profile.email ?? undefined}
     onLogout={auth.logout} canAccessManagement={controller.hasManagementAccess}
     logoutError={auth.logoutError}
