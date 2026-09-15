@@ -31,7 +31,7 @@ Stable lines at this checkpoint:
 - `v3/main`: `d2980c4704d059e832a1a10b8f44aba60f2ed655`;
 - AI execution foundation was certified at `41b731acdb7c0a6688ffb3bb27957a43244d7b8d`;
 - `v3/ai-assistant` PR #409 head before review remediation: `9a95ac872d041aa7867fd7907d5935d5a6fc5858`;
-- final pushed candidate after review closure: `86719765b3baa21785e95ca77cb81673c1562d88` (tree `16b65930a1f8fb666661dcb3d03d8a192c0361c8`).
+- final local candidate after review closure: `0e6a7d8c9e6921d1b7b5fd0772b69adfdd21496a` (tree `278db27a5d8c8b30c1aa0a7065a5984bc05c8bd9`); push is the final step.
 
 Re-fetch before use; GitHub wins over these stored SHAs.
 
