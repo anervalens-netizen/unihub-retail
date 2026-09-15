@@ -1,4 +1,4 @@
-name: V3 frontend CI
+name: V3 CI
 
 on:
   pull_request:
@@ -7,27 +7,32 @@ on:
     paths:
       - "src/**"
       - "e2e/**"
+      - "backend/**"
+      - "ops/ai-sandbox/**"
+      - "ops/systemd/unihub-ai.service"
       - "playwright.config.ts"
+      - "playwright.ai-smoke.config.ts"
       - "vendor/npm/**"
       - "package.json"
       - "package-lock.json"
-      - "backend/requirements.txt"
-      - "backend/requirements.lock"
-      - "backend/requirements-dev.txt"
-      - "backend/requirements-dev.lock"
       - "eslint.config.js"
       - "tsconfig*.json"
       - "vite.config.ts"
       - "vitest.config.ts"
+      - "scripts/check_backend_architecture.py"
       - "scripts/check_bundle_budget.mjs"
+      - "scripts/check_changed_function_complexity.py"
       - "scripts/check_changed_line_coverage.py"
+      - "scripts/check_complexity_ratchet.py"
       - "scripts/check_dependency_policy.mjs"
+      - "scripts/check_env_contract.py"
       - "scripts/check_ts_function_complexity.cjs"
+      - "scripts/generate_retail_contract.py"
       - "scripts/ts-function-complexity-ratchet.json"
       - ".github/workflows/v3-frontend-ci.yml"
 
 concurrency:
-  group: v3-frontend-${{ github.event.pull_request.number }}
+  group: v3-ci-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
 permissions:
@@ -92,13 +97,6 @@ jobs:
       - name: Verify vendored packages and frontend dependency policy
         run: |
           set -euo pipefail
-          # This lane must not certify Python dependency changes without a Python environment.
-          if ! git diff --quiet "$PR_BASE_SHA"...HEAD -- \
-            backend/requirements.txt backend/requirements.lock \
-            backend/requirements-dev.txt backend/requirements-dev.lock; then
-            echo "::error::Python dependency changes require the backend verification lane."
-            exit 1
-          fi
           "$RETAIL_NODE" scripts/verify_vendored_npm_packages.mjs
           "$RETAIL_NODE" scripts/check_dependency_policy.mjs --pr-diff-only
 
@@ -119,7 +117,6 @@ jobs:
           set -euo pipefail
           MERGE_BASE="$(git merge-base "$PR_BASE_SHA" HEAD)"
           if git diff --quiet "$MERGE_BASE" HEAD -- src; then
-            # Exercise the lane itself instead of reporting a zero-test workflow/config check.
             "$RETAIL_NODE" "$RETAIL_NPM_CLI" run test -- \
               src/lib/dataGrid.test.ts \
               src/components/common/DataGrid.globalSearch.test.tsx \
@@ -127,7 +124,6 @@ jobs:
               src/features/dashboard/HistoryPerformanceSelection.test.tsx \
               src/features/dashboard/BreakdownTable.test.tsx
           fi
-          # Keep affected-source coverage separate from the workflow-only smoke suite.
           "$RETAIL_NODE" "$RETAIL_NPM_CLI" run test:coverage -- \
             --changed="$MERGE_BASE" --passWithNoTests
           LCOV_PATH=coverage/frontend/lcov.info
@@ -155,3 +151,102 @@ jobs:
             e2e/current-daily-trend.spec.ts \
             e2e/ai-forecast-daily-table.spec.ts \
             e2e/insight-deep-link.spec.ts
+
+  backend:
+    name: v3-backend
+    if: github.event.pull_request.head.repo.full_name == github.repository && startsWith(github.head_ref, 'v3/')
+    runs-on: [self-hosted, Linux, X64, dell-compute, unihub-build, unihub-retail-build]
+    timeout-minutes: 35
+    env:
+      CI: "true"
+      PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      PYTHONNOUSERSITE: "1"
+      PYTHONSAFEPATH: "1"
+      PYTHONHOME: ""
+      PYTHONPATH: ""
+      PYTHONSTARTUP: ""
+      PYTHONINSPECT: ""
+      PYTHONDONTWRITEBYTECODE: "1"
+      MYPYPATH: ""
+      MYPY_CONFIG_FILE: ""
+      BACKEND_SENTRY_DSN: ""
+      BACKEND_SENTRY_TRACES_SAMPLE_RATE: "0"
+      SENTRY_DSN: ""
+      SENTRY_TRACES_SAMPLE_RATE: "0"
+      VITE_FRONTEND_GLITCHTIP_DSN: ""
+    steps:
+      - name: Prove isolated build runner
+        run: |
+          set -euo pipefail
+          test "$RUNNER_ENVIRONMENT" = self-hosted
+          test "$RUNNER_NAME" = dell-retail-build
+          test "$(hostname)" = dell-standby
+          test ! -e /run/dell-compute/quiesced
+          test ! -e /var/lib/dell-standby/ACTIVE
+          test ! -r /opt/Mobiup/unihub-retail/.env
+          test ! -r /opt/Mobiup/.ssh/id_ed25519_mobiup_primary_admin
+          test ! -r /home/andrei/.ssh/id_ed25519
+          test ! -e /storage/backups
+          test ! -e /run/tailscale/tailscaled.sock
+          test -S /var/run/docker.sock
+
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: false
+
+      - name: Verify exact source
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$PR_HEAD_SHA"
+          test -z "$(git status --short)"
+          git diff --check "$PR_BASE_SHA"...HEAD
+
+      - name: Prepare hash-locked Python environment
+        run: |
+          set -euo pipefail
+          python_base=/usr/bin/python3.12
+          test "$(sha256sum "$python_base" | awk '{print $1}')" = e50d468e8b0adfb05733f5b87b3cff34829c4a8c1aea50c865aa8bdfe4bb150f
+          "$python_base" -I -m venv backend/venv
+          test "$(readlink -f backend/venv/bin/python)" = "$python_base"
+          PYTHONDONTWRITEBYTECODE=1 backend/venv/bin/python -B -I -m pip install \
+            --disable-pip-version-check --quiet --no-compile --require-hashes \
+            -r backend/requirements-dev.lock
+          backend/venv/bin/python -I -m pip check
+          find backend/venv -type f -name '*.pyc' -delete
+
+      - name: Runtime imports and immutable contracts
+        run: |
+          set -euo pipefail
+          cd backend
+          venv/bin/python -I -c "import sys; sys.path.insert(0, '.'); import main; import ai_assistant.runtime_app"
+          venv/bin/python -I -c "import sys; sys.path.insert(0, '.'); from db.migration_runner import load_migration_manifest, verify_migration_files; verify_migration_files(load_migration_manifest())"
+          cd ..
+          backend/venv/bin/python -I scripts/generate_retail_contract.py --check
+          backend/venv/bin/python -I scripts/check_env_contract.py
+
+      - name: Type, architecture and complexity gates
+        run: |
+          set -euo pipefail
+          cd backend
+          venv/bin/python -I -m mypy . --ignore-missing-imports --explicit-package-bases
+          cd ..
+          backend/venv/bin/python -I scripts/check_backend_architecture.py
+          backend/venv/bin/python -I scripts/check_complexity_ratchet.py
+          backend/venv/bin/python -I scripts/check_changed_function_complexity.py \
+            --base "$PR_BASE_SHA" --maximum 20
+
+      - name: Focused isolated AI backend integration
+        run: |
+          set -euo pipefail
+          cd backend
+          ./scripts/run_tests_isolated.sh \
+            tests/test_ai_assistant_settings.py \
+            tests/test_ai_assistant_runtime_state.py \
+            tests/test_ai_assistant_runtime_race.py \
+            tests/test_ai_assistant_persistence_db.py \
+            tests/test_request_body_limits.py \
+            -q
