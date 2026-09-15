@@ -19,12 +19,12 @@ test('store performance cards and calendar sections remain usable on desktop and
   await page.goto('/');
   await page.getByRole('button', { name: 'Agenti', exact: true }).first().click();
   await page.getByRole('tab', { name: 'Grile', exact: true }).click();
-  await page.getByRole('tab', { name: 'Program V2', exact: true }).click();
+  await page.getByRole('tab', { name: 'v2', exact: true }).click();
   await page.getByLabel('Luna programului').fill('2026-09');
-  await page.getByText('TL Constanța · DAVIDDA', { exact: true }).click();
+  await page.getByText('TL Constanța', { exact: true }).click();
   await page.getByRole('button', { name: /CONSTANTA CITY PARK/ }).click();
   await page.getByRole('tab', { name: 'Grile', exact: true }).last().click();
-  await expect(page.getByRole('heading', { name: 'Performanță magazin și echipă' })).toBeVisible();
+  await expect(page.getByText('Performanță magazin', { exact: true })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Manea Nicoleta · MANEANI' })).toBeVisible();
   await expect(page.getByText('2.600 lei', { exact: true })).toHaveCount(2);
   await page.getByRole('dialog').screenshot({ path: testInfo.outputPath('grila-desktop.png') });

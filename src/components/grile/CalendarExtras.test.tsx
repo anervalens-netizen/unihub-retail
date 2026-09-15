@@ -3,7 +3,7 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { leaveChanges, SupplementEditor } from './CalendarExtras';
+import { CalendarExtras, leaveChanges, SupplementEditor } from './CalendarExtras';
 import type { CalendarData } from '../../api/grileCalendar';
 const api=vi.hoisted(() => ({ saveCalendarDays: vi.fn().mockResolvedValue([]) }));
 vi.mock('../../api/grileCalendar', () => api);
@@ -19,6 +19,27 @@ it('writes leave on weekdays only using observed revisions', () => {
 it('rejects visitors and assignments in another store before leave submission', () => {
   expect(() => leaveChanges(data,'S2','A','2026-09-03','2026-09-07')).toThrow('bază');
   expect(() => leaveChanges({...data,days:[{...data.days[0]!,site_code:'S2'}]},'S1','A','2026-09-03','2026-09-07')).toThrow('alt magazin');
+});
+it('renders empty leave and supplemental sections', () => {
+  const store={site_code:'S1',locatie:'Alpha',firma:'Firma',regional:'RM',asm:''};
+  const client=new QueryClient({defaultOptions:{queries:{retry:false},mutations:{retry:false}}});
+  render(<QueryClientProvider client={client}><CalendarExtras data={data} store={store} stores={[store]} writable={false} /></QueryClientProvider>);
+  expect(screen.getByText(/Nu sunt concedii/)).toBeInTheDocument();
+  expect(screen.getByText(/Nu sunt zile suplimentare/)).toBeInTheDocument();
+});
+it('renders populated leave and supplemental rows', () => {
+  const store={site_code:'S1',locatie:'Alpha',firma:'Firma',regional:'RM',asm:''};
+  const stores=[store,{site_code:'S2',locatie:'Beta',firma:'Firma',regional:'RM',asm:''}];
+  const populated: CalendarData={...data, roster:[...data.roster,{agent_code:'B',home_site_code:'S1',active:true,revision:1,month:'2026-09',regional:'RM',display_name:'Beta Agent',transfers: [], identity_status:'confirmed'}], days:[
+    ...data.days,
+    {agent_code:'A',site_code:'S1',work_date:'2026-09-07',revision:1,status:'leave',supplemental:false},
+    {agent_code:'B',site_code:'S1',work_date:'2026-09-08',revision:1,status:'work',supplemental:true},
+  ]};
+  const client=new QueryClient({defaultOptions:{queries:{retry:false},mutations:{retry:false}}});
+  render(<QueryClientProvider client={client}><CalendarExtras data={populated} store={store} stores={stores} writable={false} /></QueryClientProvider>);
+  expect(screen.getAllByText('2026-09-07').length).toBeGreaterThan(0);
+  expect(screen.getByText('Programat suplimentar')).toBeInTheDocument();
+  expect(screen.getByText('Firma · Alpha')).toBeInTheDocument();
 });
 it('never enables paid supplemental work until the manager explicitly checks it', async () => {
   const store={site_code:'S1',locatie:'Alpha',firma:'Firma',regional:'RM',asm:''};
