@@ -9,6 +9,7 @@ import pytest
 from ai_assistant.run_state_machine import ActiveRun
 from ai_assistant.runtime import AiSandboxRuntime
 from ai_assistant.settings import AiAssistantSettings
+from ai_assistant.storage_slots import StorageSlots
 from schemas.ai_assistant import RuntimeSteerRequest
 
 
@@ -32,6 +33,8 @@ def bare_runtime(tmp_path: Path) -> AiSandboxRuntime:
         max_artifact_bytes=1024 * 1024,
         setup_timeout_seconds=30,
     )
+    runtime.slots = StorageSlots(tmp_path / "slots", tmp_path / "images")  # type: ignore[assignment]
+    runtime.slots.available.update({0, 1})
     runtime._active = {}  # type: ignore[attr-defined]
     runtime._lock = asyncio.Lock()  # type: ignore[attr-defined]
     return runtime

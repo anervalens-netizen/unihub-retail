@@ -3,16 +3,24 @@ from __future__ import annotations
 
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 from unittest.mock import AsyncMock, Mock
 
 import pytest
 from fastapi import HTTPException
 
-from ai_assistant import runtime_app
+from ai_assistant import runtime_app, runtime as runtime_module
 from tests.test_ai_assistant_runtime_health import fake_runtime, request_for, turn_payload
 
 LABELS = {"com.unihub.component": "ai-assistant", "com.unihub.runtime": "sandbox-agent"}
+
+
+@pytest.fixture(autouse=True)
+def guard_authority(monkeypatch: pytest.MonkeyPatch):
+    verify = AsyncMock()
+    monkeypatch.setattr(runtime_module, "verify_guard_authority", verify)
+    monkeypatch.setattr(runtime_module, "verify_guard_database", AsyncMock())
+    return verify
 
 
 def container(labels: dict[str, str], state: str = "running") -> Any:
@@ -22,6 +30,9 @@ def container(labels: dict[str, str], state: str = "running") -> Any:
 def startup_runtime(tmp_path: Path, containers: list[Any]) -> Any:
     runtime: Any = fake_runtime(tmp_path, ready=False)
     runtime._orphans_ready = False
+    runtime.slots.verify = Mock()
+    runtime._verify_slots_unused = Mock()
+    runtime.slots.reconcile = Mock()
     runtime.docker = SimpleNamespace(containers=SimpleNamespace(list=Mock(return_value=containers)), close=Mock())
     runtime.db_guard = SimpleNamespace(ready=False, error="not scanned", start=AsyncMock(), close=AsyncMock())
 
@@ -61,14 +72,27 @@ async def test_startup_removes_all_matching_states_and_preserves_others(tmp_path
     await runtime.shutdown()
     runtime.db_guard.close.assert_awaited_once()
     runtime.docker.close.assert_called_once()
+    runtime.slots.verify.assert_called_once()
+    runtime._verify_slots_unused.assert_called_once()
+    runtime.slots.reconcile.assert_called_once()
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize("failure", ["enumeration", "removal", "authority"])
-async def test_startup_failure_stays_unhealthy_and_never_starts_guard(tmp_path: Path, failure: str) -> None:
+@pytest.mark.parametrize("failure", ["slots", "enumeration", "removal", "attached", "reconcile", "authority", "guard_authority", "guard_database"])
+async def test_startup_failure_stays_unhealthy_and_never_starts_guard(tmp_path: Path, failure: str, guard_authority) -> None:
     stale = container(LABELS)
     runtime = startup_runtime(tmp_path, [stale])
-    if failure == "enumeration":
+    if failure == "guard_database":
+        cast(Any, runtime_module.verify_guard_database).side_effect = RuntimeError("wrong database")
+    elif failure == "slots":
+        runtime.slots.verify.side_effect = RuntimeError("invalid slot")
+    elif failure == "attached":
+        runtime._verify_slots_unused.side_effect = RuntimeError("slot attached")
+    elif failure == "reconcile":
+        runtime.slots.reconcile.side_effect = RuntimeError("cleanup failure")
+    elif failure == "guard_authority":
+        guard_authority.side_effect = RuntimeError("invalid guard authority")
+    elif failure == "enumeration":
         runtime.docker.containers.list.side_effect = OSError("daemon unreachable")
     elif failure == "removal":
         stale.remove.side_effect = OSError("remove rejected")
@@ -100,3 +124,23 @@ async def test_guard_loss_refuses_new_runs_and_health_recovers(tmp_path: Path) -
     runtime.db_guard.ready = True
     runtime.db_guard.error = None
     assert (await runtime_app.health(request_for(runtime))).status_code == 200
+
+
+@pytest.mark.anyio
+async def test_startup_preflight_order(tmp_path: Path, guard_authority) -> None:
+    runtime = startup_runtime(tmp_path, [])
+    calls = Mock()
+    calls.attach_mock(runtime.slots.verify, "verify_slots")
+    calls.attach_mock(runtime.docker.containers.list, "remove_stale")
+    calls.attach_mock(runtime._verify_slots_unused, "verify_unused")
+    calls.attach_mock(runtime.slots.reconcile, "reconcile_slots")
+    calls.attach_mock(runtime.verify_readonly_authority, "readonly")
+    calls.attach_mock(guard_authority, "guard_authority")
+    calls.attach_mock(cast(Any, runtime_module.verify_guard_database), "guard_database")
+    calls.attach_mock(runtime.db_guard.start, "start_guard")
+    await runtime.startup()
+    assert [call[0] for call in calls.mock_calls] == [
+        "verify_slots", "remove_stale", "verify_unused", "reconcile_slots",
+        "readonly", "guard_authority", "guard_database", "start_guard",
+    ]
+    guard_authority.assert_awaited_once_with(runtime.settings.guard_dsn)

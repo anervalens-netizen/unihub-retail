@@ -1,7 +1,7 @@
 """Host-side ceilings for direct sandbox SQL, independent of USERSET defaults.
 
-Only this dedicated login's sessions are signaled. The credential remains the
-same read-only credential; PostgreSQL permits signaling one's own other sessions.
+Only the explicit sandbox login's sessions are signaled. The host-only guard
+inherits that login, never the reverse; sandbox code cannot signal the guard.
 A sandbox-controlled application_name must never exempt a target from policing.
 """
 from __future__ import annotations
@@ -13,6 +13,8 @@ import logging
 import time
 
 import asyncpg
+
+from .guard_authority import verify_guard_connection
 
 logger = logging.getLogger(__name__)
 GUARD_APPLICATION_NAME = "unihub-ai-db-guard"
@@ -33,7 +35,7 @@ SELECT pid,
            THEN pg_cancel_backend(pid)
        END AS signaled
 FROM pg_stat_activity
-WHERE usesysid = (SELECT oid FROM pg_roles WHERE rolname = current_user)
+WHERE usesysid = (SELECT oid FROM pg_roles WHERE rolname = 'unihub_ai_readonly')
   AND pid <> pg_backend_pid()
 """
 
@@ -71,6 +73,8 @@ class DatabaseSessionGuard:
         if self._task is None:
             self._task = asyncio.create_task(self._run(), name=GUARD_APPLICATION_NAME)
         await self._first_attempt.wait()
+        if not self.ready:
+            raise RuntimeError("AI database guard initial scan failed")
 
     async def close(self) -> None:
         if self._task is not None:
@@ -84,12 +88,13 @@ class DatabaseSessionGuard:
             self._dsn,
             timeout=3,
             command_timeout=3,
-            server_settings={
-                "application_name": GUARD_APPLICATION_NAME,
-                "statement_timeout": "3000",
-                "lock_timeout": "1000",
-                "idle_in_transaction_session_timeout": "3000",
-            },
+            server_settings={"application_name": GUARD_APPLICATION_NAME},
+        )
+        # Check inherited defaults before overriding them, including every reconnect.
+        await verify_guard_connection(self._connection)
+        await self._connection.execute(
+            "SET statement_timeout = '3000ms'; SET lock_timeout = '1000ms'; "
+            "SET idle_in_transaction_session_timeout = '3000ms'"
         )
 
     async def _scan(self) -> None:

@@ -19,12 +19,9 @@ async def lifespan(app: FastAPI):
     runtime = AiSandboxRuntime()
     app.state.ai_runtime = runtime
     try:
+        # Initial preflight failure exits Uvicorn; systemd retries the process.
+        # After readiness, guard reconnect remains in-process without killing runs.
         await runtime.startup()
-    except Exception:
-        # Stay observable but refuse runs; a connected guard recovers on its own,
-        # while authority/orphan failures require a successful new startup.
-        pass
-    try:
         yield
     finally:
         await runtime.shutdown()

@@ -1,0 +1,23 @@
+[Unit]
+Description=UniHub Retail host preallocated AI workspace storage
+Before=unihub-ai.service
+After=local-fs.target
+RequiresMountsFor=/var/lib/unihub-retail
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+ExecStart=/bin/bash /opt/Mobiup/unihub-retail/ops/ai-sandbox/provision-storage.sh
+RemainAfterExit=yes
+TimeoutStartSec=300
+UMask=0077
+# Mounts MUST live in the host namespace and survive this oneshot/restarts.
+# Do not add ProtectSystem, ProtectHome, PrivateTmp, PrivateDevices,
+# ReadWritePaths or other filesystem namespace sandboxing here.
+PrivateMounts=no
+NoNewPrivileges=yes
+# No ExecStop: production storage is persistent and has no automated teardown.
+
+[Install]
+WantedBy=multi-user.target

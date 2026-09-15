@@ -1,8 +1,8 @@
 [Unit]
 Description=UniHub Retail owner AI SandboxAgent runtime
-After=network-online.target docker.service
+After=network-online.target docker.service unihub-ai-storage.service
 Wants=network-online.target
-Requires=docker.service
+Requires=docker.service unihub-ai-storage.service
 StartLimitIntervalSec=60
 StartLimitBurst=5
 
@@ -27,12 +27,12 @@ StandardError=journal
 SyslogIdentifier=unihub-ai
 
 ProtectSystem=strict
-# systemd provisions the nested AI state namespace before ExecStart so the
-# unprefixed ReadWritePaths entry below can never depend on an administrator
-# creating /var/lib/unihub-retail/ai-assistant by hand on a first deployment.
+# Metadata only; StateDirectory is writable independently of ReadWritePaths.
+# The root host provisioner must mount both fixed disks before this namespace.
 StateDirectory=unihub-retail/ai-assistant
 StateDirectoryMode=0770
-ReadWritePaths=/var/lib/unihub-retail/ai-assistant
+ReadWritePaths=/var/lib/unihub-retail/ai-sandbox-slots/slot-0/workspace
+ReadWritePaths=/var/lib/unihub-retail/ai-sandbox-slots/slot-1/workspace
 ProtectHome=read-only
 NoNewPrivileges=true
 PrivateTmp=true

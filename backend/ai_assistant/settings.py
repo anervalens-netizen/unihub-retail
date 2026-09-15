@@ -16,6 +16,7 @@ AI_STORAGE_ROOT_ENV = "AI_ASSISTANT_STORAGE_ROOT"
 AI_SNAPSHOT_ROOT_ENV = "AI_ASSISTANT_SNAPSHOT_ROOT"
 AI_SANDBOX_IMAGE_ENV = "AI_ASSISTANT_SANDBOX_IMAGE"
 AI_READONLY_DSN_ENV = "AI_ASSISTANT_READONLY_DSN"
+AI_GUARD_DSN_ENV = "AI_ASSISTANT_GUARD_DSN"
 AI_MAX_CONCURRENT_RUNS_ENV = "AI_ASSISTANT_MAX_CONCURRENT_RUNS_PER_OWNER"
 OPENAI_API_KEY_ENV = "OPENAI_API_KEY"
 AI_MODEL = "gpt-5.6-luna"
@@ -39,6 +40,8 @@ class AiAssistantSettings:
     # Never render the sandbox credential: it is resolved into the model
     # sandbox environment and must not appear in logs or tracebacks.
     readonly_dsn: str = field(default="", repr=False)
+    # Host-only watchdog credential: never resolve into sandbox environment.
+    guard_dsn: str = field(default="", repr=False)
     max_concurrent_runs_per_owner: int = AI_MAX_CONCURRENT_RUNS_PER_OWNER
     max_total_artifact_bytes: int = 1024 * 1024 * 1024
 
@@ -118,6 +121,21 @@ def _validate_sandbox_readonly_dsn(raw: str) -> None:
         )
 
 
+def _validate_guard_dsn(raw: str) -> None:
+    try:
+        parsed = urlsplit(raw)
+        valid = (parsed.scheme in {"postgresql", "postgres"} and parsed.hostname
+                 and parsed.username == "unihub_ai_guard" and parsed.port
+                 and parsed.path not in {"", "/"} and not parsed.query and not parsed.fragment)
+    except ValueError:
+        valid = False
+    if not valid:
+        raise RuntimeError(
+            f"{AI_GUARD_DSN_ENV} must be a direct unihub_ai_guard PostgreSQL DSN "
+            "with explicit host, port and database and no connection overrides"
+        )
+
+
 def load_ai_assistant_settings(*, runtime: bool = False) -> AiAssistantSettings:
     storage_default = (
         Path("/var/lib/unihub-retail/ai-assistant")
@@ -134,11 +152,14 @@ def load_ai_assistant_settings(*, runtime: bool = False) -> AiAssistantSettings:
         os.getenv(AI_RUNTIME_URL_ENV, "http://127.0.0.1:9911").strip()
     )
     readonly_dsn = ""
+    guard_dsn = ""
     if runtime:
         if not os.getenv(OPENAI_API_KEY_ENV, "").strip():
             raise RuntimeError(f"{OPENAI_API_KEY_ENV} is required by the AI runtime")
         readonly_dsn = os.getenv(AI_READONLY_DSN_ENV, "").strip()
         _validate_sandbox_readonly_dsn(readonly_dsn)
+        guard_dsn = os.getenv(AI_GUARD_DSN_ENV, "").strip()
+        _validate_guard_dsn(guard_dsn)
     settings = AiAssistantSettings(
         model=AI_MODEL,
         runtime_url=runtime_url,
@@ -153,6 +174,7 @@ def load_ai_assistant_settings(*, runtime: bool = False) -> AiAssistantSettings:
         ),
         setup_timeout_seconds=_bounded_seconds("AI_ASSISTANT_SETUP_TIMEOUT_SECONDS", 90),
         readonly_dsn=readonly_dsn,
+        guard_dsn=guard_dsn,
         max_concurrent_runs_per_owner=_bounded_runs_per_owner(),
         max_total_artifact_bytes=_positive_int(
             "AI_ASSISTANT_MAX_TOTAL_ARTIFACT_BYTES", 1024 * 1024 * 1024

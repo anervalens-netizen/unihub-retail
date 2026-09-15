@@ -11,10 +11,12 @@ from uuid import UUID
 
 from agents import ModelSettings, Runner
 from agents.run import RunConfig
-from agents.sandbox import LocalSnapshot, Manifest, SandboxAgent, SandboxRunConfig
+from agents.sandbox import Manifest, SandboxAgent, SandboxRunConfig
 from agents.sandbox.entries import Dir
 from agents.sandbox.manifest import EnvEntry, EnvValue, Environment
-from agents.sandbox.sandboxes.docker import DockerSandboxClient, DockerSandboxClientOptions
+from ai_assistant.docker_client import BoundedDockerSandboxClient, SlotDockerOptions, WorkspaceSnapshot, LABELS
+from ai_assistant.storage_slots import StorageSlots, clean_slot, storage_io
+from ai_assistant.guard_authority import verify_guard_authority, verify_guard_database
 from docker import from_env as docker_from_env
 from openai.types.responses import ResponseTextDeltaEvent
 from openai.types.shared import Reasoning
@@ -46,6 +48,8 @@ The Retail PostgreSQL connection is available as UNIHUB_READONLY_DSN and is tech
 Owner uploads are under /workspace/input. Use /workspace/work for intermediate work and /workspace/output for final deliverables.
 When the owner refers to the current page, selection, filters or card, inspect /workspace/input/current-view.json when present.
 Put finished files the owner should receive under /workspace/output.
+The root filesystem is read-only. All durable writes, user configuration and package installs belong under /workspace (8 GiB total); /tmp is only 512 MiB of ephemeral memory.
+Plain pip install uses the workspace target automatically; npm install -g uses the workspace prefix. Workspace Python/npm executables are on PATH.
 Do not ask unnecessary confirmation questions.
 """
 
@@ -71,7 +75,8 @@ def _manifest() -> Manifest:
         entries={
             "knowledge": Dir(description="Versioned UniHub Retail context"),
             "input": Dir(description="Owner uploads and current-view context"),
-            "work": Dir(description="Agent scratch workspace"),
+            "home": Dir(description="Writable user home and configuration"),
+            "work": Dir(description="Agent scratch workspace and Python/npm user packages"),
             "output": Dir(description="Finished deliverables returned to the owner"),
         },
         environment=Environment(
@@ -112,17 +117,11 @@ class AiSandboxRuntime:
     def __init__(self, settings: AiAssistantSettings | None = None):
         self.settings = settings or load_ai_assistant_settings(runtime=True)
         self.docker = docker_from_env(timeout=10)
-        self.client = DockerSandboxClient(self.docker)
-        self.db_guard = DatabaseSessionGuard(self.settings.readonly_dsn)
+        self.client = BoundedDockerSandboxClient(self.docker)
+        self.slots = StorageSlots()
+        self.db_guard = DatabaseSessionGuard(self.settings.guard_dsn)
         self._orphans_ready = False
         self._startup_error: str | None = "AI sandbox startup reconciliation is incomplete"
-        self.options = DockerSandboxClientOptions(
-            image=self.settings.sandbox_image,
-            labels={
-                "com.unihub.component": "ai-assistant",
-                "com.unihub.runtime": "sandbox-agent",
-            },
-        )
         self._active: dict[UUID, ActiveRun] = {}
         self._lock = asyncio.Lock()
         self._authority_ready = False
@@ -158,12 +157,29 @@ class AiSandboxRuntime:
             if all(container.labels.get(key) == value for key, value in labels.items()):
                 container.remove(force=True, v=True)
 
+    def _verify_slots_unused(self, slot: Any = None) -> None:
+        slots = (slot,) if slot is not None else self.slots.slots
+        for container in self.docker.containers.list(all=True):
+            container.reload()
+            for mount in container.attrs.get("Mounts", []):
+                source_value = mount.get("Source")
+                if mount.get("Type") != "bind" or not isinstance(source_value, str):
+                    continue
+                source = Path(source_value).resolve()
+                if any(source.is_relative_to(item.mount) or item.workspace.is_relative_to(source) for item in slots):
+                    raise RuntimeError("AI storage slot is still attached to a container")
+
     async def startup(self) -> None:
         try:
-            await asyncio.to_thread(self._remove_stale_sandboxes)
+            await storage_io(self.slots.verify)
+            await storage_io(self._remove_stale_sandboxes)
+            await storage_io(self._verify_slots_unused)
+            await storage_io(self.slots.reconcile)
             self._orphans_ready = True
             self._startup_error = None
             await self.verify_readonly_authority()
+            await verify_guard_authority(self.settings.guard_dsn)
+            await verify_guard_database(self.settings.readonly_dsn, self.settings.guard_dsn)
             await self.db_guard.start()
         except Exception:
             self._startup_error = "AI runtime startup preflight failed"
@@ -172,7 +188,7 @@ class AiSandboxRuntime:
 
     async def shutdown(self) -> None:
         await self.db_guard.close()
-        await asyncio.to_thread(self.docker.close)
+        await storage_io(self.docker.close)
 
     async def verify_readonly_authority(self) -> None:
         """Fail closed before the runtime is allowed to report healthy.
@@ -209,7 +225,10 @@ class AiSandboxRuntime:
             )
             if owned >= ceiling:
                 return None
-            active = ActiveRun(task=asyncio.current_task(), owner_subject=owner_subject)
+            slot = self.slots.acquire()
+            if slot is None:
+                return None
+            active = ActiveRun(task=asyncio.current_task(), owner_subject=owner_subject, slot=slot)
             self._active[conversation_id] = active
             return active
 
@@ -246,17 +265,32 @@ class AiSandboxRuntime:
         return names
 
     async def _cleanup_sandbox(self, conversation_id: UUID, active: ActiveRun) -> None:
-        sandbox = active.sandbox
-        if sandbox is None:
+        if active.cleanup_done:
             return
-        try:
-            await sandbox.aclose()
-        except Exception:
-            logger.exception("AI sandbox close failed conversation=%s", conversation_id)
-        try:
-            await self.client.delete(sandbox)
-        except Exception:
-            logger.exception("AI sandbox deletion failed conversation=%s", conversation_id)
+        active.cleanup_done = True
+        failed = False
+        sandbox = active.sandbox
+        if sandbox is not None:
+            try:
+                if active.sandbox_started:
+                    await sandbox.aclose()
+            except BaseException:
+                failed = True
+                logger.error("AI snapshot/close failed conversation=%s", conversation_id)
+            try:
+                await self.client.delete(sandbox)
+            except BaseException:
+                failed = True
+                logger.error("AI sandbox deletion failed conversation=%s", conversation_id)
+        if active.slot is not None and not failed:
+            try:
+                await storage_io(self._verify_slots_unused, active.slot)
+                await storage_io(clean_slot, active.slot)
+                active.slot_clean = True
+            except BaseException:
+                failed = True
+        if failed:
+            raise RuntimeError("AI sandbox cleanup failed; storage slot quarantined")
 
     async def steer(self, conversation_id: UUID, request: RuntimeSteerRequest) -> None:
         async with self._lock:
@@ -313,17 +347,20 @@ class AiSandboxRuntime:
 
         Returns ``None`` when a concurrent Stop must win before model execution.
         """
-        snapshot = LocalSnapshot(
+        if active.slot is None:
+            raise RuntimeError("AI run has no storage slot")
+        snapshot = WorkspaceSnapshot(
             id=str(conversation_id),
             base_path=self.settings.snapshot_root,
         )
         sandbox = await self.client.create(
             manifest=agent.default_manifest,
             snapshot=snapshot,
-            options=self.options,
+            options=SlotDockerOptions(image=self.settings.sandbox_image, labels=LABELS, slot=active.slot),
         )
         active.sandbox = sandbox
         await sandbox.start()
+        active.sandbox_started = True
         await self._stage_knowledge(sandbox)
         upload_names = await self._stage_request_files(
             sandbox,
@@ -457,6 +494,8 @@ class AiSandboxRuntime:
         async with self._lock:
             if self._active.get(conversation_id) is active:
                 self._active.pop(conversation_id, None)
+                if active.slot is not None:
+                    self.slots.release(active.slot, clean=active.slot_clean)
 
     async def stream_turn(self, request: RuntimeTurnRequest) -> AsyncIterator[bytes]:
         conversation_id = request.conversation_id
@@ -510,6 +549,7 @@ class AiSandboxRuntime:
                 active.sandbox,
                 before_outputs,
             )
+            await self._cleanup_sandbox(conversation_id, active)
             yield _ndjson(
                 {
                     "type": "complete",
@@ -529,5 +569,7 @@ class AiSandboxRuntime:
             logger.exception("AI sandbox run failed conversation=%s", conversation_id)
             yield _ndjson({"type": "error", "message": "UniHub AI nu a putut finaliza cererea."})
         finally:
-            await self._cleanup_sandbox(conversation_id, active)
-            await self._release(conversation_id, active)
+            try:
+                await self._cleanup_sandbox(conversation_id, active)
+            finally:
+                await self._release(conversation_id, active)

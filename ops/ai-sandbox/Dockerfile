@@ -6,12 +6,18 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     VIRTUAL_ENV=/opt/venv \
-    PATH=/opt/venv/bin:/workspace/.npm-global/bin:${PATH} \
-    NPM_CONFIG_PREFIX=/workspace/.npm-global
+    PATH=/workspace/work/python/bin:/workspace/work/npm/bin:/opt/venv/bin:${PATH} \
+    HOME=/workspace/home \
+    XDG_CACHE_HOME=/workspace/work/cache \
+    NPM_CONFIG_PREFIX=/workspace/work/npm \
+    NPM_CONFIG_CACHE=/workspace/work/cache/npm \
+    PIP_TARGET=/workspace/work/python \
+    PYTHONPATH=/workspace/work/python
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
       bash \
+      build-essential \
       ca-certificates \
       chromium \
       curl \
@@ -32,10 +38,10 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 RUN python -m venv /opt/venv \
-    && /opt/venv/bin/python -m pip install --disable-pip-version-check --upgrade pip
+    && env -u PIP_TARGET /opt/venv/bin/python -m pip install --disable-pip-version-check --upgrade pip
 
 COPY requirements.lock /tmp/ai-sandbox-requirements.lock
-RUN /opt/venv/bin/python -m pip install \
+RUN env -u PIP_TARGET /opt/venv/bin/python -m pip install \
       --disable-pip-version-check \
       --no-cache-dir \
       --require-hashes \
@@ -48,8 +54,17 @@ RUN useradd --create-home --uid 1000 --shell /bin/bash sandbox \
       /workspace/input \
       /workspace/work \
       /workspace/output \
-      /workspace/.npm-global \
-    && chown -R sandbox:sandbox /workspace /opt/venv
+      /workspace/home \
+      /workspace/work/npm \
+      /workspace/work/python \
+    && chown -R sandbox:sandbox /workspace
+
+# SDK shell execution uses sh -lc, whose /etc/profile resets PATH. Restore the
+# bounded user environment for login shells as well as direct exec processes.
+RUN printf '%s\n' \
+      'export HOME=/workspace/home' \
+      'export PATH=/workspace/work/python/bin:/workspace/work/npm/bin:/opt/venv/bin:/usr/local/bin:/usr/bin:/bin' \
+      > /etc/profile.d/unihub-workspace.sh
 
 WORKDIR /workspace
 USER sandbox

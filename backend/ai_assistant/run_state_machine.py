@@ -6,6 +6,7 @@ from typing import Any, Literal
 from uuid import UUID, uuid4
 
 from schemas.ai_assistant import RuntimeSteerRequest
+from ai_assistant.storage_slots import StorageSlot
 
 RunPhase = Literal["setup", "running", "steering", "finishing", "stopping"]
 
@@ -23,10 +24,14 @@ class ActiveRun:
     phase: RunPhase = "setup"
     task: asyncio.Task[Any] | None = None
     sandbox: Any | None = None
+    sandbox_started: bool = False
     result: Any | None = None
     pending_steers: list[RuntimeSteerRequest] = field(default_factory=list)
     stop_requested: bool = False
     owner_subject: str = ""
+    slot: StorageSlot | None = None
+    cleanup_done: bool = False
+    slot_clean: bool = False
 
     def queue_steer(self, request: RuntimeSteerRequest) -> None:
         self.pending_steers.append(request)

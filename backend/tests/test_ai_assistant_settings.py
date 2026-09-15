@@ -69,12 +69,26 @@ def test_ai_runtime_requires_sandbox_reachable_readonly_dsn(
         "AI_ASSISTANT_READONLY_DSN",
         "postgresql://unihub_ai_readonly:test@db.internal:5432/unihub",
     )
+    monkeypatch.setenv("AI_ASSISTANT_GUARD_DSN", "postgresql://unihub_ai_guard:host-secret@127.0.0.1:5432/unihub")
     settings = load_ai_assistant_settings(runtime=True)
+    assert "host-secret" not in repr(settings)
+    assert settings.guard_dsn.startswith("postgresql://unihub_ai_guard:")
+    assert load_ai_assistant_settings().guard_dsn == ""
     assert settings.model == "gpt-5.6-luna"
     # The sandbox credential is retained for the startup authority preflight but
     # must never surface through the settings representation.
     assert settings.readonly_dsn.endswith("@db.internal:5432/unihub")
     assert "unihub_ai_readonly" not in repr(settings)
+
+
+@pytest.mark.parametrize("dsn", ["", "postgresql://unihub_ai_readonly:p@db:5432/db", "postgresql://unihub_ai_guard:p@db:5432/db?options=-crole=other", "postgresql://unihub_ai_guard:p@db:bad/db"])
+def test_guard_dsn_required_direct_and_without_overrides(monkeypatch, tmp_path, dsn):
+    _base_env(monkeypatch, tmp_path)
+    monkeypatch.setenv("OPENAI_API_KEY", "test-only")
+    monkeypatch.setenv("AI_ASSISTANT_READONLY_DSN", "postgresql://unihub_ai_readonly:p@db:5432/db")
+    monkeypatch.setenv("AI_ASSISTANT_GUARD_DSN", dsn)
+    with pytest.raises(RuntimeError, match="AI_ASSISTANT_GUARD_DSN"):
+        load_ai_assistant_settings(runtime=True)
 
 
 @pytest.mark.parametrize("value", ["invalid", "0", "1048575", "1048576"])

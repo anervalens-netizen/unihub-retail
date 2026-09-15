@@ -9,6 +9,9 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 from uuid import uuid4
+from urllib.parse import urlsplit, urlunsplit
+from ai_assistant.storage_slots import StorageSlots
+from tests.test_ai_assistant_db_guard import GUARD_LOGIN, guard_database
 
 import pytest
 from docker.errors import NotFound
@@ -21,7 +24,7 @@ from tests.test_ai_assistant_runtime_health import fake_runtime
 from tests.test_ai_assistant_startup import LABELS
 
 pytestmark = pytest.mark.skipif(
-    os.getenv("UNIHUB_TEST_DATABASE") != "1" or os.getenv("AI_TEST_REAL_DOCKER") != "1",
+    os.getenv("UNIHUB_TEST_DATABASE") != "1" or os.getenv("AI_TEST_REAL_DOCKER") != "1" or not os.getenv("AI_TEST_STORAGE_ROOT"),
     reason="requires opt-in local Docker and isolated PostgreSQL",
 )
 
@@ -38,6 +41,8 @@ class DockerResult:
     async def stream_events(self) -> Any:
         result = await self.sandbox.exec("printf tiny > output/proof.txt", timeout=10)
         assert result.ok()
+        sql = await self.sandbox.exec('psql "$UNIHUB_READONLY_DSN" -Atc "SELECT current_user"', timeout=10)
+        assert sql.ok() and sql.stdout.strip() == b"unihub_ai_readonly"
         self.started.set()
         if self.mode == "stop":
             await self.release.wait()
@@ -58,11 +63,27 @@ async def test_real_docker_startup_and_all_run_cleanup_paths(
 ) -> None:
     settings = replace(
         fake_runtime(tmp_path, ready=False).settings,
-        sandbox_image="unihub-retail-ai-sandbox:v3-dev",
+        sandbox_image=os.getenv("AI_TEST_SANDBOX_IMAGE", "unihub-retail-ai-sandbox:pr409-slots"),
         readonly_dsn=dsn_for(AI_LOGIN),
+        guard_dsn=dsn_for(GUARD_LOGIN),
     )
     monkeypatch.setenv("AI_ASSISTANT_READONLY_DSN", settings.readonly_dsn)
     runtime = AiSandboxRuntime(settings)
+    root = Path(os.environ["AI_TEST_STORAGE_ROOT"])
+    assert root.parent == Path("/tmp") and root.name.startswith("unihub-ai-storage.")
+    runtime.slots = StorageSlots(root / "ai-sandbox-slots", root / "ai-storage-images")
+    # Select only this canonical runner's PostgreSQL by its exact published port.
+    port = str(urlsplit(settings.readonly_dsn).port)
+    databases = [c for c in runtime.docker.containers.list(filters={"label": "unihub.test=retail"})
+                 if any(p["HostPort"] == port for p in (c.attrs["NetworkSettings"]["Ports"].get("5432/tcp") or []))]
+    assert len(databases) == 1
+    networks = databases[0].attrs["NetworkSettings"]["Networks"]
+    assert len(networks) == 1
+    host = next(iter(networks.values()))["IPAddress"]
+    parsed = urlsplit(settings.readonly_dsn)
+    bridge_dsn = urlunsplit(parsed._replace(netloc=f"{parsed.username}:{parsed.password}@{host}:5432"))
+    runtime.settings = replace(settings, readonly_dsn=bridge_dsn)
+    monkeypatch.setenv("AI_ASSISTANT_READONLY_DSN", bridge_dsn)
     filters = {"label": [f"{key}={value}" for key, value in LABELS.items()]}
     assert not runtime.docker.containers.list(all=True, filters=filters), "preexisting matching containers: abort proof"
     created: list[Any] = []

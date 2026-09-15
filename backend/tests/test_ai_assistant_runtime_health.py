@@ -44,6 +44,10 @@ def fake_runtime(
         setup_timeout_seconds=30,
         readonly_dsn=readonly_dsn,
     )
+    from ai_assistant.storage_slots import StorageSlots
+
+    runtime.slots = StorageSlots(tmp_path / "slots", tmp_path / "images")
+    runtime.slots.available = {0, 1}
     runtime._orphans_ready = True
     runtime._startup_error = None
     runtime.db_guard = cast(Any, SimpleNamespace(ready=True, error=None))
@@ -106,7 +110,7 @@ async def test_run_endpoint_refuses_to_expose_an_unverified_credential(
 
 
 @pytest.mark.anyio
-async def test_lifespan_stays_alive_but_unhealthy_after_a_rejected_dsn(
+async def test_lifespan_propagates_initial_authority_failure(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     class RejectedRuntime(AiSandboxRuntime):
@@ -127,13 +131,15 @@ async def test_lifespan_stays_alive_but_unhealthy_after_a_rejected_dsn(
     monkeypatch.setattr(runtime_app, "AiSandboxRuntime", RejectedRuntime)
     app = cast(FastAPI, SimpleNamespace(state=SimpleNamespace()))
 
-    async with runtime_app.lifespan(app):
-        runtime = app.state.ai_runtime
-        assert isinstance(runtime, RejectedRuntime)
-        assert runtime.authority_ready is False
-        assert (await runtime_app.health(request_for(runtime))).status_code == 503
-        with pytest.raises(HTTPException):
-            await runtime_app.run_turn(turn_payload(), request_for(runtime))
+    with pytest.raises(AiReadOnlyAuthorityError, match="elevated role attributes"):
+        async with runtime_app.lifespan(app):
+            pytest.fail("Rejected authority must prevent serving")
+    runtime = app.state.ai_runtime
+    assert isinstance(runtime, RejectedRuntime)
+    assert runtime.authority_ready is False
+    assert (await runtime_app.health(request_for(runtime))).status_code == 503
+    with pytest.raises(HTTPException):
+        await runtime_app.run_turn(turn_payload(), request_for(runtime))
 
 
 @pytest.mark.anyio

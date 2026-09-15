@@ -214,7 +214,12 @@ def build_runtime(
     runtime = object.__new__(AiSandboxRuntime)
     runtime.settings = settings  # type: ignore[assignment]
     runtime.client = client  # type: ignore[assignment]
-    runtime.options = object()  # type: ignore[assignment]
+    from ai_assistant.storage_slots import StorageSlots
+
+    runtime.slots = StorageSlots(tmp_path / "slots", tmp_path / "images")
+    runtime.slots.available = {0, 1}
+    monkeypatch.setattr(runtime, "_verify_slots_unused", lambda slot=None: None)
+    monkeypatch.setattr(runtime_module, "clean_slot", lambda slot: None)
     runtime._active = {}  # type: ignore[attr-defined]
     runtime._lock = asyncio.Lock()  # type: ignore[attr-defined]
     return runtime, client, runner
@@ -390,7 +395,9 @@ async def test_stop_during_setup_cancels_setup_and_never_runs_the_model(
     # Identity-matched cleanup released the slot and deleted the sandbox.
     assert runtime._active == {}
     assert client.deleted == client.created
-    assert all(sandbox.closed for sandbox in client.created)
+    # Incomplete hydration must never persist over the last good snapshot.
+    assert all(not sandbox.closed for sandbox in client.created)
+    assert runtime.slots.available == {0, 1}
 
 
 @pytest.mark.anyio
@@ -689,7 +696,7 @@ async def test_two_conversations_run_together_and_the_third_is_refused_before_an
 
 
 @pytest.mark.anyio
-async def test_a_second_owner_has_an_independent_budget(
+async def test_a_second_owner_cannot_bypass_the_global_two_slot_budget(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -718,10 +725,15 @@ async def test_a_second_owner_has_an_independent_budget(
     )
     await settle()
 
-    assert len(runtime._active) == 3
+    assert len(runtime._active) == 2
+    assert event_types(await owner_b) == ["error"]
+    assert client.created == []
     gate.set()
-    for task in (*owner_a, owner_b):
+    for task in owner_a:
         assert event_types(await task)[-1] == "complete"
+    assert len(client.created) == 2
+    assert runtime.slots.available == {0, 1}
+    assert event_types(await collect(runtime.stream_turn(turn_request(uuid4(), owner_subject="owner-b"))))[-1] == "complete"
     assert len(client.created) == 3
 
 
