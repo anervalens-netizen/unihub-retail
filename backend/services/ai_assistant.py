@@ -32,8 +32,10 @@ class AiArtifactNotFound(LookupError):
 
 def _safe_filename(value: str) -> str:
     name = Path(value).name.strip()
-    name = _SAFE_FILENAME_RE.sub("_", name)
-    return (name[:180] or "file.bin").strip(".")
+    name = _SAFE_FILENAME_RE.sub("_", name).strip(" .")
+    if not name:
+        return "file.bin"
+    return name[:180].rstrip(" .") or "file.bin"
 
 
 class AiAssistantService:
@@ -64,6 +66,31 @@ class AiAssistantService:
             created_at=row["created_at"],
         )
 
+    @staticmethod
+    def _message(row: Any, attachments: list[AiArtifactItem] | None = None) -> AiMessageItem:
+        return AiMessageItem(
+            id=row["id"],
+            role=row["role"],
+            text=row["text"],
+            status=row["status"],
+            created_at=row["created_at"],
+            attachments=attachments or [],
+        )
+
+    def _remove_storage_keys(self, storage_keys: list[str]) -> None:
+        for storage_key in storage_keys:
+            try:
+                path = resolve_storage_key(self.settings.storage_root, storage_key)
+                path.unlink(missing_ok=True)
+                parent = path.parent
+                if parent != self.settings.storage_root:
+                    try:
+                        parent.rmdir()
+                    except OSError:
+                        pass
+            except (OSError, ValueError):
+                continue
+
     async def list_conversations(self, owner_subject: str) -> list[AiConversationItem]:
         rows = await self.repo.list_conversations(owner_subject)
         return [self._conversation(row) for row in rows]
@@ -92,14 +119,7 @@ class AiAssistantService:
             if message_id is not None:
                 grouped.setdefault(message_id, []).append(self._artifact(row))
         return [
-            AiMessageItem(
-                id=row["id"],
-                role=row["role"],
-                text=row["text"],
-                status=row["status"],
-                created_at=row["created_at"],
-                attachments=grouped.get(row["id"], []),
-            )
+            self._message(row, grouped.get(row["id"], []))
             for row in rows
         ]
 
@@ -111,81 +131,71 @@ class AiAssistantService:
         text: str,
         effort: AiReasoningEffort,
         files: list[UploadFile],
-    ) -> tuple[AiMessageItem, list[RuntimeUpload], str | None]:
+    ) -> tuple[AiMessageItem, list[RuntimeUpload], str | None, int]:
         conversation = await self.require_conversation(owner_subject, conversation_id)
-        message_id = uuid4()
-        row = await self.repo.create_message(
-            owner_subject,
-            conversation_id,
-            message_id,
-            role="user",
-            text=text,
-            status="complete",
-        )
-        if row is None:
-            raise AiConversationNotFound
-
+        prepared: list[dict[str, Any]] = []
         runtime_uploads: list[RuntimeUpload] = []
-        attachments: list[AiArtifactItem] = []
-        for upload in files:
-            artifact_id = uuid4()
-            filename = _safe_filename(upload.filename or "upload.bin")
-            payload = await upload.read()
-            if len(payload) > self.settings.max_artifact_bytes:
-                raise ValueError(f"{filename} exceeds AI artifact size limit")
-            storage_key = (
-                Path("input") / str(conversation_id) / str(artifact_id) / filename
-            ).as_posix()
-            target = resolve_storage_key(self.settings.storage_root, storage_key)
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_bytes(payload)
-            mime_type = (
-                upload.content_type
-                or mimetypes.guess_type(filename)[0]
-                or "application/octet-stream"
-            )
-            artifact_row = await self.repo.create_artifact(
-                owner_subject,
-                artifact_id=artifact_id,
-                conversation_id=conversation_id,
-                message_id=message_id,
-                filename=filename,
-                mime_type=mime_type,
-                size_bytes=len(payload),
-                storage_key=storage_key,
-                kind="input",
-            )
-            if artifact_row is None:
-                raise AiConversationNotFound
-            attachments.append(self._artifact(artifact_row))
-            runtime_uploads.append(
-                RuntimeUpload(
-                    storage_key=storage_key,
-                    sandbox_name=f"{artifact_id.hex[:12]}-{filename}",
+        written_keys: list[str] = []
+        try:
+            for upload in files:
+                artifact_id = uuid4()
+                filename = _safe_filename(upload.filename or "upload.bin")
+                payload = await upload.read()
+                if len(payload) > self.settings.max_artifact_bytes:
+                    raise ValueError(f"{filename} exceeds AI artifact size limit")
+                storage_key = (
+                    Path("input") / str(conversation_id) / str(artifact_id) / filename
+                ).as_posix()
+                target = resolve_storage_key(self.settings.storage_root, storage_key)
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(payload)
+                written_keys.append(storage_key)
+                mime_type = (
+                    upload.content_type
+                    or mimetypes.guess_type(filename)[0]
+                    or "application/octet-stream"
                 )
-            )
+                prepared.append(
+                    {
+                        "id": artifact_id,
+                        "filename": filename,
+                        "mime_type": mime_type,
+                        "size_bytes": len(payload),
+                        "storage_key": storage_key,
+                    }
+                )
+                runtime_uploads.append(
+                    RuntimeUpload(
+                        storage_key=storage_key,
+                        sandbox_name=f"{artifact_id.hex[:12]}-{filename}",
+                    )
+                )
 
-        title: str | None = None
-        if conversation["title"] == "Conversație nouă" and text.strip():
-            title = text.strip().replace("\n", " ")[:80]
-        await self.repo.update_conversation(
-            owner_subject,
-            conversation_id,
-            effort=effort,
-            title=title,
-        )
-        return (
-            AiMessageItem(
-                id=row["id"],
-                role=row["role"],
-                text=row["text"],
-                status=row["status"],
-                created_at=row["created_at"],
-                attachments=attachments,
-            ),
-            runtime_uploads,
-            conversation["previous_response_id"],
-        )
+            title: str | None = None
+            if conversation["title"] == "Conversație nouă" and text.strip():
+                title = text.strip().replace("\n", " ")[:80]
+            created = await self.repo.create_user_submission(
+                owner_subject,
+                conversation_id,
+                uuid4(),
+                text=text,
+                effort=effort,
+                title=title,
+                artifacts=prepared,
+            )
+            if created is None:
+                raise AiConversationNotFound
+            prior_conversation, message_row, artifact_rows = created
+            attachments = [self._artifact(row) for row in artifact_rows]
+            return (
+                self._message(message_row, attachments),
+                runtime_uploads,
+                prior_conversation["previous_response_id"],
+                int(message_row["ordinal"]),
+            )
+        except Exception:
+            self._remove_storage_keys(written_keys)
+            raise
 
     async def finish_assistant_message(
         self,
@@ -197,47 +207,51 @@ class AiAssistantService:
         artifacts: list[RuntimeArtifact],
         status: str = "complete",
     ) -> AiMessageItem:
-        await self.require_conversation(owner_subject, conversation_id)
-        message_id = uuid4()
-        row = await self.repo.create_message(
-            owner_subject,
-            conversation_id,
-            message_id,
-            role="assistant",
-            text=text,
-            status=status,
-        )
-        if row is None:
-            raise AiConversationNotFound
-        attachments: list[AiArtifactItem] = []
-        for artifact in artifacts:
-            artifact_row = await self.repo.create_artifact(
+        prepared = [
+            {
+                "id": artifact.id,
+                "filename": _safe_filename(artifact.filename),
+                "mime_type": artifact.mime_type,
+                "size_bytes": artifact.size_bytes,
+                "storage_key": artifact.storage_key,
+            }
+            for artifact in artifacts
+        ]
+        storage_keys = [artifact.storage_key for artifact in artifacts]
+        try:
+            created = await self.repo.create_assistant_completion(
                 owner_subject,
-                artifact_id=artifact.id,
-                conversation_id=conversation_id,
-                message_id=message_id,
-                filename=artifact.filename,
-                mime_type=artifact.mime_type,
-                size_bytes=artifact.size_bytes,
-                storage_key=artifact.storage_key,
-                kind="output",
+                conversation_id,
+                uuid4(),
+                text=text,
+                status=status,
+                previous_response_id=previous_response_id,
+                artifacts=prepared,
             )
-            if artifact_row is not None:
-                attachments.append(self._artifact(artifact_row))
-        await self.repo.update_conversation(
+            if created is None:
+                raise AiConversationNotFound
+            message_row, artifact_rows = created
+            return self._message(
+                message_row,
+                [self._artifact(row) for row in artifact_rows],
+            )
+        except Exception:
+            self._remove_storage_keys(storage_keys)
+            raise
+
+    async def record_error_message(
+        self,
+        owner_subject: str,
+        conversation_id: UUID,
+        text: str,
+    ) -> AiMessageItem | None:
+        row = await self.repo.create_error_message(
             owner_subject,
             conversation_id,
-            previous_response_id=previous_response_id,
-            set_previous_response_id=True,
+            uuid4(),
+            text=text,
         )
-        return AiMessageItem(
-            id=row["id"],
-            role=row["role"],
-            text=row["text"],
-            status=row["status"],
-            created_at=row["created_at"],
-            attachments=attachments,
-        )
+        return None if row is None else self._message(row)
 
     async def artifact_path(
         self, owner_subject: str, artifact_id: UUID
