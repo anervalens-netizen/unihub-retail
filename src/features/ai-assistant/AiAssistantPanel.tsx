@@ -227,7 +227,7 @@ export function AiAssistantPanel({
   }
 
   return <>
-    {!open && <button type="button" onClick={() => setOpen(true)} className="fixed bottom-20 right-4 z-40 inline-flex size-11 items-center justify-center rounded-2xl bg-indigo-600 text-white shadow-lg shadow-indigo-600/20 transition hover:-translate-y-0.5 hover:bg-indigo-700 lg:bottom-6" aria-label="Deschide UniHub AI"><Bot size={20} aria-hidden="true" /></button>}
+    {!open && <button type="button" onClick={() => setOpen(true)} className="fixed bottom-36 right-4 z-40 inline-flex size-11 items-center justify-center rounded-2xl bg-indigo-600 text-white shadow-lg shadow-indigo-600/20 transition hover:-translate-y-0.5 hover:bg-indigo-700 lg:bottom-6" aria-label="Deschide UniHub AI"><Bot size={20} aria-hidden="true" /></button>}
     {open && <div className="fixed inset-0 z-50 flex justify-end bg-slate-950/20 backdrop-blur-[1px] lg:static lg:z-auto lg:bg-transparent lg:backdrop-blur-none">
       <button type="button" aria-label="Închide UniHub AI" className="absolute inset-0 lg:hidden" onClick={() => setOpen(false)} />
       <aside

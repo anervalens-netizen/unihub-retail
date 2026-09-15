@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type Dispatch,
+  type SetStateAction,
+} from 'react';
 
 import {
   consumeAiStream,
@@ -94,17 +101,29 @@ function useStreamEvents(
   }, [setMessages, setRunStatus]);
 }
 
-export function useAiAssistant(enabled: boolean) {
-  const [conversationId, setConversationId] = usePersistentState<string | null>(
-    'unihub_ai_conversation',
-    null,
-  );
-  const [messages, setMessages] = useState<AiChatMessage[]>([]);
-  const [runStatus, setRunStatus] = useState<AiRunStatus>(enabled ? 'idle' : 'unavailable');
+type MutableRef<T> = { current: T };
+
+/**
+ * Owns conversation bootstrap/selection. A monotonically increasing selection
+ * epoch makes a delayed bootstrap response unable to overwrite a newer owner
+ * choice (New Conversation) made while that response was still in flight.
+ */
+function useConversationBootstrap(params: {
+  enabled: boolean;
+  conversationId: string | null;
+  setConversationId: Dispatch<SetStateAction<string | null>>;
+  setMessages: Dispatch<SetStateAction<AiChatMessage[]>>;
+  setRunStatus: Dispatch<SetStateAction<AiRunStatus>>;
+}): { initializedRef: MutableRef<boolean>; selectionEpochRef: MutableRef<number> } {
+  const {
+    enabled,
+    conversationId,
+    setConversationId,
+    setMessages,
+    setRunStatus,
+  } = params;
   const initializedRef = useRef(false);
   const selectionEpochRef = useRef(0);
-  const streamAbortRef = useRef<AbortController | null>(null);
-  const handleStreamEvent = useStreamEvents(setMessages, setRunStatus);
 
   const loadConversation = useCallback(async (id: string, epoch: number) => {
     const next = await listAiMessages(id);
@@ -112,7 +131,7 @@ export function useAiAssistant(enabled: boolean) {
     setConversationId(id);
     setMessages(next);
     return true;
-  }, [setConversationId]);
+  }, [setConversationId, setMessages]);
 
   useEffect(() => {
     if (!enabled) {
@@ -145,7 +164,27 @@ export function useAiAssistant(enabled: boolean) {
     return () => {
       cancelled = true;
     };
-  }, [conversationId, enabled, loadConversation]);
+  }, [conversationId, enabled, loadConversation, setRunStatus]);
+
+  return { initializedRef, selectionEpochRef };
+}
+
+export function useAiAssistant(enabled: boolean) {
+  const [conversationId, setConversationId] = usePersistentState<string | null>(
+    'unihub_ai_conversation',
+    null,
+  );
+  const [messages, setMessages] = useState<AiChatMessage[]>([]);
+  const [runStatus, setRunStatus] = useState<AiRunStatus>(enabled ? 'idle' : 'unavailable');
+  const { initializedRef, selectionEpochRef } = useConversationBootstrap({
+    enabled,
+    conversationId,
+    setConversationId,
+    setMessages,
+    setRunStatus,
+  });
+  const streamAbortRef = useRef<AbortController | null>(null);
+  const handleStreamEvent = useStreamEvents(setMessages, setRunStatus);
 
   useEffect(() => () => {
     streamAbortRef.current?.abort();
@@ -227,7 +266,7 @@ export function useAiAssistant(enabled: boolean) {
       console.error('UniHub AI conversation creation failed', error);
       setRunStatus('unavailable');
     }
-  }, [enabled, runStatus, setConversationId]);
+  }, [enabled, initializedRef, runStatus, selectionEpochRef, setConversationId]);
 
   return {
     messages,

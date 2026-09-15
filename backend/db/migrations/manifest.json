@@ -155,6 +155,6 @@
     "075_v3_saved_views.sql": "6ffc7bf571001b993af3849bb2a8170af826dc4737bdd643cdb876ee87b8d856",
     "076_v3_dashboard_generation_epoch.sql": "22c2df0116596c51438b369d1f6329111a4f3682b9e7ecf555493c94dc952337",
     "077_v3_reporting_epoch_operations_acl.sql": "46af12600bf4bf5e05a73ead476864a6ad356010c7cf8108cde5096fd8a44805",
-    "086_v3_ai_assistant.sql": "939b1ace57f4ff514cf63a04957801b2c031abd7343941863578692c290784a8"
+    "086_v3_ai_assistant.sql": "0f2d4db3c5de689ad08e289435bb87b332f4039443d3dafd2ea601676ff881ce"
   }
 }

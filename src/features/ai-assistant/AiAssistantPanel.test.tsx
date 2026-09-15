@@ -86,4 +86,37 @@ describe('AiAssistantPanel', () => {
     expect(screen.getByText('raport.xlsx')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Trimite/ })).toBeDisabled();
   });
+
+  it('hides an open panel when owner access is lost while it stays mounted', () => {
+    const { rerender } = render(<AiAssistantPanel canAccess currentContext={context} messages={[]} runStatus="running" onSubmit={vi.fn()} onStop={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Deschide UniHub AI' }));
+    expect(screen.getByRole('complementary', { name: 'UniHub AI' })).toBeInTheDocument();
+
+    rerender(<AiAssistantPanel canAccess={false} currentContext={context} messages={[]} runStatus="running" onSubmit={vi.fn()} onStop={vi.fn()} />);
+
+    expect(screen.queryByRole('complementary', { name: 'UniHub AI' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Deschide UniHub AI' })).not.toBeInTheDocument();
+  });
+
+  it('keeps Steer usable while running and blocks Stop once stopping', () => {
+    const submit = vi.fn();
+    const stop = vi.fn();
+    const { rerender } = render(<AiAssistantPanel canAccess currentContext={context} messages={[]} runStatus="running" onSubmit={submit} onStop={stop} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Deschide UniHub AI' }));
+    fireEvent.change(screen.getByLabelText('Mesaj pentru UniHub AI'), { target: { value: 'continuă pe ASM' } });
+    expect(screen.getByRole('button', { name: /Steer/ })).toBeEnabled();
+    fireEvent.click(screen.getByRole('button', { name: /Stop/ }));
+    expect(stop).toHaveBeenCalledOnce();
+
+    rerender(<AiAssistantPanel canAccess currentContext={context} messages={[]} runStatus="stopping" onSubmit={submit} onStop={stop} />);
+    expect(screen.getByRole('button', { name: /Stop/ })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /Steer/ })).toBeEnabled();
+  });
+
+  it('offers Send rather than Stop while idle', () => {
+    render(<AiAssistantPanel canAccess currentContext={context} messages={[]} runStatus="idle" onSubmit={vi.fn()} onStop={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Deschide UniHub AI' }));
+    expect(screen.queryByRole('button', { name: /Stop/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Trimite/ })).toBeInTheDocument();
+  });
 });

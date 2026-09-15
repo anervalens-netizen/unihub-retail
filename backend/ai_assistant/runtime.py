@@ -28,7 +28,12 @@ from ai_assistant.settings import (
     load_ai_assistant_settings,
     resolve_storage_key,
 )
-from schemas.ai_assistant import RuntimeArtifact, RuntimeSteerRequest, RuntimeTurnRequest
+from schemas.ai_assistant import (
+    AiReasoningEffort,
+    RuntimeArtifact,
+    RuntimeSteerRequest,
+    RuntimeTurnRequest,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -82,7 +87,7 @@ def _manifest() -> Manifest:
     )
 
 
-def _agent(settings: AiAssistantSettings, effort: str) -> SandboxAgent[None]:
+def _agent(settings: AiAssistantSettings, effort: AiReasoningEffort) -> SandboxAgent[None]:
     return SandboxAgent(
         name="UniHub AI",
         model=settings.model,

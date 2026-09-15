@@ -1499,6 +1499,138 @@ export const RETAIL_COMPONENT_SCHEMAS = {
     "title": "AgentsOverviewResponse",
     "type": "object"
   },
+  "AiArtifactItem": {
+    "additionalProperties": false,
+    "properties": {
+      "created_at": {
+        "format": "date-time",
+        "title": "Created At",
+        "type": "string"
+      },
+      "download_url": {
+        "title": "Download Url",
+        "type": "string"
+      },
+      "filename": {
+        "title": "Filename",
+        "type": "string"
+      },
+      "id": {
+        "format": "uuid",
+        "title": "Id",
+        "type": "string"
+      },
+      "kind": {
+        "enum": [
+          "input",
+          "output"
+        ],
+        "title": "Kind",
+        "type": "string"
+      },
+      "mime_type": {
+        "title": "Mime Type",
+        "type": "string"
+      },
+      "size_bytes": {
+        "title": "Size Bytes",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "id",
+      "filename",
+      "mime_type",
+      "size_bytes",
+      "kind",
+      "download_url",
+      "created_at"
+    ],
+    "title": "AiArtifactItem",
+    "type": "object"
+  },
+  "AiConversationCreate": {
+    "additionalProperties": false,
+    "properties": {
+      "effort": {
+        "default": "high",
+        "enum": [
+          "none",
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ],
+        "title": "Effort",
+        "type": "string"
+      }
+    },
+    "title": "AiConversationCreate",
+    "type": "object"
+  },
+  "AiConversationItem": {
+    "additionalProperties": false,
+    "properties": {
+      "created_at": {
+        "format": "date-time",
+        "title": "Created At",
+        "type": "string"
+      },
+      "effort": {
+        "enum": [
+          "none",
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ],
+        "title": "Effort",
+        "type": "string"
+      },
+      "id": {
+        "format": "uuid",
+        "title": "Id",
+        "type": "string"
+      },
+      "title": {
+        "title": "Title",
+        "type": "string"
+      },
+      "updated_at": {
+        "format": "date-time",
+        "title": "Updated At",
+        "type": "string"
+      }
+    },
+    "required": [
+      "id",
+      "title",
+      "effort",
+      "created_at",
+      "updated_at"
+    ],
+    "title": "AiConversationItem",
+    "type": "object"
+  },
+  "AiConversationListResponse": {
+    "additionalProperties": false,
+    "properties": {
+      "items": {
+        "items": {
+          "$ref": "#/components/schemas/AiConversationItem"
+        },
+        "title": "Items",
+        "type": "array"
+      }
+    },
+    "required": [
+      "items"
+    ],
+    "title": "AiConversationListResponse",
+    "type": "object"
+  },
   "AiForecastDailyPoint": {
     "additionalProperties": false,
     "properties": {
@@ -2179,6 +2311,109 @@ export const RETAIL_COMPONENT_SCHEMAS = {
     "title": "AiForecastSummary",
     "type": "object"
   },
+  "AiMessageItem": {
+    "additionalProperties": false,
+    "properties": {
+      "attachments": {
+        "items": {
+          "$ref": "#/components/schemas/AiArtifactItem"
+        },
+        "title": "Attachments",
+        "type": "array"
+      },
+      "created_at": {
+        "format": "date-time",
+        "title": "Created At",
+        "type": "string"
+      },
+      "id": {
+        "format": "uuid",
+        "title": "Id",
+        "type": "string"
+      },
+      "role": {
+        "enum": [
+          "user",
+          "assistant",
+          "system"
+        ],
+        "title": "Role",
+        "type": "string"
+      },
+      "status": {
+        "enum": [
+          "complete",
+          "streaming",
+          "error",
+          "stopped"
+        ],
+        "title": "Status",
+        "type": "string"
+      },
+      "text": {
+        "title": "Text",
+        "type": "string"
+      }
+    },
+    "required": [
+      "id",
+      "role",
+      "text",
+      "status",
+      "created_at"
+    ],
+    "title": "AiMessageItem",
+    "type": "object"
+  },
+  "AiMessageListResponse": {
+    "additionalProperties": false,
+    "properties": {
+      "items": {
+        "items": {
+          "$ref": "#/components/schemas/AiMessageItem"
+        },
+        "title": "Items",
+        "type": "array"
+      }
+    },
+    "required": [
+      "items"
+    ],
+    "title": "AiMessageListResponse",
+    "type": "object"
+  },
+  "AiSteerResponse": {
+    "additionalProperties": false,
+    "properties": {
+      "accepted": {
+        "title": "Accepted",
+        "type": "boolean"
+      },
+      "message": {
+        "$ref": "#/components/schemas/AiMessageItem"
+      }
+    },
+    "required": [
+      "accepted",
+      "message"
+    ],
+    "title": "AiSteerResponse",
+    "type": "object"
+  },
+  "AiStopResponse": {
+    "additionalProperties": false,
+    "properties": {
+      "ok": {
+        "title": "Ok",
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "ok"
+    ],
+    "title": "AiStopResponse",
+    "type": "object"
+  },
   "AsmStats": {
     "additionalProperties": false,
     "properties": {
@@ -2327,6 +2562,95 @@ export const RETAIL_COMPONENT_SCHEMAS = {
       "file"
     ],
     "title": "Body_reconcile_erp_report_file_api_import_erp_reconciliation_post",
+    "type": "object"
+  },
+  "Body_run_turn_api_ai_conversations__conversation_id__turn_post": {
+    "properties": {
+      "current_view": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Current View"
+      },
+      "effort": {
+        "default": "high",
+        "enum": [
+          "none",
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ],
+        "title": "Effort",
+        "type": "string"
+      },
+      "files": {
+        "anyOf": [
+          {
+            "items": {
+              "contentMediaType": "application/octet-stream",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Files"
+      },
+      "text": {
+        "default": "",
+        "maxLength": 50000,
+        "title": "Text",
+        "type": "string"
+      }
+    },
+    "title": "Body_run_turn_api_ai_conversations__conversation_id__turn_post",
+    "type": "object"
+  },
+  "Body_steer_api_ai_conversations__conversation_id__steer_post": {
+    "properties": {
+      "current_view": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Current View"
+      },
+      "files": {
+        "anyOf": [
+          {
+            "items": {
+              "contentMediaType": "application/octet-stream",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "title": "Files"
+      },
+      "text": {
+        "default": "",
+        "maxLength": 50000,
+        "title": "Text",
+        "type": "string"
+      }
+    },
+    "title": "Body_steer_api_ai_conversations__conversation_id__steer_post",
     "type": "object"
   },
   "Body_upload_promo_actuals_file_api_import_promo_actuals_post": {
@@ -16178,6 +16502,9 @@ export const RETAIL_RESPONSE_SCHEMAS = {
   "change_store_activity_api_stores__site_code__activity_post": {
     "$ref": "#/components/schemas/StoreActivityChangeResponse"
   },
+  "create_conversation_api_ai_conversations_post": {
+    "$ref": "#/components/schemas/AiConversationItem"
+  },
   "create_export_operation_api_exports_operations_post": {
     "$ref": "#/components/schemas/ExportOperationResponse"
   },
@@ -16190,6 +16517,7 @@ export const RETAIL_RESPONSE_SCHEMAS = {
   "delete_saved_view_api_saved_views__view_id__delete": {
     "$ref": "#/components/schemas/SavedViewDeleteResponse"
   },
+  "download_artifact_api_ai_artifacts__artifact_id__download_get": {},
   "download_export_api_exports_download_post": {},
   "download_export_operation_api_exports_operations__operation_id__download_get": {},
   "export_scenario_api_target_calculator_scenarios__scenario_id__export_get": {},
@@ -16437,6 +16765,12 @@ export const RETAIL_RESPONSE_SCHEMAS = {
   "grile_store_refresh_operation_api_grile_store_refreshes__operation_id__get": {
     "$ref": "#/components/schemas/GrileStoreRefreshOperationEnvelope"
   },
+  "list_conversations_api_ai_conversations_get": {
+    "$ref": "#/components/schemas/AiConversationListResponse"
+  },
+  "list_messages_api_ai_conversations__conversation_id__messages_get": {
+    "$ref": "#/components/schemas/AiMessageListResponse"
+  },
   "list_records_salarii_records_get": {
     "items": {
       "$ref": "#/components/schemas/SalaryRecordPublic"
@@ -16501,6 +16835,7 @@ export const RETAIL_RESPONSE_SCHEMAS = {
   "remove_task_api_tasks__task_id__delete": {
     "$ref": "#/components/schemas/TaskDeleteResponse"
   },
+  "run_turn_api_ai_conversations__conversation_id__turn_post": {},
   "salarii_evolution_salarii_evolution_get": {
     "items": {
       "$ref": "#/components/schemas/SalaryEvolutionPoint"
@@ -16537,6 +16872,12 @@ export const RETAIL_RESPONSE_SCHEMAS = {
   },
   "session_status_auth_session_get": {
     "$ref": "#/components/schemas/SessionStatusResponse"
+  },
+  "steer_api_ai_conversations__conversation_id__steer_post": {
+    "$ref": "#/components/schemas/AiSteerResponse"
+  },
+  "stop_api_ai_conversations__conversation_id__stop_post": {
+    "$ref": "#/components/schemas/AiStopResponse"
   },
   "stores_api_store_pnl_stores_get": {
     "$ref": "#/components/schemas/PnlStoresResponse"
