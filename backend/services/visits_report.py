@@ -3,6 +3,7 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
+import asyncpg
 from fastapi import HTTPException
 
 from config import get_visits_images_dir
@@ -23,6 +24,10 @@ from domain.filter_scope import FilterInput
 from services.filters import normalize_filter, normalize_filter_values
 
 logger = logging.getLogger(__name__)
+VISITS_SOURCE_UNAVAILABLE = {
+    "code": "visits_source_unavailable",
+    "message": "Sursa FieldOps pentru vizite nu este disponibilă momentan.",
+}
 
 
 def _filter_values(value: FilterInput) -> list[str]:
@@ -43,12 +48,12 @@ class VisitsReportService:
             return await reader()
         except HTTPException:
             raise
+        except asyncpg.exceptions.UndefinedTableError as exc:
+            logger.warning("FieldOps PostgreSQL visit source is unavailable operation=%s", operation)
+            raise HTTPException(status_code=503, detail=VISITS_SOURCE_UNAVAILABLE) from exc
         except Exception:
             logger.exception("FieldOps PostgreSQL visit read failed operation=%s", operation)
-            raise HTTPException(
-                status_code=503,
-                detail="Datele de vizite nu sunt disponibile momentan.",
-            ) from None
+            raise
 
     def get_photo_filenames(self, visit_id: str) -> list[str]:
         return self._photo_repository().get_photo_filenames(visit_id)

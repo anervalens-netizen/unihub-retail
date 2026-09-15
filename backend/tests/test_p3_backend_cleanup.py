@@ -3,13 +3,15 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from fastapi import HTTPException
 from pydantic import ValidationError
 
 import worker
 from repositories.hr import HrRepository
 from repositories.tasks import TasksRepository
 from routers.hr import LeaveRequestCreate
-from routers.tasks import TaskCreate
+from services.tasks import TasksService
+from routers.tasks import TaskCreate, TaskUpdate
 
 
 class _Acquire:
@@ -51,6 +53,21 @@ async def test_tasks_repository_uses_bounded_stable_pagination() -> None:
 
 
 @pytest.mark.asyncio
+async def test_task_repository_emits_only_supplied_patch_columns_including_null() -> None:
+    connection = AsyncMock()
+    connection.fetchrow.return_value = {"id": 7, "assignee": None}
+    pool = MagicMock()
+    pool.acquire.return_value = _Acquire(connection)
+
+    await TasksRepository(pool).update_task(7, {"assignee": None})
+
+    sql, assignee, task_id = connection.fetchrow.await_args.args
+    assert "assignee = $1" in sql
+    assert "site_code =" not in sql and "deadline =" not in sql and "status =" not in sql
+    assert (assignee, task_id) == (None, 7)
+
+
+@pytest.mark.asyncio
 async def test_hr_repository_uses_bounded_stable_pagination() -> None:
     connection = AsyncMock()
     connection.fetchval.return_value = 9
@@ -74,6 +91,24 @@ async def test_hr_repository_uses_bounded_stable_pagination() -> None:
     assert "ORDER BY created_at DESC, id DESC" in sql
     assert "LIMIT $3 OFFSET $4" in sql
     assert (status, agent_name, limit, offset) == ("pending", "%Ana%", 4, 8)
+
+
+@pytest.mark.asyncio
+async def test_task_service_rejects_null_for_non_nullable_fields() -> None:
+    repo = MagicMock()
+    with pytest.raises(HTTPException) as caught:
+        await TasksService(repo).update_task(7, {"status": None})
+
+    assert caught.value.status_code == 400
+    repo.update_task.assert_not_called()
+
+
+def test_task_patch_preserves_omitted_vs_explicit_null_fields() -> None:
+    omitted = TaskUpdate.model_validate({}).model_dump(exclude_unset=True)
+    explicit_null = TaskUpdate.model_validate({"assignee": None, "site_code": None, "deadline": None}).model_dump(exclude_unset=True)
+
+    assert omitted == {}
+    assert explicit_null == {"assignee": None, "site_code": None, "deadline": None}
 
 
 def test_listing_inputs_are_typed_and_bounded() -> None:

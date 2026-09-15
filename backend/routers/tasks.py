@@ -126,7 +126,7 @@ async def patch_task(
     svc: TasksService = Depends(get_tasks_service),
     _claims=Depends(require_business_write_access),
 ):
-    return await svc.update_task(task_id, body.model_dump(exclude_none=True))
+    return await svc.update_task(task_id, body.model_dump(exclude_unset=True))
 
 
 @router.delete("/{task_id}", response_model=TaskDeleteResponse)

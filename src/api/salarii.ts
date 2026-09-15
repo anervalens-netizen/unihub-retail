@@ -39,9 +39,11 @@ export async function fetchSalaryAgents(params: SalaryAgentsQuery): Promise<Sala
 
 export async function fetchSalaryAgentHistory(
   personId: RetailOperationPaths['agent_history_salarii_agents__person_id__history_get']['person_id'],
+  signal?: AbortSignal,
 ): Promise<SalaryAgentHistory> {
   return await generatedGet('agent_history_salarii_agents__person_id__history_get', {
     pathParams: { person_id: personId },
+    signal,
   });
 }
 

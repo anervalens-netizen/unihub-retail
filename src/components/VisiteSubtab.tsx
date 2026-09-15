@@ -4,6 +4,7 @@ import { MapPin, Search } from 'lucide-react';
 
 import { getFilterOptions } from '../api/filters';
 import { getVisitsReport, getVisitsTree, type TeamLeaderGroup, type VisitReportResponse, type VisitReportRow } from '../api/visitsReport';
+import { ApiError } from '../api/client';
 import type { AppFilters } from '../lib/appFilters';
 import { ALL_FIRMS, ALL_SCOPE } from '../lib/filterValues';
 import { queryKeys } from '../lib/queryKeys';
@@ -19,6 +20,18 @@ const COMPLIANCE_KEYS: Array<{ key: keyof VisitReportRow; label: string }> = [
   { key: 'curatenie_pct', label: 'Curatenie' }, { key: 'imagine_pct', label: 'Imagine' }, { key: 'uniforma_pct', label: 'Uniforma' }, { key: 'afise_pct', label: 'Afise' }, { key: 'produse_promo_pct', label: 'Promo' },
 ];
 
+export function isVisitsSourceUnavailable(error: unknown): boolean {
+  if (!(error instanceof ApiError) || error.status !== 503) return false;
+  const body = error.body;
+  if (!body || typeof body !== 'object' || !('detail' in body)) return false;
+  const detail = body.detail;
+  return Boolean(detail && typeof detail === 'object' && 'code' in detail && detail.code === 'visits_source_unavailable');
+}
+
+function visitsQueryRetry(failureCount: number, error: unknown): boolean {
+  return !isVisitsSourceUnavailable(error) && failureCount < 2;
+}
+
 function useVisitsSubtab({ currentMonth, months }: VisiteSubtabProps) {
   const [openVisitId, setOpenVisitId] = useState<string | null>(null);
   const [selectedMonth, setSelectedMonth] = useState(currentMonth);
@@ -30,8 +43,8 @@ function useVisitsSubtab({ currentMonth, months }: VisiteSubtabProps) {
       if (latestMonth) setSelectedMonth(latestMonth);
     }
   }, [availableMonths, selectedMonth]);
-  const summaryQuery = useQuery({ queryKey: queryKeys.visits.report(selectedMonth), queryFn: ({ signal }) => getVisitsReport(buildVisitsReportQuery(selectedMonth, ALL_FILTERS), signal), enabled: Boolean(selectedMonth), staleTime: 5 * 60 * 1000 });
-  const treeQuery = useQuery({ queryKey: queryKeys.visits.tree(selectedMonth), queryFn: ({ signal }) => getVisitsTree(buildVisitsTreeQuery(selectedMonth, ALL_FILTERS), signal), enabled: Boolean(selectedMonth), staleTime: 5 * 60 * 1000 });
+  const summaryQuery = useQuery({ queryKey: queryKeys.visits.report(selectedMonth), queryFn: ({ signal }) => getVisitsReport(buildVisitsReportQuery(selectedMonth, ALL_FILTERS), signal), enabled: Boolean(selectedMonth), staleTime: 5 * 60 * 1000, retry: visitsQueryRetry });
+  const treeQuery = useQuery({ queryKey: queryKeys.visits.tree(selectedMonth), queryFn: ({ signal }) => getVisitsTree(buildVisitsTreeQuery(selectedMonth, ALL_FILTERS), signal), enabled: Boolean(selectedMonth), staleTime: 5 * 60 * 1000, retry: visitsQueryRetry });
   const activeStoresQuery = useQuery({ queryKey: queryKeys.visits.activeStores(selectedMonth), queryFn: ({ signal }) => getFilterOptions(selectedMonth, signal), enabled: Boolean(selectedMonth), staleTime: 5 * 60 * 1000 });
   const groups = useMemo(() => treeQuery.data?.team_leaders ?? [], [treeQuery.data]);
   const filteredGroups = useMemo(() => {
@@ -39,7 +52,7 @@ function useVisitsSubtab({ currentMonth, months }: VisiteSubtabProps) {
     return groups.map((group) => ({ ...group, months: group.months.filter((month) => month.month === selectedMonth) })).filter((group) => group.months.length > 0).filter((group) => !needle || group.team_leader.toLocaleLowerCase('ro-RO').includes(needle)).map((group) => ({ ...group, nr_vizite: group.months.reduce((total, month) => total + month.nr_vizite, 0) }));
   }, [groups, selectedMonth, teamLeaderSearch]);
   const activeStoreCount = useMemo(() => new Set(activeStoresQuery.data?.magazine.map((store) => store.site_code) ?? []).size, [activeStoresQuery.data]);
-  return { openVisitId, setOpenVisitId, selectedMonth, setSelectedMonth, teamLeaderSearch, setTeamLeaderSearch, availableMonths, summary: summaryQuery.data ?? null, filteredGroups, activeStoreCount, loadingSummary: summaryQuery.isPending, loadingTree: treeQuery.isPending, error: summaryQuery.error ?? treeQuery.error };
+  return { openVisitId, setOpenVisitId, selectedMonth, setSelectedMonth, teamLeaderSearch, setTeamLeaderSearch, availableMonths, summary: summaryQuery.data ?? null, filteredGroups, activeStoreCount, loadingSummary: summaryQuery.isPending, loadingTree: treeQuery.isPending, sourceUnavailable: isVisitsSourceUnavailable(summaryQuery.error) || isVisitsSourceUnavailable(treeQuery.error), error: summaryQuery.error ?? treeQuery.error };
 }
 
 function PctBar({ value }: { value: number }) {
@@ -77,6 +90,7 @@ export function VisiteSubtab(props: VisiteSubtabProps) {
   const model = useVisitsSubtab(props);
   if (model.availableMonths.length === 0) return <div className="flex h-40 flex-col items-center justify-center gap-2 text-slate-400"><MapPin size={28} strokeWidth={1.5} /><p className="text-sm font-semibold">Nicio vizita inregistrata</p></div>;
   if (model.loadingTree && model.loadingSummary) return <div className="flex h-40 items-center justify-center text-sm font-semibold text-slate-500">Se incarca vizitele...</div>;
-  if (model.error) return <div className="mx-4 mt-4 rounded-2xl bg-red-50 p-4 text-sm text-red-600 dark:bg-red-900/20 dark:text-red-400">{model.error.message || 'Eroare la incarcare'}</div>;
+  if (model.sourceUnavailable) return <div className="mx-4 mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-200" role="status" aria-live="polite"><p className="font-semibold">Vizitele nu sunt disponibile momentan.</p><p className="mt-1">Sursa externă FieldOps nu a putut fi accesată. Restul aplicației rămâne disponibil.</p></div>;
+  if (model.error) return <div className="mx-4 mt-4 rounded-2xl bg-red-50 p-4 text-sm text-red-600 dark:bg-red-900/20 dark:text-red-400">{model.error instanceof Error ? model.error.message : 'Eroare la incarcare'}</div>;
   return <div className="space-y-4 px-4"><VisitsToolbar months={model.availableMonths} selectedMonth={model.selectedMonth} search={model.teamLeaderSearch} onMonthChange={model.setSelectedMonth} onSearch={model.setTeamLeaderSearch} /><VisitKpis summary={model.summary} loading={model.loadingSummary} activeStoreCount={model.activeStoreCount} /><CompliancePanel summary={model.summary} selectedMonth={model.selectedMonth} /><TeamLeadersPanel groups={model.filteredGroups} loading={model.loadingTree} onOpenVisit={model.setOpenVisitId} />{model.openVisitId && <VisitDrawer visitId={model.openVisitId} onClose={() => model.setOpenVisitId(null)} />}</div>;
 }

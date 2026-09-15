@@ -16063,6 +16063,39 @@ export const RETAIL_COMPONENT_SCHEMAS = {
     "title": "VisitTreeResponse",
     "type": "object"
   },
+  "VisitsSourceUnavailableDetail": {
+    "additionalProperties": false,
+    "properties": {
+      "code": {
+        "const": "visits_source_unavailable",
+        "title": "Code",
+        "type": "string"
+      },
+      "message": {
+        "title": "Message",
+        "type": "string"
+      }
+    },
+    "required": [
+      "code",
+      "message"
+    ],
+    "title": "VisitsSourceUnavailableDetail",
+    "type": "object"
+  },
+  "VisitsSourceUnavailableResponse": {
+    "additionalProperties": false,
+    "properties": {
+      "detail": {
+        "$ref": "#/components/schemas/VisitsSourceUnavailableDetail"
+      }
+    },
+    "required": [
+      "detail"
+    ],
+    "title": "VisitsSourceUnavailableResponse",
+    "type": "object"
+  },
   "YearHistoryPoint": {
     "additionalProperties": false,
     "properties": {

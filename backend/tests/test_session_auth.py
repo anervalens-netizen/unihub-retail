@@ -4,7 +4,7 @@ import asyncio
 import json
 import time
 from pathlib import Path
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, quote, urlparse
 from unittest.mock import AsyncMock
 
 import httpx
@@ -256,6 +256,44 @@ async def test_login_stores_encrypted_pkce_flow_and_redirects() -> None:
     assert len(redis.values) == 1
     ciphertext = next(iter(redis.values.values()))
     assert b"verifier" not in ciphertext and b"nonce" not in ciphertext
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("destination", [
+    "https://evil.example/",
+    "//evil.example/",
+    "javascript:alert(1)",
+    "%2F%2Fevil.example%2F",
+    "https://retail.example.invalid.evil.example/",
+])
+async def test_callback_ignores_untrusted_return_destinations(
+    monkeypatch: pytest.MonkeyPatch,
+    destination: str,
+) -> None:
+    redis = FakeRedis()
+    http = FakeHttp({
+        "access_token": "access-token",
+        "id_token": "id-token",
+        "refresh_token": "refresh-token",
+    })
+    _install(redis, http)
+    state, binding = "r" * 43, "b" * 43
+    await _store_bound_flow(redis, state, binding)
+    claims = AuthClaims(
+        "subject", "user@example.invalid", "user", ["unihub-manager"],
+        "issuer", "retail", int(time.time()) - 1, int(time.time()) + 600, {},
+    )
+    monkeypatch.setattr(session_auth, "verify_oidc_token", AsyncMock(return_value=claims))
+
+    response = await session_auth.session_callback(_request(
+        "GET",
+        "x" * 43,
+        query=f"code=code&state={state}&return_to={quote(destination, safe='')}".encode(),
+        extra_cookies={_flow_cookie_name(state): binding},
+    ))
+
+    assert response.status_code == 303
+    assert response.headers["location"] == _settings().public_origin + "/"
 
 
 @pytest.mark.anyio

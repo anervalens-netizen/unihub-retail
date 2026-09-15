@@ -47,7 +47,9 @@ class TasksService:
     async def update_task(self, task_id: int, data: dict[str, Any]) -> dict[str, Any]:
         if not data:
             raise HTTPException(status_code=400, detail="Niciun câmp de actualizat")
-            
+        if any(data.get(field) is None for field in ("title", "status") if field in data):
+            raise HTTPException(status_code=400, detail="Câmpul nu poate fi golit")
+
         row = await self.repo.update_task(task_id, data)
         if row is None:
             raise HTTPException(status_code=404, detail="Task negăsit")

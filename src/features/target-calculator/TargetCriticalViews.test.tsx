@@ -54,6 +54,9 @@ describe('Target critical views', () => {
     const setTargetMonth = vi.fn(); const setTotalTarget = vi.fn(); const setMinFloor = vi.fn();
     const { rerender } = render(<TargetConfiguration context={null} busy={false} loadInitial={reload} targetMonth="2026-09" setTargetMonth={vi.fn()} totalTarget="1000" setTotalTarget={vi.fn()} minFloor="100" setMinFloor={vi.fn()} seasonalityMode="multi" selectSeasonalityMode={vi.fn()} handleCalculate={calculate} logicOpen={false} setLogicOpen={setLogic} />);
     expect(screen.queryByText('Calculator Target')).not.toBeInTheDocument();
+    rerender(<TargetConfiguration context={{ can_finalize: false } as never} busy={false} loadInitial={reload} targetMonth="2026-09" setTargetMonth={vi.fn()} totalTarget="1000" setTotalTarget={vi.fn()} minFloor="100" setMinFloor={vi.fn()} seasonalityMode="multi" selectSeasonalityMode={vi.fn()} handleCalculate={calculate} logicOpen={false} setLogicOpen={setLogic} />);
+    expect(screen.getByRole('status')).toHaveTextContent('Nu ai permisiunea de a configura sau finaliza targeturi');
+    expect(screen.queryByRole('button', { name: 'Calculeaza propunerea' })).not.toBeInTheDocument();
     rerender(<TargetConfiguration context={{ can_finalize: true, latest_sales_month: '2026-08', active_store_count: 2 } as never} busy={false} loadInitial={reload} targetMonth="2026-09" setTargetMonth={setTargetMonth} totalTarget="1000" setTotalTarget={setTotalTarget} minFloor="100" setMinFloor={setMinFloor} seasonalityMode="multi" selectSeasonalityMode={vi.fn()} handleCalculate={calculate} logicOpen setLogicOpen={setLogic} />);
     fireEvent.change(screen.getByLabelText('Luna target'), { target: { value: '2026-10' } });
     fireEvent.change(screen.getByLabelText('Target total (RON)'), { target: { value: '2000' } });
