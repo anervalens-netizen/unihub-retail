@@ -199,10 +199,10 @@ class AiAssistantService:
             self._remove_storage_keys(written_keys)
             raise
 
-    async def compensate_rejected_steer(
+    async def compensate_rejected_submission(
         self, owner_subject: str, conversation_id: UUID, message_id: UUID,
     ) -> None:
-        storage_keys = await self.repo.compensate_rejected_steer(
+        storage_keys = await self.repo.compensate_rejected_submission(
             owner_subject, conversation_id, message_id,
         )
         # Unlike best-effort cleanup during submission failure, failures here must

@@ -22,6 +22,7 @@ from schemas.ai_assistant import (
     AiReasoningEffort,
     AiSteerResponse,
     AiStopResponse,
+    RUNTIME_ADMISSION_REJECTION_MESSAGE,
     RuntimeCompleteEvent,
     RuntimeSteerRequest,
     RuntimeTurnRequest,
@@ -162,6 +163,15 @@ async def _stream_runtime_events(
                         continue
                     if event.get("type") == "error":
                         message = str(event.get("message") or "UniHub AI nu a putut finaliza cererea.")
+                        if message == RUNTIME_ADMISSION_REJECTION_MESSAGE:
+                            try:
+                                await service.compensate_rejected_submission(
+                                    owner_subject, conversation_id, user_message.id,
+                                )
+                            except Exception:
+                                message = "Nu am putut anula salvarea cererii AI respinse."
+                            yield _line({"type": "error", "message": message})
+                            return
                         await _record_runtime_error(service, owner_subject, conversation_id, message)
                         yield _line({"type": "error", "message": message})
                         continue
@@ -289,7 +299,7 @@ async def steer(
             )
             if response.status_code == status.HTTP_409_CONFLICT:
                 try:
-                    await service.compensate_rejected_steer(claims.sub, conversation_id, user_message.id)
+                    await service.compensate_rejected_submission(claims.sub, conversation_id, user_message.id)
                 except Exception as exc:
                     raise HTTPException(
                         status.HTTP_503_SERVICE_UNAVAILABLE,

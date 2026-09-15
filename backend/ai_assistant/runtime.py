@@ -32,6 +32,7 @@ from ai_assistant.settings import (
     resolve_storage_key,
 )
 from schemas.ai_assistant import (
+    RUNTIME_ADMISSION_REJECTION_MESSAGE,
     AiReasoningEffort,
     RuntimeSteerRequest,
     RuntimeTurnRequest,
@@ -501,7 +502,7 @@ class AiSandboxRuntime:
         conversation_id = request.conversation_id
         active = await self._reserve(conversation_id, request.owner_subject)
         if active is None:
-            yield _ndjson({"type": "error", "message": "A run is already active for this conversation."})
+            yield _ndjson({"type": "error", "message": RUNTIME_ADMISSION_REJECTION_MESSAGE})
             return
 
         agent = _agent(self.settings, request.effort)

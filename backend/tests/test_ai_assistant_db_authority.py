@@ -9,6 +9,7 @@ production.
 
 from __future__ import annotations
 
+import asyncio
 import os
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
@@ -99,7 +100,7 @@ async def _recreate_roles(connection: asyncpg.Connection) -> None:
     await connection.execute(_AUTHORITY_ROLE_BOOTSTRAP)
     await connection.execute(
         f'CREATE ROLE "{AI_LOGIN}" LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE '
-        f"NOREPLICATION NOBYPASSRLS INHERIT PASSWORD '{PASSWORD}'"
+        f"NOREPLICATION NOBYPASSRLS INHERIT CONNECTION LIMIT 4 PASSWORD '{PASSWORD}'"
     )
     for statement in BOUNDED_DEFAULTS:
         await connection.execute(f'ALTER ROLE "{AI_LOGIN}" {statement}')
@@ -107,7 +108,7 @@ async def _recreate_roles(connection: asyncpg.Connection) -> None:
 
     await connection.execute(
         f'CREATE ROLE "{WEB_LOGIN}" LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE '
-        f"NOREPLICATION NOBYPASSRLS INHERIT PASSWORD '{PASSWORD}'"
+        f"NOREPLICATION NOBYPASSRLS INHERIT CONNECTION LIMIT 4 PASSWORD '{PASSWORD}'"
     )
     for statement in BOUNDED_DEFAULTS:
         await connection.execute(f'ALTER ROLE "{WEB_LOGIN}" {statement}')
@@ -119,12 +120,12 @@ async def _recreate_roles(connection: asyncpg.Connection) -> None:
     )
     await connection.execute(
         f'CREATE ROLE "{UNBOUNDED_LOGIN}" LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE '
-        f"NOREPLICATION NOBYPASSRLS INHERIT PASSWORD '{PASSWORD}'"
+        f"NOREPLICATION NOBYPASSRLS INHERIT CONNECTION LIMIT 4 PASSWORD '{PASSWORD}'"
     )
     await connection.execute(f'GRANT "{READONLY_AUTHORITY_ROLE}" TO "{UNBOUNDED_LOGIN}"')
     await connection.execute(
         f'CREATE ROLE "{OVER_BOUND_LOGIN}" LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE '
-        f"NOREPLICATION NOBYPASSRLS INHERIT PASSWORD '{PASSWORD}'"
+        f"NOREPLICATION NOBYPASSRLS INHERIT CONNECTION LIMIT 4 PASSWORD '{PASSWORD}'"
     )
     await connection.execute(
         f'ALTER ROLE "{OVER_BOUND_LOGIN}" SET statement_timeout = \'600s\''
@@ -172,6 +173,17 @@ async def test_dedicated_read_only_login_passes(authority_database: Any) -> None
 
 
 @pytest.mark.anyio
+async def test_read_only_login_connection_limit_is_enforced(authority_database: Any) -> None:
+    del authority_database
+    connections = [await asyncpg.connect(dsn_for(AI_LOGIN)) for _ in range(4)]
+    try:
+        with pytest.raises(asyncpg.TooManyConnectionsError):
+            await asyncpg.connect(dsn_for(AI_LOGIN))
+    finally:
+        await asyncio.gather(*(connection.close() for connection in connections))
+
+
+@pytest.mark.anyio
 async def test_web_business_write_login_is_rejected(authority_database: Any) -> None:
     del authority_database
 
@@ -188,6 +200,14 @@ async def test_elevated_login_is_rejected(authority_database: Any) -> None:
 
     with pytest.raises(AiReadOnlyAuthorityError, match="elevated role attributes: superuser"):
         await verify_sandbox_readonly_authority(dsn_for(ELEVATED_LOGIN))
+
+
+@pytest.mark.anyio
+async def test_unlimited_connections_are_rejected(authority_database: Any) -> None:
+    await authority_database.execute(f'ALTER ROLE "{AI_LOGIN}" CONNECTION LIMIT -1')
+
+    with pytest.raises(AiReadOnlyAuthorityError, match="CONNECTION LIMIT 4"):
+        await verify_sandbox_readonly_authority(dsn_for(AI_LOGIN))
 
 
 @pytest.mark.anyio
@@ -226,6 +246,13 @@ async def test_verified_login_reads_application_data_and_cannot_write(
     probe = await asyncpg.connect(dsn_for(AI_LOGIN))
     try:
         assert await probe.fetchval(f'SELECT count(*) FROM "{PROBE_TABLE}"') == 1
+        for private_table in (
+            "ai_assistant_conversations",
+            "ai_assistant_messages",
+            "ai_assistant_artifacts",
+        ):
+            with pytest.raises(asyncpg.InsufficientPrivilegeError):
+                await probe.fetchval(f'SELECT count(*) FROM "{private_table}"')
         for statement in (
             f'INSERT INTO "{PROBE_TABLE}" (id, value) VALUES (2, \'b\')',
             f'UPDATE "{PROBE_TABLE}" SET value = \'c\'',

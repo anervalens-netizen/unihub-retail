@@ -131,7 +131,7 @@ class AiAssistantRepository:
                 )
                 return conversation, message, artifact_rows
 
-    async def compensate_rejected_steer(
+    async def compensate_rejected_submission(
         self, owner_subject: str, conversation_id: UUID, message_id: UUID,
     ) -> list[str]:
         """Remove one definitely rejected submission, retaining concurrent work."""

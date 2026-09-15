@@ -227,8 +227,9 @@ clean and quarantine slots but cannot mount, format or modify image files.
 
 SDK 0.22.2's default workspace persistence copies bind contents through
 container `/tmp`; the narrow Docker adapter instead archives the bind in a
-drained worker, validates the exact restore policy, persists atomically, and
-restores after stale-slot cleanup. A start that fails before hydration finishes
+drained worker, validates the exact restore policy, persists atomically under
+a serialized 16 GiB aggregate snapshot-store ceiling, and restores after
+stale-slot cleanup. A start that fails before hydration finishes
 never replaces the last good snapshot. The runtime globally admits at most two
 sandboxes, because allocation of conversation, owner capacity and a storage
 slot occurs under one lock. Cleanup failure quarantines the slot.
@@ -236,11 +237,12 @@ slot occurs under one lock. Cleanup failure quarantines the slot.
 The database guard authenticates only through `AI_ASSISTANT_GUARD_DSN` as
 `unihub_ai_guard`, verifies the actual same PostgreSQL/database identity and
 exact directional role graph on every connection, and signals only
-`unihub_ai_readonly`. Initial preflight/first-scan failure propagates out of the
+`unihub_ai_readonly`. The sandbox login is fixed at `CONNECTION LIMIT 4` and
+inherits no access to owner-private AI conversation, message or artifact rows. Initial preflight/first-scan failure propagates out of the
 FastAPI lifespan so systemd retries; later disconnects remain recoverable in
-process. A definite Steer HTTP 409 transactionally removes only that persisted
-submission before deleting its files; ambiguous transport failures preserve
-history. Final certification evidence and exact pushed SHA belong in the task
+process. A definite Steer HTTP 409 or exact runtime Turn admission rejection
+transactionally removes only that persisted submission before deleting its
+files; ambiguous transport/runtime failures preserve history. Final certification evidence and exact pushed SHA belong in the task
 report; no production unit installation/restart or review-thread resolution is
 part of this checkpoint.
 

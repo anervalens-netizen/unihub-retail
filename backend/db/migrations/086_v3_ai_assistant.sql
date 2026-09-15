@@ -67,11 +67,10 @@ REVOKE ALL ON TABLE ai_assistant_messages FROM PUBLIC;
 REVOKE ALL ON TABLE ai_assistant_artifacts FROM PUBLIC;
 REVOKE ALL ON SEQUENCE ai_assistant_messages_ordinal_seq FROM PUBLIC;
 
-GRANT SELECT ON TABLE ai_assistant_conversations TO unihub_web_read;
-GRANT SELECT ON TABLE ai_assistant_messages TO unihub_web_read;
-GRANT SELECT ON TABLE ai_assistant_artifacts TO unihub_web_read;
-
-GRANT INSERT, UPDATE, DELETE ON TABLE ai_assistant_conversations TO unihub_business_write;
-GRANT INSERT, UPDATE, DELETE ON TABLE ai_assistant_messages TO unihub_business_write;
-GRANT INSERT, UPDATE, DELETE ON TABLE ai_assistant_artifacts TO unihub_business_write;
+-- AI conversation content is owner-filtered by the web API and must never be
+-- visible to the model's broadly shared unihub_web_read inheritance. The web
+-- login already inherits the internal business-write authority.
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE ai_assistant_conversations TO unihub_business_write;
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE ai_assistant_messages TO unihub_business_write;
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE ai_assistant_artifacts TO unihub_business_write;
 GRANT USAGE, SELECT ON SEQUENCE ai_assistant_messages_ordinal_seq TO unihub_business_write;

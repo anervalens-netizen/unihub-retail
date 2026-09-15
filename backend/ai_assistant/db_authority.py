@@ -21,6 +21,7 @@ READONLY_AUTHORITY_ROLE = "unihub_web_read"
 MAX_STATEMENT_TIMEOUT_MS = 300_000
 MAX_LOCK_TIMEOUT_MS = 5_000
 MAX_IDLE_TRANSACTION_TIMEOUT_MS = 60_000
+REQUIRED_CONNECTION_LIMIT = 4
 
 _CONNECT_TIMEOUT_SECONDS = 10.0
 _COMMAND_TIMEOUT_SECONDS = 30.0
@@ -43,7 +44,7 @@ _IDENTITY_SQL = """
 SELECT current_user::text AS current_user,
        session_user::text AS session_user,
        rolcanlogin, rolinherit, rolsuper, rolcreatedb, rolcreaterole,
-       rolreplication, rolbypassrls
+       rolreplication, rolbypassrls, rolconnlimit
 FROM pg_roles
 WHERE rolname = current_user
 """
@@ -157,6 +158,11 @@ async def _verify_identity(connection: asyncpg.Connection) -> str:
     if not bool(row["rolinherit"]):
         raise AiReadOnlyAuthorityError(
             f"AI sandbox read-only login {current_user} must INHERIT its read-only authority"
+        )
+    if int(row["rolconnlimit"]) != REQUIRED_CONNECTION_LIMIT:
+        raise AiReadOnlyAuthorityError(
+            f"AI sandbox read-only login {current_user} must have CONNECTION LIMIT "
+            f"{REQUIRED_CONNECTION_LIMIT}"
         )
     direct = await connection.fetch(_DIRECT_MEMBERSHIP_SQL)
     direct_roles = {str(item["rolname"]) for item in direct}

@@ -12,6 +12,7 @@ AiReasoningEffort = Literal["none", "low", "medium", "high", "xhigh", "max"]
 AiMessageRole = Literal["user", "assistant", "system"]
 AiMessageStatus = Literal["complete", "streaming", "error", "stopped"]
 AiArtifactKind = Literal["input", "output"]
+RUNTIME_ADMISSION_REJECTION_MESSAGE = "A run is already active for this conversation."
 
 
 class AiArtifactItem(StrictApiModel):

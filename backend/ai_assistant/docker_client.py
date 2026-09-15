@@ -6,6 +6,7 @@ import os
 import shutil
 import tempfile
 import tarfile
+import threading
 from pathlib import Path
 from uuid import uuid4
 
@@ -24,6 +25,9 @@ _SLOT: ContextVar[StorageSlot | None] = ContextVar("ai_storage_slot", default=No
 LABELS = {"com.unihub.component": "ai-assistant", "com.unihub.runtime": "sandbox-agent"}
 SLOT_LABEL = "com.unihub.storage-slot"
 _EPHEMERAL_TMP = "/" + "tmp"
+MAX_WORKSPACE_ARCHIVE_BYTES = 9 * 1024**3
+MAX_SNAPSHOT_STORE_BYTES = 16 * 1024**3
+_SNAPSHOT_STORE_LOCK = threading.Lock()
 WORKSPACE_ENV = {
     "HOME": "/workspace/home",
     "XDG_CACHE_HOME": "/workspace/work/cache",
@@ -84,9 +88,9 @@ class _BoundedDocker:
 
 class _BoundedArchive(io.RawIOBase):
     """Sparse logical files must not expand without bound on the host."""
-    def __init__(self, stream: io.IOBase):
+    def __init__(self, stream: io.IOBase, *, limit: int = MAX_WORKSPACE_ARCHIVE_BYTES):
         self.stream = stream
-        self.remaining = 9 * 1024**3  # 8 GiB contents plus bounded tar/inode metadata.
+        self.remaining = limit  # 8 GiB contents plus bounded tar/inode metadata.
 
     def read(self, size: int = -1) -> bytes:
         data = self.stream.read(min(size if size >= 0 else 65536, self.remaining + 1))
@@ -162,14 +166,24 @@ class WorkspaceSnapshot(LocalSnapshot):
         path = self._path()
         path.parent.mkdir(parents=True, exist_ok=True)
         temporary = path.with_name(f".{path.name}.{uuid4().hex}.tmp")
-        try:
-            with temporary.open("xb") as output:
-                shutil.copyfileobj(_BoundedArchive(data), output)
-                output.flush()
-                os.fsync(output.fileno())
-            temporary.replace(path)
-        finally:
-            temporary.unlink(missing_ok=True)
+        with _SNAPSHOT_STORE_LOCK:
+            files = [item for item in path.parent.rglob("*") if item.is_file()]
+            current = sum(item.stat().st_size for item in files)
+            replaced = path.stat().st_size if path.is_file() else 0
+            allowance = MAX_SNAPSHOT_STORE_BYTES - current + replaced
+            if allowance <= 0:
+                raise RuntimeError("AI workspace snapshot store is full")
+            try:
+                with temporary.open("xb") as output:
+                    shutil.copyfileobj(
+                        _BoundedArchive(data, limit=min(MAX_WORKSPACE_ARCHIVE_BYTES, allowance)),
+                        output,
+                    )
+                    output.flush()
+                    os.fsync(output.fileno())
+                temporary.replace(path)
+            finally:
+                temporary.unlink(missing_ok=True)
 
 
 class BoundedDockerSandboxClient(DockerSandboxClient):

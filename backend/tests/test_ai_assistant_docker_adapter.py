@@ -88,9 +88,8 @@ def test_workspace_snapshot_keeps_previous_bytes_on_bounded_read_failure(
     path.write_bytes(b"previous snapshot")
 
     class TinyBoundedArchive(_BoundedArchive):
-        def __init__(self, stream: io.IOBase) -> None:
-            super().__init__(stream)
-            self.remaining = 3
+        def __init__(self, stream: io.IOBase, *, limit: int = 3) -> None:
+            super().__init__(stream, limit=min(limit, 3))
 
     monkeypatch.setattr(docker_client, "_BoundedArchive", TinyBoundedArchive)
     with pytest.raises(RuntimeError, match="bounded archive"):
@@ -104,6 +103,23 @@ def test_bounded_archive_enforces_small_remaining_budget_without_large_allocatio
     with pytest.raises(RuntimeError, match="bounded archive allowance"):
         archive.read()
     archive.close()
+
+
+def test_workspace_snapshot_enforces_aggregate_store_budget(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(docker_client, "MAX_SNAPSHOT_STORE_BYTES", 20)
+    snapshot = WorkspaceSnapshot(id="conversation", base_path=tmp_path)
+    path = snapshot._path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(b"previous")
+    (path.parent / "other-snapshot").write_bytes(b"123456789012")
+
+    with pytest.raises(RuntimeError, match="bounded archive allowance"):
+        snapshot._persist_atomic(io.BytesIO(b"replacement-too-large"))
+
+    assert path.read_bytes() == b"previous"
+    assert not list(path.parent.glob(".*.tmp"))
 
 
 def _slot(tmp_path: Path) -> StorageSlot:

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from io import BytesIO
+import json
 from pathlib import Path
 from typing import Any
 from auth import AuthClaims
@@ -13,6 +14,7 @@ import pytest
 from fastapi import HTTPException, UploadFile
 
 from routers import ai_assistant as routes
+from schemas.ai_assistant import RUNTIME_ADMISSION_REJECTION_MESSAGE, RuntimeTurnRequest
 from test_ai_assistant_persistence_db import (
     OWNER, clean_certification_owner, new_conversation, pytestmark, service_for,
 )
@@ -141,9 +143,77 @@ async def test_rejected_steers_preserve_empty_conversation_and_other_owner(tmp_p
         OWNER, conversation_id, text=text, effort="max", files=[], steer=True,
     ) for text in ("first rejected", "second rejected")]
     with pytest.raises(LookupError):
-        await service.compensate_rejected_steer("other-owner", conversation_id, submissions[0][0].id)
+        await service.compensate_rejected_submission("other-owner", conversation_id, submissions[0][0].id)
     assert len(await repo.list_messages(OWNER, conversation_id)) == 2
     for submission in submissions:
-        await service.compensate_rejected_steer(OWNER, conversation_id, submission[0].id)
+        await service.compensate_rejected_submission(OWNER, conversation_id, submission[0].id)
     assert await repo.list_messages(OWNER, conversation_id) == []
     assert dict(await repo.get_conversation(OWNER, conversation_id)) == before
+
+
+class _AdmissionRejectedResponse:
+    status_code = 200
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *args):
+        return None
+
+    async def aiter_lines(self):
+        yield json.dumps({"type": "error", "message": RUNTIME_ADMISSION_REJECTION_MESSAGE})
+
+
+class _AdmissionRejectedClient:
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *args):
+        return None
+
+    def stream(self, *args, **kwargs):
+        return _AdmissionRejectedResponse()
+
+
+@pytest.mark.anyio
+async def test_rejected_turn_compensates_exact_submission(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service, repo = await service_for(tmp_path)
+    conversation_id = await new_conversation(service)
+    user_message, uploads, previous_response_id, _ = await service.begin_user_message(
+        OWNER,
+        conversation_id,
+        text="rejected turn",
+        effort="max",
+        files=[UploadFile(filename="turn.csv", file=BytesIO(b"turn"))],
+    )
+    stored_path = service.settings.storage_root / uploads[0].storage_key
+    monkeypatch.setattr(routes.httpx, "AsyncClient", lambda **kwargs: _AdmissionRejectedClient())
+    payload = RuntimeTurnRequest(
+        conversation_id=conversation_id,
+        owner_subject=OWNER,
+        text="rejected turn",
+        effort="max",
+        previous_response_id=previous_response_id,
+        current_view=None,
+        uploads=uploads,
+    )
+
+    events = [
+        json.loads(line)
+        async for line in routes._stream_runtime_events(
+            service=service,
+            owner_subject=OWNER,
+            conversation_id=conversation_id,
+            runtime_url="http://runtime/internal/ai/run",
+            payload=payload,
+            user_message=user_message,
+        )
+    ]
+
+    assert events[-1] == {"type": "error", "message": RUNTIME_ADMISSION_REJECTION_MESSAGE}
+    assert await repo.list_messages(OWNER, conversation_id) == []
+    assert await repo.list_artifacts(OWNER, conversation_id) == []
+    assert (await repo.get_conversation(OWNER, conversation_id))["previous_response_id"] is None
+    assert not stored_path.exists()
