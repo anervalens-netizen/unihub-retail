@@ -1,8 +1,10 @@
 """Definite runtime rejection compensation against canonical isolated PostgreSQL."""
 from __future__ import annotations
 
+from dataclasses import dataclass
 from io import BytesIO
 from pathlib import Path
+from typing import Any
 from auth import AuthClaims
 from unittest.mock import AsyncMock
 
@@ -16,10 +18,17 @@ from test_ai_assistant_persistence_db import (
 )
 
 
-@pytest.mark.anyio
-@pytest.mark.parametrize("outcome", ["accepted", "inactive", "finishing", "transport", "http500", "db_failure", "file_failure"])
-async def test_steer_compensation(tmp_path: Path, monkeypatch, outcome: str) -> None:
-    service, repo = await service_for(tmp_path)
+@dataclass
+class _SteerSnapshot:
+    conversation_id: Any
+    before: dict
+    prior_messages: list
+    prior_artifacts: list
+    previous_path: Path
+    completion: list
+
+
+async def _snapshot_prior_state(service: Any, repo: Any) -> _SteerSnapshot:
     conversation_id = await new_conversation(service)
     await service.begin_user_message(
         OWNER, conversation_id, text="previous", effort="max",
@@ -32,15 +41,18 @@ async def test_steer_compensation(tmp_path: Path, monkeypatch, outcome: str) -> 
     prior_messages = await repo.list_messages(OWNER, conversation_id)
     prior_artifacts = await repo.list_artifacts(OWNER, conversation_id)
     previous_path = service.settings.storage_root / prior_artifacts[0]["storage_key"]
-    completion_state = None
+    return _SteerSnapshot(conversation_id, before, prior_messages, prior_artifacts, previous_path, [])
+
+
+def _install_steer_transport(monkeypatch: Any, service: Any, repo: Any, conversation_id: Any, outcome: str) -> list:
+    completion: list = []
 
     async def post(*args, **kwargs):
-        nonlocal completion_state
         if outcome == "finishing":
             await service.finish_assistant_message(
                 OWNER, conversation_id, text="concurrent completion", previous_response_id="new-response", artifacts=[],
             )
-            completion_state = dict(await repo.get_conversation(OWNER, conversation_id))
+            completion.append(dict(await repo.get_conversation(OWNER, conversation_id)))
         if outcome == "transport":
             raise httpx.ReadTimeout("ambiguous response")
         code = 200 if outcome == "accepted" else 500 if outcome == "http500" else 409
@@ -50,6 +62,10 @@ async def test_steer_compensation(tmp_path: Path, monkeypatch, outcome: str) -> 
     client.__aenter__.return_value = client
     client.post.side_effect = post
     monkeypatch.setattr(routes.httpx, "AsyncClient", lambda **kwargs: client)
+    return completion
+
+
+async def _install_compensation_failure(repo: Any, monkeypatch: Any, outcome: str) -> None:
     if outcome == "db_failure":
         # Real PostgreSQL failure after deletes must roll back the whole transaction.
         async with repo.pool.acquire() as conn:
@@ -62,42 +78,58 @@ async def test_steer_compensation(tmp_path: Path, monkeypatch, outcome: str) -> 
             """)
     if outcome == "file_failure":
         monkeypatch.setattr(Path, "unlink", lambda *args, **kwargs: (_ for _ in ()).throw(OSError("forced unlink failure")))
-    try:
-        call = routes.steer(
-            conversation_id, text="new steer", current_view=None,
-            files=[UploadFile(filename="same.csv", file=BytesIO(b"new"))],
-            claims=AuthClaims(OWNER, "owner@example.invalid", "user", [], "issuer", "audience", 0, 0, {}),
-            service=service,
-        )
-        if outcome == "accepted":
-            assert (await call).accepted
-        else:
-            with pytest.raises(HTTPException) as error:
-                await call
-            assert error.value.status_code == (409 if outcome in {"inactive", "finishing"} else 503)
-            if outcome in {"db_failure", "file_failure"}:
-                assert "anularea salvării" in error.value.detail
-    finally:
-        if outcome == "db_failure":
-            await repo.pool.execute("DROP TRIGGER reject_compensation ON ai_assistant_conversations")
 
-    messages = await repo.list_messages(OWNER, conversation_id)
-    artifacts = await repo.list_artifacts(OWNER, conversation_id)
-    after = dict(await repo.get_conversation(OWNER, conversation_id))
-    assert messages[:2] == prior_messages
-    assert artifacts[0] == prior_artifacts[0]
-    assert previous_path.read_bytes() == b"previous"
-    assert after["title"] == before["title"]
-    assert after["effort"] == before["effort"]
+
+async def _run_rejected_steer(service: Any, conversation_id: Any, outcome: str) -> None:
+    call = routes.steer(
+        conversation_id, text="new steer", current_view=None,
+        files=[UploadFile(filename="same.csv", file=BytesIO(b"new"))],
+        claims=AuthClaims(OWNER, "owner@example.invalid", "user", [], "issuer", "audience", 0, 0, {}),
+        service=service,
+    )
+    if outcome == "accepted":
+        assert (await call).accepted
+        return
+    with pytest.raises(HTTPException) as error:
+        await call
+    assert error.value.status_code == (409 if outcome in {"inactive", "finishing"} else 503)
+    if outcome in {"db_failure", "file_failure"}:
+        assert "anularea salvării" in error.value.detail
+
+
+async def _assert_compensation_preserved(repo: Any, service: Any, outcome: str, snapshot: _SteerSnapshot) -> None:
+    messages = await repo.list_messages(OWNER, snapshot.conversation_id)
+    artifacts = await repo.list_artifacts(OWNER, snapshot.conversation_id)
+    after = dict(await repo.get_conversation(OWNER, snapshot.conversation_id))
+    assert messages[:2] == snapshot.prior_messages
+    assert artifacts[0] == snapshot.prior_artifacts[0]
+    assert snapshot.previous_path.read_bytes() == b"previous"
+    assert after["title"] == snapshot.before["title"]
+    assert after["effort"] == snapshot.before["effort"]
     compensated = outcome in {"inactive", "finishing", "file_failure"}
     assert any(row["text"] == "new steer" for row in messages) is not compensated
     assert len(artifacts) == (1 if compensated else 2)
     host_files = list(service.settings.storage_root.rglob("same.csv"))
     assert len(host_files) == (1 if outcome in {"inactive", "finishing"} else 2)
     if compensated:
-        assert after == (completion_state or before)
+        assert after == (snapshot.completion[0] if snapshot.completion else snapshot.before)
     else:
         assert after["previous_response_id"] == "prior-response"
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("outcome", ["accepted", "inactive", "finishing", "transport", "http500", "db_failure", "file_failure"])
+async def test_steer_compensation(tmp_path: Path, monkeypatch, outcome: str) -> None:
+    service, repo = await service_for(tmp_path)
+    snapshot = await _snapshot_prior_state(service, repo)
+    snapshot.completion = _install_steer_transport(monkeypatch, service, repo, snapshot.conversation_id, outcome)
+    await _install_compensation_failure(repo, monkeypatch, outcome)
+    try:
+        await _run_rejected_steer(service, snapshot.conversation_id, outcome)
+    finally:
+        if outcome == "db_failure":
+            await repo.pool.execute("DROP TRIGGER reject_compensation ON ai_assistant_conversations")
+    await _assert_compensation_preserved(repo, service, outcome, snapshot)
 
 
 @pytest.mark.anyio

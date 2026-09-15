@@ -57,6 +57,59 @@ async def collect(runtime: AiSandboxRuntime, request: RuntimeTurnRequest) -> lis
     return [json.loads(chunk) async for chunk in runtime.stream_turn(request)]
 
 
+def _assert_disposable_storage_root() -> Path:
+    root = Path(os.environ["AI_TEST_STORAGE_ROOT"])
+    assert root.parent == Path("/tmp") and root.name.startswith("unihub-ai-storage.")
+    return root
+
+
+def _bridge_dsn_for_canonical_runner(runtime: AiSandboxRuntime, settings: Any) -> str:
+    """Select only this canonical runner's PostgreSQL by its exact published port."""
+    port = str(urlsplit(settings.readonly_dsn).port)
+    databases = [c for c in runtime.docker.containers.list(filters={"label": "unihub.test=retail"})
+                 if any(p["HostPort"] == port for p in (c.attrs["NetworkSettings"]["Ports"].get("5432/tcp") or []))]
+    assert len(databases) == 1
+    networks = databases[0].attrs["NetworkSettings"]["Networks"]
+    assert len(networks) == 1
+    host = next(iter(networks.values()))["IPAddress"]
+    parsed = urlsplit(settings.readonly_dsn)
+    return urlunsplit(parsed._replace(netloc=f"{parsed.username}:{parsed.password}@{host}:5432"))
+
+
+def _seed_state_containers(runtime: AiSandboxRuntime, settings: Any, created: list[Any]) -> Any:
+    """Create one container per cleanup state plus an unrelated witness container.
+
+    ``created`` is appended in place so a partial failure still leaves every
+    created container reachable by the caller's cleanup path.
+    """
+    for state in ("running", "exited", "created", "paused"):
+        item = runtime.docker.containers.create(settings.sandbox_image, command=["sleep", "120"], labels=LABELS)
+        created.append(item)
+        if state != "created":
+            item.start()
+        if state == "exited":
+            item.stop(timeout=1)
+        if state == "paused":
+            item.pause()
+    unrelated = runtime.docker.containers.create(settings.sandbox_image, command=["sleep", "120"], labels={"unihub.test": "ai-unrelated"})
+    created.append(unrelated)
+    unrelated.start()
+    return unrelated
+
+
+def _remove_created_containers(runtime: AiSandboxRuntime, created: list[Any]) -> None:
+    # Fresh SDK client because shutdown closes its transport.
+    client = runtime_module.docker_from_env()
+    try:
+        for item in created:
+            try:
+                client.containers.get(item.id).remove(force=True, v=True)
+            except NotFound:
+                pass
+    finally:
+        client.close()
+
+
 @pytest.mark.anyio
 async def test_real_docker_startup_and_all_run_cleanup_paths(
     authority_database: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
@@ -69,37 +122,16 @@ async def test_real_docker_startup_and_all_run_cleanup_paths(
     )
     monkeypatch.setenv("AI_ASSISTANT_READONLY_DSN", settings.readonly_dsn)
     runtime = AiSandboxRuntime(settings)
-    root = Path(os.environ["AI_TEST_STORAGE_ROOT"])
-    assert root.parent == Path("/tmp") and root.name.startswith("unihub-ai-storage.")
+    root = _assert_disposable_storage_root()
     runtime.slots = StorageSlots(root / "ai-sandbox-slots", root / "ai-storage-images")
-    # Select only this canonical runner's PostgreSQL by its exact published port.
-    port = str(urlsplit(settings.readonly_dsn).port)
-    databases = [c for c in runtime.docker.containers.list(filters={"label": "unihub.test=retail"})
-                 if any(p["HostPort"] == port for p in (c.attrs["NetworkSettings"]["Ports"].get("5432/tcp") or []))]
-    assert len(databases) == 1
-    networks = databases[0].attrs["NetworkSettings"]["Networks"]
-    assert len(networks) == 1
-    host = next(iter(networks.values()))["IPAddress"]
-    parsed = urlsplit(settings.readonly_dsn)
-    bridge_dsn = urlunsplit(parsed._replace(netloc=f"{parsed.username}:{parsed.password}@{host}:5432"))
+    bridge_dsn = _bridge_dsn_for_canonical_runner(runtime, settings)
     runtime.settings = replace(settings, readonly_dsn=bridge_dsn)
     monkeypatch.setenv("AI_ASSISTANT_READONLY_DSN", bridge_dsn)
     filters = {"label": [f"{key}={value}" for key, value in LABELS.items()]}
     assert not runtime.docker.containers.list(all=True, filters=filters), "preexisting matching containers: abort proof"
     created: list[Any] = []
     try:
-        for state in ("running", "exited", "created", "paused"):
-            item = runtime.docker.containers.create(settings.sandbox_image, command=["sleep", "120"], labels=LABELS)
-            created.append(item)
-            if state != "created":
-                item.start()
-            if state == "exited":
-                item.stop(timeout=1)
-            if state == "paused":
-                item.pause()
-        unrelated = runtime.docker.containers.create(settings.sandbox_image, command=["sleep", "120"], labels={"unihub.test": "ai-unrelated"})
-        created.append(unrelated)
-        unrelated.start()
+        unrelated = _seed_state_containers(runtime, settings, created)
         await runtime.startup()
         assert runtime.ready
         assert not runtime.docker.containers.list(all=True, filters=filters)
@@ -110,14 +142,7 @@ async def test_real_docker_startup_and_all_run_cleanup_paths(
         assert unrelated.status == "running"
     finally:
         await runtime.shutdown()
-        # Fresh SDK client because shutdown closes its transport.
-        client = runtime_module.docker_from_env()
-        for item in created:
-            try:
-                client.containers.get(item.id).remove(force=True, v=True)
-            except NotFound:
-                pass
-        client.close()
+        _remove_created_containers(runtime, created)
 
 
 async def _exercise_runs(runtime: AiSandboxRuntime, monkeypatch: pytest.MonkeyPatch, filters: Any) -> None:
