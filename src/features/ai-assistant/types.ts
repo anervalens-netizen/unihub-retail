@@ -12,6 +12,7 @@ export interface AiArtifactAttachment {
   mimeType: string;
   sizeBytes: number;
   kind: 'input' | 'output';
+  downloadUrl?: string;
 }
 
 export interface AiChatMessage {
@@ -21,6 +22,14 @@ export interface AiChatMessage {
   status: AiMessageStatus;
   createdAt: string;
   attachments?: AiArtifactAttachment[];
+}
+
+export interface AiConversation {
+  id: string;
+  title: string;
+  effort: AiReasoningEffort;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface AiCurrentViewContext {

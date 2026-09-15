@@ -8,6 +8,7 @@ from typing import Any, Awaitable, Callable
 
 DEFAULT_JSON_BODY_BYTES = 1024 * 1024
 DEFAULT_MULTIPART_OVERHEAD_BYTES = 1024 * 1024
+DEFAULT_AI_MULTIPART_BYTES = 129 * 1024 * 1024
 
 
 def _positive_env(name: str, default: int) -> int:
@@ -27,6 +28,7 @@ class RequestBodyLimits:
     sales_multipart_bytes: int
     promo_multipart_bytes: int
     erp_multipart_bytes: int
+    ai_multipart_bytes: int = DEFAULT_AI_MULTIPART_BYTES
 
     @classmethod
     def from_env(cls) -> "RequestBodyLimits":
@@ -36,10 +38,13 @@ class RequestBodyLimits:
             sales_multipart_bytes=_positive_env("MAX_SALES_UPLOAD_BYTES", 32 * 1024 * 1024) + overhead,
             promo_multipart_bytes=_positive_env("MAX_PROMO_REPORT_UPLOAD_BYTES", 32 * 1024 * 1024) + overhead,
             erp_multipart_bytes=_positive_env("MAX_ERP_RECONCILIATION_UPLOAD_BYTES", 16 * 1024 * 1024) + overhead,
+            ai_multipart_bytes=_positive_env("MAX_AI_ASSISTANT_UPLOAD_BYTES", 128 * 1024 * 1024) + overhead,
         )
 
     def for_request(self, path: str, content_type: str) -> int:
         if content_type.casefold().startswith("multipart/form-data"):
+            if path.startswith("/api/ai/conversations/") and path.endswith(("/turn", "/steer")):
+                return self.ai_multipart_bytes
             return {
                 "/api/import/sales": self.sales_multipart_bytes,
                 "/api/import/promo-actuals": self.promo_multipart_bytes,

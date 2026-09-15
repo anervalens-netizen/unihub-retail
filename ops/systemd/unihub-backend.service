@@ -36,7 +36,7 @@ StandardError=journal
 SyslogIdentifier=unihub-backend
 
 ProtectSystem=strict
-ReadWritePaths=/opt/Mobiup/unihub-retail/data/import_spool
+ReadWritePaths=/opt/Mobiup/unihub-retail/data/import_spool /var/lib/unihub-retail/ai-assistant
 ProtectHome=read-only
 NoNewPrivileges=true
 PrivateTmp=true

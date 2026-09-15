@@ -47,7 +47,7 @@ from session_auth import (
     init_session_runtime,
     router as session_router,
 )
-from routers import ai_forecast, agents, campaigns, contests, crm, dashboard, exports, filters, grile, health, hr, imports, salarii, saved_views, store_pnl, stores, target_calculator, tasks, visits_report
+from routers import ai_assistant, ai_forecast, agents, campaigns, contests, crm, dashboard, exports, filters, grile, health, hr, imports, salarii, saved_views, store_pnl, stores, target_calculator, tasks, visits_report
 from services.jobs import close_arq_pool, get_arq_pool
 from observability.prometheus import (
     canonical_handler,
@@ -280,6 +280,7 @@ app.include_router(session_callback_router)
 app.include_router(health.router)
 
 app.include_router(agents.router, dependencies=_auth)
+app.include_router(ai_assistant.router)
 app.include_router(ai_forecast.router, dependencies=_auth)
 app.include_router(campaigns.router, dependencies=_auth)
 app.include_router(contests.router, dependencies=_auth)

@@ -11,7 +11,7 @@ import type { RetailContextUrlState } from '../../lib/insightDeepLink';
 import { usePersistentState } from '../../lib/usePersistentState';
 import { cn } from '../../lib/utils';
 import type {
-  AiChatMessage, AiComposerSubmission, AiReasoningEffort, AiRunStatus,
+  AiArtifactAttachment, AiChatMessage, AiComposerSubmission, AiReasoningEffort, AiRunStatus,
 } from './types';
 
 const MIN_DESKTOP_WIDTH = 380;
@@ -48,6 +48,22 @@ function formatFileSize(sizeBytes: number): string {
   return `${(sizeBytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+function AttachmentChip({ attachment, assistant }: { attachment: AiArtifactAttachment; assistant: boolean }) {
+  const className = cn(
+    'flex items-center gap-2 rounded-lg px-2.5 py-2 text-xs',
+    assistant ? 'bg-slate-50 dark:bg-slate-800' : 'bg-white/10',
+    attachment.downloadUrl && 'hover:ring-1 hover:ring-indigo-300 dark:hover:ring-indigo-700',
+  );
+  const content = <>
+    <FileText size={14} aria-hidden="true" />
+    <span className="min-w-0 flex-1 truncate">{attachment.filename}</span>
+    <span className="shrink-0 opacity-70">{formatFileSize(attachment.sizeBytes)}</span>
+  </>;
+  return attachment.downloadUrl
+    ? <a href={attachment.downloadUrl} className={className} download={attachment.filename}>{content}</a>
+    : <div className={className}>{content}</div>;
+}
+
 function MessageBubble({ message }: { message: AiChatMessage }) {
   const assistant = message.role === 'assistant';
   return <div className={cn('flex', assistant ? 'justify-start' : 'justify-end')}>
@@ -60,11 +76,7 @@ function MessageBubble({ message }: { message: AiChatMessage }) {
       {assistant && <div className="mb-1 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-indigo-500"><Sparkles size={12} aria-hidden="true" />UniHub AI</div>}
       <div className="whitespace-pre-wrap">{message.text}</div>
       {message.attachments?.length ? <div className="mt-2 space-y-1.5">
-        {message.attachments.map((attachment) => <div key={attachment.id} className={cn('flex items-center gap-2 rounded-lg px-2.5 py-2 text-xs', assistant ? 'bg-slate-50 dark:bg-slate-800' : 'bg-white/10')}>
-          <FileText size={14} aria-hidden="true" />
-          <span className="min-w-0 flex-1 truncate">{attachment.filename}</span>
-          <span className="shrink-0 opacity-70">{formatFileSize(attachment.sizeBytes)}</span>
-        </div>)}
+        {message.attachments.map((attachment) => <AttachmentChip key={attachment.id} attachment={attachment} assistant={assistant} />)}
       </div> : null}
       {message.status === 'streaming' && <span className="ml-1 inline-block h-3 w-1 animate-pulse rounded-full bg-current align-middle" aria-label="Răspuns în curs" />}
       {message.status === 'error' && <div className="mt-2 text-xs font-semibold text-red-500">Răspuns întrerupt</div>}
@@ -77,9 +89,9 @@ function AiEmptyState({ runtimeUnavailable }: { runtimeUnavailable: boolean }) {
     <div className="mb-4 flex size-14 items-center justify-center rounded-2xl bg-indigo-50 text-indigo-600 dark:bg-indigo-950/50 dark:text-indigo-300"><Bot size={28} aria-hidden="true" /></div>
     <h2 className="text-base font-bold text-slate-900 dark:text-white">UniHub AI</h2>
     <p className="mt-2 max-w-sm text-sm leading-6 text-slate-500 dark:text-slate-400">
-      Cere analize, rapoarte sau fișiere. Agentul poate folosi contextul paginii curente și, când runtime-ul este conectat, sandboxul lui de lucru.
+      Cere analize, rapoarte sau fișiere. Agentul poate folosi contextul paginii curente și sandboxul lui de lucru.
     </p>
-    {runtimeUnavailable && <p className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">Runtime-ul SandboxAgent este încă în curs de conectare pe acest branch.</p>}
+    {runtimeUnavailable && <p className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">Runtime-ul UniHub AI nu este disponibil momentan.</p>}
   </div>;
 }
 

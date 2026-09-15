@@ -17,8 +17,8 @@ import { useMainLayoutFilters } from './useMainLayoutFilters';
 const SavedViewsControl = lazy(() => import('./SavedViewsControl').then((module) => ({
   default: module.SavedViewsControl,
 })));
-const AiAssistantPanel = lazy(() => import('../features/ai-assistant/AiAssistantPanel').then((module) => ({
-  default: module.AiAssistantPanel,
+const AiAssistantContainer = lazy(() => import('../features/ai-assistant/AiAssistantContainer').then((module) => ({
+  default: module.AiAssistantContainer,
 })));
 
 /**
@@ -97,13 +97,9 @@ export function MainLayout({
       <main className={cn('min-h-0 flex-1', 'overflow-y-auto pb-24 lg:pb-6')}><div className="mx-auto w-full max-w-6xl lg:max-w-[1600px]">{children}</div></main>
     </div>
     {canAccessAiAssistant && <Suspense fallback={null}>
-      <AiAssistantPanel
+      <AiAssistantContainer
         canAccess={canAccessAiAssistant}
         currentContext={aiContext ?? null}
-        messages={[]}
-        runStatus="unavailable"
-        onSubmit={() => undefined}
-        onStop={() => undefined}
       />
     </Suspense>}
     <MobileFilterSheet
