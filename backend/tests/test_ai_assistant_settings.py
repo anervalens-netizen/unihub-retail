@@ -12,6 +12,8 @@ def _base_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setenv("UNIHUB_ENV", "development")
     monkeypatch.setenv("AI_ASSISTANT_STORAGE_ROOT", str(tmp_path / "store"))
     monkeypatch.setenv("AI_ASSISTANT_SNAPSHOT_ROOT", str(tmp_path / "snapshots"))
+    monkeypatch.delenv("AI_ASSISTANT_MAX_ARTIFACT_BYTES", raising=False)
+    monkeypatch.delenv("AI_ASSISTANT_MAX_TOTAL_ARTIFACT_BYTES", raising=False)
 
 
 def test_ai_settings_keep_runtime_loopback_and_model_fixed(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -23,6 +25,8 @@ def test_ai_settings_keep_runtime_loopback_and_model_fixed(monkeypatch: pytest.M
     assert settings.storage_root.is_dir()
     assert settings.snapshot_root.is_dir()
     assert settings.setup_timeout_seconds == 90
+    assert settings.max_artifact_bytes == 268435456
+    assert settings.max_total_artifact_bytes == 1073741824
     assert settings.max_concurrent_runs_per_owner == 2
     assert settings.readonly_dsn == ""
 
@@ -71,6 +75,22 @@ def test_ai_runtime_requires_sandbox_reachable_readonly_dsn(
     # must never surface through the settings representation.
     assert settings.readonly_dsn.endswith("@db.internal:5432/unihub")
     assert "unihub_ai_readonly" not in repr(settings)
+
+
+@pytest.mark.parametrize("value", ["invalid", "0", "1048575", "1048576"])
+def test_total_artifact_limit_rejects_invalid_or_below_individual(monkeypatch, tmp_path, value):
+    _base_env(monkeypatch, tmp_path)
+    monkeypatch.setenv("AI_ASSISTANT_MAX_TOTAL_ARTIFACT_BYTES", value)
+    with pytest.raises(RuntimeError, match="AI_ASSISTANT_MAX_TOTAL_ARTIFACT_BYTES"):
+        load_ai_assistant_settings()
+    assert not (tmp_path / "store").exists()
+
+
+@pytest.mark.parametrize("total", [268435456, 536870912])
+def test_total_artifact_limit_accepts_equal_or_larger(monkeypatch, tmp_path, total):
+    _base_env(monkeypatch, tmp_path)
+    monkeypatch.setenv("AI_ASSISTANT_MAX_TOTAL_ARTIFACT_BYTES", str(total))
+    assert load_ai_assistant_settings().max_total_artifact_bytes == total
 
 
 def test_ai_storage_key_cannot_escape_root(tmp_path: Path) -> None:

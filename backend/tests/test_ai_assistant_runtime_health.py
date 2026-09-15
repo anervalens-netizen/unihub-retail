@@ -44,6 +44,9 @@ def fake_runtime(
         setup_timeout_seconds=30,
         readonly_dsn=readonly_dsn,
     )
+    runtime._orphans_ready = True
+    runtime._startup_error = None
+    runtime.db_guard = cast(Any, SimpleNamespace(ready=True, error=None))
     runtime._authority_ready = ready  # type: ignore[attr-defined]
     runtime._authority_error = error  # type: ignore[attr-defined]
     return runtime
@@ -113,8 +116,13 @@ async def test_lifespan_stays_alive_but_unhealthy_after_a_rejected_dsn(
             self._authority_ready = False
             self._authority_error = "AI sandbox read-only login has elevated role attributes"
 
-        async def verify_readonly_authority(self) -> None:
+        async def startup(self) -> None:
+            self._orphans_ready = True
+            self._startup_error = None
             raise AiReadOnlyAuthorityError(self._authority_error or "")
+
+        async def shutdown(self) -> None:
+            pass
 
     monkeypatch.setattr(runtime_app, "AiSandboxRuntime", RejectedRuntime)
     app = cast(FastAPI, SimpleNamespace(state=SimpleNamespace()))

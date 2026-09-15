@@ -72,7 +72,9 @@ class FakeSandbox:
         self.writes.append(relative)
 
     async def exec(self, command: str, timeout: int | None = None) -> FakeExecResult:
-        return FakeExecResult()
+        # Empty output directory: hash enumeration emits no records, while the
+        # new path/hash/size metadata command emits a JSON array.
+        return FakeExecResult(b"[]" if command.startswith("python3 -c ") else b"")
 
     async def read(self, path: Path) -> io.BytesIO:
         return io.BytesIO(self.files.get(str(path), b""))

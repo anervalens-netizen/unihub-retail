@@ -9,8 +9,8 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from ai_assistant.runtime import AiSandboxRuntime
 from schemas.ai_assistant import RuntimeSteerRequest, RuntimeTurnRequest
 
-_AUTHORITY_UNVERIFIED = (
-    "AI read-only database authority is not verified; refusing to expose the sandbox credential"
+_RUNTIME_UNREADY = (
+    "AI runtime safety preflight or database guard is unready; refusing new runs"
 )
 
 
@@ -19,13 +19,15 @@ async def lifespan(app: FastAPI):
     runtime = AiSandboxRuntime()
     app.state.ai_runtime = runtime
     try:
-        await runtime.verify_readonly_authority()
+        await runtime.startup()
     except Exception:
-        # Fail closed but stay observable: the process keeps serving /health as
-        # 503 with the rejection reason and refuses every run until a restart
-        # re-runs the preflight successfully.
+        # Stay observable but refuse runs; a connected guard recovers on its own,
+        # while authority/orphan failures require a successful new startup.
         pass
-    yield
+    try:
+        yield
+    finally:
+        await runtime.shutdown()
 
 
 app = FastAPI(
@@ -48,12 +50,12 @@ def _runtime(request: Request) -> AiSandboxRuntime:
 async def health(request: Request) -> JSONResponse:
     """Report healthy only after the sandbox credential proved read-only."""
     runtime = _runtime(request)
-    if not runtime.authority_ready:
+    if not runtime.ready:
         return JSONResponse(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             content={
                 "status": "unavailable",
-                "reason": runtime.authority_error or _AUTHORITY_UNVERIFIED,
+                "reason": runtime.readiness_error or _RUNTIME_UNREADY,
             },
         )
     return JSONResponse({"status": "ok"})
@@ -62,8 +64,8 @@ async def health(request: Request) -> JSONResponse:
 @app.post("/internal/ai/run")
 async def run_turn(payload: RuntimeTurnRequest, request: Request) -> StreamingResponse:
     runtime = _runtime(request)
-    if not runtime.authority_ready:
-        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, _AUTHORITY_UNVERIFIED)
+    if not runtime.ready:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, _RUNTIME_UNREADY)
     return StreamingResponse(
         runtime.stream_turn(payload),
         media_type="application/x-ndjson",

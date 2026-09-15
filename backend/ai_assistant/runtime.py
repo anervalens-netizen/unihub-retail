@@ -21,6 +21,7 @@ from openai.types.shared import Reasoning
 
 from ai_assistant.artifacts import collect_output_artifacts, output_hashes
 from ai_assistant.db_authority import verify_sandbox_readonly_authority
+from ai_assistant.db_guard import DatabaseSessionGuard
 from ai_assistant.run_state_machine import ActiveRun
 from ai_assistant.settings import (
     AI_READONLY_DSN_ENV,
@@ -110,7 +111,11 @@ def _owner_input(text: str, current_view: dict[str, object] | None, uploads: lis
 class AiSandboxRuntime:
     def __init__(self, settings: AiAssistantSettings | None = None):
         self.settings = settings or load_ai_assistant_settings(runtime=True)
-        self.client = DockerSandboxClient(docker_from_env())
+        self.docker = docker_from_env(timeout=10)
+        self.client = DockerSandboxClient(self.docker)
+        self.db_guard = DatabaseSessionGuard(self.settings.readonly_dsn)
+        self._orphans_ready = False
+        self._startup_error: str | None = "AI sandbox startup reconciliation is incomplete"
         self.options = DockerSandboxClientOptions(
             image=self.settings.sandbox_image,
             labels={
@@ -131,6 +136,43 @@ class AiSandboxRuntime:
     @property
     def authority_error(self) -> str | None:
         return self._authority_error
+
+    @property
+    def ready(self) -> bool:
+        return self._orphans_ready and self.authority_ready and self.db_guard.ready
+
+    @property
+    def readiness_error(self) -> str | None:
+        return self._startup_error or self.authority_error or self.db_guard.error
+
+    def _remove_stale_sandboxes(self) -> None:
+        labels = {
+            "com.unihub.component": "ai-assistant",
+            "com.unihub.runtime": "sandbox-agent",
+        }
+        containers = self.docker.containers.list(
+            all=True, filters={"label": [f"{key}={value}" for key, value in labels.items()]}
+        )
+        for container in containers:
+            # Defense in depth: do not trust a partial/overbroad daemon filter.
+            if all(container.labels.get(key) == value for key, value in labels.items()):
+                container.remove(force=True, v=True)
+
+    async def startup(self) -> None:
+        try:
+            await asyncio.to_thread(self._remove_stale_sandboxes)
+            self._orphans_ready = True
+            self._startup_error = None
+            await self.verify_readonly_authority()
+            await self.db_guard.start()
+        except Exception:
+            self._startup_error = "AI runtime startup preflight failed"
+            logger.error(self._startup_error)
+            raise
+
+    async def shutdown(self) -> None:
+        await self.db_guard.close()
+        await asyncio.to_thread(self.docker.close)
 
     async def verify_readonly_authority(self) -> None:
         """Fail closed before the runtime is allowed to report healthy.

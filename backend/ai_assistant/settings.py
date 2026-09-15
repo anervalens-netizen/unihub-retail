@@ -40,6 +40,7 @@ class AiAssistantSettings:
     # sandbox environment and must not appear in logs or tracebacks.
     readonly_dsn: str = field(default="", repr=False)
     max_concurrent_runs_per_owner: int = AI_MAX_CONCURRENT_RUNS_PER_OWNER
+    max_total_artifact_bytes: int = 1024 * 1024 * 1024
 
 
 def _positive_int(name: str, default: int) -> int:
@@ -153,7 +154,15 @@ def load_ai_assistant_settings(*, runtime: bool = False) -> AiAssistantSettings:
         setup_timeout_seconds=_bounded_seconds("AI_ASSISTANT_SETUP_TIMEOUT_SECONDS", 90),
         readonly_dsn=readonly_dsn,
         max_concurrent_runs_per_owner=_bounded_runs_per_owner(),
+        max_total_artifact_bytes=_positive_int(
+            "AI_ASSISTANT_MAX_TOTAL_ARTIFACT_BYTES", 1024 * 1024 * 1024
+        ),
     )
+    if settings.max_total_artifact_bytes < settings.max_artifact_bytes:
+        raise RuntimeError(
+            "AI_ASSISTANT_MAX_TOTAL_ARTIFACT_BYTES must be at least "
+            "AI_ASSISTANT_MAX_ARTIFACT_BYTES"
+        )
     settings.storage_root.mkdir(parents=True, exist_ok=True)
     settings.snapshot_root.mkdir(parents=True, exist_ok=True)
     return settings

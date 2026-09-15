@@ -245,6 +245,12 @@ jobs:
           cd backend
           ./scripts/run_tests_isolated.sh \
             tests/test_ai_assistant_settings.py \
+            tests/test_ai_assistant_artifacts.py \
+            tests/test_ai_assistant_admission.py \
+            tests/test_ai_assistant_db_authority.py \
+            tests/test_ai_assistant_db_guard.py \
+            tests/test_ai_assistant_runtime_health.py \
+            tests/test_ai_assistant_startup.py \
             tests/test_ai_assistant_runtime_state.py \
             tests/test_ai_assistant_runtime_race.py \
             tests/test_ai_assistant_persistence_db.py \

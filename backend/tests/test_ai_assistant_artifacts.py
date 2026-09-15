@@ -2,9 +2,8 @@
 
 The review finding: when a sandbox produced several changed outputs, a later
 output that failed validation/read/size left the earlier copies invisibly on
-disk with no completion event and no database rows. Collection now reads and
-validates every candidate before writing anything and rolls back anything it
-did write, while never touching artifacts from earlier successful runs.
+disk with no completion event and no database rows. Collection prechecks metadata,
+then reads/writes/releases sequentially and rolls back this attempt on failure.
 """
 
 from __future__ import annotations
@@ -12,6 +11,9 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import io
+import json
+import subprocess
+from dataclasses import replace
 from pathlib import Path
 from uuid import uuid4
 
@@ -40,8 +42,16 @@ class FakeSandbox:
     def __init__(self, files: dict[str, bytes]) -> None:
         self.files = files
         self.read_failures: set[str] = set()
+        self.read_calls: list[str] = []
+        self.metadata_sizes: dict[str, int] = {}
 
     async def exec(self, command: str, timeout: int | None = None) -> FakeExecResult:
+        if command == artifacts_module._OUTPUT_METADATA_COMMAND:
+            return FakeExecResult(json.dumps([
+                [relative, hashlib.sha256(payload).hexdigest(),
+                 self.metadata_sizes.get(relative, len(payload))]
+                for relative, payload in self.files.items()
+            ]).encode())
         del command, timeout
         records = [
             f"{hashlib.sha256(self.files[relative]).hexdigest()}  output/{relative}".encode()
@@ -51,6 +61,7 @@ class FakeSandbox:
 
     async def read(self, path: Path) -> io.BytesIO:
         relative = str(path).removeprefix("output/")
+        self.read_calls.append(relative)
         if relative in self.read_failures:
             raise OSError("sandbox read failed")
         return io.BytesIO(self.files[relative])
@@ -186,3 +197,174 @@ def test_collection_rollback_stays_inside_the_ai_storage_boundary() -> None:
     runtime_source = Path(runtime_module.__file__).read_text(encoding="utf-8")
     assert "_remove_host_artifacts" not in runtime_source
     assert "collect_output_artifacts" in runtime_source
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("files,aggregate", [
+    ({"a": b"123", "b": b"456"}, 5),
+    ({"a": b"x" * (MAX_BYTES + 1)}, MAX_BYTES * 2),
+])
+async def test_metadata_limits_reject_before_any_read(tmp_path, files, aggregate):
+    runtime = build_runtime(tmp_path)
+    settings = replace(runtime.settings, max_total_artifact_bytes=aggregate)
+    sandbox = FakeSandbox(files)
+    with pytest.raises(RuntimeError, match="configured"):
+        await collect_output_artifacts(settings, uuid4(), sandbox, {})
+    assert sandbox.read_calls == []
+    assert host_files(runtime) == []
+
+
+@pytest.mark.anyio
+async def test_payload_is_written_closed_and_released_before_next_read(tmp_path, monkeypatch):
+    runtime = build_runtime(tmp_path)
+    events = []
+
+    class Payload(bytes):
+        def __del__(self):
+            events.append("release")
+
+    class Stream(io.BytesIO):
+        def read(self, size=-1):
+            return Payload(super().read(size))
+
+        def close(self):
+            if not self.closed:
+                events.append("close")
+            super().close()
+
+    class Sandbox(FakeSandbox):
+        async def read(self, path):
+            if events:
+                assert events == ["read", "close", "write", "release"]
+            events.append("read")
+            return Stream(b"abc")
+
+    write = Path.write_bytes
+
+    def record_write(path, payload):
+        events.append("write")
+        return write(path, payload)
+
+    monkeypatch.setattr(Path, "write_bytes", record_write)
+    result = await collect_output_artifacts(
+        runtime.settings, uuid4(), Sandbox({"a": b"abc", "b": b"abc"}), {}
+    )
+    assert len(result) == 2
+    assert events == ["read", "close", "write", "release"] * 2
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("failure", ["growth", "read", "write", "cancel"])
+async def test_later_failure_rolls_back_only_this_attempt(tmp_path, monkeypatch, failure):
+    runtime = build_runtime(tmp_path)
+    settings = replace(runtime.settings, max_total_artifact_bytes=8)
+    conversation_id = uuid4()
+    previous = await collect_output_artifacts(
+        settings, conversation_id, FakeSandbox({"keep": b"old"}), {}
+    )
+    keep = settings.storage_root / previous[0].storage_key
+    sandbox = FakeSandbox({"a": b"12345", "b": b"67890"})
+    sandbox.metadata_sizes = {"a": 3, "b": 3}
+    original_read = sandbox.read
+    original_write = Path.write_bytes
+    written = []
+
+    async def read(path):
+        if path.name == "b":
+            assert len(written) == 1
+            if failure == "read":
+                raise OSError("read failed")
+            if failure == "cancel":
+                raise asyncio.CancelledError()
+        return await original_read(path)
+
+    def write(path, payload):
+        written.append(path)
+        count = original_write(path, payload)
+        if path.name == "b" and failure == "write":
+            raise OSError("partial write failed")
+        return count
+
+    if failure != "growth":
+        sandbox.files = {"a": b"123", "b": b"456"}
+    monkeypatch.setattr(sandbox, "read", read)
+    monkeypatch.setattr(Path, "write_bytes", write)
+    error = asyncio.CancelledError if failure == "cancel" else (
+        RuntimeError if failure == "growth" else OSError
+    )
+    with pytest.raises(error):
+        await collect_output_artifacts(settings, conversation_id, sandbox, {})
+    assert keep.read_bytes() == b"old"
+    assert host_files(runtime) == [keep]
+    assert sorted(keep.parent.parent.iterdir()) == [keep.parent]
+
+
+@pytest.mark.anyio
+async def test_identifier_collision_never_overwrites_previous_output(tmp_path, monkeypatch):
+    runtime = build_runtime(tmp_path)
+    conversation_id = uuid4()
+    fixed_id = uuid4()
+    monkeypatch.setattr(artifacts_module, "uuid4", lambda: fixed_id)
+    previous = await collect_output_artifacts(
+        runtime.settings, conversation_id, FakeSandbox({"same": b"old"}), {}
+    )
+    with pytest.raises(FileExistsError):
+        await collect_output_artifacts(
+            runtime.settings, conversation_id, FakeSandbox({"same": b"new"}), {}
+        )
+    keep = runtime.settings.storage_root / previous[0].storage_key
+    assert keep.read_bytes() == b"old"
+    assert host_files(runtime) == [keep]
+
+
+@pytest.mark.anyio
+async def test_metadata_command_returns_hash_size_and_safe_unusual_names(tmp_path):
+    output = tmp_path / "output"
+    output.mkdir()
+    name = "unusual\n name ü.txt"
+    (output / name).write_bytes(b"hello")
+    (output / "link").symlink_to(output / name)
+    (output / "directory-link").symlink_to(output, target_is_directory=True)
+
+    class LocalSandbox:
+        async def exec(self, command, timeout):
+            result = subprocess.run(
+                command, shell=True, cwd=tmp_path, capture_output=True,
+                timeout=timeout, check=True,
+            )
+            return FakeExecResult(result.stdout)
+
+    assert await artifacts_module._output_metadata(LocalSandbox()) == [
+        (name, hashlib.sha256(b"hello").hexdigest(), 5)
+    ]
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("record", [
+    ["../outside", "a" * 64, 1], ["/outside", "a" * 64, 1],
+    ["file", "invalid", 1], ["file", "a" * 64, -1],
+    ["file", "a" * 64, True],
+])
+async def test_invalid_metadata_rejected_before_read(tmp_path, record):
+    runtime = build_runtime(tmp_path)
+
+    class Sandbox(FakeSandbox):
+        async def exec(self, command, timeout=None):
+            return FakeExecResult(json.dumps([record]).encode())
+
+    sandbox = Sandbox({})
+    with pytest.raises(RuntimeError, match="invalid sandbox output metadata"):
+        await collect_output_artifacts(runtime.settings, uuid4(), sandbox, {})
+    assert sandbox.read_calls == []
+
+
+@pytest.mark.anyio
+async def test_unchanged_large_files_do_not_use_changed_output_budget(tmp_path):
+    runtime = build_runtime(tmp_path)
+    settings = replace(runtime.settings, max_total_artifact_bytes=3)
+    sandbox = FakeSandbox({"unchanged": b"x" * (MAX_BYTES + 1), "new": b"abc"})
+    before = await output_hashes(sandbox)
+    del before["new"]
+    result = await collect_output_artifacts(settings, uuid4(), sandbox, before)
+    assert len(result) == 1
+    assert sandbox.read_calls == ["new"]
