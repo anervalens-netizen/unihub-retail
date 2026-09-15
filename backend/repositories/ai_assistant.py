@@ -65,6 +65,7 @@ class AiAssistantRepository:
         effort: str,
         title: str | None,
         artifacts: list[dict[str, Any]],
+        steer: bool = False,
     ) -> tuple[asyncpg.Record, asyncpg.Record, list[asyncpg.Record]] | None:
         async with self.pool.acquire() as conn:
             async with conn.transaction():
@@ -125,10 +126,58 @@ class AiAssistantRepository:
                     """,
                     conversation_id,
                     owner_subject,
-                    effort,
-                    title,
+                    conversation["effort"] if steer else effort,
+                    None if steer else title,
                 )
                 return conversation, message, artifact_rows
+
+    async def compensate_rejected_steer(
+        self, owner_subject: str, conversation_id: UUID, message_id: UUID,
+    ) -> list[str]:
+        """Remove one definitely rejected submission, retaining concurrent work."""
+        async with self.pool.acquire() as conn:
+            async with conn.transaction():
+                owned = await conn.fetchval(
+                    """
+                    SELECT 1 FROM ai_assistant_conversations
+                    WHERE id = $1 AND owner_subject = $2 FOR UPDATE
+                    """, conversation_id, owner_subject,
+                )
+                if owned is None:
+                    raise LookupError("AI compensation conversation not found")
+                submission = await conn.fetchval(
+                    """
+                    SELECT 1 FROM ai_assistant_messages
+                    WHERE id = $1 AND conversation_id = $2 AND role = 'user'
+                    """, message_id, conversation_id,
+                )
+                if submission is None:
+                    raise LookupError("AI compensation submission not found")
+                deleted = await conn.fetch(
+                    """
+                    DELETE FROM ai_assistant_artifacts
+                    WHERE conversation_id = $1 AND message_id = $2 AND kind = 'input'
+                    RETURNING storage_key
+                    """, conversation_id, message_id,
+                )
+                await conn.execute(
+                    """
+                    DELETE FROM ai_assistant_messages
+                    WHERE conversation_id = $1 AND id = $2 AND role = 'user'
+                    """, conversation_id, message_id,
+                )
+                await conn.execute(
+                    """
+                    UPDATE ai_assistant_conversations AS c
+                    SET updated_at = GREATEST(c.created_at, (
+                        SELECT max(created_at) FROM ai_assistant_messages
+                        WHERE conversation_id = c.id
+                    ))
+                    WHERE c.id = $1 AND c.owner_subject = $2
+                    """, conversation_id, owner_subject,
+                )
+            # Returning outside the transaction ensures host cleanup follows COMMIT.
+            return [row["storage_key"] for row in deleted]
 
     async def create_assistant_completion(
         self,

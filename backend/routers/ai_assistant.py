@@ -269,6 +269,7 @@ async def steer(
             text=text,
             effort=effort,
             files=resolved_files,
+            steer=True,
         )
     except AiConversationNotFound as exc:
         raise _not_found() from exc
@@ -286,10 +287,17 @@ async def steer(
                 f"{service.settings.runtime_url}/internal/ai/{conversation_id}/steer",
                 json=payload.model_dump(mode="json"),
             )
+            if response.status_code == status.HTTP_409_CONFLICT:
+                try:
+                    await service.compensate_rejected_steer(claims.sub, conversation_id, user_message.id)
+                except Exception as exc:
+                    raise HTTPException(
+                        status.HTTP_503_SERVICE_UNAVAILABLE,
+                        "AI Steer a fost refuzat, dar anularea salvării sau curățarea fișierelor a eșuat.",
+                    ) from exc
+                raise HTTPException(status.HTTP_409_CONFLICT, "Nu există un run AI activ care poate fi ghidat.")
             if response.status_code != status.HTTP_200_OK:
-                message = "Nu există un run AI activ care poate fi ghidat."
-                await _record_runtime_error(service, claims.sub, conversation_id, message)
-                raise HTTPException(status.HTTP_409_CONFLICT, message)
+                raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "UniHub AI runtime nu este disponibil.")
     except httpx.HTTPError as exc:
         message = "UniHub AI runtime nu este disponibil."
         await _record_runtime_error(service, claims.sub, conversation_id, message)

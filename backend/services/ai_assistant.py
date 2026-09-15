@@ -131,6 +131,7 @@ class AiAssistantService:
         text: str,
         effort: AiReasoningEffort,
         files: list[UploadFile],
+        steer: bool = False,
     ) -> tuple[AiMessageItem, list[RuntimeUpload], str | None, int]:
         conversation = await self.require_conversation(owner_subject, conversation_id)
         prepared: list[dict[str, Any]] = []
@@ -182,6 +183,7 @@ class AiAssistantService:
                 effort=effort,
                 title=title,
                 artifacts=prepared,
+                steer=steer,
             )
             if created is None:
                 raise AiConversationNotFound
@@ -196,6 +198,17 @@ class AiAssistantService:
         except Exception:
             self._remove_storage_keys(written_keys)
             raise
+
+    async def compensate_rejected_steer(
+        self, owner_subject: str, conversation_id: UUID, message_id: UUID,
+    ) -> None:
+        storage_keys = await self.repo.compensate_rejected_steer(
+            owner_subject, conversation_id, message_id,
+        )
+        # Unlike best-effort cleanup during submission failure, failures here must
+        # reach the caller. Never delete host files before metadata COMMIT succeeds.
+        for storage_key in storage_keys:
+            resolve_storage_key(self.settings.storage_root, storage_key).unlink(missing_ok=True)
 
     async def finish_assistant_message(
         self,
