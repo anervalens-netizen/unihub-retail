@@ -443,8 +443,8 @@ def test_zero_drift_across_all_production_functions(l1):
         )
 
 
-def test_total_production_function_count_is_3151(l1):
-    """Production tree must contain exactly 3151 measured functions.
+def test_total_production_function_count_is_3189(l1):
+    """Production tree must contain exactly 3189 measured functions.
 
     The C6 Target Calculator repository decomposition intentionally
     adds 8 focused helper functions (+2 in target_calculator_sources.py,
@@ -467,14 +467,16 @@ def test_total_production_function_count_is_3151(l1):
     3032 to 3045. Lot 47 added the two shared month-fence helpers,
     month_fence_key and acquire_month_fence, in backend/services/sales_generation.py
     to fence CRM against sales promotion; baseline moves from 3045 to 3047.
-    V3 AI Assistant runtime + final review closure (PR #409) moves the live
-    count from 3047 to 3151: intentional AI runtime/resource-safety functions
-    plus the local sales-promotion extraction. Counting semantics are unchanged.
+    V3 AI Assistant runtime + first review closure (PR #409) moved the live
+    count from 3047 to 3151. Final exact-head remediation moves 3151 to 3189:
+    38 focused functions for the two fixed ext4 slots, bounded Docker adapter,
+    isolated database-guard authority and rejected-Steer compensation. Counting
+    semantics are unchanged.
     The exact snapshot rejects unrelated production-function drift.
     """
     metrics = l1.collect_metrics(PR_B1_WORKTREE)
-    assert len(metrics) == 3151, (
-        f"production count drift: expected 3151, got {len(metrics)}"
+    assert len(metrics) == 3189, (
+        f"production count drift: expected 3189, got {len(metrics)}"
     )
 
 
