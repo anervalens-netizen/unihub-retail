@@ -8,6 +8,7 @@ from uuid import UUID, uuid4
 
 from fastapi import UploadFile
 
+from ai_assistant.artifact_store import write_artifact_bounded
 from ai_assistant.settings import AiAssistantSettings, resolve_storage_key
 from repositories.ai_assistant import AiAssistantRepository
 from schemas.ai_assistant import (
@@ -132,7 +133,7 @@ class AiAssistantService:
         effort: AiReasoningEffort,
         files: list[UploadFile],
         steer: bool = False,
-    ) -> tuple[AiMessageItem, list[RuntimeUpload], str | None, int]:
+    ) -> tuple[AiMessageItem, list[RuntimeUpload], str | None, int, int | None]:
         conversation = await self.require_conversation(owner_subject, conversation_id)
         prepared: list[dict[str, Any]] = []
         runtime_uploads: list[RuntimeUpload] = []
@@ -148,8 +149,7 @@ class AiAssistantService:
                     Path("input") / str(conversation_id) / str(artifact_id) / filename
                 ).as_posix()
                 target = resolve_storage_key(self.settings.storage_root, storage_key)
-                target.parent.mkdir(parents=True, exist_ok=True)
-                target.write_bytes(payload)
+                write_artifact_bounded(self.settings.storage_root, target, payload)
                 written_keys.append(storage_key)
                 mime_type = (
                     upload.content_type
@@ -187,13 +187,14 @@ class AiAssistantService:
             )
             if created is None:
                 raise AiConversationNotFound
-            prior_conversation, message_row, artifact_rows = created
+            prior_conversation, message_row, artifact_rows, previous_order_key = created
             attachments = [self._artifact(row) for row in artifact_rows]
             return (
                 self._message(message_row, attachments),
                 runtime_uploads,
                 prior_conversation["previous_response_id"],
                 int(message_row["ordinal"]),
+                int(previous_order_key) if previous_order_key is not None else None,
             )
         except Exception:
             self._remove_storage_keys(written_keys)

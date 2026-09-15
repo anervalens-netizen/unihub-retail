@@ -27,6 +27,7 @@ class ActiveRun:
     sandbox_started: bool = False
     result: Any | None = None
     pending_steers: list[RuntimeSteerRequest] = field(default_factory=list)
+    last_steer_order_key: int | None = None
     stop_requested: bool = False
     owner_subject: str = ""
     slot: StorageSlot | None = None

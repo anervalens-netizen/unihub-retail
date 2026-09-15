@@ -18,6 +18,7 @@ import re
 from typing import Any
 from uuid import UUID, uuid4
 
+from ai_assistant.artifact_store import write_artifact_bounded
 from ai_assistant.settings import AiAssistantSettings, resolve_storage_key
 from schemas.ai_assistant import RuntimeArtifact
 
@@ -133,6 +134,17 @@ def _remove_host_artifacts(storage_root: Path, targets: list[Path]) -> None:
             current = current.parent
 
 
+def remove_collected_artifacts(
+    settings: AiAssistantSettings, artifacts: list[RuntimeArtifact],
+) -> None:
+    """Roll back outputs that were collected but never emitted as complete."""
+    targets = [
+        resolve_storage_key(settings.storage_root, artifact.storage_key)
+        for artifact in artifacts
+    ]
+    _remove_host_artifacts(settings.storage_root, targets)
+
+
 async def collect_output_artifacts(
     settings: AiAssistantSettings,
     conversation_id: UUID,
@@ -171,11 +183,8 @@ async def collect_output_artifacts(
             target = resolve_storage_key(settings.storage_root, storage_key)
             # Never overwrite or roll back a pre-existing artifact directory,
             # even if an identifier unexpectedly collides.
-            target.parent.mkdir(parents=True, exist_ok=False)
-            # Track before writing: a failed write must still roll back the
-            # directory this artifact reserved.
+            write_artifact_bounded(settings.storage_root, target, payload)
             written.append(target)
-            target.write_bytes(payload)
             artifacts.append(
                 RuntimeArtifact(
                     id=artifact_id,

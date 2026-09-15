@@ -21,7 +21,11 @@ from docker import from_env as docker_from_env
 from openai.types.responses import ResponseTextDeltaEvent
 from openai.types.shared import Reasoning
 
-from ai_assistant.artifacts import collect_output_artifacts, output_hashes
+from ai_assistant.artifacts import (
+    collect_output_artifacts,
+    output_hashes,
+    remove_collected_artifacts,
+)
 from ai_assistant.db_authority import verify_sandbox_readonly_authority
 from ai_assistant.db_guard import DatabaseSessionGuard
 from ai_assistant.run_state_machine import ActiveRun
@@ -34,11 +38,24 @@ from ai_assistant.settings import (
 from schemas.ai_assistant import (
     RUNTIME_ADMISSION_REJECTION_MESSAGE,
     AiReasoningEffort,
+    RuntimeArtifact,
     RuntimeSteerRequest,
     RuntimeTurnRequest,
 )
 
 logger = logging.getLogger(__name__)
+
+
+async def _rollback_unemitted_artifacts(
+    settings: AiAssistantSettings, artifacts: list[RuntimeArtifact], emitted: bool,
+) -> None:
+    if not artifacts or emitted:
+        return
+    try:
+        await storage_io(remove_collected_artifacts, settings, artifacts)
+    except BaseException:
+        logger.exception("unable to roll back unregistered AI artifacts")
+
 
 _BASE_INSTRUCTIONS = """You are the private AI analyst and working agent inside UniHub Retail.
 Work only when the owner sends a request.
@@ -210,13 +227,9 @@ class AiSandboxRuntime:
         self._authority_error = None
         logger.info("AI read-only database authority verified principal=%s", principal)
 
-    async def _reserve(self, conversation_id: UUID, owner_subject: str) -> ActiveRun | None:
-        """Reserve the conversation slot and one owner run slot together.
-
-        The conversation bound keeps Steer/Stop deterministic; the owner bound
-        makes Docker/model spend mathematically bounded even when the caller
-        opens many conversations. Both are taken under the same lock.
-        """
+    async def _reserve(
+        self, conversation_id: UUID, owner_subject: str, *, order_key: int | None = None,
+    ) -> ActiveRun | None:
         async with self._lock:
             if conversation_id in self._active:
                 return None
@@ -229,7 +242,10 @@ class AiSandboxRuntime:
             slot = self.slots.acquire()
             if slot is None:
                 return None
-            active = ActiveRun(task=asyncio.current_task(), owner_subject=owner_subject, slot=slot)
+            active = ActiveRun(
+                task=asyncio.current_task(), owner_subject=owner_subject, slot=slot,
+                last_steer_order_key=order_key,
+            )
             self._active[conversation_id] = active
             return active
 
@@ -298,6 +314,9 @@ class AiSandboxRuntime:
             active = self._active.get(conversation_id)
             if active is None or active.phase in {"finishing", "stopping"}:
                 raise LookupError("no active AI run for this conversation")
+            if request.previous_order_key != active.last_steer_order_key:
+                raise LookupError("out-of-order AI steer")
+            active.last_steer_order_key = request.order_key
             active.queue_steer(request)
             if active.result is not None:
                 active.phase = "steering"
@@ -500,13 +519,17 @@ class AiSandboxRuntime:
 
     async def stream_turn(self, request: RuntimeTurnRequest) -> AsyncIterator[bytes]:
         conversation_id = request.conversation_id
-        active = await self._reserve(conversation_id, request.owner_subject)
+        active = await self._reserve(
+            conversation_id, request.owner_subject, order_key=request.order_key,
+        )
         if active is None:
             yield _ndjson({"type": "error", "message": RUNTIME_ADMISSION_REJECTION_MESSAGE})
             return
 
         agent = _agent(self.settings, request.effort)
         accumulated: list[str] = []
+        artifacts: list[RuntimeArtifact] = []
+        artifacts_emitted = False
         try:
             try:
                 async with asyncio.timeout(self.settings.setup_timeout_seconds):
@@ -518,9 +541,7 @@ class AiSandboxRuntime:
                 yield _ndjson({"type": "stopped"})
                 return
             result, run_config, before_outputs = started
-
             yield _ndjson({"type": "status", "message": "UniHub AI lucrează în sandbox."})
-
             while True:
                 async for event in self._stream_events(result, accumulated):
                     yield event
@@ -538,7 +559,6 @@ class AiSandboxRuntime:
                     return
                 result = next_result
                 yield _ndjson({"type": "status", "message": "Direcția nouă a fost aplicată."})
-
             final_text = (
                 result.final_output
                 if isinstance(result.final_output, str)
@@ -551,6 +571,7 @@ class AiSandboxRuntime:
                 before_outputs,
             )
             await self._cleanup_sandbox(conversation_id, active)
+            artifacts_emitted = True
             yield _ndjson(
                 {
                     "type": "complete",
@@ -570,6 +591,7 @@ class AiSandboxRuntime:
             logger.exception("AI sandbox run failed conversation=%s", conversation_id)
             yield _ndjson({"type": "error", "message": "UniHub AI nu a putut finaliza cererea."})
         finally:
+            await _rollback_unemitted_artifacts(self.settings, artifacts, artifacts_emitted)
             try:
                 await self._cleanup_sandbox(conversation_id, active)
             finally:

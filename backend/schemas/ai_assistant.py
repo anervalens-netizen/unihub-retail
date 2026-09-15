@@ -70,10 +70,11 @@ class RuntimeUpload(StrictApiModel):
 
 class RuntimeTurnRequest(StrictApiModel):
     conversation_id: UUID
-    owner_subject: str = Field(min_length=1, max_length=200)
+    owner_subject: str = Field(min_length=1, max_length=256)
     text: str
     effort: AiReasoningEffort
     previous_response_id: str | None = None
+    order_key: int = Field(ge=1)
     current_view: dict[str, Any] | None = None
     uploads: list[RuntimeUpload] = Field(default_factory=list)
 
@@ -81,6 +82,7 @@ class RuntimeTurnRequest(StrictApiModel):
 class RuntimeSteerRequest(StrictApiModel):
     text: str
     order_key: int = Field(ge=1)
+    previous_order_key: int | None = Field(default=None, ge=1)
     current_view: dict[str, Any] | None = None
     uploads: list[RuntimeUpload] = Field(default_factory=list)
 

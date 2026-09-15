@@ -259,7 +259,7 @@ async def test_host_files_are_removed_when_metadata_transaction_fails(
     leftovers = [
         path
         for path in service.settings.storage_root.rglob("*")
-        if path.is_file()
+        if path.is_file() and path.name != ".artifact-store.lock"
     ]
     assert leftovers == []
     assert await repo.list_messages(OWNER, conversation_id) == []

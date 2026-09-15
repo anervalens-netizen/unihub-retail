@@ -156,7 +156,7 @@ async def _exercise_runs(runtime: AiSandboxRuntime, monkeypatch: pytest.MonkeyPa
 
     monkeypatch.setattr(runtime_module, "Runner", SimpleNamespace(run_streamed=run))
     for mode in ("complete", "stop", "setup_failure"):
-        request = RuntimeTurnRequest(conversation_id=uuid4(), owner_subject="docker-proof", text="tiny artifact", effort="none")
+        request = RuntimeTurnRequest(conversation_id=uuid4(), owner_subject="docker-proof", text="tiny artifact", effort="none", order_key=1)
         if mode == "setup_failure":
             request.uploads = [RuntimeUpload(storage_key="input/missing", sandbox_name="missing.txt")]
         task = asyncio.create_task(collect(runtime, request))

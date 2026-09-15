@@ -70,7 +70,7 @@ def request_for(runtime: Any) -> Request:
 
 def turn_payload() -> RuntimeTurnRequest:
     return RuntimeTurnRequest(
-        conversation_id=uuid4(), owner_subject="owner-a", text="salut", effort="high"
+        conversation_id=uuid4(), owner_subject="owner-a", text="salut", effort="high", order_key=1
     )
 
 

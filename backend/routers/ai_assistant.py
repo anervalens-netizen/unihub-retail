@@ -219,7 +219,7 @@ async def run_turn(
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "AI turn requires text or a file")
     parsed_current_view = _parse_current_view(current_view)
     try:
-        user_message, uploads, previous_response_id, _ = await service.begin_user_message(
+        user_message, uploads, previous_response_id, order_key, _ = await service.begin_user_message(
             claims.sub,
             conversation_id,
             text=text,
@@ -237,6 +237,7 @@ async def run_turn(
         text=text,
         effort=effort,
         previous_response_id=previous_response_id,
+        order_key=order_key,
         current_view=parsed_current_view,
         uploads=uploads,
     )
@@ -273,7 +274,7 @@ async def steer(
     try:
         conversation = await service.require_conversation(claims.sub, conversation_id)
         effort = cast(AiReasoningEffort, conversation["effort"])
-        user_message, uploads, _, order_key = await service.begin_user_message(
+        user_message, uploads, _, order_key, previous_order_key = await service.begin_user_message(
             claims.sub,
             conversation_id,
             text=text,
@@ -288,6 +289,7 @@ async def steer(
     payload = RuntimeSteerRequest(
         text=text,
         order_key=order_key,
+        previous_order_key=previous_order_key,
         current_view=parsed_current_view,
         uploads=uploads,
     )

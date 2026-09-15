@@ -22,6 +22,7 @@ from ai_assistant import runtime as runtime_module
 from ai_assistant.runtime import AiSandboxRuntime
 from ai_assistant.settings import AiAssistantSettings
 from schemas.ai_assistant import (
+    RuntimeArtifact,
     RuntimeSteerRequest,
     RuntimeTurnRequest,
     RuntimeUpload,
@@ -237,6 +238,7 @@ def turn_request(
         owner_subject=owner_subject,
         text=text,
         effort="high",
+        order_key=1,
         uploads=uploads or [],
     )
 
@@ -244,12 +246,14 @@ def turn_request(
 def steer_request(
     *,
     order_key: int,
+    previous_order_key: int | None = None,
     text: str | None = None,
     uploads: list[RuntimeUpload] | None = None,
 ) -> RuntimeSteerRequest:
     return RuntimeSteerRequest(
         text=text if text is not None else f"steer-{order_key}",
         order_key=order_key,
+        previous_order_key=previous_order_key,
         uploads=uploads or [],
     )
 
@@ -463,7 +467,7 @@ async def test_stop_during_steer_staging_never_installs_a_resumed_result(
     assert active.result is active_result
 
     # Steer is accepted while the run is active; the SDK is asked to cancel after the turn.
-    await runtime.steer(conversation_id, steer_request(order_key=1, uploads=[upload]))
+    await runtime.steer(conversation_id, steer_request(order_key=2, previous_order_key=1, uploads=[upload]))
     assert active_result.cancel_modes == ["after_turn"]
 
     sandbox = client.created[0]
@@ -555,11 +559,21 @@ async def test_resumed_model_input_follows_durable_order_key_order(
     await active_result.stream_started.wait()
     await settle()
 
-    # Steers arrive out of HTTP completion order but carry durable order keys.
-    await runtime.steer(conversation_id, steer_request(order_key=3, text="al treilea"))
-    await runtime.steer(conversation_id, steer_request(order_key=1, text="primul"))
-    await runtime.steer(conversation_id, steer_request(order_key=2, text="al doilea"))
-    assert active_result.cancel_modes == ["after_turn", "after_turn", "after_turn"]
+    # A later durable submission cannot overtake its predecessor at admission.
+    with pytest.raises(LookupError, match="out-of-order"):
+        await runtime.steer(
+            conversation_id,
+            steer_request(order_key=3, previous_order_key=2, text="al treilea"),
+        )
+    await runtime.steer(
+        conversation_id,
+        steer_request(order_key=2, previous_order_key=1, text="al doilea"),
+    )
+    await runtime.steer(
+        conversation_id,
+        steer_request(order_key=3, previous_order_key=2, text="al treilea"),
+    )
+    assert active_result.cancel_modes == ["after_turn", "after_turn"]
 
     assert active_result.stream_gate is not None
     active_result.stream_gate.set()
@@ -570,7 +584,7 @@ async def test_resumed_model_input_follows_durable_order_key_order(
 
     assert len(runner.calls) == 2
     resumed_state = active_result.state
-    assert [text for text in resumed_state.inputs] == ["primul", "al doilea", "al treilea"]
+    assert [text for text in resumed_state.inputs] == ["al doilea", "al treilea"]
 
     assert resumed_result.stream_gate is not None
     resumed_result.stream_gate.set()
@@ -603,6 +617,38 @@ async def test_normal_completion_closes_and_deletes_the_sandbox(
     assert client.deleted == client.created
     assert client.delete_calls == client.created
     assert client.created[0].closed is True
+
+
+@pytest.mark.anyio
+async def test_cleanup_failure_removes_collected_unregistered_artifacts(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    conversation_id = uuid4()
+    runtime, _client, _runner = build_runtime(
+        tmp_path, [FakeResult(label="only", deltas=["gata"])], monkeypatch
+    )
+    storage_key = f"output/{conversation_id}/artifact/result.csv"
+    target = runtime.settings.storage_root / storage_key
+    target.parent.mkdir(parents=True)
+    target.write_bytes(b"result")
+    artifact = RuntimeArtifact(
+        id=uuid4(), filename="result.csv", mime_type="text/csv",
+        size_bytes=6, storage_key=storage_key,
+    )
+
+    async def collected(*args: Any, **kwargs: Any) -> list[RuntimeArtifact]:
+        return [artifact]
+
+    async def cleanup_failure(*args: Any, **kwargs: Any) -> None:
+        raise RuntimeError("forced cleanup failure")
+
+    monkeypatch.setattr(runtime_module, "collect_output_artifacts", collected)
+    runtime._cleanup_sandbox = cleanup_failure  # type: ignore[method-assign]
+    with pytest.raises(RuntimeError, match="forced cleanup failure"):
+        await collect(runtime.stream_turn(turn_request(conversation_id)))
+
+    assert not target.exists()
+    assert runtime._active == {}
 
 
 @pytest.mark.anyio
@@ -792,7 +838,7 @@ async def test_run_at_the_owner_ceiling_still_takes_internal_steer_turns(
 
     # The owner is at its ceiling; the accepted run must still resume on Steer.
     assert len(runtime._active) == 1
-    await runtime.steer(conversation_id, steer_request(order_key=1, text="continuă"))
+    await runtime.steer(conversation_id, steer_request(order_key=2, previous_order_key=1, text="continuă"))
     gate.set()
 
     events = await task

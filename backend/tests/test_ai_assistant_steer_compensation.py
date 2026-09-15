@@ -181,7 +181,7 @@ async def test_rejected_turn_compensates_exact_submission(
 ) -> None:
     service, repo = await service_for(tmp_path)
     conversation_id = await new_conversation(service)
-    user_message, uploads, previous_response_id, _ = await service.begin_user_message(
+    user_message, uploads, previous_response_id, order_key, _ = await service.begin_user_message(
         OWNER,
         conversation_id,
         text="rejected turn",
@@ -196,6 +196,7 @@ async def test_rejected_turn_compensates_exact_submission(
         text="rejected turn",
         effort="max",
         previous_response_id=previous_response_id,
+        order_key=order_key,
         current_view=None,
         uploads=uploads,
     )

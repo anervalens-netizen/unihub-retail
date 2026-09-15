@@ -19,13 +19,30 @@ from uuid import uuid4
 
 import pytest
 
-from ai_assistant import artifacts as artifacts_module
+from ai_assistant import artifact_store, artifacts as artifacts_module
+from ai_assistant.artifact_store import write_artifact_bounded
 from ai_assistant import runtime as runtime_module
 from ai_assistant.artifacts import collect_output_artifacts, output_hashes
 from ai_assistant.runtime import AiSandboxRuntime
 from ai_assistant.settings import AiAssistantSettings
 
 MAX_BYTES = 4096
+
+
+def test_persistent_artifact_store_has_cross_namespace_aggregate_cap(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(artifact_store, "MAX_PERSISTENT_ARTIFACT_BYTES", 10)
+    first = tmp_path / "input/conversation/first/file.bin"
+    second = tmp_path / "output/conversation/second/file.bin"
+    write_artifact_bounded(tmp_path, first, b"123456")
+
+    with pytest.raises(RuntimeError, match="artifact store is full"):
+        write_artifact_bounded(tmp_path, second, b"78901")
+
+    assert first.read_bytes() == b"123456"
+    assert not second.exists()
+    assert (tmp_path / ".artifact-store.lock").stat().st_mode & 0o777 == 0o600
 
 
 class FakeExecResult:
@@ -86,7 +103,9 @@ def build_runtime(tmp_path: Path) -> AiSandboxRuntime:
 
 def host_files(runtime: AiSandboxRuntime) -> list[Path]:
     return sorted(
-        path for path in runtime.settings.storage_root.rglob("*") if path.is_file()
+        path
+        for path in runtime.settings.storage_root.rglob("*")
+        if path.is_file() and path.name != ".artifact-store.lock"
     )
 
 
@@ -148,7 +167,9 @@ async def test_host_write_failure_rolls_back_earlier_outputs(
         await collect_output_artifacts(runtime.settings, uuid4(), sandbox, {})
 
     assert host_files(runtime) == []
-    assert list(runtime.settings.storage_root.rglob("*")) == []
+    assert [path.name for path in runtime.settings.storage_root.rglob("*")] == [
+        ".artifact-store.lock"
+    ]
 
 
 @pytest.mark.anyio

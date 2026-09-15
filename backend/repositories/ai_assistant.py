@@ -66,7 +66,7 @@ class AiAssistantRepository:
         title: str | None,
         artifacts: list[dict[str, Any]],
         steer: bool = False,
-    ) -> tuple[asyncpg.Record, asyncpg.Record, list[asyncpg.Record]] | None:
+    ) -> tuple[asyncpg.Record, asyncpg.Record, list[asyncpg.Record], int | None] | None:
         async with self.pool.acquire() as conn:
             async with conn.transaction():
                 conversation = await conn.fetchrow(
@@ -81,6 +81,10 @@ class AiAssistantRepository:
                 )
                 if conversation is None:
                     return None
+                previous_order_key = await conn.fetchval(
+                    "SELECT max(ordinal) FROM ai_assistant_messages WHERE conversation_id = $1",
+                    conversation_id,
+                )
                 message = await conn.fetchrow(
                     """
                     INSERT INTO ai_assistant_messages (
@@ -129,7 +133,7 @@ class AiAssistantRepository:
                     conversation["effort"] if steer else effort,
                     None if steer else title,
                 )
-                return conversation, message, artifact_rows
+                return conversation, message, artifact_rows, previous_order_key
 
     async def compensate_rejected_submission(
         self, owner_subject: str, conversation_id: UUID, message_id: UUID,
