@@ -128,7 +128,62 @@ carries no automated provisioning step for that login, so it must exist before
 the runtime can become healthy; the runtime now refuses to serve a run until it
 does. Production database state was not inspected or modified by this change.
 
-# Current next Dell checkpoint
+# PR #409 final review closure
+
+This section supersedes the older checkpoint instructions below. Start for this
+closure was `a5fbe4359321c1343863cc56508ac5b710400b5c`, integration base remains
+`d2980c4704d059e832a1a10b8f44aba60f2ed655`; production was not accessed and main
+was not modified.
+
+- Changed artifacts now have sandbox-side path/hash/size metadata. All metadata
+  is checked before payload transfer: 256 MiB individual, 1 GiB aggregate default
+  (`AI_ASSISTANT_MAX_TOTAL_ARTIFACT_BYTES`, never below the individual limit).
+  Payloads are fetched/written/released sequentially with an actual-byte counter;
+  failures and cancellation roll back only this attempt, preserving prior output.
+- The single AI runtime process owns its raw Docker client and reconciles **both
+  exact** AI labels across all container states before accepting runs. Removal
+  is forceful with volumes; enumeration/removal failure leaves readiness closed.
+  Do not run two AI runtime processes against the same labeled container pool.
+- `db_guard.py` uses the same verified dedicated read-only login, with no extra
+  signaling role/credential and no application query proxy. Same-role cancel and
+  terminate permissions were proven on disposable PostgreSQL. Server timestamps
+  enforce active >300s / Lock-wait query >5s / idle transaction >60s, including
+  aborted idle transactions, independently of sandbox `SET ... = 0`. Lock age is
+  conservatively measured from query_start; ceilings include polling/scan latency.
+  A spoofed guard application_name does not exempt a sandbox session.
+- Readiness requires orphan cleanup + authority/default timeout verification + a
+  successful guard scan. Connection loss/stale scans reject new runs (503), not
+  existing model tasks; bounded reconnect backoff is 1..5s, readiness recovers on
+  a successful scan. Shutdown closes the guard task/connection and Docker client.
+- The local sales-promotion source-artifact verification extraction preserves
+  ordering/transaction/fence semantics and reduces 124 to 107 lines. Live exact
+  production-function invariants are 3047 -> 3151; counting/gates are unchanged.
+- Bundle baseline was regenerated canonically after identical-toolchain builds
+  of exact V3 base and candidate. Raw/gzip base -> candidate: entry 44443/13678 ->
+  44912/13821; CSS 129120/18878 -> 133255/19352; vendor 261463/80716 ->
+  261463/80715; UI 144694/47120 -> 146148/47552; charts 428671/118602 unchanged;
+  precache 1371511/951287 -> 1377645/952346. AI remains a separate dynamic chunk
+  (17523/5838), absent from static entry/preload/precache; it mounts with the shell,
+  not only on first click. The authorized feature baseline refresh retains the
+  4096-byte tolerance. No dependencies or bundler configuration changed.
+
+Deterministic isolated proofs cover timeout overrides, other-role noninterference,
+reconnect, and artifact limits/rollback. Real local Docker proof covers stale
+running/exited/created/paused containers, unrelated preservation, and normal/Stop/
+setup-failure cleanup. The automatic V3 backend lane now includes artifact,
+authority, watchdog, admission, health and startup regressions alongside existing
+Stop/Steer tests. Local closure: full isolated backend **3372 passed / 11 skipped /
+0 failed**, focused AI **115 passed / 2 skipped**, full frontend **118 files / 907
+tests**, exact complexity suites **80 passed**, full mypy **646 files**. The
+opt-in real-Docker test passed separately (it is skipped in the ordinary suite).
+The first full attempt was stopped after finding a stale race fake returning
+empty bytes instead of metadata `[]`; only that fake was corrected, with no race
+assertions removed. Global/changed complexity, architecture, env/OpenAPI/migration
+contracts, Bandit, systemd verification and bundle budget pass. Live Luna smoke
+was not run: `OPENAI_API_KEY` was absent from the task environment. Review-thread
+resolution and merge remain owner-controlled.
+
+# Earlier Dell checkpoint (historical)
 
 Difficulty: **8/10 HIGH**.
 Type: integration/debugging/certification.

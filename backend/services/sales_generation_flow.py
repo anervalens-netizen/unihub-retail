@@ -420,6 +420,27 @@ def _sales_event_cutoff(value: object) -> datetime:
     raise SalesGenerationValidationError("Sales generation cutoff is missing")
 
 
+async def _verify_promotion_source_artifact(row: asyncpg.Record) -> None:
+    if row["source_artifact_required"]:
+        if (
+            row["source_artifact_state"] != "artifact_retained"
+            or row["source_artifact_sha256"] != row["source_sha256"]
+            or row["source_artifact_bytes"] is None
+            or not row["source_artifact_retained_path"]
+        ):
+            raise SalesGenerationValidationError(
+                "Promovarea cere un artefact sales reținut și verificat"
+            )
+        from services.jobs import verify_sales_import_artifact
+
+        await asyncio.to_thread(
+            verify_sales_import_artifact,
+            str(row["source_artifact_retained_path"]),
+            str(row["source_sha256"]),
+            int(row["source_artifact_bytes"]),
+        )
+
+
 async def promote_sales_generation(
     conn: asyncpg.Connection,
     *,
@@ -452,24 +473,7 @@ async def promote_sales_generation(
         if isinstance(manifest, str):
             manifest = json.loads(manifest)
         manifest = dict(manifest or {})
-        if row["source_artifact_required"]:
-            if (
-                row["source_artifact_state"] != "artifact_retained"
-                or row["source_artifact_sha256"] != row["source_sha256"]
-                or row["source_artifact_bytes"] is None
-                or not row["source_artifact_retained_path"]
-            ):
-                raise SalesGenerationValidationError(
-                    "Promovarea cere un artefact sales reținut și verificat"
-                )
-            from services.jobs import verify_sales_import_artifact
-
-            await asyncio.to_thread(
-                verify_sales_import_artifact,
-                str(row["source_artifact_retained_path"]),
-                str(row["source_sha256"]),
-                int(row["source_artifact_bytes"]),
-            )
+        await _verify_promotion_source_artifact(row)
         if manifest_requires_override(manifest):
             raise SalesGenerationValidationError(
                 "Promovarea este blocată de contradicții structurale ale generației"

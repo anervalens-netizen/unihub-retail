@@ -157,7 +157,8 @@ def _minimal_contract(
 def test_case_1_pass_on_exact_main(check, l1, real_v2_contract):
     result = check.evaluate(PR_B1_WORKTREE, real_v2_contract, l1)
     assert result["result"] == "PASS"
-    assert result["metrics"]["production_functions"] == 3047
+    # 3047 -> 3151: V3 AI Assistant runtime + final review closure (PR #409).
+    assert result["metrics"]["production_functions"] == 3151
     assert result["metrics"]["complexity_proxy_gte_threshold"] == 27
     assert result["metrics"]["complexity_proxy_gte_30"] == 0
     assert result["metrics"]["maximum_complexity_proxy"] == 27
