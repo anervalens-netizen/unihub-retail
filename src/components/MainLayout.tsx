@@ -17,6 +17,9 @@ import { useMainLayoutFilters } from './useMainLayoutFilters';
 const SavedViewsControl = lazy(() => import('./SavedViewsControl').then((module) => ({
   default: module.SavedViewsControl,
 })));
+const AiAssistantPanel = lazy(() => import('../features/ai-assistant/AiAssistantPanel').then((module) => ({
+  default: module.AiAssistantPanel,
+})));
 
 /**
  * The shell owns the Saved Views transport deliberately: see `SavedViewsApi`
@@ -40,6 +43,8 @@ interface MainLayoutProps {
   showFilterButton?: boolean;
   mgmtSubTab: ManagementTab;
   savedViewState?: RetailContextUrlState | null;
+  aiContext?: RetailContextUrlState | null;
+  canAccessAiAssistant?: boolean;
   errorCount?: number;
   userEmail?: string;
   onLogout?: () => void;
@@ -50,7 +55,8 @@ interface MainLayoutProps {
 export function MainLayout({
   children, activeTab, setActiveTab, isFilterOpen, setIsFilterOpen, filters, setFilters,
   filterMonth, theme, setTheme, showFilterButton = true, mgmtSubTab, savedViewState,
-  errorCount = 0, userEmail, onLogout, canAccessManagement = true, logoutError = null,
+  aiContext, canAccessAiAssistant = false, errorCount = 0, userEmail, onLogout,
+  canAccessManagement = true, logoutError = null,
 }: MainLayoutProps) {
   const filterModel = useMainLayoutFilters({
     filterMonth, filters, setFilters, activeTab, mgmtSubTab, showFilterButton,
@@ -90,6 +96,16 @@ export function MainLayout({
       ) : null}
       <main className={cn('min-h-0 flex-1', 'overflow-y-auto pb-24 lg:pb-6')}><div className="mx-auto w-full max-w-6xl lg:max-w-[1600px]">{children}</div></main>
     </div>
+    {canAccessAiAssistant && <Suspense fallback={null}>
+      <AiAssistantPanel
+        canAccess={canAccessAiAssistant}
+        currentContext={aiContext ?? null}
+        messages={[]}
+        runStatus="unavailable"
+        onSubmit={() => undefined}
+        onStop={() => undefined}
+      />
+    </Suspense>}
     <MobileFilterSheet
       open={isFilterOpen}
       onOpenChange={setIsFilterOpen}
