@@ -21,6 +21,7 @@ TEMPLATES = (
     ROOT / "ops/config/.env.import-worker.example",
     ROOT / "ops/config/.env.migrations.example",
     ROOT / "ops/config/.env.frontend.example",
+    ROOT / "ops/ai-sandbox/runtime.env.example",
 )
 FRONTEND_ENV_FILES = (
     ROOT / "vite.config.ts",

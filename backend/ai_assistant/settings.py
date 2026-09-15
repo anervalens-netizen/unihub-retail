@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import ipaddress
 import os
 from pathlib import Path
@@ -16,8 +16,14 @@ AI_STORAGE_ROOT_ENV = "AI_ASSISTANT_STORAGE_ROOT"
 AI_SNAPSHOT_ROOT_ENV = "AI_ASSISTANT_SNAPSHOT_ROOT"
 AI_SANDBOX_IMAGE_ENV = "AI_ASSISTANT_SANDBOX_IMAGE"
 AI_READONLY_DSN_ENV = "AI_ASSISTANT_READONLY_DSN"
+AI_MAX_CONCURRENT_RUNS_ENV = "AI_ASSISTANT_MAX_CONCURRENT_RUNS_PER_OWNER"
 OPENAI_API_KEY_ENV = "OPENAI_API_KEY"
 AI_MODEL = "gpt-5.6-luna"
+
+# Capability-first default: one owner may hold two sandboxes at once. This is a
+# mathematical bound on Docker/model spend, not a normal-use policy.
+AI_MAX_CONCURRENT_RUNS_PER_OWNER = 2
+_AI_MAX_CONCURRENT_RUNS_CEILING = 16
 
 
 @dataclass(frozen=True, slots=True)
@@ -30,6 +36,10 @@ class AiAssistantSettings:
     sandbox_image: str
     max_artifact_bytes: int
     setup_timeout_seconds: int
+    # Never render the sandbox credential: it is resolved into the model
+    # sandbox environment and must not appear in logs or tracebacks.
+    readonly_dsn: str = field(default="", repr=False)
+    max_concurrent_runs_per_owner: int = AI_MAX_CONCURRENT_RUNS_PER_OWNER
 
 
 def _positive_int(name: str, default: int) -> int:
@@ -51,6 +61,20 @@ def _bounded_seconds(name: str, default: int) -> int:
         raise RuntimeError(f"{name} must be an integer") from exc
     if value < 5 or value > 300:
         raise RuntimeError(f"{name} must be between 5 and 300 seconds")
+    return value
+
+
+def _bounded_runs_per_owner() -> int:
+    raw = os.getenv(AI_MAX_CONCURRENT_RUNS_ENV, str(AI_MAX_CONCURRENT_RUNS_PER_OWNER)).strip()
+    try:
+        value = int(raw)
+    except ValueError as exc:
+        raise RuntimeError(f"{AI_MAX_CONCURRENT_RUNS_ENV} must be an integer") from exc
+    if value < 1 or value > _AI_MAX_CONCURRENT_RUNS_CEILING:
+        raise RuntimeError(
+            f"{AI_MAX_CONCURRENT_RUNS_ENV} must be between 1 and "
+            f"{_AI_MAX_CONCURRENT_RUNS_CEILING}"
+        )
     return value
 
 
@@ -108,6 +132,7 @@ def load_ai_assistant_settings(*, runtime: bool = False) -> AiAssistantSettings:
     runtime_url = _validated_loopback_runtime_url(
         os.getenv(AI_RUNTIME_URL_ENV, "http://127.0.0.1:9911").strip()
     )
+    readonly_dsn = ""
     if runtime:
         if not os.getenv(OPENAI_API_KEY_ENV, "").strip():
             raise RuntimeError(f"{OPENAI_API_KEY_ENV} is required by the AI runtime")
@@ -126,6 +151,8 @@ def load_ai_assistant_settings(*, runtime: bool = False) -> AiAssistantSettings:
             "AI_ASSISTANT_MAX_ARTIFACT_BYTES", 256 * 1024 * 1024
         ),
         setup_timeout_seconds=_bounded_seconds("AI_ASSISTANT_SETUP_TIMEOUT_SECONDS", 90),
+        readonly_dsn=readonly_dsn,
+        max_concurrent_runs_per_owner=_bounded_runs_per_owner(),
     )
     settings.storage_root.mkdir(parents=True, exist_ok=True)
     settings.snapshot_root.mkdir(parents=True, exist_ok=True)

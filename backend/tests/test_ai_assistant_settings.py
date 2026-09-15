@@ -23,6 +23,8 @@ def test_ai_settings_keep_runtime_loopback_and_model_fixed(monkeypatch: pytest.M
     assert settings.storage_root.is_dir()
     assert settings.snapshot_root.is_dir()
     assert settings.setup_timeout_seconds == 90
+    assert settings.max_concurrent_runs_per_owner == 2
+    assert settings.readonly_dsn == ""
 
 
 @pytest.mark.parametrize(
@@ -65,6 +67,10 @@ def test_ai_runtime_requires_sandbox_reachable_readonly_dsn(
     )
     settings = load_ai_assistant_settings(runtime=True)
     assert settings.model == "gpt-5.6-luna"
+    # The sandbox credential is retained for the startup authority preflight but
+    # must never surface through the settings representation.
+    assert settings.readonly_dsn.endswith("@db.internal:5432/unihub")
+    assert "unihub_ai_readonly" not in repr(settings)
 
 
 def test_ai_storage_key_cannot_escape_root(tmp_path: Path) -> None:

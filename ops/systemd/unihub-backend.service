@@ -36,6 +36,10 @@ StandardError=journal
 SyslogIdentifier=unihub-backend
 
 ProtectSystem=strict
+# Both services that write the AI state path declare the same nested
+# StateDirectory, so the first deployment does not require manual mkdir.
+StateDirectory=unihub-retail/ai-assistant
+StateDirectoryMode=0770
 ReadWritePaths=/opt/Mobiup/unihub-retail/data/import_spool /var/lib/unihub-retail/ai-assistant
 ProtectHome=read-only
 NoNewPrivileges=true

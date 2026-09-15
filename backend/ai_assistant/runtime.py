@@ -4,12 +4,10 @@ import asyncio
 import io
 import json
 import logging
-import mimetypes
 import os
 from pathlib import Path
-import re
 from typing import Any, AsyncIterator, Literal
-from uuid import UUID, uuid4
+from uuid import UUID
 
 from agents import ModelSettings, Runner
 from agents.run import RunConfig
@@ -21,6 +19,8 @@ from docker import from_env as docker_from_env
 from openai.types.responses import ResponseTextDeltaEvent
 from openai.types.shared import Reasoning
 
+from ai_assistant.artifacts import collect_output_artifacts, output_hashes
+from ai_assistant.db_authority import verify_sandbox_readonly_authority
 from ai_assistant.run_state_machine import ActiveRun
 from ai_assistant.settings import (
     AI_READONLY_DSN_ENV,
@@ -30,7 +30,6 @@ from ai_assistant.settings import (
 )
 from schemas.ai_assistant import (
     AiReasoningEffort,
-    RuntimeArtifact,
     RuntimeSteerRequest,
     RuntimeTurnRequest,
 )
@@ -48,7 +47,6 @@ When the owner refers to the current page, selection, filters or card, inspect /
 Put finished files the owner should receive under /workspace/output.
 Do not ask unnecessary confirmation questions.
 """
-_SAFE_ARTIFACT_NAME_RE = re.compile(r"[^A-Za-z0-9._() -]+")
 
 
 class HostEnvValue(EnvValue):
@@ -109,13 +107,6 @@ def _owner_input(text: str, current_view: dict[str, object] | None, uploads: lis
     return "\n\n".join(parts)
 
 
-def _safe_artifact_filename(value: str, artifact_id: UUID) -> str:
-    name = _SAFE_ARTIFACT_NAME_RE.sub("_", Path(value).name).strip(" .")
-    if not name:
-        return f"artifact-{artifact_id}.bin"
-    return name[:180].rstrip(" .") or f"artifact-{artifact_id}.bin"
-
-
 class AiSandboxRuntime:
     def __init__(self, settings: AiAssistantSettings | None = None):
         self.settings = settings or load_ai_assistant_settings(runtime=True)
@@ -129,12 +120,54 @@ class AiSandboxRuntime:
         )
         self._active: dict[UUID, ActiveRun] = {}
         self._lock = asyncio.Lock()
+        self._authority_ready = False
+        self._authority_error: str | None = "AI read-only database authority is not verified"
 
-    async def _reserve(self, conversation_id: UUID) -> ActiveRun | None:
+    @property
+    def authority_ready(self) -> bool:
+        """True only after the sandbox credential proved its read-only contract."""
+        return self._authority_ready
+
+    @property
+    def authority_error(self) -> str | None:
+        return self._authority_error
+
+    async def verify_readonly_authority(self) -> None:
+        """Fail closed before the runtime is allowed to report healthy.
+
+        ``UNIHUB_READONLY_DSN`` is handed to arbitrary model-generated code, so
+        the runtime must connect with it and prove the read-only authority
+        contract before any run can start. The failure text never contains the
+        DSN or its password.
+        """
+        try:
+            principal = await verify_sandbox_readonly_authority(self.settings.readonly_dsn)
+        except Exception as exc:
+            self._authority_ready = False
+            self._authority_error = str(exc) or type(exc).__name__
+            logger.error("AI read-only database authority rejected: %s", self._authority_error)
+            raise
+        self._authority_ready = True
+        self._authority_error = None
+        logger.info("AI read-only database authority verified principal=%s", principal)
+
+    async def _reserve(self, conversation_id: UUID, owner_subject: str) -> ActiveRun | None:
+        """Reserve the conversation slot and one owner run slot together.
+
+        The conversation bound keeps Steer/Stop deterministic; the owner bound
+        makes Docker/model spend mathematically bounded even when the caller
+        opens many conversations. Both are taken under the same lock.
+        """
         async with self._lock:
             if conversation_id in self._active:
                 return None
-            active = ActiveRun(task=asyncio.current_task())
+            ceiling = self.settings.max_concurrent_runs_per_owner
+            owned = sum(
+                1 for run in self._active.values() if run.owner_subject == owner_subject
+            )
+            if owned >= ceiling:
+                return None
+            active = ActiveRun(task=asyncio.current_task(), owner_subject=owner_subject)
             self._active[conversation_id] = active
             return active
 
@@ -169,62 +202,6 @@ class AiSandboxRuntime:
                 await sandbox.write(Path("input") / upload.sandbox_name, handle)
             names.append(upload.sandbox_name)
         return names
-
-    async def _output_hashes(self, sandbox: Any) -> dict[str, str]:
-        result = await sandbox.exec(
-            "find output -type f -print0 | sort -z | xargs -0 -r sha256sum -z",
-            timeout=30,
-        )
-        if not result.ok():
-            raise RuntimeError("unable to enumerate sandbox output files")
-        hashes: dict[str, str] = {}
-        for record in result.stdout.split(b"\0"):
-            if not record:
-                continue
-            digest, raw_path = record.split(b"  ", 1)
-            path = raw_path.decode("utf-8", errors="strict")
-            if path.startswith("output/"):
-                hashes[path.removeprefix("output/")] = digest.decode("ascii")
-        return hashes
-
-    async def _collect_artifacts(
-        self,
-        conversation_id: UUID,
-        sandbox: Any,
-        before: dict[str, str],
-    ) -> list[RuntimeArtifact]:
-        after = await self._output_hashes(sandbox)
-        artifacts: list[RuntimeArtifact] = []
-        for relative, digest in sorted(after.items()):
-            if before.get(relative) == digest:
-                continue
-            stream = await sandbox.read(Path("output") / relative)
-            try:
-                payload = stream.read()
-            finally:
-                stream.close()
-            if not isinstance(payload, bytes):
-                payload = bytes(payload)
-            if len(payload) > self.settings.max_artifact_bytes:
-                raise RuntimeError(f"generated artifact exceeds configured limit: {relative}")
-            artifact_id = uuid4()
-            filename = _safe_artifact_filename(relative, artifact_id)
-            storage_key = (
-                Path("output") / str(conversation_id) / str(artifact_id) / filename
-            ).as_posix()
-            target = resolve_storage_key(self.settings.storage_root, storage_key)
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_bytes(payload)
-            artifacts.append(
-                RuntimeArtifact(
-                    id=artifact_id,
-                    filename=filename,
-                    mime_type=mimetypes.guess_type(filename)[0] or "application/octet-stream",
-                    size_bytes=len(payload),
-                    storage_key=storage_key,
-                )
-            )
-        return artifacts
 
     async def _cleanup_sandbox(self, conversation_id: UUID, active: ActiveRun) -> None:
         sandbox = active.sandbox
@@ -283,166 +260,224 @@ class AiSandboxRuntime:
             active.phase = "running"
             return True
 
+    async def _start_run(
+        self,
+        conversation_id: UUID,
+        active: ActiveRun,
+        request: RuntimeTurnRequest,
+        agent: SandboxAgent[None],
+    ) -> tuple[Any, RunConfig, dict[str, str]] | None:
+        """Create the sandbox, stage owner input and start the first model run.
+
+        Returns ``None`` when a concurrent Stop must win before model execution.
+        """
+        snapshot = LocalSnapshot(
+            id=str(conversation_id),
+            base_path=self.settings.snapshot_root,
+        )
+        sandbox = await self.client.create(
+            manifest=agent.default_manifest,
+            snapshot=snapshot,
+            options=self.options,
+        )
+        active.sandbox = sandbox
+        await sandbox.start()
+        await self._stage_knowledge(sandbox)
+        upload_names = await self._stage_request_files(
+            sandbox,
+            current_view=request.current_view,
+            uploads=request.uploads,
+        )
+        before_outputs = await output_hashes(sandbox)
+        initial_input = _owner_input(
+            request.text,
+            request.current_view,
+            upload_names,
+        )
+        for steer_request in await self._drain_pending_steers(active):
+            steer_names = await self._stage_request_files(
+                sandbox,
+                current_view=steer_request.current_view,
+                uploads=steer_request.uploads,
+            )
+            initial_input += (
+                "\n\nOwner steering update before the first model call:\n"
+                + _owner_input(
+                    steer_request.text,
+                    steer_request.current_view,
+                    steer_names,
+                )
+            )
+        if await self._stop_requested(active):
+            return None
+        run_config = RunConfig(
+            sandbox=SandboxRunConfig(session=sandbox),
+            workflow_name="UniHub AI owner request",
+        )
+        result = Runner.run_streamed(
+            agent,
+            initial_input,
+            run_config=run_config,
+            previous_response_id=request.previous_response_id,
+            max_turns=None,
+        )
+        if not await self._install_result(conversation_id, active, result):
+            return None
+        return result, run_config, before_outputs
+
+    async def _stream_events(
+        self, result: Any, accumulated: list[str]
+    ) -> AsyncIterator[bytes]:
+        async for event in result.stream_events():
+            if event.type == "raw_response_event" and isinstance(
+                event.data, ResponseTextDeltaEvent
+            ):
+                accumulated.append(event.data.delta)
+                yield _ndjson({"type": "delta", "text": event.data.delta})
+            elif event.type == "run_item_stream_event" and event.name == "tool_called":
+                yield _ndjson(
+                    {"type": "status", "message": "Folosesc instrumentele din sandbox…"}
+                )
+
+    async def _resume_with_steers(
+        self,
+        conversation_id: UUID,
+        active: ActiveRun,
+        agent: SandboxAgent[None],
+        run_config: RunConfig,
+        result: Any,
+        pending: list[RuntimeSteerRequest],
+    ) -> Any | None:
+        """Start the resumed model run that carries the queued owner steers.
+
+        Returns ``None`` when a concurrent Stop must win instead of the resume.
+        """
+        state = result.to_state()
+        fallback_inputs: list[str] = []
+        state_usable = True
+        for steer_request in pending:
+            names = await self._stage_request_files(
+                active.sandbox,
+                current_view=steer_request.current_view,
+                uploads=steer_request.uploads,
+            )
+            steer_input = _owner_input(
+                steer_request.text,
+                steer_request.current_view,
+                names,
+            )
+            fallback_inputs.append(steer_input)
+            if state_usable:
+                try:
+                    state.add_input(steer_input)
+                except Exception:
+                    state_usable = False
+        if await self._stop_requested(active):
+            return None
+        if state_usable:
+            next_result = Runner.run_streamed(
+                agent,
+                state,
+                run_config=run_config,
+                max_turns=None,
+            )
+        else:
+            next_result = Runner.run_streamed(
+                agent,
+                "\n\n".join(fallback_inputs),
+                run_config=run_config,
+                previous_response_id=result.last_response_id,
+                max_turns=None,
+            )
+        if not await self._install_result(conversation_id, active, next_result):
+            return None
+        return next_result
+
+    async def _drain_or_finish(
+        self, active: ActiveRun
+    ) -> list[RuntimeSteerRequest] | None:
+        """Take the queued owner steers, or report that Stop won the race.
+
+        ``None`` means this run was stopped. An empty list means the model turn
+        finished with nothing queued, so the reservation moves to ``finishing``.
+        """
+        async with self._lock:
+            if active.stop_requested:
+                return None
+            pending = list(active.pending_steers)
+            active.pending_steers.clear()
+            if not pending:
+                active.phase = "finishing"
+            return pending
+
+    async def _release(self, conversation_id: UUID, active: ActiveRun) -> None:
+        """Drop the reservation only if it is still the one this run created."""
+        async with self._lock:
+            if self._active.get(conversation_id) is active:
+                self._active.pop(conversation_id, None)
+
     async def stream_turn(self, request: RuntimeTurnRequest) -> AsyncIterator[bytes]:
         conversation_id = request.conversation_id
-        active = await self._reserve(conversation_id)
+        active = await self._reserve(conversation_id, request.owner_subject)
         if active is None:
             yield _ndjson({"type": "error", "message": "A run is already active for this conversation."})
             return
 
         agent = _agent(self.settings, request.effort)
-        run_config: RunConfig | None = None
-        before_outputs: dict[str, str] = {}
-        result: Any | None = None
         accumulated: list[str] = []
         try:
             try:
                 async with asyncio.timeout(self.settings.setup_timeout_seconds):
-                    snapshot = LocalSnapshot(
-                        id=str(conversation_id),
-                        base_path=self.settings.snapshot_root,
-                    )
-                    sandbox = await self.client.create(
-                        manifest=agent.default_manifest,
-                        snapshot=snapshot,
-                        options=self.options,
-                    )
-                    active.sandbox = sandbox
-                    await sandbox.start()
-                    await self._stage_knowledge(sandbox)
-                    upload_names = await self._stage_request_files(
-                        sandbox,
-                        current_view=request.current_view,
-                        uploads=request.uploads,
-                    )
-                    before_outputs = await self._output_hashes(sandbox)
-                    initial_input = _owner_input(
-                        request.text,
-                        request.current_view,
-                        upload_names,
-                    )
-                    pending_before_first_call = await self._drain_pending_steers(active)
-                    for steer_request in pending_before_first_call:
-                        steer_names = await self._stage_request_files(
-                            sandbox,
-                            current_view=steer_request.current_view,
-                            uploads=steer_request.uploads,
-                        )
-                        initial_input += (
-                            "\n\nOwner steering update before the first model call:\n"
-                            + _owner_input(
-                                steer_request.text,
-                                steer_request.current_view,
-                                steer_names,
-                            )
-                        )
-                    if await self._stop_requested(active):
-                        yield _ndjson({"type": "stopped"})
-                        return
-                    run_config = RunConfig(
-                        sandbox=SandboxRunConfig(session=sandbox),
-                        workflow_name="UniHub AI owner request",
-                    )
-                    result = Runner.run_streamed(
-                        agent,
-                        initial_input,
-                        run_config=run_config,
-                        previous_response_id=request.previous_response_id,
-                        max_turns=None,
-                    )
-                    if not await self._install_result(conversation_id, active, result):
-                        yield _ndjson({"type": "stopped"})
-                        return
+                    started = await self._start_run(conversation_id, active, request, agent)
             except TimeoutError:
                 yield _ndjson({"type": "error", "message": "Pornirea sandboxului AI a depășit timpul permis."})
                 return
+            if started is None:
+                yield _ndjson({"type": "stopped"})
+                return
+            result, run_config, before_outputs = started
 
             yield _ndjson({"type": "status", "message": "UniHub AI lucrează în sandbox."})
 
-            while result is not None and run_config is not None:
-                async for event in result.stream_events():
-                    if event.type == "raw_response_event" and isinstance(event.data, ResponseTextDeltaEvent):
-                        accumulated.append(event.data.delta)
-                        yield _ndjson({"type": "delta", "text": event.data.delta})
-                    elif event.type == "run_item_stream_event" and event.name == "tool_called":
-                        yield _ndjson({"type": "status", "message": "Folosesc instrumentele din sandbox…"})
-
-                async with self._lock:
-                    if active.stop_requested:
-                        yield _ndjson({"type": "stopped"})
-                        return
-                    pending = list(active.pending_steers)
-                    active.pending_steers.clear()
-                    if not pending:
-                        active.phase = "finishing"
-
-                if pending:
-                    state = result.to_state()
-                    fallback_inputs: list[str] = []
-                    state_usable = True
-                    for steer_request in pending:
-                        names = await self._stage_request_files(
-                            active.sandbox,
-                            current_view=steer_request.current_view,
-                            uploads=steer_request.uploads,
-                        )
-                        steer_input = _owner_input(
-                            steer_request.text,
-                            steer_request.current_view,
-                            names,
-                        )
-                        fallback_inputs.append(steer_input)
-                        if state_usable:
-                            try:
-                                state.add_input(steer_input)
-                            except Exception:
-                                state_usable = False
-                    if await self._stop_requested(active):
-                        yield _ndjson({"type": "stopped"})
-                        return
-                    if state_usable:
-                        next_result = Runner.run_streamed(
-                            agent,
-                            state,
-                            run_config=run_config,
-                            max_turns=None,
-                        )
-                    else:
-                        next_result = Runner.run_streamed(
-                            agent,
-                            "\n\n".join(fallback_inputs),
-                            run_config=run_config,
-                            previous_response_id=result.last_response_id,
-                            max_turns=None,
-                        )
-                    if not await self._install_result(conversation_id, active, next_result):
-                        yield _ndjson({"type": "stopped"})
-                        return
-                    result = next_result
-                    yield _ndjson({"type": "status", "message": "Direcția nouă a fost aplicată."})
-                    continue
-
-                final_text = (
-                    result.final_output
-                    if isinstance(result.final_output, str)
-                    else "".join(accumulated)
+            while True:
+                async for event in self._stream_events(result, accumulated):
+                    yield event
+                pending = await self._drain_or_finish(active)
+                if pending is None:
+                    yield _ndjson({"type": "stopped"})
+                    return
+                if not pending:
+                    break
+                next_result = await self._resume_with_steers(
+                    conversation_id, active, agent, run_config, result, pending
                 )
-                artifacts = await self._collect_artifacts(
-                    conversation_id,
-                    active.sandbox,
-                    before_outputs,
-                )
-                yield _ndjson(
-                    {
-                        "type": "complete",
-                        "text": final_text,
-                        "previous_response_id": result.last_response_id,
-                        "artifacts": [
-                            artifact.model_dump(mode="json") for artifact in artifacts
-                        ],
-                    }
-                )
-                return
+                if next_result is None:
+                    yield _ndjson({"type": "stopped"})
+                    return
+                result = next_result
+                yield _ndjson({"type": "status", "message": "Direcția nouă a fost aplicată."})
+
+            final_text = (
+                result.final_output
+                if isinstance(result.final_output, str)
+                else "".join(accumulated)
+            )
+            artifacts = await collect_output_artifacts(
+                self.settings,
+                conversation_id,
+                active.sandbox,
+                before_outputs,
+            )
+            yield _ndjson(
+                {
+                    "type": "complete",
+                    "text": final_text,
+                    "previous_response_id": result.last_response_id,
+                    "artifacts": [
+                        artifact.model_dump(mode="json") for artifact in artifacts
+                    ],
+                }
+            )
         except asyncio.CancelledError:
             if active.stop_requested:
                 yield _ndjson({"type": "stopped"})
@@ -453,6 +488,4 @@ class AiSandboxRuntime:
             yield _ndjson({"type": "error", "message": "UniHub AI nu a putut finaliza cererea."})
         finally:
             await self._cleanup_sandbox(conversation_id, active)
-            async with self._lock:
-                if self._active.get(conversation_id) is active:
-                    self._active.pop(conversation_id, None)
+            await self._release(conversation_id, active)

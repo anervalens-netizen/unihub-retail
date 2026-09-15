@@ -95,6 +95,12 @@ function AiEmptyState({ runtimeUnavailable }: { runtimeUnavailable: boolean }) {
   </div>;
 }
 
+const composerPlaceholder = (steering: boolean, stopping: boolean): string => {
+  if (steering) return 'Scrie pentru a ghida următorul pas…';
+  if (stopping) return 'Rularea se oprește…';
+  return 'Întreabă UniHub AI…';
+};
+
 function Composer({
   context, runStatus, onSubmit, onStop,
 }: {
@@ -109,12 +115,16 @@ function Composer({
   const [files, setFiles] = useState<File[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const running = runStatus === 'running' || runStatus === 'stopping';
+  const steering = runStatus === 'running';
+  const stopping = runStatus === 'stopping';
   const unavailable = runStatus === 'unavailable';
 
+  // A stop in flight is never steerable: the runtime rejects every control
+  // request once stopping begins, so the draft is preserved, not queued.
   const submit = useCallback(() => {
     const text = draft.trim();
     if (!text && files.length === 0) return;
-    if (unavailable) return;
+    if (unavailable || stopping) return;
     onSubmit({
       text,
       effort,
@@ -124,11 +134,11 @@ function Composer({
         locationHref: typeof window === 'undefined' ? '' : window.location.href,
       } : null,
       files,
-      mode: running ? 'steer' : 'send',
+      mode: steering ? 'steer' : 'send',
     });
     setDraft('');
     setFiles([]);
-  }, [context, draft, effort, files, includeContext, onSubmit, running, unavailable]);
+  }, [context, draft, effort, files, includeContext, onSubmit, steering, stopping, unavailable]);
 
   function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
     if (event.key === 'Enter' && !event.shiftKey) {
@@ -152,7 +162,7 @@ function Composer({
         value={draft}
         onChange={(event) => setDraft(event.target.value)}
         onKeyDown={handleKeyDown}
-        placeholder={running ? 'Scrie pentru a ghida următorul pas…' : 'Întreabă UniHub AI…'}
+        placeholder={composerPlaceholder(steering, stopping)}
         rows={3}
         className="max-h-40 min-h-16 w-full resize-none bg-transparent px-1.5 py-1 text-sm text-slate-800 outline-none placeholder:text-slate-400 dark:text-slate-100"
         aria-label="Mesaj pentru UniHub AI"
@@ -173,7 +183,7 @@ function Composer({
         </label>
         <div className="ml-auto flex items-center gap-1.5">
           {running && <button type="button" disabled={runStatus === 'stopping'} onClick={onStop} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 text-xs font-semibold text-slate-600 hover:bg-slate-100 disabled:opacity-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"><Square size={12} fill="currentColor" aria-hidden="true" />Stop</button>}
-          <button type="button" disabled={unavailable || (!draft.trim() && files.length === 0)} onClick={submit} className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-indigo-600 px-3 text-xs font-semibold text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-40"><Send size={13} aria-hidden="true" />{running ? 'Steer' : 'Trimite'}</button>
+          <button type="button" disabled={unavailable || stopping || (!draft.trim() && files.length === 0)} onClick={submit} className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-indigo-600 px-3 text-xs font-semibold text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-40"><Send size={13} aria-hidden="true" />{running ? 'Steer' : 'Trimite'}</button>
         </div>
       </div>
     </div>

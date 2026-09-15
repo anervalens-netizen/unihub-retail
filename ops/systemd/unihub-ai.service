@@ -27,6 +27,11 @@ StandardError=journal
 SyslogIdentifier=unihub-ai
 
 ProtectSystem=strict
+# systemd provisions the nested AI state namespace before ExecStart so the
+# unprefixed ReadWritePaths entry below can never depend on an administrator
+# creating /var/lib/unihub-retail/ai-assistant by hand on a first deployment.
+StateDirectory=unihub-retail/ai-assistant
+StateDirectoryMode=0770
 ReadWritePaths=/var/lib/unihub-retail/ai-assistant
 ProtectHome=read-only
 NoNewPrivileges=true

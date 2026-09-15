@@ -22,7 +22,7 @@ Capability-first, private owner-only AI: `gpt-5.6-luna`, OpenAI Agents SDK Sandb
 
 Do not add multi-agent orchestration, generic workflow/approval systems, generic MCP infrastructure, background autonomy, scheduler or voice in V1 without a concrete owner request. Hard boundaries are technical: API key server-side, no write-capable Retail DB credential in sandbox, no production/deploy credentials in sandbox, no autonomous background run.
 
-No extra AI-specific rate/quota layer is required in V1. The current boundary is authenticated owner-only access, CSRF/body limits and one active run per conversation. Add admission/quota only if measured usage or abuse evidence justifies it.
+No generic AI quota/workflow/approval layer exists or is planned. The boundary is authenticated owner-only access, CSRF/body limits, one active run per conversation and a narrow technical admission bound added by the PR #409 review: at most two concurrent runs per authenticated owner plus a ten-run-starts-per-minute owner rate limit. Both exist only to make Docker/model spend finite; an accepted run keeps unlimited internal turns and tool calls.
 
 # Repository authority
 
@@ -30,7 +30,7 @@ Stable lines at this checkpoint:
 - production `main`: `8c0bcd69a61fdf26aec746da2651de4c2aa3f020`; owner froze parallel main work until V3 completes;
 - `v3/main`: `d2980c4704d059e832a1a10b8f44aba60f2ed655`;
 - AI execution foundation was certified at `41b731acdb7c0a6688ffb3bb27957a43244d7b8d`;
-- current AI branch after concurrency redesign: `03e04d5d31624a00bfaa28d1c67d3f9d29395619`, tree `058c22cb4629634d34670273044eaefd79d9a517`.
+- `v3/ai-assistant` PR #409 head before review remediation: `9a95ac872d041aa7867fd7907d5935d5a6fc5858`.
 
 Re-fetch before use; GitHub wins over these stored SHAs.
 
@@ -95,6 +95,38 @@ The generated Retail OpenAPI/contracts may and should be regenerated once the pu
 The AI container now remains mounted across transient P&L capability refetches, while the panel still hides when access is false. The hook preserves an active stream rather than losing it during a temporary permission fetch.
 
 Bootstrap/new-conversation updates use a selection epoch so a late bootstrap cannot overwrite a newer owner choice. Steer responses refresh persisted messages from the server rather than append in HTTP response order, preserving DB ordering.
+
+# PR #409 review remediation
+
+Six Codex findings were remediated on this branch without redesigning any
+certified execution path:
+
+- the nested AI state path is provisioned by systemd `StateDirectory` in both
+  `unihub-ai.service` and `unihub-backend.service`, so a first deployment no
+  longer depends on an administrator creating it before `ReadWritePaths` is
+  evaluated;
+- `AI_ASSISTANT_READONLY_DSN` is no longer accepted on syntax alone: the
+  runtime connects with that exact credential at startup and fails closed
+  unless the login is a direct member of exactly `unihub_web_read`, has no
+  elevated role attribute, holds no effective INSERT/UPDATE/DELETE/TRUNCATE on
+  application tables or CREATE on application schemas/databases, and inherits
+  bounded `statement_timeout`/`lock_timeout`/`idle_in_transaction_session_timeout`
+  defaults. `/health` stays 503 until the preflight passes;
+- run creation is bounded per owner (runtime concurrent ceiling, default 2, plus
+  the `ai_turn` rate policy) before upload staging, sandbox creation or any model
+  call, while internal turns stay unlimited;
+- Steer is only submitted while a run is genuinely `running`; a `stopping` run
+  is never steerable and the draft is never queued;
+- host-side artifact collection validates every candidate before writing and
+  rolls the whole call back on failure, so a failed run leaves no invisible
+  files and earlier artifacts are untouched;
+- `backend/requirements-dev.lock` was regenerated with hashes.
+
+`ops/ai-sandbox/runtime.env.example` documents the required role, the SQL that
+provisions it and the mandatory bounded session defaults. The repository still
+carries no automated provisioning step for that login, so it must exist before
+the runtime can become healthy; the runtime now refuses to serve a run until it
+does. Production database state was not inspected or modified by this change.
 
 # Current next Dell checkpoint
 

@@ -202,7 +202,6 @@ export function useAiAssistant(enabled: boolean) {
     try {
       await steerAiTurn(id, submission);
       await refreshPersisted(id);
-      setRunStatus((current) => current === 'stopping' ? 'running' : current);
     } catch (error) {
       console.error('UniHub AI steer failed', error);
       try { await refreshPersisted(id); } catch { /* transport error remains visible in console */ }
@@ -229,9 +228,16 @@ export function useAiAssistant(enabled: boolean) {
     }
   }, [handleStreamEvent]);
 
+  /**
+   * Steer is accepted only while the run is genuinely `running`. Once Stop has
+   * moved the state to `stopping` the runtime rejects every control request, so
+   * submitting would persist a durable user instruction that can never be
+   * processed. The submission is dropped, never queued for a later run.
+   */
   const submit = useCallback(async (submission: AiComposerSubmission) => {
     if (!enabled || !conversationId) return;
-    if (submission.mode === 'steer' && (runStatus === 'running' || runStatus === 'stopping')) {
+    if (submission.mode === 'steer') {
+      if (runStatus !== 'running') return;
       await submitSteer(conversationId, submission);
       return;
     }

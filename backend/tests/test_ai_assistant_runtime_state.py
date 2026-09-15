@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 from uuid import uuid4
 
 import pytest
 
 from ai_assistant.run_state_machine import ActiveRun
 from ai_assistant.runtime import AiSandboxRuntime
+from ai_assistant.settings import AiAssistantSettings
 from schemas.ai_assistant import RuntimeSteerRequest
 
 
@@ -18,32 +20,43 @@ class FakeResult:
         self.cancel_modes.append(mode)
 
 
-def bare_runtime() -> AiSandboxRuntime:
+def bare_runtime(tmp_path: Path) -> AiSandboxRuntime:
     runtime = object.__new__(AiSandboxRuntime)
+    runtime.settings = AiAssistantSettings(  # type: ignore[assignment]
+        model="gpt-5.6-luna",
+        runtime_url="http://127.0.0.1:9911",
+        storage_root=tmp_path,
+        snapshot_root=tmp_path,
+        knowledge_root=tmp_path,
+        sandbox_image="unihub-retail-sandbox:test",
+        max_artifact_bytes=1024 * 1024,
+        setup_timeout_seconds=30,
+    )
     runtime._active = {}  # type: ignore[attr-defined]
     runtime._lock = asyncio.Lock()  # type: ignore[attr-defined]
     return runtime
 
 
 @pytest.mark.anyio
-async def test_only_one_run_can_reserve_a_conversation() -> None:
-    runtime = bare_runtime()
+async def test_only_one_run_can_reserve_a_conversation(tmp_path: Path) -> None:
+    runtime = bare_runtime(tmp_path)
     conversation_id = uuid4()
 
     first, second = await asyncio.gather(
-        runtime._reserve(conversation_id),
-        runtime._reserve(conversation_id),
+        runtime._reserve(conversation_id, "owner-a"),
+        runtime._reserve(conversation_id, "owner-a"),
     )
 
     assert (first is None) != (second is None)
     active = first or second
     assert active is not None
+    assert active.owner_subject == "owner-a"
     assert runtime._active[conversation_id] is active
 
 
 @pytest.mark.anyio
-async def test_steers_are_sorted_by_durable_message_order() -> None:
-    runtime = bare_runtime()
+async def test_steers_are_sorted_by_durable_message_order(tmp_path: Path) -> None:
+    runtime = bare_runtime(tmp_path)
     conversation_id = uuid4()
     result = FakeResult()
     active = ActiveRun(phase="running", result=result)
@@ -63,8 +76,8 @@ async def test_steers_are_sorted_by_durable_message_order() -> None:
 
 
 @pytest.mark.anyio
-async def test_stop_cancels_current_result_immediately() -> None:
-    runtime = bare_runtime()
+async def test_stop_cancels_current_result_immediately(tmp_path: Path) -> None:
+    runtime = bare_runtime(tmp_path)
     conversation_id = uuid4()
     result = FakeResult()
     active = ActiveRun(phase="running", result=result)
@@ -78,13 +91,13 @@ async def test_stop_cancels_current_result_immediately() -> None:
 
 
 @pytest.mark.anyio
-async def test_stop_during_setup_cancels_reserved_owner_task() -> None:
-    runtime = bare_runtime()
+async def test_stop_during_setup_cancels_reserved_owner_task(tmp_path: Path) -> None:
+    runtime = bare_runtime(tmp_path)
     conversation_id = uuid4()
     reserved = asyncio.Event()
 
     async def owner() -> None:
-        active = await runtime._reserve(conversation_id)
+        active = await runtime._reserve(conversation_id, "owner-a")
         assert active is not None
         reserved.set()
         await asyncio.Event().wait()
@@ -99,8 +112,8 @@ async def test_stop_during_setup_cancels_reserved_owner_task() -> None:
 
 
 @pytest.mark.anyio
-async def test_stopped_run_cannot_install_a_resumed_result() -> None:
-    runtime = bare_runtime()
+async def test_stopped_run_cannot_install_a_resumed_result(tmp_path: Path) -> None:
+    runtime = bare_runtime(tmp_path)
     conversation_id = uuid4()
     active = ActiveRun(phase="steering", stop_requested=True)
     runtime._active[conversation_id] = active

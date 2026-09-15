@@ -284,6 +284,7 @@ def test_sensitive_routes_keep_named_rate_limit_dependencies() -> None:
         ("POST", "/api/target-calculator/scenarios/{scenario_id}/finalize"): "rate_limit_target_mutation",
         ("GET", "/api/target-calculator/scenarios/{scenario_id}/export"): "rate_limit_report_export",
         ("POST", "/api/crm/scores/recalculate"): "rate_limit_business_write", ("POST", "/api/stores/targets"): "rate_limit_business_write",
+        ("POST", "/api/ai/conversations/{conversation_id}/turn"): "rate_limit_ai_turn",
     }
     routes = {(method, route.path): route for route in _api_route_contexts(app) for method in (route.methods or set())}
     for route_key, name in expected.items():

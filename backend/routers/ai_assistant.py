@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from typing import Any, cast
+from typing import Any, AsyncIterator, cast
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
@@ -12,8 +12,10 @@ from auth import AuthClaims, require_auth
 from composition import build_ai_assistant_service
 from permissions import can_access_management, require_privileged_access
 from privileged_access import STORE_PNL_ACCESS_GROUPS_ENV, has_configured_group
+from rate_limits import AI_TURN_LIMIT, rate_limit
 from schemas.ai_assistant import (
     AiConversationCreate,
+    AiMessageItem,
     AiConversationItem,
     AiConversationListResponse,
     AiMessageListResponse,
@@ -125,7 +127,72 @@ async def list_messages(
     return AiMessageListResponse(items=items)
 
 
-@router.post("/conversations/{conversation_id}/turn")
+async def _stream_runtime_events(
+    *,
+    service: AiAssistantService,
+    owner_subject: str,
+    conversation_id: UUID,
+    runtime_url: str,
+    payload: RuntimeTurnRequest,
+    user_message: AiMessageItem,
+) -> AsyncIterator[bytes]:
+    """Proxy one accepted run to the browser while persisting its outcome."""
+    yield _line({"type": "user_message", "message": user_message.model_dump(mode="json")})
+    try:
+        async with httpx.AsyncClient(timeout=_STREAM_TIMEOUT) as client:
+            async with client.stream(
+                "POST",
+                runtime_url,
+                json=payload.model_dump(mode="json"),
+            ) as response:
+                if response.status_code != status.HTTP_200_OK:
+                    detail = (await response.aread()).decode("utf-8", errors="replace")[:500]
+                    message = detail or "AI runtime unavailable"
+                    await _record_runtime_error(service, owner_subject, conversation_id, message)
+                    yield _line({"type": "error", "message": message})
+                    return
+                async for raw_line in response.aiter_lines():
+                    if not raw_line:
+                        continue
+                    try:
+                        event = json.loads(raw_line)
+                    except json.JSONDecodeError:
+                        continue
+                    if not isinstance(event, dict):
+                        continue
+                    if event.get("type") == "error":
+                        message = str(event.get("message") or "UniHub AI nu a putut finaliza cererea.")
+                        await _record_runtime_error(service, owner_subject, conversation_id, message)
+                        yield _line({"type": "error", "message": message})
+                        continue
+                    if event.get("type") != "complete":
+                        yield _line(event)
+                        continue
+                    completed = RuntimeCompleteEvent.model_validate(event)
+                    assistant_message = await service.finish_assistant_message(
+                        owner_subject,
+                        conversation_id,
+                        text=completed.text,
+                        previous_response_id=completed.previous_response_id,
+                        artifacts=completed.artifacts,
+                    )
+                    yield _line(
+                        {
+                            "type": "complete",
+                            "message": assistant_message.model_dump(mode="json"),
+                            "previous_response_id": completed.previous_response_id,
+                        }
+                    )
+    except httpx.HTTPError:
+        message = "UniHub AI runtime nu este disponibil."
+        await _record_runtime_error(service, owner_subject, conversation_id, message)
+        yield _line({"type": "error", "message": message})
+
+
+@router.post(
+    "/conversations/{conversation_id}/turn",
+    dependencies=[Depends(rate_limit(AI_TURN_LIMIT))],
+)
 async def run_turn(
     conversation_id: UUID,
     request: Request,
@@ -156,68 +223,22 @@ async def run_turn(
 
     payload = RuntimeTurnRequest(
         conversation_id=conversation_id,
+        owner_subject=claims.sub,
         text=text,
         effort=effort,
         previous_response_id=previous_response_id,
         current_view=parsed_current_view,
         uploads=uploads,
     )
-    runtime_url = f"{service.settings.runtime_url}/internal/ai/run"
-
-    async def stream():
-        yield _line({"type": "user_message", "message": user_message.model_dump(mode="json")})
-        try:
-            async with httpx.AsyncClient(timeout=_STREAM_TIMEOUT) as client:
-                async with client.stream(
-                    "POST",
-                    runtime_url,
-                    json=payload.model_dump(mode="json"),
-                ) as response:
-                    if response.status_code != status.HTTP_200_OK:
-                        detail = (await response.aread()).decode("utf-8", errors="replace")[:500]
-                        message = detail or "AI runtime unavailable"
-                        await _record_runtime_error(service, claims.sub, conversation_id, message)
-                        yield _line({"type": "error", "message": message})
-                        return
-                    async for raw_line in response.aiter_lines():
-                        if not raw_line:
-                            continue
-                        try:
-                            event = json.loads(raw_line)
-                        except json.JSONDecodeError:
-                            continue
-                        if not isinstance(event, dict):
-                            continue
-                        if event.get("type") == "error":
-                            message = str(event.get("message") or "UniHub AI nu a putut finaliza cererea.")
-                            await _record_runtime_error(service, claims.sub, conversation_id, message)
-                            yield _line({"type": "error", "message": message})
-                            continue
-                        if event.get("type") != "complete":
-                            yield _line(event)
-                            continue
-                        completed = RuntimeCompleteEvent.model_validate(event)
-                        assistant_message = await service.finish_assistant_message(
-                            claims.sub,
-                            conversation_id,
-                            text=completed.text,
-                            previous_response_id=completed.previous_response_id,
-                            artifacts=completed.artifacts,
-                        )
-                        yield _line(
-                            {
-                                "type": "complete",
-                                "message": assistant_message.model_dump(mode="json"),
-                                "previous_response_id": completed.previous_response_id,
-                            }
-                        )
-        except httpx.HTTPError:
-            message = "UniHub AI runtime nu este disponibil."
-            await _record_runtime_error(service, claims.sub, conversation_id, message)
-            yield _line({"type": "error", "message": message})
-
     return StreamingResponse(
-        stream(),
+        _stream_runtime_events(
+            service=service,
+            owner_subject=claims.sub,
+            conversation_id=conversation_id,
+            runtime_url=f"{service.settings.runtime_url}/internal/ai/run",
+            payload=payload,
+            user_message=user_message,
+        ),
         media_type="application/x-ndjson",
         headers={"Cache-Control": "no-store"},
     )

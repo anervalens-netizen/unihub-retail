@@ -19,6 +19,7 @@ Before installation:
 ```bash
 systemd-analyze verify \
   ops/systemd/unihub-backend.service \
+  ops/systemd/unihub-ai.service \
   unihub-worker.service \
   ops/systemd/unihub-import-worker.service \
   ops/systemd/unihub-grile-worker.service \
@@ -45,6 +46,15 @@ namespace. All non-salary worker/migration units mask the salary namespace with
 salary worker may write it. Operations and migration have no repository write exception.
 `backend/tests/test_prometheus_topology.py`
 enforces the allowlist and proves code/config/release paths stay outside it.
+
+The owner AI state namespace `/var/lib/unihub-retail/ai-assistant` is not a
+repository path. `unihub-ai.service` and `unihub-backend.service` both declare
+`StateDirectory=unihub-retail/ai-assistant` with `StateDirectoryMode=0770`, so
+systemd creates the nested directory before `ExecStart` and before it evaluates
+the unprefixed `ReadWritePaths` entry. A first deployment must never depend on
+an administrator creating that directory by hand. The same test file rejects any
+`/var/lib/...` write path that the unit does not provision through
+`StateDirectory=`.
 
 ## Identități OS și artefacte partajate
 

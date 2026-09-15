@@ -4,15 +4,27 @@ from contextlib import asynccontextmanager
 from uuid import UUID
 
 from fastapi import FastAPI, HTTPException, Request, status
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 
 from ai_assistant.runtime import AiSandboxRuntime
 from schemas.ai_assistant import RuntimeSteerRequest, RuntimeTurnRequest
 
+_AUTHORITY_UNVERIFIED = (
+    "AI read-only database authority is not verified; refusing to expose the sandbox credential"
+)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    app.state.ai_runtime = AiSandboxRuntime()
+    runtime = AiSandboxRuntime()
+    app.state.ai_runtime = runtime
+    try:
+        await runtime.verify_readonly_authority()
+    except Exception:
+        # Fail closed but stay observable: the process keeps serving /health as
+        # 503 with the rejection reason and refuses every run until a restart
+        # re-runs the preflight successfully.
+        pass
     yield
 
 
@@ -33,14 +45,27 @@ def _runtime(request: Request) -> AiSandboxRuntime:
 
 
 @app.get("/health")
-async def health() -> dict[str, str]:
-    return {"status": "ok"}
+async def health(request: Request) -> JSONResponse:
+    """Report healthy only after the sandbox credential proved read-only."""
+    runtime = _runtime(request)
+    if not runtime.authority_ready:
+        return JSONResponse(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            content={
+                "status": "unavailable",
+                "reason": runtime.authority_error or _AUTHORITY_UNVERIFIED,
+            },
+        )
+    return JSONResponse({"status": "ok"})
 
 
 @app.post("/internal/ai/run")
 async def run_turn(payload: RuntimeTurnRequest, request: Request) -> StreamingResponse:
+    runtime = _runtime(request)
+    if not runtime.authority_ready:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, _AUTHORITY_UNVERIFIED)
     return StreamingResponse(
-        _runtime(request).stream_turn(payload),
+        runtime.stream_turn(payload),
         media_type="application/x-ndjson",
         headers={"Cache-Control": "no-store"},
     )

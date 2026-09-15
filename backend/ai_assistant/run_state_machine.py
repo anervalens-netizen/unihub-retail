@@ -26,6 +26,7 @@ class ActiveRun:
     result: Any | None = None
     pending_steers: list[RuntimeSteerRequest] = field(default_factory=list)
     stop_requested: bool = False
+    owner_subject: str = ""
 
     def queue_steer(self, request: RuntimeSteerRequest) -> None:
         self.pending_steers.append(request)

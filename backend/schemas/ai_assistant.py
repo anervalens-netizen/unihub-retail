@@ -69,6 +69,7 @@ class RuntimeUpload(StrictApiModel):
 
 class RuntimeTurnRequest(StrictApiModel):
     conversation_id: UUID
+    owner_subject: str = Field(min_length=1, max_length=200)
     text: str
     effort: AiReasoningEffort
     previous_response_id: str | None = None

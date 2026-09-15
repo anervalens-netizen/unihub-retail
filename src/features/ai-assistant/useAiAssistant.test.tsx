@@ -121,6 +121,54 @@ describe('useAiAssistant submission modes', () => {
   });
 });
 
+describe('useAiAssistant stream rendering', () => {
+  it('renders the persisted user message, live deltas and the completed reply', async () => {
+    api.consumeAiStream.mockImplementation(
+      async (_response: Response, onEvent: (event: unknown) => void) => {
+        onEvent({ type: 'user_message', message: message('u1', 'user', 'salut') });
+        onEvent({ type: 'delta', text: 'par' });
+        onEvent({ type: 'delta', text: 'țial' });
+        onEvent({ type: 'complete', message: message('m1', 'assistant', 'parțial') });
+      },
+    );
+    api.openAiTurnStream.mockResolvedValue(new Response(null, { status: 200 }));
+    const view = await bootIdleConversation();
+
+    await act(async () => {
+      await view.result.current.submit(submission({ text: 'salut' }));
+    });
+
+    expect(view.result.current.messages.map((item) => item.id)).toEqual(['u1', 'm1']);
+    expect(view.result.current.messages.at(-1)?.text).toBe('parțial');
+    expect(view.result.current.messages.some((item) => item.status === 'streaming')).toBe(false);
+    expect(view.result.current.runStatus).toBe('idle');
+  });
+
+  it('replaces the streaming placeholder when the runtime reports stopped or error', async () => {
+    for (const [event, expected] of [
+      [{ type: 'stopped' }, 'Rularea a fost oprită.'],
+      [{ type: 'error', message: 'a picat' }, 'a picat'],
+    ] as const) {
+      api.consumeAiStream.mockImplementation(
+        async (_response: Response, onEvent: (value: unknown) => void) => {
+          onEvent({ type: 'user_message', message: message('u1', 'user', 'salut') });
+          onEvent(event);
+        },
+      );
+      api.openAiTurnStream.mockResolvedValue(new Response(null, { status: 200 }));
+      const view = await bootIdleConversation([]);
+
+      await act(async () => {
+        await view.result.current.submit(submission({ text: 'salut' }));
+      });
+
+      expect(view.result.current.messages.at(-1)?.text).toBe(expected);
+      expect(view.result.current.messages.at(-1)?.status).toBe('error');
+      expect(view.result.current.runStatus).toBe('idle');
+    }
+  });
+});
+
 describe('useAiAssistant conversation selection epoch', () => {
   it('does not let a delayed bootstrap overwrite a newer New Conversation', async () => {
     // The bootstrap has already chosen conversation c1 and is awaiting its
@@ -247,6 +295,57 @@ describe('useAiAssistant stop and steer controls', () => {
       await pending;
     });
     expect(view.result.current.runStatus).toBe('stopping');
+    expect(api.steerAiTurn).not.toHaveBeenCalled();
+  });
+});
+
+describe('useAiAssistant stopping is not steerable', () => {
+  /** Boots a run whose Stop request never settles, leaving runStatus=stopping. */
+  async function bootStoppingTurn() {
+    const { view, releaseStream } = await bootRunningTurn();
+    api.stopAiTurn.mockImplementation(() => new Promise<void>(() => {}));
+    await act(async () => {
+      void view.result.current.stop();
+      await Promise.resolve();
+    });
+    expect(view.result.current.runStatus).toBe('stopping');
+    return { view, releaseStream };
+  }
+
+  it('never submits a Steer request once the run is stopping', async () => {
+    const { view } = await bootStoppingTurn();
+
+    await act(async () => {
+      await view.result.current.submit(submission({ text: 'ghidează', mode: 'steer' }));
+    });
+
+    // The runtime rejects every control request after Stop, so a submitted
+    // Steer would become a durable instruction that was never processed.
+    expect(api.steerAiTurn).not.toHaveBeenCalled();
+    expect(api.openAiTurnStream).toHaveBeenCalledTimes(1);
+    expect(view.result.current.runStatus).toBe('stopping');
+  });
+
+  it('still accepts a Steer while the run is genuinely running', async () => {
+    const { view } = await bootRunningTurn();
+    api.steerAiTurn.mockResolvedValue(message('u2', 'user', 'ghidează'));
+
+    await act(async () => {
+      await view.result.current.submit(submission({ text: 'ghidează', mode: 'steer' }));
+    });
+
+    expect(api.steerAiTurn).toHaveBeenCalledTimes(1);
+    expect(api.steerAiTurn.mock.calls[0]?.[0]).toBe('c1');
+  });
+
+  it('keeps an idle Turn submission unchanged', async () => {
+    const { result } = await bootIdleConversation();
+
+    await act(async () => {
+      await result.current.submit(submission({ text: 'raport nou', mode: 'send' }));
+    });
+
+    expect(api.openAiTurnStream).toHaveBeenCalledTimes(1);
     expect(api.steerAiTurn).not.toHaveBeenCalled();
   });
 });

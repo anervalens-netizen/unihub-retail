@@ -202,8 +202,9 @@ def build_runtime(
     tmp_path: Path,
     results: list[FakeResult],
     monkeypatch: pytest.MonkeyPatch,
+    settings: AiAssistantSettings | None = None,
 ) -> tuple[AiSandboxRuntime, FakeDockerClient, FakeRunner]:
-    settings = build_settings(tmp_path)
+    settings = settings or build_settings(tmp_path)
     client = FakeDockerClient()
     runner = FakeRunner(results)
     monkeypatch.setattr(runtime_module, "Runner", runner)
@@ -222,9 +223,11 @@ def turn_request(
     *,
     text: str = "Analizează luna",
     uploads: list[RuntimeUpload] | None = None,
+    owner_subject: str = "owner-a",
 ) -> RuntimeTurnRequest:
     return RuntimeTurnRequest(
         conversation_id=conversation_id,
+        owner_subject=owner_subject,
         text=text,
         effort="high",
         uploads=uploads or [],
@@ -631,3 +634,184 @@ def _immediate_timeout(seconds: int):
         yield  # pragma: no cover
 
     return _scope()
+
+
+# --------------------------------------------------------------------------
+# Owner admission — bounded run creation across conversations
+# --------------------------------------------------------------------------
+
+
+def owner_settings(tmp_path: Path, ceiling: int) -> AiAssistantSettings:
+    return replace(build_settings(tmp_path), max_concurrent_runs_per_owner=ceiling)
+
+
+@pytest.mark.anyio
+async def test_two_conversations_run_together_and_the_third_is_refused_before_any_sandbox(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Owner ceiling 2 must refuse the third run before Docker/model work."""
+    results = [FakeResult(label="a", deltas=["a"]), FakeResult(label="b", deltas=["b"])]
+    runtime, client, runner = build_runtime(
+        tmp_path, results, monkeypatch, settings=owner_settings(tmp_path, 2)
+    )
+
+    gate = asyncio.Event()
+    original_create = client.create
+
+    async def gated_create(**kwargs: Any) -> FakeSandbox:
+        await gate.wait()
+        return await original_create(**kwargs)
+
+    client.create = gated_create  # type: ignore[method-assign]
+
+    conversations = [uuid4(), uuid4(), uuid4()]
+    first = asyncio.create_task(collect(runtime.stream_turn(turn_request(conversations[0]))))
+    await settle()
+    second = asyncio.create_task(collect(runtime.stream_turn(turn_request(conversations[1]))))
+    await settle()
+    assert len(runtime._active) == 2
+
+    third = asyncio.create_task(collect(runtime.stream_turn(turn_request(conversations[2]))))
+    await settle()
+    assert event_types(await third) == ["error"]
+    assert conversations[2] not in runtime._active
+    assert len(client.created) == 0
+
+    gate.set()
+    assert event_types(await first) == ["status", "delta", "complete"]
+    assert event_types(await second) == ["status", "delta", "complete"]
+    assert len(client.created) == 2
+    assert len(runner.calls) == 2
+    assert runtime._active == {}
+
+
+@pytest.mark.anyio
+async def test_a_second_owner_has_an_independent_budget(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    results = [FakeResult(label="a", deltas=["a"]), FakeResult(label="b", deltas=["b"]), FakeResult(label="c", deltas=["c"])]
+    runtime, client, _runner = build_runtime(
+        tmp_path, results, monkeypatch, settings=owner_settings(tmp_path, 2)
+    )
+
+    gate = asyncio.Event()
+    original_create = client.create
+
+    async def gated_create(**kwargs: Any) -> FakeSandbox:
+        await gate.wait()
+        return await original_create(**kwargs)
+
+    client.create = gated_create  # type: ignore[method-assign]
+
+    owner_a = [
+        asyncio.create_task(collect(runtime.stream_turn(turn_request(uuid4(), owner_subject="owner-a"))))
+        for _ in range(2)
+    ]
+    await settle()
+    await settle()
+    owner_b = asyncio.create_task(
+        collect(runtime.stream_turn(turn_request(uuid4(), owner_subject="owner-b")))
+    )
+    await settle()
+
+    assert len(runtime._active) == 3
+    gate.set()
+    for task in (*owner_a, owner_b):
+        assert event_types(await task)[-1] == "complete"
+    assert len(client.created) == 3
+
+
+@pytest.mark.anyio
+async def test_completing_a_run_frees_owner_capacity(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    results = [FakeResult(label="a", deltas=["a"]), FakeResult(label="b", deltas=["b"])]
+    runtime, client, _runner = build_runtime(
+        tmp_path, results, monkeypatch, settings=owner_settings(tmp_path, 1)
+    )
+
+    held = uuid4()
+    gate = asyncio.Event()
+    original_create = client.create
+
+    async def gated_create(**kwargs: Any) -> FakeSandbox:
+        await gate.wait()
+        return await original_create(**kwargs)
+
+    client.create = gated_create  # type: ignore[method-assign]
+
+    first = asyncio.create_task(collect(runtime.stream_turn(turn_request(held))))
+    await settle()
+    refused = await collect(runtime.stream_turn(turn_request(uuid4())))
+    assert event_types(refused) == ["error"]
+
+    gate.set()
+    assert event_types(await first)[-1] == "complete"
+    assert runtime._active == {}
+
+    after = await collect(runtime.stream_turn(turn_request(uuid4())))
+    assert event_types(after)[-1] == "complete"
+    assert len(client.created) == 2
+
+
+@pytest.mark.anyio
+async def test_run_at_the_owner_ceiling_still_takes_internal_steer_turns(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Admission bounds run starts only; an accepted run keeps its own turns."""
+    gate = asyncio.Event()
+    results = [
+        FakeResult(label="first", deltas=["a"], stream_gate=gate),
+        FakeResult(label="second", deltas=["b"]),
+    ]
+    runtime, client, runner = build_runtime(
+        tmp_path, results, monkeypatch, settings=owner_settings(tmp_path, 1)
+    )
+
+    conversation_id = uuid4()
+    task = asyncio.create_task(collect(runtime.stream_turn(turn_request(conversation_id))))
+    await results[0].stream_started.wait()
+
+    # The owner is at its ceiling; the accepted run must still resume on Steer.
+    assert len(runtime._active) == 1
+    await runtime.steer(conversation_id, steer_request(order_key=1, text="continuă"))
+    gate.set()
+
+    events = await task
+    assert event_types(events) == ["status", "delta", "status", "delta", "complete"]
+    assert len(runner.calls) == 2
+    assert len(client.created) == 1
+
+
+@pytest.mark.anyio
+async def test_stop_frees_the_owner_slot_for_the_next_run(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    stream_gate = asyncio.Event()
+    results = [
+        FakeResult(label="held", deltas=[], stream_gate=stream_gate),
+        FakeResult(label="next", deltas=["b"]),
+    ]
+    runtime, client, _runner = build_runtime(
+        tmp_path, results, monkeypatch, settings=owner_settings(tmp_path, 1)
+    )
+
+    held = uuid4()
+    stopped = asyncio.create_task(collect(runtime.stream_turn(turn_request(held))))
+    await results[0].stream_started.wait()
+
+    await runtime.stop(held)
+    # A real SDK result aborts on cancel; the fake only ends once released.
+    stream_gate.set()
+    assert event_types(await stopped) == ["status", "stopped"]
+    assert runtime._active == {}
+
+    after = await collect(runtime.stream_turn(turn_request(uuid4())))
+    assert event_types(after) == ["status", "delta", "complete"]
+    assert len(client.created) == 2
+    assert client.deleted[0].closed is True

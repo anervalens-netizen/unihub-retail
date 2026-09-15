@@ -98,7 +98,7 @@ describe('AiAssistantPanel', () => {
     expect(screen.queryByRole('button', { name: 'Deschide UniHub AI' })).not.toBeInTheDocument();
   });
 
-  it('keeps Steer usable while running and blocks Stop once stopping', () => {
+  it('blocks Steer once stopping begins and never submits the draft', () => {
     const submit = vi.fn();
     const stop = vi.fn();
     const { rerender } = render(<AiAssistantPanel canAccess currentContext={context} messages={[]} runStatus="running" onSubmit={submit} onStop={stop} />);
@@ -108,9 +108,40 @@ describe('AiAssistantPanel', () => {
     fireEvent.click(screen.getByRole('button', { name: /Stop/ }));
     expect(stop).toHaveBeenCalledOnce();
 
+    // Stop is in flight: the runtime rejects every control request, so Steer
+    // must be unavailable and the draft must not be queued for a later run.
     rerender(<AiAssistantPanel canAccess currentContext={context} messages={[]} runStatus="stopping" onSubmit={submit} onStop={stop} />);
     expect(screen.getByRole('button', { name: /Stop/ })).toBeDisabled();
-    expect(screen.getByRole('button', { name: /Steer/ })).toBeEnabled();
+    const steer = screen.getByRole('button', { name: /Steer/ });
+    expect(steer).toBeDisabled();
+    fireEvent.click(steer);
+    expect(submit).not.toHaveBeenCalled();
+    expect(screen.getByLabelText('Mesaj pentru UniHub AI')).toHaveValue('continuă pe ASM');
+    expect(screen.getByPlaceholderText('Rularea se oprește…')).toBeInTheDocument();
+  });
+
+  it('restores normal Turn behavior once the run is idle again', () => {
+    const submit = vi.fn();
+    const { rerender } = render(<AiAssistantPanel canAccess currentContext={context} messages={[]} runStatus="stopping" onSubmit={submit} onStop={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Deschide UniHub AI' }));
+    rerender(<AiAssistantPanel canAccess currentContext={context} messages={[]} runStatus="idle" onSubmit={submit} onStop={vi.fn()} />);
+    fireEvent.change(screen.getByLabelText('Mesaj pentru UniHub AI'), { target: { value: 'rulează din nou' } });
+    fireEvent.click(screen.getByRole('button', { name: /Trimite/ }));
+    expect(submit).toHaveBeenCalledWith(expect.objectContaining({ mode: 'send', text: 'rulează din nou' }));
+  });
+
+  it('submits on Enter without Shift and keeps Shift+Enter for newlines', () => {
+    const submit = vi.fn();
+    render(<AiAssistantPanel canAccess currentContext={context} messages={[]} runStatus="idle" onSubmit={submit} onStop={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Deschide UniHub AI' }));
+    const composer = screen.getByLabelText('Mesaj pentru UniHub AI');
+    fireEvent.change(composer, { target: { value: 'analizează august' } });
+
+    fireEvent.keyDown(composer, { key: 'Enter', shiftKey: true });
+    expect(submit).not.toHaveBeenCalled();
+
+    fireEvent.keyDown(composer, { key: 'Enter' });
+    expect(submit).toHaveBeenCalledWith(expect.objectContaining({ text: 'analizează august', mode: 'send' }));
   });
 
   it('offers Send rather than Stop while idle', () => {
