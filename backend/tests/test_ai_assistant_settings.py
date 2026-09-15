@@ -8,24 +8,63 @@ from ai_assistant.settings import load_ai_assistant_settings, resolve_storage_ke
 from request_body_limits import RequestBodyLimits
 
 
-def test_ai_settings_keep_runtime_loopback_and_model_fixed(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def _base_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setenv("UNIHUB_ENV", "development")
-    monkeypatch.setenv("AI_ASSISTANT_RUNTIME_URL", "http://127.0.0.1:9911")
     monkeypatch.setenv("AI_ASSISTANT_STORAGE_ROOT", str(tmp_path / "store"))
     monkeypatch.setenv("AI_ASSISTANT_SNAPSHOT_ROOT", str(tmp_path / "snapshots"))
+
+
+def test_ai_settings_keep_runtime_loopback_and_model_fixed(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    _base_env(monkeypatch, tmp_path)
+    monkeypatch.setenv("AI_ASSISTANT_RUNTIME_URL", "http://127.0.0.1:9911")
     settings = load_ai_assistant_settings()
     assert settings.model == "gpt-5.6-luna"
     assert settings.runtime_url == "http://127.0.0.1:9911"
     assert settings.storage_root.is_dir()
     assert settings.snapshot_root.is_dir()
+    assert settings.setup_timeout_seconds == 90
 
 
-def test_ai_runtime_url_rejects_non_loopback(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    monkeypatch.setenv("UNIHUB_ENV", "development")
-    monkeypatch.setenv("AI_ASSISTANT_RUNTIME_URL", "https://ai.example.invalid")
-    monkeypatch.setenv("AI_ASSISTANT_STORAGE_ROOT", str(tmp_path / "store"))
-    with pytest.raises(RuntimeError, match="loopback-only"):
+@pytest.mark.parametrize(
+    "runtime_url",
+    [
+        "https://ai.example.invalid",
+        "http://127.0.0.1:9911@evil.example",
+        "http://localhost:9911/path",
+        "http://localhost:9911?next=http://evil.example",
+        "http://0.0.0.0:9911",
+    ],
+)
+def test_ai_runtime_url_rejects_non_loopback_or_authority_injection(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    runtime_url: str,
+) -> None:
+    _base_env(monkeypatch, tmp_path)
+    monkeypatch.setenv("AI_ASSISTANT_RUNTIME_URL", runtime_url)
+    with pytest.raises(RuntimeError):
         load_ai_assistant_settings()
+
+
+def test_ai_runtime_requires_sandbox_reachable_readonly_dsn(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _base_env(monkeypatch, tmp_path)
+    monkeypatch.setenv("OPENAI_API_KEY", "test-only")
+    monkeypatch.setenv(
+        "AI_ASSISTANT_READONLY_DSN",
+        "postgresql://unihub_ai_readonly:test@127.0.0.1:5432/unihub",
+    )
+    with pytest.raises(RuntimeError, match="Docker sandbox"):
+        load_ai_assistant_settings(runtime=True)
+
+    monkeypatch.setenv(
+        "AI_ASSISTANT_READONLY_DSN",
+        "postgresql://unihub_ai_readonly:test@db.internal:5432/unihub",
+    )
+    settings = load_ai_assistant_settings(runtime=True)
+    assert settings.model == "gpt-5.6-luna"
 
 
 def test_ai_storage_key_cannot_escape_root(tmp_path: Path) -> None:
