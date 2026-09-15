@@ -170,8 +170,11 @@ def main():
         elif not args.teardown:
             directory.mkdir(mode=0o711 if directory == images else 0o755)
             directory.chmod(0o711 if directory == images else 0o755)
-    # Preflight BOTH slots before formatting or unmounting either.
+    # Preflight BOTH slots before formatting or unmounting either. Flush a live
+    # filesystem first so dumpe2fs never races dirty in-memory bitmap updates.
     for image, target in pairs:
+        if any(m['target'] == str(target) for m in mounts()):
+            run('sync', '-f', str(target))
         if image.exists() or image.is_symlink():
             image_check(image)
         slot_check(image, target, uid, gid)
