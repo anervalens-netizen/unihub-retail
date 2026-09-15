@@ -1,4 +1,5 @@
 -- V3 AI Assistant: minimal owner-scoped chat and artifact persistence.
+--
 -- Business data access remains separate: the sandbox receives only its dedicated
 -- read-only Retail DSN and never uses these application-write tables directly.
 
@@ -23,6 +24,7 @@ CREATE TABLE ai_assistant_messages (
     id UUID PRIMARY KEY,
     conversation_id UUID NOT NULL
         REFERENCES ai_assistant_conversations(id) ON DELETE CASCADE,
+    ordinal BIGSERIAL NOT NULL,
     role TEXT NOT NULL CHECK (role IN ('user', 'assistant', 'system')),
     text TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'complete'
@@ -30,8 +32,11 @@ CREATE TABLE ai_assistant_messages (
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+CREATE UNIQUE INDEX uq_ai_assistant_messages_conversation_ordinal
+    ON ai_assistant_messages (conversation_id, ordinal);
+
 CREATE INDEX idx_ai_assistant_messages_conversation_created
-    ON ai_assistant_messages (conversation_id, created_at ASC, id ASC);
+    ON ai_assistant_messages (conversation_id, ordinal ASC);
 
 CREATE TABLE ai_assistant_artifacts (
     id UUID PRIMARY KEY,
@@ -60,6 +65,7 @@ CREATE INDEX idx_ai_assistant_artifacts_conversation_created
 REVOKE ALL ON TABLE ai_assistant_conversations FROM PUBLIC;
 REVOKE ALL ON TABLE ai_assistant_messages FROM PUBLIC;
 REVOKE ALL ON TABLE ai_assistant_artifacts FROM PUBLIC;
+REVOKE ALL ON SEQUENCE ai_assistant_messages_ordinal_seq FROM PUBLIC;
 
 GRANT SELECT ON TABLE ai_assistant_conversations TO unihub_web_read;
 GRANT SELECT ON TABLE ai_assistant_messages TO unihub_web_read;
@@ -68,3 +74,4 @@ GRANT SELECT ON TABLE ai_assistant_artifacts TO unihub_web_read;
 GRANT INSERT, UPDATE, DELETE ON TABLE ai_assistant_conversations TO unihub_business_write;
 GRANT INSERT, UPDATE, DELETE ON TABLE ai_assistant_messages TO unihub_business_write;
 GRANT INSERT, UPDATE, DELETE ON TABLE ai_assistant_artifacts TO unihub_business_write;
+GRANT USAGE, SELECT ON SEQUENCE ai_assistant_messages_ordinal_seq TO unihub_business_write;
