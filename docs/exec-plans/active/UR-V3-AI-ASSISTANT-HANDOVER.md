@@ -30,7 +30,8 @@ Stable lines at this checkpoint:
 - production `main`: `8c0bcd69a61fdf26aec746da2651de4c2aa3f020`; owner froze parallel main work until V3 completes;
 - `v3/main`: `d2980c4704d059e832a1a10b8f44aba60f2ed655`;
 - AI execution foundation was certified at `41b731acdb7c0a6688ffb3bb27957a43244d7b8d`;
-- `v3/ai-assistant` PR #409 head before review remediation: `9a95ac872d041aa7867fd7907d5935d5a6fc5858`.
+- `v3/ai-assistant` PR #409 head before review remediation: `9a95ac872d041aa7867fd7907d5935d5a6fc5858`;
+- final pushed candidate after review closure: `86719765b3baa21785e95ca77cb81673c1562d88` (tree `16b65930a1f8fb666661dcb3d03d8a192c0361c8`).
 
 Re-fetch before use; GitHub wins over these stored SHAs.
 
@@ -245,6 +246,23 @@ transactionally removes only that persisted submission before deleting its
 files; ambiguous transport/runtime failures preserve history. Final certification evidence and exact pushed SHA belong in the task
 report; no production unit installation/restart or review-thread resolution is
 part of this checkpoint.
+
+# Final exact-head evidence
+
+- Local isolated backend suite: **3438 passed, 13 skipped** after the final
+  ordering/quota/cleanup closure; focused closure suite: **121 passed, 1 skipped**.
+- Backend mypy: **656 source files, no issues**. Architecture: **400 modules,
+  acyclic, direct DB exceptions 55/55**. Complexity: changed-function gate
+  passed (maximum 20), ratchet passed, final production count **3192**.
+- Migration manifest, Retail contract, environment contract, Bandit baseline and
+  systemd/provisioner syntax all pass. Real disposable Docker proof: **2 passed**
+  with cgroup/rootfs/tmpfs/log/workspace limits and snapshot resume. Root proof
+  confirmed each 8 GiB image is physically allocated and unprivileged ENOSPC is
+  enforced. Disposable images, mounts and containers were removed afterward.
+- Automatic V3 CI run `35022127660` passed backend and frontend on the preceding
+  code-only equivalent candidate. The next final push must be observed again;
+  no manual Actions run or review-thread resolution is permitted. `OPENAI_API_KEY`
+  is absent in this environment, so no live provider call was attempted.
 
 # Session recovery
 

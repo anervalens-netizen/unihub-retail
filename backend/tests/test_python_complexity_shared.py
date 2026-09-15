@@ -443,8 +443,8 @@ def test_zero_drift_across_all_production_functions(l1):
         )
 
 
-def test_total_production_function_count_is_3189(l1):
-    """Production tree must contain exactly 3189 measured functions.
+def test_total_production_function_count_is_3192(l1):
+    """Production tree must contain exactly 3192 measured functions.
 
     The C6 Target Calculator repository decomposition intentionally
     adds 8 focused helper functions (+2 in target_calculator_sources.py,
@@ -470,13 +470,14 @@ def test_total_production_function_count_is_3189(l1):
     V3 AI Assistant runtime + first review closure (PR #409) moved the live
     count from 3047 to 3151. Final exact-head remediation moves 3151 to 3189:
     38 focused functions for the two fixed ext4 slots, bounded Docker adapter,
-    isolated database-guard authority and rejected-Steer compensation. Counting
-    semantics are unchanged.
+    isolated database-guard authority and rejected-Steer compensation. The final
+    artifact-store quota, ordering and cleanup closure adds three bounded helpers,
+    moving 3189 to 3192. Counting semantics are unchanged.
     The exact snapshot rejects unrelated production-function drift.
     """
     metrics = l1.collect_metrics(PR_B1_WORKTREE)
-    assert len(metrics) == 3189, (
-        f"production count drift: expected 3189, got {len(metrics)}"
+    assert len(metrics) == 3192, (
+        f"production count drift: expected 3192, got {len(metrics)}"
     )
 
 

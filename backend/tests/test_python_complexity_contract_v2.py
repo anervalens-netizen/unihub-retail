@@ -157,8 +157,9 @@ def _minimal_contract(
 def test_case_1_pass_on_exact_main(check, l1, real_v2_contract):
     result = check.evaluate(PR_B1_WORKTREE, real_v2_contract, l1)
     assert result["result"] == "PASS"
-    # 3151 -> 3189: final PR #409 storage/guard/Steer remediation functions.
-    assert result["metrics"]["production_functions"] == 3189
+    # 3151 -> 3189: first PR #409 remediation; 3 bounded artifact/cleanup
+    # helpers bring the final exact-head count to 3192.
+    assert result["metrics"]["production_functions"] == 3192
     assert result["metrics"]["complexity_proxy_gte_threshold"] == 27
     assert result["metrics"]["complexity_proxy_gte_30"] == 0
     assert result["metrics"]["maximum_complexity_proxy"] == 27
