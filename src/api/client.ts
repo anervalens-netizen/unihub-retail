@@ -187,6 +187,22 @@ function makeJsonHeaders(data: unknown, headers?: Record<string, string>): Recor
   return getSessionHeaders({ 'Content-Type': 'application/json', ...headers }, true);
 }
 
+export async function postStreaming(
+  url: string,
+  data?: unknown,
+  options?: Pick<RequestOptions, 'headers' | 'signal'>,
+): Promise<Response> {
+  const response = await fetch(buildUrl(url), {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: makeJsonHeaders(data, options?.headers),
+    body: makeJsonBody(data),
+    signal: options?.signal,
+  });
+  await handleResponse(response);
+  return response;
+}
+
 export const client = {
   get: async <T = unknown>(
     url: string,

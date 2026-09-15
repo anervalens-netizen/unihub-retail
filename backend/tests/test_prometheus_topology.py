@@ -10,6 +10,8 @@ from observability.metrics_network import metrics_peer_allowed
 from observability.prometheus import UNMATCHED_HANDLER, canonical_handler
 from observability.worker_metrics import start_worker_metrics
 
+from ai_assistant.settings import AI_STORAGE_ROOT_ENV
+
 
 class Route:
     path = "/api/items/{item_id}"
@@ -73,6 +75,7 @@ def test_worker_metrics_rejects_wildcard_loopback_and_wrong_gateway(
 def _read_retail_units(root: Path) -> dict[str, str]:
     paths = {
         "web": "ops/systemd/unihub-backend.service",
+        "ai": "ops/systemd/unihub-ai.service",
         "operations": "unihub-worker.service",
         "imports": "ops/systemd/unihub-import-worker.service",
         "grile": "ops/systemd/unihub-grile-worker.service",
@@ -107,6 +110,11 @@ def _assert_exact_write_paths(units: dict[str, str]) -> None:
     operations, imports = units["operations"], units["imports"]
     grile, exports = units["grile"], units["exports"]
     salary_exports, migrations = units["salary_exports"], units["migrations"]
+    ai = units["ai"]
+    assert _write_paths(ai) == {
+        "/var/lib/unihub-retail/ai-sandbox-slots/slot-0/workspace",
+        "/var/lib/unihub-retail/ai-sandbox-slots/slot-1/workspace",
+    }
     assert "ReadWritePaths=/opt/Mobiup/unihub-retail/data/import_spool" in web
     assert "ReadWritePaths=" not in operations
     assert "ReadWritePaths=" not in migrations
@@ -129,26 +137,100 @@ def _assert_exact_write_paths(units: dict[str, str]) -> None:
     assert salary_namespace_mask not in salary_exports
 
 
+def _write_paths(unit: str) -> set[str]:
+    """Return every individual path listed in the unit's ReadWritePaths= lines.
+
+    systemd accepts a whitespace-separated list, so the raw value must be split
+    before the allow-list comparison; a concatenated line would silently hide
+    every path after the first one.
+    """
+    paths: set[str] = set()
+    for line in unit.splitlines():
+        if line.startswith("ReadWritePaths="):
+            paths.update(line.removeprefix("ReadWritePaths=").split())
+    return paths
+
+
+def _state_directory_paths(unit: str) -> set[str]:
+    paths: set[str] = set()
+    for line in unit.splitlines():
+        if line.startswith("StateDirectory="):
+            paths.update(
+                f"/var/lib/{name}"
+                for name in line.removeprefix("StateDirectory=").split()
+            )
+    return paths
+
+
 def _assert_no_broad_write_paths(units: dict[str, str]) -> None:
+    # Exact runtime data directories required by that authority. Anything below
+    # /var/lib must additionally be provisioned by the unit itself, which
+    # _assert_state_directory_provisioning enforces.
     approved_write_paths = {
         "/opt/Mobiup/unihub-retail/data/import_spool",
         "/opt/Mobiup/unihub-retail/data/promo_generations",
         "/opt/Mobiup/unihub-retail/backend/outputs/grile",
         "/opt/Mobiup/unihub-retail/data/export_artifacts",
         "/opt/Mobiup/unihub-retail/data/export_artifacts/salary",
+        "/var/lib/unihub-retail/ai-assistant",
+        "/var/lib/unihub-retail/ai-sandbox-slots/slot-0/workspace",
+        "/var/lib/unihub-retail/ai-sandbox-slots/slot-1/workspace",
     }
     for unit in units.values():
-        write_paths = {
-            line.removeprefix("ReadWritePaths=")
-            for line in unit.splitlines()
-            if line.startswith("ReadWritePaths=")
-        }
+        write_paths = _write_paths(unit)
         assert write_paths <= approved_write_paths
         assert not any(
             path.endswith(("/backend", "/src", "/ops", "/config"))
             or path == "/opt/Mobiup/unihub-retail"
             for path in write_paths
         )
+
+
+def _assert_state_directory_provisioning(units: dict[str, str]) -> None:
+    """Every /var/lib write path must be created by systemd, not by hand.
+
+    ProtectSystem=strict processes ReadWritePaths= during namespace setup before
+    ExecStart, so a missing directory fails the unit instead of being created by
+    application code. StateDirectory= provisions the path first and is the only
+    versioned mechanism this repository uses for that namespace.
+    """
+    externally_provisioned = {
+        "/var/lib/unihub-retail/ai-sandbox-slots/slot-0/workspace",
+        "/var/lib/unihub-retail/ai-sandbox-slots/slot-1/workspace",
+    }
+    for name, unit in units.items():
+        unmanaged = {path for path in _write_paths(unit) if path.startswith("/var/lib/")}
+        if name == "ai":
+            assert externally_provisioned <= unmanaged
+            unmanaged -= externally_provisioned
+            lines = unit.splitlines()
+            assert any(
+                line.startswith("Requires=") and "unihub-ai-storage.service" in line.split()
+                for line in lines
+            )
+            assert any(
+                line.startswith("After=") and "unihub-ai-storage.service" in line.split()
+                for line in lines
+            )
+        assert unmanaged <= _state_directory_paths(unit), name
+    for name in ("web", "ai"):
+        assert _state_directory_paths(units[name]) == {"/var/lib/unihub-retail/ai-assistant"}
+        assert "StateDirectory=unihub-retail/ai-assistant" in units[name]
+        assert "StateDirectoryMode=0770" in units[name]
+    assert _write_paths(units["web"]) >= {"/var/lib/unihub-retail/ai-assistant"}
+    assert "/var/lib/unihub-retail/ai-assistant" not in _write_paths(units["ai"])
+
+
+def _assert_ai_state_path_matches_settings(units: dict[str, str]) -> None:
+    """The declared unit namespace must equal the production storage default."""
+    unit_paths = _state_directory_paths(units["ai"]) | _state_directory_paths(units["web"])
+    assert len(unit_paths) == 1
+    declared = unit_paths.pop()
+    source = (Path(__file__).resolve().parents[2] / "backend/ai_assistant/settings.py").read_text(
+        encoding="utf-8"
+    )
+    assert f'Path("{declared}")' in source
+    assert AI_STORAGE_ROOT_ENV in source
 
 
 def _assert_systemd_write_boundaries(units: dict[str, str]) -> None:
@@ -160,6 +242,8 @@ def _assert_systemd_write_boundaries(units: dict[str, str]) -> None:
     assert all("PYTHON_DOTENV_DISABLED=1" in unit for unit in all_units)
     _assert_exact_write_paths(units)
     _assert_no_broad_write_paths(units)
+    _assert_state_directory_provisioning(units)
+    _assert_ai_state_path_matches_settings(units)
 
 
 def _assert_runtime_os_identities(units: dict[str, str]) -> None:
@@ -170,6 +254,7 @@ def _assert_runtime_os_identities(units: dict[str, str]) -> None:
             "unihub-import-spool unihub-promo-artifacts unihub-grile-artifacts unihub-export-artifacts",
             "0007",
         ),
+        "ai": ("unihub-web", "unihub-web", "docker", "0007"),
         "operations": ("unihub-operations", "unihub-operations", None, "0077"),
         "imports": (
             "unihub-import",

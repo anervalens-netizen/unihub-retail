@@ -30,6 +30,9 @@ REPORT_EXPORT_LIMIT = RateLimitPolicy("report_export", 30, 60)
 BUSINESS_WRITE_LIMIT = RateLimitPolicy("business_write", 60, 60)
 GRILE_JOB_LIMIT = RateLimitPolicy("grile_job", 10, 300)
 TARGET_MUTATION_LIMIT = RateLimitPolicy("target_mutation", 30, 300)
+# Owner-only AI run starts. One accepted run keeps unlimited internal turns and
+# tool calls; this bound exists solely to make Docker/model spend finite.
+AI_TURN_LIMIT = RateLimitPolicy("ai_turn", 10, 60)
 
 
 _decisions = Counter(

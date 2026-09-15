@@ -36,6 +36,7 @@ _POLICY_DEFAULTS = {
     "business_write": ("RATE_LIMIT_BUSINESS_WRITE", 60, 60),
     "grile_job": ("RATE_LIMIT_GRILE_JOB", 10, 300),
     "target_mutation": ("RATE_LIMIT_TARGET_MUTATION", 30, 300),
+    "ai_turn": ("RATE_LIMIT_AI_TURN", 10, 60),
 }
 _DISTRIBUTED_KEYS = (
     "TRUSTED_PROXY_CIDRS",

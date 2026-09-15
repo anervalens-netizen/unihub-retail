@@ -1,5 +1,5 @@
 /* GENERATED FILE. Run npm run contracts:generate; do not edit manually. */
-export const RETAIL_OPENAPI_SHA256 = 'd767d046c98c392805945525f748ef2546ba525c74bd388e72b3e4e4e6408859' as const; // pragma: allowlist secret
+export const RETAIL_OPENAPI_SHA256 = 'b2bc71b690f10bc7215c022fd2cca19dd789586faf353e462847762777936498' as const; // pragma: allowlist secret
 
 export type RetailDecimal = string & { readonly __retailDecimal: unique symbol };
 
@@ -236,6 +236,32 @@ export interface RetailAgentsOverviewResponse {
   "total_unique_agents": number;
 }
 
+export interface RetailAiArtifactItem {
+  "created_at": string;
+  "download_url": string;
+  "filename": string;
+  "id": string;
+  "kind": "input" | "output";
+  "mime_type": string;
+  "size_bytes": number;
+}
+
+export interface RetailAiConversationCreate {
+  "effort"?: "none" | "low" | "medium" | "high" | "xhigh" | "max";
+}
+
+export interface RetailAiConversationItem {
+  "created_at": string;
+  "effort": "none" | "low" | "medium" | "high" | "xhigh" | "max";
+  "id": string;
+  "title": string;
+  "updated_at": string;
+}
+
+export interface RetailAiConversationListResponse {
+  "items": Array<RetailAiConversationItem>;
+}
+
 export interface RetailAiForecastDailyPoint {
   "actual_sales": RetailDecimal;
   "cumulative_actual": RetailDecimal;
@@ -353,6 +379,28 @@ export interface RetailAiForecastSummary {
   "store_count": number;
 }
 
+export interface RetailAiMessageItem {
+  "attachments"?: Array<RetailAiArtifactItem>;
+  "created_at": string;
+  "id": string;
+  "role": "user" | "assistant" | "system";
+  "status": "complete" | "streaming" | "error" | "stopped";
+  "text": string;
+}
+
+export interface RetailAiMessageListResponse {
+  "items": Array<RetailAiMessageItem>;
+}
+
+export interface RetailAiSteerResponse {
+  "accepted": boolean;
+  "message": RetailAiMessageItem;
+}
+
+export interface RetailAiStopResponse {
+  "ok": boolean;
+}
+
 export interface RetailAsmStats {
   "asm": string;
   "incentive_qty"?: number;
@@ -375,6 +423,19 @@ export interface RetailAsmStats {
 export interface RetailBody_reconcile_erp_report_file_api_import_erp_reconciliation_post {
   "file": string;
   "import_month": string;
+}
+
+export interface RetailBody_run_turn_api_ai_conversations__conversation_id__turn_post {
+  "current_view"?: string | null;
+  "effort"?: "none" | "low" | "medium" | "high" | "xhigh" | "max";
+  "files"?: Array<string> | null;
+  "text"?: string;
+}
+
+export interface RetailBody_steer_api_ai_conversations__conversation_id__steer_post {
+  "current_view"?: string | null;
+  "files"?: Array<string> | null;
+  "text"?: string;
 }
 
 export interface RetailBody_upload_promo_actuals_file_api_import_promo_actuals_post {
@@ -2569,6 +2630,13 @@ export type RetailOperationId =
   'get_stores_coverage_api_agents_stores_coverage_get' |
   'get_current_ai_forecast_api_ai_forecast_current_get' |
   'get_rolling_12_ai_forecast_api_ai_forecast_rolling_12_get' |
+  'download_artifact_api_ai_artifacts__artifact_id__download_get' |
+  'list_conversations_api_ai_conversations_get' |
+  'create_conversation_api_ai_conversations_post' |
+  'list_messages_api_ai_conversations__conversation_id__messages_get' |
+  'steer_api_ai_conversations__conversation_id__steer_post' |
+  'stop_api_ai_conversations__conversation_id__stop_post' |
+  'run_turn_api_ai_conversations__conversation_id__turn_post' |
   'get_focus_history_api_campaigns_history_get' |
   'get_campaign_overview_api_campaigns_overview_get' |
   'get_promotions_incentives_api_campaigns_promotions_incentives_get' |
@@ -2719,6 +2787,40 @@ export interface RetailOperationResponses {
 
   'get_rolling_12_ai_forecast_api_ai_forecast_rolling_12_get': {
     '200': RetailAiForecastRollingResponse;
+    '422': RetailHTTPValidationError;
+  }
+
+  'download_artifact_api_ai_artifacts__artifact_id__download_get': {
+    '200': unknown;
+    '422': RetailHTTPValidationError;
+  }
+
+  'list_conversations_api_ai_conversations_get': {
+    '200': RetailAiConversationListResponse;
+  }
+
+  'create_conversation_api_ai_conversations_post': {
+    '201': RetailAiConversationItem;
+    '422': RetailHTTPValidationError;
+  }
+
+  'list_messages_api_ai_conversations__conversation_id__messages_get': {
+    '200': RetailAiMessageListResponse;
+    '422': RetailHTTPValidationError;
+  }
+
+  'steer_api_ai_conversations__conversation_id__steer_post': {
+    '200': RetailAiSteerResponse;
+    '422': RetailHTTPValidationError;
+  }
+
+  'stop_api_ai_conversations__conversation_id__stop_post': {
+    '200': RetailAiStopResponse;
+    '422': RetailHTTPValidationError;
+  }
+
+  'run_turn_api_ai_conversations__conversation_id__turn_post': {
+    '200': unknown;
     '422': RetailHTTPValidationError;
   }
 
@@ -3257,6 +3359,13 @@ export interface RetailOperationSuccesses {
   'get_stores_coverage_api_agents_stores_coverage_get': RetailStoreCoverageResponse;
   'get_current_ai_forecast_api_ai_forecast_current_get': RetailAiForecastResponse;
   'get_rolling_12_ai_forecast_api_ai_forecast_rolling_12_get': RetailAiForecastRollingResponse;
+  'download_artifact_api_ai_artifacts__artifact_id__download_get': unknown;
+  'list_conversations_api_ai_conversations_get': RetailAiConversationListResponse;
+  'create_conversation_api_ai_conversations_post': RetailAiConversationItem;
+  'list_messages_api_ai_conversations__conversation_id__messages_get': RetailAiMessageListResponse;
+  'steer_api_ai_conversations__conversation_id__steer_post': RetailAiSteerResponse;
+  'stop_api_ai_conversations__conversation_id__stop_post': RetailAiStopResponse;
+  'run_turn_api_ai_conversations__conversation_id__turn_post': unknown;
   'get_focus_history_api_campaigns_history_get': RetailFocusHistoryResponse;
   'get_campaign_overview_api_campaigns_overview_get': RetailCampaignSnapshot;
   'get_promotions_incentives_api_campaigns_promotions_incentives_get': RetailCampaignsPromotionsResponse;
@@ -3370,6 +3479,13 @@ export interface RetailOperationErrors {
   'get_stores_coverage_api_agents_stores_coverage_get': { '422': RetailHTTPValidationError };
   'get_current_ai_forecast_api_ai_forecast_current_get': { '422': RetailHTTPValidationError; '503': RetailReportingUnavailableResponse };
   'get_rolling_12_ai_forecast_api_ai_forecast_rolling_12_get': { '422': RetailHTTPValidationError };
+  'download_artifact_api_ai_artifacts__artifact_id__download_get': { '422': RetailHTTPValidationError };
+  'list_conversations_api_ai_conversations_get': Record<never, never>;
+  'create_conversation_api_ai_conversations_post': { '422': RetailHTTPValidationError };
+  'list_messages_api_ai_conversations__conversation_id__messages_get': { '422': RetailHTTPValidationError };
+  'steer_api_ai_conversations__conversation_id__steer_post': { '422': RetailHTTPValidationError };
+  'stop_api_ai_conversations__conversation_id__stop_post': { '422': RetailHTTPValidationError };
+  'run_turn_api_ai_conversations__conversation_id__turn_post': { '422': RetailHTTPValidationError };
   'get_focus_history_api_campaigns_history_get': { '422': RetailHTTPValidationError };
   'get_campaign_overview_api_campaigns_overview_get': { '422': RetailHTTPValidationError };
   'get_promotions_incentives_api_campaigns_promotions_incentives_get': { '422': RetailHTTPValidationError };
@@ -3502,6 +3618,26 @@ export const RETAIL_OPERATION_ERROR_STATUSES: { readonly [Id in RetailOperationI
     '503',
   ]),
   'get_rolling_12_ai_forecast_api_ai_forecast_rolling_12_get': new Set<string>([
+    '422',
+  ]),
+  'download_artifact_api_ai_artifacts__artifact_id__download_get': new Set<string>([
+    '422',
+  ]),
+  'list_conversations_api_ai_conversations_get': new Set<string>([
+  ]),
+  'create_conversation_api_ai_conversations_post': new Set<string>([
+    '422',
+  ]),
+  'list_messages_api_ai_conversations__conversation_id__messages_get': new Set<string>([
+    '422',
+  ]),
+  'steer_api_ai_conversations__conversation_id__steer_post': new Set<string>([
+    '422',
+  ]),
+  'stop_api_ai_conversations__conversation_id__stop_post': new Set<string>([
+    '422',
+  ]),
+  'run_turn_api_ai_conversations__conversation_id__turn_post': new Set<string>([
     '422',
   ]),
   'get_focus_history_api_campaigns_history_get': new Set<string>([
@@ -3839,6 +3975,13 @@ export interface RetailOperationQueries {
   'get_stores_coverage_api_agents_stores_coverage_get': { "selected_month": string; "firma"?: string | null; "regional"?: string | null; "asm"?: string | null };
   'get_current_ai_forecast_api_ai_forecast_current_get': { "month": string; "metric"?: string; "firma"?: string | null; "regional"?: string | null; "asm"?: string | null; "site_code"?: Array<string> | null };
   'get_rolling_12_ai_forecast_api_ai_forecast_rolling_12_get': { "month": string; "metric"?: string; "firma"?: string | null; "regional"?: string | null; "asm"?: string | null; "site_code"?: Array<string> | null };
+  'download_artifact_api_ai_artifacts__artifact_id__download_get': Record<never, never>;
+  'list_conversations_api_ai_conversations_get': Record<never, never>;
+  'create_conversation_api_ai_conversations_post': Record<never, never>;
+  'list_messages_api_ai_conversations__conversation_id__messages_get': Record<never, never>;
+  'steer_api_ai_conversations__conversation_id__steer_post': Record<never, never>;
+  'stop_api_ai_conversations__conversation_id__stop_post': Record<never, never>;
+  'run_turn_api_ai_conversations__conversation_id__turn_post': Record<never, never>;
   'get_focus_history_api_campaigns_history_get': { "month": string; "months_back"?: number; "firma"?: string | null; "regional"?: string | null; "asm"?: string | null; "site_code"?: Array<string> | null; "agent"?: Array<string> | null };
   'get_campaign_overview_api_campaigns_overview_get': { "month": string; "firma"?: string | null; "regional"?: string | null; "asm"?: string | null; "site_code"?: Array<string> | null; "agent"?: Array<string> | null };
   'get_promotions_incentives_api_campaigns_promotions_incentives_get': { "start_date": string; "end_date": string; "firma"?: string | null; "regional"?: string | null; "asm"?: string | null; "site_code"?: Array<string> | null; "agent"?: Array<string> | null; "promotion_key"?: string | null; "view"?: "all" | "promo" | "incentive"; "current_scope"?: boolean; "include_closed_stores"?: boolean };
@@ -3952,6 +4095,13 @@ export interface RetailOperationPaths {
   'get_stores_coverage_api_agents_stores_coverage_get': Record<never, never>;
   'get_current_ai_forecast_api_ai_forecast_current_get': Record<never, never>;
   'get_rolling_12_ai_forecast_api_ai_forecast_rolling_12_get': Record<never, never>;
+  'download_artifact_api_ai_artifacts__artifact_id__download_get': { "artifact_id": string };
+  'list_conversations_api_ai_conversations_get': Record<never, never>;
+  'create_conversation_api_ai_conversations_post': Record<never, never>;
+  'list_messages_api_ai_conversations__conversation_id__messages_get': { "conversation_id": string };
+  'steer_api_ai_conversations__conversation_id__steer_post': { "conversation_id": string };
+  'stop_api_ai_conversations__conversation_id__stop_post': { "conversation_id": string };
+  'run_turn_api_ai_conversations__conversation_id__turn_post': { "conversation_id": string };
   'get_focus_history_api_campaigns_history_get': Record<never, never>;
   'get_campaign_overview_api_campaigns_overview_get': Record<never, never>;
   'get_promotions_incentives_api_campaigns_promotions_incentives_get': Record<never, never>;
@@ -4065,6 +4215,13 @@ export interface RetailOperationBodies {
   'get_stores_coverage_api_agents_stores_coverage_get': undefined;
   'get_current_ai_forecast_api_ai_forecast_current_get': undefined;
   'get_rolling_12_ai_forecast_api_ai_forecast_rolling_12_get': undefined;
+  'download_artifact_api_ai_artifacts__artifact_id__download_get': undefined;
+  'list_conversations_api_ai_conversations_get': undefined;
+  'create_conversation_api_ai_conversations_post': RetailAiConversationCreate;
+  'list_messages_api_ai_conversations__conversation_id__messages_get': undefined;
+  'steer_api_ai_conversations__conversation_id__steer_post': FormData;
+  'stop_api_ai_conversations__conversation_id__stop_post': undefined;
+  'run_turn_api_ai_conversations__conversation_id__turn_post': FormData;
   'get_focus_history_api_campaigns_history_get': undefined;
   'get_campaign_overview_api_campaigns_overview_get': undefined;
   'get_promotions_incentives_api_campaigns_promotions_incentives_get': undefined;
@@ -4178,6 +4335,13 @@ export interface RetailOperationMeta {
   'get_stores_coverage_api_agents_stores_coverage_get': { method: 'get'; path: '/api/agents/stores-coverage'; responseType: 'json' };
   'get_current_ai_forecast_api_ai_forecast_current_get': { method: 'get'; path: '/api/ai-forecast/current'; responseType: 'json' };
   'get_rolling_12_ai_forecast_api_ai_forecast_rolling_12_get': { method: 'get'; path: '/api/ai-forecast/rolling-12'; responseType: 'json' };
+  'download_artifact_api_ai_artifacts__artifact_id__download_get': { method: 'get'; path: '/api/ai/artifacts/{artifact_id}/download'; responseType: 'json' };
+  'list_conversations_api_ai_conversations_get': { method: 'get'; path: '/api/ai/conversations'; responseType: 'json' };
+  'create_conversation_api_ai_conversations_post': { method: 'post'; path: '/api/ai/conversations'; responseType: 'json' };
+  'list_messages_api_ai_conversations__conversation_id__messages_get': { method: 'get'; path: '/api/ai/conversations/{conversation_id}/messages'; responseType: 'json' };
+  'steer_api_ai_conversations__conversation_id__steer_post': { method: 'post'; path: '/api/ai/conversations/{conversation_id}/steer'; responseType: 'json' };
+  'stop_api_ai_conversations__conversation_id__stop_post': { method: 'post'; path: '/api/ai/conversations/{conversation_id}/stop'; responseType: 'json' };
+  'run_turn_api_ai_conversations__conversation_id__turn_post': { method: 'post'; path: '/api/ai/conversations/{conversation_id}/turn'; responseType: 'json' };
   'get_focus_history_api_campaigns_history_get': { method: 'get'; path: '/api/campaigns/history'; responseType: 'json' };
   'get_campaign_overview_api_campaigns_overview_get': { method: 'get'; path: '/api/campaigns/overview'; responseType: 'json' };
   'get_promotions_incentives_api_campaigns_promotions_incentives_get': { method: 'get'; path: '/api/campaigns/promotions-incentives'; responseType: 'json' };
@@ -4374,6 +4538,20 @@ export const RETAIL_DECIMAL_PATHS: { readonly [Id in RetailOperationId]: Readonl
     'summary/delta_pct',
     'summary/delta_sales',
     'summary/forecast_sales',
+  ]),
+  'download_artifact_api_ai_artifacts__artifact_id__download_get': new Set<string>([
+  ]),
+  'list_conversations_api_ai_conversations_get': new Set<string>([
+  ]),
+  'create_conversation_api_ai_conversations_post': new Set<string>([
+  ]),
+  'list_messages_api_ai_conversations__conversation_id__messages_get': new Set<string>([
+  ]),
+  'steer_api_ai_conversations__conversation_id__steer_post': new Set<string>([
+  ]),
+  'stop_api_ai_conversations__conversation_id__stop_post': new Set<string>([
+  ]),
+  'run_turn_api_ai_conversations__conversation_id__turn_post': new Set<string>([
   ]),
   'get_focus_history_api_campaigns_history_get': new Set<string>([
     'history/*/focus_share_pct',
@@ -5602,6 +5780,20 @@ export const RETAIL_DATE_PATHS: { readonly [Id in RetailOperationId]: ReadonlySe
   ]),
   'get_rolling_12_ai_forecast_api_ai_forecast_rolling_12_get': new Set<string>([
   ]),
+  'download_artifact_api_ai_artifacts__artifact_id__download_get': new Set<string>([
+  ]),
+  'list_conversations_api_ai_conversations_get': new Set<string>([
+  ]),
+  'create_conversation_api_ai_conversations_post': new Set<string>([
+  ]),
+  'list_messages_api_ai_conversations__conversation_id__messages_get': new Set<string>([
+  ]),
+  'steer_api_ai_conversations__conversation_id__steer_post': new Set<string>([
+  ]),
+  'stop_api_ai_conversations__conversation_id__stop_post': new Set<string>([
+  ]),
+  'run_turn_api_ai_conversations__conversation_id__turn_post': new Set<string>([
+  ]),
   'get_focus_history_api_campaigns_history_get': new Set<string>([
   ]),
   'get_campaign_overview_api_campaigns_overview_get': new Set<string>([
@@ -5874,6 +6066,28 @@ export const RETAIL_DATETIME_PATHS: { readonly [Id in RetailOperationId]: Readon
   ]),
   'get_rolling_12_ai_forecast_api_ai_forecast_rolling_12_get': new Set<string>([
     'runs/*/generated_at',
+  ]),
+  'download_artifact_api_ai_artifacts__artifact_id__download_get': new Set<string>([
+  ]),
+  'list_conversations_api_ai_conversations_get': new Set<string>([
+    'items/*/created_at',
+    'items/*/updated_at',
+  ]),
+  'create_conversation_api_ai_conversations_post': new Set<string>([
+    'created_at',
+    'updated_at',
+  ]),
+  'list_messages_api_ai_conversations__conversation_id__messages_get': new Set<string>([
+    'items/*/attachments/*/created_at',
+    'items/*/created_at',
+  ]),
+  'steer_api_ai_conversations__conversation_id__steer_post': new Set<string>([
+    'message/attachments/*/created_at',
+    'message/created_at',
+  ]),
+  'stop_api_ai_conversations__conversation_id__stop_post': new Set<string>([
+  ]),
+  'run_turn_api_ai_conversations__conversation_id__turn_post': new Set<string>([
   ]),
   'get_focus_history_api_campaigns_history_get': new Set<string>([
   ]),
@@ -6148,6 +6362,13 @@ export const RETAIL_OPERATION_ROUTES = {
   'get_stores_coverage_api_agents_stores_coverage_get': { method: 'get', path: '/api/agents/stores-coverage', responseType: 'json' },
   'get_current_ai_forecast_api_ai_forecast_current_get': { method: 'get', path: '/api/ai-forecast/current', responseType: 'json' },
   'get_rolling_12_ai_forecast_api_ai_forecast_rolling_12_get': { method: 'get', path: '/api/ai-forecast/rolling-12', responseType: 'json' },
+  'download_artifact_api_ai_artifacts__artifact_id__download_get': { method: 'get', path: '/api/ai/artifacts/{artifact_id}/download', responseType: 'json' },
+  'list_conversations_api_ai_conversations_get': { method: 'get', path: '/api/ai/conversations', responseType: 'json' },
+  'create_conversation_api_ai_conversations_post': { method: 'post', path: '/api/ai/conversations', responseType: 'json' },
+  'list_messages_api_ai_conversations__conversation_id__messages_get': { method: 'get', path: '/api/ai/conversations/{conversation_id}/messages', responseType: 'json' },
+  'steer_api_ai_conversations__conversation_id__steer_post': { method: 'post', path: '/api/ai/conversations/{conversation_id}/steer', responseType: 'json' },
+  'stop_api_ai_conversations__conversation_id__stop_post': { method: 'post', path: '/api/ai/conversations/{conversation_id}/stop', responseType: 'json' },
+  'run_turn_api_ai_conversations__conversation_id__turn_post': { method: 'post', path: '/api/ai/conversations/{conversation_id}/turn', responseType: 'json' },
   'get_focus_history_api_campaigns_history_get': { method: 'get', path: '/api/campaigns/history', responseType: 'json' },
   'get_campaign_overview_api_campaigns_overview_get': { method: 'get', path: '/api/campaigns/overview', responseType: 'json' },
   'get_promotions_incentives_api_campaigns_promotions_incentives_get': { method: 'get', path: '/api/campaigns/promotions-incentives', responseType: 'json' },

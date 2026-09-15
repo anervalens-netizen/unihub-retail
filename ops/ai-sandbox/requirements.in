@@ -1,0 +1,24 @@
+# Runtime analysis/document toolchain for the private UniHub AI sandbox.
+# Resolve this file to requirements.lock with hashes before the image is built.
+beautifulsoup4
+# Fast analytical SQL over local extracts.
+duckdb
+kaleido
+lxml
+markdown
+matplotlib
+numpy
+openpyxl
+pandas
+Pillow
+plotly
+polars
+psycopg[binary]
+pyarrow
+PyMuPDF
+python-docx
+python-pptx
+reportlab
+tabulate
+weasyprint
+XlsxWriter

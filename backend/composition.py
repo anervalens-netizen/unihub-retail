@@ -8,8 +8,10 @@ from __future__ import annotations
 
 from typing import Any
 
+from ai_assistant.settings import load_ai_assistant_settings
 from db.connection import get_pool
 from repositories.agents import AgentsRepository
+from repositories.ai_assistant import AiAssistantRepository
 from repositories.ai_forecast import AiForecastRepository
 from repositories.campaigns import CampaignsRepository
 from repositories.contests import ContestsRepository
@@ -28,6 +30,7 @@ from repositories.target_calculator import TargetCalculatorRepository
 from repositories.tasks import TasksRepository
 from repositories.visits_report_postgres import VisitsReportPostgresRepository
 from services.agents import AgentsService
+from services.ai_assistant import AiAssistantService
 from services.ai_forecast import AiForecastService
 from services.campaigns import CampaignsService
 from services.contests import ContestsService
@@ -52,6 +55,11 @@ from services.visits_report import VisitsReportService
 async def build_agents_service() -> AgentsService:
     pool = await get_pool()
     return AgentsService(AgentsRepository(pool))
+
+
+async def build_ai_assistant_service() -> AiAssistantService:
+    pool = await get_pool()
+    return AiAssistantService(AiAssistantRepository(pool), load_ai_assistant_settings())
 
 
 async def build_ai_forecast_service() -> AiForecastService:

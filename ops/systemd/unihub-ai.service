@@ -1,0 +1,61 @@
+[Unit]
+Description=UniHub Retail owner AI SandboxAgent runtime
+After=network-online.target docker.service unihub-ai-storage.service
+Wants=network-online.target
+Requires=docker.service unihub-ai-storage.service
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=unihub-web
+Group=unihub-web
+SupplementaryGroups=docker
+WorkingDirectory=/opt/Mobiup/unihub-retail/backend
+Environment="PATH=/opt/Mobiup/unihub-retail/backend/venv/bin:/usr/bin:/bin"
+EnvironmentFile=/opt/Mobiup/unihub-retail/.env.ai
+Environment="PYTHONDONTWRITEBYTECODE=1"
+Environment="PYTHON_DOTENV_DISABLED=1"
+ExecStart=/opt/Mobiup/unihub-retail/backend/venv/bin/python3 -m uvicorn ai_assistant.runtime_app:app --host 127.0.0.1 --port 9911 --workers 1 --no-proxy-headers
+Restart=always
+RestartSec=5
+TimeoutStartSec=120
+TimeoutStopSec=120
+KillSignal=SIGTERM
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=unihub-ai
+
+ProtectSystem=strict
+# Metadata only; StateDirectory is writable independently of ReadWritePaths.
+# The root host provisioner must mount both fixed disks before this namespace.
+StateDirectory=unihub-retail/ai-assistant
+StateDirectoryMode=0770
+ReadWritePaths=/var/lib/unihub-retail/ai-sandbox-slots/slot-0/workspace
+ReadWritePaths=/var/lib/unihub-retail/ai-sandbox-slots/slot-1/workspace
+ProtectHome=read-only
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectClock=true
+ProtectControlGroups=true
+ProtectHostname=true
+ProtectKernelLogs=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+LockPersonality=true
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+SystemCallArchitectures=native
+CapabilityBoundingSet=
+UMask=0007
+CPUWeight=300
+IOWeight=300
+MemoryHigh=1536M
+MemoryMax=2304M
+MemorySwapMax=512M
+
+[Install]
+WantedBy=multi-user.target
