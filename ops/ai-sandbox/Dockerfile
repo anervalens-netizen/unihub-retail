@@ -1,5 +1,5 @@
 # The exact base digest is resolved/pinned during the first local sandbox build checkpoint.
-ARG BASE_IMAGE=python:3.12-slim-bookworm
+ARG BASE_IMAGE=python:3.12-slim-bookworm@sha256:782412e85d0f0984994c290652577d4018aff08145c85b262bb63dc0c7522254
 FROM ${BASE_IMAGE}
 
 ENV DEBIAN_FRONTEND=noninteractive \

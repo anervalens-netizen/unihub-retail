@@ -9,7 +9,7 @@ const context = {
   tab: 'hub' as const,
   period: '2026-08',
   hubSection: 'current' as const,
-  filters: { firma: [], rm: [], magazin: [], agent: [] },
+  filters: { firma: 'Toate', rm: 'Toti', magazin: [], agent: [] },
 };
 
 describe('AiAssistantPanel', () => {

@@ -199,8 +199,10 @@ export function AiAssistantPanel({
   const latestMessageId = messages.at(-1)?.id;
   useEffect(() => {
     if (!latestMessageId || !open) return;
-    const node = panelRef.current?.querySelector('[data-ai-message-list]');
-    node?.scrollTo({ top: node.scrollHeight, behavior: 'smooth' });
+    const node = panelRef.current?.querySelector<HTMLElement>('[data-ai-message-list]');
+    if (node && typeof node.scrollTo === 'function') {
+      node.scrollTo({ top: node.scrollHeight, behavior: 'smooth' });
+    }
   }, [latestMessageId, open]);
 
   const messageList = useMemo(() => messages.filter((message) => message.role !== 'system'), [messages]);
